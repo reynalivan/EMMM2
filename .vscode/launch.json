@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Rust (CodeLLDB)",
+            "program": "${workspaceFolder}/src-tauri/target/debug/emmm2.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/src-tauri",
+            "preLaunchTask": "Test: Backend (Watch)" 
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Vitest",
+            "runtimeExecutable": "pnpm",
+            "runtimeArgs": [
+                "vitest",
+                "--run",
+                "--threads=false"
+            ],
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
