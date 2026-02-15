@@ -1,28 +1,12 @@
 import { CheckCircle2, Plus, ArrowRight } from 'lucide-react';
-
-interface GameConfig {
-  id: string;
-  name: string;
-  game_type: string;
-  path: string;
-  mods_path: string;
-  launcher_path: string;
-  launch_args: string | null;
-}
+import type { GameConfig } from '../../types/game';
+import { GAME_TYPE_COLORS } from '../../types/game';
 
 interface Props {
   games: GameConfig[];
   onContinue: () => void;
   onAddMore: () => void;
 }
-
-const GAME_TYPE_COLORS: Record<string, string> = {
-  GIMI: 'badge-primary',
-  SRMI: 'badge-secondary',
-  WWMI: 'badge-accent',
-  ZZMI: 'badge-info',
-  EFMI: 'badge-warning',
-};
 
 export default function AutoDetectResult({ games, onContinue, onAddMore }: Props) {
   return (

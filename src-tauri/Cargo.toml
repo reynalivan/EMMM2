@@ -33,6 +33,21 @@ thiserror = "2.0.18"
 anyhow = "1.0.101"
 log = "0.4.29"
 
+# Epic 2: Scanner Core
+walkdir = "2"
+regex = "1"
+deunicode = "1"
+strsim = "0.11"
+blake3 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+
+# Epic 2: Archive & File Ops
+notify = "7"
+zip = { version = "2", features = ["aes-crypto"] }
+sevenz-rust = { version = "0.6", features = ["aes256"] }
+rar = "0.4"
+tempfile = "3"
+
 [dev-dependencies]
 env_logger = "0.11.9"
 

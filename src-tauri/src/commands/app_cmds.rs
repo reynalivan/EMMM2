@@ -1,6 +1,5 @@
 use crate::database::models::ConfigStatus;
 use tauri_plugin_store::StoreExt;
-use log;
 
 /// Checks whether the app has a valid config with games configured.
 /// Returns the config status to determine which screen to show.

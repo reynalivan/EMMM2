@@ -2,18 +2,9 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Gamepad2, Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import type { GameConfig } from '../../types/game';
 import ManualSetupForm from './ManualSetupForm';
 import AutoDetectResult from './AutoDetectResult';
-
-interface GameConfig {
-  id: string;
-  name: string;
-  game_type: string;
-  path: string;
-  mods_path: string;
-  launcher_path: string;
-  launch_args: string | null;
-}
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 

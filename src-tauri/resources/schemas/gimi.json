@@ -1,0 +1,30 @@
+{
+  "categories": [
+    { "name": "Character", "icon": "User", "color": "primary" },
+    { "name": "Weapon", "icon": "Sword", "color": "secondary" },
+    { "name": "UI", "icon": "Layout", "color": "accent" },
+    { "name": "Other", "icon": "Package", "color": "neutral" }
+  ],
+  "filters": [
+    {
+      "key": "element",
+      "label": "Element",
+      "options": ["Pyro", "Hydro", "Anemo", "Electro", "Dendro", "Cryo", "Geo"]
+    },
+    {
+      "key": "rarity",
+      "label": "Rarity",
+      "options": ["5-Star", "4-Star"]
+    },
+    {
+      "key": "weapon_type",
+      "label": "Weapon Type",
+      "options": ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"]
+    },
+    {
+      "key": "region",
+      "label": "Region",
+      "options": ["Mondstadt", "Liyue", "Inazuma", "Sumeru", "Fontaine", "Natlan", "Snezhnaya"]
+    }
+  ]
+}

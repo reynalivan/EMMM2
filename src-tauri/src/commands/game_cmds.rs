@@ -4,7 +4,6 @@ use serde_json::json;
 use std::path::Path;
 use tauri_plugin_store::StoreExt;
 use uuid::Uuid;
-use log;
 
 /// Auto-detect games by scanning an XXMI root folder.
 /// Validates each subfolder, saves valid games to config store + DB.

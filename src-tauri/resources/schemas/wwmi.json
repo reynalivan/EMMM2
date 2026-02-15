@@ -1,0 +1,25 @@
+{
+  "categories": [
+    { "name": "Resonator", "icon": "User", "color": "primary" },
+    { "name": "Weapon", "icon": "Sword", "color": "secondary" },
+    { "name": "UI", "icon": "Layout", "color": "accent" },
+    { "name": "Other", "icon": "Package", "color": "neutral" }
+  ],
+  "filters": [
+    {
+      "key": "element",
+      "label": "Element",
+      "options": ["Spectro", "Havoc", "Electro", "Aero", "Glacio", "Fusion"]
+    },
+    {
+      "key": "rarity",
+      "label": "Rarity",
+      "options": ["5-Star", "4-Star"]
+    },
+    {
+      "key": "weapon_type",
+      "label": "Weapon Type",
+      "options": ["Broadblade", "Sword", "Pistols", "Gauntlets", "Rectifier"]
+    }
+  ]
+}

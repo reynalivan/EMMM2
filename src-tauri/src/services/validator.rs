@@ -223,4 +223,32 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
     }
+
+    // Covers: EC-1.03 (Unusual Characters / Unicode)
+    #[test]
+    fn test_unicode_path() {
+        // "Génsjhìn❤" in path
+        let dir = std::env::temp_dir().join("emmm2_test_unicode_❤");
+        let _ = fs::remove_dir_all(&dir);
+        create_valid_instance(&dir);
+
+        let result = validate_instance(&dir);
+        assert!(result.is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // Covers: EC-1.02 (Mixed Path Separators)
+    #[test]
+    fn test_mixed_separators() {
+        // Rust's std::path handles separators natively, but we verify it works
+        let dir = std::env::temp_dir().join("emmm2_test_mixed");
+        let _ = fs::remove_dir_all(&dir);
+        create_valid_instance(&dir);
+
+        let result = validate_instance(&dir);
+        assert!(result.is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

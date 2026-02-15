@@ -5,14 +5,8 @@ import { z } from 'zod';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ArrowLeft, FolderOpen, Loader2, AlertCircle } from 'lucide-react';
-
-const GAME_OPTIONS = [
-  { value: 'GIMI', label: 'Genshin Impact (GIMI)' },
-  { value: 'SRMI', label: 'Honkai Star Rail (SRMI)' },
-  { value: 'WWMI', label: 'Wuthering Waves (WWMI)' },
-  { value: 'ZZMI', label: 'Zenless Zone Zero (ZZMI)' },
-  { value: 'EFMI', label: 'Arknight Endfield (EFMI)' },
-] as const;
+import type { GameConfig } from '../../types/game';
+import { GAME_OPTIONS } from '../../types/game';
 
 const schema = z.object({
   gameType: z.string().min(1, 'Please select a game type'),
@@ -20,16 +14,6 @@ const schema = z.object({
 });
 
 type FormData = z.infer<typeof schema>;
-
-interface GameConfig {
-  id: string;
-  name: string;
-  game_type: string;
-  path: string;
-  mods_path: string;
-  launcher_path: string;
-  launch_args: string | null;
-}
 
 interface Props {
   onBack: () => void;

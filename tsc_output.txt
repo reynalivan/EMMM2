@@ -1,0 +1,17 @@
+src/components/scanner/ReviewTable.tsx(9,8): error TS2307: Cannot find module '@tanstack/react-table' or its corresponding type declarations.
+src/components/scanner/ReviewTable.tsx(10,35): error TS2307: Cannot find module '@tanstack/react-table' or its corresponding type declarations.
+src/components/scanner/ReviewTable.tsx(23,69): error TS6133: 'activeGameId' is declared but its value is never read.
+src/components/scanner/ReviewTable.tsx(32,20): error TS7031: Binding element 'table' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(38,15): error TS2322: Type '{ type: "checkbox"; className: string; checked: any; indeterminate: string | undefined; onChange: any; }' is not assignable to type 'DetailedHTMLProps<InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>'.
+  Property 'indeterminate' does not exist on type 'DetailedHTMLProps<InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>'.
+src/components/scanner/ReviewTable.tsx(43,18): error TS7031: Binding element 'row' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(57,20): error TS7031: Binding element 'column' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(63,16): error TS7006: Parameter 'info' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(113,16): error TS7006: Parameter 'info' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(125,16): error TS7006: Parameter 'info' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(135,16): error TS7006: Parameter 'info' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(146,16): error TS7006: Parameter 'info' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(180,41): error TS7006: Parameter 'headerGroup' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(182,41): error TS7006: Parameter 'header' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(193,42): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/components/scanner/ReviewTable.tsx(195,43): error TS7006: Parameter 'cell' implicitly has an 'any' type.

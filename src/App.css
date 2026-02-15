@@ -1,49 +1,74 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin "daisyui";
 
-@plugin "daisyui/theme" {
-  name: "light";
-  default: true;
-  color-scheme: light;
+/* Discord-like Theme Configuration */
+@theme onyx {
+  --color-base-100: #313338; /* Discord Main Chat BG */
+  --color-base-200: #2b2d31; /* Discord Sidebar BG */
+  --color-base-300: #1e1f22; /* Discord Darker Areas */
+  --color-base-content: #dbdee1; /* Discord Text */
+
+  --color-primary: #5865f2; /* Discord Blurple */
+  --color-primary-content: #ffffff;
+
+  --color-secondary: #23a559; /* Discord Green */
+  --color-secondary-content: #ffffff;
+
+  --color-accent: #f0f1f2;
+  --color-neutral: #111214;
+  --color-info: #00b0f4;
+  --color-success: #23a559;
+  --color-warning: #fee75c;
+  --color-error: #da373c;
+
+  --radius-box: 0.5rem;
 }
 
-@plugin "daisyui/theme" {
-  name: "dark";
-  default: false;
-  color-scheme: dark;
+/* Global Styles */
+:root {
+  --glass-border: rgba(255, 255, 255, 0.05);
+  --glass-bg: rgba(30, 31, 34, 0.6);
 }
 
-@plugin "daisyui/theme" {
-  name: "darker";
-  default: false;
-  prefersdark: false;
-  color-scheme: "dark";
-  --color-base-100: oklch(21% 0.034 264.665);
-  --color-base-200: oklch(27% 0.033 256.848);
-  --color-base-300: oklch(37% 0.034 259.733);
-  --color-base-content: oklch(96% 0.007 247.896);
-  --color-primary: oklch(54% 0.245 262.881);
-  --color-primary-content: oklch(97% 0.014 254.604);
-  --color-secondary: oklch(60% 0.25 292.717);
-  --color-secondary-content: oklch(97% 0.014 343.198);
-  --color-accent: oklch(52% 0.105 223.128);
-  --color-accent-content: oklch(98% 0.018 155.826);
-  --color-neutral: oklch(27% 0.033 256.848);
-  --color-neutral-content: oklch(98% 0.002 247.839);
-  --color-info: oklch(50% 0.134 242.749);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(59% 0.145 163.225);
-  --color-success-content: oklch(97% 0.021 166.113);
-  --color-warning: oklch(68% 0.162 75.834);
-  --color-warning-content: oklch(98% 0.016 73.684);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(97% 0.014 343.198);
-  --radius-selector: 2rem;
-  --radius-field: 0.5rem;
-  --radius-box: 1rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.21875rem;
-  --border: 1px;
-  --depth: 1;
-  --noise: 1;
+body {
+  @apply bg-base-100 text-base-content antialiased selection:bg-primary/30 selection:text-white;
+}
+
+/* Utility Classes */
+.glass-surface {
+  @apply bg-base-200/80 backdrop-blur-md border border-white/5;
+}
+
+.glow-active {
+  box-shadow: 0 0 15px -3px var(--color-primary);
+}
+
+.glow-text {
+  text-shadow: 0 0 10px var(--color-primary);
+}
+
+/* Scrollbar Styling (Discord Style: Dark & Rounded) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background-color: #2b2d31;
+}
+
+::-webkit-scrollbar-track {
+  background-color: #2b2d31;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #1a1b1e;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #111214;
+}
+
+/* Card Hover Effect */
+.card-hover-effect {
+  @apply transition-all duration-200 hover:scale-[1.01] hover:shadow-md hover:bg-base-300;
 }
