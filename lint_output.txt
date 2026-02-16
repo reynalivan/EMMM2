@@ -1,0 +1,138 @@
+
+> emmm2@0.1.0 lint E:\Dev\EMMM2NEW
+> eslint .
+
+
+E:\Dev\EMMM2NEW\src\features\details\hooks\usePreviewPanelState.ts
+  131:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+E:\Dev\EMMM2NEW\src\features\details\hooks\usePreviewPanelState.ts:131:7
+  129 |         });
+  130 |       }
+> 131 |       setPendingTransition({ kind: 'mod', path: externalSelectedPath });
+      |       ^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  132 |       setShowUnsavedModal(true);
+  133 |       return;
+  134 |     }                                                                                                                 react-hooks/set-state-in-effect
+  140:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+E:\Dev\EMMM2NEW\src\features\details\hooks\usePreviewPanelState.ts:140:5
+  138 |
+  139 |   useEffect(() => {
+> 140 |     setCurrentImageIndex(0);
+      |     ^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  141 |   }, [activePath, images.length]);
+  142 |
+  143 |   useEffect(() => {                                                                                                                                                             react-hooks/set-state-in-effect
+  149:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+E:\Dev\EMMM2NEW\src\features\details\hooks\usePreviewPanelState.ts:149:5
+  147 |
+  148 |     const nextInitialMap = toFieldValueMap(allKeyBindFields);
+> 149 |     setInitialByField(nextInitialMap);
+      |     ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  150 |     setDraftByField(nextInitialMap);
+  151 |     setFieldErrors({});
+  152 |   }, [allKeyBindFields, hasUnsavedEditorChanges]);                                                   react-hooks/set-state-in-effect
+  155:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+E:\Dev\EMMM2NEW\src\features\details\hooks\usePreviewPanelState.ts:155:5
+  153 |
+  154 |   useEffect(() => {
+> 155 |     setOpenSectionIds((prev) => {
+      |     ^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  156 |       const validIds = new Set(keyBindSections.map((section) => section.id));
+  157 |       const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+  158 |       if (next.size === 0 && keyBindSections[0]) {  react-hooks/set-state-in-effect
+
+E:\Dev\EMMM2NEW\src\features\explorer\MoveToObjectDialog.tsx
+  105:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+E:\Dev\EMMM2NEW\src\features\settings\SettingsPage.tsx
+  11:1  warning  Delete `ΓÉìΓÅÄΓÉìΓÅÄ`  prettier/prettier
+
+E:\Dev\EMMM2NEW\src\features\settings\modals\PinModal.tsx
+  29:7  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  31:7  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  33:7  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+E:\Dev\EMMM2NEW\src\features\sidebar\CreateObjectModal.tsx
+  55:22  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+E:\Dev\EMMM2NEW\src\features\sidebar\CreateObjectModal.tsx:55:22
+  53 |
+  54 |   // Track selected category for dynamic metadata fields
+> 55 |   const objectType = watch('object_type');
+     |                      ^^^^^ React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.
+  56 |
+  57 |   // Derive per-category filters from schema
+  58 |   const categoryFilters: FilterDef[] = useMemo(() => {  react-hooks/incompatible-library
+
+E:\Dev\EMMM2NEW\src\features\sidebar\useObjectListHandlers.ts
+  288:5  warning  React Hook useCallback has a missing dependency: 'objects'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+E:\Dev\EMMM2NEW\src\features\sidebar\useObjectListLogic.ts
+  159:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+E:\Dev\EMMM2NEW\src\features\sidebar\useObjectListLogic.ts:159:5
+  157 |   useEffect(() => {
+  158 |     const validKeys = new Set(categoryFilters.map((f) => f.key));
+> 159 |     setActiveFilters((prev) => {
+      |     ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  160 |       const next: Record<string, string[]> = {};
+  161 |       for (const [k, v] of Object.entries(prev)) {
+  162 |         if (validKeys.has(k)) next[k] = v;  react-hooks/set-state-in-effect
+
+E:\Dev\EMMM2NEW\src\features\sidebar\useObjectListVirtualizer.ts
+  126:26  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+E:\Dev\EMMM2NEW\src\features\sidebar\useObjectListVirtualizer.ts:126:26
+  124 |   const rowHeight = isMobile ? 64 : 52;
+  125 |
+> 126 |   const rowVirtualizer = useVirtualizer({
+      |                          ^^^^^^^^^^^^^^ TanStack Virtual's `useVirtualizer()` API returns functions that cannot be memoized safely
+  127 |     count: totalItems,
+  128 |     getScrollElement: () => parentRef.current,
+  129 |     estimateSize: (index) => {  react-hooks/incompatible-library
+
+E:\Dev\EMMM2NEW\src\services\objectService.ts
+  230:7  error  There is no `cause` attached to the symptom error being thrown  preserve-caught-error
+
+Γ£û 14 problems (7 errors, 7 warnings)
+  0 errors and 4 warnings potentially fixable with the `--fix` option.
+
+ΓÇëELIFECYCLEΓÇë Command failed with exit code 1.

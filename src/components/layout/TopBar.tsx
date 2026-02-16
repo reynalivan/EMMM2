@@ -11,7 +11,7 @@ export default function TopBar() {
     <div className="h-16 glass-surface flex items-center justify-between px-3 md:px-4 sticky top-0 z-50">
       {/* Left Section: Branding & Navigation */}
       <div className="flex items-center gap-3 md:gap-5 shrink-0">
-        {workspaceView === 'mods' ? (
+        {workspaceView !== 'dashboard' ? (
           <button
             onClick={() => setWorkspaceView('dashboard')}
             className="btn btn-ghost btn-sm btn-square text-white/70 hover:text-primary hover:bg-white/5"

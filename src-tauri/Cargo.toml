@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -32,6 +32,7 @@ uuid = { version = "1.21.0", features = ["v4"] }
 thiserror = "2.0.18"
 anyhow = "1.0.101"
 log = "0.4.29"
+tauri-plugin-fs = "2"
 
 # Epic 2: Scanner Core
 walkdir = "2"
@@ -39,6 +40,7 @@ regex = "1"
 deunicode = "1"
 strsim = "0.11"
 blake3 = "1"
+rayon = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 # Epic 2: Archive & File Ops
@@ -47,10 +49,14 @@ zip = { version = "2", features = ["aes-crypto"] }
 sevenz-rust = { version = "0.6", features = ["aes256"] }
 rar = "0.4"
 tempfile = "3"
+lru = "0.16.3"
+sanitize-filename = "0.6.0"
+argon2 = "0.5"
+rand = "0.8"
+sysinfo = "0.33"
 
 [dev-dependencies]
 env_logger = "0.11.9"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
-

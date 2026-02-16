@@ -36,6 +36,8 @@ export interface ScanResultItem {
   confidence: 'High' | 'Medium' | 'Low' | 'None';
   matchDetail: string | null;
   detectedSkin: string | null;
+  /** Canonical folder name for this skin variant (first alias). */
+  skinFolderName: string | null;
   thumbnailPath: string | null;
 }
 

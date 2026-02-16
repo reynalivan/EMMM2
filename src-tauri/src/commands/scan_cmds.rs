@@ -12,7 +12,7 @@ use crate::services::watcher::{SuppressionGuard, WatcherState};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 // ─── State Management ──────────────────────────────────────────────
 
@@ -26,6 +26,14 @@ impl ScanState {
             is_cancelled: AtomicBool::new(false),
         }
     }
+}
+
+impl Default for ScanState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl ScanState {
     pub fn cancel(&self) {
         self.is_cancelled.store(true, Ordering::SeqCst);
     }
@@ -88,6 +96,102 @@ pub async fn set_watcher_suppression_cmd(
     watcher: State<'_, WatcherState>,
 ) -> Result<(), String> {
     watcher.suppressor.store(suppressed, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Start the file watcher for a specific path.
+/// Emits `mod_watch:event` to the frontend.
+#[tauri::command]
+pub async fn start_watcher_cmd(
+    app: tauri::AppHandle,
+    path: String,
+    state: State<'_, WatcherState>,
+) -> Result<(), String> {
+    // use tauri::Manager; // for emit
+
+    let path_obj = Path::new(&path);
+
+    // Stop existing watcher
+    {
+        let mut w = state.watcher.lock().unwrap();
+        if w.is_some() {
+            log::info!("Stopping existing watcher");
+            *w = None; // Drop the old watcher
+        }
+    }
+
+    log::info!("Starting watcher on: {}", path);
+
+    // Start new watcher
+    let (watcher, rx) =
+        crate::services::watcher::watch_mod_directory(path_obj, state.suppressor.clone())?;
+
+    // Store watcher immediately to keep it alive
+    {
+        let mut w = state.watcher.lock().unwrap();
+        *w = Some(watcher);
+    }
+
+    // Spawn thread to handle events
+    // We clone app handle to emit events
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            // Check if we should stop?
+            // The channel will close when the sender (watcher thread/closure) is dropped.
+            // But here we are the receiver.
+            // If the watcher in State is dropped (replaced), the notify watcher drops.
+            // Does notify watcher drop the sender? Yes usually.
+            // So recv() will return Err.
+
+            // Emit to frontend
+            // Payload must be Serialize. ModWatchEvent is not Serialize in watcher.rs?
+            // Need to check if ModWatchEvent derives Serialize.
+            // Takes a look at watcher.rs content: `#[derive(Debug, Clone)]`. NO Serialize!
+            // We need to fix that.
+
+            // For now, map to a simpler struct or use serde_json?
+            // Better to add Serialize to ModWatchEvent.
+            // I'll do that in next step if compilation fails, but let's assume I need to.
+            // Actually I should verify watcher.rs content again. Step 1355 showed NO Serialize.
+
+            // Temporary fix: Serialize manually or just basic info
+            match event {
+                crate::services::watcher::ModWatchEvent::Created(p) => {
+                    let _ = app_handle.emit(
+                        "mod_watch:event",
+                        serde_json::json!({ "type": "Created", "path": p }),
+                    );
+                }
+                crate::services::watcher::ModWatchEvent::Modified(p) => {
+                    let _ = app_handle.emit(
+                        "mod_watch:event",
+                        serde_json::json!({ "type": "Modified", "path": p }),
+                    );
+                }
+                crate::services::watcher::ModWatchEvent::Removed(p) => {
+                    let _ = app_handle.emit(
+                        "mod_watch:event",
+                        serde_json::json!({ "type": "Removed", "path": p }),
+                    );
+                }
+                crate::services::watcher::ModWatchEvent::Renamed { from, to } => {
+                    let _ = app_handle.emit(
+                        "mod_watch:event",
+                        serde_json::json!({ "type": "Renamed", "from": from, "to": to }),
+                    );
+                }
+                crate::services::watcher::ModWatchEvent::Error(e) => {
+                    let _ = app_handle.emit(
+                        "mod_watch:event",
+                        serde_json::json!({ "type": "Error", "error": e }),
+                    );
+                }
+            }
+        }
+        log::info!("Watcher event loop ended for {}", path);
+    });
+
     Ok(())
 }
 
@@ -257,6 +361,122 @@ pub async fn detect_conflicts_in_folder_cmd(
     }
 
     Ok(conflict::detect_conflicts(&all_inis))
+}
+
+/// Sync the database with the filesystem.
+/// Scans the folder, updates existing mods, finds new ones, detects objects, and removes deleted ones.
+///
+/// # Covers: US-3.5 (Sync)
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn sync_database_cmd(
+    app: tauri::AppHandle,
+    game_id: String,
+    game_name: String,
+    game_type: String,
+    mods_path: String,
+    db_json: String,
+    pool: State<'_, sqlx::SqlitePool>,
+    on_progress: Channel<types::ScanEvent>,
+) -> Result<crate::services::scanner::sync::SyncResult, String> {
+    use crate::services::scanner::sync;
+
+    let mods = Path::new(&mods_path);
+    if !mods.exists() {
+        return Err(format!("Mods path does not exist: {}", mods_path));
+    }
+
+    let master_db = MasterDb::from_json(&db_json)?;
+
+    // Resolve resource_dir for MasterDB thumbnail path resolution
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .ok();
+
+    sync::sync_with_db(&pool, &game_id, &game_name, &game_type, mods, &master_db, resource_dir.as_deref(), Some(on_progress)).await
+}
+
+/// Phase 1: Scan folders + run Deep Matcher, return preview without writing to DB.
+/// Frontend shows a review modal for the user to confirm/override matches.
+///
+/// # Covers: US-2.3 (Review & Organize UI)
+#[tauri::command]
+pub async fn scan_preview_cmd(
+    app: tauri::AppHandle,
+    game_id: String,
+    mods_path: String,
+    db_json: String,
+    pool: State<'_, sqlx::SqlitePool>,
+    on_progress: Channel<types::ScanEvent>,
+) -> Result<Vec<crate::services::scanner::sync::ScanPreviewItem>, String> {
+    use crate::services::scanner::sync;
+
+    let mods = Path::new(&mods_path);
+    if !mods.exists() {
+        return Err(format!("Mods path does not exist: {}", mods_path));
+    }
+
+    let master_db = MasterDb::from_json(&db_json)?;
+    let resource_dir = app.path().resource_dir().ok();
+
+    sync::scan_preview(&pool, &game_id, mods, &master_db, resource_dir.as_deref(), Some(on_progress)).await
+}
+
+/// Phase 2: Commit user-confirmed scan results to DB.
+/// Called after the user reviews and confirms/overrides matches in the review modal.
+///
+/// # Covers: US-2.3 (Review & Organize UI — Confirm)
+#[tauri::command]
+pub async fn commit_scan_cmd(
+    app: tauri::AppHandle,
+    game_id: String,
+    game_name: String,
+    game_type: String,
+    mods_path: String,
+    items: Vec<crate::services::scanner::sync::ConfirmedScanItem>,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> Result<crate::services::scanner::sync::SyncResult, String> {
+    use crate::services::scanner::sync;
+
+    let resource_dir = app.path().resource_dir().ok();
+
+    sync::commit_scan_results(&pool, &game_id, &game_name, &game_type, &mods_path, items, resource_dir.as_deref()).await
+}
+
+/// Bulk Auto-Organize mods.
+/// Moves selected mods to `Mods/{Category}/{ObjectName}/{ModName}`.
+#[tauri::command]
+pub async fn auto_organize_mods(
+    paths: Vec<String>,
+    target_root: String,
+    db_json: String,
+    watcher: State<'_, WatcherState>,
+) -> Result<crate::commands::mod_cmds::BulkResult, String> {
+    use crate::commands::mod_cmds::{BulkActionError, BulkResult};
+    use crate::services::scanner::organizer;
+
+    let db = MasterDb::from_json(&db_json)?;
+    let root = Path::new(&target_root);
+    let mut success = Vec::new();
+    let mut failures = Vec::new();
+
+    for path_str in paths {
+        let path = Path::new(&path_str);
+
+        // Suppress watcher
+        let _guard = SuppressionGuard::new(&watcher.suppressor);
+
+        match organizer::organize_mod(path, root, &db) {
+            Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
+            Err(e) => failures.push(BulkActionError {
+                path: path_str,
+                error: e,
+            }),
+        }
+    }
+
+    Ok(BulkResult { success, failures })
 }
 
 #[cfg(test)]

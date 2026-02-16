@@ -1,7 +1,49 @@
 {
   "categories": [
-    { "name": "Character", "icon": "User", "color": "primary" },
-    { "name": "Weapon", "icon": "Sword", "color": "secondary" },
+    {
+      "name": "Character",
+      "icon": "User",
+      "color": "primary",
+      "filters": [
+        {
+          "key": "element",
+          "label": "Element",
+          "options": ["Anemo", "Cryo", "Dendro", "Electro", "Geo", "Hydro", "Pyro"]
+        },
+        {
+          "key": "weapon",
+          "label": "Weapon Type",
+          "options": ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"]
+        },
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["5-Star", "4-Star"]
+        },
+        {
+          "key": "gender",
+          "label": "Gender",
+          "options": ["Male", "Female"]
+        }
+      ]
+    },
+    {
+      "name": "Weapon",
+      "icon": "Sword",
+      "color": "secondary",
+      "filters": [
+        {
+          "key": "weapon",
+          "label": "Weapon Type",
+          "options": ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"]
+        },
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["5-Star", "4-Star"]
+        }
+      ]
+    },
     { "name": "UI", "icon": "Layout", "color": "accent" },
     { "name": "Other", "icon": "Package", "color": "neutral" }
   ],
@@ -9,7 +51,12 @@
     {
       "key": "element",
       "label": "Element",
-      "options": ["Pyro", "Hydro", "Anemo", "Electro", "Dendro", "Cryo", "Geo"]
+      "options": ["Anemo", "Cryo", "Dendro", "Electro", "Geo", "Hydro", "Pyro"]
+    },
+    {
+      "key": "weapon",
+      "label": "Weapon Type",
+      "options": ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"]
     },
     {
       "key": "rarity",
@@ -17,14 +64,9 @@
       "options": ["5-Star", "4-Star"]
     },
     {
-      "key": "weapon_type",
-      "label": "Weapon Type",
-      "options": ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"]
-    },
-    {
-      "key": "region",
-      "label": "Region",
-      "options": ["Mondstadt", "Liyue", "Inazuma", "Sumeru", "Fontaine", "Natlan", "Snezhnaya"]
+      "key": "gender",
+      "label": "Gender",
+      "options": ["Male", "Female"]
     }
   ]
 }

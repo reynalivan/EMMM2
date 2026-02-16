@@ -3,8 +3,8 @@ import { useModFolders, useToggleMod } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import {
-  useClearPreviewImages,
   useAllModIniDocuments,
+  useClearPreviewImages,
   useModInfo,
   useModIniFiles,
   usePreviewImages,
@@ -20,6 +20,7 @@ import {
   toFieldValueMap,
   toIniWritePayload,
 } from '../previewPanelUtils';
+import { useMetadataDraft } from './useMetadataDraft';
 
 type PendingTransition =
   | { kind: 'mod'; path: string | null }
@@ -37,12 +38,6 @@ export function usePreviewPanelState() {
   const [activePath, setActivePath] = useState<string | null>(externalSelectedPath);
   const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
-
-  const [titleDraft, setTitleDraft] = useState('');
-  const [descriptionDraft, setDescriptionDraft] = useState('');
-  const [syncedTitle, setSyncedTitle] = useState('');
-  const [syncedDescription, setSyncedDescription] = useState('');
-
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [activeIniTab, setActiveIniTab] = useState<'keybind' | 'information'>('keybind');
 
@@ -68,7 +63,7 @@ export function usePreviewPanelState() {
     [folders, activePath],
   );
 
-  const iniFiles = iniFilesQuery.data ?? [];
+  const iniFiles = useMemo(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
   const allIniQueries = useAllModIniDocuments(activePath, iniFiles);
   const iniDocuments = useMemo(
     () =>
@@ -94,109 +89,89 @@ export function usePreviewPanelState() {
     [allKeyBindFields, draftByField, initialByField],
   );
 
-  const metadataDirty =
-    !!activePath && (titleDraft !== syncedTitle || descriptionDraft !== syncedDescription);
-
   const images = previewImagesQuery.data ?? [];
 
-  useEffect(() => {
-    if (!activePath) {
-      setTitleDraft('');
-      setDescriptionDraft('');
-      setSyncedTitle('');
-      setSyncedDescription('');
-      return;
-    }
-
-    const nextTitle = modInfoQuery.data?.actual_name ?? selectedFolder?.name ?? '';
-    const nextDescription = modInfoQuery.data?.description ?? '';
-    setTitleDraft(nextTitle);
-    setDescriptionDraft(nextDescription);
-    setSyncedTitle(nextTitle);
-    setSyncedDescription(nextDescription);
-  }, [
+  const {
+    titleDraft,
+    authorDraft,
+    versionDraft,
+    descriptionDraft,
+    setTitleDraft,
+    setAuthorDraft,
+    setVersionDraft,
+    setDescriptionDraft,
+    metadataDirty,
+    saveMetadata,
+    discardMetadata,
+  } = useMetadataDraft({
     activePath,
-    modInfoQuery.data?.actual_name,
-    modInfoQuery.data?.description,
-    selectedFolder?.name,
-  ]);
+    fallbackTitle: selectedFolder?.name ?? '',
+    source: modInfoQuery.data,
+    onSave: async (folderPath, draft) =>
+      updateModInfo.mutateAsync({
+        folderPath,
+        update: draft,
+      }),
+  });
 
-  useEffect(() => {
-    if (!activePath || !metadataDirty) return;
-
-    const timer = setTimeout(() => {
-      updateModInfo
-        .mutateAsync({
-          folderPath: activePath,
-          update: {
-            actual_name: titleDraft,
-            description: descriptionDraft,
-          },
-        })
-        .then((saved) => {
-          setSyncedTitle(saved.actual_name);
-          setSyncedDescription(saved.description);
-        })
-        .catch((error) => {
-          if (error.message?.includes('permission') || error.message?.includes('EACCES')) {
-            toast.error('Permission denied. Cannot save metadata.');
-          } else {
-            toast.error(`Autosave failed: ${toErrorMessage(error)}`);
-          }
-        });
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [titleDraft, descriptionDraft, activePath, metadataDirty]);
+  const hasUnsavedChanges = hasUnsavedEditorChanges || metadataDirty;
 
   useEffect(() => {
     if (externalSelectedPath === activePath) {
       return;
     }
 
-    if (hasUnsavedEditorChanges) {
+    if (hasUnsavedChanges) {
       if (activePath) {
         useAppStore.setState({
           gridSelection: new Set([activePath]),
           mobileActivePane: 'details',
         });
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingTransition({ kind: 'mod', path: externalSelectedPath });
       setShowUnsavedModal(true);
       return;
     }
 
     setActivePath(externalSelectedPath);
-  }, [externalSelectedPath, activePath, hasUnsavedEditorChanges]);
+  }, [externalSelectedPath, activePath, hasUnsavedChanges]);
 
-  useEffect(() => {
+  // Reset image index when active path or image count changes
+  const [prevActivePathForImg, setPrevActivePathForImg] = useState(activePath);
+  const [prevImgLen, setPrevImgLen] = useState(images.length);
+  if (activePath !== prevActivePathForImg || images.length !== prevImgLen) {
+    setPrevActivePathForImg(activePath);
+    setPrevImgLen(images.length);
     setCurrentImageIndex(0);
-  }, [activePath, images.length]);
+  }
 
-  useEffect(() => {
-    const nextInitialMap = toFieldValueMap(allKeyBindFields);
-    if (Object.keys(draftByField).length > 0 && hasUnsavedEditorChanges) {
-      return;
+  const [prevAllKeyBindFields, setPrevAllKeyBindFields] = useState(allKeyBindFields);
+  if (allKeyBindFields !== prevAllKeyBindFields) {
+    setPrevAllKeyBindFields(allKeyBindFields);
+    if (!hasUnsavedEditorChanges) {
+      const nextInitialMap = toFieldValueMap(allKeyBindFields);
+      setInitialByField(nextInitialMap);
+      setDraftByField(nextInitialMap);
+      setFieldErrors({});
     }
+  }
 
-    setInitialByField(nextInitialMap);
-    setDraftByField(nextInitialMap);
-    setFieldErrors({});
-  }, [allKeyBindFields, hasUnsavedEditorChanges, draftByField]);
-
-  useEffect(() => {
-    setOpenSectionIds((prev) => {
-      const validIds = new Set(keyBindSections.map((section) => section.id));
-      const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
-      if (next.size === 0 && keyBindSections[0]) {
-        next.add(keyBindSections[0].id);
-      }
-      return next;
-    });
-  }, [keyBindSections]);
+  const [prevKeyBindSections, setPrevKeyBindSections] = useState(keyBindSections);
+  if (keyBindSections !== prevKeyBindSections) {
+    setPrevKeyBindSections(keyBindSections);
+    const validIds = new Set(keyBindSections.map((section) => section.id));
+    const next = new Set(Array.from(openSectionIds).filter((id) => validIds.has(id)));
+    if (next.size === 0 && keyBindSections[0]) {
+      next.add(keyBindSections[0].id);
+    }
+    setOpenSectionIds(next);
+  }
 
   const applyPendingTransition = (transition: PendingTransition) => {
-    if (!transition) return;
+    if (!transition) {
+      return;
+    }
     if (transition.kind === 'mod') {
       setActivePath(transition.path);
       return;
@@ -207,30 +182,6 @@ export function usePreviewPanelState() {
       next.delete(transition.sectionId);
       return next;
     });
-  };
-
-  const saveMetadata = async () => {
-    if (!activePath || !metadataDirty) return;
-
-    try {
-      const saved = await updateModInfo.mutateAsync({
-        folderPath: activePath,
-        update: {
-          actual_name: titleDraft,
-          description: descriptionDraft,
-        },
-      });
-      setSyncedTitle(saved.actual_name);
-      setSyncedDescription(saved.description);
-      toast.success('Metadata saved.');
-    } catch (error) {
-      toast.error(`Cannot save metadata: ${toErrorMessage(error)}`);
-    }
-  };
-
-  const discardMetadata = () => {
-    setTitleDraft(syncedTitle);
-    setDescriptionDraft(syncedDescription);
   };
 
   const saveEditor = async (): Promise<boolean> => {
@@ -261,7 +212,6 @@ export function usePreviewPanelState() {
       }
 
       await Promise.all(allIniQueries.map((query) => query.refetch()));
-
       setInitialByField({ ...draftByField });
       setDraftByField({ ...draftByField });
       setFieldErrors({});
@@ -288,8 +238,11 @@ export function usePreviewPanelState() {
 
     setOpenSectionIds((prev) => {
       const next = new Set(prev);
-      if (isOpen) next.delete(sectionId);
-      else next.add(sectionId);
+      if (isOpen) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
       return next;
     });
   };
@@ -313,8 +266,12 @@ export function usePreviewPanelState() {
     currentImageIndex,
     setCurrentImageIndex,
     titleDraft,
+    authorDraft,
+    versionDraft,
     descriptionDraft,
     setTitleDraft,
+    setAuthorDraft,
+    setVersionDraft,
     setDescriptionDraft,
     metadataDirty,
     activeIniTab,
@@ -343,6 +300,5 @@ export function usePreviewPanelState() {
     discardEditor,
     requestToggleSection,
     updateEditorField,
-    setActivePath,
   };
 }

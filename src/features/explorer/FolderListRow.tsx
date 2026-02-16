@@ -1,70 +1,217 @@
-import { Folder, File } from 'lucide-react';
+/**
+ * FolderListRow — List view row for a mod folder.
+ * Used by FolderGrid in list mode.
+ */
+
+import { memo, useState, useEffect } from 'react';
+import {
+  Folder,
+  File,
+  ExternalLink,
+  Pencil,
+  Trash2,
+  ToggleLeft,
+  Star,
+  ArrowRightLeft,
+} from 'lucide-react';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import type { ModFolder } from '../../types/mod';
+
+import {
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '../../components/ui/ContextMenu';
+import { useThumbnail } from '../../hooks/useThumbnail';
 
 interface FolderListRowProps {
-  item: {
-    id: string;
-    name: string;
-    type: string;
-    enabled: boolean;
-    imageUrl: string | null;
-  };
+  item: ModFolder;
   isSelected: boolean;
   toggleSelection: (id: string, multi: boolean) => void;
   clearSelection: () => void;
+  onToggleEnabled?: (folder: ModFolder) => void;
+  onToggleFavorite?: (folder: ModFolder) => void;
+  selectionSize?: number;
+  onBulkToggle?: (enable: boolean) => void;
+  onBulkDelete?: () => void;
+  onBulkTag?: () => void;
+  onRename?: (folder: ModFolder) => void;
+  onDelete?: (folder: ModFolder) => void;
+  onOpenMoveDialog?: (folder: ModFolder) => void;
 }
 
-export default function FolderListRow({
+function FolderListRowInner({
   item,
   isSelected,
   toggleSelection,
   clearSelection,
+  onToggleEnabled,
+  onToggleFavorite,
+  selectionSize = 0,
+  onBulkToggle,
+  onBulkDelete,
+  onBulkTag,
+  onRename,
+  onDelete,
+  onOpenMoveDialog,
 }: FolderListRowProps) {
-  return (
-    <div
-      id={`grid-item-${item.id}`}
-      onClick={(e) => {
-        if (!e.ctrlKey && !e.shiftKey) clearSelection();
-        toggleSelection(item.id, e.ctrlKey || e.shiftKey);
-      }}
-      className={`
-        flex items-center gap-3 p-2 rounded-md border cursor-pointer active:scale-[0.98] transition-all
-        ${isSelected ? 'border-primary/50 bg-primary/10' : 'border-base-content/5 bg-base-200'}
-      `}
-    >
-      <div className="w-24 h-20 shrink-0 bg-base-300 rounded-md overflow-hidden flex items-center justify-center select-none border border-base-content/5">
-        {item.imageUrl ? (
-          <img
-            src={item.imageUrl}
-            alt={item.name}
-            className="w-full h-full object-cover opacity-90"
-            draggable={false}
-          />
-        ) : item.type === 'folder' ? (
-          <Folder size={24} className="text-base-content/20" />
-        ) : (
-          <File size={24} className="text-base-content/20" />
-        )}
-      </div>
+  // Lazy thumbnail: resolved per-row via separate backend command
+  const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(item.path);
+  const [imgError, setImgError] = useState(false);
+  const thumbnailSrc = thumbnailPath && !imgError ? convertFileSrc(thumbnailPath) : null;
+  const isBulkSelection = isSelected && selectionSize > 1;
 
-      <div className="min-w-0 flex-1">
-        <div
-          className={`text-sm font-medium truncate leading-tight ${isSelected ? 'text-white' : 'text-base-content/80'}`}
-        >
-          {item.name}
-        </div>
-        <div className="flex items-center gap-2 mt-2">
-          <span
-            className={`badge badge-xs border-0 font-bold ${item.enabled ? 'bg-secondary/20 text-secondary' : 'bg-base-content/10 text-base-content/30'}`}
-          >
-            {item.enabled ? 'ON' : 'OFF'}
-          </span>
-          {item.type === 'folder' && (
-            <span className="text-[9px] text-base-content/30 uppercase tracking-widest font-bold">
-              DIR
-            </span>
+  // Reset error state when thumbnail path changes
+  useEffect(() => {
+    setImgError(false);
+  }, [thumbnailPath]);
+
+  const handleContextClick = (_: React.MouseEvent) => {
+    // If we right click and it's NOT selected, select it (and clear others if no modifier)
+    // Actually ContextMenu trigger handles visibility, but we want to ensure selection logic is visually consistent.
+    // If user right clicks an unselected item, standard OS behavior is to select it.
+    if (!isSelected) {
+      clearSelection();
+      toggleSelection(item.path, false);
+    }
+  };
+
+  return (
+    <ContextMenu
+      content={
+        isBulkSelection ? (
+          <>
+            <div className="px-2 py-1 text-xs font-semibold opacity-50 select-none">
+              {selectionSize} items selected
+            </div>
+            <ContextMenuSeparator />
+            <ContextMenuItem icon={ToggleLeft} onClick={() => onBulkToggle?.(true)}>
+              Enable Selected
+            </ContextMenuItem>
+            <ContextMenuItem icon={ToggleLeft} onClick={() => onBulkToggle?.(false)}>
+              Disable Selected
+            </ContextMenuItem>
+            <ContextMenuItem icon={Pencil} onClick={onBulkTag}>
+              Add Tags...
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem icon={Trash2} danger onClick={onBulkDelete}>
+              Delete {selectionSize} Items
+            </ContextMenuItem>
+          </>
+        ) : (
+          <>
+            <ContextMenuItem
+              icon={ExternalLink}
+              onClick={async () => {
+                const { invoke } = await import('@tauri-apps/api/core');
+                invoke('open_in_explorer', { path: item.path }).catch(console.error);
+              }}
+            >
+              Open in Explorer
+            </ContextMenuItem>
+            <ContextMenuItem icon={Pencil} onClick={() => onRename?.(item)}>
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem icon={ToggleLeft} onClick={() => onToggleEnabled?.(item)}>
+              {item.is_enabled ? 'Disable' : 'Enable'}
+            </ContextMenuItem>
+            {onOpenMoveDialog && (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem icon={ArrowRightLeft} onClick={() => onOpenMoveDialog(item)}>
+                  Move to Object...
+                </ContextMenuItem>
+              </>
+            )}
+            <ContextMenuSeparator />
+            <ContextMenuItem icon={Trash2} danger onClick={() => onDelete?.(item)}>
+              Delete to Trash
+            </ContextMenuItem>
+          </>
+        )
+      }
+    >
+      <div
+        id={`grid-item-${item.path}`}
+        onClick={(e) => {
+          if (!e.ctrlKey && !e.shiftKey) clearSelection();
+          toggleSelection(item.path, e.ctrlKey || e.shiftKey);
+        }}
+        onContextMenu={handleContextClick}
+        className={`
+        flex items-center gap-3 p-2 rounded-md border cursor-pointer active:scale-[0.99] transition-all h-full
+        ${isSelected ? 'border-primary/50 bg-primary/10' : 'border-base-content/5 bg-base-200 hover:bg-base-300'}
+      `}
+      >
+        <div className="w-10 h-10 shrink-0 bg-base-300 rounded-md overflow-hidden flex items-center justify-center select-none border border-base-content/5">
+          {thumbLoading ? (
+            <div className="w-full h-full skeleton bg-base-300" />
+          ) : thumbnailSrc ? (
+            <img
+              src={thumbnailSrc}
+              alt=""
+              decoding="async"
+              className="w-full h-full object-cover opacity-90"
+              draggable={false}
+              onError={() => setImgError(true)}
+            />
+          ) : item.is_directory ? (
+            <Folder size={18} className="text-base-content/20" />
+          ) : (
+            <File size={18} className="text-base-content/20" />
           )}
         </div>
+
+        <div className="min-w-0 flex-1 flex items-center gap-3">
+          <div
+            className={`text-sm font-medium truncate leading-tight flex-1
+            ${isSelected ? 'text-primary' : 'text-base-content/80'}`}
+          >
+            {item.name}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFavorite?.(item);
+              }}
+              className={`p-1 rounded-full transition-all duration-200
+                 ${
+                   item.is_favorite
+                     ? 'text-warning opacity-100 hover:scale-110'
+                     : 'text-base-content/20 opacity-0 group-hover:opacity-100 hover:text-warning hover:scale-110'
+                 }
+               `}
+              title={item.is_favorite ? 'Unfavorite' : 'Favorite'}
+            >
+              <Star
+                size={16}
+                className={`drop-shadow-sm ${item.is_favorite ? 'fill-current' : ''}`}
+              />
+            </button>
+            <label
+              className="flex items-center gap-1.5 cursor-pointer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                type="checkbox"
+                className="toggle toggle-xs toggle-success"
+                checked={item.is_enabled}
+                onChange={() => onToggleEnabled?.(item)}
+              />
+              <span className="text-[10px] font-semibold text-base-content/40 hidden sm:inline">
+                {item.is_enabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
+          </div>
+        </div>
       </div>
-    </div>
+    </ContextMenu>
   );
 }
+
+/** Memoized FolderListRow — prevents re-renders when virtualizer recalculates but props are unchanged */
+const FolderListRow = memo(FolderListRowInner);
+export default FolderListRow;

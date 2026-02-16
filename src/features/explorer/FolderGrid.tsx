@@ -1,82 +1,120 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useRef } from 'react';
-import { Home, Search, Filter, Plus, ChevronLeft, ChevronUp, ChevronDown } from 'lucide-react';
-import { useAppStore } from '../../stores/useAppStore';
-import { useResponsive } from '../../hooks/useResponsive';
-import { generateDummyItems } from '../../lib/mockData';
+import {
+  Search,
+  ChevronLeft,
+  ArrowUpDown,
+  LayoutGrid,
+  List,
+  Loader2,
+  FolderOpen,
+  RefreshCw,
+} from 'lucide-react';
 import FolderCard from './FolderCard';
 import FolderListRow from './FolderListRow';
+import MoveToObjectDialog from './MoveToObjectDialog';
+import ExplorerBreadcrumbs from './Breadcrumbs';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import DuplicateWarningModal from './DuplicateWarningModal';
+import { BulkTagModal } from './BulkTagModal';
+import DragOverlay from './DragOverlay';
+import BulkProgressBar from './BulkProgressBar';
+import { useFolderGrid } from './hooks/useFolderGrid';
+import { useAppStore } from '../../stores/useAppStore';
 
 export default function FolderGrid() {
+  const safeMode = useAppStore((state) => state.safeMode);
   const {
+    // Data & State
+    sortedFolders,
+    isLoading,
+    isError,
+    error,
+    isGridView,
+    isMobile,
     currentPath,
-    setCurrentPath,
+    explorerSearchQuery,
+    sortOrder,
+    sortLabel,
+    viewMode,
+
+    // Virtualization
+    parentRef,
+    rowVirtualizer,
+    columnCount,
+    cardWidth,
+
+    // Navigation
+    handleNavigate,
+    handleBreadcrumbClick,
+    handleGoHome,
+    setMobilePane,
+    setViewMode,
+    setExplorerSearch,
+    handleSortToggle,
+    handleKeyDown,
+    focusedId,
+    handleRefresh,
+
+    // Selection
     gridSelection,
     toggleGridSelection,
     clearGridSelection,
-    setMobilePane,
-  } = useAppStore();
 
-  const [items] = useState(() => generateDummyItems(64));
-  const [searchQuery, setSearchQuery] = useState('');
-  const { isMobile } = useResponsive();
+    // Actions
+    handleToggleEnabled,
+    handleToggleFavorite,
+    handleEnableOnlyThis,
+    handleMoveToObject,
+    moveDialog,
+    openMoveDialog,
+    closeMoveDialog,
+    objects,
 
-  // Scroll Indicator State
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [indicator, setIndicator] = useState<'up' | 'down' | null>(null);
+    // Duplicate Warning
+    duplicateWarning,
+    handleDuplicateForceEnable,
+    handleDuplicateEnableOnly,
+    handleDuplicateCancel,
 
-  // Scroll Tracking for Indicators
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || gridSelection.size === 0) {
-      setIndicator(null);
-      return;
-    }
+    // Rename
+    renamingId,
+    handleRenameRequest,
+    handleRenameSubmit,
+    handleRenameCancel,
 
-    const checkVisibility = () => {
-      const firstSelectedId = Array.from(gridSelection)[0];
-      if (!firstSelectedId) return;
+    // Delete
+    deleteConfirm,
+    setDeleteConfirm,
+    handleDeleteRequest,
+    handleDeleteConfirm,
 
-      const element = document.getElementById(`grid-item-${firstSelectedId}`);
-      if (!element) return;
+    // Bulk
+    bulkTagOpen,
+    setBulkTagOpen,
+    bulkDeleteConfirm,
+    setBulkDeleteConfirm,
+    handleBulkToggle,
+    handleBulkTagRequest,
+    handleBulkDeleteRequest,
+    handleBulkDeleteConfirm,
 
-      const containerRect = container.getBoundingClientRect();
-      const itemRect = element.getBoundingClientRect();
+    // DnD
+    isDragging,
+    selectedObject,
+  } = useFolderGrid();
 
-      const isAbove = itemRect.bottom < containerRect.top + 50;
-      const isBelow = itemRect.top > containerRect.bottom - 50;
-
-      if (isAbove) setIndicator('up');
-      else if (isBelow) setIndicator('down');
-      else setIndicator(null);
-    };
-
-    container.addEventListener('scroll', checkVisibility);
-    checkVisibility();
-
-    return () => container.removeEventListener('scroll', checkVisibility);
-  }, [gridSelection, items]);
-
-  const scrollToSelection = () => {
-    const firstSelectedId = Array.from(gridSelection)[0];
-    if (!firstSelectedId) return;
-    const element = document.getElementById(`grid-item-${firstSelectedId}`);
-    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
-  const handleBreadcrumbClick = (index: number) => {
-    setCurrentPath(currentPath.slice(0, index + 1));
-  };
-
-  const handleNavigate = (folderName: string) => {
-    setCurrentPath([...currentPath, folderName]);
-  };
+  const visibleFolders = safeMode
+    ? sortedFolders.filter((folder) => folder.is_safe)
+    : sortedFolders;
 
   return (
-    <div className="flex flex-col h-full bg-transparent p-4 relative">
-      {/* Top Bar: Breadcrumbs & Actions */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+    <div
+      className="flex flex-col h-full bg-transparent p-4 relative outline-none"
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+    >
+      {/* Top Bar: Breadcrumbs & View Controls */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <button
             onClick={() => setMobilePane('sidebar')}
             className="btn btn-ghost btn-sm btn-square md:hidden text-base-content/50 hover:text-base-content"
@@ -84,40 +122,48 @@ export default function FolderGrid() {
             <ChevronLeft size={20} />
           </button>
 
-          <div className="breadcrumbs text-sm text-base-content/50 font-medium">
-            <ul>
-              <li>
-                <button
-                  onClick={() => setCurrentPath([])}
-                  className="hover:text-primary transition-colors flex items-center gap-1"
-                >
-                  <Home size={16} /> <span className="hidden sm:inline">ROOT</span>
-                </button>
-              </li>
-              {currentPath.map((folder, index) => (
-                <li key={folder}>
-                  <button
-                    onClick={() => handleBreadcrumbClick(index)}
-                    className="hover:text-primary transition-colors hover:underline"
-                  >
-                    {folder}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ExplorerBreadcrumbs
+            path={currentPath}
+            onNavigate={handleBreadcrumbClick}
+            onGoHome={handleGoHome}
+            isRootHidden={!!selectedObject}
+          />
         </div>
 
-        <div className="flex items-center gap-2">
-          <button className="btn btn-primary btn-sm gap-2 shadow-sm shadow-primary/20 text-white font-medium">
-            <Plus size={16} />
-            <span className="hidden sm:inline">Create</span>
+        {/* View/Sort toggle buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleSortToggle}
+            className="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content"
+            title={`Sort: ${sortLabel} ${sortOrder === 'asc' ? '↑' : '↓'}`}
+          >
+            <ArrowUpDown size={14} />
+            <span className="text-[10px] font-semibold hidden sm:inline">
+              {sortLabel} {sortOrder === 'asc' ? '↑' : '↓'}
+            </span>
           </button>
+
+          {!isMobile && (
+            <>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`btn btn-ghost btn-xs btn-square ${viewMode === 'grid' ? 'text-primary' : 'text-base-content/40'}`}
+              >
+                <LayoutGrid size={14} />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`btn btn-ghost btn-xs btn-square ${viewMode === 'list' ? 'text-primary' : 'text-base-content/40'}`}
+              >
+                <List size={14} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4 bg-base-300/50 p-2 rounded-lg border border-base-content/5">
+      {/* Search toolbar */}
+      <div className="flex items-center gap-3 mb-3 bg-base-300/50 p-2 rounded-lg border border-base-content/5">
         <div className="relative flex-1 group">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30 group-focus-within:text-primary transition-colors"
@@ -125,74 +171,198 @@ export default function FolderGrid() {
           />
           <input
             type="text"
-            placeholder="Search folder..."
+            placeholder="Search mods..."
             className="input input-sm w-full pl-10 bg-transparent border-transparent focus:border-transparent text-base-content placeholder:text-base-content/20 transition-all focus:bg-base-content/5 rounded-md"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={explorerSearchQuery}
+            onChange={(e) => setExplorerSearch(e.target.value)}
           />
         </div>
-        <div className="h-6 w-px bg-base-content/10 mx-1" />
-        <button className="btn btn-sm btn-ghost btn-square text-base-content/50 hover:text-base-content hover:bg-base-content/5">
-          <Filter size={18} />
-        </button>
-        <label className="label cursor-pointer gap-2 py-0 hover:opacity-100 opacity-60 transition-opacity">
-          <span className="label-text text-xs text-base-content/70 font-medium">ALL</span>
-          <input
-            type="checkbox"
-            className="checkbox checkbox-xs border-base-content/30 checked:border-primary checkbox-primary rounded-[4px]"
-          />
-        </label>
-      </div>
-
-      {/* Grid Content */}
-      <div
-        ref={containerRef}
-        className={`overflow-y-auto pb-24 scroll-p-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40 ${
-          isMobile
-            ? 'flex flex-col gap-3'
-            : 'grid gap-4 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
-        }`}
-      >
-        {items.map((item) => {
-          const isSelected = gridSelection.has(item.id);
-
-          if (isMobile) {
-            return (
-              <FolderListRow
-                key={item.id}
-                item={item}
-                isSelected={isSelected}
-                toggleSelection={toggleGridSelection}
-                clearSelection={clearGridSelection}
-              />
-            );
-          }
-
-          return (
-            <FolderCard
-              key={item.id}
-              item={item}
-              isSelected={isSelected}
-              onNavigate={handleNavigate}
-              toggleSelection={toggleGridSelection}
-              clearSelection={clearGridSelection}
-            />
-          );
-        })}
-      </div>
-
-      {/* Floating Scroll Indicators */}
-      {indicator && (
-        <div
-          className={`absolute left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1 pointer-events-auto cursor-pointer ${indicator === 'up' ? 'top-32' : 'bottom-6'}`}
-          onClick={scrollToSelection}
+        <span className="text-[10px] text-base-content/30 font-medium tabular-nums shrink-0">
+          {visibleFolders.length} item{visibleFolders.length !== 1 ? 's' : ''}
+        </span>
+        <button
+          onClick={handleRefresh}
+          className="btn btn-ghost btn-xs btn-square text-base-content/30 hover:text-primary transition-colors"
+          title="Refresh folder list"
         >
-          <div className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1.5 hover:bg-primary/90 transition-colors">
-            {indicator === 'up' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            <span>Selection {indicator === 'up' ? 'Above' : 'Below'}</span>
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      {/* Loading */}
+      {isLoading && (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 size={24} className="animate-spin text-primary/50" />
+        </div>
+      )}
+
+      {/* Error */}
+      {isError && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4">
+          <p className="text-xs text-error/60">
+            {error instanceof Error ? error.message : String(error) || 'Failed to load'}
+          </p>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && !isError && visibleFolders.length === 0 && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
+          <FolderOpen size={40} className="text-base-content/15" />
+          <p className="text-sm text-base-content/40 text-center">
+            {explorerSearchQuery
+              ? 'No mods match your search'
+              : 'No mod folders found. Add mods to your game directory to get started.'}
+          </p>
+        </div>
+      )}
+
+      {/* Virtualized Grid/List Content */}
+      {!isLoading && !isError && visibleFolders.length > 0 && (
+        <div
+          ref={parentRef}
+          className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40"
+        >
+          <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              if (isGridView) {
+                // Grid mode: each virtual row = N columns
+                const fromIndex = virtualRow.index * columnCount;
+                const toIndex = Math.min(fromIndex + columnCount, visibleFolders.length);
+                const rowItems = visibleFolders.slice(fromIndex, toIndex);
+
+                return (
+                  <div
+                    key={virtualRow.index}
+                    className="absolute top-0 left-0 w-full flex gap-3"
+                    style={{
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {rowItems.map((folder) => (
+                      <div key={folder.path} className="flex-none" style={{ width: cardWidth }}>
+                        <FolderCard
+                          folder={folder}
+                          isSelected={gridSelection.has(folder.path)}
+                          onNavigate={handleNavigate}
+                          toggleSelection={toggleGridSelection}
+                          clearSelection={clearGridSelection}
+                          onToggleEnabled={handleToggleEnabled}
+                          onToggleFavorite={handleToggleFavorite}
+                          onEnableOnlyThis={handleEnableOnlyThis}
+                          isRenaming={renamingId === folder.path}
+                          onRenameSubmit={handleRenameSubmit}
+                          onRenameCancel={handleRenameCancel}
+                          onRename={() => handleRenameRequest(folder)}
+                          onDelete={() => handleDeleteRequest(folder)}
+                          isFocused={focusedId === folder.path}
+                          selectionSize={gridSelection.size}
+                          onBulkToggle={handleBulkToggle}
+                          onBulkDelete={handleBulkDeleteRequest}
+                          onBulkTag={handleBulkTagRequest}
+                          onOpenMoveDialog={openMoveDialog}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
+
+              // List mode: each virtual row = 1 item
+              const folder = visibleFolders[virtualRow.index];
+              if (!folder) return null;
+
+              return (
+                <div
+                  key={folder.path}
+                  className="absolute top-0 left-0 w-full"
+                  style={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <FolderListRow
+                    item={folder}
+                    isSelected={gridSelection.has(folder.path)}
+                    toggleSelection={(id: string, multi: boolean) => toggleGridSelection(id, multi)}
+                    clearSelection={clearGridSelection}
+                    onToggleEnabled={handleToggleEnabled}
+                    selectionSize={gridSelection.size}
+                    onBulkToggle={handleBulkToggle}
+                    onBulkDelete={handleBulkDeleteRequest}
+                    onBulkTag={handleBulkTagRequest}
+                    onRename={() => handleRenameRequest(folder)}
+                    onDelete={() => handleDeleteRequest(folder)}
+                    onToggleFavorite={handleToggleFavorite}
+                    onOpenMoveDialog={openMoveDialog}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      {/* Move To Object Dialog */}
+      {moveDialog.open && moveDialog.folder && (
+        <MoveToObjectDialog
+          open={moveDialog.open}
+          onClose={closeMoveDialog}
+          objects={objects}
+          currentObjectId={moveDialog.folder.object_id ?? undefined}
+          currentStatus={moveDialog.folder.is_enabled}
+          onSubmit={(targetId, status) => {
+            if (!moveDialog.folder) return;
+            handleMoveToObject(moveDialog.folder, targetId, status);
+            closeMoveDialog();
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirm.open}
+        title="Delete to Trash?"
+        message={`Are you sure you want to move "${deleteConfirm.folder?.name}" to trash? You can undo this later.`}
+        confirmLabel="Move to Trash"
+        danger
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirm({ open: false, folder: null })}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteConfirm}
+        title={`Delete ${gridSelection.size} Mods?`}
+        message={`Are you sure you want to move ${gridSelection.size} mods to trash?`}
+        confirmLabel="Move All to Trash"
+        danger
+        onConfirm={handleBulkDeleteConfirm}
+        onCancel={() => setBulkDeleteConfirm(false)}
+      />
+
+      {bulkTagOpen && (
+        <BulkTagModal
+          isOpen={true}
+          onClose={() => setBulkTagOpen(false)}
+          selectedPaths={Array.from(gridSelection)}
+        />
+      )}
+
+      {/* Duplicate Character Warning */}
+      <DuplicateWarningModal
+        open={duplicateWarning.open}
+        targetName={duplicateWarning.folder?.name ?? ''}
+        duplicates={duplicateWarning.duplicates}
+        onForceEnable={handleDuplicateForceEnable}
+        onEnableOnlyThis={handleDuplicateEnableOnly}
+        onCancel={handleDuplicateCancel}
+      />
+
+      <BulkProgressBar />
+
+      {/* Drag Overlay */}
+      {isDragging && <DragOverlay isDragging={isDragging} />}
     </div>
   );
 }

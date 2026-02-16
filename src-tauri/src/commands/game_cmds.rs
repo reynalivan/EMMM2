@@ -137,3 +137,87 @@ pub async fn get_games(app: tauri::AppHandle) -> Result<Vec<GameConfig>, String>
         None => Ok(Vec::new()),
     }
 }
+
+/// Launch the 3DMigoto Loader (if not running) and then the Game.
+/// Covers: US-10.1, TC-10.1-01
+#[tauri::command]
+pub async fn launch_game(app: tauri::AppHandle, game_id: String) -> Result<(), String> {
+    use sysinfo::System;
+
+    // 1. Get Game Config
+    let games = get_games(app).await?;
+    let game = games
+        .into_iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| "Game config not found".to_string())?;
+
+    // 2. Check if Loader is valid
+    let launcher_path = Path::new(&game.launcher_path);
+    if !launcher_path.exists() {
+        return Err(format!(
+            "Launcher not found at: {}",
+            game.launcher_path
+        ));
+    }
+
+    let game_path = Path::new(&game.path);
+    if !game_path.exists() {
+        return Err(format!("Game executable not found at: {}", game.path));
+    }
+
+    // 3. Process Check (sysinfo)
+    let mut sys = System::new_all();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let launcher_name = launcher_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    
+    // exact name match might be tricky with extension, usually contains .exe
+    let is_loader_running = sys.processes().values().any(|p| {
+        p.name().to_string_lossy().eq_ignore_ascii_case(&launcher_name)
+    });
+
+    // 4. Launch Loader if needed
+    if !is_loader_running {
+        log::info!("Starting Loader: {}", game.launcher_path);
+        
+        // Use directory of the launcher as CWD
+        let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
+        
+        std::process::Command::new(&game.launcher_path)
+            .current_dir(launcher_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to start loader: {e}"))?;
+            
+        // Small delay to let loader initialize
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    } else {
+        log::info!("Loader already running: {}", launcher_name);
+    }
+
+    // 5. Launch Game
+    log::info!("Starting Game: {}", game.path);
+    let game_dir = game_path.parent().unwrap_or(game_path);
+    
+    let mut cmd = std::process::Command::new(&game.path);
+    cmd.current_dir(game_dir);
+
+    // Apply args
+    if let Some(args_str) = game.launch_args {
+        if !args_str.trim().is_empty() {
+            // Split by space, handle quotes? Simple split for now.
+            // Check shell-words crate if complex parsing needed. 
+            // For now, simple whitespace split.
+            for arg in args_str.split_whitespace() {
+                cmd.arg(arg);
+            }
+        }
+    }
+
+    cmd.spawn()
+        .map_err(|e| format!("Failed to start game: {e}"))?;
+
+    Ok(())
+}

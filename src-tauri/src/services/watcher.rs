@@ -41,15 +41,24 @@ impl Default for WatcherConfig {
 /// Managed state for the watcher, accessible via Tauri commands.
 pub struct WatcherState {
     pub suppressor: Arc<AtomicBool>,
+    pub watcher: std::sync::Mutex<Option<RecommendedWatcher>>,
 }
 
 impl WatcherState {
     pub fn new() -> Self {
         Self {
             suppressor: Arc::new(AtomicBool::new(false)),
+            watcher: std::sync::Mutex::new(None),
         }
     }
 }
+
+impl Default for WatcherState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 /// RAII Guard for watcher suppression.
 /// Sets suppression to TRUE on creation, and FALSE on drop.

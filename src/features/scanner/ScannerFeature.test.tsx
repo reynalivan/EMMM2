@@ -50,7 +50,8 @@ describe('ScannerFeature', () => {
   const mockActiveGame = {
     id: 'game-1',
     name: 'Test Game',
-    mods_path: '/mods/path',
+    mod_path: '/mods/path',
+    game_type: 'GIMI',
   };
 
   beforeEach(() => {
@@ -87,7 +88,7 @@ describe('ScannerFeature', () => {
 
     // Mock startScan to simulate progress
     (scanService.startScan as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      async (_path, onEvent) => {
+      async (_gameType, _path, onEvent) => {
         onEvent({ event: 'started', data: { totalFolders: 10 } });
         onEvent({ event: 'progress', data: { current: 5, folderName: 'Mod A' } });
         onEvent({ event: 'finished', data: { matched: 5, unmatched: 5 } });
@@ -99,7 +100,8 @@ describe('ScannerFeature', () => {
 
     await waitFor(() => {
       expect(scanService.startScan).toHaveBeenCalledWith(
-        mockActiveGame.mods_path,
+        mockActiveGame.game_type,
+        mockActiveGame.mod_path,
         expect.any(Function),
       );
     });
@@ -108,7 +110,7 @@ describe('ScannerFeature', () => {
   it('detects conflicts after scan', async () => {
     // Setup scan to finish
     (scanService.startScan as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      async (_path, onEvent) => {
+      async (_gameType, _path, onEvent) => {
         onEvent({ event: 'finished', data: { matched: 0, unmatched: 0 } });
       },
     );
@@ -124,7 +126,7 @@ describe('ScannerFeature', () => {
     fireEvent.click(screen.getByText('Start Scan'));
 
     await waitFor(() => {
-      expect(scanService.detectConflictsInFolder).toHaveBeenCalledWith(mockActiveGame.mods_path);
+      expect(scanService.detectConflictsInFolder).toHaveBeenCalledWith(mockActiveGame.mod_path);
     });
 
     // Check if toast appears

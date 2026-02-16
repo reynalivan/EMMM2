@@ -1,7 +1,44 @@
 {
   "categories": [
-    { "name": "Operator", "icon": "User", "color": "primary" },
-    { "name": "Weapon", "icon": "Sword", "color": "secondary" },
+    {
+      "name": "Character",
+      "label": "Operator",
+      "icon": "User",
+      "color": "primary",
+      "filters": [
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["6-Star", "5-Star", "4-Star"]
+        },
+        {
+          "key": "class",
+          "label": "Class",
+          "options": [
+            "Vanguard",
+            "Guard",
+            "Defender",
+            "Medic",
+            "Sniper",
+            "Caster",
+            "Supporter",
+            "Specialist"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Weapon",
+      "icon": "Sword",
+      "color": "secondary",
+      "filters": [
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["6-Star", "5-Star", "4-Star"]
+        }
+      ]
+    },
     { "name": "UI", "icon": "Layout", "color": "accent" },
     { "name": "Other", "icon": "Package", "color": "neutral" }
   ],

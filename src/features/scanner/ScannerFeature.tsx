@@ -1,10 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Play, ScanSearch } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { Play, ScanSearch } from 'lucide-react';
 import { useScannerStore } from '../../stores/scannerStore';
 import { scanService } from '../../services/scanService';
 import { useActiveGame } from '../../hooks/useActiveGame';
+import {
+  useBulkToggle,
+  useBulkDelete,
+  useRenameMod,
+  useAutoOrganizeMods,
+} from '../../hooks/useFolders'; // Imported hooks
 import type { ArchiveInfo } from '../../types/scanner';
+import { toast } from '../../stores/useToastStore';
 
 import ArchiveModal from '../../components/scanner/ArchiveModal';
 import ScanOverlay from '../../components/scanner/ScanOverlay';
@@ -16,6 +24,12 @@ export default function ScannerFeature() {
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
 
+  // Hooks for actions
+  const bulkToggle = useBulkToggle();
+  const bulkDelete = useBulkDelete();
+  const renameMod = useRenameMod();
+  const autoOrganize = useAutoOrganizeMods();
+
   const {
     isScanning,
     setIsScanning,
@@ -24,12 +38,11 @@ export default function ScannerFeature() {
     setStats,
     resetScanner,
     scanResults,
-    setScanResults, // Added setScanResults
+    setScanResults,
   } = useScannerStore();
 
   const [archives, setArchives] = useState<ArchiveInfo[]>([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
 
   // 1. Detect Archives Mutation
@@ -40,11 +53,10 @@ export default function ScannerFeature() {
         setArchives(foundArchives);
         setShowArchiveModal(true);
       } else {
-        // No archives? Start scan directly
         handleStartScan();
       }
     },
-    onError: (err: unknown) => setErrorMessage(`Failed to detect archives: ${err}`),
+    onError: (err: unknown) => toast.error(`Failed to detect archives: ${err}`),
   });
 
   // 2. Extract Mutation
@@ -61,23 +73,23 @@ export default function ScannerFeature() {
       if (!activeGame) throw new Error('No active game config');
 
       for (const archivePath of paths) {
-        await scanService.extractArchive(archivePath, activeGame.mods_path, pwd, overwrite);
+        await scanService.extractArchive(archivePath, activeGame.mod_path, pwd, overwrite);
       }
     },
     onSuccess: () => {
       setShowArchiveModal(false);
-      handleStartScan(); // Proceed to scan after extraction
+      handleStartScan();
     },
-    onError: (err: unknown) => setErrorMessage(`Extraction failed: ${err}`),
+    onError: (err: unknown) => toast.error(`Extraction failed: ${err}`),
   });
 
   // 3. Scan Mutation
   const scanMutation = useMutation({
-    mutationFn: async ({ modsPath }: { modsPath: string }) => {
+    mutationFn: async ({ gameType, modsPath }: { gameType: string; modsPath: string }) => {
       resetScanner();
       setIsScanning(true);
 
-      await scanService.startScan(modsPath, (event) => {
+      await scanService.startScan(gameType, modsPath, (event) => {
         switch (event.event) {
           case 'started':
             setTotalFolders(event.data.totalFolders);
@@ -89,21 +101,18 @@ export default function ScannerFeature() {
             break;
           case 'finished':
             setStats(event.data.matched, event.data.unmatched);
-            setStats(event.data.matched, event.data.unmatched);
             break;
         }
       });
     },
     onError: (err: unknown) => {
       console.error('Scan failed', err);
-      console.error('Scan failed', err);
+      toast.error(`Scan failed: ${err}`);
     },
     onSettled: async () => {
-      // Always run conflict check after scan
       if (activeGame) {
         try {
-          // Run conflict detection
-          const conflicts = await scanService.detectConflictsInFolder(activeGame.mods_path);
+          const conflicts = await scanService.detectConflictsInFolder(activeGame.mod_path);
           setConflicts(conflicts);
         } catch (e) {
           console.error('Conflict check failed', e);
@@ -115,12 +124,11 @@ export default function ScannerFeature() {
   });
 
   const onScanClick = async () => {
-    setErrorMessage(null);
     if (!activeGame) {
-      setErrorMessage('No active game selected');
+      toast.error('No active game selected');
       return;
     }
-    detectMutation.mutate(activeGame.mods_path);
+    detectMutation.mutate(activeGame.mod_path);
   };
 
   const handleStartScan = async () => {
@@ -130,10 +138,8 @@ export default function ScannerFeature() {
     setScanResults([]);
     setConflicts([]);
 
-    // Extract paths from config
-    const { mods_path } = activeGame;
-
-    scanMutation.mutate({ modsPath: mods_path });
+    const { mod_path, game_type } = activeGame;
+    scanMutation.mutate({ gameType: game_type, modsPath: mod_path });
   };
 
   const handleExtract = async (selectedPaths: string[], password?: string, overwrite?: boolean) => {
@@ -167,16 +173,9 @@ export default function ScannerFeature() {
           </button>
         </div>
 
-        {errorMessage && (
-          <div role="alert" className="alert alert-error mt-4 text-sm py-2">
-            <AlertCircle className="w-4 h-4" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
         {/* Components */}
         <ArchiveModal
-          key={archives.length > 0 ? archives[0].path : 'empty'} // Force remount on new scan
+          key={archives.length > 0 ? archives[0].path : 'empty'}
           archives={archives}
           isOpen={showArchiveModal}
           onExtract={handleExtract}
@@ -195,7 +194,6 @@ export default function ScannerFeature() {
             } catch (e) {
               console.error('Failed to cancel scan:', e);
             }
-            // setIsScanning is handled by 'finished' event or error, but we can optimistically set false
             setIsScanning(false);
           }}
         />
@@ -205,12 +203,35 @@ export default function ScannerFeature() {
           <div className="mt-6 border-t border-base-200 pt-4">
             <ReviewTable
               data={scanResults}
-              onOpenFolder={async (path) => {
-                console.log('Open folder:', path);
+              onOpenFolder={(path) => {
+                invoke('open_in_explorer', { path }).catch((e) =>
+                  console.error('Failed to open folder:', e),
+                );
               }}
               onRename={(path, newName) => {
-                console.log('Rename', path, newName);
-                // TODO: Call backend rename
+                // Determine folderName from path for display, but hook expects full path?
+                // useRenameMod expects { folderPath, newName }
+                renameMod.mutate({ folderPath: path, newName });
+              }}
+              onBulkEnable={(paths) => bulkToggle.mutate({ paths, enable: true })}
+              onBulkDisable={(paths) => bulkToggle.mutate({ paths, enable: false })}
+              onBulkDelete={(paths) => {
+                if (confirm(`Are you sure you want to delete ${paths.length} mods?`)) {
+                  bulkDelete.mutate({ paths, gameId: activeGame?.id });
+                }
+              }}
+              onAutoOrganize={async (paths) => {
+                if (!activeGame) return;
+                try {
+                  const dbJson = await scanService.getMasterDb(activeGame.game_type);
+                  autoOrganize.mutate({
+                    paths,
+                    targetRoot: activeGame.mod_path,
+                    dbJson,
+                  });
+                } catch (e) {
+                  toast.error(`Failed to load DB for auto-organize: ${e}`);
+                }
               }}
             />
           </div>

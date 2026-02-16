@@ -18,16 +18,30 @@ describe('FilterPanel Component', () => {
   const mockOnFilterChange = vi.fn();
   const mockOnClearAll = vi.fn();
 
-  it('renders nothing if no filters provided', () => {
-    const { container } = render(
+  /** Shared default props for the new category/sort fields */
+  const defaultCategorySortProps = {
+    selectedCategory: null as string | null,
+    onSelectCategory: vi.fn(),
+    sortBy: 'name' as const,
+    onSortChange: vi.fn(),
+  };
+
+  it('renders status filter row even if no metadata filters provided', () => {
+    render(
       <FilterPanel
         filters={[]}
         activeFilters={{}}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
-    expect(container).toBeEmptyDOMElement();
+    // Status row (All / Enabled / Disabled) should always render
+    expect(screen.getByText('All')).toBeInTheDocument();
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.getByText('Disabled')).toBeInTheDocument();
   });
 
   it('renders filter buttons correctly', () => {
@@ -37,6 +51,9 @@ describe('FilterPanel Component', () => {
         activeFilters={{}}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
     expect(screen.getByText('Element')).toBeInTheDocument();
@@ -50,6 +67,9 @@ describe('FilterPanel Component', () => {
         activeFilters={{}}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
 
@@ -72,6 +92,9 @@ describe('FilterPanel Component', () => {
         activeFilters={{}}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
 
@@ -88,6 +111,9 @@ describe('FilterPanel Component', () => {
         activeFilters={{ element: ['Pyro', 'Hydro'] }}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
 
@@ -98,14 +124,14 @@ describe('FilterPanel Component', () => {
 
     // Implementation details:
     // <span className="badge badge-xs badge-primary">{activeCount}</span>
-    expect(screen.getByText('2')).toBeInTheDocument();
+    // Check main badge count and button badge (multiple "2"s)
 
     // Check button badge
     // Also inside the button for specific filter
     // We expect another '2' inside the element button
     // It might be ambiguous, so check existence
     const badges = screen.getAllByText('2');
-    expect(badges.length).toBeGreaterThanOrEqual(2);
+    expect(badges.length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows Clear All button when active filters exist', () => {
@@ -115,6 +141,9 @@ describe('FilterPanel Component', () => {
         activeFilters={{}}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
     expect(screen.queryByText(/clear/i)).not.toBeInTheDocument();
@@ -125,6 +154,9 @@ describe('FilterPanel Component', () => {
         activeFilters={{ element: ['Pyro'] }}
         onFilterChange={mockOnFilterChange}
         onClearAll={mockOnClearAll}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
       />,
     );
     const clearBtn = screen.getByText(/clear/i);

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".opencode/rules/project_context.md",
+    ".opencode/rules/coding_standards.md",
+    ".opencode/rules/meta_coding_standards.md",
+    ".opencode/rules/error_handling.md",
+    ".opencode/rules/testing_standards.md",
+    ".opencode/rules/tdd_workflow.md",
+    ".opencode/rules/security_secrets.md",
+    ".opencode/rules/performance_standards.md",
+    ".opencode/rules/database_standards.md",
+    ".opencode/rules/tech_stack.md",
+    ".opencode/rules/project_structure.md",
+    ".opencode/rules/design_guidelines.md",
+    ".opencode/rules/design_system.md",
+    ".opencode/rules/unit_testing_standards.md",
+    ".opencode/rules/repair_standards.md",
+    ".opencode/rules/research_standards.md",
+    ".opencode/rules/git_workflow.md",
+    ".opencode/rules/code_integrity.md"
+  ],
+  "permission": {
+    "skill": {
+      "*": "allow"
+		},
+		"task": "deny"
+  },
+  "mcp": {
+    "daisyui": {
+      "type": "local",
+      "command": [
+        "E:/Dev/#mcp/daisyui-mcp/venv/Scripts/python.exe",
+        "E:/Dev/#mcp/daisyui-mcp/mcp_server.py"
+      ],
+      "enabled": true
+    }
+  }
+}

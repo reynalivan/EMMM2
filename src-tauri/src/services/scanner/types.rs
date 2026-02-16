@@ -42,6 +42,8 @@ pub struct ScanResultItem {
     pub confidence: String,
     pub match_detail: Option<String>,
     pub detected_skin: Option<String>,
+    /// Canonical folder name for this skin variant (first alias).
+    pub skin_folder_name: Option<String>,
     pub thumbnail_path: Option<String>,
 }
 
@@ -91,6 +93,28 @@ pub fn build_result_item(
             Some(match_result.detail.clone())
         },
         detected_skin: match_result.detected_skin.clone(),
+        skin_folder_name: match_result.skin_folder_name.clone(),
         thumbnail_path: thumb.map(|p| p.to_string_lossy().to_string()),
     }
+}
+
+/// Represents a row in the `objects` table.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct GameObject {
+    pub id: String,
+    pub game_id: String,
+    pub name: String,
+    pub object_type: String,
+    pub sub_category: Option<String>,
+    pub sort_order: i64,
+    // stored as JSON string in DB, but we might want to deserialize it if we use sqlx json features
+    // For now, let's keep it as String to match existing code or use sqlx::types::Json
+    // Migration says TEXT for tags and metadata? Let's check migration 004.
+    // Assuming TEXT for simplicity as per TRD "JSON string".
+    pub tags: String,
+    pub metadata: String,
+    pub thumbnail_path: Option<String>,
+    pub is_safe: bool,
+    pub is_pinned: bool,
+    pub created_at: String,
 }

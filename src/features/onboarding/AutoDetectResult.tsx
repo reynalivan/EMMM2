@@ -30,7 +30,7 @@ export default function AutoDetectResult({ games, onContinue, onAddMore }: Props
               <div className="card-body flex-row items-center gap-4">
                 <div className="flex-1 text-left">
                   <h3 className="font-semibold text-lg">{game.name}</h3>
-                  <p className="text-base-content/50 text-xs truncate max-w-xs">{game.path}</p>
+                  <p className="text-base-content/50 text-xs truncate max-w-xs">{game.game_exe}</p>
                 </div>
                 <span className={`badge ${GAME_TYPE_COLORS[game.game_type] || 'badge-neutral'}`}>
                   {game.game_type}

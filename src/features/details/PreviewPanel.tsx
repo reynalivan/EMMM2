@@ -1,183 +1,393 @@
-import { Info, Trash2, Copy, Maximize2, X, ChevronRight, Plus } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronRight, Info, Trash2, X } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/useAppStore';
+import { toast } from '../../stores/useToastStore';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import UnsavedIniChangesModal from './components/UnsavedIniChangesModal';
+import GallerySection from './components/GallerySection';
+import MetadataSection from './components/MetadataSection';
+import IniEditorSection from './components/IniEditorSection';
+import { usePreviewPanelState } from './hooks/usePreviewPanelState';
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export default function PreviewPanel() {
-  const { togglePreview, setMobilePane } = useAppStore();
-  // TODO: Get selected item details from store
-  const selectedName = 'Albedo Flowery';
-  const isEnabled = false;
+  const togglePreview = useAppStore((state) => state.togglePreview);
+  const setMobilePane = useAppStore((state) => state.setMobilePane);
+
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+
+  const {
+    activePath,
+    selectedFolder,
+    images,
+    currentImageIndex,
+    setCurrentImageIndex,
+    titleDraft,
+    authorDraft,
+    versionDraft,
+    descriptionDraft,
+    setTitleDraft,
+    setAuthorDraft,
+    setVersionDraft,
+    setDescriptionDraft,
+    metadataDirty,
+    activeIniTab,
+    setActiveIniTab,
+    keyBindSections,
+    openSectionIds,
+    draftByField,
+    fieldErrors,
+    variableSummaries,
+    hasUnsavedEditorChanges,
+    updateModInfo,
+    savePreviewImage,
+    removePreviewImage,
+    clearPreviewImages,
+    writeModIni,
+    previewImagesQuery,
+    toggleMod,
+    showUnsavedModal,
+    setShowUnsavedModal,
+    setPendingTransition,
+    pendingTransition,
+    applyPendingTransition,
+    saveMetadata,
+    discardMetadata,
+    saveEditor,
+    discardEditor,
+    requestToggleSection,
+    updateEditorField,
+  } = usePreviewPanelState();
+
+  const boundedImageIndex = Math.min(currentImageIndex, Math.max(images.length - 1, 0));
+  const currentImagePath = images[boundedImageIndex] ?? null;
+
+  const pasteThumbnailFromClipboard = useCallback(async () => {
+    if (!activePath) {
+      toast.warning('Select a mod folder first.');
+      return;
+    }
+
+    if (!navigator.clipboard?.read) {
+      toast.error('Clipboard image paste is not supported in this environment.');
+      return;
+    }
+
+    try {
+      const items = await navigator.clipboard.read();
+      let imageBlob: Blob | null = null;
+
+      for (const item of items) {
+        const imageType = item.types.find((type) => type.startsWith('image/'));
+        if (imageType) {
+          imageBlob = await item.getType(imageType);
+          break;
+        }
+      }
+
+      if (!imageBlob) {
+        toast.warning('Clipboard does not contain an image.');
+        return;
+      }
+
+      const bytes = Array.from(new Uint8Array(await imageBlob.arrayBuffer()));
+      await savePreviewImage.mutateAsync({
+        folderPath: activePath,
+        objectName: selectedFolder?.name ?? 'mod',
+        imageData: bytes,
+      });
+      await previewImagesQuery.refetch();
+      setCurrentImageIndex(0);
+      toast.success('Thumbnail pasted.');
+    } catch (error) {
+      toast.error(`Cannot paste image: ${toErrorMessage(error)}`);
+    }
+  }, [activePath, savePreviewImage, selectedFolder, previewImagesQuery, setCurrentImageIndex]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isPaste = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v';
+      if (!isPaste || !activePath) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const editable =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable === true;
+      if (editable) {
+        return;
+      }
+
+      event.preventDefault();
+      void pasteThumbnailFromClipboard();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [activePath, pasteThumbnailFromClipboard]);
 
   return (
-    <div className="flex flex-col h-full bg-base-100/30 border-l border-white/5 p-6 overflow-y-auto backdrop-blur-md">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            {/* Mobile Back Button */}
+    <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-y-auto border-l border-white/5 bg-base-100/30 p-6 backdrop-blur-md">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.currentTarget.value = '';
+
+          if (!file || !activePath) {
+            return;
+          }
+
+          try {
+            const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+            await savePreviewImage.mutateAsync({
+              folderPath: activePath,
+              objectName: selectedFolder?.name ?? 'mod',
+              imageData: bytes,
+            });
+            await previewImagesQuery.refetch();
+            setCurrentImageIndex(0);
+            toast.success('Thumbnail imported.');
+          } catch (error) {
+            toast.error(`Cannot import thumbnail: ${toErrorMessage(error)}`);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title="Remove Thumbnail"
+        message="This will permanently remove the currently selected thumbnail image."
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        danger
+        onCancel={() => setConfirmRemoveOpen(false)}
+        onConfirm={async () => {
+          setConfirmRemoveOpen(false);
+          if (!activePath || !currentImagePath) {
+            return;
+          }
+          try {
+            await removePreviewImage.mutateAsync({
+              folderPath: activePath,
+              imagePath: currentImagePath,
+            });
+            await previewImagesQuery.refetch();
+            setCurrentImageIndex((prev) => Math.max(0, prev - 1));
+            toast.success('Thumbnail removed.');
+          } catch (error) {
+            toast.error(`Cannot remove thumbnail: ${toErrorMessage(error)}`);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="Clear All Thumbnails"
+        message="This will permanently remove all discovered thumbnails in this mod folder."
+        confirmLabel="Clear All"
+        cancelLabel="Cancel"
+        danger
+        onCancel={() => setConfirmClearOpen(false)}
+        onConfirm={async () => {
+          setConfirmClearOpen(false);
+          if (!activePath) {
+            return;
+          }
+          try {
+            await clearPreviewImages.mutateAsync({ folderPath: activePath });
+            await previewImagesQuery.refetch();
+            setCurrentImageIndex(0);
+            toast.success('All thumbnails cleared.');
+          } catch (error) {
+            toast.error(`Cannot clear thumbnails: ${toErrorMessage(error)}`);
+          }
+        }}
+      />
+
+      <UnsavedIniChangesModal
+        open={showUnsavedModal}
+        isSaving={writeModIni.isPending}
+        onCancel={() => {
+          setShowUnsavedModal(false);
+          setPendingTransition(null);
+        }}
+        onDiscard={() => {
+          discardMetadata();
+          discardEditor();
+          applyPendingTransition(pendingTransition);
+          setShowUnsavedModal(false);
+          setPendingTransition(null);
+        }}
+        onSave={async () => {
+          await saveMetadata();
+          const editorSaved = await saveEditor();
+          if (!editorSaved) return;
+          applyPendingTransition(pendingTransition);
+          setShowUnsavedModal(false);
+          setPendingTransition(null);
+        }}
+      />
+
+      <div className="mb-6 flex items-start justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2">
             <button
               onClick={() => setMobilePane('grid')}
-              className="btn btn-ghost btn-xs btn-circle md:hidden text-white/50 hover:text-white"
+              aria-label="Back to grid"
+              className="btn btn-circle btn-ghost btn-xs text-white/50 hover:text-white md:hidden"
             >
               <ChevronRight className="rotate-180" size={16} />
             </button>
-
-            <h2 className="text-xl font-bold text-white tracking-tight glow-text">
-              {selectedName}
+            <h2 className="truncate text-xl font-bold tracking-tight text-white">
+              {titleDraft || selectedFolder?.name || 'No mod selected'}
             </h2>
           </div>
-
-          <label className="label cursor-pointer justify-start gap-2 p-0 hover:opacity-100 opacity-70 transition-opacity">
+          <label className="label cursor-pointer justify-start gap-2 p-0 opacity-80 hover:opacity-100">
             <input
               type="checkbox"
-              className="toggle toggle-sm border-white/10 bg-base-300 hover:bg-base-200 checked:bg-primary checked:border-primary checked:shadow-[0_0_10px_var(--color-primary)]"
-              checked={isEnabled}
-              readOnly
+              aria-label="Toggle mod enabled status"
+              className="toggle toggle-sm border-white/10 bg-base-300 checked:border-primary checked:bg-primary"
+              checked={selectedFolder?.is_enabled ?? false}
+              disabled={!selectedFolder || toggleMod.isPending}
+              onChange={() => {
+                if (!selectedFolder) return;
+                toggleMod.mutate({ path: selectedFolder.path, enable: !selectedFolder.is_enabled });
+              }}
             />
             <span className="text-sm font-medium text-white/60">
-              {isEnabled ? 'Enabled' : 'Disabled'}
+              {selectedFolder
+                ? selectedFolder.is_enabled
+                  ? 'Enabled'
+                  : 'Disabled'
+                : 'No active mod'}
             </span>
           </label>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button className="btn btn-ghost btn-sm btn-circle text-error/50 hover:text-error hover:bg-error/10 transition-colors">
+        <div className="ml-2 flex items-center gap-1">
+          <button className="btn btn-circle btn-ghost btn-sm text-error/50 hover:bg-error/10 hover:text-error">
+            <span className="sr-only">Delete mod</span>
             <Trash2 size={18} />
           </button>
-
-          {/* Desktop Close/Toggle Button */}
           <button
             onClick={togglePreview}
-            className="btn btn-ghost btn-sm btn-circle text-white/30 hover:text-white hidden md:inline-flex hover:bg-white/5"
+            aria-label="Toggle preview panel"
+            className="btn btn-circle btn-ghost btn-sm hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex"
             title="Close Preview"
           >
             <ChevronRight size={18} />
           </button>
-
-          {/* Mobile Close Button */}
           <button
             onClick={() => setMobilePane('grid')}
-            className="btn btn-ghost btn-sm btn-circle text-white/30 md:hidden hover:text-white"
+            aria-label="Close details pane"
+            className="btn btn-circle btn-ghost btn-sm text-white/30 hover:text-white md:hidden"
           >
             <X size={18} />
           </button>
         </div>
       </div>
 
-      {/* Preview Carousel */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest">
-            Preview Images
-          </h3>
-        </div>
+      <GallerySection
+        images={images}
+        currentImageIndex={currentImageIndex}
+        isFetching={previewImagesQuery.isFetching}
+        canEdit={!!activePath}
+        isMutating={
+          savePreviewImage.isPending || removePreviewImage.isPending || clearPreviewImages.isPending
+        }
+        onPrev={() => setCurrentImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1))}
+        onNext={() => setCurrentImageIndex((prev) => (prev + 1) % Math.max(images.length, 1))}
+        onSelectIndex={setCurrentImageIndex}
+        onPaste={() => {
+          void pasteThumbnailFromClipboard();
+        }}
+        onImport={() => {
+          if (!activePath) {
+            toast.warning('Select a mod folder first.');
+            return;
+          }
+          importInputRef.current?.click();
+        }}
+        onRequestRemoveCurrent={() => {
+          if (!currentImagePath) {
+            toast.warning('No thumbnail selected to remove.');
+            return;
+          }
+          setConfirmRemoveOpen(true);
+        }}
+        onRequestClearAll={() => {
+          if (images.length === 0) {
+            toast.warning('No thumbnails to clear.');
+            return;
+          }
+          setConfirmClearOpen(true);
+        }}
+      />
 
-        <div className="carousel w-full rounded-xl border border-white/5 bg-black/40 aspect-3/4 relative group shadow-inner">
-          {/* Placeholder Carousel Items */}
-          <div id="item1" className="carousel-item w-full relative">
-            <img
-              src="https://picsum.photos/300/400"
-              className="w-full h-full object-cover opacity-90"
-            />
-            <div className="absolute inset-0 bg-linear-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4">
-              <p className="text-white text-[10px] font-bold tracking-wider backdrop-blur-md bg-white/5 border border-white/10 px-3 py-1 rounded-full uppercase">
-                Primary Preview
-              </p>
-            </div>
-          </div>
+      <MetadataSection
+        activePath={activePath}
+        titleDraft={titleDraft}
+        authorDraft={authorDraft}
+        versionDraft={versionDraft}
+        descriptionDraft={descriptionDraft}
+        metadataDirty={metadataDirty}
+        isSaving={updateModInfo.isPending}
+        onTitleChange={setTitleDraft}
+        onAuthorChange={setAuthorDraft}
+        onVersionChange={setVersionDraft}
+        onDescriptionChange={setDescriptionDraft}
+        onSave={() => void saveMetadata()}
+        onDiscard={discardMetadata}
+      />
 
-          {/* Carousel Controls (Stub) */}
-          <div className="absolute flex justify-between transform -translate-y-1/2 left-2 right-2 top-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <a
-              href="#item4"
-              className="btn btn-circle btn-xs bg-black/50 border-white/10 hover:bg-primary text-white hover:border-primary"
-            >
-              ❮
-            </a>
-            <a
-              href="#item2"
-              className="btn btn-circle btn-xs bg-black/50 border-white/10 hover:bg-primary text-white hover:border-primary"
-            >
-              ❯
-            </a>
-          </div>
-        </div>
+      <IniEditorSection
+        activePath={activePath}
+        activeTab={activeIniTab}
+        sections={keyBindSections}
+        openSectionIds={openSectionIds}
+        draftByField={draftByField}
+        fieldErrors={fieldErrors}
+        variableSummaries={variableSummaries}
+        editorDirty={hasUnsavedEditorChanges}
+        isSaving={writeModIni.isPending}
+        onTabChange={setActiveIniTab}
+        onToggleSection={requestToggleSection}
+        onFieldChange={updateEditorField}
+        onSave={() => void saveEditor()}
+        onDiscard={discardEditor}
+      />
 
-        {/* Carousel Toolbar */}
-        <div className="flex justify-center gap-1 mt-3">
-          <span className="text-[10px] font-mono text-white/30 mr-auto pt-1">1 / 1</span>
-          <button
-            className="btn btn-xs btn-ghost btn-square text-white/30 hover:text-white"
-            title="Add Image"
-          >
-            <Plus size={14} />
-          </button>
-          <button
-            className="btn btn-xs btn-ghost btn-square text-white/30 hover:text-white"
-            title="Paste Image"
-          >
-            <Copy size={14} />
-          </button>
-          <button
-            className="btn btn-xs btn-ghost btn-square text-white/30 hover:text-white"
-            title="Delete Image"
-          >
-            <Trash2 size={14} />
-          </button>
-          <button
-            className="btn btn-xs btn-ghost btn-square text-white/30 hover:text-white"
-            title="Fullscreen"
-          >
-            <Maximize2 size={14} />
-          </button>
-        </div>
-      </div>
+      <div className="mt-auto pt-6">
+        <button
+          className="btn btn-outline btn-sm w-full gap-2"
+          onClick={async () => {
+            if (!activePath) {
+              toast.warning('Select a mod folder first.');
+              return;
+            }
 
-      {/* Description */}
-      <div className="mb-6">
-        <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
-          Description
-        </h3>
-        <textarea
-          className="textarea textarea-bordered w-full h-24 text-sm bg-transparent border-white/10 focus:border-primary/50 text-white/80 transition-colors resize-none placeholder:text-white/20 focus:bg-white/5"
-          placeholder="No description available."
-        ></textarea>
-      </div>
-
-      {/* Configuration Files */}
-      <div>
-        <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
-          Mod Configuration
-        </h3>
-        <div className="space-y-2">
-          {[
-            { file: 'merged.ini', key: 1 },
-            { file: 'KeySwap.ini', key: 2 },
-          ].map((item) => (
-            <div
-              key={item.key}
-              className="flex items-center justify-between p-3 bg-base-200/20 rounded-lg border border-white/5 group hover:border-primary/50 hover:bg-base-200/40 transition-all cursor-pointer hover:shadow-[0_0_15px_-5px_rgba(var(--color-primary),0.3)]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:text-white group-hover:bg-primary transition-colors">
-                  <span className="text-[10px] font-bold">INI</span>
-                </div>
-                <div className="text-sm font-medium text-white/80 group-hover:text-white">
-                  {item.file}
-                </div>
-              </div>
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="btn btn-xs btn-ghost text-primary hover:bg-primary/20">
-                  Edit
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Floating Action Button (Mobile/Small Screens primarily) */}
-      <div className="mt-auto pt-6 text-center">
-        <button className="btn btn-outline btn-sm w-full gap-2 opacity-50 hover:opacity-100 border-white/20 text-white hover:bg-white/10 hover:border-white/40 hover:text-white">
+            try {
+              await invoke('open_in_explorer', { path: activePath });
+            } catch (error) {
+              toast.error(`Cannot open folder location: ${toErrorMessage(error)}`);
+            }
+          }}
+          disabled={!activePath}
+        >
           <Info size={16} />
           View File Location
         </button>

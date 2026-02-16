@@ -1,0 +1,147 @@
+[
+  {
+    "name": "Perlica",
+    "tags": [],
+    "object_type": "Character",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "6-Star",
+      "class": "Caster"
+    }
+  },
+  {
+    "name": "Ember",
+    "tags": [],
+    "object_type": "Character",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "6-Star",
+      "class": "Guard"
+    }
+  },
+  {
+    "name": "Endministrator",
+    "tags": [
+      "Admin",
+      "Player Character"
+    ],
+    "object_type": "Character",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "6-Star",
+      "class": "Vanguard"
+    }
+  },
+  {
+    "name": "Chen Qianyu",
+    "tags": [
+      "Chen",
+      "Qianyu"
+    ],
+    "object_type": "Character",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "5-Star",
+      "class": "Guard"
+    }
+  },
+  {
+    "name": "Ilya",
+    "tags": [],
+    "object_type": "Character",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "5-Star",
+      "class": "Sniper"
+    }
+  },
+  {
+    "name": "Neon",
+    "tags": [],
+    "object_type": "Character",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "5-Star",
+      "class": "Defender"
+    }
+  },
+  {
+    "name": "Standard Assault Rifle",
+    "tags": [
+      "AR",
+      "Assault Rifle"
+    ],
+    "object_type": "Weapon",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "4-Star"
+    }
+  },
+  {
+    "name": "Tactical Blade",
+    "tags": [
+      "Blade",
+      "Sword"
+    ],
+    "object_type": "Weapon",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "5-Star"
+    }
+  },
+  {
+    "name": "Heavy Shield",
+    "tags": [
+      "Shield"
+    ],
+    "object_type": "Weapon",
+    "custom_skins": [],
+    "metadata": {
+      "rarity": "5-Star"
+    }
+  },
+  {
+    "name": "Deployment UI",
+    "tags": [
+      "Deploy Screen",
+      "Placement"
+    ],
+    "object_type": "UI",
+    "custom_skins": [],
+    "metadata": {}
+  },
+  {
+    "name": "Resource Bar",
+    "tags": [
+      "DP Bar",
+      "Cost Bar"
+    ],
+    "object_type": "UI",
+    "custom_skins": [],
+    "metadata": {}
+  },
+  {
+    "name": "Originium Slug",
+    "tags": [
+      "Slug",
+      "Basic Enemy"
+    ],
+    "object_type": "Other",
+    "custom_skins": [],
+    "metadata": {
+      "sub_category": "Enemy"
+    }
+  },
+  {
+    "name": "Drone",
+    "tags": [
+      "Attack Drone",
+      "Flying Enemy"
+    ],
+    "object_type": "Other",
+    "custom_skins": [],
+    "metadata": {
+      "sub_category": "Enemy"
+    }
+  }
+]

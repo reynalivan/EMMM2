@@ -1,7 +1,62 @@
 {
   "categories": [
-    { "name": "Character", "icon": "User", "color": "primary" },
-    { "name": "Light Cone", "icon": "Disc3", "color": "secondary" },
+    {
+      "name": "Character",
+      "icon": "User",
+      "color": "primary",
+      "filters": [
+        {
+          "key": "element",
+          "label": "Element",
+          "options": ["Physical", "Fire", "Ice", "Lightning", "Wind", "Quantum", "Imaginary"]
+        },
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["5-Star", "4-Star"]
+        },
+        {
+          "key": "path",
+          "label": "Path",
+          "options": [
+            "Destruction",
+            "The Hunt",
+            "Erudition",
+            "Harmony",
+            "Nihility",
+            "Preservation",
+            "Abundance",
+            "Remembrance"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Light Cone",
+      "icon": "Disc3",
+      "color": "secondary",
+      "filters": [
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["5-Star", "4-Star"]
+        },
+        {
+          "key": "path",
+          "label": "Path",
+          "options": [
+            "Destruction",
+            "The Hunt",
+            "Erudition",
+            "Harmony",
+            "Nihility",
+            "Preservation",
+            "Abundance",
+            "Remembrance"
+          ]
+        }
+      ]
+    },
     { "name": "UI", "icon": "Layout", "color": "accent" },
     { "name": "Other", "icon": "Package", "color": "neutral" }
   ],

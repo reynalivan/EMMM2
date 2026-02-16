@@ -5,9 +5,9 @@ export interface GameConfig {
   id: string;
   name: string;
   game_type: string;
-  path: string;
-  mods_path: string;
-  launcher_path: string;
+  mod_path: string;
+  game_exe: string;
+  loader_exe: string | null;
   launch_args: string | null;
 }
 

@@ -11,8 +11,8 @@ import type {
   ObjectSummary,
   ObjectFilter,
   CategoryCount,
-  CreateObjectInput,
   UpdateObjectInput,
+  CreateObjectInput,
   GameObject,
 } from '../types/object';
 
@@ -93,6 +93,10 @@ export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]>
       o.sub_category,
       o.thumbnail_path,
       o.is_safe,
+      o.is_pinned,
+      o.created_at,
+      o.metadata,
+      o.tags,
       COUNT(m.id) as mod_count,
       COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) as enabled_count
     FROM objects o
@@ -119,12 +123,48 @@ export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]>
     const searchTerm = `%${filter.search_query.trim().toLowerCase()}%`;
     query += ` AND (LOWER(o.name) LIKE $${paramIdx} OR LOWER(o.tags) LIKE $${paramIdx})`;
     params.push(searchTerm);
+    paramIdx++;
   }
 
-  query += `
-    GROUP BY o.id
-    ORDER BY o.object_type, o.sort_order, o.name
-  `;
+  // Meta filters (Dynamic JSON query)
+  if (filter.meta_filters && Object.keys(filter.meta_filters).length > 0) {
+    for (const [key, values] of Object.entries(filter.meta_filters)) {
+      if (values && values.length > 0) {
+        // Construct IN clause manually for JSON extract
+        // Security Note: 'key' comes from schema (trusted), 'values' are from UI
+        // We use parameters for values to prevent injection
+        const placeholders = values.map(() => `$${paramIdx++}`).join(', ');
+        // JSON_EXTRACT returns the value as string if it's a string in JSON
+        query += ` AND JSON_EXTRACT(o.metadata, '$.${key}') IN (${placeholders})`;
+        params.push(...values);
+      }
+    }
+  }
+
+  query += ` GROUP BY o.id`;
+
+  // Status Filter (HAVING clause)
+  if (filter.status_filter === 'enabled') {
+    query += ` HAVING enabled_count > 0`;
+  } else if (filter.status_filter === 'disabled') {
+    // Show objects that have mods but none are enabled
+    query += ` HAVING mod_count > 0 AND enabled_count = 0`;
+  }
+
+  // Sorting
+  switch (filter.sort_by) {
+    case 'date':
+      query += ` ORDER BY o.created_at DESC`;
+      break;
+    case 'rarity':
+      // Sort by rarity (descending, so 5-Star first)
+      query += ` ORDER BY JSON_EXTRACT(o.metadata, '$.rarity') DESC, o.name ASC`;
+      break;
+    case 'name':
+    default:
+      query += ` ORDER BY o.object_type, o.sort_order, o.name ASC`;
+      break;
+  }
 
   return select<ObjectSummary[]>(query, params);
 }
@@ -162,30 +202,37 @@ export async function getObjectById(id: string): Promise<GameObject | null> {
 }
 
 /**
- * Create a new object.
- * Covers: TC-3.3-01, NC-3.3-01, NC-3.3-03
+ * Create a new object (US-3.3).
+ * Covers: TC-3.3-01, NC-3.3-01 (Duplicate)
  */
-export async function createObject(input: CreateObjectInput): Promise<void> {
+export async function createObject(input: CreateObjectInput): Promise<string> {
   const nameError = validateObjectName(input.name);
-  if (nameError) {
-    throw new Error(nameError);
-  }
+  if (nameError) throw new Error(nameError);
 
   const id = crypto.randomUUID();
-
-  await execute(
-    `INSERT INTO objects (id, game_id, name, object_type, sub_category, tags, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      id,
-      input.game_id,
-      input.name.trim(),
-      input.object_type,
-      input.sub_category ?? null,
-      JSON.stringify(input.tags ?? []),
-      JSON.stringify(input.metadata ?? {}),
-    ],
-  );
+  try {
+    await execute(
+      `INSERT INTO objects (id, game_id, name, object_type, sub_category, is_safe, tags, metadata, sort_order, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, 0, datetime('now'))`,
+      [
+        id,
+        input.game_id,
+        input.name.trim(),
+        input.object_type,
+        input.sub_category ?? null,
+        input.is_safe !== false ? 1 : 0,
+        input.metadata ? JSON.stringify(input.metadata) : '{}',
+      ],
+    );
+  } catch (err) {
+    const msg = String(err).toLowerCase();
+    if (msg.includes('unique constraint failed') || msg.includes('unique_game_object_name')) {
+      // eslint-disable-next-line preserve-caught-error
+      throw new Error(`An object named "${input.name.trim()}" already exists for this game.`);
+    }
+    throw err;
+  }
+  return id;
 }
 
 /**

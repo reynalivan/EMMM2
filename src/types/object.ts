@@ -15,6 +15,7 @@ export interface GameObject {
   metadata: string; // JSON string of metadata object
   thumbnail_path: string | null;
   is_safe: boolean;
+  is_pinned: boolean;
   created_at: string;
 }
 
@@ -28,6 +29,10 @@ export interface ObjectSummary {
   enabled_count: number;
   thumbnail_path: string | null;
   is_safe: boolean;
+  is_pinned: boolean;
+  created_at?: string;
+  metadata: string;
+  tags: string;
 }
 
 /** Filter criteria sent to DB queries */
@@ -37,6 +42,8 @@ export interface ObjectFilter {
   object_type?: string;
   safe_mode: boolean;
   meta_filters?: Record<string, string[]>;
+  sort_by?: 'name' | 'date' | 'rarity';
+  status_filter?: 'all' | 'enabled' | 'disabled';
 }
 
 /** Game schema: defines categories and filter fields per game type */
@@ -47,8 +54,12 @@ export interface GameSchema {
 
 export interface CategoryDef {
   name: string;
+  /** Display label for the category. Falls back to `name` if absent. */
+  label?: string;
   icon: string;
   color: string;
+  /** Per-category metadata filter fields. If absent, no metadata editing for this category. */
+  filters?: FilterDef[];
 }
 
 export interface FilterDef {
@@ -63,16 +74,6 @@ export interface CategoryCount {
   count: number;
 }
 
-/** Input DTO for creating an object */
-export interface CreateObjectInput {
-  game_id: string;
-  name: string;
-  object_type: string;
-  sub_category?: string;
-  tags?: string[];
-  metadata?: Record<string, unknown>;
-}
-
 /** Input DTO for updating an object */
 export interface UpdateObjectInput {
   name?: string;
@@ -82,4 +83,14 @@ export interface UpdateObjectInput {
   metadata?: Record<string, unknown>;
   thumbnail_path?: string;
   is_safe?: boolean;
+}
+
+/** Input DTO for creating a new object (US-3.3) */
+export interface CreateObjectInput {
+  game_id: string;
+  name: string;
+  object_type: string;
+  sub_category?: string | null;
+  is_safe?: boolean;
+  metadata?: Record<string, unknown>;
 }

@@ -1,8 +1,10 @@
 import { ArrowRight, Box, CircuitBoard, Layers } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
+import { useActiveGame } from '../../hooks/useActiveGame';
 
 export default function Dashboard() {
-  const { setWorkspaceView, activeGame } = useAppStore();
+  const { setWorkspaceView } = useAppStore();
+  const { activeGame } = useActiveGame();
 
   return (
     <div className="flex flex-col items-center justify-center h-full bg-base-100 relative overflow-hidden">
@@ -21,13 +23,7 @@ export default function Dashboard() {
         </h1>
         <p className="text-xl text-base-content/60 mb-12">
           The next-generation mod manager for
-          <span className="font-semibold text-primary ml-1">
-            {activeGame === 'GIMI'
-              ? 'Genshin Impact'
-              : activeGame === 'SRMI'
-                ? 'Star Rail'
-                : 'Zenless Zone Zero'}
-          </span>
+          <span className="font-semibold text-primary ml-1">{activeGame?.name ?? 'your game'}</span>
         </p>
 
         <div className="grid grid-cols-3 gap-4 mb-12 w-full max-w-lg mx-auto">

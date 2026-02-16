@@ -9,7 +9,8 @@ import {
   SortingState,
   Table,
 } from '@tanstack/react-table';
-import { FolderOpen, ArrowUpDown } from 'lucide-react';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { FolderOpen, ArrowUpDown, Sparkles } from 'lucide-react';
 import { ScanResultItem } from '../../types/scanner';
 import { IndeterminateCheckbox, EditableCell } from './ReviewTableComponents';
 
@@ -58,6 +59,23 @@ export function useReviewTable({
           </label>
         ),
       }),
+      // Thumbnail
+      columnHelper.accessor('thumbnailPath', {
+        id: 'thumbnail',
+        header: 'Preview',
+        cell: (info) => {
+          const path = info.getValue();
+          if (!path) return <div className="w-10 h-10 bg-base-300 rounded-md" />;
+
+          return (
+            <div className="avatar">
+              <div className="w-10 h-10 rounded-md">
+                <img src={convertFileSrc(path)} alt="mod preview" className="object-cover" />
+              </div>
+            </div>
+          );
+        },
+      }),
       // Name (Editable)
       columnHelper.accessor('displayName', {
         header: ({ column }) => (
@@ -84,6 +102,32 @@ export function useReviewTable({
             <span className="badge badge-sm badge-outline">{val}</span>
           ) : (
             <span className="text-base-content/30 text-xs">-</span>
+          );
+        },
+      }),
+      // Detected Skin
+      columnHelper.accessor('detectedSkin', {
+        header: () => (
+          <span className="flex items-center gap-1">
+            <Sparkles className="w-3 h-3" />
+            Skin
+          </span>
+        ),
+        cell: (info) => {
+          const skin = info.getValue();
+          const folderName = info.row.original.skinFolderName;
+          if (!skin) return <span className="text-base-content/20 text-xs">—</span>;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className="badge badge-xs badge-primary badge-outline truncate max-w-[140px]">
+                {skin}
+              </span>
+              {folderName && (
+                <span className="text-[10px] text-base-content/40 font-mono truncate max-w-[140px]">
+                  → {folderName}
+                </span>
+              )}
+            </div>
           );
         },
       }),

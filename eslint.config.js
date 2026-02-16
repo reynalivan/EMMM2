@@ -7,7 +7,7 @@ import prettier from 'eslint-plugin-prettier';
 import prettierConfig from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['dist', 'src-tauri', 'coverage', '.agent', '.history', '.vscode'] },
+  { ignores: ['dist', 'src-tauri', 'coverage', '.agent', '.history', '.vscode', '.opencode'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended, prettierConfig],
     files: ['**/*.{ts,tsx}'],

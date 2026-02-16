@@ -20,6 +20,12 @@ export default defineConfig(async () => ({
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
     css: true,
+    deps: {
+      inline: ['@tauri-apps/plugin-fs'],
+    },
+    alias: {
+      '@tauri-apps/plugin-fs': 'e:/Dev/EMMM2NEW/src/mocks/tauri-plugin-fs.ts',
+    },
   },
 
   // 2. tauri expects a fixed port, fail if that port is not available

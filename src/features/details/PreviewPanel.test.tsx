@@ -30,6 +30,7 @@ vi.mock('../../stores/useToastStore', () => ({
   },
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockUsePreviewPanelState = usePreviewPanelStateModule.usePreviewPanelState as any;
 
 function createDefaultHookState() {
@@ -152,6 +153,7 @@ describe('PreviewPanel', () => {
   // Covers: NC-6.1-01 (Error handling - no mod selected)
   it('should show warning when trying to open folder without active path', async () => {
     const state = createDefaultHookState();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     state.activePath = null as any;
     mockUsePreviewPanelState.mockReturnValue(state);
 

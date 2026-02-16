@@ -2,21 +2,41 @@ import {
   RefreshCw,
   Settings,
   MoreVertical,
-  Play,
   PanelRightClose,
   PanelRightOpen,
   ShieldCheck,
   ShieldAlert,
+  Trash2,
+  Layers,
 } from 'lucide-react';
+import { useState } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
+import TrashManagerModal from '../../modals/TrashManagerModal';
+import LaunchBar from '../../LaunchBar/LaunchBar';
 
 export default function GlobalActions() {
-  const { workspaceView, isPreviewOpen, togglePreview, safeMode, setSafeMode } = useAppStore();
+  const { workspaceView, setWorkspaceView, isPreviewOpen, togglePreview, safeMode, setSafeMode } =
+    useAppStore();
+  const [trashOpen, setTrashOpen] = useState(false);
 
   return (
     <div className="flex items-center gap-2 md:gap-3">
       {/* Desktop Tools */}
       <div className="hidden md:flex items-center gap-1">
+        <button
+          className="btn btn-ghost btn-sm btn-square text-white/50 hover:text-info hover:bg-white/5"
+          title="Collections"
+          onClick={() => setWorkspaceView('collections')}
+        >
+          <Layers size={18} />
+        </button>
+        <button
+          className="btn btn-ghost btn-sm btn-square text-white/50 hover:text-warning hover:bg-white/5"
+          title="Trash"
+          onClick={() => setTrashOpen(true)}
+        >
+          <Trash2 size={18} />
+        </button>
         <button
           className="btn btn-ghost btn-sm btn-square text-white/50 hover:text-white hover:bg-white/5"
           title="Refresh"
@@ -26,10 +46,16 @@ export default function GlobalActions() {
         <button
           className="btn btn-ghost btn-sm btn-square text-white/50 hover:text-white hover:bg-white/5"
           title="Settings"
+          onClick={() => setWorkspaceView('settings')}
         >
           <Settings size={18} />
         </button>
+        {/* Launch Bar (Epic 10) */}
+        <LaunchBar />
       </div>
+
+      {/* Trash Manager Modal */}
+      <TrashManagerModal open={trashOpen} onClose={() => setTrashOpen(false)} />
 
       {/* Mobile Menu Dropdown */}
       <div className="dropdown dropdown-end md:hidden">
@@ -41,8 +67,18 @@ export default function GlobalActions() {
           className="dropdown-content z-1 menu p-2 shadow-2xl bg-base-100/90 backdrop-blur-xl rounded-box w-48 mt-2 border border-white/10"
         >
           <li>
-            <a className="gap-2 hover:bg-white/5">
+            <a className="gap-2 hover:bg-white/5" onClick={() => setWorkspaceView('collections')}>
+              <Layers size={16} /> Collections
+            </a>
+          </li>
+          <li>
+            <a className="gap-2 hover:bg-white/5" onClick={() => setWorkspaceView('settings')}>
               <Settings size={16} /> Settings
+            </a>
+          </li>
+          <li>
+            <a className="gap-2 hover:bg-white/5" onClick={() => setTrashOpen(true)}>
+              <Trash2 size={16} /> Trash
             </a>
           </li>
           <li>
@@ -68,11 +104,6 @@ export default function GlobalActions() {
       </div>
 
       <div className="w-px h-6 bg-white/5 mx-1 hidden md:block" />
-
-      <button className="btn btn-primary btn-sm gap-2 shadow-[0_0_20px_-5px_var(--color-primary)] hover:shadow-[0_0_25px_-3px_var(--color-primary)] border border-white/10 text-white font-bold tracking-wide transition-all hover:scale-105">
-        <Play size={16} fill="currentColor" />
-        <span className="hidden sm:inline">PLAY</span>
-      </button>
 
       {/* Desktop Toggle Preview */}
       {workspaceView === 'mods' && (

@@ -1,14 +1,52 @@
 {
   "categories": [
-    { "name": "Agent", "icon": "User", "color": "primary" },
-    { "name": "W-Engine", "icon": "Cog", "color": "secondary" },
+    {
+      "name": "Character",
+      "label": "Agent",
+      "icon": "User",
+      "color": "primary",
+      "filters": [
+        {
+          "key": "element",
+          "label": "Attribute",
+          "options": ["Physical", "Fire", "Ice", "Electric", "Ether"]
+        },
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["S-Rank", "A-Rank"]
+        },
+        {
+          "key": "specialty",
+          "label": "Specialty",
+          "options": ["Attack", "Stun", "Anomaly", "Support", "Defense"]
+        }
+      ]
+    },
+    {
+      "name": "W-Engine",
+      "icon": "Cog",
+      "color": "secondary",
+      "filters": [
+        {
+          "key": "rarity",
+          "label": "Rarity",
+          "options": ["S-Rank", "A-Rank"]
+        },
+        {
+          "key": "specialty",
+          "label": "Specialty",
+          "options": ["Attack", "Stun", "Anomaly", "Support", "Defense"]
+        }
+      ]
+    },
     { "name": "Bangboo", "icon": "Bot", "color": "info" },
     { "name": "UI", "icon": "Layout", "color": "accent" },
     { "name": "Other", "icon": "Package", "color": "neutral" }
   ],
   "filters": [
     {
-      "key": "attribute",
+      "key": "element",
       "label": "Attribute",
       "options": ["Physical", "Fire", "Ice", "Electric", "Ether"]
     },

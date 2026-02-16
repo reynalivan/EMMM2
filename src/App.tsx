@@ -45,13 +45,13 @@ function AppRouter() {
   );
 }
 
+import { ToastContainer } from './components/ui/Toast';
+
 export default function App() {
   return (
-    <div
-      data-theme="onyx"
-      className="h-screen w-screen overflow-hidden bg-base-100 text-base-content antialiased"
-    >
+    <div className="flex flex-col h-screen bg-base-100 text-base-content overflow-hidden font-sans antialiased selection:bg-primary selection:text-primary-content">
       <AppRouter />
+      <ToastContainer />
     </div>
   );
 }

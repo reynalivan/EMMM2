@@ -26,3 +26,6 @@ export * from '@testing-library/react';
 
 // Override render method
 export { customRender as render };
+
+// Export wrapper for hooks
+export { AllTheProviders as createWrapper };
