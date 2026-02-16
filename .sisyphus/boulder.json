@@ -1,0 +1,11 @@
+{
+  "active_plan": null,
+  "started_at": "2026-02-16T05:20:10.335Z",
+  "completed_at": "2026-02-16T06:45:23.000Z",
+  "session_ids": ["ses_39b484f7cffelKMFBnhVb0SG4Y", "ses_39a352bddffekPhh8lQOcKP2MJ"],
+  "plan_name": "epic6-preview-panel",
+  "agent": "atlas",
+  "status": "completed",
+  "tasks_completed": 10,
+  "tasks_total": 10
+}

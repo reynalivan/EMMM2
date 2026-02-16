@@ -1,0 +1,27 @@
+
+> emmm2@0.1.0 test E:\Dev\EMMM2NEW
+> vitest "src/features/details/PreviewPanel.test.tsx" "src/features/details/previewPanelUtils.test.ts" "--reporter=verbose"
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90mE:/Dev/EMMM2NEW[39m
+
+ [32m✓[39m src/features/details/previewPanelUtils.test.ts[2m > [22mpreviewPanelUtils[2m > [22mloads current and adjacent gallery images including wrap-around[32m 1[2mms[22m[39m
+ [32m✓[39m src/features/details/previewPanelUtils.test.ts[2m > [22mpreviewPanelUtils[2m > [22mvalidates ini draft values[32m 0[2mms[22m[39m
+ [32m✓[39m src/features/details/previewPanelUtils.test.ts[2m > [22mpreviewPanelUtils[2m > [22mbuilds key bind sections with editable key/back and assignments[32m 1[2mms[22m[39m
+ [32m✓[39m src/features/details/previewPanelUtils.test.ts[2m > [22mpreviewPanelUtils[2m > [22mcreates write payload grouped by file and reports field errors[32m 0[2mms[22m[39m
+ [32m✓[39m src/features/details/previewPanelUtils.test.ts[2m > [22mpreviewPanelUtils[2m > [22mbuilds variable summaries with ranges and occurrences[32m 7[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould handle paste thumbnail flow when clipboard has image[32m 192[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould show unsaved modal when trying to change mod with unsaved editor changes[32m 26[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould display mod title and description from hook state[32m 16[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould toggle mod enabled state via checkbox[32m 31[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould show warning when trying to open folder without active path[32m 95[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould accept file input for thumbnail import[32m 7[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould discard editor changes when unsaved modal onDiscard is called[32m 19[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould save editor changes when unsaved modal onSave is called[32m 16[2mms[22m[39m
+ [32m✓[39m src/features/details/PreviewPanel.test.tsx[2m > [22mPreviewPanel[2m > [22mshould display error toast when open_in_explorer fails[32m 16[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+[2m   Start at [22m 17:40:31
+[2m   Duration [22m 1.56s[2m (transform 145ms, setup 172ms, import 506ms, tests 428ms, environment 948ms)[22m
+
