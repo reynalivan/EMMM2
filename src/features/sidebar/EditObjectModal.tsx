@@ -1,8 +1,19 @@
 import { useGameSchema } from '../../hooks/useObjects';
 import type { ObjectSummary, FilterDef } from '../../types/object';
 import { type ModFolder } from '../../hooks/useFolders';
-import { X, Upload, Image as ImageIcon } from 'lucide-react';
+import {
+  X,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Search,
+  ChevronDown,
+  CheckCircle,
+  Ban,
+  Sparkles,
+} from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useEditObjectForm } from './hooks/useEditObjectForm';
@@ -18,12 +29,40 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
   const { activeGame } = useActiveGame();
   const { data: gameSchema } = useGameSchema();
 
-  // Thumbnail state
-  // We keep this local as it's a UI-first state before commit
+  // Thumbnail state (UI only)
   const [selectedThumbnailPath, setSelectedThumbnailPath] = useState<string | null>(null);
+  const [thumbnailAction, setThumbnailAction] = useState<'keep' | 'update' | 'delete'>('keep');
 
-  // Pending DB sync entry — shown for confirmation before overwriting form fields
-  const [pendingSyncEntry, setPendingSyncEntry] = useState<DbEntryFull | null>(null);
+  // Tabs state: Manual vs Auto Sync
+  const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual');
+
+  // Reset state when object changes or modal opens
+  useEffect(() => {
+    if (open && object) {
+      setSelectedThumbnailPath(null);
+      setThumbnailAction('keep');
+      setActiveTab('manual');
+      setIsDbOpen(false); // Ensure closed on open
+      setDbSearch('');
+    }
+  }, [open, object?.id]); // Depend on object.id to detect switches
+
+  // Click outside handler for search overlay
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsDbOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Core Form Logic
   const {
@@ -37,12 +76,36 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
     isLoadingDetails,
     handleSubmit,
     isFolder,
-  } = useEditObjectForm(open, object, onClose, selectedThumbnailPath);
+    isObject,
+  } = useEditObjectForm(open, object, onClose, selectedThumbnailPath, thumbnailAction);
 
-  // MasterDB Sync Logic
+  // Original Name for Context & Suggestions
+  const originalName = object?.name || '';
+
+  // MasterDB Sync Logic (Include originalName for suggestions)
   const objectType = watch('object_type');
-  const { isSyncMode, setIsSyncMode, dbSearch, setDbSearch, isDbOpen, setIsDbOpen, dbOptions } =
-    useMasterDbSync(objectType);
+  const {
+    isSyncMode,
+    setIsSyncMode,
+    dbSearch,
+    setDbSearch,
+    isDbOpen,
+    setIsDbOpen,
+    dbOptions,
+    suggestions,
+    isLoading,
+    error,
+  } = useMasterDbSync(objectType, originalName);
+
+  // Update sync mode when tab changes
+  useEffect(() => {
+    // Sync mode activation
+    if (activeTab === 'auto') {
+      setIsSyncMode(true);
+    } else {
+      setIsSyncMode(false);
+    }
+  }, [activeTab, setIsSyncMode]);
 
   // Derive per-category filters from selected category
   const categoryFilters: FilterDef[] = useMemo(() => {
@@ -60,60 +123,57 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
     prevCategoryRef.current = objectType ?? '';
   }, [objectType, setValue]);
 
-  if (!open || !object) return null;
-
-  // Handler: user selects from dropdown — show confirmation instead of direct overwrite
-  const handleDbSelectPending = (entry: DbEntryFull) => {
+  // Handler: user selects from dropdown — immediately apply to form (Auto Sync)
+  const handleDbSelect = (entry: DbEntryFull) => {
     setDbSearch(entry.name);
     setIsDbOpen(false);
-    setPendingSyncEntry(entry);
-  };
 
-  // Handler: user confirms the pending sync entry — actually overwrite form fields
-  const handleConfirmSync = () => {
-    if (!pendingSyncEntry) return;
-    const entry = pendingSyncEntry;
-
+    // Auto-fill and lock
     setValue('name', entry.name);
 
-    // Auto-fill category
     if (entry.object_type) {
       setValue('object_type', entry.object_type);
     }
 
-    // Auto-fill metadata from DB entry
     if (entry.metadata) {
       const meta: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(entry.metadata)) {
+      Object.entries(entry.metadata).forEach(([k, v]) => {
         meta[k] = v;
-      }
+      });
       setValue('metadata', meta);
     }
 
-    // Auto-fill thumbnail from DB
     if (entry.thumbnail_path) {
       setSelectedThumbnailPath(entry.thumbnail_path);
+      setThumbnailAction('update');
     }
-
-    setPendingSyncEntry(null);
   };
 
-  // Handler: user cancels the pending sync
-  const handleCancelSync = () => {
-    setPendingSyncEntry(null);
-  };
-
-  // Derived thumbnail
-  // Casting is safe due to isFolder/isObject checks in hook, but here we just need proper access
+  // Derived thumbnail logic
   const existingThumbnail = isFolder
     ? (object as ModFolder).thumbnail_path
-    : (object as ObjectSummary).thumbnail_path;
-
-  const displayThumbnail = selectedThumbnailPath
-    ? `asset://${selectedThumbnailPath}`
-    : existingThumbnail
-      ? `asset://${existingThumbnail}`
+    : isObject
+      ? (object as ObjectSummary).thumbnail_path
       : null;
+
+  const displayThumbnail = useMemo(() => {
+    if (thumbnailAction === 'delete') return null;
+    if (thumbnailAction === 'update' && selectedThumbnailPath) {
+      try {
+        return convertFileSrc(selectedThumbnailPath);
+      } catch {
+        return `asset://${selectedThumbnailPath}`; // Fallback
+      }
+    }
+    if (thumbnailAction === 'keep' && existingThumbnail) {
+      try {
+        return convertFileSrc(existingThumbnail);
+      } catch {
+        return `asset://${existingThumbnail}`; // Fallback
+      }
+    }
+    return null;
+  }, [thumbnailAction, selectedThumbnailPath, existingThumbnail]);
 
   const handleThumbnailClick = async () => {
     try {
@@ -122,26 +182,38 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
       });
 
-      if (selected) {
-        setSelectedThumbnailPath(selected as string);
+      if (selected && typeof selected === 'string') {
+        setSelectedThumbnailPath(selected);
+        setThumbnailAction('update');
       }
     } catch (err) {
       console.error('Failed to select image', err);
     }
   };
 
+  const handleDeleteThumbnail = () => {
+    setThumbnailAction('delete');
+    setSelectedThumbnailPath(null);
+  };
+
+  if (!open || !object) return null;
+
   return (
     <div className="modal modal-open">
-      <div className="modal-box relative w-11/12 max-w-2xl">
+      <div className="modal-box relative w-11/12 max-w-2xl overflow-visible">
         <button
-          className="btn btn-sm btn-circle absolute right-2 top-2"
+          className="btn btn-sm btn-circle absolute right-2 top-2 z-[60]"
           onClick={onClose}
           aria-label="Close"
         >
           <X size={16} />
         </button>
 
-        <h3 className="font-bold text-lg mb-4">Edit Metadata</h3>
+        {/* Header with Context */}
+        <h3 className="font-bold text-lg mb-1">Edit Metadata</h3>
+        <p className="text-sm opacity-50 mb-4 truncate">
+          Original: <span className="font-mono">{originalName}</span>
+        </p>
 
         {isLoadingDetails ? (
           <div className="flex justify-center p-8">Loading details...</div>
@@ -162,172 +234,234 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
                     <ImageIcon size={48} className="opacity-20" />
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline w-full gap-2"
-                  onClick={handleThumbnailClick}
-                >
-                  <Upload size={14} />
-                  Change
-                </button>
-                {selectedThumbnailPath && (
+                <div className="flex gap-2 w-full">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline flex-1 gap-2"
+                    onClick={handleThumbnailClick}
+                    disabled={activeTab === 'auto'}
+                  >
+                    <Upload size={14} />
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline btn-error square px-2"
+                    onClick={handleDeleteThumbnail}
+                    disabled={activeTab === 'auto' || !displayThumbnail}
+                    title="Delete Thumbnail"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                {thumbnailAction === 'update' && (
                   <div className="text-xs opacity-50 truncate max-w-[128px]">Selected</div>
+                )}
+                {thumbnailAction === 'delete' && (
+                  <div className="text-xs text-error opacity-70">Will be deleted</div>
                 )}
               </div>
 
               {/* Right Col: Fields */}
               <div className="flex flex-col gap-3 w-full">
-                {/* Name & Sync Toggle */}
-                <div className="form-control w-full">
-                  <div className="flex justify-between items-center py-1">
-                    <label className="label-text font-medium">Name</label>
-                    {activeGame && (
-                      <label className="label cursor-pointer gap-2 p-0">
-                        <span className="label-text text-xs opacity-70">Sync from DB</span>
-                        <input
-                          type="checkbox"
-                          className="toggle toggle-xs toggle-primary"
-                          checked={isSyncMode}
-                          onChange={(e) => setIsSyncMode(e.target.checked)}
-                          disabled={!watch('object_type')}
-                        />
-                      </label>
+                {/* Tabs: Manual vs Auto Sync */}
+                <div role="tablist" className="tabs tabs-bordered w-full mb-2">
+                  <a
+                    role="tab"
+                    className={`tab ${activeTab === 'manual' ? 'tab-active font-bold border-b-2 border-primary' : ''}`}
+                    onClick={() => setActiveTab('manual')}
+                  >
+                    Manual
+                  </a>
+                  <a
+                    role="tab"
+                    className={`tab gap-2 ${activeTab === 'auto' ? 'tab-active font-bold border-b-2 border-primary' : ''}`}
+                    onClick={() => activeGame && setActiveTab('auto')}
+                    style={{
+                      opacity: activeGame ? 1 : 0.5,
+                      cursor: activeGame ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Auto Sync
+                    {suggestions.length > 0 && (
+                      <div className="badge badge-sm badge-secondary">{suggestions.length}</div>
                     )}
-                  </div>
+                  </a>
+                </div>
 
-                  {isSyncMode ? (
-                    <div className="dropdown w-full">
+                {/* Name & Search/Suggestions */}
+                <div className="form-control w-full relative">
+                  <label className="label py-1">
+                    <span className="label-text font-medium">Name</span>
+                  </label>
+
+                  {activeTab === 'manual' ? (
+                    <>
                       <input
                         type="text"
-                        placeholder="Search database..."
                         className={`input input-bordered w-full ${errors.name ? 'input-error' : ''}`}
-                        value={dbSearch}
-                        onChange={(e) => setDbSearch(e.target.value)}
-                        onFocus={() => setIsDbOpen(true)}
-                        onBlur={() => setTimeout(() => setIsDbOpen(false), 200)}
+                        {...register('name')}
                       />
-                      {isDbOpen && dbOptions.length > 0 && (
-                        <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-full max-h-60 overflow-y-auto block z-50 border border-base-300 top-full mt-1">
-                          {dbOptions.map((opt) => (
-                            <li key={opt.name}>
-                              <button
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault(); // Prevent blur
-                                  handleDbSelectPending(opt);
-                                }}
+                      {errors.name && (
+                        <span className="text-error text-xs mt-1">{errors.name.message}</span>
+                      )}
+                    </>
+                  ) : (
+                    // Auto Sync Mode: Read-Only Label + Suggestions + Manual Search Overlay
+                    <div className="flex flex-col gap-2">
+                      {/* Current Linked Value (Read-alike) */}
+                      <div className="relative w-full" ref={searchContainerRef}>
+                        <label
+                          tabIndex={0}
+                          className="input input-bordered w-full flex items-center gap-2 cursor-pointer bg-base-200/50 hover:bg-base-200 transition-colors"
+                          onClick={(e) => {
+                            e.preventDefault(); // Prevent double toggling if label behavior interferes
+                            setIsDbOpen(!isDbOpen);
+                          }}
+                        >
+                          <Search className="w-4 h-4 opacity-50" />
+                          <span className="flex-1 truncate">
+                            {dbSearch || 'Click to search database...'}
+                          </span>
+                          <ChevronDown className="w-4 h-4 opacity-50" />
+                        </label>
+
+                        {/* Floating Search Overlay - Standard Absolute Position */}
+                        {isDbOpen && (
+                          <div className="absolute top-full left-0 w-full mt-1 p-2 shadow-xl bg-base-100 rounded-box border border-base-300 z-[9999]">
+                            <input
+                              type="text"
+                              placeholder="Type to filter..."
+                              className="input input-sm input-bordered w-full mb-2"
+                              autoFocus
+                              value={dbSearch}
+                              onChange={(e) => setDbSearch(e.target.value)}
+                              onClick={(e) => e.stopPropagation()} // Prevent close on click
+                            />
+                            <div className="max-h-60 overflow-y-auto">
+                              {isLoading ? (
+                                <div className="p-4 text-center text-sm opacity-50">Loading...</div>
+                              ) : dbOptions.length > 0 ? (
+                                <ul className="menu menu-xs p-0 w-full">
+                                  {dbOptions.map((opt) => (
+                                    <li key={opt.name} className="w-full">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDbSelect(opt)}
+                                        className="flex items-center gap-3 py-2 w-full"
+                                      >
+                                        {opt.thumbnail_path ? (
+                                          <img
+                                            src={convertFileSrc(opt.thumbnail_path)}
+                                            className="w-8 h-8 rounded-md object-cover bg-base-300 flex-shrink-0"
+                                            alt=""
+                                          />
+                                        ) : (
+                                          <div className="w-8 h-8 rounded-md bg-base-300 flex items-center justify-center flex-shrink-0">
+                                            <ImageIcon size={14} className="opacity-30" />
+                                          </div>
+                                        )}
+                                        <div className="flex flex-col items-start overflow-hidden flex-1">
+                                          <span className="font-bold truncate w-full text-left">
+                                            {opt.name}
+                                          </span>
+                                          {opt.aliases && (
+                                            <span className="text-xs opacity-50 truncate w-full text-left">
+                                              {opt.aliases[0]}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <div className="p-4 text-center text-sm opacity-50">
+                                  {error ? 'Error loading DB' : 'No matches found'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Smart Suggestions Cards */}
+                      {suggestions.length > 0 && (
+                        <div className="flex flex-col gap-1 mt-1">
+                          <div className="flex items-center gap-1 text-xs font-bold opacity-60 px-1">
+                            <Sparkles size={12} className="text-secondary" />
+                            <span>Smart Suggestions</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {suggestions.map((sugg) => (
+                              <div
+                                key={sugg.name}
+                                className="flex items-center gap-2 p-2 border border-base-200 rounded-lg hover:border-primary/50 hover:bg-base-200/50 cursor-pointer transition-all"
+                                onClick={() => handleDbSelect(sugg)}
                               >
-                                {opt.name}
-                                {opt.aliases && opt.aliases.length > 0 && (
-                                  <span className="text-xs opacity-50 ml-2">
-                                    ({opt.aliases[0]})
-                                  </span>
+                                {sugg.thumbnail_path ? (
+                                  <img
+                                    src={convertFileSrc(sugg.thumbnail_path)}
+                                    className="w-8 h-8 rounded-md object-cover bg-base-300"
+                                    alt=""
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-md bg-base-300 flex items-center justify-center">
+                                    <ImageIcon size={14} className="opacity-30" />
+                                  </div>
                                 )}
-                                {opt.object_type && (
-                                  <span className="badge badge-xs badge-ghost ml-1">
-                                    {opt.object_type}
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="text-xs font-bold truncate">{sugg.name}</span>
+                                  <span className="text-[10px] opacity-50 truncate">
+                                    {(sugg.score * 100).toFixed(0)}% Match
                                   </span>
-                                )}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  ) : (
-                    <input
-                      type="text"
-                      className={`input input-bordered w-full ${errors.name ? 'input-error' : ''}`}
-                      {...register('name')}
-                    />
-                  )}
-                  {errors.name && (
-                    <span className="text-error text-xs mt-1">{errors.name.message}</span>
                   )}
                 </div>
 
-                {/* Sync Confirmation Card — shown when user picks from DB dropdown */}
-                {pendingSyncEntry && (
-                  <div className="rounded-xl bg-base-200/60 border border-primary/20 p-3 flex flex-col gap-2">
-                    <div className="text-xs font-semibold text-primary">
-                      Apply data from database?
-                    </div>
-                    <div className="flex gap-3 items-center">
-                      {pendingSyncEntry.thumbnail_path && (
-                        <div className="w-10 h-10 rounded-lg bg-base-300 overflow-hidden shrink-0">
-                          <img
-                            src={`asset://${pendingSyncEntry.thumbnail_path}`}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      )}
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className="text-sm font-medium truncate">
-                          {pendingSyncEntry.name}
-                        </span>
-                        <div className="flex gap-1 flex-wrap">
-                          {pendingSyncEntry.object_type && (
-                            <span className="badge badge-xs badge-primary badge-outline">
-                              {pendingSyncEntry.object_type}
-                            </span>
-                          )}
-                          {pendingSyncEntry.metadata &&
-                            Object.entries(pendingSyncEntry.metadata).map(([k, v]) => (
-                              <span key={k} className="badge badge-xs badge-ghost" title={k}>
-                                {String(v)}
-                              </span>
-                            ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 justify-end">
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-ghost"
-                        onClick={handleCancelSync}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-primary"
-                        onClick={handleConfirmSync}
-                      >
-                        Apply
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Category Dropdown */}
+                {/* Category Dropdown (Read-only in Sync Mode) */}
                 <div className="form-control w-full">
                   <label className="label py-1">
                     <span className="label-text font-medium">Category</span>
                   </label>
-                  <select
-                    className={`select select-bordered w-full ${errors.object_type ? 'select-error' : ''}`}
-                    {...register('object_type')}
-                  >
-                    <option value="">Select Category</option>
-                    {gameSchema?.categories.map((cat) => (
-                      <option key={cat.name} value={cat.name}>
-                        {cat.label ?? cat.name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.object_type && (
-                    <span className="text-error text-xs mt-1">{errors.object_type.message}</span>
+                  {activeTab === 'auto' ? (
+                    <div className="px-3 py-2 bg-base-200/50 rounded-lg border border-base-300 text-sm opacity-80 min-h-10 flex items-center">
+                      {gameSchema?.categories.find((c) => c.name === objectType)?.label ||
+                        objectType ||
+                        'None'}
+                    </div>
+                  ) : (
+                    <select
+                      className={`select select-bordered w-full ${errors.object_type ? 'select-error' : ''}`}
+                      {...register('object_type')}
+                    >
+                      <option value="">Select Category</option>
+                      {gameSchema?.categories.map((cat) => (
+                        <option key={cat.name} value={cat.name}>
+                          {cat.label ?? cat.name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </div>
 
-                {/* Dynamic Metadata Fields — per-category filters */}
+                {/* Dynamic Metadata Fields */}
                 {categoryFilters.map((filter) => (
                   <div key={filter.key} className="form-control w-full">
                     <label className="label py-1">
                       <span className="label-text">{filter.label}</span>
                     </label>
-                    {filter.options && filter.options.length > 0 ? (
+                    {activeTab === 'auto' ? (
+                      <div className="px-3 py-2 bg-base-200/50 rounded-lg border border-base-300 text-sm opacity-80 min-h-10 flex items-center">
+                        {(watch(`metadata.${filter.key}`) as string) || 'None'}
+                      </div>
+                    ) : filter.options && filter.options.length > 0 ? (
                       <select
                         className="select select-bordered w-full select-sm"
                         {...register(`metadata.${filter.key}`)}
@@ -348,21 +482,6 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
                     )}
                   </div>
                 ))}
-
-                {/* Safe Mode */}
-                <div className="form-control w-full mt-2">
-                  <label className="label cursor-pointer justify-start gap-4 border rounded-lg p-3 hover:bg-base-200 transition-colors">
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-success"
-                      {...register('is_safe')}
-                    />
-                    <div className="flex flex-col">
-                      <span className="label-text font-bold">Safe Mode (SFW)</span>
-                      <span className="label-text-alt opacity-70">Disable to mark as NSFW</span>
-                    </div>
-                  </label>
-                </div>
               </div>
             </div>
 

@@ -88,7 +88,10 @@ export default function ObjectListContent({
   return (
     <div className="flex-1 relative min-h-0">
       {/* Scroll container */}
-      <div ref={parentRef} className="absolute inset-0 overflow-auto px-2 py-1.5">
+      <div
+        ref={parentRef}
+        className="absolute inset-0 overflow-y-auto custom-scrollbar px-2 py-1.5"
+      >
         <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
           {rowVirtualizer.getVirtualItems().map((virtualItem) => {
             const item = flatObjectItems[virtualItem.index];
@@ -217,8 +220,8 @@ function StickyRow({
     <div
       className={`absolute left-0 right-0 z-10 px-2 cursor-pointer ${
         isTop
-          ? 'top-0 pt-1 border-b border-base-300/30'
-          : 'bottom-0 pb-1 border-t border-base-300/30 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]'
+          ? '-top-1 pt-1 border-b border-base-300/30'
+          : '-bottom-1 pb-1 border-t border-base-300/30 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]'
       }`}
       onClick={scrollToSelected}
     >

@@ -247,6 +247,19 @@ export function useUpdateModThumbnail() {
   });
 }
 
+/** Hook to delete a mod's thumbnail file. */
+export function useDeleteModThumbnail() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (folderPath: string) => invoke<void>('delete_mod_thumbnail', { folderPath }),
+    onSuccess: (_data, folderPath) => {
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(folderPath) });
+    },
+  });
+}
+
 /** Hook to paste a thumbnail from clipboard bytes. */
 export function usePasteThumbnail() {
   const queryClient = useQueryClient();

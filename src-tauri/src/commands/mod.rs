@@ -1,7 +1,7 @@
 pub mod app_cmds;
 pub mod collection_cmds;
-pub mod dup_scan_cmds;
 pub mod dup_resolve_cmds;
+pub mod dup_scan_cmds;
 pub mod epic5_cmds;
 pub mod folder_cmds;
 pub mod game_cmds;

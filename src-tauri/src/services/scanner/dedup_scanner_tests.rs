@@ -13,10 +13,12 @@ async fn setup_scan_db() -> sqlx::SqlitePool {
         .await
         .unwrap();
 
-    sqlx::query("CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL)")
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "CREATE TABLE duplicate_whitelist (
             id TEXT PRIMARY KEY,
@@ -224,13 +226,19 @@ async fn test_tc_9_1_02_structure_match_confidence_70_to_90() {
         .unwrap();
 
     assert_eq!(outcome.status, DedupScanStatus::Completed);
-    
+
     if let Some(group) = outcome.groups.iter().find(|g| g.members.len() == 2) {
-        assert!(group.confidence_score >= 70 && group.confidence_score <= 90,
-            "Structure match should have confidence 70-90%, got {}", group.confidence_score);
-        assert!(group.match_reason.to_lowercase().contains("structure") ||
-                group.match_reason.to_lowercase().contains("tree"),
-            "Match reason should mention structure, got: {}", group.match_reason);
+        assert!(
+            group.confidence_score >= 70 && group.confidence_score <= 90,
+            "Structure match should have confidence 70-90%, got {}",
+            group.confidence_score
+        );
+        assert!(
+            group.match_reason.to_lowercase().contains("structure")
+                || group.match_reason.to_lowercase().contains("tree"),
+            "Match reason should mention structure, got: {}",
+            group.match_reason
+        );
     }
 }
 
@@ -246,7 +254,7 @@ async fn test_tc_9_1_03_name_size_match_disabled_prefix_normalization() {
 
     fs::create_dir_all(&folder_a).unwrap();
     fs::create_dir_all(&folder_b).unwrap();
-    
+
     // Different content but similar sizes
     fs::write(folder_a.join("mod.ini"), ";version 1\n$swapvar=alpha\n").unwrap();
     fs::write(folder_b.join("mod.ini"), ";version 2\n$swapvar=beta__\n").unwrap();
@@ -273,15 +281,21 @@ async fn test_tc_9_1_03_name_size_match_disabled_prefix_normalization() {
         .unwrap();
 
     assert_eq!(outcome.status, DedupScanStatus::Completed);
-    
+
     // The DISABLED prefix normalization means these should be detected as potential duplicates
     if let Some(group) = outcome.groups.iter().find(|g| g.members.len() == 2) {
         // Algorithm may produce different scores based on content similarity
-        assert!(group.confidence_score >= 50,
-            "Name match after DISABLED normalization should produce some confidence, got {}", group.confidence_score);
-        assert!(group.match_reason.to_lowercase().contains("name") ||
-                group.match_reason.to_lowercase().contains("low confidence"),
-            "Match reason should mention name or low confidence, got: {}", group.match_reason);
+        assert!(
+            group.confidence_score >= 50,
+            "Name match after DISABLED normalization should produce some confidence, got {}",
+            group.confidence_score
+        );
+        assert!(
+            group.match_reason.to_lowercase().contains("name")
+                || group.match_reason.to_lowercase().contains("low confidence"),
+            "Match reason should mention name or low confidence, got: {}",
+            group.match_reason
+        );
     }
 }
 
@@ -298,7 +312,7 @@ async fn test_tc_9_3_02_cancel_scan_leaves_db_unchanged() {
         let folder = mods_root.join(format!("Mod{}", i));
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("mod.ini"), format!(";mod {}\n$var={}\n", i, i)).unwrap();
-        
+
         sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
             .bind(format!("mod-{}", i))
             .bind(game_id)
@@ -317,9 +331,12 @@ async fn test_tc_9_3_02_cancel_scan_leaves_db_unchanged() {
 
     // Verify scan was cancelled
     assert_eq!(outcome.status, DedupScanStatus::Cancelled);
-    
+
     // Verify no partial results persisted
-    assert!(outcome.groups.is_empty(), "Cancelled scan should not produce groups");
+    assert!(
+        outcome.groups.is_empty(),
+        "Cancelled scan should not produce groups"
+    );
 }
 
 // Covers: EC-9.01 (10 Copies of Same Mod)
@@ -336,7 +353,7 @@ async fn test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group() {
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("mod.ini"), ";identical\n$swapvar=999\n").unwrap();
         fs::write(folder.join("texture.dds"), b"identical-content").unwrap();
-        
+
         sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
             .bind(format!("mod-{}", i))
             .bind(game_id)
@@ -351,24 +368,32 @@ async fn test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group() {
         .unwrap();
 
     assert_eq!(outcome.status, DedupScanStatus::Completed);
-    
+
     // Should find groups (exact implementation may vary - could be 1 large group or multiple pairs)
-    assert!(!outcome.groups.is_empty(), "10 identical copies should produce duplicate groups");
-    
+    assert!(
+        !outcome.groups.is_empty(),
+        "10 identical copies should produce duplicate groups"
+    );
+
     // Count total unique members across all groups
     let mut all_member_ids: HashSet<String> = HashSet::new();
     for group in &outcome.groups {
         for member in &group.members {
             // Use mod_id if available, otherwise use folder_path as identifier
-            let identifier = member.mod_id.clone()
+            let identifier = member
+                .mod_id
+                .clone()
                 .unwrap_or_else(|| member.folder_path.clone());
             all_member_ids.insert(identifier);
         }
     }
-    
+
     // All 10 folders should be represented in the groups
-    assert!(all_member_ids.len() >= 9, 
-        "At least 9 of the 10 copies should be flagged as duplicates, got {}", all_member_ids.len());
+    assert!(
+        all_member_ids.len() >= 9,
+        "At least 9 of the 10 copies should be flagged as duplicates, got {}",
+        all_member_ids.len()
+    );
 }
 
 // Covers: EC-9.05 (Cancel Mid-Hash)
@@ -385,7 +410,7 @@ async fn test_ec_9_05_cancel_mid_hash_stops_cleanly() {
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("mod.ini"), format!(";mod {}\n", i).repeat(100)).unwrap();
         fs::write(folder.join("large.dds"), vec![i as u8; 1024 * 100]).unwrap(); // 100KB file
-        
+
         sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
             .bind(format!("mod-{}", i))
             .bind(game_id)
@@ -410,7 +435,8 @@ async fn test_ec_9_05_cancel_mid_hash_stops_cleanly() {
 
     // Should either complete or cancel cleanly - no panic/error
     assert!(
-        outcome.status == DedupScanStatus::Cancelled || outcome.status == DedupScanStatus::Completed,
+        outcome.status == DedupScanStatus::Cancelled
+            || outcome.status == DedupScanStatus::Completed,
         "Scan should complete or cancel cleanly without errors"
     );
 }
@@ -422,13 +448,13 @@ async fn test_di_9_02_blake3_hash_algorithm_is_used() {
     let game_id = "game-1";
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path();
-    
+
     let folder_a = mods_root.join("TestA");
     let folder_b = mods_root.join("TestB");
 
     fs::create_dir_all(&folder_a).unwrap();
     fs::create_dir_all(&folder_b).unwrap();
-    
+
     // Exact same content - should produce high confidence match
     let content = b"test-content-for-blake3-verification";
     fs::write(folder_a.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
@@ -456,16 +482,22 @@ async fn test_di_9_02_blake3_hash_algorithm_is_used() {
         .unwrap();
 
     assert_eq!(outcome.status, DedupScanStatus::Completed);
-    
+
     // Verify duplicate was detected (BLAKE3 should produce consistent hashes for identical content)
-    assert!(!outcome.groups.is_empty(), "Identical content should be detected as duplicates");
-    
+    assert!(
+        !outcome.groups.is_empty(),
+        "Identical content should be detected as duplicates"
+    );
+
     if let Some(group) = outcome.groups.iter().find(|g| g.members.len() == 2) {
         // With all files identical, should get high confidence (100% for exact match)
-        assert_eq!(group.confidence_score, 100,
-            "Complete file match should produce 100% confidence via BLAKE3, got {}", group.confidence_score);
+        assert_eq!(
+            group.confidence_score, 100,
+            "Complete file match should produce 100% confidence via BLAKE3, got {}",
+            group.confidence_score
+        );
     }
-    
+
     // NOTE: This test verifies BLAKE3 indirectly through behavior.
     // Direct verification would require exposing internal hash function or checking imports.
     // The fact that identical files produce deterministic high-confidence results

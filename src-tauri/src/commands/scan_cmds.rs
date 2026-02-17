@@ -389,12 +389,19 @@ pub async fn sync_database_cmd(
     let master_db = MasterDb::from_json(&db_json)?;
 
     // Resolve resource_dir for MasterDB thumbnail path resolution
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .ok();
+    let resource_dir = app.path().resource_dir().ok();
 
-    sync::sync_with_db(&pool, &game_id, &game_name, &game_type, mods, &master_db, resource_dir.as_deref(), Some(on_progress)).await
+    sync::sync_with_db(
+        &pool,
+        &game_id,
+        &game_name,
+        &game_type,
+        mods,
+        &master_db,
+        resource_dir.as_deref(),
+        Some(on_progress),
+    )
+    .await
 }
 
 /// Phase 1: Scan folders + run Deep Matcher, return preview without writing to DB.
@@ -420,7 +427,15 @@ pub async fn scan_preview_cmd(
     let master_db = MasterDb::from_json(&db_json)?;
     let resource_dir = app.path().resource_dir().ok();
 
-    sync::scan_preview(&pool, &game_id, mods, &master_db, resource_dir.as_deref(), Some(on_progress)).await
+    sync::scan_preview(
+        &pool,
+        &game_id,
+        mods,
+        &master_db,
+        resource_dir.as_deref(),
+        Some(on_progress),
+    )
+    .await
 }
 
 /// Phase 2: Commit user-confirmed scan results to DB.
@@ -441,7 +456,16 @@ pub async fn commit_scan_cmd(
 
     let resource_dir = app.path().resource_dir().ok();
 
-    sync::commit_scan_results(&pool, &game_id, &game_name, &game_type, &mods_path, items, resource_dir.as_deref()).await
+    sync::commit_scan_results(
+        &pool,
+        &game_id,
+        &game_name,
+        &game_type,
+        &mods_path,
+        items,
+        resource_dir.as_deref(),
+    )
+    .await
 }
 
 /// Bulk Auto-Organize mods.

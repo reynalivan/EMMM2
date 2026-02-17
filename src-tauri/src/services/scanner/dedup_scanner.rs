@@ -2,11 +2,11 @@ use crate::services::scanner::walker::{self, ModCandidate};
 use crate::types::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
 use rayon::prelude::*;
 use sqlx::Row;
+use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use sqlx::SqlitePool;
 
 #[path = "dedup_scanner_signals.rs"]
 mod dedup_scanner_signals;
@@ -151,7 +151,10 @@ fn apply_whitelist_filter(
         .collect()
 }
 
-async fn fetch_mod_id_map(db: &SqlitePool, game_id: &str) -> Result<HashMap<String, String>, String> {
+async fn fetch_mod_id_map(
+    db: &SqlitePool,
+    game_id: &str,
+) -> Result<HashMap<String, String>, String> {
     let rows = sqlx::query("SELECT id, folder_path FROM mods WHERE game_id = ?")
         .bind(game_id)
         .fetch_all(db)
@@ -176,22 +179,21 @@ async fn fetch_whitelist_pairs(
     db: &SqlitePool,
     game_id: &str,
 ) -> Result<HashSet<(String, String)>, String> {
-    let rows = sqlx::query(
-        "SELECT folder_a_id, folder_b_id FROM duplicate_whitelist WHERE game_id = ?",
-    )
-    .bind(game_id)
-    .fetch_all(db)
-    .await
-    .map_err(|error| format!("Failed to fetch duplicate whitelist pairs: {error}"))?;
+    let rows =
+        sqlx::query("SELECT folder_a_id, folder_b_id FROM duplicate_whitelist WHERE game_id = ?")
+            .bind(game_id)
+            .fetch_all(db)
+            .await
+            .map_err(|error| format!("Failed to fetch duplicate whitelist pairs: {error}"))?;
 
     let mut pairs = HashSet::new();
     for row in rows {
-        let folder_a_id: String = row.try_get("folder_a_id").map_err(|error| {
-            format!("Invalid duplicate_whitelist.folder_a_id value: {error}")
-        })?;
-        let folder_b_id: String = row.try_get("folder_b_id").map_err(|error| {
-            format!("Invalid duplicate_whitelist.folder_b_id value: {error}")
-        })?;
+        let folder_a_id: String = row
+            .try_get("folder_a_id")
+            .map_err(|error| format!("Invalid duplicate_whitelist.folder_a_id value: {error}"))?;
+        let folder_b_id: String = row
+            .try_get("folder_b_id")
+            .map_err(|error| format!("Invalid duplicate_whitelist.folder_b_id value: {error}"))?;
         pairs.insert(canonical_pair(&folder_a_id, &folder_b_id));
     }
 

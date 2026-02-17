@@ -207,7 +207,9 @@ async fn set_group_status(db: &SqlitePool, group_id: &str, status: &str) -> Resu
         .bind(group_id)
         .execute(db)
         .await
-        .map_err(|error| format!("Failed to update resolution status for group '{group_id}': {error}"))?;
+        .map_err(|error| {
+            format!("Failed to update resolution status for group '{group_id}': {error}")
+        })?;
 
     if result.rows_affected() == 0 {
         log::warn!(

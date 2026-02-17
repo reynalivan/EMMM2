@@ -64,6 +64,8 @@ export default function ResizableWorkspace({
       if (isResizing === 'left') {
         let newLeft = e.clientX - containerRect.left;
         if (newLeft < minCategoryWidth) newLeft = minCategoryWidth;
+        // Limit max width for sidebar
+        if (newLeft > 450) newLeft = 450;
         // Don't let it squish main content too much
         const rightWidth = isPreviewOpen ? widthsRef.current.right : 0;
         const maxLeft = containerRect.width - rightWidth - minMainWidth;

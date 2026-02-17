@@ -62,8 +62,6 @@ export default function ObjectList() {
     handleEnableAll,
     handleDisableAll,
     categoryNames,
-    safeMode,
-    setSafeMode,
     scanReview,
     handleCommitScan,
     handleCloseScanReview,
@@ -162,15 +160,6 @@ export default function ObjectList() {
           {`${objects.length} object${objects.length !== 1 ? 's' : ''}`}
         </span>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <span className="text-[10px] text-base-content/30">Safe</span>
-            <input
-              type="checkbox"
-              className="toggle toggle-success toggle-xs"
-              checked={safeMode}
-              onChange={() => setSafeMode(!safeMode)}
-            />
-          </label>
           {selectedObjectType && (
             <button
               className="text-[10px] text-primary/60 hover:text-primary transition-colors"

@@ -27,10 +27,12 @@ async fn setup_context() -> TestContext {
         .await
         .unwrap();
 
-    sqlx::query("CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL)")
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "CREATE TABLE dedup_groups (
             id TEXT PRIMARY KEY,
@@ -220,11 +222,12 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     .unwrap();
     assert_eq!(ignored_count, 1);
 
-    let status: String = sqlx::query_scalar("SELECT resolution_status FROM dedup_groups WHERE id = ?")
-        .bind("group-3")
-        .fetch_one(&context.pool)
-        .await
-        .unwrap();
+    let status: String =
+        sqlx::query_scalar("SELECT resolution_status FROM dedup_groups WHERE id = ?")
+            .bind("group-3")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
     assert_eq!(status, "ignored");
 }
 
@@ -256,12 +259,10 @@ async fn test_nc_9_2_03_lock_contention_returns_clear_error() {
     .await;
 
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_ascii_lowercase()
-            .contains("operation in progress")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_ascii_lowercase()
+        .contains("operation in progress"));
 }
 
 // Covers: TC-9.2-03 (Bulk Resolution) + TC-9.3-01 (Progress Events)
@@ -275,7 +276,7 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
     for i in 1..=10 {
         let folder_a = context.mods_root.join(format!("Original{}", i));
         let folder_b = context.mods_root.join(format!("Duplicate{}", i));
-        
+
         fs::create_dir_all(&folder_a).unwrap();
         fs::create_dir_all(&folder_b).unwrap();
         fs::write(folder_a.join("mod.ini"), format!("original {}", i)).unwrap();
@@ -340,17 +341,25 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
 
     // Verify progress events
     assert_eq!(progress_events.len(), 10, "Should emit 10 progress events");
-    
+
     // Verify monotonic progress
     for (index, event) in progress_events.iter().enumerate() {
-        assert_eq!(event.current, index + 1, "Progress current should be sequential");
+        assert_eq!(
+            event.current,
+            index + 1,
+            "Progress current should be sequential"
+        );
         assert_eq!(event.total, 10, "Progress total should be consistent");
     }
 
     // Verify all duplicates were deleted
     for i in 1..=10 {
         let folder_b = context.mods_root.join(format!("Duplicate{}", i));
-        assert!(!folder_b.exists(), "Duplicate{} should be moved to trash", i);
+        assert!(
+            !folder_b.exists(),
+            "Duplicate{} should be moved to trash",
+            i
+        );
     }
 }
 
@@ -365,7 +374,7 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
     for i in 1..=3 {
         let folder_a = context.mods_root.join(format!("OriginalLock{}", i));
         let folder_b = context.mods_root.join(format!("DuplicateLock{}", i));
-        
+
         fs::create_dir_all(&folder_a).unwrap();
         fs::create_dir_all(&folder_b).unwrap();
         fs::write(folder_a.join("mod.ini"), format!("a {}", i)).unwrap();
@@ -407,7 +416,7 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
     // Simulate file lock by making one folder read-only (best-effort simulation)
     // Note: True file locking is OS-specific and hard to reliably test
     // This test verifies graceful error handling exists
-    
+
     let lock = OperationLock::new();
     let suppressor = Arc::new(AtomicBool::new(false));
     let summary = resolve_batch(
@@ -425,7 +434,10 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
     // Should complete without panicking even if some operations fail
     assert_eq!(summary.total, 3);
     // At least some should succeed (exact count depends on OS/permissions)
-    assert!(summary.successful + summary.failed == 3,
+    assert!(
+        summary.successful + summary.failed == 3,
         "All operations should be accounted for: {} successful + {} failed != 3",
-        summary.successful, summary.failed);
+        summary.successful,
+        summary.failed
+    );
 }

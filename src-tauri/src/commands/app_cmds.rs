@@ -74,7 +74,7 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
     // But since "open" crate is standard for cross-platform, lets use "open" crate if available.
     // If not, use standard Command "explorer" (windows only).
     // The user rules say "The USER's OS version is windows."
-    
+
     std::process::Command::new("explorer")
         .arg(log_dir)
         .spawn()

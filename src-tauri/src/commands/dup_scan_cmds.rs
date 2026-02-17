@@ -233,7 +233,9 @@ pub async fn dup_scan_cancel(state: State<'_, DupScanState>) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub async fn dup_scan_get_report(state: State<'_, DupScanState>) -> Result<Option<DupScanReport>, String> {
+pub async fn dup_scan_get_report(
+    state: State<'_, DupScanState>,
+) -> Result<Option<DupScanReport>, String> {
     Ok(state.load_report())
 }
 

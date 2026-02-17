@@ -1,6 +1,6 @@
 use crate::services::config::{pin_guard::PinVerifyStatus, AppSettings, ConfigService};
-use tauri::State;
 use std::time::{Duration, SystemTime};
+use tauri::State;
 
 #[tauri::command]
 pub async fn get_settings(state: State<'_, ConfigService>) -> Result<AppSettings, String> {
@@ -21,17 +21,26 @@ pub async fn set_safe_mode_pin(pin: String, state: State<'_, ConfigService>) -> 
 }
 
 #[tauri::command]
-pub async fn verify_pin(pin: String, state: State<'_, ConfigService>) -> Result<PinVerifyStatus, String> {
+pub async fn verify_pin(
+    pin: String,
+    state: State<'_, ConfigService>,
+) -> Result<PinVerifyStatus, String> {
     Ok(state.verify_pin_status(&pin))
 }
 
 #[tauri::command]
-pub async fn set_active_game(game_id: Option<String>, state: State<'_, ConfigService>) -> Result<(), String> {
+pub async fn set_active_game(
+    game_id: Option<String>,
+    state: State<'_, ConfigService>,
+) -> Result<(), String> {
     state.set_active_game(game_id)
 }
 
 #[tauri::command]
-pub async fn set_safe_mode_enabled(enabled: bool, state: State<'_, ConfigService>) -> Result<(), String> {
+pub async fn set_safe_mode_enabled(
+    enabled: bool,
+    state: State<'_, ConfigService>,
+) -> Result<(), String> {
     state.set_safe_mode_enabled(enabled)
 }
 
@@ -41,8 +50,8 @@ pub async fn run_maintenance(
     pool: State<'_, sqlx::SqlitePool>,
 ) -> Result<String, String> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
-    use tauri::Manager;
     use sqlx::Row;
+    use tauri::Manager;
 
     // 1. Vacuum DB (Optimize storage)
     sqlx::query("VACUUM")
@@ -52,18 +61,16 @@ pub async fn run_maintenance(
 
     // 2. Prune Thumbnails
     // Get all valid image paths from DB
-    let rows = sqlx::query("SELECT DISTINCT thumbnail_path FROM mods WHERE thumbnail_path IS NOT NULL")
-        .fetch_all(pool.inner())
-        .await
-        .map_err(|e| format!("Failed to fetch thumbnails: {}", e))?;
+    let rows =
+        sqlx::query("SELECT DISTINCT thumbnail_path FROM mods WHERE thumbnail_path IS NOT NULL")
+            .fetch_all(pool.inner())
+            .await
+            .map_err(|e| format!("Failed to fetch thumbnails: {}", e))?;
 
-    let valid_paths: Vec<String> = rows
-        .iter()
-        .map(|r| r.get("thumbnail_path"))
-        .collect();
+    let valid_paths: Vec<String> = rows.iter().map(|r| r.get("thumbnail_path")).collect();
 
-    let pruned_count = ThumbnailCache::prune_orphans(&valid_paths)
-        .map_err(|e| format!("Prune failed: {}", e))?;
+    let pruned_count =
+        ThumbnailCache::prune_orphans(&valid_paths).map_err(|e| format!("Prune failed: {}", e))?;
 
     // 3. Remove orphaned collection_items rows
     let orphan_rows = sqlx::query(

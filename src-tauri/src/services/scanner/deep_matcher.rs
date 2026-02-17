@@ -522,7 +522,9 @@ mod tests {
                     CustomSkin {
                         name: "Gunnhildr's Heritage".to_string(),
                         aliases: vec!["JeanCN".to_string(), "Jean2".to_string()],
-                        thumbnail_skin_path: Some("assets/thumbnails/gimi/skin/jean_cn.png".to_string()),
+                        thumbnail_skin_path: Some(
+                            "assets/thumbnails/gimi/skin/jean_cn.png".to_string(),
+                        ),
                         rarity: Some("5".to_string()),
                     },
                     CustomSkin {
@@ -687,7 +689,10 @@ mod tests {
 
         assert_eq!(result.object_name, "Jean");
         assert_eq!(result.level, MatchLevel::L1Name);
-        assert_eq!(result.detected_skin, Some("Gunnhildr's Heritage".to_string()));
+        assert_eq!(
+            result.detected_skin,
+            Some("Gunnhildr's Heritage".to_string())
+        );
         assert_eq!(result.skin_folder_name, Some("JeanCN".to_string()));
     }
 
@@ -699,7 +704,10 @@ mod tests {
         let result = match_folder(&c, &db, &empty_content());
 
         assert_eq!(result.object_name, "Jean");
-        assert_eq!(result.detected_skin, Some("Sea Breeze Dandelion".to_string()));
+        assert_eq!(
+            result.detected_skin,
+            Some("Sea Breeze Dandelion".to_string())
+        );
         assert_eq!(result.skin_folder_name, Some("JeanSea".to_string()));
     }
 

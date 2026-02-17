@@ -121,7 +121,7 @@ export function useObjectListVirtualizer({
 
   // Virtualizer — updated row heights for polish
   const totalItems = flatObjectItems.length;
-  const rowHeight = isMobile ? 64 : 52;
+  const rowHeight = isMobile ? 82 : 70;
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({

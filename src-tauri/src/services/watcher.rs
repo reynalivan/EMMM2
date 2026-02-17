@@ -59,7 +59,6 @@ impl Default for WatcherState {
     }
 }
 
-
 /// RAII Guard for watcher suppression.
 /// Sets suppression to TRUE on creation, and FALSE on drop.
 pub struct SuppressionGuard {

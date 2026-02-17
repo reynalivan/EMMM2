@@ -101,9 +101,7 @@ impl ThumbnailCache {
     fn check_folder_l1(folder_path: &str) -> Option<String> {
         let mut cache = Self::get_instance().lock().unwrap();
         if let Some(entry) = cache.folder_cache.get(folder_path) {
-            if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS
-                && entry.webp_path.exists()
-            {
+            if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists() {
                 return Some(entry.webp_path.to_string_lossy().to_string());
             }
             cache.folder_cache.pop(folder_path);
@@ -131,17 +129,17 @@ impl ThumbnailCache {
             e
         })?;
 
-        debug!(
-            "[Thumbnail] Resolved {:?} → {:?}",
-            folder_path, webp_path
-        );
+        debug!("[Thumbnail] Resolved {:?} → {:?}", folder_path, webp_path);
 
         // Insert into folder-keyed L1
         {
             let mut cache = Self::get_instance().lock().unwrap();
             cache.folder_cache.put(
                 folder_key.to_string(),
-                CachedEntry { webp_path: webp_path.clone(), cached_at: Instant::now() },
+                CachedEntry {
+                    webp_path: webp_path.clone(),
+                    cached_at: Instant::now(),
+                },
             );
         }
 
@@ -164,7 +162,9 @@ impl ThumbnailCache {
         cache.image_cache.pop(&key);
         // Also clear parent folder so the grid picks up changes
         if let Some(parent) = original_path.parent() {
-            cache.folder_cache.pop(&parent.to_string_lossy().to_string());
+            cache
+                .folder_cache
+                .pop(&parent.to_string_lossy().to_string());
         }
     }
 
@@ -176,8 +176,7 @@ impl ThumbnailCache {
         {
             let mut cache = Self::get_instance().lock().unwrap();
             if let Some(entry) = cache.image_cache.get(&key) {
-                if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS
-                    && entry.webp_path.exists()
+                if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists()
                 {
                     return Ok(entry.webp_path.clone());
                 }
@@ -192,7 +191,10 @@ impl ThumbnailCache {
             let mut cache = Self::get_instance().lock().unwrap();
             cache.image_cache.put(
                 key,
-                CachedEntry { webp_path: webp_path.clone(), cached_at: Instant::now() },
+                CachedEntry {
+                    webp_path: webp_path.clone(),
+                    cached_at: Instant::now(),
+                },
             );
         }
 
@@ -221,8 +223,7 @@ impl ThumbnailCache {
         }
 
         // Generate: CatmullRom 256×256
-        let img = image::open(original_path)
-            .map_err(|e| format!("Failed to open image: {}", e))?;
+        let img = image::open(original_path).map_err(|e| format!("Failed to open image: {}", e))?;
         let resized = img.resize(THUMB_SIZE, THUMB_SIZE, FilterType::CatmullRom);
 
         let mut bytes: Vec<u8> = Vec::new();
@@ -230,12 +231,10 @@ impl ThumbnailCache {
             .write_to(&mut Cursor::new(&mut bytes), ImageFormat::WebP)
             .map_err(|e| format!("Failed to encode WebP: {}", e))?;
 
-        fs::write(&cached_path, &bytes)
-            .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
+        fs::write(&cached_path, &bytes).map_err(|e| format!("Failed to save thumbnail: {}", e))?;
 
         Ok(cached_path)
     }
-
 
     fn validate_mtime(original: &Path, cached: &Path) -> Result<bool, String> {
         let meta_orig = fs::metadata(original).map_err(|e| e.to_string())?;
@@ -253,8 +252,8 @@ impl ThumbnailCache {
 
         let mut keep_hashes = std::collections::HashSet::new();
         for path in valid_paths {
-             let hash = blake3::hash(path.as_bytes()).to_string();
-             keep_hashes.insert(hash);
+            let hash = blake3::hash(path.as_bytes()).to_string();
+            keep_hashes.insert(hash);
         }
 
         let mut deleted_count = 0;
@@ -262,15 +261,16 @@ impl ThumbnailCache {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() { continue; }
-            
+            if !path.is_file() {
+                continue;
+            }
+
             // Check if it's a webp file
             if path.extension().is_some_and(|e| e == "webp") {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     // It's a hash.webp. If hash not in keep_hashes, delete.
-                    if !keep_hashes.contains(stem) 
-                        && fs::remove_file(&path).is_ok() {
-                             deleted_count += 1;
+                    if !keep_hashes.contains(stem) && fs::remove_file(&path).is_ok() {
+                        deleted_count += 1;
                     }
                 }
             }

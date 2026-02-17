@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useModFolders, useToggleMod } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
@@ -89,7 +89,7 @@ export function usePreviewPanelState() {
     [allKeyBindFields, draftByField, initialByField],
   );
 
-  const images = previewImagesQuery.data ?? [];
+  const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
 
   const {
     titleDraft,
@@ -128,7 +128,7 @@ export function usePreviewPanelState() {
           mobileActivePane: 'details',
         });
       }
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+
       setPendingTransition({ kind: 'mod', path: externalSelectedPath });
       setShowUnsavedModal(true);
       return;
@@ -138,6 +138,7 @@ export function usePreviewPanelState() {
   }, [externalSelectedPath, activePath, hasUnsavedChanges]);
 
   // Reset image index when active path or image count changes
+  // Reset image index when active path or image count changes
   const [prevActivePathForImg, setPrevActivePathForImg] = useState(activePath);
   const [prevImgLen, setPrevImgLen] = useState(images.length);
   if (activePath !== prevActivePathForImg || images.length !== prevImgLen) {
@@ -146,9 +147,12 @@ export function usePreviewPanelState() {
     setCurrentImageIndex(0);
   }
 
-  const [prevAllKeyBindFields, setPrevAllKeyBindFields] = useState(allKeyBindFields);
-  if (allKeyBindFields !== prevAllKeyBindFields) {
-    setPrevAllKeyBindFields(allKeyBindFields);
+  // Stable identity for allKeyBindFields via JSON key
+  const fieldIds = useMemo(() => allKeyBindFields.map((f) => f.id).join('\0'), [allKeyBindFields]);
+  const [prevFieldIds, setPrevFieldIds] = useState(fieldIds);
+
+  if (fieldIds !== prevFieldIds) {
+    setPrevFieldIds(fieldIds);
     if (!hasUnsavedEditorChanges) {
       const nextInitialMap = toFieldValueMap(allKeyBindFields);
       setInitialByField(nextInitialMap);
@@ -157,9 +161,12 @@ export function usePreviewPanelState() {
     }
   }
 
-  const [prevKeyBindSections, setPrevKeyBindSections] = useState(keyBindSections);
-  if (keyBindSections !== prevKeyBindSections) {
-    setPrevKeyBindSections(keyBindSections);
+  // Stable identity for keyBindSections via JSON key
+  const sectionIds = useMemo(() => keyBindSections.map((s) => s.id).join('\0'), [keyBindSections]);
+  const [prevSectionIds, setPrevSectionIds] = useState(sectionIds);
+
+  if (sectionIds !== prevSectionIds) {
+    setPrevSectionIds(sectionIds);
     const validIds = new Set(keyBindSections.map((section) => section.id));
     const next = new Set(Array.from(openSectionIds).filter((id) => validIds.has(id)));
     if (next.size === 0 && keyBindSections[0]) {

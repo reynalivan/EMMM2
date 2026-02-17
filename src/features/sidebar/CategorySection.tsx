@@ -20,37 +20,19 @@ export default function CategorySection({
 }: CategorySectionProps) {
   return (
     <div
-      role="button"
-      tabIndex={0}
-      className={`flex items-center gap-2 px-3 py-1 cursor-pointer select-none group transition-colors duration-150
-        ${isSelected ? 'text-primary' : 'text-base-content/40 hover:text-base-content/60'}`}
+      className={`flex items-center gap-2 px-3 py-1 mt-2 mb-1 select-none cursor-pointer hover:bg-base-content/5 transition-colors ${isSelected ? 'bg-base-content/10' : ''}`}
       onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
     >
-      {/* Left line */}
-      <div
-        className={`flex-1 h-px transition-colors ${isSelected ? 'bg-primary/30' : 'bg-base-content/10 group-hover:bg-base-content/15'}`}
-      />
-
       {/* Label + count */}
-      <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap">
+      <span
+        className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-primary' : 'text-base-content/40'}`}
+      >
         {category.label ?? category.name}
       </span>
-      <span
-        className={`text-[10px] tabular-nums font-bold ${isSelected ? 'text-primary/70' : 'text-base-content/25'}`}
-      >
-        {count}
-      </span>
+      <span className="text-[10px] tabular-nums font-bold text-base-content/25">{count}</span>
 
       {/* Right line */}
-      <div
-        className={`flex-1 h-px transition-colors ${isSelected ? 'bg-primary/30' : 'bg-base-content/10 group-hover:bg-base-content/15'}`}
-      />
+      <div className={`flex-1 h-px ${isSelected ? 'bg-primary/20' : 'bg-base-content/5'}`} />
     </div>
   );
 }

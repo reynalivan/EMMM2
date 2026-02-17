@@ -62,16 +62,14 @@ async fn ensure_game_exists(
     game_type: &str,
     mods_path: &str,
 ) -> Result<(), String> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO games (id, name, game_type, path) VALUES (?, ?, ?, ?)"
-    )
-    .bind(game_id)
-    .bind(game_name)
-    .bind(game_type)
-    .bind(mods_path)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
+    sqlx::query("INSERT OR IGNORE INTO games (id, name, game_type, path) VALUES (?, ?, ?, ?)")
+        .bind(game_id)
+        .bind(game_name)
+        .bind(game_type)
+        .bind(mods_path)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
     Ok(())
 }
 
@@ -88,7 +86,9 @@ pub async fn scan_preview(
     let total = candidates.len();
 
     if let Some(channel) = &on_progress {
-        let _ = channel.send(types::ScanEvent::Started { total_folders: total });
+        let _ = channel.send(types::ScanEvent::Started {
+            total_folders: total,
+        });
     }
 
     let mut items = Vec::with_capacity(total);
@@ -104,20 +104,22 @@ pub async fn scan_preview(
         let folder_path_str = candidate.path.to_string_lossy().to_string();
 
         // Check if already in DB
-        let existing = sqlx::query(
-            "SELECT id, object_id FROM mods WHERE folder_path = ? AND game_id = ?"
-        )
-        .bind(&folder_path_str)
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let existing =
+            sqlx::query("SELECT id, object_id FROM mods WHERE folder_path = ? AND game_id = ?")
+                .bind(&folder_path_str)
+                .bind(game_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
 
         let already_in_db = existing.is_some();
         // Verify that the mod's object_id points to an actual existing object
         // (prevents stale references from auto-skipping re-scan)
         let already_matched = if let Some(ref row) = existing {
-            if let Some(obj_id) = row.try_get::<Option<String>, _>("object_id").unwrap_or(None) {
+            if let Some(obj_id) = row
+                .try_get::<Option<String>, _>("object_id")
+                .unwrap_or(None)
+            {
                 let obj_exists = sqlx::query("SELECT 1 FROM objects WHERE id = ?")
                     .bind(&obj_id)
                     .fetch_optional(pool)
@@ -141,22 +143,35 @@ pub async fn scan_preview(
                     Some(match_result.object_name.clone()),
                     types::match_level_label(&match_result.level).to_string(),
                     types::confidence_label(&match_result.level).to_string(),
-                    if match_result.detail.is_empty() { None } else { Some(match_result.detail.clone()) },
+                    if match_result.detail.is_empty() {
+                        None
+                    } else {
+                        Some(match_result.detail.clone())
+                    },
                     match_result.detected_skin.clone(),
                     Some(match_result.object_type.clone()),
                 )
             } else {
-                (None, "Unmatched".to_string(), "None".to_string(), None, None, Some("Other".to_string()))
+                (
+                    None,
+                    "Unmatched".to_string(),
+                    "None".to_string(),
+                    None,
+                    None,
+                    Some("Other".to_string()),
+                )
             };
 
         // Resolve thumbnail + tags + metadata from MasterDB
-        let db_entry = matched_object.as_ref().and_then(|name| {
-            master_db.entries.iter().find(|e| &e.name == name)
-        });
+        let db_entry = matched_object
+            .as_ref()
+            .and_then(|name| master_db.entries.iter().find(|e| &e.name == name));
 
         let db_thumbnail = db_entry.and_then(|entry| {
             let rel = if let Some(ref skin_name) = detected_skin {
-                entry.custom_skins.iter()
+                entry
+                    .custom_skins
+                    .iter()
                     .find(|s| &s.name == skin_name)
                     .and_then(|s| s.thumbnail_skin_path.clone())
                     .or_else(|| entry.thumbnail_path.clone())
@@ -166,13 +181,19 @@ pub async fn scan_preview(
             rel.and_then(|r| {
                 if let Some(res_dir) = resource_dir {
                     let abs = res_dir.join(&r);
-                    if abs.exists() { Some(abs.to_string_lossy().to_string()) } else { None }
-                } else { Some(r) }
+                    if abs.exists() {
+                        Some(abs.to_string_lossy().to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(r)
+                }
             })
         });
 
-        let tags_json = db_entry
-            .map(|e| serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".to_string()));
+        let tags_json =
+            db_entry.map(|e| serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".to_string()));
         let metadata_json = db_entry
             .and_then(|e| e.metadata.as_ref())
             .map(|m| serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()));
@@ -244,11 +265,15 @@ pub async fn commit_scan_results(
             continue;
         }
 
-        let current_status = if item.is_disabled { "DISABLED" } else { "ENABLED" };
+        let current_status = if item.is_disabled {
+            "DISABLED"
+        } else {
+            "ENABLED"
+        };
 
         // Check if mod exists
         let existing = sqlx::query(
-            "SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?"
+            "SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?",
         )
         .bind(&item.folder_path)
         .bind(game_id)
@@ -298,9 +323,16 @@ pub async fn commit_scan_results(
             let meta = item.metadata_json.as_deref().unwrap_or("{}");
 
             let object_id = ensure_object_exists(
-                &mut tx, game_id, obj_name, obj_type,
-                db_thumb, tags, meta, &mut new_objects_count,
-            ).await?;
+                &mut tx,
+                game_id,
+                obj_name,
+                obj_type,
+                db_thumb,
+                tags,
+                meta,
+                &mut new_objects_count,
+            )
+            .await?;
 
             sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
                 .bind(&object_id)
@@ -312,9 +344,16 @@ pub async fn commit_scan_results(
         } else {
             // Unmatched folder → auto-create "Other" object using display name
             let object_id = ensure_object_exists(
-                &mut tx, game_id, &item.display_name, "Other",
-                None, "[]", "{}", &mut new_objects_count,
-            ).await?;
+                &mut tx,
+                game_id,
+                &item.display_name,
+                "Other",
+                None,
+                "[]",
+                "{}",
+                &mut new_objects_count,
+            )
+            .await?;
 
             sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
                 .bind(&object_id)
@@ -384,7 +423,14 @@ pub async fn sync_with_db(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 2a. Ensure game record exists (fixes FK constraint)
-    ensure_game_exists(&mut tx, game_id, game_name, game_type, &mods_path.to_string_lossy()).await?;
+    ensure_game_exists(
+        &mut tx,
+        game_id,
+        game_name,
+        game_type,
+        &mods_path.to_string_lossy(),
+    )
+    .await?;
 
     let mut new_mods_count = 0;
     let mut updated_mods_count = 0;
@@ -616,12 +662,14 @@ async fn ensure_object_exists(
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
     // Check if object exists by name within game
-    let existing = sqlx::query("SELECT id, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND name = ?")
-        .bind(game_id)
-        .bind(obj_name)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let existing = sqlx::query(
+        "SELECT id, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND name = ?",
+    )
+    .bind(game_id)
+    .bind(obj_name)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
 
     if let Some(row) = existing {
         let id: String = row.try_get("id").map_err(|e| e.to_string())?;

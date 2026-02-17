@@ -68,154 +68,169 @@ export default function FilterPanel({
   }, [expandedFilter, handleClickOutside]);
 
   return (
-    <div ref={panelRef} className="px-2 py-1.5 border-b border-base-300/20 space-y-1.5">
-      {/* Row 1: Category chips */}
-      {categories.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          <button
-            className={`btn btn-xs rounded-full transition-all duration-150 ${
-              !selectedCategory
-                ? 'btn-primary'
-                : 'btn-ghost border border-base-300/20 opacity-60 hover:opacity-100'
-            }`}
-            onClick={() => onSelectCategory(null)}
-          >
-            All
-          </button>
-          {categories.map((cat) => (
+    <div ref={panelRef} className="px-3 py-2 border-b border-base-300/20 space-y-3">
+      {/* Section 1: Sort */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] uppercase font-bold text-base-content/30 tracking-wider">
+          Sort
+        </span>
+        <div className="flex items-center gap-1">
+          {SORT_OPTIONS.map((opt) => (
             <button
-              key={cat.name}
-              className={`btn btn-xs rounded-full transition-all duration-150 ${
-                selectedCategory === cat.name
-                  ? 'btn-primary'
-                  : 'btn-ghost border border-base-300/20 opacity-60 hover:opacity-100'
+              key={opt.value}
+              className={`btn btn-xs rounded-md transition-all duration-150 ${
+                sortBy === opt.value
+                  ? 'btn-accent text-accent-content'
+                  : 'btn-ghost border border-base-300/20 opacity-50 hover:opacity-100'
               }`}
-              onClick={() => onSelectCategory(selectedCategory === cat.name ? null : cat.name)}
+              onClick={() => onSortChange(opt.value)}
             >
-              {cat.label ?? cat.name}
+              {opt.label}
             </button>
           ))}
         </div>
-      )}
-
-      {/* Row 2: Sort + Status chips */}
-      <div className="flex items-center gap-1 flex-wrap">
-        {/* Sort chips */}
-        {SORT_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            className={`btn btn-xs rounded-full transition-all duration-150 ${
-              sortBy === opt.value
-                ? 'btn-accent btn-outline'
-                : 'btn-ghost border border-base-300/20 opacity-50 hover:opacity-100'
-            }`}
-            onClick={() => onSortChange(opt.value)}
-          >
-            {opt.label}
-          </button>
-        ))}
-
-        <div className="w-px h-4 bg-base-content/10 mx-0.5" />
-
-        {/* Status chips */}
-        {(['all', 'enabled', 'disabled'] as const).map((status) => (
-          <button
-            key={status}
-            className={`btn btn-xs rounded-full transition-all duration-150 ${
-              statusFilter === status
-                ? status === 'enabled'
-                  ? 'btn-success text-success-content'
-                  : status === 'disabled'
-                    ? 'btn-warning text-warning-content'
-                    : 'btn-neutral text-neutral-content'
-                : 'btn-ghost opacity-50 hover:opacity-100'
-            }`}
-            onClick={() => onStatusFilterChange(status)}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        ))}
       </div>
 
-      {/* Row 3: Metadata filter chips (Element, Weapon, Rarity, Gender) */}
-      {filters.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {filters.map((filter) => {
-            const isExpanded = expandedFilter === filter.key;
-            const selected = activeFilters[filter.key] ?? [];
+      {/* Section 2: Filter */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase font-bold text-base-content/30 tracking-wider">
+            Filter
+          </span>
 
-            return (
-              <div key={filter.key} className="relative">
-                <button
-                  className={`btn btn-xs rounded-full gap-1 transition-all duration-150 ${
-                    selected.length > 0
-                      ? 'btn-primary'
-                      : 'btn-ghost border border-base-300/30 opacity-70 hover:opacity-100'
-                  }`}
-                  onClick={() => setExpandedFilter(isExpanded ? null : filter.key)}
-                >
-                  <span className="text-[11px]">{filter.label}</span>
-                  {selected.length > 0 && (
-                    <span className="badge badge-xs bg-base-100/20 text-inherit border-0">
-                      {selected.length}
-                    </span>
-                  )}
-                </button>
-
-                {/* Dropdown options */}
-                {isExpanded && (
-                  <div className="absolute top-full left-0 mt-1 z-50 p-1.5 rounded-lg bg-base-100/95 backdrop-blur-xl border border-white/10 shadow-xl min-w-40 max-h-52 overflow-y-auto">
-                    {selected.length > 0 && (
-                      <button
-                        className="w-full text-left text-[10px] text-error/70 hover:text-error px-2 py-1 mb-0.5 transition-colors flex items-center gap-1"
-                        onClick={() => onFilterChange(filter.key, [])}
-                      >
-                        <X size={10} />
-                        Clear {filter.label}
-                      </button>
-                    )}
-                    {filter.options.map((option) => {
-                      const isActive = selected.includes(option);
-                      return (
-                        <label
-                          key={option}
-                          className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                            isActive ? 'bg-primary/10 hover:bg-primary/15' : 'hover:bg-base-200/50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-xs checkbox-primary"
-                            checked={isActive}
-                            onChange={() => {
-                              const next = isActive
-                                ? selected.filter((v) => v !== option)
-                                : [...selected, option];
-                              onFilterChange(filter.key, next);
-                            }}
-                          />
-                          <span className="text-xs text-base-content/80">{option}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Clear all metadata filters */}
-          {activeMetaCount > 0 && (
-            <button
-              className="btn btn-xs btn-ghost rounded-full gap-1 text-error/70 hover:text-error"
-              onClick={onClearAll}
-            >
-              <X size={10} />
-              <span className="text-[11px]">Clear</span>
-            </button>
-          )}
+          {/* Status chips */}
+          <div className="flex items-center gap-1">
+            {(['all', 'enabled', 'disabled'] as const).map((status) => (
+              <button
+                key={status}
+                className={`btn btn-xs rounded-full transition-all duration-150 ${
+                  statusFilter === status
+                    ? status === 'enabled'
+                      ? 'btn-success text-success-content'
+                      : status === 'disabled'
+                        ? 'btn-warning text-warning-content'
+                        : 'btn-neutral text-neutral-content'
+                    : 'btn-ghost opacity-50 hover:opacity-100'
+                }`}
+                onClick={() => onStatusFilterChange(status)}
+              >
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+
+        {/* Category chips */}
+        {categories.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            <button
+              className={`btn btn-xs rounded-full transition-all duration-150 ${
+                !selectedCategory
+                  ? 'btn-primary'
+                  : 'btn-ghost border border-base-300/20 opacity-60 hover:opacity-100'
+              }`}
+              onClick={() => onSelectCategory(null)}
+            >
+              All Types
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.name}
+                className={`btn btn-xs rounded-full transition-all duration-150 ${
+                  selectedCategory === cat.name
+                    ? 'btn-primary'
+                    : 'btn-ghost border border-base-300/20 opacity-60 hover:opacity-100'
+                }`}
+                onClick={() => onSelectCategory(selectedCategory === cat.name ? null : cat.name)}
+              >
+                {cat.label ?? cat.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Metadata filter chips (Element, Weapon, Rarity, Gender) */}
+        {filters.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {filters.map((filter) => {
+              const isExpanded = expandedFilter === filter.key;
+              const selected = activeFilters[filter.key] ?? [];
+
+              return (
+                <div key={filter.key} className="relative">
+                  <button
+                    className={`btn btn-xs rounded-full gap-1 transition-all duration-150 ${
+                      selected.length > 0
+                        ? 'btn-primary'
+                        : 'btn-ghost border border-base-300/30 opacity-70 hover:opacity-100'
+                    }`}
+                    onClick={() => setExpandedFilter(isExpanded ? null : filter.key)}
+                  >
+                    <span className="text-[11px]">{filter.label}</span>
+                    {selected.length > 0 && (
+                      <span className="badge badge-xs bg-base-100/20 text-inherit border-0">
+                        {selected.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Dropdown options */}
+                  {isExpanded && (
+                    <div className="absolute top-full left-0 mt-1 z-50 p-1.5 rounded-lg bg-base-100/95 backdrop-blur-xl border border-white/10 shadow-xl min-w-40 max-h-52 overflow-y-auto">
+                      {selected.length > 0 && (
+                        <button
+                          className="w-full text-left text-[10px] text-error/70 hover:text-error px-2 py-1 mb-0.5 transition-colors flex items-center gap-1"
+                          onClick={() => onFilterChange(filter.key, [])}
+                        >
+                          <X size={10} />
+                          Clear {filter.label}
+                        </button>
+                      )}
+                      {filter.options.map((option) => {
+                        const isActive = selected.includes(option);
+                        return (
+                          <label
+                            key={option}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                              isActive
+                                ? 'bg-primary/10 hover:bg-primary/15'
+                                : 'hover:bg-base-200/50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="checkbox checkbox-xs checkbox-primary"
+                              checked={isActive}
+                              onChange={() => {
+                                const next = isActive
+                                  ? selected.filter((v) => v !== option)
+                                  : [...selected, option];
+                                onFilterChange(filter.key, next);
+                              }}
+                            />
+                            <span className="text-xs text-base-content/80">{option}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Clear all metadata filters */}
+            {activeMetaCount > 0 && (
+              <button
+                className="btn btn-xs btn-ghost rounded-full gap-1 text-error/70 hover:text-error"
+                onClick={onClearAll}
+              >
+                <X size={10} />
+                <span className="text-[11px]">Clear</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

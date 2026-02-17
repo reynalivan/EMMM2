@@ -108,12 +108,14 @@ pub async fn update_collection(
             .map_err(|e| e.to_string())?;
 
         for mod_id in &unique {
-            sqlx::query("INSERT OR IGNORE INTO collection_items (collection_id, mod_id) VALUES (?, ?)")
-                .bind(&input.id)
-                .bind(mod_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO collection_items (collection_id, mod_id) VALUES (?, ?)",
+            )
+            .bind(&input.id)
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
         }
     }
 
@@ -136,14 +138,15 @@ pub async fn export_collection(
     collection_id: &str,
     game_id: &str,
 ) -> Result<ExportCollectionPayload, String> {
-    let (name, is_safe_context): (String, bool) =
-        sqlx::query_as("SELECT name, is_safe_context FROM collections WHERE id = ? AND game_id = ?")
-            .bind(collection_id)
-            .bind(game_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or("Collection not found")?;
+    let (name, is_safe_context): (String, bool) = sqlx::query_as(
+        "SELECT name, is_safe_context FROM collections WHERE id = ? AND game_id = ?",
+    )
+    .bind(collection_id)
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or("Collection not found")?;
 
     let items = sqlx::query_as::<_, (String, String, String)>(
         "SELECT m.id, m.actual_name, m.folder_path FROM collection_items ci JOIN mods m ON m.id = ci.mod_id WHERE ci.collection_id = ? ORDER BY m.actual_name",
@@ -223,7 +226,11 @@ fn unique_mod_ids(mod_ids: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-async fn get_collection(pool: &SqlitePool, id: &str, game_id: &str) -> Result<CollectionDetails, String> {
+async fn get_collection(
+    pool: &SqlitePool,
+    id: &str,
+    game_id: &str,
+) -> Result<CollectionDetails, String> {
     let (cid, name, gid, safe): (String, String, String, bool) = sqlx::query_as(
         "SELECT id, name, game_id, is_safe_context FROM collections WHERE id = ? AND game_id = ?",
     )
@@ -234,11 +241,13 @@ async fn get_collection(pool: &SqlitePool, id: &str, game_id: &str) -> Result<Co
     .map_err(|e| e.to_string())?
     .ok_or("Collection not found")?;
 
-    let mod_ids = sqlx::query_scalar("SELECT mod_id FROM collection_items WHERE collection_id = ? ORDER BY mod_id")
-        .bind(id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mod_ids = sqlx::query_scalar(
+        "SELECT mod_id FROM collection_items WHERE collection_id = ? ORDER BY mod_id",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(CollectionDetails {
         collection: Collection {

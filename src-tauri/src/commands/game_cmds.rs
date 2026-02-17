@@ -154,10 +154,7 @@ pub async fn launch_game(app: tauri::AppHandle, game_id: String) -> Result<(), S
     // 2. Check if Loader is valid
     let launcher_path = Path::new(&game.launcher_path);
     if !launcher_path.exists() {
-        return Err(format!(
-            "Launcher not found at: {}",
-            game.launcher_path
-        ));
+        return Err(format!("Launcher not found at: {}", game.launcher_path));
     }
 
     let game_path = Path::new(&game.path);
@@ -173,24 +170,26 @@ pub async fn launch_game(app: tauri::AppHandle, game_id: String) -> Result<(), S
         .file_name()
         .unwrap_or_default()
         .to_string_lossy();
-    
+
     // exact name match might be tricky with extension, usually contains .exe
     let is_loader_running = sys.processes().values().any(|p| {
-        p.name().to_string_lossy().eq_ignore_ascii_case(&launcher_name)
+        p.name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&launcher_name)
     });
 
     // 4. Launch Loader if needed
     if !is_loader_running {
         log::info!("Starting Loader: {}", game.launcher_path);
-        
+
         // Use directory of the launcher as CWD
         let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
-        
+
         std::process::Command::new(&game.launcher_path)
             .current_dir(launcher_dir)
             .spawn()
             .map_err(|e| format!("Failed to start loader: {e}"))?;
-            
+
         // Small delay to let loader initialize
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     } else {
@@ -200,7 +199,7 @@ pub async fn launch_game(app: tauri::AppHandle, game_id: String) -> Result<(), S
     // 5. Launch Game
     log::info!("Starting Game: {}", game.path);
     let game_dir = game_path.parent().unwrap_or(game_path);
-    
+
     let mut cmd = std::process::Command::new(&game.path);
     cmd.current_dir(game_dir);
 
@@ -208,7 +207,7 @@ pub async fn launch_game(app: tauri::AppHandle, game_id: String) -> Result<(), S
     if let Some(args_str) = game.launch_args {
         if !args_str.trim().is_empty() {
             // Split by space, handle quotes? Simple split for now.
-            // Check shell-words crate if complex parsing needed. 
+            // Check shell-words crate if complex parsing needed.
             // For now, simple whitespace split.
             for arg in args_str.split_whitespace() {
                 cmd.arg(arg);

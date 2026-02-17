@@ -253,8 +253,7 @@ mod tests {
         let schemas_dir = temp.path().join("schemas");
         std::fs::create_dir_all(&schemas_dir).unwrap();
 
-        let valid =
-            r#"{"categories": [{"name": "Character", "icon": "User", "color": "primary", "filters": [{"key": "element", "label": "Element", "options": ["Fire"]}]}], "filters": []}"#;
+        let valid = r#"{"categories": [{"name": "Character", "icon": "User", "color": "primary", "filters": [{"key": "element", "label": "Element", "options": ["Fire"]}]}], "filters": []}"#;
         let mut file = std::fs::File::create(schemas_dir.join("srmi.json")).unwrap();
         file.write_all(valid.as_bytes()).unwrap();
 

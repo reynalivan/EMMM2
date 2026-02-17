@@ -9,6 +9,7 @@ import {
   useRenameMod,
   useUpdateModCategory,
   useUpdateModThumbnail,
+  useDeleteModThumbnail,
   useUpdateModInfo,
   ModFolder,
   ModInfo,
@@ -31,6 +32,7 @@ export function useEditObjectForm(
   object: ObjectSummary | ModFolder | null,
   onClose: () => void,
   selectedThumbnailPath: string | null,
+  thumbnailAction: 'keep' | 'update' | 'delete',
 ) {
   const { activeGame } = useActiveGame();
 
@@ -39,6 +41,7 @@ export function useEditObjectForm(
   const renameMod = useRenameMod();
   const updateCategory = useUpdateModCategory();
   const updateThumbnail = useUpdateModThumbnail();
+  const deleteThumbnail = useDeleteModThumbnail();
   const updateInfo = useUpdateModInfo();
 
   const isPending =
@@ -46,6 +49,7 @@ export function useEditObjectForm(
     renameMod.isPending ||
     updateCategory.isPending ||
     updateThumbnail.isPending ||
+    deleteThumbnail.isPending ||
     updateInfo.isPending;
 
   // Detect type
@@ -154,6 +158,12 @@ export function useEditObjectForm(
             sub_category: data.sub_category || undefined,
             is_safe: data.is_safe,
             metadata: data.metadata as Record<string, unknown>,
+            thumbnail_path:
+              thumbnailAction === 'update'
+                ? (selectedThumbnailPath ?? undefined)
+                : thumbnailAction === 'delete'
+                  ? null
+                  : undefined,
           },
         });
       } else if (isFolder) {
@@ -179,11 +189,13 @@ export function useEditObjectForm(
         }
 
         // 3. Thumbnail
-        if (selectedThumbnailPath) {
+        if (thumbnailAction === 'update' && selectedThumbnailPath) {
           await updateThumbnail.mutateAsync({
             folderPath: currentPath,
             sourcePath: selectedThumbnailPath,
           });
+        } else if (thumbnailAction === 'delete') {
+          await deleteThumbnail.mutateAsync(currentPath);
         }
 
         // 4. Update Info (Safe + Metadata)

@@ -80,7 +80,7 @@ export default function ObjectRowItem({
         isSelected
           ? 'bg-primary/10 border-primary/20 shadow-sm'
           : 'hover:bg-base-200/50 hover:border-base-300/30',
-        isMobile && 'px-3 py-2',
+        isMobile ? 'px-3 py-2' : 'px-2 py-1.5',
         className,
       )}
       onClick={onClick}
@@ -95,8 +95,8 @@ export default function ObjectRowItem({
       <div
         className={cn(
           'relative shrink-0 overflow-hidden rounded-xl bg-base-300 flex items-center justify-center border border-base-content/5',
-          isMobile ? 'w-14 h-14' : 'w-12 h-12',
-          isSelected && 'border-primary/20',
+          isMobile ? 'w-16 h-16' : 'w-14 h-14',
+          isSelected && 'border-primary/20 bg-base-100',
         )}
       >
         {thumbnailUrl && !imgError ? (

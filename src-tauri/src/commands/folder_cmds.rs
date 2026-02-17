@@ -1,9 +1,9 @@
+use crate::services::config::ConfigService;
 use serde::Serialize;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-use crate::services::config::ConfigService;
 
 /// Extracted info from info.json for populating ModFolder fields.
 struct InfoAnalysis {
@@ -17,7 +17,14 @@ struct InfoAnalysis {
 
 impl Default for InfoAnalysis {
     fn default() -> Self {
-        Self { has_info_json: false, is_favorite: false, is_misplaced: false, is_safe: true, metadata: None, category: None }
+        Self {
+            has_info_json: false,
+            is_favorite: false,
+            is_misplaced: false,
+            is_safe: true,
+            metadata: None,
+            category: None,
+        }
     }
 }
 
@@ -39,7 +46,11 @@ fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis {
                 }
             }
             let category = info.metadata.get("category").cloned();
-            let metadata = if info.metadata.is_empty() { None } else { Some(info.metadata.clone()) };
+            let metadata = if info.metadata.is_empty() {
+                None
+            } else {
+                Some(info.metadata.clone())
+            };
             InfoAnalysis {
                 has_info_json: true,
                 is_favorite: info.is_favorite,
@@ -50,7 +61,10 @@ fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis {
             }
         }
         Ok(None) => InfoAnalysis::default(),
-        Err(_) => InfoAnalysis { has_info_json: true, ..InfoAnalysis::default() },
+        Err(_) => InfoAnalysis {
+            has_info_json: true,
+            ..InfoAnalysis::default()
+        },
     }
 }
 
@@ -67,9 +81,14 @@ fn contains_filtered_keyword(folder: &ModFolder, keywords: &[String]) -> bool {
         return false;
     }
 
-    let mut haystacks = vec![folder.name.to_lowercase(), folder.folder_name.to_lowercase()];
+    let mut haystacks = vec![
+        folder.name.to_lowercase(),
+        folder.folder_name.to_lowercase(),
+    ];
 
-    if let Ok(Some(info)) = crate::services::file_ops::info_json::read_info_json(Path::new(&folder.path)) {
+    if let Ok(Some(info)) =
+        crate::services::file_ops::info_json::read_info_json(Path::new(&folder.path))
+    {
         haystacks.push(info.actual_name.to_lowercase());
         haystacks.push(info.author.to_lowercase());
         haystacks.push(info.description.to_lowercase());
@@ -159,7 +178,8 @@ pub async fn list_mod_folders(
     sub_path: Option<String>,
     object_id: Option<String>,
 ) -> Result<Vec<ModFolder>, String> {
-    let folders = list_mod_folders_inner(Some(&*pool), game_id, mods_path, sub_path, object_id).await?;
+    let folders =
+        list_mod_folders_inner(Some(&*pool), game_id, mods_path, sub_path, object_id).await?;
     Ok(apply_safe_mode_filter(folders, &config))
 }
 
@@ -342,11 +362,12 @@ pub async fn list_mod_folders_inner(
             continue;
         }
 
-        let (is_enabled, display_name) = if let Some(stripped) = folder_name.strip_prefix(DISABLED_PREFIX) {
-            (false, stripped.to_string())
-        } else {
-            (true, folder_name.clone())
-        };
+        let (is_enabled, display_name) =
+            if let Some(stripped) = folder_name.strip_prefix(DISABLED_PREFIX) {
+                (false, stripped.to_string())
+            } else {
+                (true, folder_name.clone())
+            };
 
         // Get modified time
         let modified_at = entry
@@ -412,6 +433,34 @@ pub async fn get_mod_thumbnail(folder_path: String) -> Result<Option<String>, St
     ThumbnailCache::resolve(&folder_path).await
 }
 
+/// Delete the thumbnail file for a mod folder (if found) and invalidate cache.
+#[tauri::command]
+pub async fn delete_mod_thumbnail(folder_path: String) -> Result<(), String> {
+    use crate::services::images::thumbnail_cache::ThumbnailCache;
+    use crate::services::scanner::thumbnail::find_thumbnail;
+
+    let path = std::path::Path::new(&folder_path);
+    if !path.exists() {
+        return Err("Folder does not exist".to_string());
+    }
+
+    // Find the actual file (original image)
+    if let Some(thumb_path) = find_thumbnail(path) {
+        // Delete from disk
+        std::fs::remove_file(&thumb_path)
+            .map_err(|e| format!("Failed to delete thumbnail: {}", e))?;
+
+        // Invalidate caches
+        ThumbnailCache::invalidate(&thumb_path);
+        ThumbnailCache::invalidate_folder(&folder_path);
+    } else {
+        // Also invalidate folder cache just in case
+        ThumbnailCache::invalidate_folder(&folder_path);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,7 +477,8 @@ mod tests {
         fs::create_dir(mods.join("Albedo")).unwrap();
 
         let result =
-            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None)
+                .await;
         assert!(result.is_ok());
 
         let folders = result.unwrap();
@@ -457,7 +507,8 @@ mod tests {
         fs::write(mods.join("readme.txt"), "hello").unwrap();
 
         let result =
-            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None)
+                .await;
         let folders = result.unwrap();
         assert_eq!(folders.len(), 1);
         assert_eq!(folders[0].name, "ValidMod");
@@ -465,9 +516,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_mod_folders_nonexistent_path() {
-        let result =
-            list_mod_folders_inner(None, None, "C:\\nonexistent\\fake\\path".to_string(), None, None)
-                .await;
+        let result = list_mod_folders_inner(
+            None,
+            None,
+            "C:\\nonexistent\\fake\\path".to_string(),
+            None,
+            None,
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("does not exist"));
     }
@@ -479,7 +535,8 @@ mod tests {
         fs::create_dir(&mods).unwrap();
 
         let result =
-            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None)
+                .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }
@@ -540,7 +597,8 @@ mod tests {
         fs::write(mod_folder.join("preview.png"), "fake png data").unwrap();
 
         let result =
-            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None)
+                .await;
         let folders = result.unwrap();
         assert_eq!(folders.len(), 1);
         // Thumbnails are now resolved lazily via get_mod_thumbnail, not during listing
@@ -559,7 +617,8 @@ mod tests {
         fs::write(with_info.join("info.json"), "{}").unwrap();
 
         let result =
-            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None)
+                .await;
         let folders = result.unwrap();
         assert_eq!(folders.len(), 2);
 
@@ -578,7 +637,8 @@ mod tests {
         fs::create_dir_all(mods.join("TestMod")).unwrap();
 
         let result =
-            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+            list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None)
+                .await;
         let folders = result.unwrap();
         assert_eq!(folders.len(), 1);
         // modified_at should be non-zero (a real timestamp)

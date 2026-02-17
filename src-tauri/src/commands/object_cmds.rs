@@ -1,6 +1,6 @@
-use crate::services::schema_loader;
 use crate::services::scanner::deep_matcher;
 use crate::services::scanner::normalizer;
+use crate::services::schema_loader;
 use serde::Serialize;
 use tauri::Manager;
 
@@ -62,11 +62,42 @@ pub async fn get_master_db(app: tauri::AppHandle, game_type: String) -> Result<S
             game_type,
             db_path.display()
         );
-        // Return empty flat array (canonical format for MasterDb::from_json)
         return Ok("[]".to_string());
     }
 
-    std::fs::read_to_string(&db_path).map_err(|e| format!("Failed to read MasterDB: {e}"))
+    let json_content =
+        std::fs::read_to_string(&db_path).map_err(|e| format!("Failed to read MasterDB: {e}"))?;
+
+    // Parse JSON to modify thumbnail paths
+    let mut entries: Vec<serde_json::Value> = serde_json::from_str(&json_content)
+        .map_err(|e| format!("Failed to parse MasterDB JSON: {e}"))?;
+
+    for entry in &mut entries {
+        // Resolve thumbnail_path to absolute
+        if let Some(thumb_rel) = entry.get("thumbnail_path").and_then(|v| v.as_str()) {
+            let abs_path = resource_dir.join(thumb_rel);
+            if let Some(abs_str) = abs_path.to_str() {
+                entry["thumbnail_path"] = serde_json::Value::String(abs_str.to_string());
+            }
+        }
+
+        // Also resolve custom_skins thumbnails
+        if let Some(skins) = entry.get_mut("custom_skins").and_then(|v| v.as_array_mut()) {
+            for skin in skins {
+                if let Some(skin_thumb_rel) =
+                    skin.get("thumbnail_skin_path").and_then(|v| v.as_str())
+                {
+                    let abs_path = resource_dir.join(skin_thumb_rel);
+                    if let Some(abs_str) = abs_path.to_str() {
+                        skin["thumbnail_skin_path"] =
+                            serde_json::Value::String(abs_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&entries).map_err(|e| format!("Failed to serialize MasterDB: {e}"))
 }
 
 /// Pin or unpin an object in the database.
@@ -141,8 +172,8 @@ pub async fn match_object_with_db(
         return Ok(None);
     }
 
-    let json = std::fs::read_to_string(&db_path)
-        .map_err(|e| format!("Failed to read MasterDB: {e}"))?;
+    let json =
+        std::fs::read_to_string(&db_path).map_err(|e| format!("Failed to read MasterDB: {e}"))?;
 
     let db = deep_matcher::MasterDb::from_json(&json)?;
 
@@ -163,20 +194,19 @@ pub async fn match_object_with_db(
             match entry {
                 Some(entry) => {
                     // Resolve thumbnail to absolute path
-                    let resolved_thumbnail =
-                        entry.thumbnail_path.as_ref().and_then(|rel_path| {
-                            let abs_path = resource_dir.join(rel_path);
-                            if abs_path.exists() {
-                                abs_path.to_str().map(|s| s.to_string())
-                            } else {
-                                log::warn!(
-                                    "Thumbnail not found for {}: {}",
-                                    entry.name,
-                                    abs_path.display()
-                                );
-                                None
-                            }
-                        });
+                    let resolved_thumbnail = entry.thumbnail_path.as_ref().and_then(|rel_path| {
+                        let abs_path = resource_dir.join(rel_path);
+                        if abs_path.exists() {
+                            abs_path.to_str().map(|s| s.to_string())
+                        } else {
+                            log::warn!(
+                                "Thumbnail not found for {}: {}",
+                                entry.name,
+                                abs_path.display()
+                            );
+                            None
+                        }
+                    });
 
                     Ok(Some(MatchedDbEntry {
                         name: entry.name.clone(),

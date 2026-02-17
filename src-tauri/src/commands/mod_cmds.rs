@@ -393,7 +393,12 @@ pub async fn move_mod_to_object(
         }
     }
 
-    log::info!("Moved mod {} to object {} (status: {:?})", mod_id, target_object_id, status);
+    log::info!(
+        "Moved mod {} to object {} (status: {:?})",
+        mod_id,
+        target_object_id,
+        status
+    );
     Ok(())
 }
 
@@ -540,11 +545,12 @@ pub async fn toggle_favorite(
     // 2. Sync to info.json logic
     // We need the folder path to update info.json
     // Ideally we should fetch folder_path first.
-    let folder_path: Option<String> = sqlx::query_scalar("SELECT folder_path FROM mods WHERE id = ?")
-        .bind(&id)
-        .fetch_optional(pool.inner())
-        .await
-        .map_err(|e| e.to_string())?;
+    let folder_path: Option<String> =
+        sqlx::query_scalar("SELECT folder_path FROM mods WHERE id = ?")
+            .bind(&id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     if let Some(path_str) = folder_path {
         let update = info_json::ModInfoUpdate {
@@ -584,10 +590,10 @@ pub async fn pick_random_mod(
     // Exclude hidden mods (starting with .)
     // Since we don't have a structured Mod model in this file, we fetch raw rows
     let mut query = "SELECT id, actual_name, folder_path, is_safe FROM mods WHERE game_id = ? AND status = 'DISABLED' AND folder_path NOT LIKE '%/.%' AND folder_path NOT LIKE '%\\.%'".to_string();
-    
+
     // SQLite doesn't have robust path parsing in SQL, so we filter hidden folders in Rust to be safe
     // But basic LIKE exclusion helps.
-    
+
     if is_safe {
         query.push_str(" AND is_safe = 1");
     }
@@ -606,18 +612,18 @@ pub async fn pick_random_mod(
     let candidates: Vec<(String, String, String)> = rows
         .into_iter()
         .filter_map(|row| {
-             let path: String = row.get("folder_path");
-             let path_obj = Path::new(&path);
-             
-             // Check if folder name starts with dot
-             if let Some(name) = path_obj.file_name() {
-                 if name.to_string_lossy().starts_with('.') {
-                     return None;
-                 }
-                 // Also exclude system/trash folders if they sneak in
-             }
-             
-             Some((row.get("id"), row.get("actual_name"), path))
+            let path: String = row.get("folder_path");
+            let path_obj = Path::new(&path);
+
+            // Check if folder name starts with dot
+            if let Some(name) = path_obj.file_name() {
+                if name.to_string_lossy().starts_with('.') {
+                    return None;
+                }
+                // Also exclude system/trash folders if they sneak in
+            }
+
+            Some((row.get("id"), row.get("actual_name"), path))
         })
         .collect();
 
@@ -630,13 +636,13 @@ pub async fn pick_random_mod(
         // Try to find a thumbnail (folder.jpg, etc.)
         // We reuse logic from get_mod_thumbnail or just check common names?
         // Actually, we can just return None for now and let the frontend use a default or fetch it.
-        // But better to grab it if we can. 
+        // But better to grab it if we can.
         // We can use `crate::services::images::thumbnail_cache`.
         // Or simpler: scan for image.
-        // Let's just return what we have. Frontend can fetch thumbnail via `get_mod_thumbnail` if needed, 
+        // Let's just return what we have. Frontend can fetch thumbnail via `get_mod_thumbnail` if needed,
         // but `get_mod_thumbnail` takes a path. So we return the path too?
         // No, `get_mod_thumbnail` takes folder path string.
-        
+
         // Let's try to resolve thumbnail here for "Premium" experience (immediate preview).
         // Since we have the path, we can check quickly.
         // Thumbnail: let frontend fetch via `get_mod_thumbnail` if needed.
@@ -673,7 +679,7 @@ pub async fn get_active_mod_conflicts(
     let mut ini_files = Vec::new();
 
     // 2. Collect .ini files from these mods
-    // We reuse scanner::walker::scan_folder_content but only for inis? 
+    // We reuse scanner::walker::scan_folder_content but only for inis?
     // Or just a quick walk. walker::scan_folder_content is efficient.
     for row in rows {
         let path_str: String = row.get("folder_path");
@@ -689,7 +695,6 @@ pub async fn get_active_mod_conflicts(
 
     Ok(conflicts)
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -21,17 +21,20 @@ pub async fn apply_collection(
     game_id: &str,
     safe_mode_enabled: bool,
 ) -> Result<ApplyCollectionResult, String> {
-    let (collection_name, is_safe_context): (String, bool) =
-        sqlx::query_as("SELECT name, is_safe_context FROM collections WHERE id = ? AND game_id = ?")
-            .bind(collection_id)
-            .bind(game_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or("Collection not found")?;
+    let (collection_name, is_safe_context): (String, bool) = sqlx::query_as(
+        "SELECT name, is_safe_context FROM collections WHERE id = ? AND game_id = ?",
+    )
+    .bind(collection_id)
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or("Collection not found")?;
 
     if safe_mode_enabled && !is_safe_context {
-        return Err("Collection contains non-safe context. Disable Safe Mode to apply.".to_string());
+        return Err(
+            "Collection contains non-safe context. Disable Safe Mode to apply.".to_string(),
+        );
     }
 
     let target_ids: Vec<String> = sqlx::query_scalar(
@@ -60,7 +63,15 @@ pub async fn apply_collection(
     let conflicts = fetch_enabled_conflicts(pool, game_id, &target_ids, &object_ids).await?;
     states.extend(conflicts);
 
-    apply_state_change(pool, watcher_state, undo_state, game_id, states, &target_ids).await
+    apply_state_change(
+        pool,
+        watcher_state,
+        undo_state,
+        game_id,
+        states,
+        &target_ids,
+    )
+    .await
 }
 
 pub async fn undo_collection_apply(
@@ -76,7 +87,11 @@ pub async fn undo_collection_apply(
         return Err("Snapshot belongs to a different game".to_string());
     }
 
-    let target_ids: Vec<String> = snapshot.entries.iter().map(|entry| entry.mod_id.clone()).collect();
+    let target_ids: Vec<String> = snapshot
+        .entries
+        .iter()
+        .map(|entry| entry.mod_id.clone())
+        .collect();
     let states = fetch_mod_states(pool, game_id, &target_ids).await?;
     let desired: HashMap<String, String> = snapshot
         .entries
@@ -90,7 +105,11 @@ pub async fn undo_collection_apply(
     })
 }
 
-async fn fetch_mod_states(pool: &SqlitePool, game_id: &str, ids: &[String]) -> Result<Vec<ModState>, String> {
+async fn fetch_mod_states(
+    pool: &SqlitePool,
+    game_id: &str,
+    ids: &[String],
+) -> Result<Vec<ModState>, String> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
