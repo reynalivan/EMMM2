@@ -85,5 +85,10 @@
         "Remembrance"
       ]
     }
-  ]
+  ],
+  "hash_db": {},
+  "stopwords": [],
+  "short_token_whitelist": [],
+  "ini_key_blacklist": [],
+  "ini_key_whitelist": []
 }

@@ -6,6 +6,22 @@ use serde::{Deserialize, Serialize};
 pub struct GameSchema {
     pub categories: Vec<CategoryDef>,
     pub filters: Vec<FilterDef>,
+    /// Optional hash database mapping entry names to hashes.
+    /// Format: { "EntryName": ["hash1", "hash2"] }
+    #[serde(default)]
+    pub hash_db: std::collections::HashMap<String, Vec<String>>,
+    /// Optional stopwords to exclude during tokenization.
+    #[serde(default)]
+    pub stopwords: Vec<String>,
+    /// Optional short token whitelist (tokens normally filtered but allowed).
+    #[serde(default)]
+    pub short_token_whitelist: Vec<String>,
+    /// Optional INI key blacklist (keys to skip during extraction).
+    #[serde(default)]
+    pub ini_key_blacklist: Vec<String>,
+    /// Optional INI key whitelist (keys to include during extraction).
+    #[serde(default)]
+    pub ini_key_whitelist: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +79,11 @@ pub fn default_schema() -> GameSchema {
             },
         ],
         filters: vec![],
+        hash_db: std::collections::HashMap::new(),
+        stopwords: vec![],
+        short_token_whitelist: vec![],
+        ini_key_blacklist: vec![],
+        ini_key_whitelist: vec![],
     }
 }
 

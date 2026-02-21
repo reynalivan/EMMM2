@@ -1,4 +1,6 @@
-use crate::services::scanner::deep_matcher::{MatchLevel, MatchResult};
+use crate::services::scanner::deep_matcher::{
+    Candidate, Confidence, MatchLevel, MatchResult, MatchStatus, StagedMatchResult,
+};
 use crate::services::scanner::walker;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -70,6 +72,49 @@ pub fn confidence_label(level: &MatchLevel) -> &'static str {
     }
 }
 
+pub fn match_status_label(status: &MatchStatus) -> &'static str {
+    match status {
+        MatchStatus::AutoMatched => "AutoMatched",
+        MatchStatus::NeedsReview => "NeedsReview",
+        MatchStatus::NoMatch => "NoMatch",
+    }
+}
+
+pub fn staged_confidence_label(result: &StagedMatchResult) -> &'static str {
+    match result.status {
+        MatchStatus::AutoMatched => result
+            .best
+            .as_ref()
+            .or_else(|| result.candidates_topk.first())
+            .map(|candidate| confidence_value_label(&candidate.confidence))
+            .unwrap_or("High"),
+        MatchStatus::NeedsReview => "Low",
+        MatchStatus::NoMatch => "None",
+    }
+}
+
+pub fn staged_primary_candidate(result: &StagedMatchResult) -> Option<&Candidate> {
+    match result.status {
+        MatchStatus::AutoMatched | MatchStatus::NeedsReview => result
+            .best
+            .as_ref()
+            .or_else(|| result.candidates_topk.first()),
+        MatchStatus::NoMatch => None,
+    }
+}
+
+pub fn staged_match_detail(result: &StagedMatchResult) -> String {
+    result.summary()
+}
+
+pub fn staged_auto_matched_object_name(result: &StagedMatchResult) -> Option<&str> {
+    if result.status != MatchStatus::AutoMatched {
+        return None;
+    }
+
+    staged_primary_candidate(result).map(|candidate| candidate.name.as_str())
+}
+
 pub fn build_result_item(
     candidate: &walker::ModCandidate,
     match_result: &MatchResult,
@@ -95,6 +140,119 @@ pub fn build_result_item(
         detected_skin: match_result.detected_skin.clone(),
         skin_folder_name: match_result.skin_folder_name.clone(),
         thumbnail_path: thumb.map(|p| p.to_string_lossy().to_string()),
+    }
+}
+
+pub fn build_result_item_from_staged(
+    candidate: &walker::ModCandidate,
+    match_result: &StagedMatchResult,
+    thumb: Option<PathBuf>,
+) -> ScanResultItem {
+    ScanResultItem {
+        path: candidate.path.to_string_lossy().to_string(),
+        raw_name: candidate.raw_name.clone(),
+        display_name: candidate.display_name.clone(),
+        is_disabled: candidate.is_disabled,
+        matched_object: staged_auto_matched_object_name(match_result)
+            .map(std::string::ToString::to_string),
+        match_level: match_status_label(&match_result.status).to_string(),
+        confidence: staged_confidence_label(match_result).to_string(),
+        match_detail: Some(staged_match_detail(match_result)),
+        detected_skin: None,
+        skin_folder_name: None,
+        thumbnail_path: thumb.map(|p| p.to_string_lossy().to_string()),
+    }
+}
+
+fn confidence_value_label(confidence: &Confidence) -> &'static str {
+    match confidence {
+        Confidence::High => "High",
+        Confidence::Medium => "Medium",
+        Confidence::Low => "Low",
+        Confidence::None => "None",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::scanner::deep_matcher::{Evidence, Reason};
+
+    fn candidate(name: &str, confidence: Confidence) -> Candidate {
+        Candidate {
+            entry_id: 0,
+            name: name.to_string(),
+            object_type: "Character".to_string(),
+            score: 12.0,
+            confidence,
+            reasons: vec![Reason::AliasStrict {
+                alias: "sunset".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn test_staged_primary_candidate_is_status_aware() {
+        let auto = StagedMatchResult {
+            status: MatchStatus::AutoMatched,
+            best: Some(candidate("Raiden", Confidence::High)),
+            candidates_topk: Vec::new(),
+            evidence: Evidence::default(),
+        };
+        assert_eq!(
+            staged_primary_candidate(&auto).map(|candidate| candidate.name.as_str()),
+            Some("Raiden")
+        );
+
+        let review = StagedMatchResult {
+            status: MatchStatus::NeedsReview,
+            best: None,
+            candidates_topk: vec![candidate("Amber", Confidence::Low)],
+            evidence: Evidence::default(),
+        };
+        assert_eq!(
+            staged_primary_candidate(&review).map(|candidate| candidate.name.as_str()),
+            Some("Amber")
+        );
+
+        let no_match = StagedMatchResult {
+            status: MatchStatus::NoMatch,
+            best: Some(candidate("Ignored", Confidence::High)),
+            candidates_topk: Vec::new(),
+            evidence: Evidence::default(),
+        };
+        assert!(staged_primary_candidate(&no_match).is_none());
+    }
+
+    #[test]
+    fn test_staged_labels_and_detail_are_deterministic() {
+        let auto = StagedMatchResult {
+            status: MatchStatus::AutoMatched,
+            best: Some(candidate("Raiden", Confidence::Medium)),
+            candidates_topk: Vec::new(),
+            evidence: Evidence::default(),
+        };
+        assert_eq!(match_status_label(&auto.status), "AutoMatched");
+        assert_eq!(staged_confidence_label(&auto), "Medium");
+        assert_eq!(staged_match_detail(&auto), "Matched by AliasStrict");
+
+        let review = StagedMatchResult {
+            status: MatchStatus::NeedsReview,
+            best: Some(candidate("Amber", Confidence::High)),
+            candidates_topk: vec![
+                candidate("Amber", Confidence::High),
+                candidate("Lisa", Confidence::High),
+            ],
+            evidence: Evidence::default(),
+        };
+        assert_eq!(match_status_label(&review.status), "NeedsReview");
+        assert_eq!(staged_confidence_label(&review), "Low");
+        assert_eq!(staged_match_detail(&review), "Ambiguous: Amber vs Lisa");
+
+        let no_match = StagedMatchResult::no_match();
+        assert_eq!(match_status_label(&no_match.status), "NoMatch");
+        assert_eq!(staged_confidence_label(&no_match), "None");
+        assert_eq!(staged_match_detail(&no_match), "No reliable match");
     }
 }
 

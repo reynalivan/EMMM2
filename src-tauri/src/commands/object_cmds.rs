@@ -1,7 +1,10 @@
 use crate::services::scanner::deep_matcher;
-use crate::services::scanner::normalizer;
+use crate::services::scanner::deep_matcher::content::IniTokenizationConfig;
+use crate::services::scanner::types;
+use crate::services::scanner::walker::{FolderContent, ModCandidate};
 use crate::services::schema_loader;
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 /// Get the game schema (categories + filters) for a specific game type.
@@ -146,9 +149,60 @@ pub struct MatchedDbEntry {
     pub match_detail: String,
 }
 
+fn match_object_with_staged_pipeline(
+    db: &deep_matcher::MasterDb,
+    object_name: &str,
+) -> deep_matcher::StagedMatchResult {
+    let candidate = ModCandidate {
+        path: PathBuf::from(object_name),
+        raw_name: object_name.to_string(),
+        display_name: object_name.to_string(),
+        is_disabled: false,
+    };
+    let content = FolderContent {
+        subfolder_names: Vec::new(),
+        files: Vec::new(),
+        ini_files: Vec::new(),
+    };
+    let ini_config = IniTokenizationConfig::default();
+
+    deep_matcher::match_folder_quick(&candidate, db, &content, &ini_config)
+}
+
+fn resolve_thumbnail_path(resource_dir: &Path, entry: &deep_matcher::DbEntry) -> Option<String> {
+    let rel_path = entry.thumbnail_path.as_ref()?;
+    let abs_path = resource_dir.join(rel_path);
+
+    if !abs_path.exists() {
+        log::warn!("Thumbnail not found for {}: {}", entry.name, abs_path.display());
+        return None;
+    }
+
+    abs_path.to_str().map(|path| path.to_string())
+}
+
+fn build_matched_db_entry_from_staged(
+    resource_dir: &Path,
+    db: &deep_matcher::MasterDb,
+    match_result: &deep_matcher::StagedMatchResult,
+) -> Option<MatchedDbEntry> {
+    let candidate = types::staged_primary_candidate(match_result)?;
+    let entry = db.entries.get(candidate.entry_id)?;
+
+    Some(MatchedDbEntry {
+        name: entry.name.clone(),
+        object_type: entry.object_type.clone(),
+        tags: entry.tags.clone(),
+        metadata: entry.metadata.clone(),
+        thumbnail_path: resolve_thumbnail_path(resource_dir, entry),
+        match_level: types::match_status_label(&match_result.status).to_string(),
+        match_confidence: types::staged_confidence_label(match_result).to_string(),
+        match_detail: types::staged_match_detail(match_result),
+    })
+}
+
 /// Match a single object name against the MasterDB for a specific game.
-/// Uses the full deep matcher pipeline: L0 Skin Alias → L1 Name → L2 Token → L5 Fuzzy.
-/// (L3 Content and L4 AI are skipped as they require disk scanning.)
+/// Uses staged quick matcher semantics and adapter labels.
 ///
 /// This is used for the "Sync with DB" context menu action on individual objects/folders.
 #[tauri::command]
@@ -177,51 +231,88 @@ pub async fn match_object_with_db(
 
     let db = deep_matcher::MasterDb::from_json(&json)?;
 
-    // Clean name using the same normalizer as the deep matcher pipeline
-    let clean_name = normalizer::strip_noise_prefixes(&object_name);
+    let match_result = match_object_with_staged_pipeline(&db, &object_name);
+    Ok(build_matched_db_entry_from_staged(
+        &resource_dir,
+        &db,
+        &match_result,
+    ))
+}
 
-    // Run matching pipeline: L0 → L1 → L2 → L5 (same order as match_folder, minus L3/L4)
-    let match_result = deep_matcher::skin_alias_match(&clean_name, &db)
-        .or_else(|| deep_matcher::name_match(&clean_name, &db))
-        .or_else(|| deep_matcher::token_match(&clean_name, &db))
-        .or_else(|| deep_matcher::fuzzy_match(&clean_name, &db));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::scanner::deep_matcher::{CustomSkin, DbEntry, MatchStatus, MasterDb};
+    use tempfile::TempDir;
 
-    match match_result {
-        Some(result) => {
-            // Find the full DbEntry to get metadata + thumbnail
-            let entry = db.entries.iter().find(|e| e.name == result.object_name);
+    fn build_entry(name: &str, tags: &[&str], aliases: &[&str]) -> DbEntry {
+        let custom_skins = if aliases.is_empty() {
+            Vec::new()
+        } else {
+            vec![CustomSkin {
+                name: aliases[0].to_string(),
+                aliases: aliases.iter().map(|alias| alias.to_string()).collect(),
+                thumbnail_skin_path: None,
+                rarity: None,
+            }]
+        };
 
-            match entry {
-                Some(entry) => {
-                    // Resolve thumbnail to absolute path
-                    let resolved_thumbnail = entry.thumbnail_path.as_ref().and_then(|rel_path| {
-                        let abs_path = resource_dir.join(rel_path);
-                        if abs_path.exists() {
-                            abs_path.to_str().map(|s| s.to_string())
-                        } else {
-                            log::warn!(
-                                "Thumbnail not found for {}: {}",
-                                entry.name,
-                                abs_path.display()
-                            );
-                            None
-                        }
-                    });
-
-                    Ok(Some(MatchedDbEntry {
-                        name: entry.name.clone(),
-                        object_type: entry.object_type.clone(),
-                        tags: entry.tags.clone(),
-                        metadata: entry.metadata.clone(),
-                        thumbnail_path: resolved_thumbnail,
-                        match_level: result.level.to_string(),
-                        match_confidence: result.confidence.to_string(),
-                        match_detail: result.detail.clone(),
-                    }))
-                }
-                None => Ok(None),
-            }
+        DbEntry {
+            name: name.to_string(),
+            tags: tags.iter().map(|tag| tag.to_string()).collect(),
+            object_type: "Character".to_string(),
+            custom_skins,
+            thumbnail_path: None,
+            metadata: None,
+            hashes: Vec::new(),
         }
-        None => Ok(None),
+    }
+
+    #[test]
+    fn test_object_command_auto_matched_uses_staged_status_adapters() {
+        let db = MasterDb::new(vec![build_entry(
+            "Raiden Shogun",
+            &["raiden"],
+            &["Raiden Wish"],
+        )]);
+        let match_result = match_object_with_staged_pipeline(&db, "Raiden Wish");
+        let temp = TempDir::new().expect("temp dir");
+
+        let item = build_matched_db_entry_from_staged(temp.path(), &db, &match_result)
+            .expect("expected staged auto match payload");
+
+        assert_eq!(match_result.status, MatchStatus::AutoMatched);
+        assert_eq!(item.name, "Raiden Shogun");
+        assert_eq!(item.match_level, "AutoMatched");
+        assert_eq!(item.match_confidence, "High");
+        assert_eq!(item.match_detail, "Matched by AliasStrict");
+    }
+
+    #[test]
+    fn test_object_command_needs_review_keeps_candidate_with_low_confidence_label() {
+        let db = MasterDb::new(vec![
+            build_entry("Amber", &["sunset"], &["Sunset"]),
+            build_entry("Lisa", &["sunset"], &["Sunset"]),
+        ]);
+        let match_result = match_object_with_staged_pipeline(&db, "Sunset Pack");
+        let temp = TempDir::new().expect("temp dir");
+
+        let item = build_matched_db_entry_from_staged(temp.path(), &db, &match_result)
+            .expect("expected review payload");
+
+        assert_eq!(match_result.status, MatchStatus::NeedsReview);
+        assert_eq!(item.match_level, "NeedsReview");
+        assert_eq!(item.match_confidence, "Low");
+        assert_eq!(item.match_detail, "Ambiguous: Amber vs Lisa");
+    }
+
+    #[test]
+    fn test_object_command_has_no_active_fuzzy_fallback() {
+        let db = MasterDb::new(vec![build_entry("Albedo", &[], &[])]);
+        let match_result = match_object_with_staged_pipeline(&db, "Albato");
+        let temp = TempDir::new().expect("temp dir");
+
+        assert_eq!(match_result.status, MatchStatus::NoMatch);
+        assert!(build_matched_db_entry_from_staged(temp.path(), &db, &match_result).is_none());
     }
 }

@@ -1,0 +1,140 @@
+{
+  "metadata": {
+    "task": "Task 1: Baseline Matcher Behavior Capture",
+    "purpose": "Golden corpus for legacy matcher behavior validation",
+    "date_captured": "2026-02-21T15:42:00Z",
+    "legacy_matcher_version": "current (pre-staged refactor)",
+    "note": "Captures 4 representative test cases: exact match, alias match, ambiguous case, no match"
+  },
+  "test_cases": [
+    {
+      "id": "TC-BASELINE-01",
+      "name": "Exact Name Match (L1)",
+      "input": {
+        "folder_name": "Raiden Shogun skin",
+        "database_size": 5,
+        "content": "empty"
+      },
+      "expected_output": {
+        "object_name": "Raiden Shogun",
+        "level": "L1Name",
+        "confidence": "High",
+        "detected_skin": null,
+        "skin_folder_name": null
+      },
+      "legacy_behavior": "Direct substring match on folder name against DB entry names and tags"
+    },
+    {
+      "id": "TC-BASELINE-02",
+      "name": "Alias Match (L0 Skin Aliases)",
+      "input": {
+        "folder_name": "JeanCN_mod",
+        "database_size": 5,
+        "content": "empty"
+      },
+      "expected_output": {
+        "object_name": "Jean",
+        "level": "L1Name",
+        "confidence": "High",
+        "detected_skin": "Gunnhildr's Heritage",
+        "skin_folder_name": "JeanCN"
+      },
+      "legacy_behavior": "Skin alias match (L0) returns parent character with skin detection and canonical folder name"
+    },
+    {
+      "id": "TC-BASELINE-03",
+      "name": "Ambiguous Case (Multiple Matches)",
+      "input": {
+        "folder_name": "Traveler_mod",
+        "database_size": 5,
+        "content": "empty"
+      },
+      "expected_output": {
+        "object_name": "One of: Lumine or Aether",
+        "level": "L2Token",
+        "confidence": "High",
+        "detected_skin": null,
+        "skin_folder_name": null
+      },
+      "legacy_behavior": "Token match on shared tag 'Traveler'; result depends on iteration order (non-deterministic in unordered maps)"
+    },
+    {
+      "id": "TC-BASELINE-04",
+      "name": "No Match (Unmatched)",
+      "input": {
+        "folder_name": "xyzABCDEF_completely_unknown_1234",
+        "database_size": 5,
+        "content": "empty"
+      },
+      "expected_output": {
+        "object_name": "",
+        "level": "Unmatched",
+        "confidence": "None",
+        "detected_skin": null,
+        "skin_folder_name": null
+      },
+      "legacy_behavior": "Falls through all matching stages (L0-L5) and returns Unmatched result"
+    }
+  ],
+  "fixture_database": {
+    "note": "Same test database used in all test cases",
+    "entries": [
+      {
+        "name": "Raiden Shogun",
+        "tags": ["Raiden", "Ei"],
+        "object_type": "Character",
+        "custom_skins": [
+          {
+            "name": "Wish",
+            "aliases": ["RaidenWish", "Raiden2"]
+          }
+        ]
+      },
+      {
+        "name": "Jean",
+        "tags": ["Jean Gunnhildr"],
+        "object_type": "Character",
+        "custom_skins": [
+          {
+            "name": "Gunnhildr's Heritage",
+            "aliases": ["JeanCN", "Jean2"]
+          }
+        ]
+      },
+      {
+        "name": "Lumine",
+        "tags": ["Traveler", "Aether"],
+        "object_type": "Character",
+        "custom_skins": []
+      },
+      {
+        "name": "Aether",
+        "tags": ["Traveler"],
+        "object_type": "Character",
+        "custom_skins": []
+      },
+      {
+        "name": "Primordial Jade Winged-Spear",
+        "tags": ["PJWS"],
+        "object_type": "Weapon",
+        "custom_skins": []
+      }
+    ]
+  },
+  "pipeline_stages_tested": {
+    "L0_SkinAlias": "TC-BASELINE-02",
+    "L1_DirectName": "TC-BASELINE-01",
+    "L2_TokenMatch": "TC-BASELINE-03",
+    "L3_ContentScan": "not tested (content empty in all cases)",
+    "L4_AI": "not tested (off by default)",
+    "L5_Fuzzy": "not tested (would apply to TC-BASELINE-04)",
+    "Unmatched": "TC-BASELINE-04"
+  },
+  "notes": [
+    "All test cases use empty FolderContent (no subfolders, no files)",
+    "Legacy matcher is early-return: first stage to match returns immediately",
+    "No multi-candidate ranking in legacy; single best candidate returned",
+    "Confidence is deterministic based on level only (not score/margin)",
+    "TC-BASELINE-03 documents non-determinism: ambiguous 'Traveler' tag matches both Lumine and Aether depending on iteration order"
+  ]
+}

@@ -1,4 +1,6 @@
-use super::deep_matcher::{self, MasterDb, MatchLevel};
+use super::deep_matcher::{
+    self, content::IniTokenizationConfig, Candidate, MasterDb, MatchStatus, StagedMatchResult,
+};
 use super::walker;
 use crate::services::file_ops::info_json;
 use std::fs;
@@ -10,6 +12,17 @@ pub struct OrganizeResult {
     pub new_path: PathBuf,
     pub object_name: String,
     pub object_type: String,
+}
+
+fn auto_matched_candidate(result: &StagedMatchResult) -> Option<&Candidate> {
+    if result.status != MatchStatus::AutoMatched {
+        return None;
+    }
+
+    result
+        .best
+        .as_ref()
+        .or_else(|| result.candidates_topk.first())
 }
 
 /// Organize a single mod folder based on Deep Matcher.
@@ -46,46 +59,35 @@ pub fn organize_mod(
     };
 
     // 3. Match
-    let match_result = deep_matcher::match_folder(&candidate, db, &content);
+    let ini_config = IniTokenizationConfig::default();
+    let match_result = deep_matcher::match_folder_quick(&candidate, db, &content, &ini_config);
 
-    // 4. Determine Target
-    let (category, obj_name) = if match_result.level == MatchLevel::Unmatched {
-        ("Other".to_string(), "Unknown".to_string())
-    } else {
-        (
-            match_result.object_type.clone(),
-            match_result.object_name.clone(),
-        )
+    // 4. Determine target only for actionable auto matches.
+    let Some(auto_candidate) = auto_matched_candidate(&match_result) else {
+        return Ok(OrganizeResult {
+            original_path: path.to_path_buf(),
+            new_path: path.to_path_buf(),
+            object_name: "Unknown".to_string(),
+            object_type: "Other".to_string(),
+        });
     };
+
+    let category = auto_candidate.object_type.clone();
+    let obj_name = auto_candidate.name.clone();
 
     // Construct path: target_root / Category / ObjectName / ModResultName
     // We sanitize ObjectName just in case
     let safe_obj_name = sanitize_filename::sanitize(&obj_name);
     let safe_category = sanitize_filename::sanitize(&category);
 
-    let target_parent = if match_result.level == MatchLevel::Unmatched {
-        target_root.join("Other")
-    } else if match_result.object_type.eq_ignore_ascii_case("Character") {
+    let target_parent = if category.eq_ignore_ascii_case("Character") {
         // Flatten Characters: Mods/Ayaka instead of Mods/Character/Ayaka
         target_root.join(&safe_obj_name)
     } else {
         target_root.join(&safe_category).join(&safe_obj_name)
     };
 
-    // Use skin_folder_name as the destination folder name if present,
-    // otherwise use the original folder name.
-    // e.g. "JeanCN" skin folder → Jean/JeanCN, "Jean mods" → Jean/Jean mods
-    let dest_folder_name = match &match_result.skin_folder_name {
-        Some(skin_name) if !skin_name.is_empty() => {
-            // Prefix with DISABLED if the mod was disabled
-            if candidate.is_disabled {
-                format!("DISABLED {skin_name}")
-            } else {
-                skin_name.clone()
-            }
-        }
-        _ => folder_name.clone(),
-    };
+    let dest_folder_name = folder_name.clone();
 
     let target_path = target_parent.join(&dest_folder_name);
 
@@ -114,18 +116,15 @@ pub fn organize_mod(
     fs::rename(path, &target_path).map_err(|e| format!("Failed to move folder: {e}"))?;
 
     // Update info.json
-    if match_result.level != MatchLevel::Unmatched {
-        let mut meta =
-            std::collections::HashMap::from([("character".to_string(), obj_name.clone())]);
-        meta.insert("category".to_string(), category.clone());
+    let mut meta = std::collections::HashMap::from([("character".to_string(), obj_name.clone())]);
+    meta.insert("category".to_string(), category.clone());
 
-        let update = info_json::ModInfoUpdate {
-            // We store the matched object name in metadata for reference
-            metadata: Some(meta),
-            ..Default::default()
-        };
-        let _ = info_json::update_info_json(&target_path, &update);
-    }
+    let update = info_json::ModInfoUpdate {
+        // We store the matched object name in metadata for reference
+        metadata: Some(meta),
+        ..Default::default()
+    };
+    let _ = info_json::update_info_json(&target_path, &update);
 
     Ok(OrganizeResult {
         original_path: path.to_path_buf(),
@@ -134,3 +133,7 @@ pub fn organize_mod(
         object_type: category,
     })
 }
+
+#[cfg(test)]
+#[path = "organizer_tests.rs"]
+mod organizer_tests;

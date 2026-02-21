@@ -1,19 +1,9 @@
 {
-  "active_plan": "E:\\Dev\\EMMM2NEW\\.sisyphus\\plans\\epic9-duplicate-scanner.md",
-  "started_at": "2026-02-16T18:30:00.000Z",
-  "completed_at": "2026-02-16T22:15:00.000Z",
+  "active_plan": "E:\\Dev\\EMMM2NEW\\.sisyphus\\plans\\deep-matcher-staged-refactor.md",
+  "started_at": "2026-02-21T08:34:14.679Z",
   "session_ids": [
-    "ses_3999c9c59ffewNM02UP3BlYeZe",
-    "ses_3999c5042ffepYS1jRw59J0Ql5",
-    "ses_399964edfffesUfKD51KkNO2Ys",
-    "ses_3997d0991ffejPwaDxGvRllN5I",
-    "ses_39973031dffeexkla5iuypKdqT",
-    "ses_3996366c4ffe0Oyc43osqzVK6V",
-    "ses_38134a497ffeeoOoruTiFNkqkD"
+    "ses_380d69787ffeg3JBGeBMchBynR"
   ],
-  "plan_name": "epic9-duplicate-scanner",
-  "agent": "atlas",
-  "status": "done",
-  "tasks_completed": 10,
-  "tasks_total": 10
+  "plan_name": "deep-matcher-staged-refactor",
+  "agent": "atlas"
 }

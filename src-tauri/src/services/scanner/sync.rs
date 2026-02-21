@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use tauri::ipc::Channel;
 
+use crate::services::scanner::deep_matcher::content::IniTokenizationConfig;
 use crate::services::scanner::{deep_matcher, types, walker};
 
 #[derive(Debug, Serialize, Clone)]
@@ -54,6 +55,19 @@ pub struct ConfirmedScanItem {
     pub skip: bool,
 }
 
+fn auto_matched_candidate(
+    match_result: &deep_matcher::StagedMatchResult,
+) -> Option<&deep_matcher::Candidate> {
+    if match_result.status != deep_matcher::MatchStatus::AutoMatched {
+        return None;
+    }
+
+    match_result
+        .best
+        .as_ref()
+        .or_else(|| match_result.candidates_topk.first())
+}
+
 /// Upsert the game record into the `games` table so FK constraints are satisfied.
 async fn ensure_game_exists(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
@@ -92,6 +106,7 @@ pub async fn scan_preview(
     }
 
     let mut items = Vec::with_capacity(total);
+    let ini_config = IniTokenizationConfig::default();
 
     for (idx, candidate) in candidates.iter().enumerate() {
         if let Some(channel) = &on_progress {
@@ -133,34 +148,18 @@ pub async fn scan_preview(
             false
         };
 
-        // Run Deep Matcher
+        // Run staged matcher.
         let content = walker::scan_folder_content(&candidate.path, 3);
-        let match_result = deep_matcher::match_folder(candidate, master_db, &content);
+        let match_result =
+            deep_matcher::match_folder_quick(candidate, master_db, &content, &ini_config);
+        let auto_candidate = auto_matched_candidate(&match_result);
 
-        let (matched_object, match_level, confidence, match_detail, detected_skin, object_type) =
-            if match_result.level != deep_matcher::MatchLevel::Unmatched {
-                (
-                    Some(match_result.object_name.clone()),
-                    types::match_level_label(&match_result.level).to_string(),
-                    types::confidence_label(&match_result.level).to_string(),
-                    if match_result.detail.is_empty() {
-                        None
-                    } else {
-                        Some(match_result.detail.clone())
-                    },
-                    match_result.detected_skin.clone(),
-                    Some(match_result.object_type.clone()),
-                )
-            } else {
-                (
-                    None,
-                    "Unmatched".to_string(),
-                    "None".to_string(),
-                    None,
-                    None,
-                    Some("Other".to_string()),
-                )
-            };
+        let matched_object = auto_candidate.map(|candidate| candidate.name.clone());
+        let object_type = auto_candidate.map(|candidate| candidate.object_type.clone());
+        let match_level = types::match_status_label(&match_result.status).to_string();
+        let confidence = types::staged_confidence_label(&match_result).to_string();
+        let match_detail = Some(match_result.summary());
+        let detected_skin = None;
 
         // Resolve thumbnail + tags + metadata from MasterDB
         let db_entry = matched_object
@@ -342,22 +341,9 @@ pub async fn commit_scan_results(
                 .await
                 .map_err(|e| e.to_string())?;
         } else {
-            // Unmatched folder → auto-create "Other" object using display name
-            let object_id = ensure_object_exists(
-                &mut tx,
-                game_id,
-                &item.display_name,
-                "Other",
-                None,
-                "[]",
-                "{}",
-                &mut new_objects_count,
-            )
-            .await?;
-
-            sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
-                .bind(&object_id)
-                .bind("Other")
+            // Keep non-auto results pending without implicit object assignment.
+            sqlx::query("UPDATE mods SET object_id = NULL, object_type = ? WHERE id = ?")
+                .bind(item.object_type.as_deref().unwrap_or("Other"))
                 .bind(&mod_id)
                 .execute(&mut *tx)
                 .await
@@ -435,6 +421,8 @@ pub async fn sync_with_db(
     let mut new_mods_count = 0;
     let mut updated_mods_count = 0;
     let mut new_objects_count = 0;
+    let mut auto_matched_count = 0;
+    let ini_config = IniTokenizationConfig::default();
 
     let mut processed_ids = HashSet::new();
 
@@ -509,103 +497,64 @@ pub async fn sync_with_db(
 
         processed_ids.insert(mod_id.clone());
 
-        // 3. Run Deep Matcher (if new or unmatched)
-        // We need content to match
-        // Use scan_folder_content with max_depth=3 (standard)
+        // 3. Run staged matcher and only auto-apply actionable results.
         let content = walker::scan_folder_content(&candidate.path, 3);
-        let match_result = deep_matcher::match_folder(candidate, master_db, &content);
+        let match_result =
+            deep_matcher::match_folder_quick(candidate, master_db, &content, &ini_config);
+        let Some(auto_candidate) = auto_matched_candidate(&match_result) else {
+            continue;
+        };
 
-        if match_result.level != deep_matcher::MatchLevel::Unmatched {
-            // Found a match!
-            // Look up the DB entry for thumbnail + tags + metadata
-            let db_entry = master_db
-                .entries
-                .iter()
-                .find(|e| e.name == match_result.object_name);
+        let db_entry = master_db
+            .entries
+            .iter()
+            .find(|e| e.name == auto_candidate.name);
 
-            // Resolve thumbnail: prefer skin thumbnail if skin detected, else base
-            let db_thumbnail_relative = db_entry.and_then(|entry| {
-                if let Some(ref skin_name) = match_result.detected_skin {
-                    // Look for skin-specific thumbnail first
-                    entry
-                        .custom_skins
-                        .iter()
-                        .find(|s| &s.name == skin_name)
-                        .and_then(|s| s.thumbnail_skin_path.clone())
-                        .or_else(|| entry.thumbnail_path.clone())
+        let db_thumbnail_relative = db_entry.and_then(|entry| entry.thumbnail_path.clone());
+
+        let db_thumbnail = db_thumbnail_relative.and_then(|rel_path| {
+            if let Some(res_dir) = resource_dir {
+                let abs_path = res_dir.join(&rel_path);
+                if abs_path.exists() {
+                    Some(abs_path.to_string_lossy().to_string())
                 } else {
-                    entry.thumbnail_path.clone()
+                    log::warn!("MasterDB thumbnail not found: {}", abs_path.display());
+                    None
                 }
-            });
+            } else {
+                Some(rel_path)
+            }
+        });
 
-            // Resolve relative path to absolute using resource_dir
-            let db_thumbnail = db_thumbnail_relative.and_then(|rel_path| {
-                if let Some(res_dir) = resource_dir {
-                    let abs_path = res_dir.join(&rel_path);
-                    if abs_path.exists() {
-                        Some(abs_path.to_string_lossy().to_string())
-                    } else {
-                        log::warn!("MasterDB thumbnail not found: {}", abs_path.display());
-                        None
-                    }
-                } else {
-                    // No resource_dir, store as-is (fallback)
-                    Some(rel_path)
-                }
-            });
+        let db_tags_json = db_entry
+            .map(|e| serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".to_string()))
+            .unwrap_or_else(|| "[]".to_string());
+        let db_metadata_json = db_entry
+            .and_then(|e| e.metadata.as_ref())
+            .map(|m| serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()))
+            .unwrap_or_else(|| "{}".to_string());
 
-            // Serialize tags and metadata from MasterDB entry
-            let db_tags_json = db_entry
-                .map(|e| serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".to_string()))
-                .unwrap_or_else(|| "[]".to_string());
-            let db_metadata_json = db_entry
-                .and_then(|e| e.metadata.as_ref())
-                .map(|m| serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()))
-                .unwrap_or_else(|| "{}".to_string());
+        let object_id = ensure_object_exists(
+            &mut tx,
+            game_id,
+            &auto_candidate.name,
+            &auto_candidate.object_type,
+            db_thumbnail.as_deref(),
+            &db_tags_json,
+            &db_metadata_json,
+            &mut new_objects_count,
+        )
+        .await?;
 
-            // Ensure object exists in DB
-            let object_id = ensure_object_exists(
-                &mut tx,
-                game_id,
-                &match_result.object_name,
-                &match_result.object_type,
-                db_thumbnail.as_deref(),
-                &db_tags_json,
-                &db_metadata_json,
-                &mut new_objects_count,
-            )
-            .await?;
+        sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
+            .bind(&object_id)
+            .bind(&auto_candidate.object_type)
+            .bind(&mod_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
 
-            // Link mod to object
-            sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
-                .bind(&object_id)
-                .bind(&match_result.object_type)
-                .bind(&mod_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        } else {
-            // Unmatched folder → auto-create "Other" object using display name
-            let object_id = ensure_object_exists(
-                &mut tx,
-                game_id,
-                &candidate.display_name,
-                "Other",
-                None,
-                "[]",
-                "{}",
-                &mut new_objects_count,
-            )
-            .await?;
-
-            sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
-                .bind(&object_id)
-                .bind("Other")
-                .bind(&mod_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+        auto_matched_count += 1;
     }
 
     // 4. Handle Deletions (Mods in DB but not in FS)
@@ -636,8 +585,8 @@ pub async fn sync_with_db(
 
     if let Some(channel) = &on_progress {
         let _ = channel.send(types::ScanEvent::Finished {
-            matched: new_mods_count, // Use new mods count as proxy for matched in this context
-            unmatched: 0,
+            matched: auto_matched_count,
+            unmatched: total.saturating_sub(auto_matched_count),
         });
     }
 
@@ -732,3 +681,7 @@ async fn ensure_object_exists(
         Ok(new_id)
     }
 }
+
+#[cfg(test)]
+#[path = "sync_tests.rs"]
+mod sync_tests;

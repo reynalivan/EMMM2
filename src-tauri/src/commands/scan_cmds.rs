@@ -5,7 +5,8 @@
 
 use crate::services::file_ops::archive::{self, ArchiveAnalysis, ExtractionResult};
 use crate::services::scanner::conflict::{self, ConflictInfo};
-use crate::services::scanner::deep_matcher::{self, MasterDb, MatchLevel};
+use crate::services::scanner::deep_matcher::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::{self, MasterDb};
 use crate::services::scanner::thumbnail;
 use crate::services::scanner::walker::{self, ArchiveInfo};
 use crate::services::watcher::{SuppressionGuard, WatcherState};
@@ -237,6 +238,7 @@ pub async fn start_scan(
     // 3. Process each candidate
     let mut results = Vec::with_capacity(total);
     let mut matched_count: usize = 0;
+    let ini_config = IniTokenizationConfig::default();
 
     for (idx, candidate) in candidates.iter().enumerate() {
         // Check cancellation
@@ -257,19 +259,19 @@ pub async fn start_scan(
         let content = walker::scan_folder_content(&candidate.path, 3);
 
         // Run matching pipeline
-        let match_result = deep_matcher::match_folder(candidate, &db, &content);
+        let match_result = deep_matcher::match_folder_quick(candidate, &db, &content, &ini_config);
 
         // Find thumbnail
         let thumb = thumbnail::find_thumbnail(&candidate.path);
 
         // Track match count
-        if match_result.level != MatchLevel::Unmatched {
+        if let Some(object_name) = types::staged_auto_matched_object_name(&match_result) {
             matched_count += 1;
 
             let _ = on_progress.send(ScanEvent::Matched {
                 folder_name: candidate.display_name.clone(),
-                object_name: match_result.object_name.clone(),
-                confidence: types::confidence_label(&match_result.level).to_string(),
+                object_name: object_name.to_string(),
+                confidence: types::staged_confidence_label(&match_result).to_string(),
             });
         }
 
@@ -280,7 +282,11 @@ pub async fn start_scan(
         });
 
         // Build result
-        results.push(types::build_result_item(candidate, &match_result, thumb));
+        results.push(types::build_result_item_from_staged(
+            candidate,
+            &match_result,
+            thumb,
+        ));
     }
 
     // Send Finished event
@@ -314,14 +320,16 @@ pub async fn get_scan_result(
     let mods = Path::new(&mods_path);
     let db = MasterDb::from_json(&db_json)?;
     let candidates = walker::scan_mod_folders(mods)?;
+    let ini_config = IniTokenizationConfig::default();
 
     let results: Vec<ScanResultItem> = candidates
         .iter()
         .map(|candidate| {
             let content = walker::scan_folder_content(&candidate.path, 3);
-            let match_result = deep_matcher::match_folder(candidate, &db, &content);
+            let match_result =
+                deep_matcher::match_folder_quick(candidate, &db, &content, &ini_config);
             let thumb = thumbnail::find_thumbnail(&candidate.path);
-            types::build_result_item(candidate, &match_result, thumb)
+            types::build_result_item_from_staged(candidate, &match_result, thumb)
         })
         .collect();
 
@@ -507,6 +515,7 @@ pub async fn auto_organize_mods(
 mod tests {
 
     use super::*;
+    use serde_json::json;
     use std::fs;
     use tempfile::TempDir;
 
@@ -559,5 +568,100 @@ mod tests {
 
         state.reset();
         assert!(!state.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_get_scan_result_auto_matched_uses_staged_status_semantics() {
+        let dir = TempDir::new().unwrap();
+        let mod_dir = dir.path().join("Mystery Mod");
+        fs::create_dir(&mod_dir).unwrap();
+        fs::write(
+            mod_dir.join("config.ini"),
+            "[TextureOverrideBody]\nhash = d94c8962\n",
+        )
+        .unwrap();
+
+        let db_json = json!([
+            {
+                "name": "Raiden Shogun",
+                "tags": [],
+                "object_type": "Character",
+                "custom_skins": [],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hashes": ["d94c8962"]
+            },
+            {
+                "name": "Jean",
+                "tags": [],
+                "object_type": "Character",
+                "custom_skins": [],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hashes": []
+            }
+        ])
+        .to_string();
+
+        let results = get_scan_result(dir.path().to_string_lossy().to_string(), db_json)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        let item = &results[0];
+        assert_eq!(item.matched_object.as_deref(), Some("Raiden Shogun"));
+        assert_eq!(item.match_level, "AutoMatched");
+    }
+
+    #[tokio::test]
+    async fn test_get_scan_result_needs_review_does_not_auto_assign_object() {
+        let dir = TempDir::new().unwrap();
+        let mod_dir = dir.path().join("Sunset Pack");
+        fs::create_dir(&mod_dir).unwrap();
+
+        let db_json = json!([
+            {
+                "name": "Amber",
+                "tags": ["sunset"],
+                "object_type": "Character",
+                "custom_skins": [
+                    {
+                        "name": "Sunset",
+                        "aliases": ["Sunset"],
+                        "thumbnail_skin_path": null,
+                        "rarity": null
+                    }
+                ],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hashes": []
+            },
+            {
+                "name": "Lisa",
+                "tags": ["sunset"],
+                "object_type": "Character",
+                "custom_skins": [
+                    {
+                        "name": "Sunset",
+                        "aliases": ["Sunset"],
+                        "thumbnail_skin_path": null,
+                        "rarity": null
+                    }
+                ],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hashes": []
+            }
+        ])
+        .to_string();
+
+        let results = get_scan_result(dir.path().to_string_lossy().to_string(), db_json)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        let item = &results[0];
+        assert_eq!(item.match_level, "NeedsReview");
+        assert_eq!(item.matched_object, None);
     }
 }

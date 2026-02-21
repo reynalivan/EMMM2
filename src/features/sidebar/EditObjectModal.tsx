@@ -346,7 +346,7 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
 
                           {/* Floating Search Overlay - Standard Absolute Position */}
                           {isDbOpen && (
-                            <div className="absolute left-0 top-full z-[80] mt-1 w-full rounded-box border border-base-300 bg-base-100 p-2 shadow-xl">
+                            <div className="absolute left-0 top-full z-80 mt-1 w-full rounded-box border border-base-300 bg-base-100 p-2 shadow-xl">
                               <input
                                 type="text"
                                 placeholder="Type to filter..."

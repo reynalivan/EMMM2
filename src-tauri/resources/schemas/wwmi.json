@@ -59,5 +59,10 @@
       "label": "Rarity",
       "options": ["5-Star", "4-Star"]
     }
-  ]
+  ],
+  "hash_db": {},
+  "stopwords": [],
+  "short_token_whitelist": [],
+  "ini_key_blacklist": [],
+  "ini_key_whitelist": []
 }
