@@ -22,9 +22,16 @@ export interface DbEntry {
 export interface DbEntryFull {
   name: string;
   aliases?: string[];
+  tags?: string[];
   object_type: string;
   metadata?: Record<string, unknown>;
   thumbnail_path?: string;
+  custom_skins?: {
+    name: string;
+    aliases?: string[];
+    thumbnail_skin_path?: string;
+    rarity?: string;
+  }[];
 }
 
 /** Categorized view for sidebar UI consumption. */
@@ -44,9 +51,11 @@ function categorizeMasterDb(entries: DbEntry[]): MasterDbCategorized {
     result[key].push({
       name: entry.name,
       aliases: entry.tags,
+      tags: entry.tags, // Added for UI consumption
       object_type: entry.object_type,
       metadata: entry.metadata,
       thumbnail_path: entry.thumbnail_path,
+      custom_skins: entry.custom_skins, // Added for UI consumption
     });
   }
   return result;
@@ -88,6 +97,9 @@ function fuzzyScore(query: string, target: string): number {
   return lcs / Math.min(m, n);
 }
 
+const DEFAULT_OPTION_LIMIT = 120;
+const SEARCH_RESULT_LIMIT = 80;
+
 export function useMasterDbSync(objectType: string | undefined, originalName?: string) {
   const { activeGame } = useActiveGame();
 
@@ -105,14 +117,10 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
     queryKey: ['master-db', activeGame?.game_type],
     queryFn: async () => {
       if (!activeGame) return null;
-      console.log('[useMasterDbSync] Fetching DB for:', activeGame.game_type);
       try {
         const json = await invoke<string>('get_master_db', { gameType: activeGame.game_type });
         const entries = JSON.parse(json) as DbEntry[];
-        console.log('[useMasterDbSync] Parsed entries:', entries.length);
-        const categorized = categorizeMasterDb(entries);
-        console.log('[useMasterDbSync] Categorized keys:', Object.keys(categorized));
-        return categorized;
+        return categorizeMasterDb(entries);
       } catch (e) {
         console.error('[useMasterDbSync] Failed to load MasterDB:', e);
         throw e;
@@ -131,8 +139,6 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
     const searchLower = originalName.toLowerCase();
     const FUZZY_THRESHOLD = 0.25; // Lowered from 0.4 to ensure matches appear
 
-    console.log('[useSmartSuggestions] Input:', searchLower, 'Source size:', source.length);
-
     const matches = source
       .map((item) => {
         const nameScore = fuzzyScore(searchLower, item.name);
@@ -147,7 +153,6 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
       .slice(0, 4) // Max 4 suggestions
       .map(({ item, score }) => ({ ...item, score })); // Include score for UI confidence
 
-    console.log('[useSmartSuggestions] Matches:', matches.length);
     return matches;
   }, [masterDb, originalName]);
 
@@ -156,12 +161,14 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
   const dbOptions = useMemo(() => {
     if (!masterDb) return [];
 
-    let source: DbEntryFull[] = [];
+    let source: DbEntryFull[];
 
     // Look up by exact object_type key (lowercase)
     const typeLower = objectType?.toLowerCase() || '';
 
-    if (dbSearch.trim()) {
+    const searchText = dbSearch.trim().toLowerCase();
+
+    if (searchText) {
       // If searching, search GLOBAL DB to allow changing category/finding correct item
       source = Object.values(masterDb).flat();
     } else if (typeLower && masterDb[typeLower]) {
@@ -172,29 +179,41 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
       source = Object.values(masterDb).flat();
     }
 
-    // If search is empty, return ALL options (as requested)
-    if (!dbSearch) {
-      return source;
+    if (!searchText) {
+      return source.slice(0, DEFAULT_OPTION_LIMIT);
     }
 
-    const searchLower = dbSearch.toLowerCase();
-    // Score each entry with fuzzy matching
-    // console.log('[useMasterDbSync] Source size:', source?.length);
-    const FUZZY_THRESHOLD = 0.1; // Lower threshold to be more inclusive
+    const directMatches = source
+      .filter((item) => {
+        if (item.name.toLowerCase().includes(searchText)) {
+          return true;
+        }
+
+        return item.aliases?.some((alias) => alias.toLowerCase().includes(searchText)) ?? false;
+      })
+      .slice(0, SEARCH_RESULT_LIMIT);
+
+    if (directMatches.length > 0 || searchText.length < 3) {
+      return directMatches;
+    }
+
+    const FUZZY_THRESHOLD = 0.2;
     const scored = source
       .map((item) => {
-        const nameScore = fuzzyScore(searchLower, item.name);
+        const nameScore = fuzzyScore(searchText, item.name);
         const aliasScore = Math.max(
           0,
-          ...(item.aliases?.map((a) => fuzzyScore(searchLower, a)) ?? []),
+          ...(item.aliases?.map((alias) => fuzzyScore(searchText, alias)) ?? []),
         );
+
         return { item, score: Math.max(nameScore, aliasScore) };
       })
       .filter(({ score }) => score >= FUZZY_THRESHOLD)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => b.score - a.score)
+      .slice(0, SEARCH_RESULT_LIMIT)
+      .map(({ item }) => item);
 
-    // console.log('[useMasterDbSync] Filtered options:', scored.length);
-    return scored.map(({ item }) => item); // Return all matches
+    return scored;
   }, [masterDb, dbSearch, objectType]);
 
   return {
@@ -206,6 +225,7 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
     setIsDbOpen,
     dbOptions,
     suggestions,
+    masterDb, // Exported to allow Exact-Match hydration in EditObjectModal
     isLoading: isQueryLoading && isSyncMode, // Only load if sync mode active
     error,
   };

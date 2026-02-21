@@ -41,9 +41,9 @@ export interface ContextMenuHandlerProps {
   handleOpen: (path: string) => void;
   handlePin: (id: string) => void;
   handleFavorite: (path: string) => void;
-  handleMoveCategory: (id: string, category: string) => void;
-  handleEnableAll?: (id: string) => void;
-  handleDisableAll?: (id: string) => void;
+  handleMoveCategory: (id: string, category: string, type: 'object' | 'folder') => void;
+  handleEnableObject?: (id: string) => void;
+  handleDisableObject?: (id: string) => void;
 }
 
 /** Build the context menu content for an item */
@@ -63,8 +63,8 @@ function renderContextMenu(item: ContextMenuTarget, ctx: ContextMenuHandlerProps
       onPin={ctx.handlePin}
       onFavorite={ctx.handleFavorite}
       onMoveCategory={ctx.handleMoveCategory}
-      onEnableAll={ctx.handleEnableAll}
-      onDisableAll={ctx.handleDisableAll}
+      onEnableObject={ctx.handleEnableObject}
+      onDisableObject={ctx.handleDisableObject}
     />
   );
 }
@@ -159,6 +159,7 @@ export default function ObjectListContent({
                       objectType: item.obj.object_type,
                       enabledCount: item.obj.enabled_count,
                       modCount: item.obj.mod_count,
+                      isPinned: item.obj.is_pinned,
                     },
                     ctx,
                   )}
@@ -235,6 +236,7 @@ function StickyRow({
               objectType: item.obj.object_type,
               enabledCount: item.obj.enabled_count,
               modCount: item.obj.mod_count,
+              isPinned: item.obj.is_pinned,
             },
             ctx,
           )}

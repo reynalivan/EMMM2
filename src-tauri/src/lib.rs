@@ -75,6 +75,12 @@ pub fn run() {
             sql: include_str!("../migrations/20260216143000_epic8_collections.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "add_sync_mode",
+            sql: include_str!("../migrations/20260217120000_add_sync_mode.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

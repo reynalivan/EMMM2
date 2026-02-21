@@ -47,6 +47,7 @@ export interface ModInfo {
   version: string;
   tags: string[];
   is_safe: boolean;
+  is_auto_sync: boolean;
   is_favorite: boolean;
   metadata?: Record<string, string>;
 }
@@ -61,6 +62,7 @@ export interface ModInfoUpdate {
   tags_add?: string[];
   tags_remove?: string[];
   is_safe?: boolean;
+  is_auto_sync?: boolean;
   is_favorite?: boolean;
   metadata?: Record<string, string>;
 }

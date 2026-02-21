@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Move,
   Pin,
+  PinOff,
   Power,
   RefreshCw,
   Trash2,
@@ -29,6 +30,7 @@ export type ContextMenuTarget =
       objectType: string;
       enabledCount?: number;
       modCount?: number;
+      isPinned?: boolean;
     };
 
 interface ObjectContextMenuProps {
@@ -44,9 +46,9 @@ interface ObjectContextMenuProps {
   onOpen: (path: string) => void;
   onPin: (id: string) => void;
   onFavorite: (path: string) => void;
-  onMoveCategory: (id: string, category: string) => void;
-  onEnableAll?: (id: string) => void;
-  onDisableAll?: (id: string) => void;
+  onMoveCategory: (id: string, category: string, type: 'object' | 'folder') => void;
+  onEnableObject?: (id: string) => void;
+  onDisableObject?: (id: string) => void;
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -67,8 +69,8 @@ export function ObjectContextMenu({
   onPin,
   onFavorite,
   onMoveCategory,
-  onEnableAll,
-  onDisableAll,
+  onEnableObject,
+  onDisableObject,
 }: ObjectContextMenuProps) {
   // 1. Render Object Menu
   if (item.type === 'object') {
@@ -83,25 +85,28 @@ export function ObjectContextMenu({
         <ContextMenuItem icon={Edit} onClick={() => onEditObject(item.id)}>
           Edit Metadata
         </ContextMenuItem>
-        <ContextMenuItem icon={Pin} onClick={() => onPin(item.id)}>
-          Pin to Top
+        <ContextMenuItem icon={item.isPinned ? PinOff : Pin} onClick={() => onPin(item.id)}>
+          {item.isPinned ? 'Unpin Objects' : 'Pin to Top'}
         </ContextMenuItem>
 
-        {/* Enable/Disable All Mods */}
-        {hasDisabledMods && onEnableAll && (
-          <ContextMenuItem icon={ToggleRight} onClick={() => onEnableAll(item.id)}>
-            Enable All Mods
+        {/* Enable/Disable Object */}
+        {hasDisabledMods && onEnableObject && (
+          <ContextMenuItem icon={ToggleRight} onClick={() => onEnableObject(item.id)}>
+            Enable
           </ContextMenuItem>
         )}
-        {hasEnabledMods && onDisableAll && (
-          <ContextMenuItem icon={ToggleLeft} onClick={() => onDisableAll(item.id)}>
-            Disable All Mods
+        {hasEnabledMods && onDisableObject && (
+          <ContextMenuItem icon={ToggleLeft} onClick={() => onDisableObject(item.id)}>
+            Disable
           </ContextMenuItem>
         )}
 
         <ContextMenuSub label="Move Category..." icon={Move}>
           {categories.map((cat) => (
-            <ContextMenuItem key={cat.name} onClick={() => onMoveCategory(item.id, cat.name)}>
+            <ContextMenuItem
+              key={cat.name}
+              onClick={() => onMoveCategory(item.id, cat.name, 'object')}
+            >
               {cat.label ?? cat.name}
             </ContextMenuItem>
           ))}
@@ -140,7 +145,10 @@ export function ObjectContextMenu({
       </ContextMenuItem>
       <ContextMenuSub label="Move to..." icon={Move}>
         {categories.map((cat) => (
-          <ContextMenuItem key={cat.name} onClick={() => onMoveCategory(item.path, cat.name)}>
+          <ContextMenuItem
+            key={cat.name}
+            onClick={() => onMoveCategory(item.path, cat.name, 'folder')}
+          >
             {cat.label ?? cat.name}
           </ContextMenuItem>
         ))}

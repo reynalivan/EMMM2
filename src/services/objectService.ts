@@ -94,6 +94,7 @@ export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]>
       o.thumbnail_path,
       o.is_safe,
       o.is_pinned,
+      o.is_auto_sync,
       o.created_at,
       o.metadata,
       o.tags,
@@ -154,15 +155,15 @@ export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]>
   // Sorting
   switch (filter.sort_by) {
     case 'date':
-      query += ` ORDER BY o.created_at DESC`;
+      query += ` ORDER BY o.is_pinned DESC, o.created_at DESC`;
       break;
     case 'rarity':
       // Sort by rarity (descending, so 5-Star first)
-      query += ` ORDER BY JSON_EXTRACT(o.metadata, '$.rarity') DESC, o.name ASC`;
+      query += ` ORDER BY o.is_pinned DESC, JSON_EXTRACT(o.metadata, '$.rarity') DESC, o.name ASC`;
       break;
     case 'name':
     default:
-      query += ` ORDER BY o.object_type, o.sort_order, o.name ASC`;
+      query += ` ORDER BY o.is_pinned DESC, o.object_type, o.sort_order, o.name ASC`;
       break;
   }
 
@@ -212,8 +213,8 @@ export async function createObject(input: CreateObjectInput): Promise<string> {
   const id = crypto.randomUUID();
   try {
     await execute(
-      `INSERT INTO objects (id, game_id, name, object_type, sub_category, is_safe, tags, metadata, sort_order, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, 0, datetime('now'))`,
+      `INSERT INTO objects (id, game_id, name, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, sort_order, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, '[]', $7, 0, datetime('now'))`,
       [
         id,
         input.game_id,
@@ -279,6 +280,11 @@ export async function updateObject(id: string, updates: UpdateObjectInput): Prom
   if (updates.is_safe !== undefined) {
     setClauses.push(`is_safe = $${paramIdx++}`);
     params.push(updates.is_safe ? 1 : 0);
+  }
+
+  if (updates.is_auto_sync !== undefined) {
+    setClauses.push(`is_auto_sync = $${paramIdx++}`);
+    params.push(updates.is_auto_sync ? 1 : 0);
   }
 
   if (setClauses.length === 0) return;

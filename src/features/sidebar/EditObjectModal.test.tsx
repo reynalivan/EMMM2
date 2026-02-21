@@ -80,6 +80,7 @@ const mockObject: ObjectSummary = {
   thumbnail_path: null,
   is_safe: true,
   is_pinned: false,
+  is_auto_sync: false,
   metadata: '{"element":"Pyro"}',
   tags: '[]',
 };

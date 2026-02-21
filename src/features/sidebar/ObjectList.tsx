@@ -59,8 +59,8 @@ export default function ObjectList() {
     handlePin,
     handleFavorite,
     handleMoveCategory,
-    handleEnableAll,
-    handleDisableAll,
+    handleEnableObject,
+    handleDisableObject,
     categoryNames,
     scanReview,
     handleCommitScan,
@@ -91,8 +91,8 @@ export default function ObjectList() {
     handlePin,
     handleFavorite,
     handleMoveCategory,
-    handleEnableAll,
-    handleDisableAll,
+    handleEnableObject,
+    handleDisableObject,
   };
 
   return (
@@ -126,7 +126,13 @@ export default function ObjectList() {
       <ObjectListStates
         isLoading={isLoading}
         isError={isError}
-        errorMessage={objectsErrorInfo?.message}
+        errorMessage={
+          objectsErrorInfo
+            ? objectsErrorInfo instanceof Error
+              ? objectsErrorInfo.message
+              : String(objectsErrorInfo)
+            : undefined
+        }
         hasNoGame={hasNoGame}
         isEmpty={isEmpty}
         sidebarSearchQuery={sidebarSearchQuery}

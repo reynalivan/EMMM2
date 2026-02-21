@@ -11,6 +11,7 @@ import {
   Star,
   Sword,
   Users,
+  Pin,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { ObjectSummary } from '../../types/object';
@@ -129,11 +130,15 @@ export default function ObjectRowItem({
           >
             {obj.name}
           </span>
-          {obj.enabled_count > 0 && (
-            <span className="badge badge-xs badge-primary font-mono tabular-nums bg-primary/20 text-primary border-0">
-              {obj.enabled_count}
-            </span>
-          )}
+
+          <div className="flex items-center gap-1.5">
+            {obj.is_pinned && <Pin size={12} className="text-secondary rotate-45" />}
+            {obj.enabled_count > 0 && (
+              <span className="badge badge-xs badge-primary font-mono tabular-nums bg-primary/20 text-primary border-0">
+                {obj.enabled_count}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Metadata subtext — element icon, weapon, rarity, or fallback to mod count */}

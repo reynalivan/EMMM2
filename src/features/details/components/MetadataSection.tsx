@@ -32,89 +32,92 @@ export default function MetadataSection({
   onDiscard,
 }: MetadataSectionProps) {
   return (
-    <div className="mb-6">
+    <div className="mb-6 flex flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Metadata</h3>
-        <div className="flex items-center gap-2">
-          <button
-            className="btn btn-ghost btn-xs text-warning"
-            disabled={!metadataDirty || isSaving}
-            onClick={onDiscard}
-            title="Discard metadata changes"
-          >
-            Discard
-          </button>
-          <button
-            className="btn btn-primary btn-xs"
-            disabled={!metadataDirty || isSaving || !activePath}
-            onClick={onSave}
-            title="Save metadata"
-          >
-            <Check size={13} />
-            Save Metadata
-          </button>
-        </div>
       </div>
 
-      <label className="label py-1" htmlFor="metadata-title-input">
-        <span className="label-text text-xs">Title</span>
-      </label>
-      <input
-        id="metadata-title-input"
-        aria-label="Mod title"
-        type="text"
-        className="input input-bordered mb-2 w-full bg-transparent text-sm"
-        placeholder="Mod title"
-        value={titleDraft}
-        disabled={!activePath}
-        onChange={(event) => onTitleChange(event.target.value)}
-      />
+      <div className="flex-1 overflow-y-auto">
+        <label className="label py-1" htmlFor="metadata-title-input">
+          <span className="label-text text-xs">Title</span>
+        </label>
+        <input
+          id="metadata-title-input"
+          aria-label="Mod title"
+          type="text"
+          className="input input-bordered mb-2 w-full bg-transparent text-sm"
+          placeholder="Mod title"
+          value={titleDraft}
+          disabled={!activePath}
+          onChange={(event) => onTitleChange(event.target.value)}
+        />
 
-      <div className="mb-2 grid grid-cols-2 gap-2">
-        <div>
-          <label className="label py-1" htmlFor="metadata-author-input">
-            <span className="label-text text-xs">Author</span>
-          </label>
-          <input
-            id="metadata-author-input"
-            aria-label="Mod author"
-            type="text"
-            className="input input-bordered w-full bg-transparent text-sm"
-            placeholder="Unknown"
-            value={authorDraft}
-            disabled={!activePath}
-            onChange={(event) => onAuthorChange(event.target.value)}
-          />
+        <div className="mb-2 grid grid-cols-2 gap-2">
+          <div>
+            <label className="label py-1" htmlFor="metadata-author-input">
+              <span className="label-text text-xs">Author</span>
+            </label>
+            <input
+              id="metadata-author-input"
+              aria-label="Mod author"
+              type="text"
+              className="input input-bordered w-full bg-transparent text-sm"
+              placeholder="Unknown"
+              value={authorDraft}
+              disabled={!activePath}
+              onChange={(event) => onAuthorChange(event.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label py-1" htmlFor="metadata-version-input">
+              <span className="label-text text-xs">Version</span>
+            </label>
+            <input
+              id="metadata-version-input"
+              aria-label="Mod version"
+              type="text"
+              className="input input-bordered w-full bg-transparent text-sm"
+              placeholder="1.0"
+              value={versionDraft}
+              disabled={!activePath}
+              onChange={(event) => onVersionChange(event.target.value)}
+            />
+          </div>
         </div>
-        <div>
-          <label className="label py-1" htmlFor="metadata-version-input">
-            <span className="label-text text-xs">Version</span>
-          </label>
-          <input
-            id="metadata-version-input"
-            aria-label="Mod version"
-            type="text"
-            className="input input-bordered w-full bg-transparent text-sm"
-            placeholder="1.0"
-            value={versionDraft}
-            disabled={!activePath}
-            onChange={(event) => onVersionChange(event.target.value)}
-          />
-        </div>
+
+        <label className="label py-1" htmlFor="metadata-description-input">
+          <span className="label-text text-xs">Description</span>
+        </label>
+        <textarea
+          id="metadata-description-input"
+          aria-label="Mod description"
+          className="textarea textarea-bordered h-24 w-full resize-none bg-transparent text-sm"
+          placeholder="No description available."
+          value={descriptionDraft}
+          disabled={!activePath}
+          onChange={(event) => onDescriptionChange(event.target.value)}
+        />
       </div>
 
-      <label className="label py-1" htmlFor="metadata-description-input">
-        <span className="label-text text-xs">Description</span>
-      </label>
-      <textarea
-        id="metadata-description-input"
-        aria-label="Mod description"
-        className="textarea textarea-bordered h-24 w-full resize-none bg-transparent text-sm"
-        placeholder="No description available."
-        value={descriptionDraft}
-        disabled={!activePath}
-        onChange={(event) => onDescriptionChange(event.target.value)}
-      />
+      <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-2 border-t border-white/5 bg-base-100/80 px-6 py-4 backdrop-blur-sm">
+        <button
+          className="btn btn-ghost btn-sm flex-1 text-warning"
+          disabled={!metadataDirty || isSaving}
+          onClick={onDiscard}
+          title="Discard metadata changes"
+        >
+          Discard
+        </button>
+        <button
+          className="btn btn-primary btn-sm flex-1"
+          disabled={!metadataDirty || isSaving || !activePath}
+          onClick={onSave}
+          title="Save metadata"
+        >
+          <Check size={13} />
+          Save Metadata
+        </button>
+      </div>
     </div>
   );
 }

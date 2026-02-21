@@ -56,7 +56,6 @@ emmm2.db*
 
 
 # Project Specific
-test_games/
 .history/
 .agent/
 .docs/

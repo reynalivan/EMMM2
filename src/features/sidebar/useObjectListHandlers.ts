@@ -405,14 +405,41 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
   );
 
   const handleMoveCategory = useCallback(
-    async (id: string, category: string) => {
+    async (id: string, category: string, itemType: 'object' | 'folder') => {
       if (!activeGame) return;
       try {
-        await invoke('set_mod_category', {
-          gameId: activeGame.id,
-          folderPath: id,
-          category,
-        });
+        if (itemType === 'folder') {
+          await invoke('set_mod_category', {
+            gameId: activeGame.id,
+            folderPath: id,
+            category,
+          });
+        } else {
+          // Object move: 1) Update DB
+          await updateObject.mutateAsync({
+            id,
+            updates: { object_type: category },
+          });
+
+          // Object move: 2) Retrieve and update info.json for all child mods
+          const objectFolders = await invoke<{ path: string; is_enabled: boolean }[]>(
+            'get_folders',
+            {
+              gameId: activeGame.id,
+              modsPath: activeGame.mod_path,
+              objectId: id,
+            },
+          );
+
+          for (const f of objectFolders) {
+            await invoke('set_mod_category', {
+              gameId: activeGame.id,
+              folderPath: f.path,
+              category,
+            });
+          }
+        }
+
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
@@ -420,7 +447,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         console.error('Failed to move category:', e);
       }
     },
-    [activeGame, queryClient],
+    [activeGame, queryClient, updateObject],
   );
 
   // Dynamic categories from schema (with display labels)
@@ -434,14 +461,15 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     return cats.map((c) => ({ name: c.name, label: c.label }));
   }, [schema]);
 
-  // Enable/Disable All Mods for an object
-  const handleEnableAll = useCallback(
+  // Enable/Disable Object by toggling its underlying folders
+  const handleEnableObject = useCallback(
     async (objectId: string) => {
       if (!activeGame) return;
       try {
-        const folders = await invoke<{ path: string; is_enabled: boolean }[]>('get_folders', {
+        const folders = await invoke<{ path: string; is_enabled: boolean }[]>('list_mod_folders', {
           gameId: activeGame.id,
           modsPath: activeGame.mod_path,
+          subPath: null,
           objectId,
         });
         const disabledPaths = folders.filter((f) => !f.is_enabled).map((f) => f.path);
@@ -449,22 +477,23 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         await invoke('bulk_toggle_mods', { paths: disabledPaths, enable: true });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['objects'] });
-        toast.success(`Enabled ${disabledPaths.length} mods`);
+        toast.success(`Enabled ${disabledPaths.length} object folders`);
       } catch (e) {
-        console.error('Failed to enable all mods:', e);
-        toast.error('Failed to enable all mods');
+        console.error('Failed to enable object folders:', e);
+        toast.error('Failed to enable object folders');
       }
     },
     [activeGame, queryClient],
   );
 
-  const handleDisableAll = useCallback(
+  const handleDisableObject = useCallback(
     async (objectId: string) => {
       if (!activeGame) return;
       try {
-        const folders = await invoke<{ path: string; is_enabled: boolean }[]>('get_folders', {
+        const folders = await invoke<{ path: string; is_enabled: boolean }[]>('list_mod_folders', {
           gameId: activeGame.id,
           modsPath: activeGame.mod_path,
+          subPath: null,
           objectId,
         });
         const enabledPaths = folders.filter((f) => f.is_enabled).map((f) => f.path);
@@ -472,10 +501,10 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         await invoke('bulk_toggle_mods', { paths: enabledPaths, enable: false });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['objects'] });
-        toast.success(`Disabled ${enabledPaths.length} mods`);
+        toast.success(`Disabled ${enabledPaths.length} object folders`);
       } catch (e) {
-        console.error('Failed to disable all mods:', e);
-        toast.error('Failed to disable all mods');
+        console.error('Failed to disable object folders:', e);
+        toast.error('Failed to disable object folders');
       }
     },
     [activeGame, queryClient],
@@ -507,8 +536,8 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handlePin,
     handleFavorite,
     handleMoveCategory,
-    handleEnableAll,
-    handleDisableAll,
+    handleEnableObject,
+    handleDisableObject,
     categoryNames,
   };
 }

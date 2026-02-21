@@ -16,6 +16,7 @@ export interface GameObject {
   thumbnail_path: string | null;
   is_safe: boolean;
   is_pinned: boolean;
+  is_auto_sync: boolean;
   created_at: string;
 }
 
@@ -30,6 +31,7 @@ export interface ObjectSummary {
   thumbnail_path: string | null;
   is_safe: boolean;
   is_pinned: boolean;
+  is_auto_sync: boolean;
   created_at?: string;
   metadata: string;
   tags: string;
@@ -79,10 +81,11 @@ export interface UpdateObjectInput {
   name?: string;
   object_type?: string;
   sub_category?: string;
-  tags?: string[];
   metadata?: Record<string, unknown>;
-  thumbnail_path?: string;
+  thumbnail_path?: string | null;
   is_safe?: boolean;
+  is_auto_sync?: boolean;
+  tags?: string[];
 }
 
 /** Input DTO for creating a new object (US-3.3) */

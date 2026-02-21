@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useModFolders, useToggleMod } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
@@ -129,12 +129,18 @@ export function usePreviewPanelState() {
         });
       }
 
-      setPendingTransition({ kind: 'mod', path: externalSelectedPath });
-      setShowUnsavedModal(true);
+      // Defer state update to avoid "setState during render" warning
+      setTimeout(() => {
+        setPendingTransition({ kind: 'mod', path: externalSelectedPath });
+        setShowUnsavedModal(true);
+      }, 0);
       return;
     }
 
-    setActivePath(externalSelectedPath);
+    // Defer state update (derived from props)
+    setTimeout(() => {
+      setActivePath(externalSelectedPath);
+    }, 0);
   }, [externalSelectedPath, activePath, hasUnsavedChanges]);
 
   // Reset image index when active path or image count changes

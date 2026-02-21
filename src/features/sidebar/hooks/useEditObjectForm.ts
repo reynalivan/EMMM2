@@ -17,13 +17,36 @@ import {
 import type { ObjectSummary, GameObject } from '../../../types/object';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 
-const schema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  object_type: z.string().min(1, 'Type is required'),
-  sub_category: z.string().optional().nullable(),
-  is_safe: z.boolean(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
+const schema = z
+  .object({
+    name: z.string().min(1, 'Name is required'),
+    object_type: z.string().min(1, 'Type is required'),
+    sub_category: z.string().optional().nullable(),
+    is_safe: z.boolean(),
+    is_auto_sync: z.boolean(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    tags: z.array(z.string()).optional(),
+    has_custom_skin: z.boolean().optional(),
+    custom_skin: z
+      .object({
+        name: z.string().optional(),
+        aliases: z.array(z.string()).optional(),
+        thumbnail_skin_path: z.string().optional(),
+        rarity: z.string().optional(),
+      })
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.has_custom_skin) {
+      if (!data.custom_skin?.name || data.custom_skin.name.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Skin name required',
+          path: ['custom_skin', 'name'],
+        });
+      }
+    }
+  });
 
 export type EditObjectFormData = z.infer<typeof schema>;
 
@@ -90,7 +113,11 @@ export function useEditObjectForm(
       object_type: '',
       sub_category: '',
       is_safe: true,
+      is_auto_sync: false,
       metadata: {},
+      tags: [],
+      has_custom_skin: false,
+      custom_skin: { name: '', aliases: [], thumbnail_skin_path: '', rarity: '' },
     },
   });
 
@@ -103,31 +130,74 @@ export function useEditObjectForm(
     const defaultName = isFolder ? (object as ModFolder).name : (object as ObjectSummary).name;
     let defaultType = '';
     let defaultSafe: boolean;
+    let defaultAutoSync: boolean;
     let defaultMeta: Record<string, unknown> = {};
+    let defaultTags: string[] = [];
+    let defaultCustomSkin:
+      | {
+          name: string;
+          aliases?: string[];
+          thumbnail_skin_path?: string;
+          rarity?: string;
+        }
+      | undefined = undefined;
+    let defaultHasCustomSkin: boolean = false;
 
     if (fullDetails?.type === 'folder' && fullDetails.data) {
       const info = fullDetails.data as ModInfo;
       defaultSafe = info.is_safe;
+      defaultAutoSync = info.is_auto_sync;
       if (info.metadata) {
         defaultMeta = info.metadata as Record<string, unknown>;
+        if (defaultMeta.custom_skin) {
+          defaultCustomSkin = defaultMeta.custom_skin as unknown as NonNullable<
+            typeof defaultCustomSkin
+          >;
+          defaultHasCustomSkin = true;
+        }
       }
     } else if (fullDetails?.type === 'object' && fullDetails.data) {
       const obj = fullDetails.data as GameObject;
       defaultType = obj.object_type;
       defaultSafe = obj.is_safe;
+      defaultAutoSync = obj.is_auto_sync;
       try {
         if (typeof obj.metadata === 'string') {
           defaultMeta = JSON.parse(obj.metadata);
         } else {
           defaultMeta = obj.metadata as Record<string, unknown>;
         }
+        if (defaultMeta.custom_skin) {
+          defaultCustomSkin = defaultMeta.custom_skin as unknown as NonNullable<
+            typeof defaultCustomSkin
+          >;
+          defaultHasCustomSkin = true;
+        }
+      } catch {
+        // Ignore JSON parse error
+      }
+      try {
+        if (obj.tags) {
+          const parsedTags = typeof obj.tags === 'string' ? JSON.parse(obj.tags) : obj.tags;
+          if (Array.isArray(parsedTags)) {
+            defaultTags = parsedTags.map(String);
+          }
+        }
       } catch {
         // Ignore JSON parse error
       }
     } else {
-      // Fallback: use ObjectSummary fields (covers query error + null data)
       defaultType = isObject ? (object as ObjectSummary).object_type : '';
       defaultSafe = isObject ? (object as ObjectSummary).is_safe : true;
+      defaultAutoSync = isObject ? (object as ObjectSummary).is_auto_sync : false;
+      if (isObject && (object as ObjectSummary).tags) {
+        try {
+          const parsedTags = JSON.parse((object as ObjectSummary).tags);
+          if (Array.isArray(parsedTags)) defaultTags = parsedTags.map(String);
+        } catch {
+          // Ignore JSON parse error
+        }
+      }
     }
 
     form.reset({
@@ -135,7 +205,16 @@ export function useEditObjectForm(
       object_type: defaultType,
       sub_category: isObject ? (object as ObjectSummary).sub_category : '',
       is_safe: defaultSafe,
+      is_auto_sync: defaultAutoSync,
       metadata: defaultMeta,
+      tags: defaultTags,
+      has_custom_skin: defaultHasCustomSkin,
+      custom_skin: defaultCustomSkin || {
+        name: '',
+        aliases: [],
+        thumbnail_skin_path: '',
+        rarity: '',
+      },
     });
   }, [object, fullDetails, isFolder, isObject, form, isLoadingDetails, isDetailsError]);
 
@@ -148,8 +227,16 @@ export function useEditObjectForm(
         });
       }
 
+      const finalMeta = data.metadata ? { ...data.metadata } : {};
+      if (data.has_custom_skin && data.custom_skin?.name) {
+        finalMeta.custom_skin = data.custom_skin;
+      } else {
+        delete finalMeta.custom_skin;
+      }
+
       if (isObject) {
         const obj = object as ObjectSummary;
+
         await updateObject.mutateAsync({
           id: obj.id,
           updates: {
@@ -157,7 +244,9 @@ export function useEditObjectForm(
             object_type: data.object_type,
             sub_category: data.sub_category || undefined,
             is_safe: data.is_safe,
-            metadata: data.metadata as Record<string, unknown>,
+            is_auto_sync: data.is_auto_sync,
+            metadata: finalMeta,
+            tags: data.tags || [],
             thumbnail_path:
               thumbnailAction === 'update'
                 ? (selectedThumbnailPath ?? undefined)
@@ -198,11 +287,12 @@ export function useEditObjectForm(
           await deleteThumbnail.mutateAsync(currentPath);
         }
 
-        // 4. Update Info (Safe + Metadata)
+        // 4. Update Info (Safe + Metadata + AutoSync)
         await updateInfo.mutateAsync({
           folderPath: currentPath,
           update: {
             is_safe: data.is_safe,
+            is_auto_sync: data.is_auto_sync,
             metadata: metaStrings,
           },
         });

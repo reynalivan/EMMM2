@@ -242,8 +242,8 @@ export function useObjectListLogic() {
     handlePin: handlers.handlePin,
     handleFavorite: handlers.handleFavorite,
     handleMoveCategory: handlers.handleMoveCategory,
-    handleEnableAll: handlers.handleEnableAll,
-    handleDisableAll: handlers.handleDisableAll,
+    handleEnableObject: handlers.handleEnableObject,
+    handleDisableObject: handlers.handleDisableObject,
     categoryNames: handlers.categoryNames,
   };
 }

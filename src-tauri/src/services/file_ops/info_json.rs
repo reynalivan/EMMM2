@@ -31,6 +31,8 @@ pub struct ModInfo {
     #[serde(default)]
     pub is_favorite: bool,
     #[serde(default)]
+    pub is_auto_sync: bool,
+    #[serde(default)]
     pub metadata: std::collections::HashMap<String, String>,
 }
 
@@ -55,6 +57,7 @@ impl ModInfo {
             tags: Vec::new(),
             is_safe: true,
             is_favorite: false,
+            is_auto_sync: false,
             metadata: std::collections::HashMap::new(),
         }
     }
@@ -122,6 +125,7 @@ pub struct ModInfoUpdate {
     pub tags_remove: Option<Vec<String>>,
     pub is_safe: Option<bool>,
     pub is_favorite: Option<bool>,
+    pub is_auto_sync: Option<bool>,
     pub metadata: Option<std::collections::HashMap<String, String>>,
 }
 
@@ -168,6 +172,9 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
     }
     if let Some(fav) = update.is_favorite {
         info.is_favorite = fav;
+    }
+    if let Some(sync) = update.is_auto_sync {
+        info.is_auto_sync = sync;
     }
     if let Some(ref meta) = update.metadata {
         // Merge metadata (overwrite existing keys, keep others)
