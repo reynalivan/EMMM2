@@ -1,6 +1,5 @@
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
-use tauri_plugin_sql::{Migration, MigrationKind};
 
 pub mod commands;
 pub mod database;
@@ -14,81 +13,6 @@ pub const DISABLED_PREFIX: &str = "DISABLED ";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let migrations = vec![
-        Migration {
-            version: 1,
-            description: "create_initial_tables",
-            sql: include_str!("../migrations/001_init.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 2,
-            description: "epic1_fixes",
-            sql: include_str!("../migrations/002_epic1_fixes.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 3,
-            description: "epic2_scanner",
-            sql: include_str!("../migrations/003_epic2_scanner.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 4,
-            description: "epic3_objects",
-            sql: include_str!("../migrations/004_epic3_objects.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 5,
-            description: "epic4_explorer",
-            sql: include_str!("../migrations/005_epic4_explorer.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 6,
-            description: "objects_pin",
-            sql: include_str!("../migrations/006_objects_pin.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 7,
-            description: "drop_trash_log",
-            sql: include_str!("../migrations/007_drop_trash_log.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 8,
-            description: "add_favorite_column",
-            sql: include_str!("../migrations/008_add_favorite_column.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 9,
-            description: "epic9_dedup_scanner",
-            sql: include_str!("../migrations/20260216103000_epic9_dedup_scanner.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 10,
-            description: "epic8_collections_indexes",
-            sql: include_str!("../migrations/20260216143000_epic8_collections.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 11,
-            description: "add_sync_mode",
-            sql: include_str!("../migrations/20260217120000_add_sync_mode.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 12,
-            description: "app_settings",
-            sql: include_str!("../migrations/012_app_settings.sql"),
-            kind: MigrationKind::Up,
-        },
-    ];
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -111,7 +35,7 @@ pub fn run() {
                 ])
                 .build(),
         )
-        .setup(|app| {
+        .setup(move |app| {
             let app_handle = app.handle();
             // Initialize services
             if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
@@ -138,6 +62,12 @@ pub fn run() {
                             .await
                             .expect("failed to connect to backend db");
 
+                        // Run standard sqlx migrations (compiled into the binary)
+                        sqlx::migrate!("./migrations")
+                            .run(&p)
+                            .await
+                            .expect("Failed to run database migrations");
+
                         // One-time migration: UUID → stable BLAKE3 IDs for mods
                         if let Err(e) = services::scanner::sync::migrate_to_stable_ids(&p).await {
                             log::warn!("Stable ID migration skipped: {e}");
@@ -154,16 +84,10 @@ pub fn run() {
 
             Ok(())
         })
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:app.db", migrations)
-                .build(),
-        )
         .manage(commands::scanner::scan_cmds::ScanState::new())
         .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
         .manage(services::scanner::watcher::WatcherState::new())
         .manage(services::core::operation_lock::OperationLock::new())
-        .manage(services::collections::CollectionsUndoState::new())
         .invoke_handler(tauri::generate_handler![
             commands::app::app_cmds::check_config_status,
             commands::app::app_cmds::get_log_lines,
@@ -189,7 +113,6 @@ pub fn run() {
             commands::scanner::conflict_cmds::detect_conflicts_cmd,
             commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
             commands::scanner::watcher_cmds::set_watcher_suppression_cmd,
-            commands::explorer::filter_existing_folders,
             commands::explorer::list_mod_folders,
             commands::explorer::get_mod_thumbnail,
             commands::mods::mod_core_cmds::open_in_explorer,
@@ -240,12 +163,15 @@ pub fn run() {
             commands::scanner::conflict_cmds::check_shader_conflicts,
             commands::collections::collection_cmds::list_collections,
             commands::collections::collection_cmds::create_collection,
+            commands::objects::object_cmds::get_objects_cmd,
+            commands::objects::object_cmds::get_category_counts_cmd,
+            commands::objects::object_cmds::create_object_cmd,
+            commands::objects::object_cmds::update_object_cmd,
+            commands::objects::object_cmds::delete_object_cmd,
             commands::collections::collection_cmds::update_collection,
             commands::collections::collection_cmds::delete_collection,
             commands::collections::collection_cmds::apply_collection,
-            commands::collections::collection_cmds::undo_collection_apply,
-            commands::collections::collection_cmds::export_collection,
-            commands::collections::collection_cmds::import_collection,
+            commands::collections::collection_cmds::get_collection_preview,
             commands::scanner::sync_cmds::sync_database_cmd,
             commands::scanner::sync_cmds::scan_preview_cmd,
             commands::scanner::sync_cmds::commit_scan_cmd,

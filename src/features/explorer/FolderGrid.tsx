@@ -8,6 +8,8 @@ import {
   Loader2,
   FolderOpen,
   RefreshCw,
+  Upload,
+  FolderInput,
 } from 'lucide-react';
 import FolderCard from './FolderCard';
 import FolderListRow from './FolderListRow';
@@ -226,13 +228,65 @@ export default function FolderGrid() {
 
       {/* Empty state */}
       {!isLoading && !isError && visibleFolders.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
           <FolderOpen size={40} className="text-base-content/15" />
           <p className="text-sm text-base-content/40 text-center">
             {explorerSearchQuery
               ? 'No mods match your search'
-              : 'No mod folders found. Add mods to your game directory to get started.'}
+              : currentPath.length > 0
+                ? 'This folder is empty.'
+                : 'No mod folders found. Add mods to your game directory to get started.'}
           </p>
+
+          {/* When navigated into an empty folder → show back + import suggestion */}
+          {!explorerSearchQuery && currentPath.length > 0 && (
+            <div className="flex flex-col items-center gap-3 mt-2">
+              <button
+                className="btn btn-ghost btn-sm gap-2 text-base-content/60"
+                onClick={() => handleBreadcrumbClick(currentPath.length - 2)}
+              >
+                <ChevronLeft size={16} />
+                Go back
+              </button>
+
+              <div className="divider text-base-content/20 text-[10px] my-0">OR</div>
+
+              <p className="text-xs text-base-content/30">Import mods into this folder</p>
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-outline btn-sm gap-2"
+                  onClick={async () => {
+                    const { open } = await import('@tauri-apps/plugin-dialog');
+                    const selected = await open({
+                      multiple: true,
+                      filters: [{ name: 'Archives', extensions: ['zip', 'rar', '7z'] }],
+                    });
+                    if (selected) {
+                      // TODO: Wire to import pipeline
+                      console.log('Import archives:', selected);
+                    }
+                  }}
+                >
+                  <Upload size={14} />
+                  Import Archive
+                </button>
+                <button
+                  className="btn btn-outline btn-sm gap-2"
+                  onClick={async () => {
+                    const { open } = await import('@tauri-apps/plugin-dialog');
+                    const selected = await open({ directory: true, multiple: false });
+                    if (selected) {
+                      // TODO: Wire to import pipeline
+                      console.log('Import folder:', selected);
+                    }
+                  }}
+                >
+                  <FolderInput size={14} />
+                  Import Folder
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

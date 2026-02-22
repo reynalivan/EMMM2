@@ -1,11 +1,10 @@
 use crate::services::collections::{
     apply_collection as apply_collection_service, create_collection as create_collection_service,
-    delete_collection as delete_collection_service, export_collection as export_collection_service,
-    import_collection as import_collection_service, list_collections as list_collections_service,
-    undo_collection_apply as undo_collection_apply_service,
-    update_collection as update_collection_service, ApplyCollectionResult, Collection,
-    CollectionDetails, CollectionsUndoState, CreateCollectionInput, ExportCollectionPayload,
-    ImportCollectionResult, UndoCollectionResult, UpdateCollectionInput,
+    delete_collection as delete_collection_service,
+    get_collection_preview as get_collection_preview_service,
+    list_collections as list_collections_service, update_collection as update_collection_service,
+    ApplyCollectionResult, Collection, CollectionDetails, CollectionPreviewMod,
+    CreateCollectionInput, UpdateCollectionInput,
 };
 use crate::services::config::ConfigService;
 use crate::services::core::operation_lock::OperationLock;
@@ -53,7 +52,6 @@ pub async fn apply_collection(
     pool: State<'_, SqlitePool>,
     watcher_state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
-    undo_state: State<'_, CollectionsUndoState>,
     config: State<'_, ConfigService>,
     collection_id: String,
     game_id: String,
@@ -63,7 +61,6 @@ pub async fn apply_collection(
     apply_collection_service(
         pool.inner(),
         &watcher_state,
-        &undo_state,
         &collection_id,
         &game_id,
         safe_mode_enabled,
@@ -72,31 +69,10 @@ pub async fn apply_collection(
 }
 
 #[tauri::command]
-pub async fn undo_collection_apply(
-    pool: State<'_, SqlitePool>,
-    watcher_state: State<'_, WatcherState>,
-    op_lock: State<'_, OperationLock>,
-    undo_state: State<'_, CollectionsUndoState>,
-    game_id: String,
-) -> Result<UndoCollectionResult, String> {
-    let _lock = op_lock.acquire().await?;
-    undo_collection_apply_service(pool.inner(), &watcher_state, &undo_state, &game_id).await
-}
-
-#[tauri::command]
-pub async fn export_collection(
+pub async fn get_collection_preview(
     pool: State<'_, SqlitePool>,
     collection_id: String,
     game_id: String,
-) -> Result<ExportCollectionPayload, String> {
-    export_collection_service(pool.inner(), &collection_id, &game_id).await
-}
-
-#[tauri::command]
-pub async fn import_collection(
-    pool: State<'_, SqlitePool>,
-    game_id: String,
-    payload: ExportCollectionPayload,
-) -> Result<ImportCollectionResult, String> {
-    import_collection_service(pool.inner(), &game_id, payload).await
+) -> Result<Vec<CollectionPreviewMod>, String> {
+    get_collection_preview_service(pool.inner(), &collection_id, &game_id).await
 }

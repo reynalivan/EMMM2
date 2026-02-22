@@ -1,8 +1,6 @@
-use std::path::Path;
-
 use crate::services::config::ConfigService;
-use crate::DISABLED_PREFIX;
 
+pub mod classifier;
 pub mod helpers;
 pub mod listing;
 #[cfg(test)]
@@ -15,32 +13,6 @@ pub mod types;
 pub(crate) use helpers::try_resolve_alternate;
 
 pub use types::ModFolder;
-
-// ── Public commands ───────────────────────────────────────────────────────────
-
-/// Bulk-check which folder names physically exist as directories under `base_dir`.
-/// Returns only the names that exist. Used to filter ObjectList by filesystem truth.
-#[tauri::command]
-pub async fn filter_existing_folders(
-    base_dir: String,
-    folder_names: Vec<String>,
-) -> Result<Vec<String>, String> {
-    let base = Path::new(&base_dir);
-    if !base.exists() || !base.is_dir() {
-        return Ok(Vec::new());
-    }
-
-    let existing: Vec<String> = folder_names
-        .into_iter()
-        .filter(|name| {
-            let path = base.join(name);
-            let disabled_path = base.join(format!("{}{}", DISABLED_PREFIX, name));
-            (path.exists() && path.is_dir()) || (disabled_path.exists() && disabled_path.is_dir())
-        })
-        .collect();
-
-    Ok(existing)
-}
 
 /// List mod folders at a given path, optionally navigating into a sub_path.
 ///

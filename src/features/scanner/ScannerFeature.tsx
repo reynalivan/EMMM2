@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
+import { dirname, basename, join } from '@tauri-apps/api/path';
+import { mkdir, exists, rename } from '@tauri-apps/plugin-fs';
 import { Play, ScanSearch } from 'lucide-react';
 import { useScannerStore } from '../../stores/scannerStore';
 import { scanService } from '../../services/scanService';
@@ -73,7 +75,27 @@ export default function ScannerFeature() {
       if (!activeGame) throw new Error('No active game config');
 
       for (const archivePath of paths) {
-        await scanService.extractArchive(archivePath, activeGame.mod_path, pwd, overwrite);
+        const result = await scanService.extractArchive(
+          archivePath,
+          activeGame.mod_path,
+          pwd,
+          overwrite,
+        );
+        if (result.success) {
+          try {
+            const dir = await dirname(archivePath);
+            const base = await basename(archivePath);
+            const extractedDir = await join(dir, '.extracted');
+            if (!(await exists(extractedDir))) {
+              await mkdir(extractedDir, { recursive: true });
+            }
+            await rename(archivePath, await join(extractedDir, base));
+          } catch (e) {
+            console.warn(`Failed to move extracted archive ${archivePath}:`, e);
+          }
+        } else {
+          throw new Error(result.error ?? 'Unknown error during extraction');
+        }
       }
     },
     onSuccess: () => {

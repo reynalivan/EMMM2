@@ -6,7 +6,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
-import { mkdir, exists, remove } from '@tauri-apps/plugin-fs';
+import { dirname, basename, join } from '@tauri-apps/api/path';
+import { mkdir, exists, remove, rename } from '@tauri-apps/plugin-fs';
 import { useToggleMod, useDeleteMod, type ModFolder } from '../../hooks/useFolders';
 import { useDeleteObject, useUpdateObject } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -508,6 +509,17 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
           const result = await scanService.extractArchive(archivePath, objectFolderPath);
           if (result.success) {
             pathsToIngest.push(result.dest_path);
+            try {
+              const dir = await dirname(archivePath);
+              const base = await basename(archivePath);
+              const extractedDir = await join(dir, '.extracted');
+              if (!(await exists(extractedDir))) {
+                await mkdir(extractedDir, { recursive: true });
+              }
+              await rename(archivePath, await join(extractedDir, base));
+            } catch (e) {
+              console.warn(`Failed to move extracted archive ${archivePath}:`, e);
+            }
           } else {
             toast.error(`Failed to extract: ${result.error ?? 'Unknown error'}`);
           }
@@ -578,6 +590,17 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
           if (result.success) {
             folderPaths.push(result.dest_path);
             tempPaths.push(result.dest_path);
+            try {
+              const dir = await dirname(archivePath);
+              const base = await basename(archivePath);
+              const extractedDir = await join(dir, '.extracted');
+              if (!(await exists(extractedDir))) {
+                await mkdir(extractedDir, { recursive: true });
+              }
+              await rename(archivePath, await join(extractedDir, base));
+            } catch (e) {
+              console.warn(`Failed to move extracted archive ${archivePath}:`, e);
+            }
           } else {
             toast.error(`Failed to extract: ${result.error ?? 'Unknown error'}`);
           }
@@ -672,25 +695,83 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     // with pendingPaths. This exists so useObjectListLogic can export it.
   }, []);
 
-  // Enable/Disable Object by toggling its physical folder directly
-  const handleEnableObject = useCallback(
-    async (objectId: string) => {
+  // ── Shared: bulk-toggle all mods inside an object ────────────────────────
+  const toggleObjectMods = useCallback(
+    async (objectId: string, enable: boolean) => {
       if (!activeGame) return;
       const obj = objects.find((o) => o.id === objectId);
       if (!obj) return;
+
+      const label = enable ? 'Enable' : 'Disable';
       try {
-        // The disabled folder is at modsPath/DISABLED objectName
-        const disabledPath = `${activeGame.mod_path}\\DISABLED ${obj.name}`;
-        await invoke('toggle_mod', { path: disabledPath, enable: true });
+        // 1. Query this object's mods from backend
+        const objectMods = await invoke<{ path: string; is_enabled: boolean }[]>(
+          'list_mod_folders',
+          {
+            modsPath: activeGame.mod_path,
+            subPath: obj.name,
+            gameId: activeGame.id,
+            objectId,
+          },
+        );
+
+        // 2. Filter to only mods that need toggling
+        const toToggle = objectMods.filter((f) => f.is_enabled !== enable);
+        if (toToggle.length === 0) {
+          toast.info(`${obj.name}: nothing to ${label.toLowerCase()}`);
+          return;
+        }
+
+        // 3. Optimistic update: immediately update enabled_count in sidebar
+        queryClient.setQueriesData<{ id: string; enabled_count: number }[]>(
+          { queryKey: ['objects'] },
+          (old) =>
+            old?.map((o) =>
+              o.id === objectId
+                ? {
+                    ...o,
+                    enabled_count: enable
+                      ? objectMods.length // all enabled
+                      : 0, // all disabled
+                  }
+                : o,
+            ),
+        );
+
+        // 4. Suppress watcher during bulk FS renames
+        await invoke('set_watcher_suppression_cmd', { suppressed: true });
+        try {
+          const paths = toToggle.map((f) => f.path);
+          await invoke('bulk_toggle_mods', { paths, enable });
+        } finally {
+          await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        }
+
+        // 5. Refresh caches (authoritative data from backend)
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['objects'] });
-        toast.success(`Enabled ${obj.name}`);
+        queryClient.invalidateQueries({ queryKey: ['conflicts'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+        toast.success(`${label}d ${toToggle.length} mod(s) in ${obj.name}`);
       } catch (e) {
-        console.error('Failed to enable object:', e);
-        toast.error('Failed to enable object');
+        // Rollback optimistic update
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['conflicts'] });
+        console.error(`Failed to ${label.toLowerCase()} object:`, e);
+        toast.error(`Failed to ${label.toLowerCase()} object`);
       }
     },
     [activeGame, objects, queryClient],
+  );
+
+  const handleEnableObject = useCallback(
+    (objectId: string) => toggleObjectMods(objectId, true),
+    [toggleObjectMods],
+  );
+
+  const handleDisableObject = useCallback(
+    (objectId: string) => toggleObjectMods(objectId, false),
+    [toggleObjectMods],
   );
 
   const handleRevealInExplorer = useCallback(
@@ -706,30 +787,9 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         toast.error(msg);
-        // Refresh data in case stale entries were cleaned up
         queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      }
-    },
-    [activeGame, objects, queryClient],
-  );
-
-  const handleDisableObject = useCallback(
-    async (objectId: string) => {
-      if (!activeGame) return;
-      const obj = objects.find((o) => o.id === objectId);
-      if (!obj) return;
-      try {
-        // The enabled folder is at modsPath/objectName
-        const enabledPath = `${activeGame.mod_path}\\${obj.name}`;
-        await invoke('toggle_mod', { path: enabledPath, enable: false });
-        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        toast.success(`Disabled ${obj.name}`);
-      } catch (e) {
-        console.error('Failed to disable object:', e);
-        toast.error('Failed to disable object');
       }
     },
     [activeGame, objects, queryClient],

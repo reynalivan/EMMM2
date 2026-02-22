@@ -162,8 +162,11 @@ pub(crate) fn build_mod_folder_from_fs_entry(
     let size_bytes = entry_meta.map(|m| m.len()).unwrap_or(0);
 
     let info = analyze_mod_metadata(&path, sub_path);
+    let (node_type, classification_reasons) = super::classifier::classify_folder(&path);
 
     Some(ModFolder {
+        node_type: node_type.as_str().to_string(),
+        classification_reasons,
         id: None,
         name: display_name,
         folder_name,
@@ -240,8 +243,11 @@ pub(crate) async fn build_mod_folder_from_db_row(
     let info = analyze_mod_metadata(&resolved_path, sub_path);
     let mod_obj_id: Option<String> = row.try_get("object_id").ok();
     let db_misplaced = is_db_misplaced(mod_obj_id, &resolved_path, obj_folder_map);
+    let (node_type, classification_reasons) = super::classifier::classify_folder(&resolved_path);
 
     Ok(Some(ModFolder {
+        node_type: node_type.as_str().to_string(),
+        classification_reasons,
         id: Some(id),
         name,
         folder_name,
@@ -299,13 +305,13 @@ pub(crate) async fn list_mod_folders_inner(
     };
 
     // Strategy:
-    // 1. If game_id is provided and we are at root (sub_path is empty/None), try DB.
+    // 1. If game_id is provided AND (sub_path is empty OR object_id is known), try DB.
     // 2. DB only tracks "Mods", not generic subfolders.
     // 3. If DB has results, return them.
     // 4. Fallback to FS scan if DB is empty or if we are in a subfolder.
 
     if let Some(ref gid) = game_id {
-        if sub_path.is_none() || sub_path.as_deref() == Some("") {
+        if sub_path.is_none() || sub_path.as_deref() == Some("") || object_id.is_some() {
             log::debug!("Checking DB cache for game_id: {}", gid);
             if let Some(p) = pool {
                 if let Some(folders) =

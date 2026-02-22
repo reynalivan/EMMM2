@@ -29,6 +29,8 @@ vi.mock('../../components/ui/ContextMenu', () => ({
 }));
 
 const mockFolder: ModFolder = {
+  node_type: 'ContainerFolder',
+  classification_reasons: [],
   name: 'Test Mod',
   folder_name: 'Test Mod',
   path: '/mods/Test Mod',

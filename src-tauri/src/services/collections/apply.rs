@@ -1,7 +1,4 @@
-use super::types::{
-    ApplyCollectionResult, CollectionsUndoState, ModState, SnapshotEntry, UndoCollectionResult,
-    UndoSnapshot,
-};
+use super::types::{ApplyCollectionResult, ModState};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use regex::Regex;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -9,6 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
+use uuid::Uuid;
 
 static DISABLED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^(disabled|disable|dis)[_\-\s]*").expect("valid regex"));
@@ -16,7 +14,6 @@ static DISABLED_RE: LazyLock<Regex> =
 pub async fn apply_collection(
     pool: &SqlitePool,
     watcher_state: &WatcherState,
-    undo_state: &CollectionsUndoState,
     collection_id: &str,
     game_id: &str,
     safe_mode_enabled: bool,
@@ -37,6 +34,7 @@ pub async fn apply_collection(
         );
     }
 
+    // Step 1: Get mod_ids that still exist in the mods table
     let target_ids: Vec<String> = sqlx::query_scalar(
         "SELECT ci.mod_id FROM collection_items ci JOIN mods m ON m.id = ci.mod_id WHERE ci.collection_id = ? AND m.game_id = ?",
     )
@@ -45,6 +43,55 @@ pub async fn apply_collection(
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Step 2: Reconcile orphaned items by mod_path (US-8.3 fallback)
+    let orphaned: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT ci.mod_id, ci.mod_path FROM collection_items ci WHERE ci.collection_id = ? AND ci.mod_id NOT IN (SELECT id FROM mods WHERE game_id = ?)",
+    )
+    .bind(collection_id)
+    .bind(game_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut reconciled_ids = target_ids;
+    let mut reconcile_warnings = Vec::new();
+
+    for (old_id, maybe_path) in &orphaned {
+        if let Some(path) = maybe_path {
+            let found: Option<String> =
+                sqlx::query_scalar("SELECT id FROM mods WHERE folder_path = ? AND game_id = ?")
+                    .bind(path)
+                    .bind(game_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+            if let Some(new_id) = found {
+                // Re-link: update collection_items to point to the new mod ID
+                sqlx::query(
+                    "UPDATE collection_items SET mod_id = ? WHERE collection_id = ? AND mod_id = ?",
+                )
+                .bind(&new_id)
+                .bind(collection_id)
+                .bind(old_id)
+                .execute(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                reconciled_ids.push(new_id);
+            } else {
+                let name = Path::new(path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| old_id.clone());
+                reconcile_warnings.push(format!("Skipping missing mod: {}", name));
+            }
+        } else {
+            reconcile_warnings.push(format!("Skipping orphaned mod (no path): {}", old_id));
+        }
+    }
+
+    let target_ids = reconciled_ids;
 
     if target_ids.is_empty() {
         return Ok(ApplyCollectionResult {
@@ -63,46 +110,66 @@ pub async fn apply_collection(
     let conflicts = fetch_enabled_conflicts(pool, game_id, &target_ids, &object_ids).await?;
     states.extend(conflicts);
 
-    apply_state_change(
-        pool,
-        watcher_state,
-        undo_state,
-        game_id,
-        states,
-        &target_ids,
-    )
-    .await
+    snapshot_current_state(pool, game_id, safe_mode_enabled).await?;
+
+    let mut result = apply_state_change(pool, watcher_state, states, &target_ids).await?;
+    result.warnings.extend(reconcile_warnings);
+    Ok(result)
 }
 
-pub async fn undo_collection_apply(
+async fn snapshot_current_state(
     pool: &SqlitePool,
-    watcher_state: &WatcherState,
-    undo_state: &CollectionsUndoState,
     game_id: &str,
-) -> Result<UndoCollectionResult, String> {
-    let snapshot = undo_state
-        .take()
-        .ok_or("No collection snapshot available to undo")?;
-    if snapshot.game_id != game_id {
-        return Err("Snapshot belongs to a different game".to_string());
+    safe_mode_enabled: bool,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Delete existing snapshot collection mapping and the collection itself for this game
+    sqlx::query("DELETE FROM collection_items WHERE collection_id IN (SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1)")
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM collections WHERE game_id = ? AND is_last_unsaved = 1")
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let currently_enabled: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, folder_path FROM mods WHERE game_id = ? AND status = 'ENABLED'")
+            .bind(game_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let snapshot_id = Uuid::new_v4().to_string();
+    let name = format!("Unsaved {}", Uuid::new_v4());
+
+    sqlx::query("INSERT INTO collections (id, name, game_id, is_safe_context, is_last_unsaved) VALUES (?, ?, ?, ?, 1)")
+        .bind(&snapshot_id)
+        .bind(&name)
+        .bind(game_id)
+        .bind(safe_mode_enabled)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for (mod_id, mod_path) in currently_enabled {
+        sqlx::query(
+            "INSERT INTO collection_items (collection_id, mod_id, mod_path) VALUES (?, ?, ?)",
+        )
+        .bind(&snapshot_id)
+        .bind(&mod_id)
+        .bind(&mod_path)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
     }
 
-    let target_ids: Vec<String> = snapshot
-        .entries
-        .iter()
-        .map(|entry| entry.mod_id.clone())
-        .collect();
-    let states = fetch_mod_states(pool, game_id, &target_ids).await?;
-    let desired: HashMap<String, String> = snapshot
-        .entries
-        .into_iter()
-        .map(|entry| (entry.mod_id, entry.previous_status))
-        .collect();
-
-    let restored = apply_with_desired_status(pool, watcher_state, states, desired).await?;
-    Ok(UndoCollectionResult {
-        restored_count: restored,
-    })
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 async fn fetch_mod_states(
@@ -186,8 +253,6 @@ async fn fetch_enabled_conflicts(
 async fn apply_state_change(
     pool: &SqlitePool,
     watcher_state: &WatcherState,
-    undo_state: &CollectionsUndoState,
-    game_id: &str,
     states: Vec<ModState>,
     target_ids: &[String],
 ) -> Result<ApplyCollectionResult, String> {
@@ -203,25 +268,12 @@ async fn apply_state_change(
         })
         .collect();
 
-    let snapshot_entries: Vec<SnapshotEntry> = states
-        .iter()
-        .map(|state| SnapshotEntry {
-            mod_id: state.id.clone(),
-            previous_status: state.status.clone(),
-        })
-        .collect();
-
-    let changed = apply_with_desired_status(pool, watcher_state, states, desired).await?;
-    if changed > 0 {
-        undo_state.set(UndoSnapshot {
-            game_id: game_id.to_string(),
-            entries: snapshot_entries,
-        });
-    }
+    let (changed, warnings) =
+        apply_with_desired_status(pool, watcher_state, states, desired).await?;
 
     Ok(ApplyCollectionResult {
         changed_count: changed,
-        warnings: Vec::new(),
+        warnings,
     })
 }
 
@@ -230,8 +282,9 @@ async fn apply_with_desired_status(
     watcher_state: &WatcherState,
     states: Vec<ModState>,
     desired: HashMap<String, String>,
-) -> Result<usize, String> {
+) -> Result<(usize, Vec<String>), String> {
     let mut updates = Vec::new();
+    let mut warnings = Vec::new();
 
     {
         let _guard = SuppressionGuard::new(&watcher_state.suppressor);
@@ -247,6 +300,11 @@ async fn apply_with_desired_status(
             let new_path = rename_for_status(&state.folder_path, next_status == "ENABLED")?;
             if let Some(path) = new_path {
                 if !Path::new(&state.folder_path).exists() {
+                    let folder_name = Path::new(&state.folder_path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| state.id.clone());
+                    warnings.push(format!("Skipping missing mod: {}", folder_name));
                     continue;
                 }
                 fs::rename(&state.folder_path, &path).map_err(|e| e.to_string())?;
@@ -270,7 +328,7 @@ async fn apply_with_desired_status(
     }
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    Ok(updates.len())
+    Ok((updates.len(), warnings))
 }
 
 fn rename_for_status(path: &str, to_enabled: bool) -> Result<Option<String>, String> {

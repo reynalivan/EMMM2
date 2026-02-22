@@ -98,7 +98,10 @@ pub async fn scan_preview_cmd(
     let resource_dir = app.path().resource_dir().ok();
 
     let optional_paths = specific_paths.map(|paths| {
-        paths.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>()
+        paths
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect::<Vec<_>>()
     });
 
     sync::scan_preview(

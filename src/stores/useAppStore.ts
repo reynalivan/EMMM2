@@ -23,7 +23,7 @@ interface AppState {
   isPreviewOpen: boolean;
 
   // Selection State
-  activePreset: string | null;
+  activeCollectionId: string | null;
   selectedObject: string | null;
   gridSelection: Set<string>;
 
@@ -51,7 +51,7 @@ interface AppState {
 
   setWorkspaceView: (view: WorkspaceView) => void;
   setCurrentPath: (path: string[]) => void;
-  setActivePreset: (preset: string | null) => void;
+  setActiveCollectionId: (id: string | null) => void;
   setSelectedObject: (id: string | null) => void;
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
@@ -84,7 +84,7 @@ export const useAppStore = create<AppState>()(
       isStoreInitialized: false,
       workspaceView: 'dashboard',
       currentPath: [],
-      activePreset: null,
+      activeCollectionId: null,
       selectedObject: null,
       gridSelection: new Set(),
       leftPanelWidth: 260,
@@ -162,7 +162,7 @@ export const useAppStore = create<AppState>()(
 
       setWorkspaceView: (view) => set({ workspaceView: view }),
       setCurrentPath: (path) => set({ currentPath: path }),
-      setActivePreset: (preset) => set({ activePreset: preset }),
+      setActiveCollectionId: (id) => set({ activeCollectionId: id }),
 
       setSelectedObject: (id) =>
         set({

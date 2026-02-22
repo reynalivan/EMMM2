@@ -40,6 +40,7 @@ describe('CollectionsPage', () => {
             name: 'Abyss Team',
             game_id: 'g-1',
             is_safe_context: true,
+            member_count: 5,
           },
         ];
       }
@@ -49,6 +50,6 @@ describe('CollectionsPage', () => {
     render(<CollectionsPage />);
 
     await waitFor(() => expect(screen.getByText('Abyss Team')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /apply abyss team/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save collection/i })).toBeInTheDocument();
   });
 });

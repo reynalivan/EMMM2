@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
@@ -20,7 +20,14 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   const [error, setError] = useState<string | null>(null);
   const [safe, setSafe] = useState(true);
 
-  if (!open) return null;
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    else if (!open && dialog.open) dialog.close();
+  }, [open]);
 
   const handleRoll = async () => {
     setLoading(true);
@@ -57,7 +64,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   };
 
   return (
-    <div className="modal modal-open">
+    <dialog ref={dialogRef} className="modal" onClose={onClose}>
       <div className="modal-box relative border border-base-300">
         <button className="btn btn-sm btn-circle absolute right-2 top-2" onClick={onClose}>
           ✕
@@ -118,7 +125,9 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
           </div>
         </div>
       </div>
-      <div className="modal-backdrop" onClick={onClose}></div>
-    </div>
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>close</button>
+      </form>
+    </dialog>
   );
 }

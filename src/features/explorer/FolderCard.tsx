@@ -1,8 +1,9 @@
 import { useState, memo } from 'react';
-import { Folder, Star, Copy } from 'lucide-react';
+import { Folder, Star, Copy, Package, Layers } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { ModFolder } from '../../types/mod';
+import { isNavigable } from '../../types/mod';
 import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
 import { useThumbnail } from '../../hooks/useThumbnail';
@@ -99,7 +100,7 @@ function FolderCardInner({
   };
 
   const handleDoubleClick = () => {
-    if (folder.is_directory) {
+    if (folder.is_directory && isNavigable(folder)) {
       onNavigate(folder.folder_name);
     }
   };
@@ -129,6 +130,7 @@ function FolderCardInner({
             onToggleFavorite={() => onToggleFavorite?.(folder)}
             onEnableOnlyThis={onEnableOnlyThis ? () => onEnableOnlyThis(folder) : undefined}
             onOpenMoveDialog={onOpenMoveDialog}
+            onNavigate={onNavigate}
           />
         )
       }
@@ -140,6 +142,7 @@ function FolderCardInner({
         className={`
           group relative flex flex-col rounded-lg overflow-hidden cursor-pointer
           transition-all duration-200 border w-full
+          ${folder.node_type === 'InternalAssets' ? 'opacity-50' : ''}
           ${
             isSelected
               ? 'border-primary/50 bg-base-200 shadow-md ring-1 ring-primary/50'
@@ -178,6 +181,20 @@ function FolderCardInner({
               className={`transition-colors duration-300
                 ${isSelected ? 'text-primary' : 'text-base-content/15 group-hover:text-base-content/30'}`}
             />
+          )}
+
+          {/* Node type badge overlay */}
+          {folder.node_type === 'ModPackRoot' && (
+            <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-info/90 text-info-content rounded-md z-10 shadow-sm">
+              <Package size={10} />
+              <span className="text-[9px] font-bold uppercase">Mod Pack</span>
+            </div>
+          )}
+          {folder.node_type === 'VariantContainer' && (
+            <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-secondary/90 text-secondary-content rounded-md z-10 shadow-sm">
+              <Layers size={10} />
+              <span className="text-[9px] font-bold uppercase">Variants</span>
+            </div>
           )}
 
           {/* Favorite star overlay */}

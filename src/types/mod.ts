@@ -5,6 +5,10 @@
 
 /** A single mod folder entry from `list_mod_folders` backend command. */
 export interface ModFolder {
+  /** Folder classification: ContainerFolder | ModPackRoot | VariantContainer | InternalAssets */
+  node_type: string;
+  /** Diagnostic reasons for the classification (debug/tooltip) */
+  classification_reasons: string[];
   /** Database ID (UUID), if available */
   id?: string | null;
   /** Linked Object ID (foreign key) */
@@ -37,6 +41,14 @@ export interface ModFolder {
   metadata: Record<string, string> | null;
   /** Category from info.json metadata */
   category: string | null;
+}
+
+/** Possible folder classification values from the backend classifier. */
+export type NodeType = 'ContainerFolder' | 'ModPackRoot' | 'VariantContainer' | 'InternalAssets';
+
+/** Only ContainerFolder allows double-click drill-down navigation. */
+export function isNavigable(folder: ModFolder): boolean {
+  return folder.node_type === 'ContainerFolder';
 }
 
 /** Mod metadata stored in `info.json` inside each mod folder. */

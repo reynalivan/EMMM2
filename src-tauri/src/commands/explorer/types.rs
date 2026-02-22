@@ -30,6 +30,10 @@ impl Default for InfoAnalysis {
 /// Represents a single mod folder entry from the filesystem.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModFolder {
+    /// Classification: "ContainerFolder" | "ModPackRoot" | "VariantContainer" | "InternalAssets"
+    pub node_type: String,
+    /// Short diagnostic reasons for the classification (debug/tooltips)
+    pub classification_reasons: Vec<String>,
     /// Database ID (UUID), if available
     pub id: Option<String>,
     /// Display name (without "DISABLED " prefix)

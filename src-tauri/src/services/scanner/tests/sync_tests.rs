@@ -169,3 +169,101 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         .unwrap();
     assert_eq!(object_count, 1);
 }
+
+// Covers: Fix for duplicate objects — case-insensitive merge in ensure_object_exists
+#[tokio::test]
+async fn test_ensure_object_case_insensitive_merge() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mod_dir = temp_dir.path().join("hook");
+    fs::create_dir(&mod_dir).unwrap();
+
+    // First commit: unmatched → obj_name = "hook" (Other, no thumbnail)
+    let items_unmatched = vec![ConfirmedScanItem {
+        folder_path: mod_dir.to_string_lossy().to_string(),
+        display_name: "hook".to_string(),
+        is_disabled: false,
+        matched_object: None,
+        object_type: None,
+        thumbnail_path: None,
+        tags_json: None,
+        metadata_json: None,
+        skip: false,
+        move_from_temp: false,
+    }];
+
+    let _r1 = commit_scan_results(
+        &pool,
+        "g1",
+        "Game",
+        "srmi",
+        &temp_dir.path().to_string_lossy(),
+        items_unmatched,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Verify: object "hook" (Other) exists
+    let obj_count_before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
+            .bind("g1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(obj_count_before, 1);
+
+    // Second commit: matched → obj_name = "Hook" (Character, with thumbnail)
+    let items_matched = vec![ConfirmedScanItem {
+        folder_path: mod_dir.to_string_lossy().to_string(),
+        display_name: "hook".to_string(),
+        is_disabled: false,
+        matched_object: Some("Hook".to_string()),
+        object_type: Some("Character".to_string()),
+        thumbnail_path: Some("thumbnails/hook.png".to_string()),
+        tags_json: Some(r#"["fire"]"#.to_string()),
+        metadata_json: Some(r#"{"rarity":"4-Star"}"#.to_string()),
+        skip: false,
+        move_from_temp: false,
+    }];
+
+    let _r2 = commit_scan_results(
+        &pool,
+        "g1",
+        "Game",
+        "srmi",
+        &temp_dir.path().to_string_lossy(),
+        items_matched,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Verify: still only ONE object (merged, not duplicated)
+    let obj_count_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
+        .bind("g1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        obj_count_after, 1,
+        "Should have merged, not created a duplicate"
+    );
+
+    // Verify: the surviving object has the canonical name "Hook" and type "Character"
+    let obj_row =
+        sqlx::query("SELECT name, object_type, thumbnail_path FROM objects WHERE game_id = ?")
+            .bind("g1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let name: String = obj_row.try_get("name").unwrap();
+    let obj_type: String = obj_row.try_get("object_type").unwrap();
+    let thumb: Option<String> = obj_row.try_get("thumbnail_path").unwrap();
+    assert_eq!(name, "Hook", "Name should be upgraded to MasterDB alias");
+    assert_eq!(
+        obj_type, "Character",
+        "Type should be upgraded to Character"
+    );
+    assert!(thumb.is_some(), "Thumbnail should be set from matched data");
+}

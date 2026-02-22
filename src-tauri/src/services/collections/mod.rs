@@ -2,13 +2,12 @@ mod apply;
 mod storage;
 mod types;
 
-pub use apply::{apply_collection, undo_collection_apply};
+pub use apply::apply_collection;
 pub use storage::{
-    create_collection, delete_collection, export_collection, import_collection, list_collections,
+    create_collection, delete_collection, get_collection_preview, list_collections,
     update_collection,
 };
 pub use types::{
-    ApplyCollectionResult, Collection, CollectionDetails, CollectionsUndoState,
-    CreateCollectionInput, ExportCollectionItem, ExportCollectionPayload, ImportCollectionResult,
-    SnapshotEntry, UndoCollectionResult, UndoSnapshot, UpdateCollectionInput,
+    ApplyCollectionResult, Collection, CollectionDetails, CollectionPreviewMod,
+    CreateCollectionInput, UpdateCollectionInput,
 };

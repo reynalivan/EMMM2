@@ -1,4 +1,5 @@
 import { AlertTriangle, X } from 'lucide-react';
+import { useRef, useEffect } from 'react';
 import type { ConflictInfo } from '../../types/mod';
 
 interface ConflictModalProps {
@@ -8,19 +9,24 @@ interface ConflictModalProps {
 }
 
 export default function ConflictModal({ open, onClose, conflicts }: ConflictModalProps) {
-  if (!open) return null;
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    else if (!open && dialog.open) dialog.close();
+  }, [open]);
 
   return (
-    <dialog className="modal modal-open">
+    <dialog ref={dialogRef} className="modal" onClose={onClose}>
       <div className="modal-box w-11/12 max-w-3xl border border-warning/20 bg-base-100 shadow-2xl">
-        <form method="dialog">
-          <button
-            className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
-        </form>
+        <button
+          className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+          onClick={onClose}
+        >
+          <X size={18} />
+        </button>
 
         <h3 className="font-bold text-lg text-warning flex items-center gap-2 pb-4 border-b border-base-content/10">
           <AlertTriangle className="fill-warning/20" />
@@ -80,7 +86,9 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
           </button>
         </div>
       </div>
-      <div className="modal-backdrop bg-black/50" onClick={onClose} />
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>close</button>
+      </form>
     </dialog>
   );
 }

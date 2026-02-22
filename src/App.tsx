@@ -37,7 +37,17 @@ function AppRouter() {
     <Routes>
       <Route
         path="/welcome"
-        element={<WelcomeScreen onComplete={() => navigate('/dashboard')} />}
+        element={
+          <WelcomeScreen
+            onComplete={async (games) => {
+              if (games && games.length > 0) {
+                await useAppStore.getState().setActiveGameId(games[0].id);
+              }
+              await useAppStore.getState().initStore();
+              navigate('/dashboard', { replace: true });
+            }}
+          />
+        }
       />
       <Route path="/dashboard" element={<MainLayout />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

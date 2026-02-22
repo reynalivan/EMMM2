@@ -3,6 +3,8 @@ export interface Collection {
   name: string;
   game_id: string;
   is_safe_context: boolean;
+  member_count: number;
+  is_last_unsaved: boolean;
 }
 
 export interface CollectionDetails {
@@ -10,10 +12,21 @@ export interface CollectionDetails {
   mod_ids: string[];
 }
 
+export interface CollectionPreviewMod {
+  id: string;
+  actual_name: string;
+  folder_path: string;
+  is_safe: boolean;
+  object_id: string | null;
+  object_name: string | null;
+  object_type: string | null;
+}
+
 export interface CreateCollectionInput {
   name: string;
   game_id: string;
   is_safe_context: boolean;
+  auto_snapshot?: boolean;
   mod_ids: string[];
 }
 
@@ -28,28 +41,4 @@ export interface UpdateCollectionInput {
 export interface ApplyCollectionResult {
   changed_count: number;
   warnings: string[];
-}
-
-export interface UndoCollectionResult {
-  restored_count: number;
-}
-
-export interface ExportCollectionItem {
-  mod_id: string;
-  actual_name: string;
-  folder_path: string;
-}
-
-export interface ExportCollectionPayload {
-  version: number;
-  name: string;
-  game_id: string;
-  is_safe_context: boolean;
-  items: ExportCollectionItem[];
-}
-
-export interface ImportCollectionResult {
-  collection_id: string;
-  imported_count: number;
-  missing: string[];
 }

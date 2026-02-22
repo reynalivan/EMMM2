@@ -7,7 +7,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Trash2,
-  Layers,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
@@ -23,13 +22,6 @@ export default function GlobalActions() {
     <div className="flex items-center gap-2 md:gap-3">
       {/* Desktop Tools */}
       <div className="hidden md:flex items-center gap-1">
-        <button
-          className="btn btn-ghost btn-sm btn-square text-white/50 hover:text-info hover:bg-white/5"
-          title="Collections"
-          onClick={() => setWorkspaceView('collections')}
-        >
-          <Layers size={18} />
-        </button>
         <button
           className="btn btn-ghost btn-sm btn-square text-white/50 hover:text-warning hover:bg-white/5"
           title="Trash"
@@ -66,11 +58,6 @@ export default function GlobalActions() {
           tabIndex={0}
           className="dropdown-content z-1 menu p-2 shadow-2xl bg-base-100/90 backdrop-blur-xl rounded-box w-48 mt-2 border border-white/10"
         >
-          <li>
-            <a className="gap-2 hover:bg-white/5" onClick={() => setWorkspaceView('collections')}>
-              <Layers size={16} /> Collections
-            </a>
-          </li>
           <li>
             <a className="gap-2 hover:bg-white/5" onClick={() => setWorkspaceView('settings')}>
               <Settings size={16} /> Settings

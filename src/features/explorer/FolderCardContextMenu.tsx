@@ -7,6 +7,7 @@ import {
   Zap,
   Image as ImageIcon,
   ArrowRightLeft,
+  FolderOpen,
 } from 'lucide-react';
 import { ContextMenuItem, ContextMenuSeparator } from '../../components/ui/ContextMenu';
 import { usePasteThumbnail } from '../../hooks/useFolders';
@@ -22,6 +23,7 @@ interface FolderCardContextMenuProps {
   onToggleFavorite: () => void;
   onEnableOnlyThis?: () => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
+  onNavigate?: (folderName: string) => void;
 }
 
 export default function FolderCardContextMenu({
@@ -32,6 +34,7 @@ export default function FolderCardContextMenu({
   onToggleFavorite,
   onEnableOnlyThis,
   onOpenMoveDialog,
+  onNavigate,
 }: FolderCardContextMenuProps) {
   const pasteThumbnail = usePasteThumbnail();
 
@@ -112,6 +115,14 @@ export default function FolderCardContextMenu({
           <ContextMenuSeparator />
           <ContextMenuItem icon={ArrowRightLeft} onClick={() => onOpenMoveDialog(folder)}>
             Move to Object...
+          </ContextMenuItem>
+        </>
+      )}
+      {folder.node_type === 'ModPackRoot' && onNavigate && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem icon={FolderOpen} onClick={() => onNavigate(folder.folder_name)}>
+            Open content mods (Advanced)
           </ContextMenuItem>
         </>
       )}

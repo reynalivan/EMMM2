@@ -135,6 +135,8 @@ describe('FolderGrid', () => {
   it('renders items', () => {
     const mockData: ModFolder[] = [
       {
+        node_type: 'ContainerFolder',
+        classification_reasons: [],
         name: 'Mod A',
         path: '/mods/Mod A',
         is_enabled: true,

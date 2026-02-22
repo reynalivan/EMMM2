@@ -109,19 +109,33 @@ export function useObjectListLogic() {
     schema,
   });
 
-  // Auto-sync: when a game is selected but DB has 0 objects, quick-import all as "Other".
+  // Auto-sync: when a game is selected but DB has 0 mods, quick-import all as "Other".
   // Then offer an "Auto Organize" toast so the user can opt-in to full Deep Matcher matching.
+  // We check the DB directly (not React query) to avoid false triggers during loading transitions.
   useEffect(() => {
     if (
       activeGame &&
       !objectsLoading &&
       !objectsError &&
-      allObjects.length === 0 &&
       autoSyncTriggered.current !== activeGame.id
     ) {
       autoSyncTriggered.current = activeGame.id;
       (async () => {
         try {
+          // Direct DB check: only import if there are truly 0 mods for this game
+          const { getObjects } = await import('../../services/objectService');
+          const allGameObjects = await getObjects({
+            game_id: activeGame.id,
+            safe_mode: false,
+          });
+          const existingModCount = allGameObjects.reduce((acc, obj) => acc + obj.mod_count, 0);
+          if (existingModCount > 0) {
+            // Mods already exist in DB — skip quickImport, just refresh queries
+            queryClient.invalidateQueries({ queryKey: ['objects'] });
+            queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+            return;
+          }
+
           const result = await scanService.quickImport(
             activeGame.id,
             activeGame.name,
@@ -147,7 +161,7 @@ export function useObjectListLogic() {
         }
       })();
     }
-  }, [activeGame, objectsLoading, objectsError, allObjects.length, queryClient, handlers]);
+  }, [activeGame, objectsLoading, objectsError, queryClient, handlers]);
 
   const handleFilterChange = (key: string, values: string[]) => {
     setActiveFilters((prev) => ({ ...prev, [key]: values }));

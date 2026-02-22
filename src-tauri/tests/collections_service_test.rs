@@ -1,6 +1,5 @@
 use emmm2_lib::services::collections::{
-    apply_collection, create_collection, export_collection, import_collection, list_collections,
-    undo_collection_apply, CollectionsUndoState, CreateCollectionInput,
+    apply_collection, create_collection, list_collections, CreateCollectionInput,
 };
 use emmm2_lib::services::scanner::watcher::WatcherState;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -23,8 +22,13 @@ async fn setup_pool() -> sqlx::SqlitePool {
         include_str!("../migrations/006_objects_pin.sql"),
         include_str!("../migrations/007_drop_trash_log.sql"),
         include_str!("../migrations/008_add_favorite_column.sql"),
+        include_str!("../migrations/012_app_settings.sql"),
         include_str!("../migrations/20260216103000_epic9_dedup_scanner.sql"),
         include_str!("../migrations/20260216143000_epic8_collections.sql"),
+        include_str!("../migrations/20260217120000_add_sync_mode.sql"),
+        include_str!("../migrations/20260222100000_fix_duplicate_objects.sql"),
+        include_str!("../migrations/20260222103000_enforce_nocase_objects.sql"),
+        include_str!("../migrations/20260222110000_add_unsaved_collection_flag.sql"),
     ];
 
     for migration in migrations {
@@ -114,6 +118,7 @@ async fn collections_create_and_list() {
             game_id: game_id.clone(),
             is_safe_context: true,
             mod_ids: vec![mod_a_id],
+            auto_snapshot: None,
         },
     )
     .await
@@ -146,18 +151,17 @@ async fn collections_apply_then_undo_restores_state() {
             game_id: game_id.clone(),
             is_safe_context: true,
             mod_ids: vec![mod_a_id.clone()],
+            auto_snapshot: None,
         },
     )
     .await
     .expect("create collection");
 
     let watcher_state = WatcherState::new();
-    let undo_state = CollectionsUndoState::new();
 
     let applied = apply_collection(
         &pool,
         &watcher_state,
-        &undo_state,
         &created.collection.id,
         &game_id,
         false,
@@ -181,11 +185,23 @@ async fn collections_apply_then_undo_restores_state() {
     assert_eq!(mod_a_status, "ENABLED");
     assert_eq!(mod_b_status, "DISABLED");
 
-    let undo = undo_collection_apply(&pool, &watcher_state, &undo_state, &game_id)
+    let snapshot_id: String = sqlx::query_scalar("SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1")
+        .bind(&game_id)
+        .fetch_one(&pool)
         .await
-        .expect("undo apply");
+        .expect("snapshot collection");
 
-    assert_eq!(undo.restored_count, 2);
+    let undo = apply_collection(
+        &pool,
+        &watcher_state,
+        &snapshot_id,
+        &game_id,
+        false,
+    )
+    .await
+    .expect("undo apply via snapshot");
+
+    assert_eq!(undo.changed_count, 2);
 
     let mod_a_status_after: String = sqlx::query_scalar("SELECT status FROM mods WHERE id = ?")
         .bind(&mod_a_id)
@@ -200,41 +216,4 @@ async fn collections_apply_then_undo_restores_state() {
 
     assert_eq!(mod_a_status_after, "DISABLED");
     assert_eq!(mod_b_status_after, "ENABLED");
-}
-
-#[tokio::test]
-async fn collections_export_import_roundtrip() {
-    let pool = setup_pool().await;
-    let tmp = TempDir::new().expect("create temp dir");
-    let mods_dir = tmp.path().to_string_lossy().to_string();
-    let (game_id, mod_a_id, _, _, _) = seed_game_and_mods(&pool, &mods_dir).await;
-
-    let created = create_collection(
-        &pool,
-        CreateCollectionInput {
-            name: "Export Team".to_string(),
-            game_id: game_id.clone(),
-            is_safe_context: true,
-            mod_ids: vec![mod_a_id],
-        },
-    )
-    .await
-    .expect("create export source collection");
-
-    let payload = export_collection(&pool, &created.collection.id, &game_id)
-        .await
-        .expect("export collection");
-
-    sqlx::query("DELETE FROM collections WHERE id = ?")
-        .bind(&created.collection.id)
-        .execute(&pool)
-        .await
-        .expect("delete collection for roundtrip");
-
-    let imported = import_collection(&pool, &game_id, payload)
-        .await
-        .expect("import collection");
-
-    assert_eq!(imported.imported_count, 1);
-    assert!(imported.missing.is_empty());
 }

@@ -24,24 +24,25 @@ pub async fn repair_orphan_mods(
     for row in &orphans {
         let mod_id: String = row.try_get("id").map_err(|e| e.to_string())?;
         let actual_name: String = row.try_get("actual_name").map_err(|e| e.to_string())?;
+        // Strip DISABLED prefix so we never create "DISABLED xyz" objects
+        let clean_name = actual_name
+            .strip_prefix(crate::DISABLED_PREFIX)
+            .unwrap_or(&actual_name)
+            .to_string();
 
-        let existing = sqlx::query("SELECT id FROM objects WHERE game_id = ? AND name = ?")
-            .bind(&game_id)
-            .bind(&actual_name)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let object_id = if let Some(obj_row) = existing {
-            obj_row
-                .try_get::<String, _>("id")
-                .map_err(|e| e.to_string())?
-        } else {
-            let new_id = uuid::Uuid::new_v4().to_string();
-            sqlx::query("INSERT INTO objects (id, game_id, name, object_type, tags, metadata) VALUES (?, ?, ?, 'Other', '[]', '{}')")
-                .bind(&new_id).bind(&game_id).bind(&actual_name).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-            new_id
-        };
+        let mut new_objects_count = 0;
+        let object_id = crate::services::scanner::sync::helpers::ensure_object_exists(
+            &mut tx,
+            &game_id,
+            &clean_name,
+            "Other", // obj_type
+            None,    // db_thumbnail
+            "[]",    // sqlite tags json
+            "{}",    // sqlite metadata json
+            &mut new_objects_count,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         sqlx::query("UPDATE mods SET object_id = ?, object_type = 'Other' WHERE id = ?")
             .bind(&object_id)

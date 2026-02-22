@@ -375,7 +375,9 @@ function ReviewRow({
         <td className="w-10 text-center">
           <input
             type="checkbox"
-            className="checkbox checkbox-sm checkbox-primary rounded"
+            className={`checkbox checkbox-sm checkbox-primary rounded transition-opacity duration-200 ${
+              isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            }`}
             checked={isSelected}
             onChange={onToggleSelect}
             disabled={isSkipped && !isSelected}
@@ -686,10 +688,13 @@ export default function ScanReviewModal({
   const [overrides, setOverrides] = useState<Record<string, MasterDbEntry | null>>({});
   // Skips: folder_path -> boolean
   const [skips, setSkips] = useState<Record<string, boolean>>({});
-  // Draft renames: folder_path -> new display name
   const [renames, setRenames] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<string>('All');
+  const [activeMainTab, setActiveMainTab] = useState<
+    'All' | 'Matched' | 'Unmatched' | 'Existing' | 'Skipped'
+  >('All');
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
+  const [globalSearch, setGlobalSearch] = useState('');
 
   const handleOverride = useCallback((folderPath: string, entry: MasterDbEntry | null) => {
     setOverrides((prev) => ({ ...prev, [folderPath]: entry }));
@@ -723,15 +728,12 @@ export default function ScanReviewModal({
     [],
   );
 
-  const { matchedCount, unmatchedCount, skippedCount, alreadyMatchedCount } = useMemo(() => {
+  const { matchedCount, unmatchedCount, alreadyMatchedCount } = useMemo(() => {
     let matched = 0;
     let unmatched = 0;
-    let skipped = 0;
     let alreadyMatched = 0;
     for (const item of items) {
-      if (skips[item.folderPath]) {
-        skipped++;
-      } else if (item.alreadyMatched) {
+      if (item.alreadyMatched) {
         alreadyMatched++;
       } else if (overrides[item.folderPath] || item.matchedObject) {
         matched++;
@@ -742,10 +744,9 @@ export default function ScanReviewModal({
     return {
       matchedCount: matched,
       unmatchedCount: unmatched,
-      skippedCount: skipped,
       alreadyMatchedCount: alreadyMatched,
     };
-  }, [items, overrides, skips]);
+  }, [items, overrides]);
 
   const handleConfirm = useCallback(() => {
     const confirmed: ConfirmedScanItem[] = items.map((item) => {
@@ -769,29 +770,49 @@ export default function ScanReviewModal({
     onConfirm(confirmed);
   }, [items, overrides, skips, renames, onConfirm]);
 
-  const newItems = items.filter((i) => !i.alreadyMatched);
-  const existingItems = items.filter((i) => i.alreadyMatched);
+  // Determine item's underlying tab association
+  const getItemTab = useCallback(
+    (item: ScanPreviewItem) => {
+      if (skips[item.folderPath]) return 'Skipped';
+      if (item.alreadyMatched) return 'Existing';
+      const ov = overrides[item.folderPath];
+      if (ov || item.matchedObject) return 'Matched';
+      return 'Unmatched';
+    },
+    [overrides, skips],
+  );
 
-  const tabCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      All: newItems.length,
-      Excellent: 0,
-      High: 0,
-      Medium: 0,
-      Low: 0,
-    };
-    for (const item of newItems) {
-      if (item.confidence && counts[item.confidence] !== undefined) {
-        counts[item.confidence]++;
+  const visibleItems = useMemo(() => {
+    return items.filter((item) => {
+      // Main tab filter
+      if (activeMainTab !== 'All' && getItemTab(item) !== activeMainTab) return false;
+
+      // Confidence chips filter
+      if (activeFilters.size > 0 && activeMainTab !== 'Existing') {
+        const conf = overrides[item.folderPath] ? 'Manual' : item.confidence;
+        // Assume chips might be Excellent, High, Medium, Low, Manual
+        if (conf && !activeFilters.has(conf)) return false;
       }
-    }
-    return counts;
-  }, [newItems]);
 
-  const visibleNewItems = useMemo(() => {
-    if (activeTab === 'All') return newItems;
-    return newItems.filter((item) => item.confidence === activeTab);
-  }, [newItems, activeTab]);
+      // Global search filter
+      if (globalSearch) {
+        const q = globalSearch.toLowerCase();
+        const display = (renames[item.folderPath] ?? item.displayName).toLowerCase();
+        if (!display.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [items, overrides, activeMainTab, activeFilters, globalSearch, renames, getItemTab]);
+
+  const toggleFilter = useCallback((conf: string) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(conf)) next.delete(conf);
+      else next.add(conf);
+      return next;
+    });
+  }, []);
 
   const handleDeclineSelected = useCallback(() => {
     setSkips((prev) => {
@@ -808,7 +829,7 @@ export default function ScanReviewModal({
 
   return (
     <div className="modal modal-open">
-      <div className="modal-box relative w-[95%] max-w-5xl max-h-[85vh] flex flex-col p-4 sm:p-6">
+      <div className="modal-box relative w-[95%] max-w-5xl h-[85vh] flex flex-col p-4 sm:p-6">
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2"
           onClick={onClose}
@@ -818,50 +839,54 @@ export default function ScanReviewModal({
           <X size={16} />
         </button>
 
-        <h3 className="font-bold text-lg mb-1">Review Scan Results</h3>
-        <p className="text-xs text-base-content/50 mb-3">
-          {items.length} folders scanned •{' '}
-          <span className="text-success">{matchedCount} matched</span> •{' '}
-          <span className="text-warning">{unmatchedCount} unmatched</span> •{' '}
-          <span className="text-base-content/30">{alreadyMatchedCount} existing</span>
-          {skippedCount > 0 && (
-            <>
-              {' '}
-              • <span className="text-info">{skippedCount} skipped</span>
-            </>
-          )}
-        </p>
+        <h3 className="font-bold text-xl mb-3">Review {items.length} Scan Results</h3>
 
-        {/* Tabs & Bulk Action */}
-        <div className="flex items-center justify-between px-4 pb-0 mb-3 border-base-300/30">
-          <div className="tabs tabs-boxed bg-base-300/30 p-1 gap-1">
-            {['All', 'Excellent', 'High', 'Medium', 'Low'].map((tab) => (
-              <button
-                key={tab}
-                className={`tab tab-sm h-7 transition-all flex items-center gap-1.5 ${
-                  activeTab === tab
-                    ? 'tab-active bg-primary! text-primary-content! shadow-sm font-medium'
-                    : 'text-base-content/60 hover:text-base-content hover:bg-base-200/50'
-                }`}
-                onClick={() => setActiveTab(tab)}
-              >
-                {tab}
-                <span
-                  className={`badge badge-xs opacity-80 ${
-                    activeTab === tab
-                      ? 'bg-primary-content/20 border-transparent'
-                      : 'bg-base-200 border-base-300'
+        {/* Header Controls: Main Tabs & Delete Bulk Action */}
+        <div className="flex items-end justify-between mb-1 mt-2">
+          {/* Main Tabs Container */}
+          <div className="flex gap-4 border-b border-base-300 px-1 flex-1">
+            {['All', 'Matched', 'Unmatched', 'Existing', 'Skipped'].map((tab) => {
+              const count =
+                tab === 'All' ? items.length : items.filter((i) => getItemTab(i) === tab).length;
+
+              let pillClass = 'bg-base-300/50 text-base-content/60 border-transparent';
+              if (tab === 'Matched') pillClass = 'bg-success/10 text-success border-success/20';
+              if (tab === 'Unmatched') pillClass = 'bg-error/10 text-error border-error/20';
+              if (tab === 'Skipped') pillClass = 'bg-warning/10 text-warning border-warning/20';
+
+              return (
+                <button
+                  key={tab}
+                  className={`pb-3 px-2 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${
+                    activeMainTab === tab
+                      ? 'text-primary'
+                      : 'text-base-content/60 hover:text-base-content/80'
                   }`}
+                  onClick={() => {
+                    setActiveMainTab(
+                      tab as 'All' | 'Matched' | 'Unmatched' | 'Existing' | 'Skipped',
+                    );
+                    setActiveFilters(new Set()); // Reset subclass filters
+                    setSelected(new Set()); // Reset selection
+                  }}
                 >
-                  {tabCounts[tab]}
-                </span>
-              </button>
-            ))}
+                  {tab}
+                  <span
+                    className={`text-[10px] uppercase font-bold px-1.5 py-0.5 leading-none rounded-full border ${pillClass}`}
+                  >
+                    {count}
+                  </span>
+                  {activeMainTab === tab && (
+                    <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {selected.size > 0 && (
             <button
-              className="btn btn-xs btn-error btn-outline gap-1 opacity-90 hover:opacity-100 shadow-sm"
+              className="btn btn-xs h-7 min-h-0 btn-error shadow-sm shadow-error/10 hover:shadow-error/20 btn-outline ml-4 mb-2.5"
               onClick={handleDeclineSelected}
               title="Bulk skip all selected items"
             >
@@ -870,27 +895,87 @@ export default function ScanReviewModal({
           )}
         </div>
 
+        {/* Filters & Search Layer */}
+        <div className="flex items-center justify-between mt-3 mb-2 min-h-[32px]">
+          <div className="flex items-center gap-2">
+            {activeMainTab !== 'Existing' && (
+              <>
+                <span className="text-xs uppercase font-semibold text-base-content/40 tracking-wider mr-2">
+                  Filter:
+                </span>
+                {['Excellent', 'High', 'Medium', 'Low', 'Manual'].map((conf) => {
+                  // calculate count for this chip based on activeMainTab
+                  const itemsForChip = items.filter((item) => {
+                    if (activeMainTab !== 'All' && getItemTab(item) !== activeMainTab) return false;
+                    const itemConf = overrides[item.folderPath] ? 'Manual' : item.confidence;
+                    return itemConf === conf;
+                  });
+                  const count = itemsForChip.length;
+
+                  return (
+                    <button
+                      key={conf}
+                      onClick={() => toggleFilter(conf)}
+                      className={`badge badge-sm cursor-pointer transition-all gap-1 pl-2 pr-1 h-6 ${
+                        activeFilters.has(conf)
+                          ? 'badge-primary'
+                          : 'badge-outline border-base-300 text-base-content/60 hover:bg-base-200'
+                      }`}
+                    >
+                      {conf}
+                      <span
+                        className={`text-[9px] rounded-full px-1 py-0.5 leading-none ${
+                          activeFilters.has(conf)
+                            ? 'bg-primary-content/20 text-primary-content'
+                            : 'bg-base-300/50'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative w-64 ml-auto">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
+            />
+            <input
+              type="text"
+              className="input input-sm w-full pl-9 pr-3 bg-base-200/50 border-base-300 focus:border-primary/50"
+              placeholder="Search by folder name..."
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
         {/* Main list */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden border border-base-300/30 rounded-lg bg-base-200/30 relative">
+        <div className="flex-1 mt-2 overflow-y-auto overflow-x-hidden border border-base-300/30 rounded-lg bg-base-200/30 relative">
           <table className="table table-sm table-pin-rows">
-            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 [&_th]:bg-black/40 [&_th]:backdrop-blur-md">
+            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 z-150 [&_th]:bg-black/40 [&_th]:backdrop-blur-md">
               <tr>
                 <th className="w-10 text-center">
                   <input
                     type="checkbox"
                     className="checkbox checkbox-xs rounded border-base-content/40"
                     checked={
-                      visibleNewItems.length > 0 &&
-                      visibleNewItems.every((i) => selected.has(i.folderPath))
+                      visibleItems.length > 0 &&
+                      visibleItems.every((i) => selected.has(i.folderPath))
                     }
                     onChange={() =>
                       handleToggleSelectAll(
-                        visibleNewItems,
-                        visibleNewItems.length > 0 &&
-                          visibleNewItems.every((i) => selected.has(i.folderPath)),
+                        visibleItems,
+                        visibleItems.length > 0 &&
+                          visibleItems.every((i) => selected.has(i.folderPath)),
                       )
                     }
-                    title="Select/Deselect all visible new items"
+                    title="Select/Deselect all visible items"
                   />
                 </th>
                 <th className="pl-4">Folder Name</th>
@@ -901,52 +986,10 @@ export default function ScanReviewModal({
               </tr>
             </thead>
             <tbody>
-              {visibleNewItems.length > 0 && (
+              {visibleItems.length > 0 && (
                 <>
-                  <tr className="bg-base-300/30 hover:bg-base-300/30 pointer-events-none">
-                    <td
-                      colSpan={6}
-                      className="text-[10px] uppercase font-semibold text-base-content/40 py-1 border-b-0"
-                    >
-                      New & Unmatched ({visibleNewItems.length})
-                    </td>
-                  </tr>
-                  {visibleNewItems.map((item) => (
-                    <ReviewRow
-                      key={item.folderPath}
-                      item={item}
-                      override={overrides[item.folderPath] ?? null}
-                      onOverride={(e) => handleOverride(item.folderPath, e)}
-                      onToggleSkip={() => handleToggleSkip(item.folderPath)}
-                      isSkipped={!!skips[item.folderPath]}
-                      isSelected={selected.has(item.folderPath)}
-                      onToggleSelect={() => handleToggleSelect(item.folderPath)}
-                      masterDbEntries={masterDbEntries}
-                      renamedName={renames[item.folderPath] ?? null}
-                      onRename={(n) =>
-                        setRenames((prev) => {
-                          const next = { ...prev };
-                          if (n) next[item.folderPath] = n;
-                          else delete next[item.folderPath];
-                          return next;
-                        })
-                      }
-                      activeGame={activeGame}
-                    />
-                  ))}
-                </>
-              )}
-              {existingItems.length > 0 && (
-                <>
-                  <tr className="bg-base-300/30 hover:bg-base-300/30 pointer-events-none">
-                    <td
-                      colSpan={6}
-                      className="text-[10px] uppercase font-semibold text-base-content/40 py-1 border-b-0"
-                    >
-                      Already Matched ({existingItems.length})
-                    </td>
-                  </tr>
-                  {existingItems.map((item) => (
+                  <tr className="bg-base-300/30 hover:bg-base-300/30 pointer-events-none hidden" />
+                  {visibleItems.map((item) => (
                     <ReviewRow
                       key={item.folderPath}
                       item={item}

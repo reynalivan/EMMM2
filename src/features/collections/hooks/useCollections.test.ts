@@ -20,6 +20,7 @@ describe('useCollections', () => {
         name: 'Abyss Team',
         game_id: 'g-1',
         is_safe_context: true,
+        member_count: 5,
       },
     ]);
 

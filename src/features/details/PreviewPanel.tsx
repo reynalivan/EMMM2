@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Info, Trash2, X } from 'lucide-react';
+import { ChevronRight, Info, Trash2, X, FolderOpen, FileArchive, FolderPlus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -15,8 +16,8 @@ function toErrorMessage(error: unknown): string {
 }
 
 export default function PreviewPanel() {
-  const togglePreview = useAppStore((state) => state.togglePreview);
   const setMobilePane = useAppStore((state) => state.setMobilePane);
+  const setSelectedObject = useAppStore((state) => state.setSelectedObject);
 
   const importInputRef = useRef<HTMLInputElement>(null);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
@@ -135,6 +136,54 @@ export default function PreviewPanel() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [activePath, pasteThumbnailFromClipboard]);
+
+  if (!activePath) {
+    return (
+      <div className="mx-auto flex h-full w-full max-w-[560px] flex-col items-center justify-center p-6 text-center border-l border-white/5 bg-base-100/30 backdrop-blur-md">
+        <div className="mb-6 text-base-content/50">
+          <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
+          <p className="text-xl font-bold text-white mb-2">No mod selected</p>
+          <p className="text-sm">Select a folder to show detail and preview.</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="btn btn-outline btn-primary gap-2"
+            onClick={async () => {
+              const selected = await openDialog({
+                multiple: true,
+                filters: [{ name: 'Archives', extensions: ['zip', 'rar', '7z'] }],
+              });
+              if (selected && selected.length > 0) {
+                window.dispatchEvent(
+                  new CustomEvent('request-auto-organize-paths', { detail: selected }),
+                );
+              }
+            }}
+          >
+            <FileArchive size={18} />
+            Import Archives
+          </button>
+          <button
+            className="btn btn-outline btn-primary gap-2"
+            onClick={async () => {
+              const selected = await openDialog({
+                multiple: true,
+                directory: true,
+              });
+              if (selected && selected.length > 0) {
+                window.dispatchEvent(
+                  new CustomEvent('request-auto-organize-paths', { detail: selected }),
+                );
+              }
+            }}
+          >
+            <FolderPlus size={18} />
+            Import Folders
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-y-auto border-l border-white/5 bg-base-100/30 p-6 backdrop-blur-md">
@@ -284,12 +333,12 @@ export default function PreviewPanel() {
             <Trash2 size={18} />
           </button>
           <button
-            onClick={togglePreview}
-            aria-label="Toggle preview panel"
+            onClick={() => setSelectedObject(null)}
+            aria-label="Unselect mod"
             className="btn btn-circle btn-ghost btn-sm hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex"
             title="Close Preview"
           >
-            <ChevronRight size={18} />
+            <X size={18} />
           </button>
           <button
             onClick={() => setMobilePane('grid')}

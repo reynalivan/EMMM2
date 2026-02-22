@@ -5,16 +5,15 @@ import type {
   ApplyCollectionResult,
   Collection,
   CollectionDetails,
+  CollectionPreviewMod,
   CreateCollectionInput,
-  ExportCollectionPayload,
-  ImportCollectionResult,
-  UndoCollectionResult,
   UpdateCollectionInput,
 } from '../../../types/collection';
 
 export const collectionKeys = {
   all: ['collections'] as const,
   list: (gameId: string) => [...collectionKeys.all, gameId] as const,
+  preview: (collectionId: string) => [...collectionKeys.all, 'preview', collectionId] as const,
 };
 
 export function useCollections(gameId?: string | null) {
@@ -23,6 +22,16 @@ export function useCollections(gameId?: string | null) {
     queryFn: () => invoke<Collection[]>('list_collections', { gameId }),
     enabled: !!gameId,
     staleTime: 10_000,
+  });
+}
+
+export function useCollectionPreview(collectionId: string | null, gameId: string | null) {
+  return useQuery<CollectionPreviewMod[]>({
+    queryKey: collectionKeys.preview(collectionId ?? ''),
+    queryFn: () =>
+      invoke<CollectionPreviewMod[]>('get_collection_preview', { collectionId, gameId }),
+    enabled: !!collectionId && !!gameId,
+    staleTime: 60_000, // Previews don't change unless collection is updated
   });
 }
 
@@ -35,6 +44,24 @@ export function useCreateCollection() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
       toast.success(`Created collection: ${result.collection.name}`);
+    },
+    onError: (err) => {
+      toast.error(String(err));
+    },
+  });
+}
+
+export function useSaveCurrentAsCollection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: Omit<CreateCollectionInput, 'mod_ids' | 'auto_snapshot'>) =>
+      invoke<CollectionDetails>('create_collection', {
+        input: { ...input, mod_ids: [], auto_snapshot: true },
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+      toast.success(`Saved current state as: ${result.collection.name}`);
     },
     onError: (err) => {
       toast.error(String(err));
@@ -82,57 +109,10 @@ export function useApplyCollection() {
       invoke<ApplyCollectionResult>('apply_collection', { collectionId, gameId }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['mods'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       toast.success(`Applied collection (${result.changed_count} changes)`);
-    },
-    onError: (err) => {
-      toast.error(String(err));
-    },
-  });
-}
-
-export function useUndoCollectionApply() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (gameId: string) =>
-      invoke<UndoCollectionResult>('undo_collection_apply', { gameId }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      toast.success(`Undo complete (${result.restored_count} restored)`);
-    },
-    onError: (err) => {
-      toast.error(String(err));
-    },
-  });
-}
-
-export function useExportCollection() {
-  return useMutation({
-    mutationFn: ({ collectionId, gameId }: { collectionId: string; gameId: string }) =>
-      invoke<ExportCollectionPayload>('export_collection', { collectionId, gameId }),
-    onError: (err) => {
-      toast.error(String(err));
-    },
-  });
-}
-
-export function useImportCollection() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ gameId, payload }: { gameId: string; payload: ExportCollectionPayload }) =>
-      invoke<ImportCollectionResult>('import_collection', { gameId, payload }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      if (result.missing.length > 0) {
-        toast.warning(`Imported ${result.imported_count} items, ${result.missing.length} missing`);
-        return;
-      }
-      toast.success(`Imported collection (${result.imported_count} items)`);
     },
     onError: (err) => {
       toast.error(String(err));

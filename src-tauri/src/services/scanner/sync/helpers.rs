@@ -105,8 +105,9 @@ pub async fn ensure_object_exists(
     db_metadata_json: &str,
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
+    // Case-insensitive lookup to prevent duplicates (e.g. folder "hook" vs DB alias "Hook")
     let existing = sqlx::query(
-        "SELECT id, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND name = ?",
+        "SELECT id, name, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND LOWER(name) = LOWER(?)",
     )
     .bind(game_id)
     .bind(obj_name)
@@ -116,6 +117,21 @@ pub async fn ensure_object_exists(
 
     if let Some(row) = existing {
         let id: String = row.try_get("id").map_err(|e| e.to_string())?;
+        let existing_name: String = row.try_get("name").map_err(|e| e.to_string())?;
+        let existing_type: String = row
+            .try_get("object_type")
+            .unwrap_or_else(|_| "Other".to_string());
+
+        // Upgrade name + type when incoming data has richer info (thumbnail from MasterDB)
+        if (existing_name != obj_name || existing_type != obj_type) && db_thumbnail.is_some() {
+            sqlx::query("UPDATE objects SET name = ?, object_type = ? WHERE id = ?")
+                .bind(obj_name)
+                .bind(obj_type)
+                .bind(&id)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
 
         let existing_thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
         if existing_thumb.is_none() && db_thumbnail.is_some() {

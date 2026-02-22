@@ -7,7 +7,7 @@
  *   - Bottom (status bar): Append as new object folder
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { FolderPlus, FolderInput } from 'lucide-react';
@@ -349,6 +349,25 @@ export default function ObjectList() {
     qc.invalidateQueries({ queryKey: ['mod-folders'] });
     qc.invalidateQueries({ queryKey: ['category-counts'] });
   }, [activeGame, qc]);
+
+  // Listen to remote auto-organize requests (e.g., from PreviewPanel empty state)
+  useEffect(() => {
+    const onAutoOrganizeRequest = () => handleSync();
+    window.addEventListener('request-auto-organize', onAutoOrganizeRequest);
+
+    const onAutoOrganizePathsRequest = (e: Event) => {
+      const paths = (e as CustomEvent<string[]>).detail;
+      if (paths && Array.isArray(paths)) {
+        handleDropAutoOrganize(paths);
+      }
+    };
+    window.addEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
+
+    return () => {
+      window.removeEventListener('request-auto-organize', onAutoOrganizeRequest);
+      window.removeEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
+    };
+  }, [handleSync, handleDropAutoOrganize]);
 
   const isEmpty = !isLoading && !isError && objects.length === 0;
   const hasNoGame = !activeGame;

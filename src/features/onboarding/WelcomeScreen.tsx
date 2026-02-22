@@ -12,7 +12,11 @@ import AnimatedLogo from '../../components/welcome/AnimatedLogo';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
-export default function WelcomeScreen({ onComplete }: { onComplete: () => void }) {
+export default function WelcomeScreen({
+  onComplete,
+}: {
+  onComplete: (games: GameConfig[]) => void;
+}) {
   const [screen, setScreen] = useState<Screen>('welcome');
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,7 +233,7 @@ export default function WelcomeScreen({ onComplete }: { onComplete: () => void }
     return (
       <AutoDetectResult
         games={detectedGames}
-        onContinue={onComplete}
+        onContinue={() => onComplete(detectedGames)}
         onAddMore={() => setScreen('manual')}
         onRemoveGame={handleRemoveGame}
       />

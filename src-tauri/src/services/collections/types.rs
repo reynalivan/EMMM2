@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Collection {
@@ -7,6 +6,8 @@ pub struct Collection {
     pub name: String,
     pub game_id: String,
     pub is_safe_context: bool,
+    pub member_count: usize,
+    pub is_last_unsaved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,10 +17,22 @@ pub struct CollectionDetails {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionPreviewMod {
+    pub id: String,
+    pub actual_name: String,
+    pub folder_path: String,
+    pub is_safe: bool,
+    pub object_id: Option<String>,
+    pub object_name: Option<String>,
+    pub object_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateCollectionInput {
     pub name: String,
     pub game_id: String,
     pub is_safe_context: bool,
+    pub auto_snapshot: Option<bool>,
     pub mod_ids: Vec<String>,
 }
 
@@ -38,77 +51,6 @@ pub struct ApplyCollectionResult {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UndoCollectionResult {
-    pub restored_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SnapshotEntry {
-    pub mod_id: String,
-    pub previous_status: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct UndoSnapshot {
-    pub game_id: String,
-    pub entries: Vec<SnapshotEntry>,
-}
-
-pub struct CollectionsUndoState {
-    snapshot: Mutex<Option<UndoSnapshot>>,
-}
-
-impl CollectionsUndoState {
-    pub fn new() -> Self {
-        Self {
-            snapshot: Mutex::new(None),
-        }
-    }
-}
-
-impl Default for CollectionsUndoState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CollectionsUndoState {
-    pub fn set(&self, snapshot: UndoSnapshot) {
-        if let Ok(mut guard) = self.snapshot.lock() {
-            *guard = Some(snapshot);
-        }
-    }
-
-    pub fn take(&self) -> Option<UndoSnapshot> {
-        self.snapshot.lock().ok().and_then(|mut guard| guard.take())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportCollectionPayload {
-    pub version: u32,
-    pub name: String,
-    pub game_id: String,
-    pub is_safe_context: bool,
-    pub items: Vec<ExportCollectionItem>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportCollectionItem {
-    pub mod_id: String,
-    pub actual_name: String,
-    pub folder_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImportCollectionResult {
-    pub collection_id: String,
-    pub imported_count: usize,
-    pub missing: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct ModState {
     pub id: String,
     pub folder_path: String,

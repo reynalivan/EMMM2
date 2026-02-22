@@ -37,21 +37,23 @@ pub async fn commit_scan_results(
         if item.move_from_temp {
             let obj_name = item.matched_object.as_deref().unwrap_or("Uncategorized");
             let source_path = Path::new(&item.folder_path);
-            
-            if let Some(folder_name) = source_path.file_name() {
-                let target_dir = Path::new(mods_path).join(obj_name);
-                let target_path = target_dir.join(folder_name);
+            match source_path.file_name() {
+                Some(folder_name) => {
+                    let target_dir = Path::new(mods_path).join(obj_name);
+                    let target_path = target_dir.join(folder_name);
 
-                if source_path.exists() {
-                    if !target_dir.exists() {
-                        let _ = std::fs::create_dir_all(&target_dir);
-                    }
-                    if let Err(e) = std::fs::rename(source_path, &target_path) {
-                        log::error!("Failed to move temp folder: {}", e);
-                    } else {
-                        actual_folder_path = target_path.to_string_lossy().into_owned();
+                    if source_path.exists() {
+                        if !target_dir.exists() {
+                            let _ = std::fs::create_dir_all(&target_dir);
+                        }
+                        if let Err(e) = std::fs::rename(source_path, &target_path) {
+                            log::error!("Failed to move temp folder: {}", e);
+                        } else {
+                            actual_folder_path = target_path.to_string_lossy().into_owned();
+                        }
                     }
                 }
+                _ => (),
             }
         }
 
@@ -119,7 +121,12 @@ pub async fn commit_scan_results(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            (folder_name, None, "[]", "{}")
+            // Strip DISABLED prefix so we never create "DISABLED xyz" objects
+            let clean_name = folder_name
+                .strip_prefix(crate::DISABLED_PREFIX)
+                .unwrap_or(&folder_name)
+                .to_string();
+            (clean_name, None, "[]", "{}")
         };
 
         let object_id = ensure_object_exists(
@@ -145,7 +152,35 @@ pub async fn commit_scan_results(
 
     let deleted_mods_count = handle_deletions(&mut tx, game_id, &processed_paths).await?;
 
+    // Garbage Collector: Delete empty "Ghost" objects left behind after their mod is re-assigned
+    // folder_path is an absolute path, so we use LIKE to match the folder basename
+    // Also matches DISABLED-prefixed folders (e.g. object "hanya" matches folder "DISABLED hanya")
+    sqlx::query(
+        "DELETE FROM objects
+         WHERE game_id = $1
+           AND NOT EXISTS (SELECT 1 FROM mods WHERE object_id = objects.id)
+           AND EXISTS (
+             SELECT 1 FROM mods
+             WHERE (
+               folder_path LIKE '%/' || objects.name
+               OR folder_path LIKE '%\\' || objects.name
+               OR folder_path LIKE '%/DISABLED ' || objects.name
+               OR folder_path LIKE '%\\DISABLED ' || objects.name
+             ) AND game_id = $1
+           )",
+    )
+    .bind(game_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("Failed to clean ghost objects: {}", e))?;
+
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Attempt to clean up the temp folder if it is empty after moves
+    let temp_dir_path = std::path::Path::new(mods_path).join(".emmm2_temp");
+    if temp_dir_path.exists() {
+        let _ = std::fs::remove_dir(&temp_dir_path);
+    }
 
     Ok(SyncResult {
         total_scanned: total,

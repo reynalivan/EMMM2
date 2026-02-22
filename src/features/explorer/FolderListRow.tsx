@@ -14,6 +14,8 @@ import {
   Star,
   ArrowRightLeft,
   Copy,
+  Package,
+  Layers,
 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { ModFolder } from '../../types/mod';
@@ -144,6 +146,7 @@ function FolderListRowInner({
         onContextMenu={handleContextClick}
         className={`
         flex items-center gap-3 p-2 rounded-md border cursor-pointer active:scale-[0.99] transition-all h-full
+        ${item.node_type === 'InternalAssets' ? 'opacity-50' : ''}
         ${isSelected ? 'border-primary/50 bg-primary/10' : 'border-base-content/5 bg-base-200 hover:bg-base-300'}
       `}
       >
@@ -173,6 +176,20 @@ function FolderListRowInner({
           >
             {item.name}
           </div>
+
+          {/* Node type badge */}
+          {item.node_type === 'ModPackRoot' && (
+            <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-info/20 text-info rounded-md shrink-0">
+              <Package size={10} />
+              <span className="text-[9px] font-bold">Mod Pack</span>
+            </div>
+          )}
+          {item.node_type === 'VariantContainer' && (
+            <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-secondary/20 text-secondary rounded-md shrink-0">
+              <Layers size={10} />
+              <span className="text-[9px] font-bold">Variants</span>
+            </div>
+          )}
 
           {/* Conflict badge */}
           {hasConflict && (

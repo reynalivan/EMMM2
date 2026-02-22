@@ -1,6 +1,6 @@
 use super::types::{
-    Collection, CollectionDetails, CreateCollectionInput, ExportCollectionItem,
-    ExportCollectionPayload, ImportCollectionResult, UpdateCollectionInput,
+    Collection, CollectionDetails, CollectionPreviewMod, CreateCollectionInput,
+    UpdateCollectionInput,
 };
 use sqlx::SqlitePool;
 use std::collections::HashSet;
@@ -12,22 +12,38 @@ pub async fn list_collections(
     safe_mode_enabled: bool,
 ) -> Result<Vec<Collection>, String> {
     let sql = if safe_mode_enabled {
-        "SELECT id, name, game_id, is_safe_context FROM collections WHERE game_id = ? AND is_safe_context = 1 ORDER BY name"
+        r#"
+        SELECT c.id, c.name, c.game_id, c.is_safe_context, COUNT(ci.mod_id) as member_count, COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
+        FROM collections c
+        LEFT JOIN collection_items ci ON c.id = ci.collection_id
+        WHERE c.game_id = ? AND c.is_safe_context = 1
+        GROUP BY c.id
+        ORDER BY c.is_last_unsaved DESC, c.name
+        "#
     } else {
-        "SELECT id, name, game_id, is_safe_context FROM collections WHERE game_id = ? ORDER BY name"
+        r#"
+        SELECT c.id, c.name, c.game_id, c.is_safe_context, COUNT(ci.mod_id) as member_count, COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
+        FROM collections c
+        LEFT JOIN collection_items ci ON c.id = ci.collection_id
+        WHERE c.game_id = ?
+        GROUP BY c.id
+        ORDER BY c.is_last_unsaved DESC, c.name
+        "#
     };
 
-    sqlx::query_as::<_, (String, String, String, bool)>(sql)
+    sqlx::query_as::<_, (String, String, String, bool, i64, bool)>(sql)
         .bind(game_id)
         .fetch_all(pool)
         .await
         .map(|rows| {
             rows.into_iter()
-                .map(|(id, name, gid, safe)| Collection {
+                .map(|(id, name, gid, safe, count, is_last_unsaved)| Collection {
                     id,
                     name,
                     game_id: gid,
                     is_safe_context: safe,
+                    member_count: count as usize,
+                    is_last_unsaved,
                 })
                 .collect()
         })
@@ -41,20 +57,73 @@ pub async fn create_collection(
     let id = Uuid::new_v4().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
+    let name_trimmed = input.name.trim();
+
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM collections WHERE game_id = ? AND name = ? AND is_safe_context = ?",
+    )
+    .bind(&input.game_id)
+    .bind(name_trimmed)
+    .bind(input.is_safe_context)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if existing.is_some() {
+        return Err(format!(
+            "A collection named '{}' already exists.",
+            name_trimmed
+        ));
+    }
+
     sqlx::query("INSERT INTO collections (id, name, game_id, is_safe_context) VALUES (?, ?, ?, ?)")
         .bind(&id)
-        .bind(input.name.trim())
+        .bind(name_trimmed)
         .bind(&input.game_id)
         .bind(input.is_safe_context)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
-    let mod_ids = unique_mod_ids(input.mod_ids);
+    let mut mod_ids = input.mod_ids;
+    if input.auto_snapshot.unwrap_or(false) {
+        mod_ids = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM mods WHERE game_id = ? AND status = 'ENABLED'",
+        )
+        .bind(&input.game_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    let mod_ids = unique_mod_ids(mod_ids);
+
+    // Fetch folder_paths for all selected mods
+    let mut paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if !mod_ids.is_empty() {
+        let mut qb: sqlx::QueryBuilder<'_, sqlx::Sqlite> =
+            sqlx::QueryBuilder::new("SELECT id, folder_path FROM mods WHERE id IN (");
+        let mut sep = qb.separated(", ");
+        for id in &mod_ids {
+            sep.push_bind(id);
+        }
+        qb.push(")");
+        let rows: Vec<(String, String)> = qb
+            .build_query_as()
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        for (id, path) in rows {
+            paths.insert(id, path);
+        }
+    }
+
     for mod_id in &mod_ids {
-        sqlx::query("INSERT OR IGNORE INTO collection_items (collection_id, mod_id) VALUES (?, ?)")
+        let mod_path = paths.get(mod_id).map(|p| p.as_str());
+        sqlx::query("INSERT OR IGNORE INTO collection_items (collection_id, mod_id, mod_path) VALUES (?, ?, ?)")
             .bind(&id)
             .bind(mod_id)
+            .bind(mod_path)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -68,6 +137,8 @@ pub async fn create_collection(
             name: input.name.trim().to_string(),
             game_id: input.game_id,
             is_safe_context: input.is_safe_context,
+            member_count: mod_ids.len(),
+            is_last_unsaved: false,
         },
         mod_ids,
     })
@@ -133,91 +204,6 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str, game_id: &str) -> Re
         .map_err(|e| e.to_string())
 }
 
-pub async fn export_collection(
-    pool: &SqlitePool,
-    collection_id: &str,
-    game_id: &str,
-) -> Result<ExportCollectionPayload, String> {
-    let (name, is_safe_context): (String, bool) = sqlx::query_as(
-        "SELECT name, is_safe_context FROM collections WHERE id = ? AND game_id = ?",
-    )
-    .bind(collection_id)
-    .bind(game_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or("Collection not found")?;
-
-    let items = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT m.id, m.actual_name, m.folder_path FROM collection_items ci JOIN mods m ON m.id = ci.mod_id WHERE ci.collection_id = ? ORDER BY m.actual_name",
-    )
-    .bind(collection_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .into_iter()
-    .map(|(mod_id, actual_name, folder_path)| ExportCollectionItem {
-        mod_id,
-        actual_name,
-        folder_path,
-    })
-    .collect();
-
-    Ok(ExportCollectionPayload {
-        version: 1,
-        name,
-        game_id: game_id.to_string(),
-        is_safe_context,
-        items,
-    })
-}
-
-pub async fn import_collection(
-    pool: &SqlitePool,
-    game_id: &str,
-    payload: ExportCollectionPayload,
-) -> Result<ImportCollectionResult, String> {
-    let mut matched = Vec::new();
-    let mut missing = Vec::new();
-
-    for item in payload.items {
-        let resolved: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM mods WHERE game_id = ? AND id = ? UNION SELECT id FROM mods WHERE game_id = ? AND actual_name = ? UNION SELECT id FROM mods WHERE game_id = ? AND folder_path = ? LIMIT 1",
-        )
-        .bind(game_id)
-        .bind(&item.mod_id)
-        .bind(game_id)
-        .bind(&item.actual_name)
-        .bind(game_id)
-        .bind(&item.folder_path)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        match resolved {
-            Some(mod_id) => matched.push(mod_id),
-            None => missing.push(item.actual_name),
-        }
-    }
-
-    let created = create_collection(
-        pool,
-        CreateCollectionInput {
-            name: payload.name,
-            game_id: game_id.to_string(),
-            is_safe_context: payload.is_safe_context,
-            mod_ids: matched.clone(),
-        },
-    )
-    .await?;
-
-    Ok(ImportCollectionResult {
-        collection_id: created.collection.id,
-        imported_count: matched.len(),
-        missing,
-    })
-}
-
 fn unique_mod_ids(mod_ids: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     mod_ids
@@ -231,8 +217,8 @@ async fn get_collection(
     id: &str,
     game_id: &str,
 ) -> Result<CollectionDetails, String> {
-    let (cid, name, gid, safe): (String, String, String, bool) = sqlx::query_as(
-        "SELECT id, name, game_id, is_safe_context FROM collections WHERE id = ? AND game_id = ?",
+    let (cid, name, gid, safe, is_last_unsaved): (String, String, String, bool, bool) = sqlx::query_as(
+        "SELECT id, name, game_id, is_safe_context, COALESCE(is_last_unsaved, 0) FROM collections WHERE id = ? AND game_id = ?",
     )
     .bind(id)
     .bind(game_id)
@@ -255,7 +241,66 @@ async fn get_collection(
             name,
             game_id: gid,
             is_safe_context: safe,
+            member_count: mod_ids.len(),
+            is_last_unsaved,
         },
         mod_ids,
     })
+}
+
+pub async fn get_collection_preview(
+    pool: &SqlitePool,
+    id: &str,
+    game_id: &str,
+) -> Result<Vec<CollectionPreviewMod>, String> {
+    let sql = r#"
+        SELECT
+            m.id,
+            m.actual_name,
+            m.folder_path,
+            COALESCE(m.is_safe, 0) as is_safe,
+            m.object_id,
+            o.name as object_name,
+            o.object_type
+        FROM collection_items ci
+        JOIN mods m ON ci.mod_id = m.id
+        LEFT JOIN objects o ON m.object_id = o.id
+        WHERE ci.collection_id = ? AND m.game_id = ?
+        ORDER BY o.name ASC, m.actual_name ASC
+    "#;
+
+    sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            bool,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ),
+    >(sql)
+    .bind(id)
+    .bind(game_id)
+    .fetch_all(pool)
+    .await
+    .map(|rows| {
+        rows.into_iter()
+            .map(
+                |(id, actual_name, folder_path, is_safe, object_id, object_name, object_type)| {
+                    CollectionPreviewMod {
+                        id,
+                        actual_name,
+                        folder_path,
+                        is_safe,
+                        object_id,
+                        object_name,
+                        object_type,
+                    }
+                },
+            )
+            .collect()
+    })
+    .map_err(|e| e.to_string())
 }
