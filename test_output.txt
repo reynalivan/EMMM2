@@ -1,0 +1,2189 @@
+
+> emmm2@0.1.0 test E:\Dev\EMMM2NEW
+> vitest
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90mE:/Dev/EMMM2NEW[39m
+
+ [31mΓ¥»[39m .trunk/plugins/trunk/actions/poetry/poetry.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/actionlint/actionlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/bandit/bandit.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/actions/commitlint/commitlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m src/services/objectService.test.ts [2m([22m[2m20 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[32m 9[2mms[22m[39m
+     [32mΓ£ô[39m accepts a normal name[32m 1[2mms[22m[39m
+     [32mΓ£ô[39m accepts names with unicode characters[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m accepts name with numbers and dashes[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects empty string[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects single character[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects whitespace-only[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects names longer than 255 characters[32m 0[2mms[22m[39m
+[31m     [31m├ù[31m rejects CON as reserved[39m[32m 3[2mms[22m[39m
+[31m     [31m├ù[31m rejects PRN case-insensitively[39m[32m 1[2mms[22m[39m
+[31m     [31m├ù[31m rejects COM1[39m[32m 0[2mms[22m[39m
+[31m     [31m├ù[31m rejects LPT3[39m[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects names with <[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects names with :[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects names with |[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects names with *[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects names with "[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects dot-only names[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects triple dots[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m rejects path traversal in name[32m 0[2mms[22m[39m
+     [32mΓ£ô[39m trims whitespace before validation[32m 0[2mms[22m[39m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/black/black.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/ansible-lint/ansible_lint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/buf/buf.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/actions/uv/uv.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/cfnlint/cfnlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/brakeman/brakeman.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/checkov/checkov.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/cmake-format/cmake_format.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/buildifier/buildifier.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/biome/biome.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/autopep8/autopep8.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/clippy/clippy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/circleci/circleci.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m src/features/explorer/FolderGrid.test.tsx [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 57[2mms[22m[39m
+[31m     [31m├ù[31m renders empty state when no sortedFolders[39m[32m 40[2mms[22m[39m
+[31m     [31m├ù[31m renders loading state[39m[32m 7[2mms[22m[39m
+[31m     [31m├ù[31m renders items[39m[32m 8[2mms[22m[39m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/clang-format/clang_format.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m src/hooks/useFolders.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 1134[2mms[22m[39m
+     [32mΓ£ô[39m fetches mod folders successfully[32m 92[2mms[22m[39m
+[31m     [31m├ù[31m handles errors[39m[33m 1040[2mms[22m[39m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/djlint/djlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/cspell/cspell.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/dotnet-format/dotnet_format.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/dart/dart.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/codespell/codespell.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/eslint/eslint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/cue-fmt/cue_fmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/flake8/flake8.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/dotenv-linter/dotenv_linter.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/clang-tidy/clang_tidy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/gitleaks/gitleaks.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/dustilock/dustilock.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/git-diff-check/git_diff_check.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/deno/deno.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/detekt/detekt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/gofumpt/gofumpt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/gofmt/gofmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m src/features/scanner/ScannerFeature.test.tsx [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 1331[2mms[22m[39m
+     [32mΓ£ô[39m renders correctly with active game[32m 122[2mms[22m[39m
+     [32mΓ£ô[39m renders "No active game" when no game selected[32m 10[2mms[22m[39m
+     [32mΓ£ô[39m starts scan when button clicked[32m 57[2mms[22m[39m
+[31m     [31m├ù[31m detects conflicts after scan[39m[33m 1052[2mms[22m[39m
+     [32mΓ£ô[39m displays error in ArchiveModal when extraction fails[32m 83[2mms[22m[39m
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+stderr | src/features/sidebar/ObjectList.test.tsx > ObjectList Component
+Quick import failed: TypeError: Cannot read properties of undefined (reading 'reduce')
+    at E:/Dev/EMMM2NEW/src/features/sidebar/useObjectListLogic.ts:131:51
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+ [31mΓ¥»[39m src/features/sidebar/ObjectList.test.tsx [2m([22m[2m13 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 829[2mms[22m[39m
+     [32mΓ£ô[39m renders loading state correctly[32m 138[2mms[22m[39m
+     [32mΓ£ô[39m renders empty state with CTA when no data and game selected[32m 67[2mms[22m[39m
+     [32mΓ£ô[39m renders "select a game" message when no active game[32m 49[2mms[22m[39m
+     [32mΓ£ô[39m renders objects grouped by category (TC-3.1-02)[32m 154[2mms[22m[39m
+     [32mΓ£ô[39m updates search query on input change (TC-3.1-03)[32m 74[2mms[22m[39m
+     [32mΓ£ô[39m selects an object on click via store[32m 34[2mms[22m[39m
+     [32mΓ£ô[39m renders sidebar for the active game from Zustand store (DI-3.03)[32m 52[2mms[22m[39m
+     [32mΓ£ô[39m renders empty filter state when filters produce no results (NC-3.4-01)[32m 54[2mms[22m[39m
+     [32mΓ£ô[39m updates sort order when sort chip is clicked[32m 53[2mms[22m[39m
+     [32mΓ£ô[39m updates status filter when FilterPanel toggle is clicked[32m 59[2mms[22m[39m
+[31m     [31m├ù[31m toggles safe mode when switch is clicked[39m[32m 23[2mms[22m[39m
+     [32mΓ£ô[39m shows power-off overlay and strikethrough for fully disabled object (TC-DIS-01)[32m 23[2mms[22m[39m
+     [32mΓ£ô[39m does NOT show disabled visuals for partially enabled object (TC-DIS-02)[32m 18[2mms[22m[39m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/gokart/gokart.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/goimports/goimports.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/golangci-lint/golangci_lint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/google-java-format/google_java_format.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/graphql-schema-linter/graphql_schema_linter.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/ktlint/ktlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/isort/isort.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/kube-linter/kube_linter.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/golines/golines.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/hadolint/hadolint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/markdown-table-prettify/markdown_table_prettify.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/iwyu/iwyu.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/haml-lint/haml_lint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/ls-lint/ls_lint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/markdownlint/markdownlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/markdown-link-check/markdown_link_check.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/nancy/nancy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/mypy/mypy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/markdownlint-cli2/markdownlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m src/features/sidebar/EditObjectModal.test.tsx [2m([22m[2m5 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 3168[2mms[22m[39m
+     [32mΓ£ô[39m renders nothing when closed[32m 45[2mms[22m[39m
+[31m     [31m├ù[31m renders with object data pre-filled when open[39m[33m 1363[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m validates required fields [33m 316[2mms[22m[39m
+[31m     [31m├ù[31m calls mutation with updated data on submit[39m[33m 1162[2mms[22m[39m
+     [32mΓ£ô[39m calls onClose when cancel is clicked[32m 279[2mms[22m[39m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/nbstripout/nbstripout.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/nixpkgs-fmt/nixpkgs_fmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/osv-scanner/osv_scanner.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/oxipng/oxipng.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/opa/opa.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/perltidy/perltidy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/perlcritic/perlcritic.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/php-cs-fixer/php_cs_fixer.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/prettier/prettier.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/pragma-once/pragma_once.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/prisma/prisma.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/psscriptanalyzer/psscriptanalyzer.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/phpstan/phpstan.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/pre-commit-hooks/pre_commit_hooks.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/renovate/renovate.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/regal/regal.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/pmd/pmd.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/pylint/pylint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/pyright/pyright.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/rome/rome.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/ruff/ruff.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/rubocop/rubocop.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/remark-lint/remark_lint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/rufo/rufo.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/scalafmt/scalafmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/shfmt/shfmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/shellcheck/shellcheck.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/rustfmt/rustfmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/semgrep/semgrep.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/snyk/snyk.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/sort-package-json/sort_package_json.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/sqlfmt/sqlfmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/sourcery/sourcery.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/standardrb/standardrb.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/sqlfluff/sqlfluff.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/svgo/svgo.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/stylelint/stylelint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/swiftformat/swiftformat.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/squawk/squawk.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/sql-formatter/sql_formatter.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/swiftlint/swiftlint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/stylua/stylua.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/tflint/tflint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/terrascan/terrascan.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/terragrunt/terragrunt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/terraform/terraform.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/taplo/taplo.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/stringslint/stringslint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/tfsec/tfsec.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/trufflehog/trufflehog.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/trunk-toolbox/trunk_toolbox.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/tofu/tofu.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/trivy/trivy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/txtpbfmt/txtpbfmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/ty/ty.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/yapf/yapf.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/vale/vale.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/repo-tools/tool-test-helper/tool_sample.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/yamllint/yamllint.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/act/act.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/linters/yamlfmt/yamlfmt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/repo-tools/linter-test-helper/linter_sample.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/assh/assh.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/agebox/agebox.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/1password-cli/1password_cli.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/asciinema/asciinema.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/alp/alp.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/age/age.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/action-validator/action_validator.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/air/air.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/adr/adr.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/amazon-ecr-credential-helper/amazon_ecr_credential_helper.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/aws-amplify/aws_amplify.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/awscli/awscli.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/bazel-differ/bazel.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/bazel/bazel.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/clangd/clangd.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/circleci/circleci.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/clangd-indexing-tools/clangd_indexing_tools.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/deno/deno.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/dbt-cli/dbt_cli.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/diff-so-fancy/diff_so_fancy.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/difft/difft.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/direnv/direnv.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/docker-credential-ecr-login/docker_credential_ecr_login.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/eksctl/eksctl.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/flyway/flyway.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/dotnet/dotnet.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/goreleaser/goreleaser.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/gk/gk.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/gulp/gulp.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/gh/gh.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/grpcui/grpcui.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/helm/helm.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/gt/gt.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/jq/jq.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/ibazel/ibazel.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/minikube/minikube.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/istioctl/istioctl.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/paratest/paratest.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/kubectl/kubectl.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/phpunit/phpunit.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/platformio/platformio.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/prisma/prisma.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/pnpm/pnpm.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/pwsh/pwsh.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/sfdx/sfdx.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/renovate/renovate.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/sentry-cli/sentry_cli.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tailwindcss/tailwindcss.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/terraform/terraform.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/ripgrep/ripgrep.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/terraform-docs/terraform_docs.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/sourcery/sourcery.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/terraformer/terraformer.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/terraform-switcher/terraform_switcher.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tfmigrate/tfmigrate.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/target-determinator/target_determinator.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/terramate/terramate.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tfnotify/tfnotify.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tree-sitter/tree_sitter.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tfupdate/tfupdate.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tofu/tofu.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/tsc/tsc.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/ts-node/ts_node.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/webpack/webpack.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/yarn/yarn.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tools/yq/yq.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tests/repo_tests/config_check.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tests/repo_tests/readme_inclusion.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/tests/repo_tests/valid_package_download.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [31mΓ¥»[39m .trunk/plugins/trunk/actions/hello-world/python/hello_world.test.ts [2m([22m[2m0 test[22m[2m)[22m
+ [32mΓ£ô[39m src/features/collections/hooks/useCollections.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 99[2mms[22m[39m
+ [32mΓ£ô[39m src/features/details/previewPanelUtils.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32mΓ£ô[39m src/features/sidebar/FilterPanel.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 130[2mms[22m[39m
+ [32mΓ£ô[39m src/features/details/hooks/usePreviewData.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 556[2mms[22m[39m
+ [32mΓ£ô[39m src/services/__tests__/dedupService.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32mΓ£ô[39m src/features/details/components/IniEditorSection.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[33m 681[2mms[22m[39m
+ [32mΓ£ô[39m src/hooks/__tests__/useFolderNavigation.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32mΓ£ô[39m src/components/__tests__/infra.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32mΓ£ô[39m src/features/scanner/components/__tests__/DuplicateReport.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[33m 755[2mms[22m[39m
+stderr | src/features/explorer/FolderCard.test.tsx > FolderCard > renders mod name
+Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["thumbnails","/mods/Test Mod"]
+
+ [32mΓ£ô[39m src/features/scanner/components/__tests__/DuplicateTable.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[33m 816[2mms[22m[39m
+ [32mΓ£ô[39m src/features/explorer/ContextMenu.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 39[2mms[22m[39m
+stderr | src/features/explorer/FolderCard.test.tsx > FolderCard > handles click events
+Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["thumbnails","/mods/Test Mod"]
+
+stderr | src/features/explorer/FolderCard.test.tsx > FolderCard > handles ctrl+click
+Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["thumbnails","/mods/Test Mod"]
+
+ [32mΓ£ô[39m src/features/collections/CollectionsPage.test.tsx [2m([22m[2m1 test[22m[2m)[22m[33m 455[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m renders collections fetched from backend [33m 453[2mms[22m[39m
+ [32mΓ£ô[39m src/components/layout/TopBar/GameSelector.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+stderr | src/features/explorer/FolderCard.test.tsx > FolderCard > handles double click
+Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["thumbnails","/mods/Test Mod"]
+
+ [32mΓ£ô[39m src/features/explorer/FolderCard.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 203[2mms[22m[39m
+ [32mΓ£ô[39m src/components/ui/ContextMenu.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 571[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m renders children and shows menu on right click [33m 362[2mms[22m[39m
+ [32mΓ£ô[39m src/features/details/hooks/usePreviewPanelState.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 254[2mms[22m[39m
+ [32mΓ£ô[39m src/features/details/components/GallerySection.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[32m 260[2mms[22m[39m
+ [32mΓ£ô[39m src/services/objectService.db.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m src/features/scanner/components/__tests__/ResolutionModal.test.tsx [2m([22m[2m22 tests[22m[2m)[22m[33m 1286[2mms[22m[39m
+       [33m[2mΓ£ô[22m[39m does not render when isOpen is false [33m 308[2mms[22m[39m
+ [32mΓ£ô[39m src/features/details/PreviewPanel.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 491[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m should handle paste thumbnail flow when clipboard has image [33m 351[2mms[22m[39m
+ [32mΓ£ô[39m src/hooks/__tests__/useDedup.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 1176[2mms[22m[39m
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Suites 186 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/actions/commitlint/commitlint.test.ts [ .trunk/plugins/trunk/actions/commitlint/commitlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/actions/commitlint/commitlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/actions/poetry/poetry.test.ts [ .trunk/plugins/trunk/actions/poetry/poetry.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/actions/poetry/poetry.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/actionlint/actionlint.test.ts [ .trunk/plugins/trunk/linters/actionlint/actionlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/actionlint/actionlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[3/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/actions/uv/uv.test.ts [ .trunk/plugins/trunk/actions/uv/uv.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/actions/uv/uv.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[4/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/ansible-lint/ansible_lint.test.ts [ .trunk/plugins/trunk/linters/ansible-lint/ansible_lint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/ansible-lint/ansible_lint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[5/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/biome/biome.test.ts [ .trunk/plugins/trunk/linters/biome/biome.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/biome/biome.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[6/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/bandit/bandit.test.ts [ .trunk/plugins/trunk/linters/bandit/bandit.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/bandit/bandit.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[7/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/autopep8/autopep8.test.ts [ .trunk/plugins/trunk/linters/autopep8/autopep8.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/autopep8/autopep8.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[8/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/black/black.test.ts [ .trunk/plugins/trunk/linters/black/black.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/black/black.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[9/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/cfnlint/cfnlint.test.ts [ .trunk/plugins/trunk/linters/cfnlint/cfnlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/cfnlint/cfnlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[10/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/brakeman/brakeman.test.ts [ .trunk/plugins/trunk/linters/brakeman/brakeman.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/brakeman/brakeman.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[11/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/buf/buf.test.ts [ .trunk/plugins/trunk/linters/buf/buf.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/buf/buf.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[12/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/buildifier/buildifier.test.ts [ .trunk/plugins/trunk/linters/buildifier/buildifier.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/buildifier/buildifier.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[13/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/checkov/checkov.test.ts [ .trunk/plugins/trunk/linters/checkov/checkov.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/checkov/checkov.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[14/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/circleci/circleci.test.ts [ .trunk/plugins/trunk/linters/circleci/circleci.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/circleci/circleci.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[15/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/clippy/clippy.test.ts [ .trunk/plugins/trunk/linters/clippy/clippy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/clippy/clippy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[16/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/cmake-format/cmake_format.test.ts [ .trunk/plugins/trunk/linters/cmake-format/cmake_format.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/cmake-format/cmake_format.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[17/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/clang-format/clang_format.test.ts [ .trunk/plugins/trunk/linters/clang-format/clang_format.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/clang-format/clang_format.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[18/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/codespell/codespell.test.ts [ .trunk/plugins/trunk/linters/codespell/codespell.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/codespell/codespell.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[19/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/clang-tidy/clang_tidy.test.ts [ .trunk/plugins/trunk/linters/clang-tidy/clang_tidy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/clang-tidy/clang_tidy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[20/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/cspell/cspell.test.ts [ .trunk/plugins/trunk/linters/cspell/cspell.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/cspell/cspell.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[21/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/dart/dart.test.ts [ .trunk/plugins/trunk/linters/dart/dart.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/dart/dart.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[22/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/detekt/detekt.test.ts [ .trunk/plugins/trunk/linters/detekt/detekt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/detekt/detekt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[23/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/cue-fmt/cue_fmt.test.ts [ .trunk/plugins/trunk/linters/cue-fmt/cue_fmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/cue-fmt/cue_fmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[24/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/djlint/djlint.test.ts [ .trunk/plugins/trunk/linters/djlint/djlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/djlint/djlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[25/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/deno/deno.test.ts [ .trunk/plugins/trunk/linters/deno/deno.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/deno/deno.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[26/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/dotenv-linter/dotenv_linter.test.ts [ .trunk/plugins/trunk/linters/dotenv-linter/dotenv_linter.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/dotenv-linter/dotenv_linter.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[27/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/dustilock/dustilock.test.ts [ .trunk/plugins/trunk/linters/dustilock/dustilock.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/dustilock/dustilock.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[28/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/flake8/flake8.test.ts [ .trunk/plugins/trunk/linters/flake8/flake8.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/flake8/flake8.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[29/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/dotnet-format/dotnet_format.test.ts [ .trunk/plugins/trunk/linters/dotnet-format/dotnet_format.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/dotnet-format/dotnet_format.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[30/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/git-diff-check/git_diff_check.test.ts [ .trunk/plugins/trunk/linters/git-diff-check/git_diff_check.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/git-diff-check/git_diff_check.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[31/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/eslint/eslint.test.ts [ .trunk/plugins/trunk/linters/eslint/eslint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/eslint/eslint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[32/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/gitleaks/gitleaks.test.ts [ .trunk/plugins/trunk/linters/gitleaks/gitleaks.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/gitleaks/gitleaks.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[33/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/gofumpt/gofumpt.test.ts [ .trunk/plugins/trunk/linters/gofumpt/gofumpt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/gofumpt/gofumpt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[34/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/gofmt/gofmt.test.ts [ .trunk/plugins/trunk/linters/gofmt/gofmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/gofmt/gofmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[35/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/gokart/gokart.test.ts [ .trunk/plugins/trunk/linters/gokart/gokart.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/gokart/gokart.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[36/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/goimports/goimports.test.ts [ .trunk/plugins/trunk/linters/goimports/goimports.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/goimports/goimports.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[37/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/golangci-lint/golangci_lint.test.ts [ .trunk/plugins/trunk/linters/golangci-lint/golangci_lint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/golangci-lint/golangci_lint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[38/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/google-java-format/google_java_format.test.ts [ .trunk/plugins/trunk/linters/google-java-format/google_java_format.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/google-java-format/google_java_format.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/hadolint/hadolint.test.ts [ .trunk/plugins/trunk/linters/hadolint/hadolint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/hadolint/hadolint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[40/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/golines/golines.test.ts [ .trunk/plugins/trunk/linters/golines/golines.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/golines/golines.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[41/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/haml-lint/haml_lint.test.ts [ .trunk/plugins/trunk/linters/haml-lint/haml_lint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/haml-lint/haml_lint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[42/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/isort/isort.test.ts [ .trunk/plugins/trunk/linters/isort/isort.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/isort/isort.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[43/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/graphql-schema-linter/graphql_schema_linter.test.ts [ .trunk/plugins/trunk/linters/graphql-schema-linter/graphql_schema_linter.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/graphql-schema-linter/graphql_schema_linter.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[44/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/ktlint/ktlint.test.ts [ .trunk/plugins/trunk/linters/ktlint/ktlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/ktlint/ktlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[45/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/kube-linter/kube_linter.test.ts [ .trunk/plugins/trunk/linters/kube-linter/kube_linter.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/kube-linter/kube_linter.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[46/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/iwyu/iwyu.test.ts [ .trunk/plugins/trunk/linters/iwyu/iwyu.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/iwyu/iwyu.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[47/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/markdown-link-check/markdown_link_check.test.ts [ .trunk/plugins/trunk/linters/markdown-link-check/markdown_link_check.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/markdown-link-check/markdown_link_check.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[48/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/markdown-table-prettify/markdown_table_prettify.test.ts [ .trunk/plugins/trunk/linters/markdown-table-prettify/markdown_table_prettify.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/markdown-table-prettify/markdown_table_prettify.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[49/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/ls-lint/ls_lint.test.ts [ .trunk/plugins/trunk/linters/ls-lint/ls_lint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/ls-lint/ls_lint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[50/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/markdownlint-cli2/markdownlint.test.ts [ .trunk/plugins/trunk/linters/markdownlint-cli2/markdownlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/markdownlint-cli2/markdownlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[51/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/mypy/mypy.test.ts [ .trunk/plugins/trunk/linters/mypy/mypy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/mypy/mypy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[52/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/markdownlint/markdownlint.test.ts [ .trunk/plugins/trunk/linters/markdownlint/markdownlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/markdownlint/markdownlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[53/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/nbstripout/nbstripout.test.ts [ .trunk/plugins/trunk/linters/nbstripout/nbstripout.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/nbstripout/nbstripout.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[54/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/nixpkgs-fmt/nixpkgs_fmt.test.ts [ .trunk/plugins/trunk/linters/nixpkgs-fmt/nixpkgs_fmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/nixpkgs-fmt/nixpkgs_fmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[55/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/nancy/nancy.test.ts [ .trunk/plugins/trunk/linters/nancy/nancy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/nancy/nancy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[56/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/osv-scanner/osv_scanner.test.ts [ .trunk/plugins/trunk/linters/osv-scanner/osv_scanner.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/osv-scanner/osv_scanner.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[57/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/oxipng/oxipng.test.ts [ .trunk/plugins/trunk/linters/oxipng/oxipng.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/oxipng/oxipng.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[58/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/opa/opa.test.ts [ .trunk/plugins/trunk/linters/opa/opa.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/opa/opa.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[59/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/perltidy/perltidy.test.ts [ .trunk/plugins/trunk/linters/perltidy/perltidy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/perltidy/perltidy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[60/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/php-cs-fixer/php_cs_fixer.test.ts [ .trunk/plugins/trunk/linters/php-cs-fixer/php_cs_fixer.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/php-cs-fixer/php_cs_fixer.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[61/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/perlcritic/perlcritic.test.ts [ .trunk/plugins/trunk/linters/perlcritic/perlcritic.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/perlcritic/perlcritic.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[62/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/pragma-once/pragma_once.test.ts [ .trunk/plugins/trunk/linters/pragma-once/pragma_once.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/pragma-once/pragma_once.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[63/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/phpstan/phpstan.test.ts [ .trunk/plugins/trunk/linters/phpstan/phpstan.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/phpstan/phpstan.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[64/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/prettier/prettier.test.ts [ .trunk/plugins/trunk/linters/prettier/prettier.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/prettier/prettier.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[65/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/pre-commit-hooks/pre_commit_hooks.test.ts [ .trunk/plugins/trunk/linters/pre-commit-hooks/pre_commit_hooks.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/pre-commit-hooks/pre_commit_hooks.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[66/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/psscriptanalyzer/psscriptanalyzer.test.ts [ .trunk/plugins/trunk/linters/psscriptanalyzer/psscriptanalyzer.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/psscriptanalyzer/psscriptanalyzer.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[67/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/pmd/pmd.test.ts [ .trunk/plugins/trunk/linters/pmd/pmd.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/pmd/pmd.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[68/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/prisma/prisma.test.ts [ .trunk/plugins/trunk/linters/prisma/prisma.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/prisma/prisma.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[69/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/pyright/pyright.test.ts [ .trunk/plugins/trunk/linters/pyright/pyright.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/pyright/pyright.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[70/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/pylint/pylint.test.ts [ .trunk/plugins/trunk/linters/pylint/pylint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/pylint/pylint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[71/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/regal/regal.test.ts [ .trunk/plugins/trunk/linters/regal/regal.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/regal/regal.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[72/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/renovate/renovate.test.ts [ .trunk/plugins/trunk/linters/renovate/renovate.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/renovate/renovate.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[73/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/rubocop/rubocop.test.ts [ .trunk/plugins/trunk/linters/rubocop/rubocop.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/rubocop/rubocop.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[74/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/remark-lint/remark_lint.test.ts [ .trunk/plugins/trunk/linters/remark-lint/remark_lint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/remark-lint/remark_lint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[75/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/ruff/ruff.test.ts [ .trunk/plugins/trunk/linters/ruff/ruff.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/ruff/ruff.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[76/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/rome/rome.test.ts [ .trunk/plugins/trunk/linters/rome/rome.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/rome/rome.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[77/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/rufo/rufo.test.ts [ .trunk/plugins/trunk/linters/rufo/rufo.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/rufo/rufo.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[78/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/scalafmt/scalafmt.test.ts [ .trunk/plugins/trunk/linters/scalafmt/scalafmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/scalafmt/scalafmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[79/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/shellcheck/shellcheck.test.ts [ .trunk/plugins/trunk/linters/shellcheck/shellcheck.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/shellcheck/shellcheck.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[80/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/shfmt/shfmt.test.ts [ .trunk/plugins/trunk/linters/shfmt/shfmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/shfmt/shfmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[81/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/rustfmt/rustfmt.test.ts [ .trunk/plugins/trunk/linters/rustfmt/rustfmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/rustfmt/rustfmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[82/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/semgrep/semgrep.test.ts [ .trunk/plugins/trunk/linters/semgrep/semgrep.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/semgrep/semgrep.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[83/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/snyk/snyk.test.ts [ .trunk/plugins/trunk/linters/snyk/snyk.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/snyk/snyk.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[84/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/sort-package-json/sort_package_json.test.ts [ .trunk/plugins/trunk/linters/sort-package-json/sort_package_json.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/sort-package-json/sort_package_json.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[85/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/sqlfluff/sqlfluff.test.ts [ .trunk/plugins/trunk/linters/sqlfluff/sqlfluff.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/sqlfluff/sqlfluff.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[86/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/sqlfmt/sqlfmt.test.ts [ .trunk/plugins/trunk/linters/sqlfmt/sqlfmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/sqlfmt/sqlfmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[87/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/sourcery/sourcery.test.ts [ .trunk/plugins/trunk/linters/sourcery/sourcery.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/sourcery/sourcery.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[88/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/sql-formatter/sql_formatter.test.ts [ .trunk/plugins/trunk/linters/sql-formatter/sql_formatter.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/sql-formatter/sql_formatter.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[89/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/squawk/squawk.test.ts [ .trunk/plugins/trunk/linters/squawk/squawk.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/squawk/squawk.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[90/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/standardrb/standardrb.test.ts [ .trunk/plugins/trunk/linters/standardrb/standardrb.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/standardrb/standardrb.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[91/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/svgo/svgo.test.ts [ .trunk/plugins/trunk/linters/svgo/svgo.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/svgo/svgo.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[92/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/stylua/stylua.test.ts [ .trunk/plugins/trunk/linters/stylua/stylua.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/stylua/stylua.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[93/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/stringslint/stringslint.test.ts [ .trunk/plugins/trunk/linters/stringslint/stringslint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/stringslint/stringslint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[94/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/stylelint/stylelint.test.ts [ .trunk/plugins/trunk/linters/stylelint/stylelint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/stylelint/stylelint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[95/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/swiftformat/swiftformat.test.ts [ .trunk/plugins/trunk/linters/swiftformat/swiftformat.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/swiftformat/swiftformat.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[96/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/swiftlint/swiftlint.test.ts [ .trunk/plugins/trunk/linters/swiftlint/swiftlint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/swiftlint/swiftlint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[97/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/terragrunt/terragrunt.test.ts [ .trunk/plugins/trunk/linters/terragrunt/terragrunt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/terragrunt/terragrunt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[98/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/terrascan/terrascan.test.ts [ .trunk/plugins/trunk/linters/terrascan/terrascan.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/terrascan/terrascan.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[99/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/taplo/taplo.test.ts [ .trunk/plugins/trunk/linters/taplo/taplo.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/taplo/taplo.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[100/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/terraform/terraform.test.ts [ .trunk/plugins/trunk/linters/terraform/terraform.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/terraform/terraform.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[101/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/tflint/tflint.test.ts [ .trunk/plugins/trunk/linters/tflint/tflint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/tflint/tflint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[102/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/tfsec/tfsec.test.ts [ .trunk/plugins/trunk/linters/tfsec/tfsec.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/tfsec/tfsec.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[103/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/trufflehog/trufflehog.test.ts [ .trunk/plugins/trunk/linters/trufflehog/trufflehog.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/trufflehog/trufflehog.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[104/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/trunk-toolbox/trunk_toolbox.test.ts [ .trunk/plugins/trunk/linters/trunk-toolbox/trunk_toolbox.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/trunk-toolbox/trunk_toolbox.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[105/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/tofu/tofu.test.ts [ .trunk/plugins/trunk/linters/tofu/tofu.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/tofu/tofu.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[106/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/trivy/trivy.test.ts [ .trunk/plugins/trunk/linters/trivy/trivy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/trivy/trivy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[107/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/ty/ty.test.ts [ .trunk/plugins/trunk/linters/ty/ty.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/ty/ty.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[108/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/txtpbfmt/txtpbfmt.test.ts [ .trunk/plugins/trunk/linters/txtpbfmt/txtpbfmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/txtpbfmt/txtpbfmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[109/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/yamllint/yamllint.test.ts [ .trunk/plugins/trunk/linters/yamllint/yamllint.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/yamllint/yamllint.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[110/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/yapf/yapf.test.ts [ .trunk/plugins/trunk/linters/yapf/yapf.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/yapf/yapf.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[111/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/vale/vale.test.ts [ .trunk/plugins/trunk/linters/vale/vale.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/vale/vale.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[112/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/linters/yamlfmt/yamlfmt.test.ts [ .trunk/plugins/trunk/linters/yamlfmt/yamlfmt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/linters/yamlfmt/yamlfmt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[113/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/repo-tools/tool-test-helper/tool_sample.test.ts [ .trunk/plugins/trunk/repo-tools/tool-test-helper/tool_sample.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/repo-tools/tool-test-helper/tool_sample.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[114/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/act/act.test.ts [ .trunk/plugins/trunk/tools/act/act.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/act/act.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[115/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/repo-tools/linter-test-helper/linter_sample.test.ts [ .trunk/plugins/trunk/repo-tools/linter-test-helper/linter_sample.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/repo-tools/linter-test-helper/linter_sample.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[116/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/1password-cli/1password_cli.test.ts [ .trunk/plugins/trunk/tools/1password-cli/1password_cli.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/1password-cli/1password_cli.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[117/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/action-validator/action_validator.test.ts [ .trunk/plugins/trunk/tools/action-validator/action_validator.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/action-validator/action_validator.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[118/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/age/age.test.ts [ .trunk/plugins/trunk/tools/age/age.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/age/age.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[119/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/adr/adr.test.ts [ .trunk/plugins/trunk/tools/adr/adr.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/adr/adr.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[120/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/agebox/agebox.test.ts [ .trunk/plugins/trunk/tools/agebox/agebox.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/agebox/agebox.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[121/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/air/air.test.ts [ .trunk/plugins/trunk/tools/air/air.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/air/air.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[122/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/alp/alp.test.ts [ .trunk/plugins/trunk/tools/alp/alp.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/alp/alp.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[123/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/assh/assh.test.ts [ .trunk/plugins/trunk/tools/assh/assh.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/assh/assh.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[124/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/asciinema/asciinema.test.ts [ .trunk/plugins/trunk/tools/asciinema/asciinema.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/asciinema/asciinema.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[125/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/amazon-ecr-credential-helper/amazon_ecr_credential_helper.test.ts [ .trunk/plugins/trunk/tools/amazon-ecr-credential-helper/amazon_ecr_credential_helper.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/amazon-ecr-credential-helper/amazon_ecr_credential_helper.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[126/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/aws-amplify/aws_amplify.test.ts [ .trunk/plugins/trunk/tools/aws-amplify/aws_amplify.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/aws-amplify/aws_amplify.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[127/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/awscli/awscli.test.ts [ .trunk/plugins/trunk/tools/awscli/awscli.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/awscli/awscli.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[128/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/bazel-differ/bazel.test.ts [ .trunk/plugins/trunk/tools/bazel-differ/bazel.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/bazel-differ/bazel.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[129/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/bazel/bazel.test.ts [ .trunk/plugins/trunk/tools/bazel/bazel.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/bazel/bazel.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[130/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/circleci/circleci.test.ts [ .trunk/plugins/trunk/tools/circleci/circleci.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/circleci/circleci.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[131/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/clangd/clangd.test.ts [ .trunk/plugins/trunk/tools/clangd/clangd.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/clangd/clangd.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[132/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/clangd-indexing-tools/clangd_indexing_tools.test.ts [ .trunk/plugins/trunk/tools/clangd-indexing-tools/clangd_indexing_tools.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/clangd-indexing-tools/clangd_indexing_tools.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[133/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/deno/deno.test.ts [ .trunk/plugins/trunk/tools/deno/deno.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/deno/deno.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[134/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/dbt-cli/dbt_cli.test.ts [ .trunk/plugins/trunk/tools/dbt-cli/dbt_cli.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/dbt-cli/dbt_cli.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[135/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/diff-so-fancy/diff_so_fancy.test.ts [ .trunk/plugins/trunk/tools/diff-so-fancy/diff_so_fancy.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/diff-so-fancy/diff_so_fancy.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[136/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/difft/difft.test.ts [ .trunk/plugins/trunk/tools/difft/difft.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/difft/difft.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[137/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/direnv/direnv.test.ts [ .trunk/plugins/trunk/tools/direnv/direnv.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/direnv/direnv.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[138/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/dotnet/dotnet.test.ts [ .trunk/plugins/trunk/tools/dotnet/dotnet.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/dotnet/dotnet.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[139/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/docker-credential-ecr-login/docker_credential_ecr_login.test.ts [ .trunk/plugins/trunk/tools/docker-credential-ecr-login/docker_credential_ecr_login.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/docker-credential-ecr-login/docker_credential_ecr_login.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[140/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/eksctl/eksctl.test.ts [ .trunk/plugins/trunk/tools/eksctl/eksctl.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/eksctl/eksctl.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[141/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/flyway/flyway.test.ts [ .trunk/plugins/trunk/tools/flyway/flyway.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/flyway/flyway.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[142/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/gh/gh.test.ts [ .trunk/plugins/trunk/tools/gh/gh.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/gh/gh.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[143/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/gk/gk.test.ts [ .trunk/plugins/trunk/tools/gk/gk.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/gk/gk.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[144/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/grpcui/grpcui.test.ts [ .trunk/plugins/trunk/tools/grpcui/grpcui.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/grpcui/grpcui.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[145/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/goreleaser/goreleaser.test.ts [ .trunk/plugins/trunk/tools/goreleaser/goreleaser.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/goreleaser/goreleaser.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[146/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/gt/gt.test.ts [ .trunk/plugins/trunk/tools/gt/gt.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/gt/gt.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[147/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/helm/helm.test.ts [ .trunk/plugins/trunk/tools/helm/helm.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/helm/helm.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[148/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/gulp/gulp.test.ts [ .trunk/plugins/trunk/tools/gulp/gulp.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/gulp/gulp.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[149/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/ibazel/ibazel.test.ts [ .trunk/plugins/trunk/tools/ibazel/ibazel.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/ibazel/ibazel.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[150/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/istioctl/istioctl.test.ts [ .trunk/plugins/trunk/tools/istioctl/istioctl.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/istioctl/istioctl.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[151/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/jq/jq.test.ts [ .trunk/plugins/trunk/tools/jq/jq.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/jq/jq.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[152/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/minikube/minikube.test.ts [ .trunk/plugins/trunk/tools/minikube/minikube.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/minikube/minikube.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[153/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/paratest/paratest.test.ts [ .trunk/plugins/trunk/tools/paratest/paratest.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/paratest/paratest.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[154/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/kubectl/kubectl.test.ts [ .trunk/plugins/trunk/tools/kubectl/kubectl.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/kubectl/kubectl.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[155/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/phpunit/phpunit.test.ts [ .trunk/plugins/trunk/tools/phpunit/phpunit.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/phpunit/phpunit.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[156/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/platformio/platformio.test.ts [ .trunk/plugins/trunk/tools/platformio/platformio.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/platformio/platformio.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[157/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/pnpm/pnpm.test.ts [ .trunk/plugins/trunk/tools/pnpm/pnpm.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/pnpm/pnpm.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[158/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/prisma/prisma.test.ts [ .trunk/plugins/trunk/tools/prisma/prisma.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/prisma/prisma.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[159/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/pwsh/pwsh.test.ts [ .trunk/plugins/trunk/tools/pwsh/pwsh.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/pwsh/pwsh.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[160/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/renovate/renovate.test.ts [ .trunk/plugins/trunk/tools/renovate/renovate.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/renovate/renovate.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[161/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/ripgrep/ripgrep.test.ts [ .trunk/plugins/trunk/tools/ripgrep/ripgrep.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/ripgrep/ripgrep.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[162/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/sentry-cli/sentry_cli.test.ts [ .trunk/plugins/trunk/tools/sentry-cli/sentry_cli.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/sentry-cli/sentry_cli.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[163/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/sfdx/sfdx.test.ts [ .trunk/plugins/trunk/tools/sfdx/sfdx.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/sfdx/sfdx.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[164/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/sourcery/sourcery.test.ts [ .trunk/plugins/trunk/tools/sourcery/sourcery.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/sourcery/sourcery.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[165/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tailwindcss/tailwindcss.test.ts [ .trunk/plugins/trunk/tools/tailwindcss/tailwindcss.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tailwindcss/tailwindcss.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[166/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/terraform/terraform.test.ts [ .trunk/plugins/trunk/tools/terraform/terraform.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/terraform/terraform.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[167/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/terraform-docs/terraform_docs.test.ts [ .trunk/plugins/trunk/tools/terraform-docs/terraform_docs.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/terraform-docs/terraform_docs.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[168/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/terraform-switcher/terraform_switcher.test.ts [ .trunk/plugins/trunk/tools/terraform-switcher/terraform_switcher.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/terraform-switcher/terraform_switcher.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[169/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/target-determinator/target_determinator.test.ts [ .trunk/plugins/trunk/tools/target-determinator/target_determinator.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/target-determinator/target_determinator.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[170/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/terraformer/terraformer.test.ts [ .trunk/plugins/trunk/tools/terraformer/terraformer.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/terraformer/terraformer.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[171/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tfmigrate/tfmigrate.test.ts [ .trunk/plugins/trunk/tools/tfmigrate/tfmigrate.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tfmigrate/tfmigrate.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[172/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/terramate/terramate.test.ts [ .trunk/plugins/trunk/tools/terramate/terramate.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/terramate/terramate.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[173/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tfnotify/tfnotify.test.ts [ .trunk/plugins/trunk/tools/tfnotify/tfnotify.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tfnotify/tfnotify.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[174/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tfupdate/tfupdate.test.ts [ .trunk/plugins/trunk/tools/tfupdate/tfupdate.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tfupdate/tfupdate.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[175/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tofu/tofu.test.ts [ .trunk/plugins/trunk/tools/tofu/tofu.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tofu/tofu.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[176/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tree-sitter/tree_sitter.test.ts [ .trunk/plugins/trunk/tools/tree-sitter/tree_sitter.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tree-sitter/tree_sitter.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[177/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/ts-node/ts_node.test.ts [ .trunk/plugins/trunk/tools/ts-node/ts_node.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/ts-node/ts_node.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[178/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/tsc/tsc.test.ts [ .trunk/plugins/trunk/tools/tsc/tsc.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/tsc/tsc.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[179/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/webpack/webpack.test.ts [ .trunk/plugins/trunk/tools/webpack/webpack.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/webpack/webpack.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[180/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/yarn/yarn.test.ts [ .trunk/plugins/trunk/tools/yarn/yarn.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/yarn/yarn.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[181/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tools/yq/yq.test.ts [ .trunk/plugins/trunk/tools/yq/yq.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tools/yq/yq.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[182/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tests/repo_tests/config_check.test.ts [ .trunk/plugins/trunk/tests/repo_tests/config_check.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tests/repo_tests/config_check.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[183/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tests/repo_tests/readme_inclusion.test.ts [ .trunk/plugins/trunk/tests/repo_tests/readme_inclusion.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tests/repo_tests/readme_inclusion.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[184/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/tests/repo_tests/valid_package_download.test.ts [ .trunk/plugins/trunk/tests/repo_tests/valid_package_download.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/tests/repo_tests/valid_package_download.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[185/198]ΓÄ»
+
+ FAIL  .trunk/plugins/trunk/actions/hello-world/python/hello_world.test.ts [ .trunk/plugins/trunk/actions/hello-world/python/hello_world.test.ts ]
+Error: Cannot find module '/@fs/C:/Users/yusri/AppData/Local/trunk/plugins/https---github-com-trunk-io-plugins/v1.7.4-4ebadccd80b22638/actions/hello-world/python/hello_world.test.ts'
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[186/198]ΓÄ»
+
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 12 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  src/hooks/useFolders.test.ts > useModFolders > handles errors
+AssertionError: expected false to be true // Object.is equality
+
+Ignored nodes: comments, script, style
+<html>
+  <head />
+  <body>
+    <div />
+  </body>
+</html>
+
+- Expected
++ Received
+
+- true
++ false
+
+ Γ¥» src/hooks/useFolders.test.ts:75:56
+     73|     });
+     74| 
+     75|     await waitFor(() => expect(result.current.isError).toBe(true));
+       |                                                        ^
+     76|     expect(result.current.error).toBeDefined();
+     77|   });
+ Γ¥» runWithExpensiveErrorDiagnosticsDisabled node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:47:12
+ Γ¥» checkCallback node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ Γ¥» Timeout.checkRealTimersCallback node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[187/198]ΓÄ»
+
+ FAIL  src/services/objectService.test.ts > validateObjectName > rejects CON as reserved
+AssertionError: the given combination of arguments (null and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ Γ¥» src/services/objectService.test.ts:43:39
+     41|   // NC-3.3-03: Reserved Windows names
+     42|   it('rejects CON as reserved', () => {
+     43|     expect(validateObjectName('CON')).toContain('reserved');
+       |                                       ^
+     44|   });
+     45| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[188/198]ΓÄ»
+
+ FAIL  src/services/objectService.test.ts > validateObjectName > rejects PRN case-insensitively
+AssertionError: the given combination of arguments (null and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ Γ¥» src/services/objectService.test.ts:47:39
+     45| 
+     46|   it('rejects PRN case-insensitively', () => {
+     47|     expect(validateObjectName('prn')).toContain('reserved');
+       |                                       ^
+     48|   });
+     49| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[189/198]ΓÄ»
+
+ FAIL  src/services/objectService.test.ts > validateObjectName > rejects COM1
+AssertionError: the given combination of arguments (null and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ Γ¥» src/services/objectService.test.ts:51:40
+     49| 
+     50|   it('rejects COM1', () => {
+     51|     expect(validateObjectName('COM1')).toContain('reserved');
+       |                                        ^
+     52|   });
+     53| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[190/198]ΓÄ»
+
+ FAIL  src/services/objectService.test.ts > validateObjectName > rejects LPT3
+AssertionError: the given combination of arguments (null and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ Γ¥» src/services/objectService.test.ts:55:40
+     53| 
+     54|   it('rejects LPT3', () => {
+     55|     expect(validateObjectName('lpt3')).toContain('reserved');
+       |                                        ^
+     56|   });
+     57| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[191/198]ΓÄ»
+
+ FAIL  src/features/explorer/FolderGrid.test.tsx > FolderGrid > renders empty state when no sortedFolders
+ FAIL  src/features/explorer/FolderGrid.test.tsx > FolderGrid > renders loading state
+ FAIL  src/features/explorer/FolderGrid.test.tsx > FolderGrid > renders items
+TypeError: Cannot read properties of undefined (reading 'open')
+ Γ¥» FolderGrid src/features/explorer/FolderGrid.tsx:391:19
+    389| 
+    390|       {/* Move To Object Dialog */}
+    391|       {moveDialog.open && moveDialog.folder && (
+       |                   ^
+    392|         <MoveToObjectDialog
+    393|           open={moveDialog.open}
+ Γ¥» Object.react_stack_bottom_frame node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:25904:20
+ Γ¥» renderWithHooks node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:7662:22
+ Γ¥» updateFunctionComponent node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:10166:19
+ Γ¥» beginWork node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:11778:18
+ Γ¥» runWithFiberInDEV node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+ Γ¥» performUnitOfWork node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:17641:22
+ Γ¥» workLoopSync node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:17469:41
+ Γ¥» renderRootSync node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:17450:11
+ Γ¥» performWorkOnRoot node_modules/.pnpm/react-dom@19.2.4_react@19.2.4/node_modules/react-dom/cjs/react-dom-client.development.js:16583:35
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[192/198]ΓÄ»
+
+ FAIL  src/features/scanner/ScannerFeature.test.tsx > ScannerFeature > detects conflicts after scan
+AssertionError: expected "vi.fn()" to be called with arguments: [ '/mods/path' ]
+
+Number of calls: 0
+
+
+Ignored nodes: comments, script, style
+<html>
+  <head />
+  <body>
+    <div>
+      <div
+        class="card bg-base-100 shadow-xl border border-base-300"
+      >
+        <div
+          class="card-body"
+        >
+          <div
+            class="flex items-center justify-between"
+          >
+            <div>
+              <h2
+                class="card-title flex items-center gap-2"
+              >
+                <svg
+                  aria-hidden="true"
+                  class="lucide lucide-scan-search w-5 h-5 text-primary"
+                  fill="none"
+                  height="24"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  width="24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M3 7V5a2 2 0 0 1 2-2h2"
+                  />
+                  <path
+                    d="M17 3h2a2 2 0 0 1 2 2v2"
+                  />
+                  <path
+                    d="M21 17v2a2 2 0 0 1-2 2h-2"
+                  />
+                  <path
+                    d="M7 21H5a2 2 0 0 1-2-2v-2"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                  />
+                  <path
+                    d="m16 16-1.9-1.9"
+                  />
+                </svg>
+                Mod Scanner
+              </h2>
+              <p
+                class="text-xs text-base-content/60"
+              >
+                Detects new mods, archives, and updates existing records.
+              </p>
+            </div>
+            <button
+              class="btn btn-primary btn-sm"
+            >
+              <svg
+                aria-hidden="true"
+                class="lucide lucide-play w-4 h-4 ml-1"
+                fill="none"
+                height="24"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"
+                />
+              </svg>
+              Start Scan
+            </button>
+          </div>
+          <div
+            data-testid="archive-modal"
+          >
+            Archive Modal
+            <button
+              data-testid="mock-extract-btn"
+            >
+              Extract
+            </button>
+          </div>
+          <div
+            data-testid="scan-overlay"
+          >
+            Scan Overlay
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+ Γ¥» src/features/scanner/ScannerFeature.test.tsx:129:51
+    127| 
+    128|     await waitFor(() => {
+    129|       expect(scanService.detectConflictsInFolder).toHaveBeenCalledWithΓÇª
+       |                                                   ^
+    130|     });
+    131| 
+ Γ¥» runWithExpensiveErrorDiagnosticsDisabled node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:47:12
+ Γ¥» checkCallback node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ Γ¥» Timeout.checkRealTimersCallback node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[193/198]ΓÄ»
+
+ FAIL  src/features/sidebar/EditObjectModal.test.tsx > EditObjectModal > renders with object data pre-filled when open
+TestingLibraryElementError: Unable to find an accessible element with the role "checkbox" and name `/safe mode/i`
+
+Here are the accessible roles:
+
+  button:
+
+  Name "Close":
+  <button
+    aria-label="Close"
+    class="btn btn-sm btn-circle absolute right-2 top-2 z-60"
+  />
+
+  Name "Change":
+  <button
+    class="btn btn-sm btn-outline flex-1 gap-2"
+    type="button"
+  />
+
+  Name "Delete Thumbnail":
+  <button
+    class="btn btn-sm btn-outline btn-error square px-2"
+    disabled=""
+    title="Delete Thumbnail"
+    type="button"
+  />
+
+  Name "Cancel":
+  <button
+    class="btn"
+    type="button"
+  />
+
+  Name "Save Changes":
+  <button
+    class="btn btn-primary min-w-[120px]"
+    type="submit"
+  />
+
+  --------------------------------------------------
+  heading:
+
+  Name "Edit Metadata":
+  <h3
+    class="font-bold text-lg mb-1"
+  />
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  <p
+    class="text-sm opacity-50 mb-4 truncate"
+  />
+
+  --------------------------------------------------
+  tablist:
+
+  Name "":
+  <div
+    class="tabs tabs-bordered -mx-6 border-b border-base-200 bg-base-100 px-6"
+    role="tablist"
+  />
+
+  --------------------------------------------------
+  tab:
+
+  Name "Manual":
+  <a
+    class="tab tab-active font-bold border-b-2 border-primary"
+    role="tab"
+  />
+
+  Name "Auto Sync":
+  <a
+    class="tab gap-2 "
+    role="tab"
+    style="opacity: 1; cursor: pointer;"
+  />
+
+  --------------------------------------------------
+  textbox:
+
+  Name "":
+  <input
+    class="input input-bordered w-full "
+    name="name"
+    type="text"
+  />
+
+  Name "":
+  <input
+    class="flex-1 min-w-[120px] bg-transparent outline-none px-2 py-1 text-sm text-base-content"
+    placeholder="Add tags (space/comma to enter)"
+    type="text"
+    value=""
+  />
+
+  --------------------------------------------------
+  combobox:
+
+  Name "":
+  <select
+    class="select select-bordered w-full "
+    name="object_type"
+  />
+
+  --------------------------------------------------
+  option:
+
+  Name "Select Category":
+  <option
+    value=""
+  />
+
+  Name "Character":
+  <option
+    value="Character"
+  />
+
+  Name "Weapon":
+  <option
+    value="Weapon"
+  />
+
+  --------------------------------------------------
+  radio:
+
+  Name "Default / Base Skin":
+  <input
+    checked=""
+    class="radio radio-primary radio-sm"
+    type="radio"
+    value="false"
+  />
+
+  Name "Custom Skin":
+  <input
+    class="radio radio-primary radio-sm"
+    type="radio"
+    value="true"
+  />
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <div
+      class="modal modal-open"
+    >
+      <div
+        class="modal-box relative flex h-[90vh] max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-hidden"
+      >
+        <button
+          aria-label="Close"
+          class="btn btn-sm btn-circle absolute right-2 top-2 z-60"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-x"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M18 6 6 18"
+            />
+            <path
+              d="m6 6 12 12"
+            />
+          </svg>
+        </button>
+        <h3
+          class="font-bold text-lg mb-1"
+        >
+          Edit Metadata
+        </h3>
+        <p
+          class="text-sm opacity-50 mb-4 truncate"
+        >
+          Original: 
+          <span
+            class="font-mono"
+          >
+            Diluc
+          </span>
+        </p>
+        <form
+          class="flex h-full min-h-0 flex-col gap-4"
+        >
+          <div
+            class="tabs tabs-bordered -mx-6 border-b border-base-200 bg-base-100 px-6"
+            role="tablist"
+          >
+            <a
+              class="tab tab-active font-bold border-b-2 border-primary"
+              role="tab"
+            >
+              Manual
+            </a>
+            <a
+              class="tab gap-2 "
+              role="tab"
+              style="opacity: 1; cursor: pointer;"
+            >
+              Auto Sync
+            </a>
+          </div>
+          <div
+            class="min-h-0 -mx-6 flex-1 overflow-y-scroll px-6 pt-4 [scrollbar-gutter:stable]"
+          >
+            <div
+              class="flex flex-col gap-6 md:flex-row"
+            >
+              <div
+                class="flex min-w-0 flex-1 flex-col gap-3"
+              >
+                <div
+                  class="form-control w-full relative"
+                >
+                  <label
+                    class="label py-1"
+                  >
+                    <span
+                      class="label-text font-medium"
+                    >
+                      Name
+                    </span>
+                  </label>
+                  <input
+                    class="input input-bordered w-full "
+                    name="name"
+                    type="text"
+                  />
+                </div>
+                <div
+                  class="form-control w-full"
+                >
+                  <label
+                    class="label py-1"
+                  >
+                    <span
+                      class="label-text font-medium"
+                    >
+                      Category
+                    </span>
+                  </label>
+                  <select
+                    class="select select-bordered w-full "
+                    name="object_type"
+                  >
+                    <option
+                      value=""
+                    >
+                      Select Category
+                    </option>
+                    <option
+                      value="Character"
+                    >
+                      Character
+                    </option>
+                    <option
+                      value="Weapon"
+                    >
+                      Weapon
+                    </option>
+                  </select>
+                </div>
+                <div
+                  class="form-control w-full mt-2"
+                >
+                  <label
+                    class="label py-1"
+                  >
+                    <span
+                      class="label-text"
+                    >
+                      Tags
+                    </span>
+                  </label>
+                  <div
+                    class="flex flex-wrap items-center gap-1 p-1 border border-base-content/20 rounded-lg bg-base-100 focus-within:outline-2 focus-within:outline-primary/50 transition-all "
+                  >
+                    <input
+                      class="flex-1 min-w-[120px] bg-transparent outline-none px-2 py-1 text-sm text-base-content"
+                      placeholder="Add tags (space/comma to enter)"
+                      type="text"
+                      value=""
+                    />
+                  </div>
+                </div>
+                <div
+                  class="form-control w-full mt-4"
+                >
+                  <label
+                    class="label py-1"
+                  >
+                    <span
+                      class="label-text font-bold text-lg"
+                    >
+                      Skin Mapping
+                    </span>
+                  </label>
+                  <div
+                    class="flex gap-4 mt-1 mb-2 px-1"
+                  >
+                    <label
+                      class="label cursor-pointer justify-start gap-2"
+                    >
+                      <input
+                        checked=""
+                        class="radio radio-primary radio-sm"
+                        type="radio"
+                        value="false"
+                      />
+                      <span
+                        class="label-text"
+                      >
+                        Default / Base Skin
+                      </span>
+                    </label>
+                    <label
+                      class="label cursor-pointer justify-start gap-2"
+                    >
+                      <input
+                        class="radio radio-primary radio-sm"
+                        type="radio"
+                        value="true"
+                      />
+                      <span
+                        class="label-text"
+                      >
+                        Custom Skin
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="flex w-full shrink-0 flex-col items-center gap-2 md:w-32"
+              >
+                <span
+                  class="label-text self-center font-medium"
+                >
+                  Thumbnail
+                </span>
+                <div
+                  class="w-32 h-32 rounded-xl bg-base-300 overflow-hidden flex items-center justify-center border border-base-content/10 relative shadow-inner"
+                >
+                  <svg
+                    aria-hidden="true"
+                    class="lucide lucide-image opacity-20"
+                    fill="none"
+                    height="48"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                    width="48"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <rect
+                      height="18"
+                      rx="2"
+                      ry="2"
+                      width="18"
+                      x="3"
+                      y="3"
+                    />
+                    <circle
+                      cx="9"
+                      cy="9"
+                      r="2"
+                    />
+                    <path
+                      d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"
+                    />
+                  </svg>
+                </div>
+                <div
+                  class="flex gap-2 w-full"
+                >
+                  <button
+                    class="btn btn-sm btn-outline flex-1 gap-2"
+                    type="button"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      class="lucide lucide-upload"
+                      fill="none"
+                      height="14"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                      width="14"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M12 3v12"
+                      />
+                      <path
+                        d="m17 8-5-5-5 5"
+                      />
+                      <path
+                        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+                      />
+                    </svg>
+                    Change
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline btn-error square px-2"
+                    disabled=""
+                    title="Delete Thumbnail"
+                    type="button"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      class="lucide lucide-trash2 lucide-trash-2"
+                      fill="none"
+                      height="14"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                      width="14"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M10 11v6"
+                      />
+                      <path
+                        d="M14 11v6"
+                      />
+                      <path
+                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
+                      />
+                      <path
+                        d="M3 6h18"
+                      />
+                      <path
+                        d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            class="modal-action mt-0 border-t border-base-200 bg-base-100/90 pt-4 backdrop-blur-sm"
+          >
+            <button
+              class="btn"
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              class="btn btn-primary min-w-[120px]"
+              type="submit"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+      <div
+        class="modal-backdrop"
+      />
+    </div>
+  </div>
+</body>
+ Γ¥» Object.getElementError node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:37:19
+ Γ¥» node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ Γ¥» node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ Γ¥» node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ Γ¥» src/features/sidebar/EditObjectModal.test.tsx:127:27
+    125|     expect(screen.getByDisplayValue('Character')).toBeInTheDocument();
+    126|     // Check safe mode toggle state (checked because is_safe: true)
+    127|     const toggle = screen.getByRole('checkbox', { name: /safe mode/i }ΓÇª
+       |                           ^
+    128|     expect(toggle).toBeChecked();
+    129|   });
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[194/198]ΓÄ»
+
+ FAIL  src/features/sidebar/EditObjectModal.test.tsx > EditObjectModal > calls mutation with updated data on submit
+AssertionError: expected "vi.fn()" to be called at least once
+
+Ignored nodes: comments, script, style
+<html>
+  <head />
+  <body>
+    <div>
+      <div
+        class="modal modal-open"
+      >
+        <div
+          class="modal-box relative flex h-[90vh] max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-hidden"
+        >
+          <button
+            aria-label="Close"
+            class="btn btn-sm btn-circle absolute right-2 top-2 z-60"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-x"
+              fill="none"
+              height="16"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="16"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M18 6 6 18"
+              />
+              <path
+                d="m6 6 12 12"
+              />
+            </svg>
+          </button>
+          <h3
+            class="font-bold text-lg mb-1"
+          >
+            Edit Metadata
+          </h3>
+          <p
+            class="text-sm opacity-50 mb-4 truncate"
+          >
+            Original: 
+            <span
+              class="font-mono"
+            >
+              Diluc
+            </span>
+          </p>
+          <form
+            class="flex h-full min-h-0 flex-col gap-4"
+          >
+            <div
+              class="tabs tabs-bordered -mx-6 border-b border-base-200 bg-base-100 px-6"
+              role="tablist"
+            >
+              <a
+                class="tab tab-active font-bold border-b-2 border-primary"
+                role="tab"
+              >
+                Manual
+              </a>
+              <a
+                class="tab gap-2 "
+                role="tab"
+                style="opacity: 1; cursor: pointer;"
+              >
+                Auto Sync
+              </a>
+            </div>
+            <div
+              class="min-h-0 -mx-6 flex-1 overflow-y-scroll px-6 pt-4 [scrollbar-gutter:stable]"
+            >
+              <div
+                class="flex flex-col gap-6 md:flex-row"
+              >
+                <div
+                  class="flex min-w-0 flex-1 flex-col gap-3"
+                >
+                  <div
+                    class="form-control w-full relative"
+                  >
+                    <label
+                      class="label py-1"
+                    >
+                      <span
+                        class="label-text font-medium"
+                      >
+                        Name
+                      </span>
+                    </label>
+                    <input
+                      class="input input-bordered w-full "
+                      name="name"
+                      type="text"
+                    />
+                  </div>
+                  <div
+                    class="form-control w-full"
+                  >
+                    <label
+                      class="label py-1"
+                    >
+                      <span
+                        class="label-text font-medium"
+                      >
+                        Category
+                      </span>
+                    </label>
+                    <select
+                      class="select select-bordered w-full "
+                      name="object_type"
+                    >
+                      <option
+                        value=""
+                      >
+                        Select Category
+                      </option>
+                      <option
+                        value="Character"
+                      >
+                        Character
+                      </option>
+                      <option
+                        value="Weapon"
+                      >
+                        Weapon
+                      </option>
+                    </select>
+                  </div>
+                  <div
+                    class="form-control w-full mt-2"
+                  >
+                    <label
+                      class="label py-1"
+                    >
+                      <span
+                        class="label-text"
+                      >
+                        Tags
+                      </span>
+                    </label>
+                    <div
+                      class="flex flex-wrap items-center gap-1 p-1 border border-base-content/20 rounded-lg bg-base-100 focus-within:outline-2 focus-within:outline-primary/50 transition-all "
+                    >
+                      <input
+                        class="flex-1 min-w-[120px] bg-transparent outline-none px-2 py-1 text-sm text-base-content"
+                        placeholder="Add tags (space/comma to enter)"
+                        type="text"
+                        value=""
+                      />
+                    </div>
+                  </div>
+                  <div
+                    class="form-control w-full mt-4"
+                  >
+                    <label
+                      class="label py-1"
+                    >
+                      <span
+                        class="label-text font-bold text-lg"
+                      >
+                        Skin Mapping
+                      </span>
+                    </label>
+                    <div
+                      class="flex gap-4 mt-1 mb-2 px-1"
+                    >
+                      <label
+                        class="label cursor-pointer justify-start gap-2"
+                      >
+                        <input
+                          checked=""
+                          class="radio radio-primary radio-sm"
+                          type="radio"
+                          value="false"
+                        />
+                        <span
+                          class="label-text"
+                        >
+                          Default / Base Skin
+                        </span>
+                      </label>
+                      <label
+                        class="label cursor-pointer justify-start gap-2"
+                      >
+                        <input
+                          class="radio radio-primary radio-sm"
+                          type="radio"
+                          value="true"
+                        />
+                        <span
+                          class="label-text"
+                        >
+                          Custom Skin
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  class="flex w-full shrink-0 flex-col items-center gap-2 md:w-32"
+                >
+                  <span
+                    class="label-text self-center font-medium"
+                  >
+                    Thumbnail
+                  </span>
+                  <div
+                    class="w-32 h-32 rounded-xl bg-base-300 overflow-hidden flex items-center justify-center border border-base-content/10 relative shadow-inner"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      class="lucide lucide-image opacity-20"
+                      fill="none"
+                      height="48"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                      width="48"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <rect
+                        height="18"
+                        rx="2"
+                        ry="2"
+                        width="18"
+                        x="3"
+                        y="3"
+                      />
+                      <circle
+                        cx="9"
+                        cy="9"
+                        r="2"
+                      />
+                      <path
+                        d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"
+                      />
+                    </svg>
+                  </div>
+                  <div
+                    class="flex gap-2 w-full"
+                  >
+                    <button
+                      class="btn btn-sm btn-outline flex-1 gap-2"
+                      type="button"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        class="lucide lucide-upload"
+                        fill="none"
+                        height="14"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        viewBox="0 0 24 24"
+                        width="14"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M12 3v12"
+                        />
+                        <path
+                          d="m17 8-5-5-5 5"
+                        />
+                        <path
+                          d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+                        />
+                      </svg>
+                      Change
+                    </button>
+                    <button
+                      class="btn btn-sm btn-outline btn-error square px-2"
+                      disabled=""
+                      title="Delete Thumbnail"
+                      type="button"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        class="lucide lucide-trash2 lucide-trash-2"
+                        fill="none"
+                        height="14"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        viewBox="0 0 24 24"
+                        width="14"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M10 11v6"
+                        />
+                        <path
+                          d="M14 11v6"
+                        />
+                        <path
+                          d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
+                        />
+                        <path
+                          d="M3 6h18"
+                        />
+                        <path
+                          d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div
+              class="modal-action mt-0 border-t border-base-200 bg-base-100/90 pt-4 backdrop-blur-sm"
+            >
+              <button
+                class="btn"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                class="btn btn-primary min-w-[120px]"
+                type="submit"
+              >
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
+        <div
+          class="modal-backdrop"
+        />
+      </div>
+    </div>
+  </body>
+</html>
+ Γ¥» src/features/sidebar/EditObjectModal.test.tsx:176:26
+    174| 
+    175|     await waitFor(() => {
+    176|       expect(mockMutate).toHaveBeenCalled();
+       |                          ^
+    177|       // Expanded verification skipped due to JSDOM/RHF quirk
+    178|     });
+ Γ¥» runWithExpensiveErrorDiagnosticsDisabled node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:47:12
+ Γ¥» checkCallback node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ Γ¥» Timeout.checkRealTimersCallback node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[195/198]ΓÄ»
+
+ FAIL  src/features/sidebar/ObjectList.test.tsx > ObjectList Component > toggles safe mode when switch is clicked
+Error: expect(received).toBeInTheDocument()
+
+received value must be an HTMLElement or an SVGElement.
+Received has type:  Null
+Received has value: null
+ Γ¥» src/features/sidebar/ObjectList.test.tsx:350:20
+    348|     // In a real app we should add aria-label
+    349|     const toggle = document.querySelector('.toggle-success');
+    350|     expect(toggle).toBeInTheDocument();
+       |                    ^
+    351| 
+    352|     // Click it
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[196/198]ΓÄ»
+
+
+[2m Test Files [22m [1m[31m192 failed[39m[22m[2m | [22m[1m[32m21 passed[39m[22m[90m (213)[39m
+[2m      Tests [22m [1m[31m12 failed[39m[22m[2m | [22m[1m[32m217 passed[39m[22m[90m (229)[39m
+[2m   Start at [22m 23:06:04
+[2m   Duration [22m 22.04s[2m (transform 4.87s, setup 30.38s, import 17.18s, tests 14.46s, environment 341.55s)[22m
+
+ΓÇëELIFECYCLEΓÇë Test failed. See above for more details.

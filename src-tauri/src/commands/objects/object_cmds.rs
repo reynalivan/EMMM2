@@ -21,6 +21,7 @@ pub struct ObjectFilter {
 pub struct ObjectSummary {
     pub id: String,
     pub name: String,
+    pub folder_path: String,
     pub object_type: String,
     pub sub_category: Option<String>,
     pub metadata: String,
@@ -39,11 +40,73 @@ pub async fn get_objects_cmd(
     filter: ObjectFilter,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CommandResult<Vec<ObjectSummary>> {
+    // Phase 1: Filesystem as source of truth for instance existence
+    // We scan the mod folder for this game and ensure a basic DB object exists for it
+    if let Ok(Some(mod_path)) = sqlx::query_scalar::<_, String>("SELECT mod_path FROM games WHERE id = ?")
+        .bind(&filter.game_id)
+        .fetch_optional(&*pool)
+        .await
+    {
+        let p = std::path::Path::new(&mod_path);
+        if p.exists() && p.is_dir() {
+            let mut fs_folders = std::collections::HashSet::new();
+            if let Ok(entries) = std::fs::read_dir(p) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let folder_name = entry.file_name().to_string_lossy().to_string();
+                        // Ignore hidden config dirs and disabled states handled elsewhere
+                        if !folder_name.starts_with('.') && !folder_name.starts_with(crate::DISABLED_PREFIX) {
+                            fs_folders.insert(folder_name);
+                        }
+                    }
+                }
+            }
+
+            let current_objects = sqlx::query!("SELECT folder_path FROM objects WHERE game_id = ?", filter.game_id)
+                .fetch_all(&*pool)
+                .await?;
+
+            let mut db_folders = std::collections::HashSet::new();
+            for o in current_objects {
+                if let Some(fp) = o.folder_path {
+                    db_folders.insert(fp);
+                }
+            }
+
+            let mut new_objects_count = 0;
+            if let Ok(mut tx) = pool.begin().await {
+                let mut changes = false;
+                for folder in fs_folders {
+                    if !db_folders.contains(&folder) {
+                        changes = true;
+                        let _ = crate::services::scanner::sync::helpers::ensure_object_exists(
+                            &mut tx,
+                            &filter.game_id,
+                            &folder, // folder_path
+                            &folder, // default alias name
+                            "Other", // default obj_type
+                            None,
+                            "[]",
+                            "{}",
+                            &mut new_objects_count,
+                        ).await;
+                    }
+                }
+                if changes {
+                    let _ = tx.commit().await;
+                }
+            }
+        }
+    }
+
+    // Phase 2: Execute normal query builder against the DB records
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
         SELECT
             o.id,
             o.name,
+            o.folder_path,
             o.object_type,
             o.sub_category,
             o.metadata,
@@ -159,6 +222,7 @@ pub async fn get_category_counts_cmd(
 pub struct CreateObjectInput {
     pub game_id: String,
     pub name: String,
+    pub folder_path: Option<String>,
     pub object_type: String,
     pub sub_category: Option<String>,
     pub is_safe: Option<bool>,
@@ -177,14 +241,17 @@ pub async fn create_object_cmd(
         .map(|m| m.to_string())
         .unwrap_or_else(|| "{}".to_string());
 
+    let folder_path = input.folder_path.unwrap_or_else(|| input.name.clone());
+
     let res = sqlx::query!(
         r#"
-        INSERT INTO objects (id, game_id, name, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, '[]', ?, datetime('now'))
+        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, datetime('now'))
         "#,
         id,
         input.game_id,
         input.name,
+        folder_path,
         input.object_type,
         input.sub_category,
         is_safe,

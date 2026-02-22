@@ -57,6 +57,7 @@ async fn test_list_mod_folders_nonexistent_path() {
         None,
     )
     .await;
+    // Base path validation still returns Err
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("does not exist"));
 }
@@ -114,8 +115,9 @@ async fn test_list_mod_folders_invalid_subpath() {
         None,
     )
     .await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Sub-path does not exist"));
+    // With Filesystem Truth design, missing subpaths just return empty Ok vectors
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().len(), 0);
 }
 
 // Covers: TC-4.2-02 (thumbnail resolved lazily via get_mod_thumbnail)

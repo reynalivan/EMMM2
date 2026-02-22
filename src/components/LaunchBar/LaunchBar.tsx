@@ -1,10 +1,11 @@
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useActiveConflicts } from '../../hooks/useFolders';
 import { invoke } from '@tauri-apps/api/core';
 import RandomizerModal from '../Randomizer/RandomizerModal';
 import ConflictModal from '../ConflictReport/ConflictModal';
+import ConflictToast from '../scanner/ConflictToast';
 
 export default function LaunchBar() {
   const { activeGame } = useActiveGame();
@@ -12,9 +13,15 @@ export default function LaunchBar() {
   const [error, setError] = useState<string | null>(null);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
   const { data: conflicts } = useActiveConflicts();
   const hasConflicts = conflicts && conflicts.length > 0;
+
+  useEffect(() => {
+    if (hasConflicts) setShowToast(true);
+    else setShowToast(false);
+  }, [hasConflicts]);
 
   const handleLaunch = async () => {
     if (!activeGame) return;
@@ -51,14 +58,22 @@ export default function LaunchBar() {
         </button>
 
         {hasConflicts && (
-          <button
-            className="btn btn-warning btn-sm shadow-lg animate-pulse"
-            onClick={() => setConflictOpen(true)}
-            title={`${conflicts.length} Shader Conflicts Detected`}
-          >
-            <AlertTriangle size={16} />
-            <span className="hidden sm:inline">Conflicts</span>
-          </button>
+          <div className="relative">
+            <button
+              className="btn btn-warning btn-sm shadow-lg animate-pulse"
+              onClick={() => {
+                setConflictOpen(true);
+                setShowToast(false);
+              }}
+              title={`${conflicts.length} Shader Conflicts Detected`}
+            >
+              <AlertTriangle size={16} />
+              <span className="hidden sm:inline">Conflicts</span>
+            </button>
+            {showToast && (
+              <ConflictToast conflicts={conflicts} onDismiss={() => setShowToast(false)} />
+            )}
+          </div>
         )}
 
         <button

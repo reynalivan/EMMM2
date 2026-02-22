@@ -8,6 +8,7 @@ export interface GameObject {
   id: string;
   game_id: string;
   name: string;
+  folder_path: string | null;
   object_type: string;
   sub_category: string | null;
   tags: string; // JSON string of string array
@@ -23,6 +24,7 @@ export interface GameObject {
 export interface ObjectSummary {
   id: string;
   name: string;
+  folder_path: string;
   object_type: string;
   sub_category: string | null;
   mod_count: number;
@@ -91,6 +93,7 @@ export interface UpdateObjectInput {
 export interface CreateObjectInput {
   game_id: string;
   name: string;
+  folder_path?: string | null;
   object_type: string;
   sub_category?: string | null;
   is_safe?: boolean;

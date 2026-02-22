@@ -22,6 +22,11 @@ export function validateObjectName(name: string): string | null {
     return 'Name contains invalid characters: < > : " / \\ | ? *';
   }
 
+  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+  if (reserved.test(trimmed)) {
+    return 'Name is a reserved system name.';
+  }
+
   if (/^\.+$/.test(trimmed)) {
     return 'Name cannot be only dots.';
   }

@@ -503,7 +503,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
           ...classified.images,
         ];
 
-        const objectFolderPath = `${activeGame.mod_path}\\${obj.name}`;
+        const objectFolderPath = `${activeGame.mod_path}\\${obj.folder_path}`;
 
         for (const archivePath of classified.archives) {
           const result = await scanService.extractArchive(archivePath, objectFolderPath);
@@ -709,7 +709,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
           'list_mod_folders',
           {
             modsPath: activeGame.mod_path,
-            subPath: obj.name,
+            subPath: obj.folder_path,
             gameId: activeGame.id,
             objectId,
           },
@@ -782,7 +782,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         await invoke('reveal_object_in_explorer', {
           objectId,
           modsPath: activeGame.mod_path,
-          objectName: obj?.name ?? objectId,
+          objectName: obj?.folder_path ?? objectId,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

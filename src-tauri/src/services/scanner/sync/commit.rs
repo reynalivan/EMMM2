@@ -129,9 +129,32 @@ pub async fn commit_scan_results(
             (clean_name, None, "[]", "{}")
         };
 
+        // Calculate the physical object folder path relative to mods_path
+        let object_folder_path = if item.move_from_temp {
+            obj_name.clone() // Assuming Auto-Organize drops them directly into mods_path/obj_name
+        } else {
+            let actual_path = Path::new(&actual_folder_path);
+            let mods_dir = Path::new(mods_path);
+            if let Ok(rel_path) = actual_path.strip_prefix(mods_dir) {
+                if let Some(parent) = rel_path.parent() {
+                    let parent_str = parent.to_string_lossy().to_string();
+                    if parent_str.is_empty() {
+                        obj_name.clone() // It's directly in mods_path
+                    } else {
+                        parent_str
+                    }
+                } else {
+                    obj_name.clone()
+                }
+            } else {
+                obj_name.clone()
+            }
+        };
+
         let object_id = ensure_object_exists(
             &mut tx,
             game_id,
+            &object_folder_path,
             &obj_name,
             obj_type,
             db_thumb,

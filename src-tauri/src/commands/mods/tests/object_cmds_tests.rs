@@ -44,7 +44,7 @@ fn test_object_command_auto_matched_uses_staged_status_adapters() {
     assert_eq!(item.match_confidence, "High");
     assert_eq!(
         item.match_detail,
-        "Auto-matched via exact alias match ('Raiden Wish')"
+        "Exact name match"
     );
 }
 
@@ -63,7 +63,7 @@ fn test_object_command_needs_review_keeps_candidate_with_low_confidence_label() 
     assert_eq!(match_result.status, MatchStatus::NeedsReview);
     assert_eq!(item.match_level, "NeedsReview");
     assert_eq!(item.match_confidence, "Low");
-    assert_eq!(item.match_detail, "Ambiguous top matches: Amber vs Lisa");
+    assert_eq!(item.match_detail, "Multiple possible matches found");
 }
 
 #[test]

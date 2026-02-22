@@ -31,6 +31,7 @@ async fn test_pool() -> SqlitePool {
             id TEXT PRIMARY KEY,
             game_id TEXT NOT NULL,
             name TEXT NOT NULL,
+            folder_path TEXT,
             object_type TEXT NOT NULL,
             thumbnail_path TEXT,
             tags TEXT NOT NULL DEFAULT '[]',

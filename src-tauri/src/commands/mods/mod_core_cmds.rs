@@ -71,27 +71,8 @@ async fn resolve_and_heal_db_path(pool: &sqlx::SqlitePool, object_id: &str) -> O
         return Some(folder_path);
     }
 
-    use crate::commands::explorer::try_resolve_alternate;
-    if let Some((alt_path, alt_enabled)) = try_resolve_alternate(path) {
-        let alt_str = alt_path.to_string_lossy().to_string();
-        let new_status = if alt_enabled { "ENABLED" } else { "DISABLED" };
-
-        let _ = sqlx::query("UPDATE mods SET folder_path = ?, status = ? WHERE id = ?")
-            .bind(&alt_str)
-            .bind(new_status)
-            .bind(&mod_id)
-            .execute(pool)
-            .await;
-
-        log::info!(
-            "Self-healed mod {} for reveal: {} → {}",
-            mod_id,
-            folder_path,
-            alt_str
-        );
-        return Some(alt_str);
-    }
-
+    // Since the filesystem is the source of truth, if the folder path in the DB
+    // doesn't exist, we just log it and delete the stale row.
     let _ = sqlx::query("DELETE FROM mods WHERE id = ?")
         .bind(&mod_id)
         .execute(pool)

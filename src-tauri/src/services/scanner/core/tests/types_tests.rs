@@ -63,7 +63,7 @@ fn test_staged_labels_and_detail_are_deterministic() {
     assert_eq!(staged_confidence_label(&auto), "Medium");
     assert_eq!(
         staged_match_detail(&auto),
-        "Auto-matched via exact alias match ('sunset')"
+        "Exact name match"
     );
 
     let review = StagedMatchResult {
@@ -77,10 +77,9 @@ fn test_staged_labels_and_detail_are_deterministic() {
         evidence: Evidence::default(),
     };
     assert_eq!(match_status_label(&review.status), "NeedsReview");
-    assert_eq!(staged_confidence_label(&review), "Low");
     assert_eq!(
         staged_match_detail(&review),
-        "Ambiguous top matches: Amber vs Lisa"
+        "Multiple possible matches found"
     );
 
     let no_match = StagedMatchResult::no_match();

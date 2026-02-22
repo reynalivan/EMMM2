@@ -35,6 +35,7 @@ pub async fn repair_orphan_mods(
             &mut tx,
             &game_id,
             &clean_name,
+            &clean_name,
             "Other", // obj_type
             None,    // db_thumbnail
             "[]",    // sqlite tags json

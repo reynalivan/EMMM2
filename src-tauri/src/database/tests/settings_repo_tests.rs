@@ -145,7 +145,8 @@ async fn setup_pool_full() -> SqlitePool {
         "CREATE TABLE IF NOT EXISTS objects (
             id TEXT PRIMARY KEY,
             game_id TEXT NOT NULL,
-            name TEXT NOT NULL
+            name TEXT NOT NULL,
+            folder_path TEXT
         )",
         "CREATE TABLE IF NOT EXISTS collections (
             id TEXT PRIMARY KEY,

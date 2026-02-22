@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::services::config::ConfigService;
-use crate::DISABLED_PREFIX;
 
 use super::types::{InfoAnalysis, ModFolder};
 
@@ -93,55 +91,4 @@ pub(crate) fn apply_safe_mode_filter(
                 && (!force_exclusive_mode || !contains_filtered_keyword(folder, &keywords))
         })
         .collect()
-}
-
-/// Returns true if the mod's physical parent folder doesn't match the DB object's folder name.
-pub(crate) fn is_db_misplaced(
-    mod_obj_id: Option<String>,
-    resolved_path: &Path,
-    obj_folder_map: &HashMap<String, String>,
-) -> bool {
-    let oid = match mod_obj_id {
-        Some(ref id) => id,
-        None => return false,
-    };
-    let obj_folder = match obj_folder_map.get(oid) {
-        Some(f) => f,
-        None => return false,
-    };
-    let parent_name = resolved_path
-        .parent()
-        .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().to_string());
-    let parent_name = match parent_name {
-        Some(ref n) => n,
-        None => return false,
-    };
-    let clean_parent = parent_name
-        .strip_prefix(DISABLED_PREFIX)
-        .unwrap_or(parent_name);
-    !clean_parent.eq_ignore_ascii_case(obj_folder)
-}
-
-/// Try to find a mod folder on disk when the DB path is stale.
-/// Checks if the alternate-prefixed version exists (add/remove DISABLED prefix).
-/// Returns (resolved_path, is_enabled) or None if truly gone.
-pub(crate) fn try_resolve_alternate(db_path: &Path) -> Option<(PathBuf, bool)> {
-    let parent = db_path.parent()?;
-    let fname = db_path.file_name()?.to_string_lossy();
-
-    if let Some(stripped) = fname.strip_prefix(DISABLED_PREFIX) {
-        // DB says DISABLED, check if enabled version exists on disk
-        let alt = parent.join(stripped);
-        if alt.exists() {
-            return Some((alt, true));
-        }
-    } else {
-        // DB says enabled, check if DISABLED version exists on disk
-        let alt = parent.join(format!("{}{}", DISABLED_PREFIX, fname));
-        if alt.exists() {
-            return Some((alt, false));
-        }
-    }
-    None
 }

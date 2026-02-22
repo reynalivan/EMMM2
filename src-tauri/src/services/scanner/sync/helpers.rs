@@ -98,6 +98,7 @@ pub async fn ensure_game_exists(
 pub async fn ensure_object_exists(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     game_id: &str,
+    folder_path: &str,
     obj_name: &str,
     obj_type: &str,
     db_thumbnail: Option<&str>,
@@ -107,10 +108,10 @@ pub async fn ensure_object_exists(
 ) -> Result<String, String> {
     // Case-insensitive lookup to prevent duplicates (e.g. folder "hook" vs DB alias "Hook")
     let existing = sqlx::query(
-        "SELECT id, name, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND LOWER(name) = LOWER(?)",
+        "SELECT id, name, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND folder_path = ?",
     )
     .bind(game_id)
-    .bind(obj_name)
+    .bind(folder_path)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -168,11 +169,12 @@ pub async fn ensure_object_exists(
 
     let new_id = uuid::Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type, thumbnail_path, tags, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type, thumbnail_path, tags, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
         .bind(&new_id)
         .bind(game_id)
         .bind(obj_name)
+        .bind(folder_path)
         .bind(obj_type)
         .bind(db_thumbnail)
         .bind(db_tags_json)

@@ -73,7 +73,7 @@ export function useFolderGrid() {
     prevSelectedRef.current = selectedObject;
     const obj = objects.find((o) => o.id === selectedObject);
     if (obj) {
-      setExplorerSubPath(obj.name);
+      setExplorerSubPath(obj.folder_path);
       setCurrentPath([obj.name]);
       clearGridSelection();
     }

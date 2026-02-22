@@ -10,6 +10,14 @@ vi.mock('./hooks/useFolderGrid', () => ({
   useFolderGrid: () => mockUseFolderGrid(),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
+}));
+
+vi.mock('../../hooks/useSettings', () => ({
+  useSettings: () => ({ data: { organize_subfolders: true }, isLoading: false }),
+}));
+
 // Mock subcomponents
 vi.mock('./FolderCard', () => ({
   default: ({ folder }: { folder: ModFolder }) => (
@@ -104,6 +112,11 @@ const defaultHookReturn = {
 
   // Refresh
   handleRefresh: vi.fn(),
+
+  // Move
+  moveDialog: { open: false, folder: null },
+  setMoveDialog: vi.fn(),
+  handleMoveRequest: vi.fn(),
 };
 
 describe('FolderGrid', () => {

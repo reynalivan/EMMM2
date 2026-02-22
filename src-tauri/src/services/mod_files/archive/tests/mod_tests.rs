@@ -131,16 +131,21 @@ fn test_extract_duplicate_dest() {
 
     fs::create_dir(dir.path().join("existing_mod")).unwrap();
 
-    // Without overwrite
+    // Without overwrite (auto-renames to "existing_mod (1)")
     let result = extract_archive(&zip_path, dir.path(), None, false).unwrap();
-    assert!(!result.success);
-    assert!(result.error.unwrap().contains("already exists"));
+    assert!(result.success);
+    assert!(result.dest_path.ends_with("existing_mod (1)"));
+    assert!(dir.path().join("existing_mod (1)").join("file.txt").exists());
+
+    // Re-create the test zip since extract_archive moves it to backup
+    let zip_path2 = create_test_zip(dir.path(), "existing_mod2.zip", &[("file.txt", b"data")]);
 
     // With overwrite
-    assert!(zip_path.exists());
-    let result = extract_archive(&zip_path, dir.path(), None, true).unwrap();
-    assert!(result.success);
-    assert!(dir.path().join("existing_mod").join("file.txt").exists());
+    assert!(zip_path2.exists());
+    let result2 = extract_archive(&zip_path2, dir.path(), None, true).unwrap();
+    assert!(result2.success);
+    // Since overwrite is true, it extracts to "existing_mod2" directly
+    assert!(dir.path().join("existing_mod2").join("file.txt").exists());
 }
 
 // Covers: NC-2.1-01 — Corrupt archive

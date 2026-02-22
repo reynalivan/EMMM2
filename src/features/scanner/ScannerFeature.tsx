@@ -19,8 +19,6 @@ import { toast } from '../../stores/useToastStore';
 import ArchiveModal from '../../components/scanner/ArchiveModal';
 import ScanOverlay from '../../components/scanner/ScanOverlay';
 import ReviewTable from '../../components/scanner/ReviewTable';
-import ConflictToast from '../../components/scanner/ConflictToast';
-import type { ConflictInfo } from '../../types/scanner';
 
 export default function ScannerFeature() {
   const queryClient = useQueryClient();
@@ -45,7 +43,6 @@ export default function ScannerFeature() {
 
   const [archives, setArchives] = useState<ArchiveInfo[]>([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
-  const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
 
   // 1. Detect Archives Mutation
   const detectMutation = useMutation({
@@ -132,16 +129,9 @@ export default function ScannerFeature() {
       toast.error(`Scan failed: ${err}`);
     },
     onSettled: async () => {
-      if (activeGame) {
-        try {
-          const conflicts = await scanService.detectConflictsInFolder(activeGame.mod_path);
-          setConflicts(conflicts);
-        } catch (e) {
-          console.error('Conflict check failed', e);
-        }
-      }
       setIsScanning(false);
       queryClient.invalidateQueries({ queryKey: ['mods'] });
+      queryClient.invalidateQueries({ queryKey: ['conflicts'] });
     },
   });
 
@@ -158,7 +148,6 @@ export default function ScannerFeature() {
 
     setIsScanning(true);
     setScanResults([]);
-    setConflicts([]);
 
     const { mod_path, game_type } = activeGame;
     scanMutation.mutate({ gameType: game_type, modsPath: mod_path });
@@ -258,8 +247,6 @@ export default function ScannerFeature() {
             />
           </div>
         )}
-
-        <ConflictToast conflicts={conflicts} onDismiss={() => setConflicts([])} />
       </div>
     </div>
   );

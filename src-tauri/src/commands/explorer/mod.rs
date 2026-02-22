@@ -8,10 +8,6 @@ pub mod listing;
 mod tests;
 pub mod types;
 
-// Re-export specific items for external modules
-// try_resolve_alternate used by conflict resolver or archive? Need to re-export it.
-pub(crate) use helpers::try_resolve_alternate;
-
 pub use types::ModFolder;
 
 /// List mod folders at a given path, optionally navigating into a sub_path.

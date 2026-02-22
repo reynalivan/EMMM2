@@ -27,7 +27,10 @@ export const thumbnailKeys = {
 export function useThumbnail(folderPath: string, enabled = true) {
   return useQuery<string | null>({
     queryKey: thumbnailKeys.folder(folderPath),
-    queryFn: () => invoke<string | null>('get_mod_thumbnail', { folderPath }),
+    queryFn: async () => {
+      const res = await invoke<string | null>('get_mod_thumbnail', { folderPath });
+      return res ?? null;
+    },
     enabled,
     staleTime: Infinity, // never auto-refetch; invalidate explicitly
     gcTime: 10 * 60_000, // 10 min garbage collection

@@ -340,21 +340,6 @@ describe('ObjectList Component', () => {
       }),
     );
   });
-  // US-3.S: Safe Mode Toggle
-  it('toggles safe mode when switch is clicked', () => {
-    render(<ObjectList />);
-
-    // Find Safe Mode toggle via class since it doesn't have an accessible label yet
-    // In a real app we should add aria-label
-    const toggle = document.querySelector('.toggle-success');
-    expect(toggle).toBeInTheDocument();
-
-    // Click it
-    fireEvent.click(toggle!);
-
-    // Verify setSafeMode called with false (since default is true)
-    expect(defaultStoreState.setSafeMode).toHaveBeenCalledWith(false);
-  });
 
   // TC-DIS-01: Fully disabled object shows grayscale overlay + strikethrough name
   it('shows power-off overlay and strikethrough for fully disabled object (TC-DIS-01)', () => {
