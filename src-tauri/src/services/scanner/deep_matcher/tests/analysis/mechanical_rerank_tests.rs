@@ -3,7 +3,7 @@ use crate::services::scanner::deep_matcher::analysis::content::FolderSignals;
 use crate::services::scanner::deep_matcher::models::types::Confidence;
 use crate::services::scanner::deep_matcher::models::types::DbEntry;
 use crate::services::scanner::deep_matcher::{Candidate, MasterDb};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 fn mock_db_with_entry(entry_id: usize, entry: DbEntry) -> MasterDb {
     let mut entries = Vec::new();

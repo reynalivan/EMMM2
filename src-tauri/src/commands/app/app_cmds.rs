@@ -81,7 +81,8 @@ pub async fn reset_database(
 
     // Ensure trash directory exists
     if !trash_dir.exists() {
-        std::fs::create_dir_all(&trash_dir).map_err(|e| format!("Failed to create trash dir: {e}"))?;
+        std::fs::create_dir_all(&trash_dir)
+            .map_err(|e| format!("Failed to create trash dir: {e}"))?;
     }
 
     // Backup the database file with a timestamp

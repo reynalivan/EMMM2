@@ -246,6 +246,9 @@ export function useObjectListLogic() {
     handleEnableObject: handlers.handleEnableObject,
     handleDisableObject: handlers.handleDisableObject,
     categoryNames: handlers.categoryNames,
-    handleDrop: handlers.handleDrop,
+    handleDrop: handlers.handleDropOnItem, // legacy compat
+    handleDropOnItem: handlers.handleDropOnItem,
+    handleDropAutoOrganize: handlers.handleDropAutoOrganize,
+    handleDropNewObject: handlers.handleDropNewObject,
   };
 }

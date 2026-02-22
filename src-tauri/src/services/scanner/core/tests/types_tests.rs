@@ -20,6 +20,7 @@ fn test_staged_primary_candidate_is_status_aware() {
         status: MatchStatus::AutoMatched,
         best: Some(candidate("Raiden", Confidence::High)),
         candidates_topk: Vec::new(),
+        candidates_all: Vec::new(),
         evidence: Evidence::default(),
     };
     assert_eq!(
@@ -31,6 +32,7 @@ fn test_staged_primary_candidate_is_status_aware() {
         status: MatchStatus::NeedsReview,
         best: None,
         candidates_topk: vec![candidate("Amber", Confidence::Low)],
+        candidates_all: Vec::new(),
         evidence: Evidence::default(),
     };
     assert_eq!(
@@ -42,6 +44,7 @@ fn test_staged_primary_candidate_is_status_aware() {
         status: MatchStatus::NoMatch,
         best: Some(candidate("Ignored", Confidence::High)),
         candidates_topk: Vec::new(),
+        candidates_all: Vec::new(),
         evidence: Evidence::default(),
     };
     assert!(staged_primary_candidate(&no_match).is_none());
@@ -53,6 +56,7 @@ fn test_staged_labels_and_detail_are_deterministic() {
         status: MatchStatus::AutoMatched,
         best: Some(candidate("Raiden", Confidence::Medium)),
         candidates_topk: Vec::new(),
+        candidates_all: Vec::new(),
         evidence: Evidence::default(),
     };
     assert_eq!(match_status_label(&auto.status), "AutoMatched");
@@ -69,6 +73,7 @@ fn test_staged_labels_and_detail_are_deterministic() {
             candidate("Amber", Confidence::High),
             candidate("Lisa", Confidence::High),
         ],
+        candidates_all: Vec::new(),
         evidence: Evidence::default(),
     };
     assert_eq!(match_status_label(&review.status), "NeedsReview");

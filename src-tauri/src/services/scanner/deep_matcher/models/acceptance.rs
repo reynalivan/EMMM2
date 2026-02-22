@@ -191,6 +191,7 @@ pub fn finalize_review(
         status: MatchStatus::NoMatch,
         best: None,
         candidates_topk: Vec::new(),
+        candidates_all: Vec::new(),
         evidence: build_evidence(db, signals, &best),
     }
 }
@@ -216,6 +217,7 @@ fn no_match_result(signals: &FolderSignals) -> StagedMatchResult {
         status: MatchStatus::NoMatch,
         best: None,
         candidates_topk: Vec::new(),
+        candidates_all: Vec::new(),
         evidence: empty_evidence(signals),
     }
 }
@@ -246,6 +248,8 @@ fn assemble_ranked_result(
     best_confidence: Option<&Confidence>,
 ) -> StagedMatchResult {
     sort_candidates_deterministic(candidates);
+
+    let candidates_all = candidates.clone();
     candidates.truncate(top_k.max(1));
 
     if let Some(confidence) = best_confidence {
@@ -265,6 +269,7 @@ fn assemble_ranked_result(
         best,
         evidence,
         candidates_topk: candidates.clone(),
+        candidates_all,
     }
 }
 

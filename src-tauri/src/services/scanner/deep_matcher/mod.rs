@@ -34,7 +34,7 @@ pub(crate) use models::types::{
     MAX_EVIDENCE_SECTIONS, MAX_EVIDENCE_TOKENS, MAX_REASONS_PER_CANDIDATE,
 };
 #[allow(unused_imports)]
-pub(crate) use pipeline::full_pipeline::match_folder_full;
+pub(crate) use pipeline::full_pipeline::{match_folder_full, score_forced_candidates};
 #[allow(unused_imports)]
 pub(crate) use pipeline::quick_pipeline::match_folder_quick;
 

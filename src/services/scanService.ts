@@ -25,6 +25,7 @@ export interface ScanPreviewItem {
   metadataJson: string | null;
   alreadyInDb: boolean;
   alreadyMatched: boolean;
+  scoredCandidates: Array<{ name: string; objectType: string; scorePct: number }>;
 }
 
 /** User-confirmed item sent to commit_scan_cmd. */
@@ -177,6 +178,7 @@ export const scanService = {
     gameType: string,
     modsPath: string,
     onEvent?: (event: ScanEvent) => void,
+    specificPaths?: string[],
   ): Promise<ScanPreviewItem[]> {
     const channel = new Channel<ScanEvent>();
 
@@ -193,6 +195,7 @@ export const scanService = {
       modsPath,
       dbJson,
       onProgress: channel,
+      specificPaths,
     });
   },
 
@@ -233,6 +236,24 @@ export const scanService = {
       gameType,
       modsPath,
       items,
+    });
+  },
+
+  /**
+   * Score a folder against candidate object names.
+   * Returns a map of candidateName → score (0-100%).
+   * Used for pre-drop validation to check if the target is a good match.
+   */
+  async scoreCandidatesBatch(
+    folderPath: string,
+    candidateNames: string[],
+    gameType: string,
+  ): Promise<Record<string, number>> {
+    const dbJson = await scanService.getMasterDb(gameType);
+    return invoke('score_candidates_batch_cmd', {
+      folderPath,
+      candidateNames,
+      dbJson,
     });
   },
 };

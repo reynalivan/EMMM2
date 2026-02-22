@@ -109,6 +109,35 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
     Ok(candidates)
 }
 
+/// Scan specific subset of folders directly rather than iterating a parent directory.
+/// Useful for drag-and-drop operations on explicit folders.
+pub fn scan_specific_folders(paths: &[PathBuf]) -> Result<Vec<ModCandidate>, String> {
+    let mut candidates = Vec::new();
+
+    for path in paths {
+        if !path.is_dir() {
+            continue;
+        }
+
+        let raw_name = match path.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+
+        let is_disabled = normalizer::is_disabled_folder(&raw_name);
+        let display_name = normalizer::normalize_display_name(&raw_name);
+
+        candidates.push(ModCandidate {
+            path: path.clone(),
+            raw_name,
+            display_name,
+            is_disabled,
+        });
+    }
+
+    Ok(candidates)
+}
+
 /// Scan folder content recursively up to `max_depth` levels.
 ///
 /// Returns subfolder names, file info, and `.ini` files for the pipeline.

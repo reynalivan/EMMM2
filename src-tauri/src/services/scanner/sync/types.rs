@@ -32,6 +32,17 @@ pub struct ScanPreviewItem {
     pub already_in_db: bool,
     /// Whether this mod already has an object_id assigned
     pub already_matched: bool,
+    /// Top-k scored candidates from the matcher (name + percentage).
+    pub scored_candidates: Vec<ScoredCandidate>,
+}
+
+/// A lightweight scored candidate for the frontend dropdown.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoredCandidate {
+    pub name: String,
+    pub object_type: String,
+    pub score_pct: u8,
 }
 
 /// User-confirmed item sent back from the review modal.
@@ -47,4 +58,6 @@ pub struct ConfirmedScanItem {
     pub tags_json: Option<String>,
     pub metadata_json: Option<String>,
     pub skip: bool,
+    #[serde(default)]
+    pub move_from_temp: bool,
 }

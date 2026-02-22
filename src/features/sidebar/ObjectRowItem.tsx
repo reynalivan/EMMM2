@@ -53,6 +53,8 @@ interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
   isMobile: boolean;
   onClick: () => void;
   ref?: Ref<HTMLDivElement>;
+  /** When true, show a "Move to {name}" overlay for DnD */
+  isDropTarget?: boolean;
 }
 
 export default function ObjectRowItem({
@@ -62,6 +64,7 @@ export default function ObjectRowItem({
   onClick,
   ref,
   className,
+  isDropTarget,
   ...rest
 }: ObjectRowItemProps) {
   const thumbnailUrl = obj.thumbnail_path ? getFileUrl(obj.thumbnail_path) : null;
@@ -78,13 +81,16 @@ export default function ObjectRowItem({
     <div
       ref={ref}
       {...rest}
+      data-object-id={obj.id}
       role="button"
       tabIndex={0}
       className={cn(
         'group relative flex items-center gap-3 w-full px-2 py-1.5 rounded-lg transition-all duration-200 border border-transparent select-none outline-none focus-visible:ring-1 focus-visible:ring-primary/50',
         isSelected
           ? 'bg-primary/10 border-primary/20 shadow-sm'
-          : 'hover:bg-base-200/50 hover:border-base-300/30',
+          : isDropTarget
+            ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/40'
+            : 'hover:bg-base-200/50 hover:border-base-300/30',
         isMobile ? 'px-3 py-2' : 'px-2 py-1.5',
         className,
       )}

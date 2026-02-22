@@ -20,9 +20,10 @@ export interface ArchiveAnalysis {
 }
 
 export interface ExtractionResult {
-  success: boolean;
-  extracted_path: string;
+  archive_name: string;
+  dest_path: string;
   files_extracted: number;
+  success: boolean;
   error?: string;
 }
 

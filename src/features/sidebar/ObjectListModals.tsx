@@ -12,6 +12,7 @@ import type { ObjectSummary } from '../../types/object';
 import type { MatchedDbEntry } from './SyncConfirmModal';
 import type { ScanPreviewItem, ConfirmedScanItem } from '../../services/scanService';
 import type { MasterDbEntry } from './ScanReviewModal';
+import type { GameConfig } from '../../types/game';
 
 interface SyncConfirmState {
   open: boolean;
@@ -39,6 +40,7 @@ const SYNC_CONFIRM_RESET: SyncConfirmState = {
 };
 
 interface ModalsProps {
+  activeGame: GameConfig | null;
   /* Delete dialog */
   deleteDialog: { open: boolean; path: string; name: string; itemCount: number };
   onConfirmDelete: () => void;
@@ -66,6 +68,7 @@ interface ModalsProps {
 }
 
 export default function ObjectListModals({
+  activeGame,
   deleteDialog,
   onConfirmDelete,
   onCancelDelete,
@@ -112,6 +115,7 @@ export default function ObjectListModals({
 
       {/* Scan Review Modal (bulk scan results — US-2.3) */}
       <ScanReviewModal
+        activeGame={activeGame}
         open={scanReview.open}
         items={scanReview.items}
         masterDbEntries={scanReview.masterDbEntries}

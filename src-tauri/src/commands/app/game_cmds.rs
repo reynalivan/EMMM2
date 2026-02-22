@@ -123,6 +123,21 @@ pub async fn add_game_manual(
     Ok(game)
 }
 
+/// Remove a game from the database.
+/// Used during onboarding if a user wants to discard an auto-detected game.
+#[tauri::command]
+pub async fn remove_game(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+) -> Result<(), String> {
+    settings_repo::delete_game(pool.inner(), &game_id)
+        .await
+        .map_err(|e| format!("Failed to remove game: {e}"))?;
+
+    log::info!("Game removed: {}", game_id);
+    Ok(())
+}
+
 /// Get all configured games from SQLite DB.
 #[tauri::command]
 pub async fn get_games(

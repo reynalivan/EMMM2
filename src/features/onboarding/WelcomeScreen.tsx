@@ -48,8 +48,27 @@ export default function WelcomeScreen({ onComplete }: { onComplete: () => void }
   };
 
   const handleManualComplete = (game: GameConfig) => {
-    setDetectedGames([game]);
+    // Append instead of overwrite, avoid exact duplicates if they somehow happen
+    setDetectedGames((prev) => {
+      const exists = prev.some((g) => g.id === game.id);
+      return exists ? prev : [...prev, game];
+    });
     setScreen('result');
+  };
+
+  const handleRemoveGame = async (gameId: string) => {
+    try {
+      await invoke('remove_game', { gameId });
+      setDetectedGames((prev) => {
+        const remaining = prev.filter((g) => g.id !== gameId);
+        if (remaining.length === 0) {
+          setScreen('welcome');
+        }
+        return remaining;
+      });
+    } catch (err) {
+      setError(String(err));
+    }
   };
 
   // == Welcome Screen ==
@@ -192,7 +211,16 @@ export default function WelcomeScreen({ onComplete }: { onComplete: () => void }
   // == Manual Setup Screen ==
   if (screen === 'manual') {
     return (
-      <ManualSetupForm onBack={() => setScreen('welcome')} onComplete={handleManualComplete} />
+      <ManualSetupForm
+        onBack={() => {
+          if (detectedGames.length > 0) {
+            setScreen('result');
+          } else {
+            setScreen('welcome');
+          }
+        }}
+        onComplete={handleManualComplete}
+      />
     );
   }
 
@@ -203,6 +231,7 @@ export default function WelcomeScreen({ onComplete }: { onComplete: () => void }
         games={detectedGames}
         onContinue={onComplete}
         onAddMore={() => setScreen('manual')}
+        onRemoveGame={handleRemoveGame}
       />
     );
   }

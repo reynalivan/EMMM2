@@ -229,6 +229,8 @@ pub fn apply_root_folder_rescue(db: &MasterDb, signals: &FolderSignals) -> Stage
     }
 
     sort_candidates_deterministic(&mut candidates);
+
+    let candidates_all = candidates.clone();
     candidates.truncate(RESCUE_TOP_K);
 
     let best = candidates.first().cloned();
@@ -236,6 +238,7 @@ pub fn apply_root_folder_rescue(db: &MasterDb, signals: &FolderSignals) -> Stage
         status: MatchStatus::NeedsReview,
         best,
         candidates_topk: candidates,
+        candidates_all,
         evidence:
             crate::services::scanner::deep_matcher::pipeline::quick_pipeline_result::empty_evidence(
                 signals,

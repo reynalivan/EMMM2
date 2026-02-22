@@ -496,6 +496,7 @@ fn promote_winner(
         status: MatchStatus::AutoMatched,
         best,
         candidates_topk: result.candidates_topk,
+        candidates_all: result.candidates_all,
         evidence: result.evidence,
     }
 }

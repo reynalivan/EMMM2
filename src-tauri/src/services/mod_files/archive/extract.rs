@@ -23,23 +23,27 @@ pub fn extract_archive(
     let format = ArchiveFormat::from_path(archive_path)
         .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
 
-    let archive_name = archive_path
+    let mut archive_name = archive_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "extracted_mod".to_string());
 
-    let dest_path = mods_dir.join(&archive_name);
+    let mut dest_path = mods_dir.join(&archive_name);
 
     // Guard: destination already exists
     if dest_path.exists() {
         if !overwrite {
-            return Ok(ExtractionResult {
-                archive_name,
-                dest_path: dest_path.to_string_lossy().to_string(),
-                files_extracted: 0,
-                success: false,
-                error: Some("Destination folder already exists".to_string()),
-            });
+            let mut counter = 1;
+            loop {
+                let new_name = format!("{} ({})", archive_name, counter);
+                let check_path = mods_dir.join(&new_name);
+                if !check_path.exists() {
+                    archive_name = new_name;
+                    dest_path = check_path;
+                    break;
+                }
+                counter += 1;
+            }
         } else {
             log::info!("Overwriting destination: {}", dest_path.display());
             // We allow overwrite/merge

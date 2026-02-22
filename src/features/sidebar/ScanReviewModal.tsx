@@ -17,9 +17,25 @@ import {
   Info,
   CheckCircle,
   Ban,
+  Pencil,
+  ExternalLink,
+  FolderOpen,
 } from 'lucide-react';
-import { useState, useMemo, useCallback } from 'react';
-import type { ScanPreviewItem, ConfirmedScanItem } from '../../services/scanService';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import {
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '../../components/ui/ContextMenu';
+import FolderTooltip from './FolderTooltip';
+import {
+  scanService,
+  type ScanPreviewItem,
+  type ConfirmedScanItem,
+} from '../../services/scanService';
+
+import type { GameConfig } from '../../types/game';
 
 /** MasterDB entry for the override search dropdown. */
 export interface MasterDbEntry {
@@ -31,6 +47,7 @@ export interface MasterDbEntry {
 }
 
 interface ScanReviewModalProps {
+  activeGame: GameConfig | null;
   open: boolean;
   items: ScanPreviewItem[];
   masterDbEntries: MasterDbEntry[];
@@ -90,165 +107,574 @@ function ReviewRow({
   onOverride,
   onToggleSkip,
   isSkipped,
+  isSelected,
+  onToggleSelect,
   masterDbEntries,
+  renamedName,
+  onRename,
+  activeGame,
 }: {
   item: ScanPreviewItem;
   override: MasterDbEntry | null;
   onOverride: (entry: MasterDbEntry | null) => void;
   onToggleSkip: () => void;
   isSkipped: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   masterDbEntries: MasterDbEntry[];
+  renamedName: string | null;
+  onRename: (newName: string | null) => void;
+  activeGame: GameConfig | null;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(30);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [editName, setEditName] = useState('');
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const dropdownRef = useRef<HTMLTableDataCellElement | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<'top' | 'bottom'>('bottom');
+  const [dynamicScores, setDynamicScores] = useState<Record<string, number>>({});
+  const hasFetchedScoresRef = useRef(false);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    if (searchOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen || !activeGame || hasFetchedScoresRef.current) return;
+
+    let isMounted = true;
+    hasFetchedScoresRef.current = true;
+
+    const fetchDynamicScores = async () => {
+      // Find entries that are not already scored
+      const candidatesToScore = masterDbEntries
+        .filter((e) => !item.scoredCandidates.some((sc) => sc.name === e.name))
+        .map((e) => e.name);
+
+      if (candidatesToScore.length === 0) return;
+
+      const chunkSize = 50;
+      for (let i = 0; i < candidatesToScore.length; i += chunkSize) {
+        if (!isMounted || !searchOpen) break;
+
+        const chunk = candidatesToScore.slice(i, i + chunkSize);
+        try {
+          const scores = await scanService.scoreCandidatesBatch(
+            item.folderPath,
+            chunk,
+            activeGame.game_type,
+          );
+
+          if (isMounted) {
+            setDynamicScores((prev) => ({ ...prev, ...scores }));
+          }
+        } catch (error) {
+          console.error('Failed to fetch score chunk:', error);
+        }
+      }
+    };
+
+    fetchDynamicScores();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [searchOpen, activeGame, item.folderPath, item.scoredCandidates, masterDbEntries]);
+
+  const displayFolderName = renamedName ?? item.displayName;
+
+  const startRename = useCallback(() => {
+    setEditName(displayFolderName);
+    setIsRenaming(true);
+    setTimeout(() => renameInputRef.current?.select(), 0);
+  }, [displayFolderName]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== item.displayName) {
+      onRename(trimmed);
+    } else {
+      onRename(null);
+    }
+    setIsRenaming(false);
+  }, [editName, item.displayName, onRename]);
+
+  const cancelRename = useCallback(() => {
+    setIsRenaming(false);
+  }, []);
+
+  const handleSearchChange = useCallback((val: string) => {
+    setSearchQuery(val);
+    setVisibleCount(30);
+  }, []);
+
+  const handleToggleDropdown = useCallback(() => {
+    setSearchOpen((prev) => {
+      if (!prev) {
+        setVisibleCount(30);
+        if (dropdownRef.current) {
+          const rect = dropdownRef.current.getBoundingClientRect();
+          if (window.innerHeight - rect.bottom < 320) {
+            setDropdownPosition('top');
+          } else {
+            setDropdownPosition('bottom');
+          }
+        }
+      }
+      return !prev;
+    });
+  }, []);
+
+  // IntersectionObserver for lazy scroll loading
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !searchOpen) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => prev + 30);
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [searchOpen, searchQuery]);
 
   const displayMatch = override?.name ?? item.matchedObject;
   const displayType = override?.object_type ?? item.objectType;
   const confidence = override ? 'Manual' : item.confidence;
 
-  const filteredEntries = useMemo(() => {
-    if (!searchQuery.trim()) return masterDbEntries.slice(0, 50);
-    const q = searchQuery.toLowerCase();
-    return masterDbEntries
-      .filter(
+  // Build a score map from item.scoredCandidates for O(1) lookup
+  const scoreMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const sc of item.scoredCandidates) {
+      map.set(sc.name, sc.scorePct);
+    }
+    return map;
+  }, [item.scoredCandidates]);
+
+  // Merge scored candidates with masterDB entries, split into groups
+  const { candidateEntries, otherEntries } = useMemo(() => {
+    type MergedEntry = MasterDbEntry & { scorePct?: number };
+    const q = searchQuery.trim().toLowerCase();
+
+    // Attach score to all entries
+    let entries: MergedEntry[] = masterDbEntries.map((e) => {
+      const mapScore = scoreMap.get(e.name);
+      return {
+        ...e,
+        scorePct: mapScore !== undefined ? mapScore : dynamicScores[e.name],
+      };
+    });
+
+    // Filter by search query
+    if (q) {
+      entries = entries.filter(
         (e) =>
           e.name.toLowerCase().includes(q) ||
           e.object_type.toLowerCase().includes(q) ||
           e.tags.some((t) => t.toLowerCase().includes(q)),
-      )
-      .slice(0, 50);
-  }, [searchQuery, masterDbEntries]);
+      );
+    }
+
+    // Split into scored candidates (scoreMap > 0 OR dynamically scored >= 50) vs others
+    const candidates = entries.filter(
+      (e) =>
+        (scoreMap.has(e.name) && e.scorePct !== undefined && e.scorePct > 0) ||
+        (!scoreMap.has(e.name) && e.scorePct !== undefined && e.scorePct >= 50),
+    );
+    const others = entries.filter(
+      (e) =>
+        !(
+          (scoreMap.has(e.name) && e.scorePct !== undefined && e.scorePct > 0) ||
+          (!scoreMap.has(e.name) && e.scorePct !== undefined && e.scorePct >= 50)
+        ),
+    );
+
+    // Sort candidates by score desc, others by score desc then alphabetically
+    candidates.sort((a, b) => b.scorePct! - a.scorePct! || a.name.localeCompare(b.name));
+    others.sort((a, b) => {
+      const scoreA = a.scorePct ?? -1;
+      const scoreB = b.scorePct ?? -1;
+      return scoreB - scoreA || a.name.localeCompare(b.name);
+    });
+
+    return { candidateEntries: candidates, otherEntries: others };
+  }, [searchQuery, masterDbEntries, scoreMap, dynamicScores]);
+
+  const displayThumb = override?.thumbnail_path ?? item.thumbnailPath;
+
+  const contextMenuContent = (
+    <>
+      <ContextMenuItem
+        icon={ExternalLink}
+        onClick={() => invoke('open_in_explorer', { path: item.folderPath }).catch(console.error)}
+      >
+        Reveal Source Folder
+      </ContextMenuItem>
+      <ContextMenuItem
+        icon={FolderOpen}
+        disabled={(!item.matchedObject && !override) || !activeGame}
+        onClick={() => {
+          const objName = override?.name ?? item.matchedObject;
+          // Find the object ID from masterDbEntries based on its name
+          const entry = masterDbEntries.find((e) => e.name === objName);
+
+          if (
+            objName &&
+            activeGame &&
+            entry &&
+            entry.metadata &&
+            typeof entry.metadata.id === 'string'
+          ) {
+            invoke('reveal_object_in_explorer', {
+              objectId: entry.metadata.id,
+              modsPath: activeGame.mod_path,
+              objectName: objName,
+            }).catch(console.error);
+          } else if (objName && activeGame) {
+            // fallback
+            invoke('reveal_object_in_explorer', {
+              objectId: objName,
+              modsPath: activeGame.mod_path,
+              objectName: objName,
+            }).catch(console.error);
+          }
+        }}
+      >
+        Reveal Destination Folder
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem icon={Pencil} onClick={startRename}>
+        Rename Folder
+      </ContextMenuItem>
+    </>
+  );
 
   return (
-    <div
-      className={`flex items-center gap-3 px-3 py-2 border-b border-base-300/20 transition-all duration-150 ${
-        isSkipped ? 'opacity-40 bg-base-300/10' : ''
-      } ${item.alreadyMatched ? 'bg-base-200/20' : ''}`}
-    >
-      {/* Folder name */}
-      <div className="flex-1 min-w-0 pr-2">
-        <p className="text-sm font-medium text-base-content truncate" title={item.folderPath}>
-          {item.displayName}
-          {item.alreadyMatched && (
-            <span className="badge badge-xs badge-ghost ml-2 opacity-60">Existing</span>
-          )}
-        </p>
-        {item.matchDetail && (
-          <p className="text-[11px] text-base-content/60 truncate mt-0.5" title={item.matchDetail}>
-            {item.matchDetail}
-          </p>
-        )}
-      </div>
-
-      {/* Percentage / Confidence Badge */}
-      {!override && confidence !== 'None' && (
-        <div
-          className={`badge badge-sm badge-outline gap-1 shrink-0 ${getConfidenceColor(
-            confidence,
-          )}`}
-          title={`${confidence} Confidence - ${matchLevelLabel(item.matchLevel)}`}
-        >
-          {getConfidenceIcon(confidence)}
-          <span className="font-medium">{item.confidenceScore}%</span>
-        </div>
-      )}
-
-      {/* Match result / override dropdown */}
-      <div className="relative flex items-center gap-2 min-w-0 shrink-0 ml-2">
-        <button
-          className={`btn btn-xs gap-1 max-w-48 truncate ${
-            override ? 'btn-info btn-outline' : 'btn-ghost bg-base-200/50'
-          }`}
-          onClick={() => setSearchOpen(!searchOpen)}
-          disabled={isSkipped}
-          title={displayMatch ?? 'No match — click to assign'}
-        >
-          <Search size={10} className="opacity-50" />
-          <span className="truncate hidden sm:inline">
-            {displayMatch ?? <span className="text-base-content/30 italic">Unmatched</span>}
-          </span>
-          <ChevronDown size={12} className="shrink-0 opacity-50" />
-        </button>
-
-        {displayType && (
-          <span className="badge badge-xs bg-base-300/50 border-base-300/60 shrink-0 text-base-content/70">
-            {displayType}
-          </span>
-        )}
-
-        {/* Search dropdown */}
-        {searchOpen && (
-          <div className="absolute top-full right-0 z-50 mt-1 w-72 bg-base-200 rounded-lg shadow-xl border border-base-300/50 overflow-hidden">
-            <div className="p-2 border-b border-base-300/30">
-              <div className="relative">
-                <Search
-                  size={12}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-base-content/30"
-                />
-                <input
-                  type="text"
-                  className="input input-xs w-full pl-7 bg-base-100/60 border-base-300/30"
-                  placeholder="Search characters, weapons..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  autoFocus
-                />
-              </div>
-            </div>
-            <ul className="max-h-48 overflow-y-auto">
-              {/* Clear override option */}
-              {override && (
-                <li>
+    <ContextMenu content={contextMenuContent}>
+      <tr
+        className={`group transition-all duration-150 ${
+          isSkipped ? 'opacity-40 bg-base-300/10' : ''
+        } ${item.alreadyMatched ? 'bg-base-200/20' : ''}`}
+      >
+        <td className="w-10 text-center">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-sm checkbox-primary rounded"
+            checked={isSelected}
+            onChange={onToggleSelect}
+            disabled={isSkipped && !isSelected}
+          />
+        </td>
+        <td className="max-w-xs truncate">
+          <FolderTooltip folderPath={item.folderPath} thumbnailPath={item.thumbnailPath}>
+            <div className="flex flex-col">
+              {isRenaming ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={renameInputRef}
+                    className="input input-xs input-bordered w-full text-sm font-medium"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') cancelRename();
+                    }}
+                    onBlur={commitRename}
+                    autoFocus
+                  />
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-base-300/30 text-error/70"
+                    type="button"
+                    className="btn btn-xs btn-ghost btn-square text-success hover:bg-success/20"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      commitRename();
+                    }}
+                    title="Confirm Rename"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost btn-square text-error hover:bg-error/20"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      cancelRename();
+                    }}
+                    title="Cancel Rename"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <span
+                  className="font-medium text-sm text-base-content truncate cursor-default"
+                  onDoubleClick={startRename}
+                >
+                  {displayFolderName}
+                  {renamedName && <Pencil size={10} className="inline ml-1.5 text-info/60" />}
+                  {item.alreadyMatched && (
+                    <span className="badge badge-xs badge-ghost ml-2 opacity-60">Existing</span>
+                  )}
+                </span>
+              )}
+              {item.matchDetail && (
+                <span className="text-[10px] text-base-content/50 truncate mt-0.5">
+                  {item.matchDetail}
+                </span>
+              )}
+            </div>
+          </FolderTooltip>
+        </td>
+
+        <td ref={dropdownRef} className="relative group/search max-w-64 w-64">
+          <button
+            className={`btn btn-sm h-8 min-h-8 w-full justify-start pl-2 pr-2 gap-2 flex-nowrap ${
+              override ? 'btn-info btn-outline' : 'btn-ghost bg-base-200/50 hover:bg-base-300/60'
+            }`}
+            onClick={handleToggleDropdown}
+            disabled={isSkipped}
+            title={displayMatch ?? 'No match — click to assign'}
+          >
+            {displayThumb ? (
+              <div className="avatar">
+                <div className="w-5 rounded-full border border-base-300/50">
+                  <img src={convertFileSrc(displayThumb)} alt={displayMatch || ''} />
+                </div>
+              </div>
+            ) : (
+              <Search size={14} className="opacity-50 shrink-0" />
+            )}
+            <span className="truncate flex-1 text-left font-medium text-sm">
+              {displayMatch ?? (
+                <span className="text-base-content/30 italic font-normal">Unmatched</span>
+              )}
+            </span>
+            <ChevronDown size={14} className="opacity-50 shrink-0" />
+          </button>
+
+          {searchOpen && (
+            <div
+              className={`absolute left-0 z-100 w-80 bg-base-200/95 backdrop-blur-md rounded-lg shadow-xl border border-base-300/50 overflow-hidden ${
+                dropdownPosition === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'
+              }`}
+            >
+              <div className="p-2 border-b border-base-300/30 bg-base-300/30">
+                <div className="relative">
+                  <Search
+                    size={14}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
+                  />
+                  <input
+                    type="text"
+                    className="input input-sm w-full pl-8 bg-base-100/60 border-base-300/30 placeholder:text-base-content/30"
+                    placeholder="Search characters, weapons..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="max-h-72 overflow-y-auto w-full flex flex-col">
+                {override && (
+                  <button
+                    className="flex items-center gap-1.5 px-3 py-2 text-error/80 hover:bg-error/10 text-sm transition-colors"
                     onClick={() => {
                       onOverride(null);
                       setSearchOpen(false);
                       setSearchQuery('');
                     }}
                   >
-                    ✕ Clear override (revert to auto-match)
+                    <X size={14} /> Clear override
                   </button>
-                </li>
-              )}
-              {filteredEntries.map((entry) => (
-                <li key={entry.name}>
-                  <button
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-base-300/30 flex items-center gap-2"
-                    onClick={() => {
-                      onOverride(entry);
-                      setSearchOpen(false);
-                      setSearchQuery('');
-                    }}
-                  >
-                    <span className="font-medium truncate flex-1">{entry.name}</span>
-                    <span className="badge badge-xs badge-outline shrink-0">
-                      {entry.object_type}
-                    </span>
-                  </button>
-                </li>
-              ))}
-              {filteredEntries.length === 0 && (
-                <li className="px-3 py-2 text-xs text-base-content/40">No results</li>
-              )}
-            </ul>
-          </div>
-        )}
-      </div>
+                )}
 
-      {/* Skip toggle */}
-      <button
-        className={`btn btn-xs btn-square ${isSkipped ? 'btn-warning' : 'btn-ghost text-base-content/30 hover:text-warning'}`}
-        onClick={onToggleSkip}
-        title={isSkipped ? 'Include this mod' : 'Skip this mod'}
-      >
-        <SkipForward size={12} />
-      </button>
-    </div>
+                {/* ── Candidates Group ── */}
+                {candidateEntries.length > 0 && (
+                  <>
+                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-base-content/40 font-semibold bg-base-300/20 border-b border-base-300/20 sticky top-0 z-10 backdrop-blur-sm">
+                      Candidates ({candidateEntries.length})
+                    </div>
+                    {candidateEntries.slice(0, visibleCount).map((entry) => (
+                      <button
+                        key={entry.name}
+                        className="flex flex-col gap-0.5 px-3 py-2 hover:bg-base-300/30 transition-colors text-left w-full border-b border-base-300/10 last:border-b-0"
+                        onClick={() => {
+                          onOverride(entry);
+                          setSearchOpen(false);
+                          setSearchQuery('');
+                        }}
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          {entry.thumbnail_path ? (
+                            <div className="avatar">
+                              <div className="w-6 rounded-full bg-base-300 ring-1 ring-base-300/50">
+                                <img src={convertFileSrc(entry.thumbnail_path)} alt="" />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-base-300/50 flex items-center justify-center">
+                              <Search size={10} className="opacity-30" />
+                            </div>
+                          )}
+                          <span className="truncate font-semibold text-sm flex-1">
+                            {entry.name}
+                          </span>
+                          <span
+                            className={`badge badge-xs font-mono tabular-nums ${getConfidenceColor(
+                              entry.scorePct! >= 90
+                                ? 'Excellent'
+                                : entry.scorePct! >= 75
+                                  ? 'High'
+                                  : entry.scorePct! >= 45
+                                    ? 'Medium'
+                                    : 'Low',
+                            )}`}
+                          >
+                            {entry.scorePct}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 ml-8 flex-wrap">
+                          <span className="badge badge-xs bg-base-300/50 border-base-300/60 text-base-content/60 uppercase text-[9px]">
+                            {entry.object_type}
+                          </span>
+                          {entry.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="badge badge-xs badge-ghost text-[9px] text-base-content/40"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* ── Other Group ── */}
+                {otherEntries.length > 0 && (
+                  <>
+                    <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-base-content/40 font-semibold bg-base-300/20 border-b border-base-300/20 sticky top-0 z-10 backdrop-blur-sm">
+                      Other ({otherEntries.length})
+                    </div>
+                    {otherEntries
+                      .slice(0, Math.max(0, visibleCount - candidateEntries.length))
+                      .map((entry) => (
+                        <button
+                          key={entry.name}
+                          className="flex items-center gap-2 px-3 py-1.5 hover:bg-base-300/30 transition-colors text-left w-full"
+                          onClick={() => {
+                            onOverride(entry);
+                            setSearchOpen(false);
+                            setSearchQuery('');
+                          }}
+                        >
+                          {entry.thumbnail_path ? (
+                            <div className="avatar">
+                              <div className="w-5 rounded-full bg-base-300">
+                                <img src={convertFileSrc(entry.thumbnail_path)} alt="" />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-base-300/40" />
+                          )}
+                          <span className="truncate font-medium text-sm flex-1 text-base-content/70">
+                            {entry.name}
+                          </span>
+
+                          {/* Lazy-loaded score display */}
+                          {entry.scorePct !== undefined ? (
+                            <span className="badge badge-xs bg-transparent border-0 font-mono text-[10px] text-base-content/40 tabular-nums">
+                              {entry.scorePct}%
+                            </span>
+                          ) : (
+                            <div className="w-6 h-3 rounded bg-base-300/40 animate-pulse ml-2"></div>
+                          )}
+
+                          <span className="badge badge-xs bg-base-300/40 border-base-300/50 text-base-content/40 uppercase text-[9px]">
+                            {entry.object_type}
+                          </span>
+                        </button>
+                      ))}
+                  </>
+                )}
+
+                {/* Lazy scroll sentinel */}
+                {visibleCount < candidateEntries.length + otherEntries.length && (
+                  <div
+                    ref={sentinelRef}
+                    className="p-2 text-center text-[10px] text-base-content/30"
+                  >
+                    Loading more...
+                  </div>
+                )}
+
+                {candidateEntries.length === 0 && otherEntries.length === 0 && (
+                  <div className="p-4 text-center text-xs text-base-content/40">
+                    No results found
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </td>
+
+        <td className="w-24">
+          {displayType ? (
+            <span className="badge badge-sm bg-base-300/50 border-base-300/60 text-base-content/70">
+              {displayType}
+            </span>
+          ) : (
+            <span className="text-xs text-base-content/30 italic">Unknown</span>
+          )}
+        </td>
+
+        <td className="w-28 text-center">
+          {!override && confidence !== 'None' ? (
+            <div
+              className={`badge badge-sm badge-outline gap-1 ${getConfidenceColor(confidence)}`}
+              title={`${confidence} Confidence - ${matchLevelLabel(item.matchLevel)}`}
+            >
+              {getConfidenceIcon(confidence)}
+              <span className="font-medium">{item.confidenceScore}%</span>
+            </div>
+          ) : (
+            <span className="text-xs text-base-content/30">—</span>
+          )}
+        </td>
+
+        <td className="w-12 text-center">
+          <button
+            className={`btn btn-xs btn-square ${isSkipped ? 'btn-warning bg-warning/20' : 'btn-ghost text-base-content/30 hover:text-warning'}`}
+            onClick={onToggleSkip}
+            title={isSkipped ? 'Include this mod' : 'Skip this mod'}
+          >
+            <SkipForward size={14} />
+          </button>
+        </td>
+      </tr>
+    </ContextMenu>
   );
 }
 
 export default function ScanReviewModal({
+  activeGame,
   open,
   items,
   masterDbEntries,
@@ -260,6 +686,9 @@ export default function ScanReviewModal({
   const [overrides, setOverrides] = useState<Record<string, MasterDbEntry | null>>({});
   // Skips: folder_path -> boolean
   const [skips, setSkips] = useState<Record<string, boolean>>({});
+  // Draft renames: folder_path -> new display name
+  const [renames, setRenames] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<string>('All');
 
   const handleOverride = useCallback((folderPath: string, entry: MasterDbEntry | null) => {
@@ -269,6 +698,30 @@ export default function ScanReviewModal({
   const handleToggleSkip = useCallback((folderPath: string) => {
     setSkips((prev) => ({ ...prev, [folderPath]: !prev[folderPath] }));
   }, []);
+
+  const handleToggleSelect = useCallback((folderPath: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath);
+      else next.add(folderPath);
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectAll = useCallback(
+    (currentItems: ScanPreviewItem[], isAllSelected: boolean) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (isAllSelected) {
+          currentItems.forEach((i) => next.delete(i.folderPath));
+        } else {
+          currentItems.forEach((i) => next.add(i.folderPath));
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   const { matchedCount, unmatchedCount, skippedCount, alreadyMatchedCount } = useMemo(() => {
     let matched = 0;
@@ -303,7 +756,7 @@ export default function ScanReviewModal({
 
       return {
         folderPath: item.folderPath,
-        displayName: item.displayName,
+        displayName: renames[item.folderPath] ?? item.displayName,
         isDisabled: item.isDisabled,
         matchedObject: ov ? ov.name : item.matchedObject,
         objectType: ov ? ov.object_type : item.objectType,
@@ -314,7 +767,7 @@ export default function ScanReviewModal({
       };
     });
     onConfirm(confirmed);
-  }, [items, overrides, skips, onConfirm]);
+  }, [items, overrides, skips, renames, onConfirm]);
 
   const newItems = items.filter((i) => !i.alreadyMatched);
   const existingItems = items.filter((i) => i.alreadyMatched);
@@ -340,21 +793,22 @@ export default function ScanReviewModal({
     return newItems.filter((item) => item.confidence === activeTab);
   }, [newItems, activeTab]);
 
-  const handleDeclineVisible = useCallback(() => {
+  const handleDeclineSelected = useCallback(() => {
     setSkips((prev) => {
       const next = { ...prev };
-      visibleNewItems.forEach((item) => {
-        next[item.folderPath] = true;
+      selected.forEach((folderPath) => {
+        next[folderPath] = true;
       });
       return next;
     });
-  }, [visibleNewItems]);
+    setSelected(new Set());
+  }, [selected]);
 
   if (!open) return null;
 
   return (
     <div className="modal modal-open">
-      <div className="modal-box relative w-11/12 max-w-3xl max-h-[85vh] flex flex-col">
+      <div className="modal-box relative w-[95%] max-w-5xl max-h-[85vh] flex flex-col p-4 sm:p-6">
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2"
           onClick={onClose}
@@ -384,74 +838,148 @@ export default function ScanReviewModal({
             {['All', 'Excellent', 'High', 'Medium', 'Low'].map((tab) => (
               <button
                 key={tab}
-                className={`tab tab-sm h-7 transition-all ${
+                className={`tab tab-sm h-7 transition-all flex items-center gap-1.5 ${
                   activeTab === tab
-                    ? 'tab-active bg-base-100 shadow-sm font-medium'
-                    : 'text-base-content/60 hover:text-base-content'
+                    ? 'tab-active bg-primary! text-primary-content! shadow-sm font-medium'
+                    : 'text-base-content/60 hover:text-base-content hover:bg-base-200/50'
                 }`}
                 onClick={() => setActiveTab(tab)}
               >
                 {tab}
-                <span className="badge badge-xs bg-base-200 border-base-300 ml-1.5 opacity-80">
+                <span
+                  className={`badge badge-xs opacity-80 ${
+                    activeTab === tab
+                      ? 'bg-primary-content/20 border-transparent'
+                      : 'bg-base-200 border-base-300'
+                  }`}
+                >
                   {tabCounts[tab]}
                 </span>
               </button>
             ))}
           </div>
 
-          <button
-            className="btn btn-xs btn-outline btn-error gap-1 opacity-80 hover:opacity-100"
-            onClick={handleDeclineVisible}
-            disabled={visibleNewItems.length === 0}
-            title="Skip all currently visible items in this tab"
-          >
-            <Ban size={12} /> Flag as Decline ({visibleNewItems.length})
-          </button>
+          {selected.size > 0 && (
+            <button
+              className="btn btn-xs btn-error btn-outline gap-1 opacity-90 hover:opacity-100 shadow-sm"
+              onClick={handleDeclineSelected}
+              title="Bulk skip all selected items"
+            >
+              <Ban size={12} /> Flag as Skip ({selected.size})
+            </button>
+          )}
         </div>
 
         {/* Main list */}
-        <div className="flex-1 overflow-y-auto border border-base-300/30 rounded-lg bg-base-200/30">
-          {visibleNewItems.length > 0 && (
-            <>
-              <div className="sticky top-0 z-10 px-3 py-1 bg-base-300/50 backdrop-blur-sm text-[10px] uppercase tracking-wider text-base-content/40 font-medium border-b border-base-300/20">
-                New & Unmatched ({visibleNewItems.length})
-              </div>
-              {visibleNewItems.map((item) => (
-                <ReviewRow
-                  key={item.folderPath}
-                  item={item}
-                  override={overrides[item.folderPath] ?? null}
-                  onOverride={(e) => handleOverride(item.folderPath, e)}
-                  onToggleSkip={() => handleToggleSkip(item.folderPath)}
-                  isSkipped={!!skips[item.folderPath]}
-                  masterDbEntries={masterDbEntries}
-                />
-              ))}
-            </>
-          )}
-          {existingItems.length > 0 && (
-            <>
-              <div className="sticky top-0 z-10 px-3 py-1 bg-base-300/50 backdrop-blur-sm text-[10px] uppercase tracking-wider text-base-content/40 font-medium">
-                Already Matched ({existingItems.length})
-              </div>
-              {existingItems.map((item) => (
-                <ReviewRow
-                  key={item.folderPath}
-                  item={item}
-                  override={overrides[item.folderPath] ?? null}
-                  onOverride={(e) => handleOverride(item.folderPath, e)}
-                  onToggleSkip={() => handleToggleSkip(item.folderPath)}
-                  isSkipped={!!skips[item.folderPath] || item.alreadyMatched}
-                  masterDbEntries={masterDbEntries}
-                />
-              ))}
-            </>
-          )}
-          {items.length === 0 && (
-            <div className="flex items-center justify-center p-8 text-base-content/40 text-sm">
-              No mod folders found.
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden border border-base-300/30 rounded-lg bg-base-200/30 relative">
+          <table className="table table-sm table-pin-rows">
+            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 [&_th]:bg-black/40 [&_th]:backdrop-blur-md">
+              <tr>
+                <th className="w-10 text-center">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-xs rounded border-base-content/40"
+                    checked={
+                      visibleNewItems.length > 0 &&
+                      visibleNewItems.every((i) => selected.has(i.folderPath))
+                    }
+                    onChange={() =>
+                      handleToggleSelectAll(
+                        visibleNewItems,
+                        visibleNewItems.length > 0 &&
+                          visibleNewItems.every((i) => selected.has(i.folderPath)),
+                      )
+                    }
+                    title="Select/Deselect all visible new items"
+                  />
+                </th>
+                <th className="pl-4">Folder Name</th>
+                <th>Target Detected</th>
+                <th>Type</th>
+                <th className="text-center">Percentage</th>
+                <th className="text-center border-l border-white/5">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleNewItems.length > 0 && (
+                <>
+                  <tr className="bg-base-300/30 hover:bg-base-300/30 pointer-events-none">
+                    <td
+                      colSpan={6}
+                      className="text-[10px] uppercase font-semibold text-base-content/40 py-1 border-b-0"
+                    >
+                      New & Unmatched ({visibleNewItems.length})
+                    </td>
+                  </tr>
+                  {visibleNewItems.map((item) => (
+                    <ReviewRow
+                      key={item.folderPath}
+                      item={item}
+                      override={overrides[item.folderPath] ?? null}
+                      onOverride={(e) => handleOverride(item.folderPath, e)}
+                      onToggleSkip={() => handleToggleSkip(item.folderPath)}
+                      isSkipped={!!skips[item.folderPath]}
+                      isSelected={selected.has(item.folderPath)}
+                      onToggleSelect={() => handleToggleSelect(item.folderPath)}
+                      masterDbEntries={masterDbEntries}
+                      renamedName={renames[item.folderPath] ?? null}
+                      onRename={(n) =>
+                        setRenames((prev) => {
+                          const next = { ...prev };
+                          if (n) next[item.folderPath] = n;
+                          else delete next[item.folderPath];
+                          return next;
+                        })
+                      }
+                      activeGame={activeGame}
+                    />
+                  ))}
+                </>
+              )}
+              {existingItems.length > 0 && (
+                <>
+                  <tr className="bg-base-300/30 hover:bg-base-300/30 pointer-events-none">
+                    <td
+                      colSpan={6}
+                      className="text-[10px] uppercase font-semibold text-base-content/40 py-1 border-b-0"
+                    >
+                      Already Matched ({existingItems.length})
+                    </td>
+                  </tr>
+                  {existingItems.map((item) => (
+                    <ReviewRow
+                      key={item.folderPath}
+                      item={item}
+                      override={overrides[item.folderPath] ?? null}
+                      onOverride={(e) => handleOverride(item.folderPath, e)}
+                      onToggleSkip={() => handleToggleSkip(item.folderPath)}
+                      isSkipped={!!skips[item.folderPath]}
+                      isSelected={selected.has(item.folderPath)}
+                      onToggleSelect={() => handleToggleSelect(item.folderPath)}
+                      masterDbEntries={masterDbEntries}
+                      renamedName={renames[item.folderPath] ?? null}
+                      onRename={(n) =>
+                        setRenames((prev) => {
+                          const next = { ...prev };
+                          if (n) next[item.folderPath] = n;
+                          else delete next[item.folderPath];
+                          return next;
+                        })
+                      }
+                      activeGame={activeGame}
+                    />
+                  ))}
+                </>
+              )}
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-base-content/40 text-sm">
+                    No mod folders found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
 
         {/* Actions */}
@@ -469,7 +997,9 @@ export default function ScanReviewModal({
             ) : (
               <Check size={14} />
             )}
-            {isCommitting ? 'Committing...' : `Confirm ${matchedCount + unmatchedCount} Mods`}
+            {isCommitting
+              ? 'Committing...'
+              : `Confirm ${matchedCount + unmatchedCount + alreadyMatchedCount} Mods`}
           </button>
         </div>
       </div>

@@ -109,7 +109,7 @@ async fn test_scan_preview_needs_review_has_no_auto_assignment() {
     fs::create_dir(&mod_dir).unwrap();
 
     let db = needs_review_db();
-    let items = scan_preview(&pool, "g1", temp_dir.path(), &db, None, None)
+    let items = scan_preview(&pool, "g1", temp_dir.path(), &db, None, None, None)
         .await
         .unwrap();
 
@@ -136,6 +136,7 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         tags_json: None,
         metadata_json: None,
         skip: false,
+        move_from_temp: false,
     }];
 
     let _result = commit_scan_results(

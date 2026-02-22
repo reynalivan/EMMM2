@@ -63,10 +63,7 @@ fn test_object_command_needs_review_keeps_candidate_with_low_confidence_label() 
     assert_eq!(match_result.status, MatchStatus::NeedsReview);
     assert_eq!(item.match_level, "NeedsReview");
     assert_eq!(item.match_confidence, "Low");
-    assert_eq!(
-        item.match_detail,
-        "Ambiguous top matches: Amber vs Lisa"
-    );
+    assert_eq!(item.match_detail, "Ambiguous top matches: Amber vs Lisa");
 }
 
 #[test]

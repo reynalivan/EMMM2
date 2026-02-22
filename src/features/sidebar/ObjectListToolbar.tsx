@@ -3,7 +3,7 @@
  * Category/Sort/Status filtering is fully delegated to FilterPanel.
  */
 
-import { Search, RefreshCw, RotateCcw, Plus, SlidersHorizontal, X } from 'lucide-react';
+import { Search, RefreshCw, RotateCcw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import type { GameSchema, FilterDef, CategoryDef } from '../../types/object';
 import FilterPanel from './FilterPanel';
@@ -28,6 +28,10 @@ interface ToolbarProps {
   statusFilter: 'all' | 'enabled' | 'disabled';
   onStatusFilterChange: (val: 'all' | 'enabled' | 'disabled') => void;
   showFilterPanel: boolean;
+  /** True when any file is dragged over the app */
+  isDragging?: boolean;
+  /** True when files are being specifically dragged over this toolbar zone */
+  isActiveZone?: boolean;
 }
 
 export default function ObjectListToolbar({
@@ -49,6 +53,8 @@ export default function ObjectListToolbar({
   statusFilter,
   onStatusFilterChange,
   showFilterPanel,
+  isDragging,
+  isActiveZone,
 }: ToolbarProps) {
   const [filterOpen, setFilterOpen] = useState(true);
 
@@ -65,7 +71,25 @@ export default function ObjectListToolbar({
   return (
     <>
       {/* Compact toolbar: Search + Filter + Sync + Create */}
-      <div className="p-2 border-b border-base-300/30 flex items-center gap-1.5">
+      <div className="p-2 border-b border-base-300/30 flex items-center gap-1.5 relative">
+        {/* Auto Organize drop overlay — slides in from top, solid on hover */}
+        {isDragging && (
+          <div
+            className={`absolute inset-0 z-20 flex items-center justify-center rounded-lg transition-all duration-300 animate-[slideDown_200ms_ease-out] ${
+              isActiveZone
+                ? 'bg-base-300 border-2 border-primary shadow-lg'
+                : 'bg-base-200 border-2 border-dashed border-base-300/50'
+            }`}
+            style={{ animation: 'slideDown 200ms ease-out' }}
+          >
+            <div
+              className={`flex items-center gap-2 ${isActiveZone ? 'text-primary font-bold' : 'text-base-content/50'}`}
+            >
+              <Sparkles size={20} className={isActiveZone ? 'animate-pulse' : ''} />
+              <span className="text-sm font-semibold">Auto Organize</span>
+            </div>
+          </div>
+        )}
         <div className="relative flex-1 min-w-0">
           <Search
             size={14}

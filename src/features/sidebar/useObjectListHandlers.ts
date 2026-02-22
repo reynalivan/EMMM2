@@ -6,6 +6,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
+import { mkdir, exists, remove } from '@tauri-apps/plugin-fs';
 import { useToggleMod, useDeleteMod, type ModFolder } from '../../hooks/useFolders';
 import { useDeleteObject, useUpdateObject } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -18,6 +19,7 @@ import { toast } from '../../stores/useToastStore';
 import type { ObjectSummary, GameSchema } from '../../types/object';
 import type { MatchedDbEntry } from './SyncConfirmModal';
 import type { MasterDbEntry } from './ScanReviewModal';
+import { classifyDroppedPaths } from './dropUtils';
 
 interface HandlerDeps {
   objects: ObjectSummary[];
@@ -226,10 +228,23 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     [activeGame, queryClient],
   );
 
-  const handleCloseScanReview = useCallback(() => {
+  const handleCloseScanReview = useCallback(async () => {
     if (scanReview.isCommitting) return;
+
+    // Cleanup temp folder if it exists
+    if (activeGame) {
+      const tempPath = `${activeGame.mod_path}\\.emmm2_temp`;
+      try {
+        if (await exists(tempPath)) {
+          await remove(tempPath, { recursive: true });
+        }
+      } catch (e) {
+        console.error('Failed to cleanup temp folder:', e);
+      }
+    }
+
     setScanReview({ open: false, items: [], masterDbEntries: [], isCommitting: false });
-  }, [scanReview.isCommitting]);
+  }, [scanReview.isCommitting, activeGame]);
 
   // Single-object sync: match against MasterDB via Rust command
   const handleSyncWithDb = useCallback(
@@ -460,51 +475,202 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     [schema],
   );
 
-  // US-3.Z: Drag & Drop ingestion handler
-  const handleDrop = useCallback(
-    async (paths: string[]) => {
+  // US-3.Z: Zone-aware DnD handlers
+
+  /** Drop on specific object row — move items into that object's folder */
+  const handleDropOnItem = useCallback(
+    async (objectId: string, paths: string[]) => {
       if (!activeGame || paths.length === 0) return;
 
-      toast.info(`Importing ${paths.length} item(s)...`);
+      const obj = objects.find((o) => o.id === objectId);
+      if (!obj) {
+        toast.error('Could not find target object.');
+        return;
+      }
 
+      toast.info(`Moving ${paths.length} item(s) to ${obj.name}...`);
+
+      // Suppress watcher during file operations to avoid "External Deletion" dialogs
+      await invoke('set_watcher_suppression_cmd', { suppressed: true });
       try {
+        const classified = classifyDroppedPaths(paths);
+
+        // Extract archives first, then ingest the extracted folders + non-archive items
+        const pathsToIngest: string[] = [
+          ...classified.folders,
+          ...classified.iniFiles,
+          ...classified.images,
+        ];
+
+        const objectFolderPath = `${activeGame.mod_path}\\${obj.name}`;
+
+        for (const archivePath of classified.archives) {
+          const result = await scanService.extractArchive(archivePath, objectFolderPath);
+          if (result.success) {
+            pathsToIngest.push(result.dest_path);
+          } else {
+            toast.error(`Failed to extract: ${result.error ?? 'Unknown error'}`);
+          }
+        }
+
+        if (pathsToIngest.length === 0) {
+          toast.info('No items to import after extraction.');
+          return;
+        }
+
+        // Use import_mods_from_paths with the object's target directory
         const result = await invoke<{
-          moved: string[];
-          skipped: string[];
-          not_dirs: string[];
-          sync: { new_mods: number; new_objects: number };
-        }>('ingest_dropped_folders', {
-          paths,
-          modsPath: activeGame.mod_path,
-          gameId: activeGame.id,
-          gameName: activeGame.name,
-          gameType: activeGame.game_type,
+          success: string[];
+          failures: { path: string; error: string }[];
+        }>('import_mods_from_paths', {
+          paths: pathsToIngest,
+          targetDir: objectFolderPath,
+          strategy: 'Raw',
+          dbJson: null,
         });
 
         queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
 
-        const movedCount = result.moved.length;
-        const skippedCount = result.skipped.length + result.not_dirs.length;
-
+        const movedCount = result.success.length;
+        const failCount = result.failures.length;
         if (movedCount > 0) {
-          toast.withAction(
-            'success',
-            `Imported ${movedCount} mod(s)${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}`,
-            { label: 'Auto Organize', onClick: () => handleSync() },
-            8000,
+          toast.success(
+            `Moved ${movedCount} item(s) to ${obj.name}${failCount > 0 ? `, ${failCount} failed` : ''}`,
           );
-        } else if (skippedCount > 0) {
-          toast.info(`0 imported, ${skippedCount} skipped (already exist or not folders)`);
+        } else if (failCount > 0) {
+          toast.error(`Failed to move items: ${result.failures[0].error}`);
         }
       } catch (e) {
-        console.error('Drop ingestion failed:', e);
+        console.error('Drop on item failed:', e);
         toast.error('Failed to import dropped items');
+      } finally {
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
       }
     },
-    [activeGame, queryClient, handleSync],
+    [activeGame, objects, queryClient],
   );
+
+  /** Drop on Auto Organize zone — extract archives → scan → open review */
+  const handleDropAutoOrganize = useCallback(
+    async (paths: string[]) => {
+      if (!activeGame) return;
+
+      const classified = classifyDroppedPaths(paths);
+
+      toast.info('Preparing Auto Organize...');
+
+      // Suppress watcher during file operations
+      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      try {
+        const tempPath = `${activeGame.mod_path}\\.emmm2_temp`;
+        if (!(await exists(tempPath))) {
+          await mkdir(tempPath, { recursive: true });
+        }
+
+        // Step 1: Extract archives to temp dir
+        const folderPaths: string[] = [...classified.folders]; // These will be scanned in-place
+        const tempPaths: string[] = [];
+
+        for (const archivePath of classified.archives) {
+          const result = await scanService.extractArchive(archivePath, tempPath);
+          if (result.success) {
+            folderPaths.push(result.dest_path);
+            tempPaths.push(result.dest_path);
+          } else {
+            toast.error(`Failed to extract: ${result.error ?? 'Unknown error'}`);
+          }
+        }
+
+        // We only pass remaining non-folder files (ini, images) to ingest_dropped_folders.
+        // We do NOT pass classified.folders here, because they are scanned in-place
+        // and shouldn't be permanently moved until user clicks Confirm.
+        const looseFiles = [...classified.iniFiles, ...classified.images];
+        if (looseFiles.length > 0) {
+          const ingestResult = await invoke<{
+            moved: string[];
+            skipped: string[];
+            not_dirs: string[];
+            sync: { new_mods: number; new_objects: number };
+          }>('ingest_dropped_folders', {
+            paths: looseFiles,
+            modsPath: tempPath, // Put loose files inside temp
+            gameId: activeGame.id,
+            gameName: activeGame.name,
+            gameType: activeGame.game_type,
+          });
+          // Add ingested paths to what we scan
+          folderPaths.push(...ingestResult.moved);
+          tempPaths.push(...ingestResult.moved);
+        }
+
+        // Step 3: Run the full scan preview (triggers Deep Matcher)
+        setIsSyncing(true);
+        const previewItemsRaw = await scanService.scanPreview(
+          activeGame.id,
+          activeGame.game_type,
+          activeGame.mod_path,
+          undefined,
+          folderPaths, // Pass exactly the paths we want to scan
+        );
+
+        // Mark items inside the temp folders so they can be moved on commit
+        const previewItems = previewItemsRaw.map((item) => ({
+          ...item,
+          moveFromTemp: tempPaths.includes(item.folderPath),
+        }));
+
+        // Load MasterDB entries for override search
+        const dbJson = await scanService.getMasterDb(activeGame.game_type);
+        let masterEntries: {
+          name: string;
+          object_type: string;
+          tags: string[];
+          metadata: Record<string, unknown> | null;
+          thumbnail_path: string | null;
+        }[] = [];
+        try {
+          const parsed = JSON.parse(dbJson);
+          if (Array.isArray(parsed)) {
+            masterEntries = parsed.map((e: Record<string, unknown>) => ({
+              name: String(e.name ?? ''),
+              object_type: String(e.object_type ?? 'Other'),
+              tags: Array.isArray(e.tags) ? (e.tags as string[]) : [],
+              metadata: (e.metadata as Record<string, unknown>) ?? null,
+              thumbnail_path: e.thumbnail_path ? String(e.thumbnail_path) : null,
+            }));
+          }
+        } catch {
+          // MasterDB parse failed — proceed with empty entries
+        }
+
+        setScanReview({
+          open: true,
+          items: previewItems,
+          masterDbEntries: masterEntries,
+          isCommitting: false,
+        });
+      } catch (e) {
+        console.error('Auto organize failed:', e);
+        toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setIsSyncing(false);
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+      }
+    },
+    [activeGame],
+  );
+
+  /**
+   * Drop on "Append as New Object" zone — returns paths to the caller.
+   * The actual create flow is handled by CreateObjectModal with pendingPaths.
+   * This is a no-op handler; the ObjectList orchestrator handles the UI state.
+   */
+  const handleDropNewObject = useCallback((_paths: string[]) => {
+    // Intentionally empty — ObjectList.tsx handles opening CreateObjectModal
+    // with pendingPaths. This exists so useObjectListLogic can export it.
+  }, []);
 
   // Enable/Disable Object by toggling its physical folder directly
   const handleEnableObject = useCallback(
@@ -599,6 +765,8 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handleEnableObject,
     handleDisableObject,
     categoryNames,
-    handleDrop,
+    handleDropOnItem,
+    handleDropAutoOrganize,
+    handleDropNewObject,
   };
 }

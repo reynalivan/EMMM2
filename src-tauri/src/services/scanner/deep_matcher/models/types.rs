@@ -136,6 +136,8 @@ pub struct StagedMatchResult {
     pub best: Option<Candidate>,
     /// Top-k candidates for review.
     pub candidates_topk: Vec<Candidate>,
+    /// All evaluated candidates before truncation (useful for UI batch rendering).
+    pub candidates_all: Vec<Candidate>,
     /// Evidence collected.
     pub evidence: Evidence,
 }
@@ -146,6 +148,7 @@ impl StagedMatchResult {
             status: MatchStatus::NoMatch,
             best: None,
             candidates_topk: Vec::new(),
+            candidates_all: Vec::new(),
             evidence: Evidence::new(),
         }
     }

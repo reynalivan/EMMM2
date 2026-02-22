@@ -39,6 +39,7 @@ pub async fn sync_database_cmd(
         &master_db,
         resource_dir.as_deref(),
         Some(on_progress),
+        None,
     )
     .await?;
 
@@ -55,6 +56,7 @@ pub async fn sync_database_cmd(
             tags_json: item.tags_json,
             metadata_json: item.metadata_json,
             skip: false,
+            move_from_temp: false,
         })
         .collect();
 
@@ -83,6 +85,7 @@ pub async fn scan_preview_cmd(
     db_json: String,
     pool: State<'_, sqlx::SqlitePool>,
     on_progress: Channel<types::ScanEvent>,
+    specific_paths: Option<Vec<String>>,
 ) -> Result<Vec<crate::services::scanner::sync::ScanPreviewItem>, String> {
     use crate::services::scanner::sync;
 
@@ -94,6 +97,10 @@ pub async fn scan_preview_cmd(
     let master_db = MasterDb::from_json(&db_json)?;
     let resource_dir = app.path().resource_dir().ok();
 
+    let optional_paths = specific_paths.map(|paths| {
+        paths.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>()
+    });
+
     sync::scan_preview(
         &pool,
         &game_id,
@@ -101,6 +108,7 @@ pub async fn scan_preview_cmd(
         &master_db,
         resource_dir.as_deref(),
         Some(on_progress),
+        optional_paths,
     )
     .await
 }
@@ -133,4 +141,61 @@ pub async fn commit_scan_cmd(
         resource_dir.as_deref(),
     )
     .await
+}
+
+/// Compute percentage scores for a specific batch of candidates against a folder.
+/// Used by the Scan Review Modal to lazy-load accurate matching percentages.
+///
+/// # Covers: US-2.3 (Review & Organize UI — Lazy Scoring)
+#[tauri::command]
+pub async fn score_candidates_batch_cmd(
+    folder_path: String,
+    candidate_names: Vec<String>,
+    db_json: String,
+) -> Result<std::collections::HashMap<String, u8>, String> {
+    use crate::services::scanner::sync;
+
+    let master_db = MasterDb::from_json(&db_json)?;
+
+    // Make CPU-bound work non-blocking
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        sync::score_candidates_batch(&folder_path, &master_db, candidate_names)
+    })
+    .await
+    .map_err(|e| format!("Batch scoring task panicked: {}", e))?;
+
+    Ok(res)
+}
+
+/// A single file/folder entry for the tooltip preview.
+#[derive(serde::Serialize)]
+pub struct FolderEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// List files and folders inside a directory (max 50 entries, sorted).
+/// Used by the Scan Review tooltip to preview folder contents on hover.
+#[tauri::command]
+pub async fn list_folder_entries_cmd(folder_path: String) -> Result<Vec<FolderEntry>, String> {
+    let path = std::path::Path::new(&folder_path);
+    if !path.is_dir() {
+        return Err(format!("Not a directory: {}", folder_path));
+    }
+
+    let read_dir = std::fs::read_dir(path).map_err(|e| format!("Cannot read directory: {}", e))?;
+
+    let mut entries: Vec<FolderEntry> = read_dir
+        .filter_map(|e| e.ok())
+        .map(|e| FolderEntry {
+            name: e.file_name().to_string_lossy().to_string(),
+            is_dir: e.file_type().map(|ft| ft.is_dir()).unwrap_or(false),
+        })
+        .take(50)
+        .collect();
+
+    // Sort: directories first, then alphabetically
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+
+    Ok(entries)
 }

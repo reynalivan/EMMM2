@@ -63,6 +63,7 @@ fn review_result() -> StagedMatchResult {
                 reasons: vec![],
             },
         ],
+        candidates_all: Vec::new(),
         evidence: Default::default(),
     }
 }
@@ -144,6 +145,7 @@ fn test_ai_rerank_only_needs_review_path_can_invoke_provider() {
         status: MatchStatus::NoMatch,
         best: None,
         candidates_topk: vec![],
+        candidates_all: Vec::new(),
         evidence: Default::default(),
     };
 

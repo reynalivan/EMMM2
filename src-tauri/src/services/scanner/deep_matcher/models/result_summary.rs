@@ -57,7 +57,7 @@ impl StagedMatchResult {
 /// Map a candidate's raw score + confidence tier to a 0–100 percentage.
 /// Uses confidence tier as a floor/ceiling guide, then interpolates
 /// based on the raw score within that tier's expected range.
-fn score_to_percentage(candidate: &Candidate) -> u8 {
+pub(crate) fn score_to_percentage(candidate: &Candidate) -> u8 {
     // Confidence tier boundaries (min%, max%)
     let (floor, ceiling) = match candidate.confidence {
         Confidence::Excellent => (90, 100),

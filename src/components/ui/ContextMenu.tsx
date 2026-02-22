@@ -32,7 +32,7 @@ export function ContextMenu({ children, content }: ContextMenuProps) {
         <Content
           collisionPadding={8}
           onCloseAutoFocus={(event) => event.preventDefault()}
-          className="context-menu-content min-w-[180px] rounded-lg border border-base-content/10 bg-base-100 shadow-xl text-sm p-1 z-50
+          className="context-menu-content min-w-[180px] rounded-lg border border-base-content/10 bg-base-100 shadow-xl text-sm p-1 z-1000
             data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95
             data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
@@ -107,7 +107,7 @@ export function ContextMenuSub({ label, children, icon: Icon }: ContextMenuSubPr
       <Portal>
         <SubContent
           collisionPadding={8}
-          className="min-w-[160px] rounded-lg border border-base-content/10 bg-base-100 shadow-xl text-sm p-1 z-50
+          className="min-w-[160px] rounded-lg border border-base-content/10 bg-base-100 shadow-xl text-sm p-1 z-1000
             data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95
             data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >

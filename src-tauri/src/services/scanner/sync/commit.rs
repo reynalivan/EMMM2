@@ -32,6 +32,29 @@ pub async fn commit_scan_results(
             continue;
         }
 
+        let mut actual_folder_path = item.folder_path.clone();
+
+        if item.move_from_temp {
+            let obj_name = item.matched_object.as_deref().unwrap_or("Uncategorized");
+            let source_path = Path::new(&item.folder_path);
+            
+            if let Some(folder_name) = source_path.file_name() {
+                let target_dir = Path::new(mods_path).join(obj_name);
+                let target_path = target_dir.join(folder_name);
+
+                if source_path.exists() {
+                    if !target_dir.exists() {
+                        let _ = std::fs::create_dir_all(&target_dir);
+                    }
+                    if let Err(e) = std::fs::rename(source_path, &target_path) {
+                        log::error!("Failed to move temp folder: {}", e);
+                    } else {
+                        actual_folder_path = target_path.to_string_lossy().into_owned();
+                    }
+                }
+            }
+        }
+
         let current_status = if item.is_disabled {
             "DISABLED"
         } else {
@@ -41,7 +64,7 @@ pub async fn commit_scan_results(
         let existing = sqlx::query(
             "SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?",
         )
-        .bind(&item.folder_path)
+        .bind(&actual_folder_path)
         .bind(game_id)
         .fetch_optional(&mut *tx)
         .await
@@ -61,7 +84,7 @@ pub async fn commit_scan_results(
             }
             id
         } else {
-            let id = generate_stable_id(game_id, &item.folder_path);
+            let id = generate_stable_id(game_id, &actual_folder_path);
             let object_type = item.object_type.as_deref().unwrap_or("Other");
             sqlx::query(
                 "INSERT INTO mods (id, game_id, actual_name, folder_path, status, object_type, is_favorite) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -69,7 +92,7 @@ pub async fn commit_scan_results(
             .bind(&id)
             .bind(game_id)
             .bind(&item.display_name)
-            .bind(&item.folder_path)
+            .bind(&actual_folder_path)
             .bind(current_status)
             .bind(object_type)
             .bind(false)

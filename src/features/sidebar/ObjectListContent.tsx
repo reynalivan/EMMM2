@@ -27,6 +27,9 @@ interface ContentProps {
   scrollToSelected: () => void;
   /* Context menu deps */
   contextMenuProps: ContextMenuHandlerProps;
+  /* DnD per-item highlight */
+  isDragging?: boolean;
+  hoveredItemId?: string | null;
 }
 
 /** Shared props for building ObjectContextMenu */
@@ -84,6 +87,8 @@ export default function ObjectListContent({
   selectedIndex,
   scrollToSelected,
   contextMenuProps,
+  isDragging,
+  hoveredItemId,
 }: ContentProps) {
   const ctx = contextMenuProps;
 
@@ -171,6 +176,7 @@ export default function ObjectListContent({
                     isSelected={selectedObject === item.obj.id}
                     isMobile={isMobile}
                     onClick={() => setSelectedObject(item.obj.id)}
+                    isDropTarget={isDragging && hoveredItemId === item.obj.id}
                   />
                 </ContextMenu>
               </div>
