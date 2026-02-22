@@ -95,7 +95,7 @@ export default function ScannerFeature() {
             setTotalFolders(event.data.totalFolders);
             break;
           case 'progress':
-            updateProgress(event.data.current, event.data.folderName);
+            updateProgress(event.data.current, event.data.folderName, event.data.etaMs ?? 0);
             break;
           case 'matched':
             break;

@@ -81,6 +81,12 @@ pub fn run() {
             sql: include_str!("../migrations/20260217120000_add_sync_mode.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "app_settings",
+            sql: include_str!("../migrations/012_app_settings.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -92,7 +98,7 @@ pub fn run() {
                 let _ = window.unminimize();
             }
         }))
-        .plugin(tauri_plugin_store::Builder::new().build())
+        // tauri_plugin_store removed: all settings now persisted in SQLite
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_log::Builder::default()
@@ -126,17 +132,25 @@ pub fn run() {
                         let opts = SqliteConnectOptions::new()
                             .filename(&db_path)
                             .create_if_missing(true);
-                        SqlitePoolOptions::new()
+                        let p = SqlitePoolOptions::new()
                             .max_connections(5)
                             .connect_with(opts)
                             .await
-                            .expect("failed to connect to backend db")
+                            .expect("failed to connect to backend db");
+
+                        // One-time migration: UUID → stable BLAKE3 IDs for mods
+                        if let Err(e) = services::scanner::sync::migrate_to_stable_ids(&p).await {
+                            log::warn!("Stable ID migration skipped: {e}");
+                        }
+
+                        p
                     });
                     app.manage(pool);
                 }
             }
             // Initialize ConfigService
-            app.manage(services::config::ConfigService::init(app_handle));
+            let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
+            app.manage(services::config::ConfigService::init(app_handle, pool_ref.inner().clone()));
 
             Ok(())
         })
@@ -145,93 +159,100 @@ pub fn run() {
                 .add_migrations("sqlite:app.db", migrations)
                 .build(),
         )
-        .manage(commands::scan_cmds::ScanState::new())
-        .manage(commands::dup_scan_cmds::DupScanState::new())
-        .manage(services::watcher::WatcherState::new())
-        .manage(services::operation_lock::OperationLock::new())
+        .manage(commands::scanner::scan_cmds::ScanState::new())
+        .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
+        .manage(services::scanner::watcher::WatcherState::new())
+        .manage(services::core::operation_lock::OperationLock::new())
         .manage(services::collections::CollectionsUndoState::new())
         .invoke_handler(tauri::generate_handler![
-            commands::app_cmds::check_config_status,
-            commands::app_cmds::get_log_lines,
-            commands::app_cmds::open_log_folder,
-            commands::game_cmds::auto_detect_games,
-            commands::game_cmds::add_game_manual,
-            commands::game_cmds::get_games,
-            commands::game_cmds::launch_game,
-            commands::object_cmds::get_game_schema,
-            commands::object_cmds::get_object,
-            commands::object_cmds::get_master_db,
-            commands::object_cmds::match_object_with_db,
-            commands::object_cmds::pin_object,
-            commands::object_cmds::delete_object,
-            commands::scan_cmds::cancel_scan_cmd,
-            commands::scan_cmds::detect_archives_cmd,
-            commands::scan_cmds::extract_archive_cmd,
-            commands::scan_cmds::analyze_archive_cmd,
-            commands::scan_cmds::start_scan,
-            commands::scan_cmds::auto_organize_mods,
-            commands::scan_cmds::get_scan_result,
-            commands::scan_cmds::detect_conflicts_cmd,
-            commands::scan_cmds::detect_conflicts_in_folder_cmd,
-            commands::folder_cmds::list_mod_folders,
-            commands::folder_cmds::get_mod_thumbnail,
-            commands::mod_cmds::open_in_explorer,
-            commands::mod_cmds::toggle_mod,
-            commands::mod_cmds::delete_mod,
-            commands::mod_cmds::pin_mod,
-            commands::mod_cmds::toggle_favorite,
-            commands::mod_cmds::pick_random_mod,
-            commands::mod_cmds::get_active_mod_conflicts,
-            commands::mod_cmds::rename_mod_folder,
-            commands::mod_cmds::restore_mod,
-            commands::mod_cmds::list_trash,
-            commands::mod_cmds::empty_trash,
-            commands::mod_cmds::read_mod_info,
-            commands::mod_cmds::update_mod_info,
-            commands::mod_cmds::pre_delete_check,
-            commands::mod_cmds::set_mod_category,
-            commands::mod_cmds::move_mod_to_object,
-            commands::mod_cmds::update_mod_thumbnail,
-            commands::mod_cmds::update_mod_thumbnail,
-            commands::mod_cmds::paste_thumbnail,
-            commands::folder_cmds::delete_mod_thumbnail,
-            commands::mod_cmds::bulk_toggle_mods,
-            commands::mod_cmds::bulk_delete_mods,
-            commands::mod_cmds::bulk_update_info,
-            commands::mod_cmds::import_mods_from_paths,
-            commands::preview_cmds::list_mod_ini_files,
-            commands::preview_cmds::read_mod_ini,
-            commands::preview_cmds::write_mod_ini,
-            commands::preview_cmds::list_mod_preview_images,
-            commands::preview_cmds::save_mod_preview_image,
-            commands::preview_cmds::remove_mod_preview_image,
-            commands::preview_cmds::clear_mod_preview_images,
-            commands::settings_cmds::get_settings,
-            commands::settings_cmds::save_settings,
-            commands::settings_cmds::set_safe_mode_pin,
-            commands::settings_cmds::verify_pin,
-            commands::settings_cmds::set_active_game,
-            commands::settings_cmds::set_safe_mode_enabled,
-            commands::settings_cmds::run_maintenance,
-            commands::epic5_cmds::enable_only_this,
-            commands::epic5_cmds::check_duplicate_enabled,
-            commands::epic5_cmds::check_shader_conflicts,
-            commands::collection_cmds::list_collections,
-            commands::collection_cmds::create_collection,
-            commands::collection_cmds::update_collection,
-            commands::collection_cmds::delete_collection,
-            commands::collection_cmds::apply_collection,
-            commands::collection_cmds::undo_collection_apply,
-            commands::collection_cmds::export_collection,
-            commands::collection_cmds::import_collection,
-            commands::scan_cmds::sync_database_cmd,
-            commands::scan_cmds::scan_preview_cmd,
-            commands::scan_cmds::commit_scan_cmd,
-            commands::scan_cmds::start_watcher_cmd,
-            commands::dup_scan_cmds::dup_scan_start,
-            commands::dup_scan_cmds::dup_scan_cancel,
-            commands::dup_scan_cmds::dup_scan_get_report,
-            commands::dup_resolve_cmds::dup_resolve_batch,
+            commands::app::app_cmds::check_config_status,
+            commands::app::app_cmds::get_log_lines,
+            commands::app::app_cmds::open_log_folder,
+            commands::app::app_cmds::reset_database,
+            commands::app::game_cmds::auto_detect_games,
+            commands::app::game_cmds::add_game_manual,
+            commands::app::game_cmds::get_games,
+            commands::app::game_cmds::launch_game,
+            commands::mods::object_cmds::get_game_schema,
+            commands::mods::object_cmds::get_object,
+            commands::mods::object_cmds::get_master_db,
+            commands::mods::object_cmds::match_object_with_db,
+            commands::mods::object_cmds::pin_object,
+            commands::scanner::scan_cmds::cancel_scan_cmd,
+            commands::scanner::archive_cmds::detect_archives_cmd,
+            commands::scanner::archive_cmds::extract_archive_cmd,
+            commands::scanner::archive_cmds::analyze_archive_cmd,
+            commands::scanner::scan_cmds::start_scan,
+            commands::scanner::organize_cmds::auto_organize_mods,
+            commands::scanner::scan_cmds::get_scan_result,
+            commands::scanner::conflict_cmds::detect_conflicts_cmd,
+            commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
+            commands::scanner::watcher_cmds::set_watcher_suppression_cmd,
+            commands::explorer::filter_existing_folders,
+            commands::explorer::list_mod_folders,
+            commands::explorer::get_mod_thumbnail,
+            commands::mods::mod_core_cmds::open_in_explorer,
+            commands::mods::mod_core_cmds::reveal_object_in_explorer,
+            commands::mods::mod_core_cmds::toggle_mod,
+            commands::mods::mod_core_cmds::rename_mod_folder,
+            commands::mods::mod_core_cmds::pre_delete_check,
+            commands::mods::mod_import_cmds::import_mods_from_paths,
+            commands::mods::mod_import_cmds::ingest_dropped_folders,
+            commands::mods::mod_bulk_cmds::bulk_toggle_mods,
+            commands::mods::mod_bulk_cmds::bulk_delete_mods,
+            commands::mods::mod_bulk_cmds::bulk_update_info,
+            commands::mods::mod_bulk_cmds::bulk_toggle_favorite,
+            commands::mods::mod_bulk_cmds::bulk_pin_mods,
+            commands::mods::mod_meta_cmds::repair_orphan_mods,
+            commands::mods::mod_meta_cmds::pin_mod,
+            commands::mods::mod_meta_cmds::toggle_favorite,
+            commands::mods::mod_meta_cmds::pick_random_mod,
+            commands::mods::mod_meta_cmds::get_active_mod_conflicts,
+            commands::mods::mod_meta_cmds::read_mod_info,
+            commands::mods::mod_meta_cmds::update_mod_info,
+            commands::mods::mod_meta_cmds::set_mod_category,
+            commands::mods::mod_meta_cmds::move_mod_to_object,
+            commands::mods::mod_thumbnail_cmds::update_mod_thumbnail,
+            commands::mods::mod_thumbnail_cmds::get_thumbnail,
+            commands::mods::mod_thumbnail_cmds::paste_thumbnail,
+            commands::explorer::delete_mod_thumbnail,
+            commands::mods::trash_cmds::delete_mod,
+            commands::mods::trash_cmds::restore_mod,
+            commands::mods::trash_cmds::list_trash,
+            commands::mods::trash_cmds::empty_trash,
+            commands::mods::preview_cmds::list_mod_ini_files,
+            commands::mods::preview_cmds::read_mod_ini,
+            commands::mods::preview_cmds::write_mod_ini,
+            commands::mods::preview_cmds::list_mod_preview_images,
+            commands::mods::preview_cmds::save_mod_preview_image,
+            commands::mods::preview_cmds::remove_mod_preview_image,
+            commands::mods::preview_cmds::clear_mod_preview_images,
+            commands::app::settings_cmds::get_settings,
+            commands::app::settings_cmds::save_settings,
+            commands::app::settings_cmds::set_safe_mode_pin,
+            commands::app::settings_cmds::verify_pin,
+            commands::app::settings_cmds::set_active_game,
+            commands::app::settings_cmds::set_safe_mode_enabled,
+            commands::app::settings_cmds::run_maintenance,
+            commands::scanner::conflict_cmds::enable_only_this,
+            commands::scanner::conflict_cmds::check_duplicate_enabled,
+            commands::scanner::conflict_cmds::check_shader_conflicts,
+            commands::collections::collection_cmds::list_collections,
+            commands::collections::collection_cmds::create_collection,
+            commands::collections::collection_cmds::update_collection,
+            commands::collections::collection_cmds::delete_collection,
+            commands::collections::collection_cmds::apply_collection,
+            commands::collections::collection_cmds::undo_collection_apply,
+            commands::collections::collection_cmds::export_collection,
+            commands::collections::collection_cmds::import_collection,
+            commands::scanner::sync_cmds::sync_database_cmd,
+            commands::scanner::sync_cmds::scan_preview_cmd,
+            commands::scanner::sync_cmds::commit_scan_cmd,
+            commands::scanner::watcher_cmds::start_watcher_cmd,
+            commands::duplicates::dup_scan_cmds::dup_scan_start,
+            commands::duplicates::dup_scan_cmds::dup_scan_cancel,
+            commands::duplicates::dup_scan_cmds::dup_scan_get_report,
+            commands::duplicates::dup_resolve_cmds::dup_resolve_batch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

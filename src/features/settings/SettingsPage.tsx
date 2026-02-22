@@ -7,8 +7,9 @@ import PrivacyTab from './tabs/PrivacyTab';
 import MaintenanceTab from './tabs/MaintenanceTab';
 import GeneralTab from './tabs/GeneralTab';
 import LogsTab from './tabs/LogsTab';
+import AITab from './tabs/AITab';
 
-type Tab = 'general' | 'games' | 'privacy' | 'maintenance' | 'logs';
+type Tab = 'general' | 'games' | 'privacy' | 'ai' | 'maintenance' | 'logs';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('general');
@@ -65,6 +66,14 @@ export default function SettingsPage() {
             </li>
             <li>
               <button
+                className={activeTab === 'ai' ? 'active' : ''}
+                onClick={() => setActiveTab('ai')}
+              >
+                AI Configuration
+              </button>
+            </li>
+            <li>
+              <button
                 className={activeTab === 'maintenance' ? 'active' : ''}
                 onClick={() => setActiveTab('maintenance')}
               >
@@ -89,6 +98,7 @@ export default function SettingsPage() {
             {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'games' && <GamesTab />}
             {activeTab === 'privacy' && <PrivacyTab />}
+            {activeTab === 'ai' && <AITab />}
             {activeTab === 'maintenance' && <MaintenanceTab />}
             {activeTab === 'logs' && <LogsTab />}
           </div>

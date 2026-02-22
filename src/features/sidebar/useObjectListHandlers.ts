@@ -450,64 +450,123 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     [activeGame, queryClient, updateObject],
   );
 
-  // Dynamic categories from schema (with display labels)
-  const categoryNames = useMemo(() => {
-    const cats: { name: string; label?: string }[] = schema?.categories ?? [
-      { name: 'Character' },
-      { name: 'Weapon' },
-      { name: 'UI' },
-      { name: 'Other' },
-    ];
-    return cats.map((c) => ({ name: c.name, label: c.label }));
-  }, [schema]);
+  // Category names from schema
+  const categoryNames = useMemo(
+    () =>
+      schema?.categories.map((c) => ({
+        name: c.name,
+        label: c.label,
+      })) ?? [],
+    [schema],
+  );
 
-  // Enable/Disable Object by toggling its underlying folders
+  // US-3.Z: Drag & Drop ingestion handler
+  const handleDrop = useCallback(
+    async (paths: string[]) => {
+      if (!activeGame || paths.length === 0) return;
+
+      toast.info(`Importing ${paths.length} item(s)...`);
+
+      try {
+        const result = await invoke<{
+          moved: string[];
+          skipped: string[];
+          not_dirs: string[];
+          sync: { new_mods: number; new_objects: number };
+        }>('ingest_dropped_folders', {
+          paths,
+          modsPath: activeGame.mod_path,
+          gameId: activeGame.id,
+          gameName: activeGame.name,
+          gameType: activeGame.game_type,
+        });
+
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+        const movedCount = result.moved.length;
+        const skippedCount = result.skipped.length + result.not_dirs.length;
+
+        if (movedCount > 0) {
+          toast.withAction(
+            'success',
+            `Imported ${movedCount} mod(s)${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}`,
+            { label: 'Auto Organize', onClick: () => handleSync() },
+            8000,
+          );
+        } else if (skippedCount > 0) {
+          toast.info(`0 imported, ${skippedCount} skipped (already exist or not folders)`);
+        }
+      } catch (e) {
+        console.error('Drop ingestion failed:', e);
+        toast.error('Failed to import dropped items');
+      }
+    },
+    [activeGame, queryClient, handleSync],
+  );
+
+  // Enable/Disable Object by toggling its physical folder directly
   const handleEnableObject = useCallback(
     async (objectId: string) => {
       if (!activeGame) return;
+      const obj = objects.find((o) => o.id === objectId);
+      if (!obj) return;
       try {
-        const folders = await invoke<{ path: string; is_enabled: boolean }[]>('list_mod_folders', {
-          gameId: activeGame.id,
-          modsPath: activeGame.mod_path,
-          subPath: null,
-          objectId,
-        });
-        const disabledPaths = folders.filter((f) => !f.is_enabled).map((f) => f.path);
-        if (disabledPaths.length === 0) return;
-        await invoke('bulk_toggle_mods', { paths: disabledPaths, enable: true });
+        // The disabled folder is at modsPath/DISABLED objectName
+        const disabledPath = `${activeGame.mod_path}\\DISABLED ${obj.name}`;
+        await invoke('toggle_mod', { path: disabledPath, enable: true });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['objects'] });
-        toast.success(`Enabled ${disabledPaths.length} object folders`);
+        toast.success(`Enabled ${obj.name}`);
       } catch (e) {
-        console.error('Failed to enable object folders:', e);
-        toast.error('Failed to enable object folders');
+        console.error('Failed to enable object:', e);
+        toast.error('Failed to enable object');
       }
     },
-    [activeGame, queryClient],
+    [activeGame, objects, queryClient],
+  );
+
+  const handleRevealInExplorer = useCallback(
+    async (objectId: string) => {
+      if (!activeGame) return;
+      const obj = objects.find((o) => o.id === objectId);
+      try {
+        await invoke('reveal_object_in_explorer', {
+          objectId,
+          modsPath: activeGame.mod_path,
+          objectName: obj?.name ?? objectId,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(msg);
+        // Refresh data in case stale entries were cleaned up
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      }
+    },
+    [activeGame, objects, queryClient],
   );
 
   const handleDisableObject = useCallback(
     async (objectId: string) => {
       if (!activeGame) return;
+      const obj = objects.find((o) => o.id === objectId);
+      if (!obj) return;
       try {
-        const folders = await invoke<{ path: string; is_enabled: boolean }[]>('list_mod_folders', {
-          gameId: activeGame.id,
-          modsPath: activeGame.mod_path,
-          subPath: null,
-          objectId,
-        });
-        const enabledPaths = folders.filter((f) => f.is_enabled).map((f) => f.path);
-        if (enabledPaths.length === 0) return;
-        await invoke('bulk_toggle_mods', { paths: enabledPaths, enable: false });
+        // The enabled folder is at modsPath/objectName
+        const enabledPath = `${activeGame.mod_path}\\${obj.name}`;
+        await invoke('toggle_mod', { path: enabledPath, enable: false });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['objects'] });
-        toast.success(`Disabled ${enabledPaths.length} object folders`);
+        toast.success(`Disabled ${obj.name}`);
       } catch (e) {
-        console.error('Failed to disable object folders:', e);
-        toast.error('Failed to disable object folders');
+        console.error('Failed to disable object:', e);
+        toast.error('Failed to disable object');
       }
     },
-    [activeGame, queryClient],
+    [activeGame, objects, queryClient],
   );
 
   return {
@@ -536,8 +595,10 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handlePin,
     handleFavorite,
     handleMoveCategory,
+    handleRevealInExplorer,
     handleEnableObject,
     handleDisableObject,
     categoryNames,
+    handleDrop,
   };
 }

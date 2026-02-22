@@ -56,16 +56,17 @@ export function ExternalChangeHandler() {
 
         if (normalizedEventPath.startsWith(normalizedRoot)) {
           const relative = normalizedEventPath.slice(normalizedRoot.length);
-          // relative starts with / ?
           const relativeClean = relative.startsWith('/') ? relative.slice(1) : relative;
 
-          // If relative path has no more slashes, it's a direct child (folder or file in root)
-          if (!relativeClean.includes('/')) {
-            // It's a root item.
-            // Could be a file in root (which we ignore usually) or a folder.
-            // Since it's removed, we can't check isDirectory.
-            // But "Remove from database" implies it WAS a mod.
-            // We show the modal.
+          // Count depth: 0 slashes = root child, 1 slash = Category/Mod
+          const depth = (relativeClean.match(/\//g) || []).length;
+
+          // Ignore files (have an extension like .ini, .txt, .dll)
+          const lastSegment = relativeClean.split('/').pop() ?? '';
+          const hasExtension = lastSegment.includes('.') && lastSegment.lastIndexOf('.') > 0;
+
+          // Show popup for folder-like removals at depth 0 (root) or 1 (Category/Mod)
+          if (depth <= 1 && !hasExtension) {
             setRemovedPath(payload.path);
           }
         }

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   Search,
   ChevronLeft,
@@ -19,6 +20,7 @@ import DragOverlay from './DragOverlay';
 import BulkProgressBar from './BulkProgressBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
 import { useAppStore } from '../../stores/useAppStore';
+import { useActiveConflicts } from '../../hooks/useFolders';
 
 export default function FolderGrid() {
   const safeMode = useAppStore((state) => state.safeMode);
@@ -96,11 +98,28 @@ export default function FolderGrid() {
     handleBulkTagRequest,
     handleBulkDeleteRequest,
     handleBulkDeleteConfirm,
+    handleBulkFavorite,
+    handleBulkSafe,
+    handleBulkPin,
+    handleBulkMoveToObject,
 
     // DnD
     isDragging,
     selectedObject,
   } = useFolderGrid();
+
+  // Duplicate / Conflict Detection Visual
+  const { data: conflicts = [] } = useActiveConflicts();
+  const conflictPathSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of conflicts) {
+      // Only flag as conflict if 2+ mods share the same hash
+      if (c.mod_paths.length > 1) {
+        for (const p of c.mod_paths) s.add(p.replace(/\\/g, '/'));
+      }
+    }
+    return s;
+  }, [conflicts]);
 
   const visibleFolders = safeMode
     ? sortedFolders.filter((folder) => folder.is_safe)
@@ -261,7 +280,12 @@ export default function FolderGrid() {
                           onBulkToggle={handleBulkToggle}
                           onBulkDelete={handleBulkDeleteRequest}
                           onBulkTag={handleBulkTagRequest}
+                          onBulkFavorite={handleBulkFavorite}
+                          onBulkSafe={handleBulkSafe}
+                          onBulkPin={handleBulkPin}
+                          onBulkMoveToObject={handleBulkMoveToObject}
                           onOpenMoveDialog={openMoveDialog}
+                          hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
                         />
                       </div>
                     ))}
@@ -292,10 +316,15 @@ export default function FolderGrid() {
                     onBulkToggle={handleBulkToggle}
                     onBulkDelete={handleBulkDeleteRequest}
                     onBulkTag={handleBulkTagRequest}
+                    onBulkFavorite={handleBulkFavorite}
+                    onBulkSafe={handleBulkSafe}
+                    onBulkPin={handleBulkPin}
+                    onBulkMoveToObject={handleBulkMoveToObject}
                     onRename={() => handleRenameRequest(folder)}
                     onDelete={() => handleDeleteRequest(folder)}
                     onToggleFavorite={handleToggleFavorite}
                     onOpenMoveDialog={openMoveDialog}
+                    hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
                   />
                 </div>
               );

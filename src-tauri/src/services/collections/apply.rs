@@ -2,7 +2,7 @@ use super::types::{
     ApplyCollectionResult, CollectionsUndoState, ModState, SnapshotEntry, UndoCollectionResult,
     UndoSnapshot,
 };
-use crate::services::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use regex::Regex;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use std::collections::HashMap;

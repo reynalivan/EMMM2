@@ -13,7 +13,6 @@ import type {
   CategoryCount,
   UpdateObjectInput,
   CreateObjectInput,
-  GameObject,
 } from '../types/object';
 
 /**
@@ -163,7 +162,7 @@ export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]>
       break;
     case 'name':
     default:
-      query += ` ORDER BY o.is_pinned DESC, o.object_type, o.sort_order, o.name ASC`;
+      query += ` ORDER BY o.is_pinned DESC, o.object_type, o.name ASC`;
       break;
   }
 
@@ -195,14 +194,6 @@ export async function getCategoryCounts(
 }
 
 /**
- * Get a single object by ID with full details.
- */
-export async function getObjectById(id: string): Promise<GameObject | null> {
-  const results = await select<GameObject[]>('SELECT * FROM objects WHERE id = $1', [id]);
-  return results[0] ?? null;
-}
-
-/**
  * Create a new object (US-3.3).
  * Covers: TC-3.3-01, NC-3.3-01 (Duplicate)
  */
@@ -213,8 +204,8 @@ export async function createObject(input: CreateObjectInput): Promise<string> {
   const id = crypto.randomUUID();
   try {
     await execute(
-      `INSERT INTO objects (id, game_id, name, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, sort_order, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 0, '[]', $7, 0, datetime('now'))`,
+      `INSERT INTO objects (id, game_id, name, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, '[]', $7, datetime('now'))`,
       [
         id,
         input.game_id,

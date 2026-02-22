@@ -5,6 +5,7 @@ interface ScanProgress {
   current: number;
   total: number;
   folderName: string;
+  etaMs: number;
   label: string;
 }
 
@@ -19,7 +20,7 @@ interface ScannerState {
 
   // Actions
   setIsScanning: (isScanning: boolean) => void;
-  updateProgress: (current: number, folderName: string) => void;
+  updateProgress: (current: number, folderName: string, etaMs: number) => void;
   setTotalFolders: (total: number) => void;
   addScanResult: (result: ScanResultItem) => void;
   setScanResults: (results: ScanResultItem[]) => void;
@@ -33,6 +34,7 @@ export const useScannerStore = create<ScannerState>()((set) => ({
     current: 0,
     total: 0,
     folderName: '',
+    etaMs: 0,
     label: 'Initializing...',
   },
   scanResults: [],
@@ -43,15 +45,23 @@ export const useScannerStore = create<ScannerState>()((set) => ({
 
   setIsScanning: (isScanning) => set({ isScanning }),
 
-  updateProgress: (current, folderName) =>
-    set((state) => ({
-      progress: {
-        ...state.progress,
-        current,
-        folderName,
-        label: `Scanning ${folderName}...`,
-      },
-    })),
+  updateProgress: (current, folderName, etaMs) =>
+    set((state) => {
+      let etaLabel = '';
+      if (etaMs > 0) {
+        const secs = Math.ceil(etaMs / 1000);
+        etaLabel = secs >= 60 ? ` — ~${Math.ceil(secs / 60)}m remaining` : ` — ~${secs}s remaining`;
+      }
+      return {
+        progress: {
+          ...state.progress,
+          current,
+          folderName,
+          etaMs,
+          label: `Scanning ${folderName}...${etaLabel}`,
+        },
+      };
+    }),
 
   setTotalFolders: (total) =>
     set((state) => ({
@@ -78,6 +88,7 @@ export const useScannerStore = create<ScannerState>()((set) => ({
         current: 0,
         total: 0,
         folderName: '',
+        etaMs: 0,
         label: 'Ready to scan',
       },
       scanResults: [],

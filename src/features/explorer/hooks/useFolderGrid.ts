@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useResponsive } from '../../../hooks/useResponsive';
 import { useActiveGame } from '../../../hooks/useActiveGame';
-import { useObjects, useMasterDb } from '../../../hooks/useObjects';
+import { useObjects } from '../../../hooks/useObjects';
 import {
   useModFolders,
   sortFolders,
@@ -14,7 +14,7 @@ import {
   useDeleteMod,
   useBulkToggle,
   useBulkDelete,
-  useImportMods,
+  useBulkUpdateInfo,
   useEnableOnlyThis,
   useCheckDuplicate,
   ModFolder,
@@ -31,7 +31,6 @@ const LIST_ROW_HEIGHT = 52;
 const GAP = 12;
 
 export function useFolderGrid() {
-  const { data: dbJson } = useMasterDb();
   const {
     selectedObject,
     currentPath,
@@ -79,9 +78,9 @@ export function useFolderGrid() {
   const deleteMod = useDeleteMod();
   const bulkToggle = useBulkToggle();
   const bulkDelete = useBulkDelete();
-  // const updateInfo = useUpdateModInfo(); // Unused
+  const bulkUpdateInfo = useBulkUpdateInfo();
   const { activeGame } = useActiveGame();
-  const importMods = useImportMods();
+
   const enableOnlyThis = useEnableOnlyThis();
 
   // Object Mode: fetch objects so we can navigate grid when sidebar object is clicked
@@ -96,8 +95,9 @@ export function useFolderGrid() {
 
     const obj = objects.find((o) => o.id === selectedObject);
     if (obj) {
-      // Clear filesystem sub-path — object filtering is done via DB, not FS navigation
-      setExplorerSubPath(undefined);
+      // Navigate into the object's physical folder under mod_path
+      // instead of resetting to the root
+      setExplorerSubPath(obj.name);
       setCurrentPath([obj.name]);
       clearGridSelection();
     }
@@ -166,6 +166,11 @@ export function useFolderGrid() {
     overscan: 5,
     initialOffset: explorerScrollOffset,
   });
+
+  // Reset scroll to top when navigating to a new folder
+  useEffect(() => {
+    rowVirtualizer.scrollToOffset(0);
+  }, [explorerSubPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist scroll offset on scroll (debounced via RAF)
   useEffect(() => {
@@ -436,6 +441,57 @@ export function useFolderGrid() {
     );
   }, [gridSelection, bulkDelete, clearGridSelection]);
 
+  // Bulk Favorite/Unfavorite
+  const handleBulkFavorite = useCallback(
+    async (favorite: boolean) => {
+      const ids = sortedFolders.filter((f) => gridSelection.has(f.path) && f.id).map((f) => f.id!);
+      if (ids.length === 0) return;
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('bulk_toggle_favorite', { ids, favorite });
+        queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      } catch (e) {
+        console.error('Bulk favorite failed:', e);
+      }
+    },
+    [gridSelection, sortedFolders, queryClient],
+  );
+
+  // Bulk Safe/Unsafe — uses existing bulk_update_info
+  const handleBulkSafe = useCallback(
+    (safe: boolean) => {
+      const paths = Array.from(gridSelection);
+      if (paths.length === 0) return;
+      bulkUpdateInfo.mutate({ paths, update: { is_safe: safe } });
+    },
+    [gridSelection, bulkUpdateInfo],
+  );
+
+  // Bulk Pin/Unpin
+  const handleBulkPin = useCallback(
+    async (pin: boolean) => {
+      const paths = Array.from(gridSelection);
+      if (paths.length === 0) return;
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('bulk_pin_mods', { ids: paths, pin });
+        queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      } catch (e) {
+        console.error('Bulk pin failed:', e);
+      }
+    },
+    [gridSelection, queryClient],
+  );
+
+  // Bulk Move to Object
+  const handleBulkMoveToObject = useCallback(() => {
+    // Use the first selected folder as the reference for the dialog
+    const firstSelected = sortedFolders.find((f) => gridSelection.has(f.path));
+    if (firstSelected) {
+      setMoveDialog({ open: true, folder: firstSelected });
+    }
+  }, [gridSelection, sortedFolders]);
+
   // Keyboard navigation
   const { focusedId, handleKeyDown } = useFolderNavigation({
     items: sortedFolders,
@@ -458,32 +514,9 @@ export function useFolderGrid() {
     },
   });
 
-  // Drag & Drop
-  const handleDrop = useCallback(
-    (paths: string[]) => {
-      if (!activeGame?.mod_path) return;
-      const targetPath = explorerSubPath
-        ? `${activeGame.mod_path}/${explorerSubPath}`
-        : activeGame.mod_path;
-
-      importMods.mutate(
-        { paths, targetDir: targetPath, strategy: 'Raw', dbJson },
-        {
-          onSuccess: (result) => {
-            if (result.failures.length > 0) {
-              console.error('Some imports failed:', result.failures);
-            }
-          },
-          onError: (err) => {
-            console.error('Import failed:', err);
-          },
-        },
-      );
-    },
-    [activeGame, explorerSubPath, importMods, dbJson],
-  );
-
-  const { isDragging } = useFileDrop({ onDrop: handleDrop });
+  // Drag & Drop — visual feedback only; actual import handled by MainLayout's SmartDropModal
+  const noopDrop = useCallback((_paths: string[]) => {}, []);
+  const { isDragging } = useFileDrop({ onDrop: noopDrop });
 
   // Manual Refresh — invalidate cache + trigger sync
   const handleRefresh = useCallback(() => {
@@ -606,6 +639,10 @@ export function useFolderGrid() {
     handleBulkTagRequest,
     handleBulkDeleteRequest,
     handleBulkDeleteConfirm,
+    handleBulkFavorite,
+    handleBulkSafe,
+    handleBulkPin,
+    handleBulkMoveToObject,
 
     // DnD
     isDragging,

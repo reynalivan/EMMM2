@@ -355,4 +355,66 @@ describe('ObjectList Component', () => {
     // Verify setSafeMode called with false (since default is true)
     expect(defaultStoreState.setSafeMode).toHaveBeenCalledWith(false);
   });
+
+  // TC-DIS-01: Fully disabled object shows grayscale overlay + strikethrough name
+  it('shows power-off overlay and strikethrough for fully disabled object (TC-DIS-01)', () => {
+    mockUseObjects.mockReturnValue({
+      data: [
+        {
+          id: 'dis-1',
+          name: 'Raiden Shogun',
+          object_type: 'Character',
+          mod_count: 3,
+          enabled_count: 0, // ALL disabled
+          metadata: '{}',
+          tags: '[]',
+          is_pinned: false,
+          is_safe: true,
+          is_auto_sync: false,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<ObjectList />);
+
+    // Name should have strikethrough
+    const nameEl = screen.getByText('Raiden Shogun');
+    expect(nameEl.className).toContain('line-through');
+
+    // Power-off overlay should be rendered
+    expect(screen.getByTestId('power-off-overlay')).toBeInTheDocument();
+  });
+
+  // TC-DIS-02: Partially enabled object (some mods on) shows NO disabled visual
+  it('does NOT show disabled visuals for partially enabled object (TC-DIS-02)', () => {
+    mockUseObjects.mockReturnValue({
+      data: [
+        {
+          id: 'partial-1',
+          name: 'Diluc',
+          object_type: 'Character',
+          mod_count: 3,
+          enabled_count: 1, // only partially enabled
+          metadata: '{}',
+          tags: '[]',
+          is_pinned: false,
+          is_safe: true,
+          is_auto_sync: false,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<ObjectList />);
+
+    // Name should NOT have strikethrough
+    const nameEl = screen.getByText('Diluc');
+    expect(nameEl.className).not.toContain('line-through');
+
+    // Power-off overlay should NOT be rendered
+    expect(screen.queryByTestId('power-off-overlay')).not.toBeInTheDocument();
+  });
 });

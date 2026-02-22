@@ -13,9 +13,11 @@ import {
   ToggleLeft,
   Star,
   ArrowRightLeft,
+  Copy,
 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { ModFolder } from '../../types/mod';
+import BulkContextMenu from './BulkContextMenu';
 
 import {
   ContextMenu,
@@ -35,9 +37,14 @@ interface FolderListRowProps {
   onBulkToggle?: (enable: boolean) => void;
   onBulkDelete?: () => void;
   onBulkTag?: () => void;
+  onBulkFavorite?: (favorite: boolean) => void;
+  onBulkSafe?: (safe: boolean) => void;
+  onBulkPin?: (pin: boolean) => void;
+  onBulkMoveToObject?: () => void;
   onRename?: (folder: ModFolder) => void;
   onDelete?: (folder: ModFolder) => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
+  hasConflict?: boolean;
 }
 
 function FolderListRowInner({
@@ -51,9 +58,14 @@ function FolderListRowInner({
   onBulkToggle,
   onBulkDelete,
   onBulkTag,
+  onBulkFavorite,
+  onBulkSafe,
+  onBulkPin,
+  onBulkMoveToObject,
   onRename,
   onDelete,
   onOpenMoveDialog,
+  hasConflict = false,
 }: FolderListRowProps) {
   // Lazy thumbnail: resolved per-row via separate backend command
   const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(item.path);
@@ -80,25 +92,16 @@ function FolderListRowInner({
     <ContextMenu
       content={
         isBulkSelection ? (
-          <>
-            <div className="px-2 py-1 text-xs font-semibold opacity-50 select-none">
-              {selectionSize} items selected
-            </div>
-            <ContextMenuSeparator />
-            <ContextMenuItem icon={ToggleLeft} onClick={() => onBulkToggle?.(true)}>
-              Enable Selected
-            </ContextMenuItem>
-            <ContextMenuItem icon={ToggleLeft} onClick={() => onBulkToggle?.(false)}>
-              Disable Selected
-            </ContextMenuItem>
-            <ContextMenuItem icon={Pencil} onClick={onBulkTag}>
-              Add Tags...
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem icon={Trash2} danger onClick={onBulkDelete}>
-              Delete {selectionSize} Items
-            </ContextMenuItem>
-          </>
+          <BulkContextMenu
+            count={selectionSize}
+            onToggle={onBulkToggle}
+            onDelete={onBulkDelete}
+            onTag={onBulkTag}
+            onFavorite={onBulkFavorite}
+            onSafe={onBulkSafe}
+            onPin={onBulkPin}
+            onMoveToObject={onBulkMoveToObject}
+          />
         ) : (
           <>
             <ContextMenuItem
@@ -170,6 +173,17 @@ function FolderListRowInner({
           >
             {item.name}
           </div>
+
+          {/* Conflict badge */}
+          {hasConflict && (
+            <div
+              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-warning/20 text-warning rounded-md shrink-0"
+              title="Hash conflict with another enabled mod"
+            >
+              <Copy size={10} />
+              <span className="text-[9px] font-bold">Conflict</span>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 shrink-0">
             <button

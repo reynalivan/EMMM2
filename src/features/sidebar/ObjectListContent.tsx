@@ -42,6 +42,7 @@ export interface ContextMenuHandlerProps {
   handlePin: (id: string) => void;
   handleFavorite: (path: string) => void;
   handleMoveCategory: (id: string, category: string, type: 'object' | 'folder') => void;
+  handleRevealInExplorer?: (id: string) => void;
   handleEnableObject?: (id: string) => void;
   handleDisableObject?: (id: string) => void;
 }
@@ -63,6 +64,7 @@ function renderContextMenu(item: ContextMenuTarget, ctx: ContextMenuHandlerProps
       onPin={ctx.handlePin}
       onFavorite={ctx.handleFavorite}
       onMoveCategory={ctx.handleMoveCategory}
+      onRevealInExplorer={ctx.handleRevealInExplorer}
       onEnableObject={ctx.handleEnableObject}
       onDisableObject={ctx.handleDisableObject}
     />

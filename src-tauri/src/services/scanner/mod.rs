@@ -1,10 +1,6 @@
 pub mod conflict;
-pub mod dedup_resolver;
-pub mod dedup_scanner;
+pub mod core;
+pub mod dedup;
 pub mod deep_matcher;
-pub mod normalizer;
-pub mod organizer;
 pub mod sync;
-pub mod thumbnail;
-pub mod types;
-pub mod walker;
+pub mod watcher;

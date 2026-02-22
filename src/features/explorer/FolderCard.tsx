@@ -1,5 +1,5 @@
 import { useState, memo } from 'react';
-import { Folder, Star } from 'lucide-react';
+import { Folder, Star, Copy } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { ModFolder } from '../../types/mod';
@@ -26,7 +26,12 @@ interface FolderCardProps {
   onBulkToggle?: (enable: boolean) => void;
   onBulkDelete?: () => void;
   onBulkTag?: () => void;
+  onBulkFavorite?: (favorite: boolean) => void;
+  onBulkSafe?: (safe: boolean) => void;
+  onBulkPin?: (pin: boolean) => void;
+  onBulkMoveToObject?: () => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
+  hasConflict?: boolean;
 }
 
 function FolderCardInner({
@@ -48,7 +53,12 @@ function FolderCardInner({
   onBulkToggle,
   onBulkDelete,
   onBulkTag,
+  onBulkFavorite,
+  onBulkSafe,
+  onBulkPin,
+  onBulkMoveToObject,
   onOpenMoveDialog,
+  hasConflict = false,
 }: FolderCardProps) {
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -105,6 +115,10 @@ function FolderCardInner({
             onToggle={onBulkToggle}
             onDelete={onBulkDelete}
             onTag={onBulkTag}
+            onFavorite={onBulkFavorite}
+            onSafe={onBulkSafe}
+            onPin={onBulkPin}
+            onMoveToObject={onBulkMoveToObject}
           />
         ) : (
           <FolderCardContextMenu
@@ -195,6 +209,17 @@ function FolderCardInner({
             >
               <div className="w-2 h-2 rounded-full bg-current animate-ping absolute inset-0 opacity-75"></div>
               <span className="text-[10px] font-bold px-1">!</span>
+            </div>
+          )}
+
+          {/* Duplicate / Conflict Badge */}
+          {hasConflict && (
+            <div
+              className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm"
+              title="Hash conflict: shares shader/buffer hashes with another enabled mod"
+            >
+              <Copy size={10} />
+              <span className="text-[9px] font-bold">Conflict</span>
             </div>
           )}
         </div>

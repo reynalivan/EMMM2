@@ -1,11 +1,11 @@
-use emmm2_lib::commands::mod_cmds;
-use emmm2_lib::services::file_ops::trash;
+use emmm2_lib::commands::mods::mod_core_cmds;
+use emmm2_lib::services::mod_files::trash;
 use std::fs;
 use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_epic4_full_maintenance_flow() {
-    use emmm2_lib::services::watcher::WatcherState;
+    use emmm2_lib::services::scanner::watcher::WatcherState;
 
     // -------------------------------------------------------------------------
     // Setup: Create a mock environment
@@ -31,7 +31,7 @@ async fn test_epic4_full_maintenance_flow() {
     // -------------------------------------------------------------------------
     // Step 1: Rename "Raiden" -> "Shogun"
     // -------------------------------------------------------------------------
-    let rename_result = mod_cmds::rename_mod_folder_inner(
+    let rename_result = mod_core_cmds::rename_mod_folder_inner(
         &state,
         mod_path.to_string_lossy().to_string(),
         "Shogun".to_string(),
@@ -50,7 +50,7 @@ async fn test_epic4_full_maintenance_flow() {
     // -------------------------------------------------------------------------
     // Step 2: Toggle (Disable) "Shogun" -> "DISABLED Shogun"
     // -------------------------------------------------------------------------
-    let toggle_result = mod_cmds::toggle_mod_inner(
+    let toggle_result = mod_core_cmds::toggle_mod_inner(
         &state,
         shogun_path.to_string_lossy().to_string(),
         false, // enable = false => disable

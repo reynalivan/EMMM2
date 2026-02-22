@@ -60,7 +60,20 @@ export function useObjects(options: UseObjectsOptions = {}) {
 
   return useQuery<ObjectSummary[]>({
     queryKey: objectKeys.list(filter),
-    queryFn: () => getObjects(filter),
+    queryFn: async () => {
+      const dbObjects = await getObjects(filter);
+      if (!dbObjects.length || !activeGame?.mod_path) return dbObjects;
+
+      // Filter by filesystem existence — FS is the single source of truth
+      const namesToCheck = dbObjects.map((o) => o.name);
+      const existingNames = await invoke<string[]>('filter_existing_folders', {
+        baseDir: activeGame.mod_path,
+        folderNames: namesToCheck,
+      });
+
+      const existingSet = new Set(existingNames);
+      return dbObjects.filter((o) => existingSet.has(o.name));
+    },
     enabled: !!activeGame?.id,
     staleTime: 30_000,
     placeholderData: (prev) => prev,

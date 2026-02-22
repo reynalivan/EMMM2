@@ -32,8 +32,9 @@ export interface ScanResultItem {
   displayName: string;
   isDisabled: boolean;
   matchedObject: string | null;
-  matchLevel: 'L1-Name' | 'L2-Token' | 'L3-Content' | 'L4-AI' | 'L5-Fuzzy' | 'Unmatched';
+  matchLevel: 'AutoMatched' | 'NeedsReview' | 'NoMatch';
   confidence: 'High' | 'Medium' | 'Low' | 'None';
+  confidenceScore: number;
   matchDetail: string | null;
   detectedSkin: string | null;
   /** Canonical folder name for this skin variant (first alias). */
@@ -49,6 +50,6 @@ export interface ConflictInfo {
 
 export type ScanEvent =
   | { event: 'started'; data: { totalFolders: number } }
-  | { event: 'progress'; data: { current: number; folderName: string } }
+  | { event: 'progress'; data: { current: number; folderName: string; etaMs: number } }
   | { event: 'matched'; data: { folderName: string; objectName: string; confidence: string } }
   | { event: 'finished'; data: { matched: number; unmatched: number } };

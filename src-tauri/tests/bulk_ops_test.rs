@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use emmm2_lib::commands::mod_cmds;
-    use emmm2_lib::services::file_ops::info_json;
+    use emmm2_lib::commands::mods::mod_bulk_cmds;
+    use emmm2_lib::services::mod_files::info_json;
     use std::fs;
     use tempfile::TempDir;
 
-    use emmm2_lib::services::watcher::WatcherState;
+    use emmm2_lib::services::scanner::watcher::WatcherState;
 
     #[tokio::test]
     async fn test_bulk_toggle_mods() {
@@ -29,7 +29,7 @@ mod tests {
             mod2.to_string_lossy().to_string(),
         ];
 
-        let result = mod_cmds::bulk_toggle_mods_inner(&state, paths, false)
+        let result = mod_bulk_cmds::bulk_toggle_mods_inner(&state, paths, false)
             .await
             .expect("Bulk disable should succeed");
 
@@ -45,7 +45,7 @@ mod tests {
             mod3.to_string_lossy().to_string(),
         ];
 
-        let result_enable = mod_cmds::bulk_toggle_mods_inner(&state, paths_enable, true)
+        let result_enable = mod_bulk_cmds::bulk_toggle_mods_inner(&state, paths_enable, true)
             .await
             .expect("Bulk enable should succeed");
 
@@ -76,7 +76,7 @@ mod tests {
             ..info_json::ModInfoUpdate::default()
         };
 
-        let result = mod_cmds::bulk_update_info(paths, update)
+        let result = mod_bulk_cmds::bulk_update_info(paths, update)
             .await
             .expect("Bulk update should succeed");
 

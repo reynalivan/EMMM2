@@ -20,12 +20,19 @@ export interface PinVerifyStatus {
   locked_seconds_remaining: number;
 }
 
+export interface AiConfig {
+  enabled: boolean;
+  api_key: string | null;
+  base_url: string | null;
+}
+
 export interface AppSettings {
   theme: string;
   language: string;
   games: GameConfig[];
   active_game_id: string | null;
   safe_mode: SafeModeConfig;
+  ai: AiConfig;
 }
 
 export const settingsKeys = {
@@ -80,6 +87,24 @@ export function useSettings() {
     },
   });
 
+  const aiConfigMutation = useMutation({
+    mutationFn: async (newAiConfig: Partial<AiConfig>) => {
+      if (!settingsQuery.data) throw new Error('Settings not loaded');
+      const newSettings = {
+        ...settingsQuery.data,
+        ai: { ...settingsQuery.data.ai, ...newAiConfig },
+      };
+      return invoke('save_settings', { settings: newSettings });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    },
+    onError: (err) => {
+      console.error(err);
+      addToast('error', `Failed to update AI config: ${String(err)}`);
+    },
+  });
+
   return {
     settings: settingsQuery.data,
     isLoading: settingsQuery.isLoading,
@@ -90,5 +115,6 @@ export function useSettings() {
     setPinAsync: setPinMutation.mutateAsync,
     verifyPin: verifyPinMutation.mutateAsync,
     runMaintenance: maintenanceMutation.mutate,
+    updateAiConfig: aiConfigMutation,
   };
 }

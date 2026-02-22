@@ -242,8 +242,10 @@ export function useObjectListLogic() {
     handlePin: handlers.handlePin,
     handleFavorite: handlers.handleFavorite,
     handleMoveCategory: handlers.handleMoveCategory,
+    handleRevealInExplorer: handlers.handleRevealInExplorer,
     handleEnableObject: handlers.handleEnableObject,
     handleDisableObject: handlers.handleDisableObject,
     categoryNames: handlers.categoryNames,
+    handleDrop: handlers.handleDrop,
   };
 }

@@ -10,7 +10,6 @@ export interface GameObject {
   name: string;
   object_type: string;
   sub_category: string | null;
-  sort_order: number;
   tags: string; // JSON string of string array
   metadata: string; // JSON string of metadata object
   thumbnail_path: string | null;

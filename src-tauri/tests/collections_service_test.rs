@@ -2,7 +2,7 @@ use emmm2_lib::services::collections::{
     apply_collection, create_collection, export_collection, import_collection, list_collections,
     undo_collection_apply, CollectionsUndoState, CreateCollectionInput,
 };
-use emmm2_lib::services::watcher::WatcherState;
+use emmm2_lib::services::scanner::watcher::WatcherState;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::fs;
 use tempfile::TempDir;

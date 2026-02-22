@@ -117,6 +117,7 @@ export function useToggleMod() {
             enable: !variables.enable,
           }).then(() => {
             queryClient.invalidateQueries({ queryKey: folderKeys.all });
+            queryClient.invalidateQueries({ queryKey: ['objects'] });
           });
         },
       });
@@ -149,6 +150,7 @@ export function useToggleMod() {
     // Always re-fetch after to get the real filesystem state
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
     },
   });
 }

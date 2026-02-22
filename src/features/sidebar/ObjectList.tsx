@@ -4,6 +4,8 @@
  */
 
 import { useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { invoke } from '@tauri-apps/api/core';
 import { useObjectListLogic } from './useObjectListLogic';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import ObjectListToolbar from './ObjectListToolbar';
@@ -59,19 +61,34 @@ export default function ObjectList() {
     handlePin,
     handleFavorite,
     handleMoveCategory,
+    handleRevealInExplorer,
     handleEnableObject,
     handleDisableObject,
     categoryNames,
     scanReview,
     handleCommitScan,
     handleCloseScanReview,
+    handleDrop,
   } = useObjectListLogic();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  // US-3.Z: Sidebar drag & drop visual feedback
-  const noopDrop = useCallback((_paths: string[]) => {}, []);
-  const { isDragging } = useFileDrop({ onDrop: noopDrop, enabled: !!activeGame });
+  // US-3.Z: Sidebar drag & drop with real ingestion handler
+  const { isDragging } = useFileDrop({ onDrop: handleDrop, enabled: !!activeGame });
+
+  const qc = useQueryClient();
+  const handleRefresh = useCallback(async () => {
+    if (activeGame) {
+      try {
+        await invoke('repair_orphan_mods', { gameId: activeGame.id });
+      } catch (e) {
+        console.error('Repair orphan mods failed:', e);
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['objects'] });
+    qc.invalidateQueries({ queryKey: ['mod-folders'] });
+    qc.invalidateQueries({ queryKey: ['category-counts'] });
+  }, [activeGame, qc]);
 
   const isEmpty = !isLoading && !isError && objects.length === 0;
   const hasNoGame = !activeGame;
@@ -91,6 +108,7 @@ export default function ObjectList() {
     handlePin,
     handleFavorite,
     handleMoveCategory,
+    handleRevealInExplorer,
     handleEnableObject,
     handleDisableObject,
   };
@@ -112,6 +130,7 @@ export default function ObjectList() {
         onSortChange={setSortBy}
         isSyncing={isSyncing}
         onSync={handleSync}
+        onRefresh={handleRefresh}
         onCreateNew={() => setCreateModalOpen(true)}
         showFilterPanel={showFilterPanel}
         categoryFilters={categoryFilters}

@@ -12,6 +12,7 @@ import {
   Sword,
   Users,
   Pin,
+  PowerOff,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { ObjectSummary } from '../../types/object';
@@ -70,6 +71,9 @@ export default function ObjectRowItem({
 
   const ElementIcon = meta.element ? ELEMENT_ICONS[meta.element] : null;
 
+  /** Fully disabled = all mods are off (none enabled, but at least one exists) */
+  const isDisabled = obj.enabled_count === 0 && obj.mod_count > 0;
+
   return (
     <div
       ref={ref}
@@ -104,7 +108,10 @@ export default function ObjectRowItem({
           <img
             src={thumbnailUrl}
             alt={obj.name}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+            className={cn(
+              'w-full h-full object-cover transition-transform duration-300 group-hover:scale-110',
+              isDisabled && 'grayscale brightness-75',
+            )}
             loading="lazy"
             onError={() => setImgError(true)}
           />
@@ -114,8 +121,18 @@ export default function ObjectRowItem({
             className={cn(
               'text-base-content/30 transition-colors',
               isSelected && 'text-primary/60',
+              isDisabled && 'grayscale',
             )}
           />
+        )}
+        {/* Power-off overlay when fully disabled */}
+        {isDisabled && (
+          <div
+            data-testid="power-off-overlay"
+            className="absolute inset-0 flex items-center justify-center bg-black/45 rounded-xl"
+          >
+            <PowerOff size={isMobile ? 18 : 15} className="text-white/75 drop-shadow" />
+          </div>
         )}
       </div>
 
@@ -126,18 +143,24 @@ export default function ObjectRowItem({
             className={cn(
               'font-medium truncate text-sm transition-colors',
               isSelected ? 'text-primary' : 'text-base-content/90 group-hover:text-base-content',
+              isDisabled && 'line-through text-base-content/35',
             )}
           >
             {obj.name}
           </span>
 
           <div className="flex items-center gap-1.5">
-            {obj.is_pinned && <Pin size={12} className="text-secondary rotate-45" />}
-            {obj.enabled_count > 0 && (
+            {obj.is_pinned ? <Pin size={12} className="text-secondary rotate-45" /> : null}
+            {obj.mod_count > 0 ? (
+              <span className="badge badge-xs font-mono tabular-nums bg-base-300/50 text-base-content/40 border-0">
+                {obj.mod_count}
+              </span>
+            ) : null}
+            {obj.enabled_count > 0 ? (
               <span className="badge badge-xs badge-primary font-mono tabular-nums bg-primary/20 text-primary border-0">
                 {obj.enabled_count}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -153,12 +176,12 @@ export default function ObjectRowItem({
           {meta.path && !meta.weapon_type && (
             <span className="truncate text-[11px]">{meta.path}</span>
           )}
-          {meta.rarity && (
+          {meta.rarity ? (
             <span className="flex items-center gap-0.5 text-amber-400/70">
               <Star size={10} className="fill-current" />
               <span className="text-[10px] tabular-nums">{meta.rarity}</span>
             </span>
-          )}
+          ) : null}
           {meta.gender && (
             <span className="flex items-center gap-0.5">
               <Users size={10} className="text-base-content/30" />
@@ -170,7 +193,7 @@ export default function ObjectRowItem({
             !meta.weapon_type &&
             !meta.rarity &&
             !meta.path &&
-            obj.mod_count > 0 && <span className="text-[11px]">{obj.mod_count} mods</span>}
+            (obj.mod_count > 0 ? <span className="text-[11px]">{obj.mod_count} mods</span> : null)}
         </div>
       </div>
 

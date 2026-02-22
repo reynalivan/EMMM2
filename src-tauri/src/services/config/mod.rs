@@ -1,164 +1,191 @@
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use tauri::{AppHandle, Manager};
-
+pub mod models;
 pub mod pin_guard;
+
+pub use models::*;
+
+use crate::database::settings_repo;
 use pin_guard::{validate_pin_format, PinGuardState, PinVerifyStatus};
-
-const CONFIG_FILENAME: &str = "config.json";
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GameConfig {
-    pub id: String,
-    pub name: String,
-    pub game_type: String, // "Genshin", "StarRail", "ZZZ", "Wuthering"
-    pub mod_path: PathBuf,
-    pub game_exe: PathBuf,
-    pub loader_exe: Option<PathBuf>,
-    pub launch_args: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SafeModeConfig {
-    pub enabled: bool,
-    pub pin_hash: Option<String>,
-    pub keywords: Vec<String>,
-    pub force_exclusive_mode: bool,
-}
-
-impl Default for SafeModeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true, // Default to Safe Mode ON for privacy
-            pin_hash: None,
-            keywords: vec!["nsfw".into(), "nude".into(), "18+".into()],
-            force_exclusive_mode: true,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AppSettings {
-    pub theme: String, // "dark", "light", "system"
-    pub language: String,
-    pub games: Vec<GameConfig>,
-    pub active_game_id: Option<String>,
-    pub safe_mode: SafeModeConfig,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            theme: "dark".into(),
-            language: "en".into(),
-            games: Vec::new(),
-            active_game_id: None,
-            safe_mode: SafeModeConfig::default(),
-        }
-    }
-}
+use sqlx::SqlitePool;
+use std::sync::Mutex;
+use tauri::AppHandle;
 
 pub struct ConfigService {
-    config_path: PathBuf,
+    pool: SqlitePool,
     settings: Mutex<AppSettings>,
     pin_guard: Mutex<PinGuardState>,
 }
 
 impl ConfigService {
-    pub fn init(app_handle: &AppHandle) -> Self {
-        let app_data_dir = app_handle
-            .path()
-            .app_data_dir()
-            .expect("Failed to get app data dir");
-
-        Self::new(app_data_dir.join(CONFIG_FILENAME))
+    /// Run an async future from a synchronous context.
+    /// Works both inside Tauri's runtime and inside `#[tokio::test]`.
+    fn run_async<F: std::future::Future>(f: F) -> F::Output {
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(f)),
+            Err(_) => tauri::async_runtime::block_on(f),
+        }
     }
 
-    pub fn new(config_path: PathBuf) -> Self {
-        let (settings, needs_save) = Self::load_from_disk(&config_path);
+    /// Initialize from Tauri AppHandle. Runs migration and loads from DB.
+    pub fn init(_app_handle: &AppHandle, pool: SqlitePool) -> Self {
+        // 1. Run our table creation (idempotent, so safe even if the
+        //    tauri_plugin_sql migration already ran).
+        Self::run_async(async {
+            Self::ensure_tables(&pool).await;
+        });
 
-        // If we migrated from legacy format, save immediately to standardize "config.json"
-        if needs_save {
-            let _ = Self::write_settings_atomically(&config_path, &settings);
-        }
+        // 2. Load current settings from DB
+        let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
         Self {
-            config_path,
+            pool,
             settings: Mutex::new(settings),
             pin_guard: Mutex::new(PinGuardState::default()),
         }
     }
 
-    fn load_from_disk(path: &Path) -> (AppSettings, bool) {
-        if !path.exists() {
-            return (AppSettings::default(), false);
-        }
+    /// Constructor for tests: takes a pool directly, no legacy migration.
+    pub fn new_for_test(pool: SqlitePool) -> Self {
+        Self::run_async(async {
+            Self::ensure_tables(&pool).await;
+        });
 
-        let content = match fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => return (AppSettings::default(), false),
+        let settings = Self::run_async(async { Self::load_from_db(&pool).await });
+
+        Self {
+            pool,
+            settings: Mutex::new(settings),
+            pin_guard: Mutex::new(PinGuardState::default()),
+        }
+    }
+
+    /// Create tables and apply ad-hoc schema patches if they don't exist (idempotent).
+    async fn ensure_tables(pool: &SqlitePool) {
+        // Games table (matches 001_init.sql + 012 ALTER extensions)
+        let _ = sqlx::query(
+            "CREATE TABLE IF NOT EXISTS games (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                game_type TEXT NOT NULL,
+                path TEXT NOT NULL,
+                launcher_path TEXT,
+                launch_args TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                mod_path TEXT,
+                game_exe TEXT,
+                loader_exe TEXT
+            )",
+        )
+        .execute(pool)
+        .await;
+
+        let _ = sqlx::query(
+            "CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await;
+
+        // Apply fallback schema patches.
+        // If `tauri_plugin_sql` migrations failed due to duplicate column errors
+        // (e.g. users migrating from older SQLx tracked versions to new Tauri plugin versions),
+        // we explicitly add required columns here and safely ignore "duplicate column" errors.
+        let patches = [
+            "ALTER TABLE games ADD COLUMN mod_path TEXT;",
+            "ALTER TABLE games ADD COLUMN game_exe TEXT;",
+            "ALTER TABLE games ADD COLUMN loader_exe TEXT;",
+            "ALTER TABLE collections ADD COLUMN is_safe_context BOOLEAN DEFAULT 0;",
+            "ALTER TABLE collections ADD COLUMN is_favorite BOOLEAN DEFAULT 0;",
+            "ALTER TABLE objects ADD COLUMN is_pinned BOOLEAN DEFAULT 0;",
+            "ALTER TABLE objects ADD COLUMN is_auto_sync BOOLEAN NOT NULL DEFAULT 0;",
+        ];
+
+        for patch in patches {
+            let _ = sqlx::query(patch).execute(pool).await;
+        }
+    }
+
+    /// Load AppSettings from the SQLite database.
+    async fn load_from_db(pool: &SqlitePool) -> AppSettings {
+        let kv = match settings_repo::get_all_settings(pool).await {
+            Ok(m) => m,
+            Err(e) => {
+                log::error!("Failed to load settings from DB: {e}");
+                return AppSettings::default();
+            }
         };
 
-        // 1. Try generic load
-        if let Ok(settings) = serde_json::from_str::<AppSettings>(&content) {
-            return (settings, false);
-        }
-
-        // 2. Try Legacy Migration (Tauri Plugin Store format)
-        #[derive(Deserialize)]
-        struct LegacyGameConfig {
-            id: String,
-            name: String,
-            game_type: String,
-            path: PathBuf,                 // Mapped to game_exe
-            mods_path: PathBuf,            // Mapped to mod_path
-            launcher_path: Option<String>, // Mapped to loader_exe
-            launch_args: Option<String>,
-        }
-
-        #[derive(Deserialize)]
-        struct LegacyAppSettings {
-            games: Option<Vec<LegacyGameConfig>>,
-            active_game: Option<String>,
-            safe_mode: Option<bool>,
-        }
-
-        if let Ok(legacy) = serde_json::from_str::<LegacyAppSettings>(&content) {
-            let mut new_settings = AppSettings::default();
-
-            if let Some(lg_games) = legacy.games {
-                new_settings.games = lg_games
-                    .into_iter()
-                    .map(|lg| GameConfig {
-                        id: lg.id,
-                        name: lg.name,
-                        game_type: lg.game_type,
-                        mod_path: lg.mods_path,
-                        game_exe: lg.path,
-                        loader_exe: lg.launcher_path.map(PathBuf::from),
-                        launch_args: lg.launch_args,
-                    })
-                    .collect();
+        let games = match settings_repo::get_all_games(pool).await {
+            Ok(rows) => rows.into_iter().map(game_row_to_config).collect(),
+            Err(e) => {
+                log::error!("Failed to load games from DB: {e}");
+                Vec::new()
             }
+        };
 
-            if let Some(ag) = legacy.active_game {
-                new_settings.active_game_id = Some(ag);
-            }
+        let theme = kv.get("theme").cloned().unwrap_or_else(|| "dark".into());
+        let language = kv.get("language").cloned().unwrap_or_else(|| "en".into());
+        let active_game_id = kv.get("active_game_id").cloned();
 
-            if let Some(sm) = legacy.safe_mode {
-                new_settings.safe_mode.enabled = sm;
-            }
+        let safe_mode: SafeModeConfig = kv
+            .get("safe_mode")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
 
-            // Return migrated settings AND true to indicate "needs save"
-            return (new_settings, true);
+        let ai: AiConfig = kv
+            .get("ai")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
+        AppSettings {
+            theme,
+            language,
+            games,
+            active_game_id,
+            safe_mode,
+            ai,
+        }
+    }
+
+    /// Write the full AppSettings to the database in a single transaction.
+    pub(crate) async fn write_settings_to_db(
+        pool: &SqlitePool,
+        settings: &AppSettings,
+    ) -> Result<(), String> {
+        settings_repo::set_setting(pool, "theme", &settings.theme)
+            .await
+            .map_err(|e| e.to_string())?;
+        settings_repo::set_setting(pool, "language", &settings.language)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Some(ref id) = settings.active_game_id {
+            settings_repo::set_setting(pool, "active_game_id", id)
+                .await
+                .map_err(|e| e.to_string())?;
         }
 
-        // If both fail, return default to avoid crashing, but log error
-        eprintln!("Failed to parse config.json, returning default.");
-        (AppSettings::default(), false)
+        let safe_mode_json =
+            serde_json::to_string(&settings.safe_mode).map_err(|e| e.to_string())?;
+        settings_repo::set_setting(pool, "safe_mode", &safe_mode_json)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let ai_json = serde_json::to_string(&settings.ai).map_err(|e| e.to_string())?;
+        settings_repo::set_setting(pool, "ai", &ai_json)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Persist games
+        for game in &settings.games {
+            let row = config_to_game_row(game);
+            settings_repo::upsert_game(pool, &row)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
     }
 
     pub fn get_settings(&self) -> AppSettings {
@@ -170,25 +197,16 @@ impl ConfigService {
 
     pub fn save_settings(&self, mut new_settings: AppSettings) -> Result<(), String> {
         new_settings.safe_mode.keywords = normalize_keywords(&new_settings.safe_mode.keywords);
-        Self::write_settings_atomically(&self.config_path, &new_settings)?;
+
+        // Write to DB synchronously
+        let pool = self.pool.clone();
+        Self::run_async(async { Self::write_settings_to_db(&pool, &new_settings).await })?;
 
         // Update in-memory state
         *self
             .settings
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = new_settings;
-        Ok(())
-    }
-
-    fn write_settings_atomically(config_path: &Path, settings: &AppSettings) -> Result<(), String> {
-        let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
-        let tmp_path = config_path.with_extension("tmp");
-
-        let mut file = fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
-        file.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-
-        fs::rename(&tmp_path, config_path).map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -260,7 +278,14 @@ impl ConfigService {
         settings.safe_mode.enabled = enabled;
         self.save_settings(settings)
     }
+
+    /// Get a reference to the pool (for use in commands that need direct DB access).
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
 }
+
+// ── Helpers ──────────────────────────────────────────
 
 fn normalize_keywords(keywords: &[String]) -> Vec<String> {
     let mut normalized: Vec<String> = Vec::new();

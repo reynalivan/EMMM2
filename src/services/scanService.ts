@@ -16,6 +16,7 @@ export interface ScanPreviewItem {
   matchedObject: string | null;
   matchLevel: string;
   confidence: string;
+  confidenceScore: number;
   matchDetail: string | null;
   detectedSkin: string | null;
   objectType: string | null;

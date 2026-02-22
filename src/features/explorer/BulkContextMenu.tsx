@@ -1,4 +1,13 @@
-import { Pencil, Trash2, ToggleLeft } from 'lucide-react';
+import {
+  Pencil,
+  Trash2,
+  ToggleLeft,
+  Star,
+  ShieldCheck,
+  ShieldOff,
+  Pin,
+  ArrowRightLeft,
+} from 'lucide-react';
 import { ContextMenuItem, ContextMenuSeparator } from '../../components/ui/ContextMenu';
 
 interface BulkContextMenuProps {
@@ -6,6 +15,10 @@ interface BulkContextMenuProps {
   onToggle?: (enable: boolean) => void;
   onDelete?: () => void;
   onTag?: () => void;
+  onFavorite?: (favorite: boolean) => void;
+  onSafe?: (safe: boolean) => void;
+  onPin?: (pin: boolean) => void;
+  onMoveToObject?: () => void;
 }
 
 export default function BulkContextMenu({
@@ -13,6 +26,10 @@ export default function BulkContextMenu({
   onToggle,
   onDelete,
   onTag,
+  onFavorite,
+  onSafe,
+  onPin,
+  onMoveToObject,
 }: BulkContextMenuProps) {
   return (
     <>
@@ -26,9 +43,36 @@ export default function BulkContextMenu({
       <ContextMenuItem icon={ToggleLeft} onClick={() => onToggle?.(false)}>
         Disable Selected
       </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem icon={Star} onClick={() => onFavorite?.(true)}>
+        Favorite Selected
+      </ContextMenuItem>
+      <ContextMenuItem icon={Star} onClick={() => onFavorite?.(false)}>
+        Unfavorite Selected
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem icon={ShieldCheck} onClick={() => onSafe?.(true)}>
+        Mark Safe
+      </ContextMenuItem>
+      <ContextMenuItem icon={ShieldOff} onClick={() => onSafe?.(false)}>
+        Mark Unsafe
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem icon={Pin} onClick={() => onPin?.(true)}>
+        Pin Selected
+      </ContextMenuItem>
+      <ContextMenuItem icon={Pin} onClick={() => onPin?.(false)}>
+        Unpin Selected
+      </ContextMenuItem>
+      <ContextMenuSeparator />
       <ContextMenuItem icon={Pencil} onClick={onTag}>
         Add Tags...
       </ContextMenuItem>
+      {onMoveToObject && (
+        <ContextMenuItem icon={ArrowRightLeft} onClick={onMoveToObject}>
+          Move to Object...
+        </ContextMenuItem>
+      )}
       <ContextMenuSeparator />
       <ContextMenuItem icon={Trash2} danger onClick={onDelete}>
         Delete {count} Items

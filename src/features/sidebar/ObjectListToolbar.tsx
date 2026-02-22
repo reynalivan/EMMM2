@@ -3,7 +3,7 @@
  * Category/Sort/Status filtering is fully delegated to FilterPanel.
  */
 
-import { Search, RefreshCw, Plus, SlidersHorizontal, X } from 'lucide-react';
+import { Search, RefreshCw, RotateCcw, Plus, SlidersHorizontal, X } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import type { GameSchema, FilterDef, CategoryDef } from '../../types/object';
 import FilterPanel from './FilterPanel';
@@ -18,6 +18,7 @@ interface ToolbarProps {
   onSortChange: (val: 'name' | 'date' | 'rarity') => void;
   isSyncing: boolean;
   onSync: () => void;
+  onRefresh: () => void;
   onCreateNew: () => void;
   /** Per-category filters for FilterPanel */
   categoryFilters: FilterDef[];
@@ -39,6 +40,7 @@ export default function ObjectListToolbar({
   onSortChange,
   isSyncing,
   onSync,
+  onRefresh,
   onCreateNew,
   categoryFilters,
   activeFilters,
@@ -100,6 +102,13 @@ export default function ObjectListToolbar({
           </button>
         )}
 
+        <button
+          className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
+          onClick={onRefresh}
+          title="Refresh list"
+        >
+          <RotateCcw size={15} />
+        </button>
         <button
           className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
           onClick={onSync}

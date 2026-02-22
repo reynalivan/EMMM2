@@ -6,6 +6,7 @@ import {
 import {
   Edit,
   ExternalLink,
+  FolderOpen,
   Move,
   Pin,
   PinOff,
@@ -47,6 +48,7 @@ interface ObjectContextMenuProps {
   onPin: (id: string) => void;
   onFavorite: (path: string) => void;
   onMoveCategory: (id: string, category: string, type: 'object' | 'folder') => void;
+  onRevealInExplorer?: (id: string) => void;
   onEnableObject?: (id: string) => void;
   onDisableObject?: (id: string) => void;
 }
@@ -69,33 +71,33 @@ export function ObjectContextMenu({
   onPin,
   onFavorite,
   onMoveCategory,
+  onRevealInExplorer,
   onEnableObject,
   onDisableObject,
 }: ObjectContextMenuProps) {
   // 1. Render Object Menu
   if (item.type === 'object') {
-    const hasDisabledMods =
-      item.modCount !== undefined &&
-      item.enabledCount !== undefined &&
-      item.enabledCount < item.modCount;
-    const hasEnabledMods = (item.enabledCount ?? 0) > 0;
-
     return (
       <>
         <ContextMenuItem icon={Edit} onClick={() => onEditObject(item.id)}>
           Edit Metadata
         </ContextMenuItem>
+        {onRevealInExplorer && (
+          <ContextMenuItem icon={FolderOpen} onClick={() => onRevealInExplorer(item.id)}>
+            Reveal in File Explorer
+          </ContextMenuItem>
+        )}
         <ContextMenuItem icon={item.isPinned ? PinOff : Pin} onClick={() => onPin(item.id)}>
           {item.isPinned ? 'Unpin Objects' : 'Pin to Top'}
         </ContextMenuItem>
 
-        {/* Enable/Disable Object */}
-        {hasDisabledMods && onEnableObject && (
+        {/* Enable/Disable Object — works for all object types */}
+        {onEnableObject && (
           <ContextMenuItem icon={ToggleRight} onClick={() => onEnableObject(item.id)}>
             Enable
           </ContextMenuItem>
         )}
-        {hasEnabledMods && onDisableObject && (
+        {onDisableObject && (
           <ContextMenuItem icon={ToggleLeft} onClick={() => onDisableObject(item.id)}>
             Disable
           </ContextMenuItem>
