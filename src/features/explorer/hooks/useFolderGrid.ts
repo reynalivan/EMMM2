@@ -12,7 +12,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useResponsive } from '../../../hooks/useResponsive';
 import { useObjects } from '../../../hooks/useObjects';
-import { useModFolders, sortFolders, folderKeys } from '../../../hooks/useFolders';
+import { useModFolders, sortFolders, folderKeys, useImportMods } from '../../../hooks/useFolders';
+import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useFolderNavigation } from '../../../hooks/useFolderNavigation';
 import { useFileDrop } from '../../../hooks/useFileDrop';
 import { useFolderGridNav } from './useFolderGridNav';
@@ -115,7 +116,6 @@ export function useFolderGrid() {
     return () => observer.disconnect();
   }, []);
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
@@ -186,8 +186,28 @@ export function useFolderGrid() {
   });
 
   // ── DnD & Refresh ────────────────────────────────────────────────────────
-  const noopDrop = useCallback((_paths: string[]) => {}, []);
-  const { isDragging } = useFileDrop({ onDrop: noopDrop });
+  const { activeGame } = useActiveGame();
+  const importMods = useImportMods();
+
+  const handleImportFiles = useCallback(
+    async (paths: string[]) => {
+      if (!activeGame?.mod_path || paths.length === 0) return;
+
+      const { join } = await import('@tauri-apps/api/path');
+      const targetDir = explorerSubPath
+        ? await join(activeGame.mod_path, explorerSubPath)
+        : activeGame.mod_path;
+
+      importMods.mutate({
+        paths,
+        targetDir,
+        strategy: 'Raw',
+      });
+    },
+    [activeGame?.mod_path, explorerSubPath, importMods],
+  );
+
+  const { isDragging } = useFileDrop({ onDrop: handleImportFiles });
 
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: folderKeys.all });
@@ -242,7 +262,8 @@ export function useFolderGrid() {
     // Objects (for MoveToObjectDialog)
     objects,
 
-    // DnD
+    // DnD and Import
     isDragging,
+    handleImportFiles,
   };
 }

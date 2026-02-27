@@ -250,7 +250,7 @@ async fn fetch_enabled_conflicts(
         .map_err(|e| e.to_string())
 }
 
-async fn apply_state_change(
+pub async fn apply_state_change(
     pool: &SqlitePool,
     watcher_state: &WatcherState,
     states: Vec<ModState>,

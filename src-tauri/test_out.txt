@@ -1,0 +1,52 @@
+warning: unused import: `tauri::State`
+ --> src\commands\objects\tests\object_cmds_tests.rs:5:5
+  |
+5 | use tauri::State;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `emmm2` (lib test) generated 1 warning (run `cargo fix --lib -p emmm2 --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.80s
+     Running unittests src\lib.rs (target\debug\deps\emmm2_lib-04a6acc90d154c0d.exe)
+
+running 1 test
+Executing Query: 
+        SELECT
+            o.id,
+            o.name,
+            o.folder_path,
+            o.object_type,
+            o.sub_category,
+            o.metadata,
+            o.tags,
+            o.is_safe,
+            o.is_pinned,
+            o.is_auto_sync,
+            o.thumbnail_path,
+            o.created_at,
+            COUNT(m.id) as mod_count,
+            COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) as enabled_count
+        FROM objects o
+        LEFT JOIN mods m ON m.object_id = o.id
+        WHERE o.game_id = ? GROUP BY o.id ORDER BY o.is_pinned DESC, o.object_type, o.name ASC
+Query returned 0 objects
+DB Objects: []
+Raw Objects Count: 0
+Joined Rows Count: 0
+
+thread 'commands::objects::object_cmds::tests::test_get_objects_with_disabled_prefix' (56708) panicked at src\commands\objects\tests\object_cmds_tests.rs:125:5:
+assertion `left == right` failed: Expected 1 object to be discovered, but DB has: []
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test commands::objects::object_cmds::tests::test_get_objects_with_disabled_prefix ... FAILED
+
+failures:
+
+failures:
+    commands::objects::object_cmds::tests::test_get_objects_with_disabled_prefix
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 249 filtered out; finished in 0.60s
+
+error: test failed, to rerun pass `--lib`

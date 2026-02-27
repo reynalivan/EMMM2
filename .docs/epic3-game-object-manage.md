@@ -61,9 +61,8 @@ ObjectList (orchestrator)
 ```
 schema.json ──→ get_game_schema (Rust) ──→ useGameSchema (TanStack Query)
                                               │
-objects table ──→ objectService.ts (SQL) ──→ useObjects ──→ useObjectListLogic
-                                              │                    │
-filter_existing_folders (Rust) ──→ FS check ──┘                    │
+get_objects_cmd ──→ FS Scan + DB Merge ───→ useObjects ──→ useObjectListLogic
+(FS Source of Truth)                                               │
                                                                    │
 useSearchWorker (Web Worker) ──→ client-side search ───────────────┘
                                                                    │
@@ -89,9 +88,9 @@ useObjectListVirtualizer ←── flatObjectItems (grouped by category) ┘
 **As the** system, **I must** match physical folders in the `/Mods` folder with the correct entries in the database, **So that** metadata (Rarity, Element, Tags) can be correctly displayed in the UI.
 
 - **Acceptance Criteria (All Implemented):**
-  - **Filesystem-First Validation:** `useObjects` hook fetches DB objects then filters by filesystem existence via `filter_existing_folders` Rust command — FS is the single source of truth.
+  - **Filesystem-First Validation:** `useObjects` hook directly invokes the `get_objects_cmd` Rust command, which actively scans the physical game directory and structurally merges it with database metadata. The FS is the ultimate single source of truth.
   - **Staged Matching Pipeline:** Uses `match_object_with_staged_pipeline` with the Deep Matcher from Epic 2 (name + content + fuzzy matching).
-  - **Fallback to "Other":** If a folder does not match any category, it is placed under "Other" via auto-linking in `sync_with_db` (Quick Import) and `commit_scan_results` (Manual Sync).
+  - **Fallback to "Other":** If a folder does not match any category, it is placed under "Other" via auto-linking in `sync_with_db`.
 
 ### US-3.3: Object CRUD & Context Menu ✅
 
@@ -265,7 +264,6 @@ Additional commands used from `mod_cmds.rs`:
 | `rename_mod_folder` | Rename a mod folder |
 | `set_mod_category` | Update mod's category in `info.json` |
 | `repair_orphan_mods` | Fix orphaned mod DB records |
-| `filter_existing_folders` | Check which folders exist on disk |
 
 ### E. ObjectRowItem Visual Design
 
@@ -292,6 +290,7 @@ Each row in the sidebar renders:
 | `name`           | TEXT    | Display name (e.g., `Raiden Shogun`)                           |
 | `object_type`    | TEXT    | Category: Character, Weapon, UI, Other                         |
 | `sub_category`   | TEXT    | Specific name for Other type (Enemy, NPC, etc.)                |
+| `folder_path`    | TEXT    | Physical folder path on disk (FS source of truth)              |
 | `sort_order`     | INTEGER | Custom sort order                                              |
 | `tags`           | TEXT    | JSON array of search aliases                                   |
 | `metadata`       | TEXT    | JSON object (Element, Rarity, Gender, Weapon Type, Path, etc.) |
@@ -304,7 +303,7 @@ Each row in the sidebar renders:
 ### TypeScript Types (`types/object.ts`)
 
 - `GameObject` — Full DB record
-- `ObjectSummary` — Lightweight summary with `mod_count` and `enabled_count` (joined query)
+- `ObjectSummary` — Lightweight summary including `folder_path` with `mod_count` and `enabled_count` (joined query)
 - `ObjectFilter` — Filter criteria DTO
 - `GameSchema` — Schema definition (categories + filters)
 - `CategoryDef` — Category with name, label, icon, color, per-category filters

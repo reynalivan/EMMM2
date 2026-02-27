@@ -18,13 +18,13 @@ export interface Toast {
 
 interface ToastState {
   toasts: Toast[];
-  addToast: (type: ToastType, message: string, duration?: number) => void;
+  addToast: (type: ToastType, message: string, duration?: number) => string;
   addToastWithAction: (
     type: ToastType,
     message: string,
     action: ToastAction,
     duration?: number,
-  ) => void;
+  ) => string;
   removeToast: (id: string) => void;
 }
 
@@ -33,10 +33,12 @@ export const useToastStore = create<ToastState>((set) => ({
   addToast: (type, message, duration = 3000) => {
     const id = Math.random().toString(36).substring(2, 9);
     set((state) => ({ toasts: [...state.toasts, { id, type, message, duration }] }));
+    return id;
   },
   addToastWithAction: (type, message, action, duration = 5000) => {
     const id = Math.random().toString(36).substring(2, 9);
     set((state) => ({ toasts: [...state.toasts, { id, type, message, duration, action }] }));
+    return id;
   },
   removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));

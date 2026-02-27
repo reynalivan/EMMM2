@@ -61,10 +61,7 @@ fn test_staged_labels_and_detail_are_deterministic() {
     };
     assert_eq!(match_status_label(&auto.status), "AutoMatched");
     assert_eq!(staged_confidence_label(&auto), "Medium");
-    assert_eq!(
-        staged_match_detail(&auto),
-        "Exact name match"
-    );
+    assert_eq!(staged_match_detail(&auto), "Exact name match");
 
     let review = StagedMatchResult {
         status: MatchStatus::NeedsReview,

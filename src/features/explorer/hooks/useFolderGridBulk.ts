@@ -14,6 +14,7 @@ import {
   folderKeys,
   ModFolder,
 } from '../../../hooks/useFolders';
+import { useActiveGame } from '../../../hooks/useActiveGame';
 
 interface FolderGridBulkOptions {
   gridSelection: Set<string>;
@@ -29,6 +30,7 @@ export function useFolderGridBulk({
   openMoveDialog,
 }: FolderGridBulkOptions) {
   const queryClient = useQueryClient();
+  const { activeGame } = useActiveGame();
   const bulkToggle = useBulkToggle();
   const bulkDelete = useBulkDelete();
   const bulkUpdateInfo = useBulkUpdateInfo();
@@ -70,17 +72,21 @@ export function useFolderGridBulk({
   // Bulk Favorite/Unfavorite
   const handleBulkFavorite = useCallback(
     async (favorite: boolean) => {
-      const ids = sortedFolders.filter((f) => gridSelection.has(f.path) && f.id).map((f) => f.id!);
-      if (ids.length === 0) return;
+      const paths = Array.from(gridSelection);
+      if (paths.length === 0 || !activeGame?.id) return;
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('bulk_toggle_favorite', { ids, favorite });
+        await invoke('bulk_toggle_favorite', {
+          gameId: activeGame.id,
+          folderPaths: paths,
+          favorite,
+        });
         queryClient.invalidateQueries({ queryKey: folderKeys.all });
       } catch (e) {
         console.error('Bulk favorite failed:', e);
       }
     },
-    [gridSelection, sortedFolders, queryClient],
+    [gridSelection, queryClient, activeGame?.id],
   );
 
   // Bulk Safe/Unsafe — uses existing bulk_update_info
@@ -97,16 +103,16 @@ export function useFolderGridBulk({
   const handleBulkPin = useCallback(
     async (pin: boolean) => {
       const paths = Array.from(gridSelection);
-      if (paths.length === 0) return;
+      if (paths.length === 0 || !activeGame?.id) return;
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('bulk_pin_mods', { ids: paths, pin });
+        await invoke('bulk_pin_mods', { gameId: activeGame.id, folderPaths: paths, pin });
         queryClient.invalidateQueries({ queryKey: folderKeys.all });
       } catch (e) {
         console.error('Bulk pin failed:', e);
       }
     },
-    [gridSelection, queryClient],
+    [gridSelection, queryClient, activeGame?.id],
   );
 
   // Bulk Move to Object

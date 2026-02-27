@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, created_at)\n        VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, datetime('now'))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "2a9c8e572bcd9f57a1424e590a35d2761f81bf097296d4aa7517a6a7f7e829ef"
+}

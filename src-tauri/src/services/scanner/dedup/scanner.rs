@@ -1,4 +1,4 @@
-use crate::services::scanner::core::walker::{self, ModCandidate};
+use crate::services::scanner::core::walker::ModCandidate;
 use crate::types::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
 use rayon::prelude::*;
 use sqlx::Row;
@@ -31,7 +31,7 @@ pub async fn scan_duplicates(
     db: &SqlitePool,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<DedupScanOutcome, String> {
-    let candidates = walker::scan_mod_folders(mods_root)?;
+    let candidates = fetch_candidates_from_db(db, game_id, mods_root).await?;
     let total_folders = candidates.len();
 
     if is_cancelled(&cancel_flag) {
@@ -74,6 +74,7 @@ fn run_pipeline_blocking(
     }
 
     let candidate_pairs = phase1_candidate_filtering(&snapshots);
+    let candidate_pairs = apply_modpack_filter(candidate_pairs, &snapshots);
     let candidate_pairs = apply_whitelist_filter(
         candidate_pairs,
         &snapshots,
@@ -113,6 +114,52 @@ fn run_pipeline_blocking(
         groups: build_groups(&snapshots, &scored_pairs),
         total_folders,
     }
+}
+
+fn apply_modpack_filter(
+    candidate_pairs: Vec<(usize, usize)>,
+    snapshots: &[ModSnapshot],
+) -> Vec<(usize, usize)> {
+    let mut variant_container_cache: HashMap<std::path::PathBuf, bool> = HashMap::new();
+
+    candidate_pairs
+        .into_iter()
+        .filter(|(left_index, right_index)| {
+            let left_path = &snapshots[*left_index].candidate.path;
+            let right_path = &snapshots[*right_index].candidate.path;
+
+            let left_parent = left_path.parent();
+            let right_parent = right_path.parent();
+
+            // If they share exactly the same parent directory
+            if let (Some(lp), Some(rp)) = (left_parent, right_parent) {
+                if lp == rp {
+                    // Check if this parent is a VariantContainer
+                    let parent_path = lp.to_path_buf();
+
+                    let is_variant_container = *variant_container_cache
+                        .entry(parent_path.clone())
+                        .or_insert_with(|| {
+                            let (node_type, _) =
+                                crate::commands::explorer::classifier::classify_folder(
+                                    &parent_path,
+                                );
+                            node_type
+                                == crate::commands::explorer::classifier::NodeType::VariantContainer
+                                || node_type
+                                    == crate::commands::explorer::classifier::NodeType::ModPackRoot
+                        });
+
+                    if is_variant_container {
+                        // They are variants in the same modpack, DO NOT match them as duplicates
+                        return false;
+                    }
+                }
+            }
+
+            true
+        })
+        .collect()
 }
 
 fn apply_whitelist_filter(
@@ -170,6 +217,56 @@ async fn fetch_mod_id_map(
     }
 
     Ok(mapping)
+}
+
+async fn fetch_candidates_from_db(
+    db: &SqlitePool,
+    game_id: &str,
+    mods_root: &Path,
+) -> Result<Vec<ModCandidate>, String> {
+    let rows = sqlx::query("SELECT folder_path FROM mods WHERE game_id = ?")
+        .bind(game_id)
+        .fetch_all(db)
+        .await
+        .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
+
+    let mut candidates = Vec::new();
+
+    for row in rows {
+        let folder_path: String = row.try_get("folder_path").map_err(|error| {
+            format!("Invalid mods.folder_path value during duplicate scan: {error}")
+        })?;
+
+        let path = Path::new(&folder_path);
+
+        // Skip paths that no longer physically exist
+        if !path.exists() || !path.is_dir() {
+            continue;
+        }
+
+        // Also skip if it's identical to mods_root
+        if path == mods_root {
+            continue;
+        }
+
+        let raw_name = match path.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+
+        let is_disabled = crate::services::scanner::core::normalizer::is_disabled_folder(&raw_name);
+        let display_name =
+            crate::services::scanner::core::normalizer::normalize_display_name(&raw_name);
+
+        candidates.push(ModCandidate {
+            path: path.to_path_buf(),
+            raw_name,
+            display_name,
+            is_disabled,
+        });
+    }
+
+    Ok(candidates)
 }
 
 async fn fetch_whitelist_pairs(

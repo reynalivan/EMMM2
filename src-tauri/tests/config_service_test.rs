@@ -152,7 +152,9 @@ async fn test_games_persist_in_db() {
         loader_exe: Some(PathBuf::from("C:\\Loader\\loader.exe")),
         launch_args: None,
     });
-    service.save_settings(settings).expect("save should succeed");
+    service
+        .save_settings(settings)
+        .expect("save should succeed");
 
     // Reload from DB
     let service_reloaded = ConfigService::new_for_test(pool);

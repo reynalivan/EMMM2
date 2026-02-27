@@ -57,8 +57,8 @@ emmm2.db*
 
 # Project Specific
 .history/
-#.agent/
-#.docs/
+.agent/
+.docs/
 .vscode/
 .opencode/
 .github/

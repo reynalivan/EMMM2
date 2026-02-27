@@ -11,8 +11,7 @@ async fn test_list_mod_folders_basic() {
     fs::create_dir(mods.join("DISABLED Ayaka")).unwrap();
     fs::create_dir(mods.join("Albedo")).unwrap();
 
-    let result =
-        list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+    let result = list_mod_folders_inner(mods.to_string_lossy().to_string(), None).await;
     assert!(result.is_ok());
 
     let folders = result.unwrap();
@@ -40,8 +39,7 @@ async fn test_list_mod_folders_skips_files_and_hidden() {
     fs::create_dir(mods.join(".hidden")).unwrap();
     fs::write(mods.join("readme.txt"), "hello").unwrap();
 
-    let result =
-        list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+    let result = list_mod_folders_inner(mods.to_string_lossy().to_string(), None).await;
     let folders = result.unwrap();
     assert_eq!(folders.len(), 1);
     assert_eq!(folders[0].name, "ValidMod");
@@ -49,14 +47,7 @@ async fn test_list_mod_folders_skips_files_and_hidden() {
 
 #[tokio::test]
 async fn test_list_mod_folders_nonexistent_path() {
-    let result = list_mod_folders_inner(
-        None,
-        None,
-        "C:\\nonexistent\\fake\\path".to_string(),
-        None,
-        None,
-    )
-    .await;
+    let result = list_mod_folders_inner("C:\\nonexistent\\fake\\path".to_string(), None).await;
     // Base path validation still returns Err
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("does not exist"));
@@ -68,8 +59,7 @@ async fn test_list_mod_folders_empty_dir() {
     let mods = tmp.path().join("Mods");
     fs::create_dir(&mods).unwrap();
 
-    let result =
-        list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+    let result = list_mod_folders_inner(mods.to_string_lossy().to_string(), None).await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap().len(), 0);
 }
@@ -85,11 +75,8 @@ async fn test_list_mod_folders_deep_navigation() {
     fs::create_dir(raiden.join("Set2")).unwrap();
 
     let result = list_mod_folders_inner(
-        None,
-        None,
         mods.to_string_lossy().to_string(),
         Some("Raiden".to_string()),
-        None,
     )
     .await;
     assert!(result.is_ok());
@@ -108,11 +95,8 @@ async fn test_list_mod_folders_invalid_subpath() {
     fs::create_dir(&mods).unwrap();
 
     let result = list_mod_folders_inner(
-        None,
-        None,
         mods.to_string_lossy().to_string(),
         Some("NonExistent".to_string()),
-        None,
     )
     .await;
     // With Filesystem Truth design, missing subpaths just return empty Ok vectors
@@ -129,8 +113,7 @@ async fn test_list_mod_folders_thumbnail_deferred() {
     fs::create_dir_all(&mod_folder).unwrap();
     fs::write(mod_folder.join("preview.png"), "fake png data").unwrap();
 
-    let result =
-        list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+    let result = list_mod_folders_inner(mods.to_string_lossy().to_string(), None).await;
     let folders = result.unwrap();
     assert_eq!(folders.len(), 1);
     assert!(folders[0].thumbnail_path.is_none());
@@ -147,8 +130,7 @@ async fn test_list_mod_folders_info_json_detection() {
     fs::create_dir_all(&without_info).unwrap();
     fs::write(with_info.join("info.json"), "{}").unwrap();
 
-    let result =
-        list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+    let result = list_mod_folders_inner(mods.to_string_lossy().to_string(), None).await;
     let folders = result.unwrap();
     assert_eq!(folders.len(), 2);
 
@@ -166,8 +148,7 @@ async fn test_list_mod_folders_has_modified_at() {
     let mods = tmp.path().join("Mods");
     fs::create_dir_all(mods.join("TestMod")).unwrap();
 
-    let result =
-        list_mod_folders_inner(None, None, mods.to_string_lossy().to_string(), None, None).await;
+    let result = list_mod_folders_inner(mods.to_string_lossy().to_string(), None).await;
     let folders = result.unwrap();
     assert_eq!(folders.len(), 1);
     assert!(folders[0].modified_at > 0);

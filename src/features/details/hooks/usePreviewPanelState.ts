@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { validateKeyBinding } from '../keybindingValidator';
 import { useModFolders, useToggleMod } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
@@ -262,14 +263,28 @@ export function usePreviewPanelState() {
 
   const updateEditorField = (fieldId: string, value: string) => {
     setDraftByField((prev) => ({ ...prev, [fieldId]: value }));
-    setFieldErrors((prev) => {
-      if (!prev[fieldId]) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[fieldId];
-      return next;
-    });
+
+    // Live keybinding validation for key/back fields
+    const field = allKeyBindFields.find((f) => f.id === fieldId);
+    if (field && (field.label === 'key' || field.label === 'back')) {
+      const kbError = value.trim() ? validateKeyBinding(value) : null;
+      setFieldErrors((prev) => {
+        if (kbError) {
+          return { ...prev, [fieldId]: kbError };
+        }
+        if (!prev[fieldId]) return prev;
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      });
+    } else {
+      setFieldErrors((prev) => {
+        if (!prev[fieldId]) return prev;
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      });
+    }
   };
 
   return {

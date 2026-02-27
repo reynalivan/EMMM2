@@ -203,10 +203,28 @@ pub async fn launch_game(
 
                 let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
 
-                std::process::Command::new(launcher_path)
-                    .current_dir(launcher_dir)
-                    .spawn()
-                    .map_err(|e| format!("Failed to start loader: {e}"))?;
+                #[cfg(target_os = "windows")]
+                {
+                    // Use PowerShell to elevate privileges on Windows (US-10.1 requirement)
+                    std::process::Command::new("powershell")
+                        .arg("-NoProfile")
+                        .arg("-Command")
+                        .arg(format!(
+                            "Start-Process -FilePath '{}' -WorkingDirectory '{}' -Verb RunAs",
+                            launcher_path.display(),
+                            launcher_dir.display()
+                        ))
+                        .spawn()
+                        .map_err(|e| format!("Failed to start loader as Admin: {e}"))?;
+                }
+
+                #[cfg(not(target_os = "windows"))]
+                {
+                    std::process::Command::new(launcher_path)
+                        .current_dir(launcher_dir)
+                        .spawn()
+                        .map_err(|e| format!("Failed to start loader: {e}"))?;
+                }
 
                 // Small delay to let loader initialize
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;

@@ -19,6 +19,8 @@ pub struct SafeModeConfig {
     pub pin_hash: Option<String>,
     pub keywords: Vec<String>,
     pub force_exclusive_mode: bool,
+    pub failed_attempts: Option<u8>,
+    pub lockout_until_ts: Option<u64>,
 }
 
 impl Default for SafeModeConfig {
@@ -28,6 +30,8 @@ impl Default for SafeModeConfig {
             pin_hash: None,
             keywords: vec!["nsfw".into(), "nude".into(), "18+".into()],
             force_exclusive_mode: true,
+            failed_attempts: None,
+            lockout_until_ts: None,
         }
     }
 }
@@ -57,6 +61,7 @@ pub struct AppSettings {
     pub active_game_id: Option<String>,
     pub safe_mode: SafeModeConfig,
     pub ai: AiConfig,
+    pub auto_close_launcher: bool,
 }
 
 impl Default for AppSettings {
@@ -68,6 +73,7 @@ impl Default for AppSettings {
             active_game_id: None,
             safe_mode: SafeModeConfig::default(),
             ai: AiConfig::default(),
+            auto_close_launcher: false,
         }
     }
 }

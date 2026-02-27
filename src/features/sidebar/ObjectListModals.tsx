@@ -64,6 +64,8 @@ interface ModalsProps {
   onCloseScanReview: () => void;
   /* Create modal */
   createModalOpen: boolean;
+  pendingPaths?: string[] | null;
+  onImportDropped?: (newObjectId: string, objectName: string, paths: string[]) => void;
   onCloseCreate: () => void;
 }
 
@@ -82,6 +84,8 @@ export default function ObjectListModals({
   onCommitScan,
   onCloseScanReview,
   createModalOpen,
+  pendingPaths,
+  onImportDropped,
   onCloseCreate,
 }: ModalsProps) {
   return (
@@ -125,7 +129,12 @@ export default function ObjectListModals({
       />
 
       {/* Create Object Modal (US-3.3) */}
-      <CreateObjectModal open={createModalOpen} onClose={onCloseCreate} />
+      <CreateObjectModal
+        open={createModalOpen}
+        onClose={onCloseCreate}
+        pendingPaths={pendingPaths}
+        onImportDropped={onImportDropped}
+      />
     </>
   );
 }

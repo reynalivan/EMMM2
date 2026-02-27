@@ -106,6 +106,7 @@ pub async fn bulk_toggle_mods_inner(
 #[tauri::command]
 pub async fn bulk_delete_mods(
     app: AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     paths: Vec<String>,
@@ -148,7 +149,14 @@ pub async fn bulk_delete_mods(
         );
 
         match delete_mod_inner(&state, &trash_dir, path.clone(), game_id.clone()).await {
-            Ok(_) => success.push(path.clone()),
+            Ok(_) => {
+                // Sync DB: remove mod record since folder is trashed
+                let _ = sqlx::query("DELETE FROM mods WHERE folder_path = ?")
+                    .bind(path)
+                    .execute(&*pool)
+                    .await;
+                success.push(path.clone());
+            }
             Err(e) => failures.push(BulkActionError {
                 path: path.clone(),
                 error: e,
@@ -196,42 +204,57 @@ pub async fn bulk_update_info(
 #[tauri::command]
 pub async fn bulk_toggle_favorite(
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    ids: Vec<String>,
+    game_id: String,
+    folder_paths: Vec<String>,
     favorite: bool,
 ) -> Result<BulkResult, String> {
+    use sqlx::Row;
     let mut success = Vec::new();
     let mut failures = Vec::new();
 
-    for id in ids {
-        if let Err(e) = sqlx::query("UPDATE mods SET is_favorite = ? WHERE id = ?")
+    let game_mod_path: String = match sqlx::query("SELECT mod_path FROM games WHERE id = ?")
+        .bind(&game_id)
+        .fetch_optional(pool.inner())
+        .await
+    {
+        Ok(Some(gr)) => gr.try_get("mod_path").unwrap_or_default(),
+        _ => return Err("Game not found or has no mods_path".to_string()),
+    };
+
+    let base = std::path::Path::new(&game_mod_path);
+
+    for folder_path in folder_paths {
+        let rel_path = std::path::Path::new(&folder_path)
+            .strip_prefix(base)
+            .unwrap_or(std::path::Path::new(&folder_path))
+            .to_string_lossy()
+            .to_string();
+
+        if let Err(e) = sqlx::query("UPDATE mods SET is_favorite = ? WHERE folder_path = ? AND game_id = ?")
             .bind(favorite)
-            .bind(&id)
+            .bind(&rel_path)
+            .bind(&game_id)
             .execute(pool.inner())
             .await
         {
             failures.push(BulkActionError {
-                path: id,
+                path: folder_path.clone(),
                 error: e.to_string(),
             });
             continue;
         }
 
-        let folder_path: Option<String> =
-            sqlx::query_scalar("SELECT folder_path FROM mods WHERE id = ?")
-                .bind(&id)
-                .fetch_optional(pool.inner())
-                .await
-                .unwrap_or(None);
-        if let Some(path_str) = folder_path {
+        let full_path = std::path::Path::new(&folder_path);
+        if full_path.exists() {
             let _ = info_json::update_info_json(
-                Path::new(&path_str),
+                full_path,
                 &info_json::ModInfoUpdate {
                     is_favorite: Some(favorite),
                     ..Default::default()
                 },
             );
         }
-        success.push(id);
+        success.push(folder_path);
     }
     Ok(BulkResult { success, failures })
 }
@@ -239,22 +262,42 @@ pub async fn bulk_toggle_favorite(
 #[tauri::command]
 pub async fn bulk_pin_mods(
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    ids: Vec<String>,
+    game_id: String,
+    folder_paths: Vec<String>,
     pin: bool,
 ) -> Result<BulkResult, String> {
+    use sqlx::Row;
     let mut success = Vec::new();
     let mut failures = Vec::new();
 
-    for id in ids {
-        match sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path = ?")
+    let game_mod_path: String = match sqlx::query("SELECT mod_path FROM games WHERE id = ?")
+        .bind(&game_id)
+        .fetch_optional(pool.inner())
+        .await
+    {
+        Ok(Some(gr)) => gr.try_get("mod_path").unwrap_or_default(),
+        _ => return Err("Game not found or has no mods_path".to_string()),
+    };
+
+    let base = std::path::Path::new(&game_mod_path);
+
+    for folder_path in folder_paths {
+        let rel_path = std::path::Path::new(&folder_path)
+            .strip_prefix(base)
+            .unwrap_or(std::path::Path::new(&folder_path))
+            .to_string_lossy()
+            .to_string();
+
+        match sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path = ? AND game_id = ?")
             .bind(pin)
-            .bind(&id)
+            .bind(&rel_path)
+            .bind(&game_id)
             .execute(pool.inner())
             .await
         {
-            Ok(_) => success.push(id),
+            Ok(_) => success.push(folder_path),
             Err(e) => failures.push(BulkActionError {
-                path: id,
+                path: folder_path,
                 error: e.to_string(),
             }),
         }

@@ -476,6 +476,25 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
                     )}
                   </div>
 
+                  {/* Safe/NSFW Toggle */}
+                  {activeTab === 'manual' && (
+                    <div className="form-control mt-2">
+                      <label className="label cursor-pointer justify-start gap-3 w-fit">
+                        <input
+                          type="checkbox"
+                          className="toggle toggle-primary"
+                          {...register('is_safe')}
+                        />
+                        <span className="label-text font-medium flex items-center gap-2">
+                          Safe Mode (SFW)
+                        </span>
+                      </label>
+                      <p className="text-[10px] opacity-70 ml-13 -mt-1">
+                        If unchecked, this item will be hidden when Privacy Mode is enabled.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Dynamic Metadata Fields */}
                   {categoryFilters.map((filter) => (
                     <div key={filter.key} className="form-control w-full">

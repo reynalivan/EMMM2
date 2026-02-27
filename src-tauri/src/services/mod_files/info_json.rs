@@ -6,9 +6,31 @@
 //!
 //! # Covers: Epic 4 §C, DI-4.03 (info.json Lifecycle)
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
+
+/// Helper to parse either a string or an array of strings into a Vec<String>
+fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v: Value = Deserialize::deserialize(deserializer)?;
+    match v {
+        Value::String(s) => Ok(vec![s]),
+        Value::Array(arr) => {
+            let mut result = Vec::new();
+            for item in arr {
+                if let Value::String(s) = item {
+                    result.push(s);
+                }
+            }
+            Ok(result)
+        }
+        _ => Ok(Vec::new()), // Fallback for invalid types
+    }
+}
 
 /// The standard mod metadata structure stored in `info.json`.
 ///
@@ -32,6 +54,8 @@ pub struct ModInfo {
     pub is_favorite: bool,
     #[serde(default)]
     pub is_auto_sync: bool,
+    #[serde(default, deserialize_with = "deserialize_string_or_vec")]
+    pub preset_name: Vec<String>,
     #[serde(default)]
     pub metadata: std::collections::HashMap<String, String>,
 }
@@ -58,6 +82,7 @@ impl ModInfo {
             is_safe: true,
             is_favorite: false,
             is_auto_sync: false,
+            preset_name: Vec::new(),
             metadata: std::collections::HashMap::new(),
         }
     }
@@ -126,6 +151,8 @@ pub struct ModInfoUpdate {
     pub is_safe: Option<bool>,
     pub is_favorite: Option<bool>,
     pub is_auto_sync: Option<bool>,
+    pub preset_name_add: Option<Vec<String>>,
+    pub preset_name_remove: Option<Vec<String>>,
     pub metadata: Option<std::collections::HashMap<String, String>>,
 }
 
@@ -176,6 +203,18 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
     if let Some(sync) = update.is_auto_sync {
         info.is_auto_sync = sync;
     }
+
+    if let Some(ref add) = update.preset_name_add {
+        for p in add {
+            if !info.preset_name.contains(p) {
+                info.preset_name.push(p.clone());
+            }
+        }
+    }
+    if let Some(ref remove) = update.preset_name_remove {
+        info.preset_name.retain(|p| !remove.contains(p));
+    }
+
     if let Some(ref meta) = update.metadata {
         // Merge metadata (overwrite existing keys, keep others)
         for (k, v) in meta {

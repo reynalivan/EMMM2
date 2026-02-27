@@ -42,10 +42,7 @@ fn test_object_command_auto_matched_uses_staged_status_adapters() {
     assert_eq!(item.name, "Raiden Shogun");
     assert_eq!(item.match_level, "AutoMatched");
     assert_eq!(item.match_confidence, "High");
-    assert_eq!(
-        item.match_detail,
-        "Exact name match"
-    );
+    assert_eq!(item.match_detail, "Exact name match");
 }
 
 #[test]

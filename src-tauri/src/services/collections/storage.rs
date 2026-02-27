@@ -127,6 +127,16 @@ pub async fn create_collection(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Metadata Portability (US-8.3)
+        if let Some(path) = mod_path {
+            use crate::services::mod_files::info_json::{update_info_json, ModInfoUpdate};
+            let update = ModInfoUpdate {
+                preset_name_add: Some(vec![name_trimmed.to_string()]),
+                ..Default::default()
+            };
+            let _ = update_info_json(std::path::Path::new(path), &update);
+        }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
@@ -150,14 +160,45 @@ pub async fn update_collection(
 ) -> Result<CollectionDetails, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
+    let (old_name,): (String,) =
+        sqlx::query_as("SELECT name FROM collections WHERE id = ? AND game_id = ?")
+            .bind(&input.id)
+            .bind(&input.game_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Collection not found")?;
+
+    let mut new_name = old_name.clone();
+
     if let Some(name) = input.name.as_ref() {
+        let name_trimmed = name.trim();
+        new_name = name_trimmed.to_string();
         sqlx::query("UPDATE collections SET name = ? WHERE id = ? AND game_id = ?")
-            .bind(name.trim())
+            .bind(name_trimmed)
             .bind(&input.id)
             .bind(&input.game_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Rename preset_name in all current members' info.json if name changed
+        if new_name != old_name {
+            let paths: Vec<String> = sqlx::query_scalar("SELECT mod_path FROM collection_items WHERE collection_id = ? AND mod_path IS NOT NULL")
+                .bind(&input.id)
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap_or_default();
+            for path in paths {
+                use crate::services::mod_files::info_json::{update_info_json, ModInfoUpdate};
+                let update = ModInfoUpdate {
+                    preset_name_remove: Some(vec![old_name.clone()]),
+                    preset_name_add: Some(vec![new_name.clone()]),
+                    ..Default::default()
+                };
+                let _ = update_info_json(std::path::Path::new(&path), &update);
+            }
+        }
     }
 
     if let Some(safe) = input.is_safe_context {
@@ -172,21 +213,93 @@ pub async fn update_collection(
 
     if let Some(mod_ids) = input.mod_ids.as_ref() {
         let unique = unique_mod_ids(mod_ids.clone());
+
+        // 1. Get old members to diff
+        let old_items: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT mod_id, mod_path FROM collection_items WHERE collection_id = ?")
+                .bind(&input.id)
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap_or_default();
+
+        let old_ids: HashSet<String> = old_items.iter().map(|(id, _)| id.clone()).collect();
+        let new_ids: HashSet<String> = unique.iter().cloned().collect();
+
+        let removed_ids: HashSet<_> = old_ids.difference(&new_ids).collect();
+        let added_ids: HashSet<_> = new_ids.difference(&old_ids).collect();
+
+        // 2. Remove preset_name from removed members
+        for (id, path) in &old_items {
+            if removed_ids.contains(id) {
+                if let Some(p) = path {
+                    use crate::services::mod_files::info_json::{update_info_json, ModInfoUpdate};
+                    let update = ModInfoUpdate {
+                        preset_name_remove: Some(vec![new_name.clone()]),
+                        ..Default::default()
+                    };
+                    let _ = update_info_json(std::path::Path::new(p), &update);
+                }
+            }
+        }
+
+        // 3. Delete old DB entries
         sqlx::query("DELETE FROM collection_items WHERE collection_id = ?")
             .bind(&input.id)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
+        // 4. Fetch paths for new members
+        let mut add_paths: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        if !added_ids.is_empty() {
+            let mut qb: sqlx::QueryBuilder<'_, sqlx::Sqlite> =
+                sqlx::QueryBuilder::new("SELECT id, folder_path FROM mods WHERE id IN (");
+            let mut sep = qb.separated(", ");
+            for id in &added_ids {
+                sep.push_bind(*id);
+            }
+            qb.push(")");
+            let rows: Vec<(String, String)> = qb
+                .build_query_as()
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap_or_default();
+            for (id, path) in rows {
+                add_paths.insert(id, path);
+            }
+        }
+
+        // 5. Insert new members and add to info.json
         for mod_id in &unique {
+            let mod_path = add_paths.get(mod_id).map(|s| s.as_str()).or_else(|| {
+                // fallback to old path if not newly added
+                old_items
+                    .iter()
+                    .find(|(id, _)| id == mod_id)
+                    .and_then(|(_, p)| p.as_deref())
+            });
+
             sqlx::query(
-                "INSERT OR IGNORE INTO collection_items (collection_id, mod_id) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO collection_items (collection_id, mod_id, mod_path) VALUES (?, ?, ?)",
             )
             .bind(&input.id)
             .bind(mod_id)
+            .bind(mod_path)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+            if added_ids.contains(mod_id) {
+                if let Some(p) = mod_path {
+                    use crate::services::mod_files::info_json::{update_info_json, ModInfoUpdate};
+                    let update = ModInfoUpdate {
+                        preset_name_add: Some(vec![new_name.clone()]),
+                        ..Default::default()
+                    };
+                    let _ = update_info_json(std::path::Path::new(p), &update);
+                }
+            }
         }
     }
 
@@ -195,13 +308,41 @@ pub async fn update_collection(
 }
 
 pub async fn delete_collection(pool: &SqlitePool, id: &str, game_id: &str) -> Result<(), String> {
+    let (name,): (String,) =
+        sqlx::query_as("SELECT name FROM collections WHERE id = ? AND game_id = ?")
+            .bind(id)
+            .bind(game_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Collection not found")?;
+
+    let paths: Vec<String> = sqlx::query_scalar(
+        "SELECT mod_path FROM collection_items WHERE collection_id = ? AND mod_path IS NOT NULL",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     sqlx::query("DELETE FROM collections WHERE id = ? AND game_id = ?")
         .bind(id)
         .bind(game_id)
         .execute(pool)
         .await
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    for path in paths {
+        use crate::services::mod_files::info_json::{update_info_json, ModInfoUpdate};
+        let update = ModInfoUpdate {
+            preset_name_remove: Some(vec![name.clone()]),
+            ..Default::default()
+        };
+        let _ = update_info_json(std::path::Path::new(&path), &update);
+    }
+
+    Ok(())
 }
 
 fn unique_mod_ids(mod_ids: Vec<String>) -> Vec<String> {

@@ -277,6 +277,40 @@ impl ThumbnailCache {
         }
         Ok(deleted_count)
     }
+
+    /// Prune thumbnails older than `max_age_days`.
+    /// Returns number of deleted files.
+    pub fn clear_old_cache(max_age_days: u64) -> Result<usize, String> {
+        let cache = Self::get_instance().lock().unwrap();
+        let base_dir = cache.base_dir.as_ref().ok_or("Cache not initialized")?;
+
+        let cutoff = SystemTime::now()
+            .checked_sub(std::time::Duration::from_secs(max_age_days * 86400))
+            .ok_or_else(|| "Failed to compute cutoff time".to_string())?;
+
+        let mut deleted_count = 0;
+        let entries = fs::read_dir(base_dir).map_err(|e| e.to_string())?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            if path.extension().is_some_and(|e| e == "webp") {
+                if let Ok(meta) = fs::metadata(&path) {
+                    if let Ok(accessed) = meta.accessed().or_else(|_| meta.modified()) {
+                        if accessed < cutoff {
+                            if fs::remove_file(&path).is_ok() {
+                                deleted_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(deleted_count)
+    }
 }
 
 #[cfg(test)]

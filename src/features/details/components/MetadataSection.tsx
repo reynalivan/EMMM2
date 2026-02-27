@@ -1,5 +1,3 @@
-import { Check } from 'lucide-react';
-
 interface MetadataSectionProps {
   activePath: string | null;
   titleDraft: string;
@@ -7,12 +5,10 @@ interface MetadataSectionProps {
   versionDraft: string;
   descriptionDraft: string;
   metadataDirty: boolean;
-  isSaving: boolean;
   onTitleChange: (value: string) => void;
   onAuthorChange: (value: string) => void;
   onVersionChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
-  onSave: () => void;
   onDiscard: () => void;
 }
 
@@ -23,18 +19,30 @@ export default function MetadataSection({
   versionDraft,
   descriptionDraft,
   metadataDirty,
-  isSaving,
   onTitleChange,
   onAuthorChange,
   onVersionChange,
   onDescriptionChange,
-  onSave,
   onDiscard,
 }: MetadataSectionProps) {
   return (
     <div className="mb-6 flex flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Metadata</h3>
+        <div className="flex items-center gap-2">
+          {metadataDirty && (
+            <>
+              <span className="text-[10px] text-base-content/40 italic">auto-saving…</span>
+              <button
+                className="btn btn-ghost btn-xs text-warning"
+                onClick={onDiscard}
+                title="Revert metadata changes and cancel auto-save"
+              >
+                Revert
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -97,26 +105,6 @@ export default function MetadataSection({
           disabled={!activePath}
           onChange={(event) => onDescriptionChange(event.target.value)}
         />
-      </div>
-
-      <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-2 border-t border-white/5 bg-base-100/80 px-6 py-4 backdrop-blur-sm">
-        <button
-          className="btn btn-ghost btn-sm flex-1 text-warning"
-          disabled={!metadataDirty || isSaving}
-          onClick={onDiscard}
-          title="Discard metadata changes"
-        >
-          Discard
-        </button>
-        <button
-          className="btn btn-primary btn-sm flex-1"
-          disabled={!metadataDirty || isSaving || !activePath}
-          onClick={onSave}
-          title="Save metadata"
-        >
-          <Check size={13} />
-          Save Metadata
-        </button>
       </div>
     </div>
   );

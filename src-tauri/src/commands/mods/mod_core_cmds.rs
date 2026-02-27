@@ -125,17 +125,44 @@ pub async fn toggle_mod(
     op_lock: State<'_, OperationLock>,
     path: String,
     enable: bool,
+    game_id: String,
 ) -> Result<String, String> {
     let _lock = op_lock.acquire().await?;
-    let new_path = toggle_mod_inner(&state, path.clone(), enable).await?;
+
+    // 1. Get the base mods_path for the active game to compute relative paths
+    let mods_path: String = sqlx::query_scalar("SELECT mod_path FROM games WHERE id = ?")
+        .bind(&game_id)
+        .fetch_one(&*pool)
+        .await
+        .map_err(|e| format!("Failed to fetch game mods path: {}", e))?;
+
+    let base = Path::new(&mods_path);
+
+    let new_absolute_path = toggle_mod_inner(&state, path.clone(), enable).await?;
     let new_status = if enable { "ENABLED" } else { "DISABLED" };
-    let _ = sqlx::query("UPDATE mods SET folder_path = ?, status = ? WHERE folder_path = ?")
-        .bind(&new_path)
+
+    // 2. Compute relative paths because the DB stores relative paths (e.g. "Acheron\ModName")
+    let new_rel = Path::new(&new_absolute_path)
+        .strip_prefix(base)
+        .unwrap_or(Path::new(&new_absolute_path))
+        .to_string_lossy()
+        .to_string();
+
+    let old_rel = Path::new(&path)
+        .strip_prefix(base)
+        .unwrap_or(Path::new(&path))
+        .to_string_lossy()
+        .to_string();
+
+    let _ = sqlx::query("UPDATE mods SET folder_path = ?, status = ? WHERE folder_path = ? AND game_id = ?")
+        .bind(&new_rel)
         .bind(new_status)
-        .bind(&path)
+        .bind(&old_rel)
+        .bind(&game_id)
         .execute(&*pool)
         .await;
-    Ok(new_path)
+
+    Ok(new_absolute_path)
 }
 
 pub async fn toggle_mod_inner(
@@ -143,34 +170,31 @@ pub async fn toggle_mod_inner(
     path: String,
     enable: bool,
 ) -> Result<String, String> {
-    let path_obj = Path::new(&path);
-    if !path_obj.exists() {
-        return Err(format!("Path does not exist: {}", path));
+    let src = Path::new(&path);
+    if !src.exists() || !src.is_dir() {
+        return Err(format!("Mod folder does not exist: {path}"));
     }
 
-    let parent = path_obj.parent().ok_or("Invalid path parent")?;
-    let file_name = path_obj
-        .file_name()
-        .ok_or("Invalid file name")?
-        .to_string_lossy()
-        .to_string();
+    let parent = src.parent().unwrap_or_else(|| Path::new(""));
+    let old_name = src.file_name().unwrap_or_default().to_string_lossy();
 
-    let new_name = standardize_prefix(&file_name, enable);
-    if new_name == file_name {
+    let new_name = standardize_prefix(&old_name, enable);
+    if new_name == old_name {
         return Ok(path);
     }
 
     let new_path = parent.join(&new_name);
 
-    if new_path.exists() && file_name.to_lowercase() != new_name.to_lowercase() {
-        return Err(format!(
-            "Target path already exists: {}",
-            new_path.display()
-        ));
+    {
+        let _guard = SuppressionGuard::new(&state.suppressor);
+        fs::rename(src, &new_path).map_err(|e| format!("Failed to rename mod folder: {e}"))?;
     }
 
-    let _guard = SuppressionGuard::new(&state.suppressor);
-    fs::rename(&path, &new_path).map_err(|e| format!("Failed to rename: {}", e))?;
+    log::info!(
+        "Toggled mod: '{}' -> '{}'",
+        old_name,
+        new_path.display()
+    );
 
     Ok(new_path.to_string_lossy().to_string())
 }
@@ -184,13 +208,45 @@ pub struct RenameResult {
 
 #[tauri::command]
 pub async fn rename_mod_folder(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     folder_path: String,
     new_name: String,
+    game_id: String,
 ) -> Result<RenameResult, String> {
     let _lock = op_lock.acquire().await?;
-    rename_mod_folder_inner(&state, folder_path, new_name).await
+
+    let mods_path: String = sqlx::query_scalar("SELECT mod_path FROM games WHERE id = ?")
+        .bind(&game_id)
+        .fetch_one(&*pool)
+        .await
+        .map_err(|e| format!("Failed to fetch game mods path: {}", e))?;
+    let base = Path::new(&mods_path);
+
+    let result = rename_mod_folder_inner(&state, folder_path.clone(), new_name).await?;
+
+    let new_rel = Path::new(&result.new_path)
+        .strip_prefix(base)
+        .unwrap_or(Path::new(&result.new_path))
+        .to_string_lossy()
+        .to_string();
+
+    let old_rel = Path::new(&folder_path)
+        .strip_prefix(base)
+        .unwrap_or(Path::new(&folder_path))
+        .to_string_lossy()
+        .to_string();
+
+    // Sync DB: update mods.folder_path to match new FS path
+    let _ = sqlx::query("UPDATE mods SET folder_path = ? WHERE folder_path = ? AND game_id = ?")
+        .bind(&new_rel)
+        .bind(&old_rel)
+        .bind(&game_id)
+        .execute(&*pool)
+        .await;
+
+    Ok(result)
 }
 
 pub async fn rename_mod_folder_inner(

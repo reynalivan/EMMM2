@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, State};
 #[tauri::command]
 pub async fn delete_mod(
     app: AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     path: String,
@@ -24,7 +25,13 @@ pub async fn delete_mod(
         fs::create_dir_all(&trash_dir).map_err(|e| format!("Failed to create trash dir: {}", e))?;
     }
 
-    delete_mod_inner(&state, &trash_dir, path, game_id).await
+    delete_mod_inner(&state, &trash_dir, path.clone(), game_id).await?;
+    // Sync DB: remove mod record since folder is trashed
+    let _ = sqlx::query("DELETE FROM mods WHERE folder_path = ?")
+        .bind(&path)
+        .execute(&*pool)
+        .await;
+    Ok(())
 }
 
 pub async fn delete_mod_inner(

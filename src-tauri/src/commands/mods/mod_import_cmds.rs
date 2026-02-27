@@ -82,7 +82,7 @@ pub async fn import_mods_from_paths(
                 Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
                 Err(e) => failures.push(BulkActionError {
                     path: path_str.clone(),
-                    error: e,
+                    error: e.to_string(),
                 }),
             }
             continue;

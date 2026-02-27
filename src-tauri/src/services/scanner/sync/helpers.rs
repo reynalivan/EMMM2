@@ -106,12 +106,14 @@ pub async fn ensure_object_exists(
     db_metadata_json: &str,
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
-    // Case-insensitive lookup to prevent duplicates (e.g. folder "hook" vs DB alias "Hook")
+    // Case-insensitive lookup to prevent duplicates (e.g. folder "archeron" vs DB "Acheron")
+    // Or if the alias name matches, it's the same object (important when DISABLED folders are toggled)
     let existing = sqlx::query(
-        "SELECT id, name, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND folder_path = ?",
+        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)",
     )
     .bind(game_id)
     .bind(folder_path)
+    .bind(obj_name)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -119,9 +121,20 @@ pub async fn ensure_object_exists(
     if let Some(row) = existing {
         let id: String = row.try_get("id").map_err(|e| e.to_string())?;
         let existing_name: String = row.try_get("name").map_err(|e| e.to_string())?;
+        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
         let existing_type: String = row
             .try_get("object_type")
             .unwrap_or_else(|_| "Other".to_string());
+
+        // Always sync folder_path to match FS truth (input folder_path)
+        if existing_fp != folder_path {
+            sqlx::query("UPDATE objects SET folder_path = ? WHERE id = ?")
+                .bind(folder_path)
+                .bind(&id)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
 
         // Upgrade name + type when incoming data has richer info (thumbnail from MasterDB)
         if (existing_name != obj_name || existing_type != obj_type) && db_thumbnail.is_some() {

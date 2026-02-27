@@ -46,6 +46,7 @@ interface FolderListRowProps {
   onRename?: (folder: ModFolder) => void;
   onDelete?: (folder: ModFolder) => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
+  onToggleSafe?: () => void;
   hasConflict?: boolean;
 }
 
@@ -67,6 +68,7 @@ function FolderListRowInner({
   onRename,
   onDelete,
   onOpenMoveDialog,
+  onToggleSafe,
   hasConflict = false,
 }: FolderListRowProps) {
   // Lazy thumbnail: resolved per-row via separate backend command
@@ -133,6 +135,14 @@ function FolderListRowInner({
             <ContextMenuItem icon={Trash2} danger onClick={() => onDelete?.(item)}>
               Delete to Trash
             </ContextMenuItem>
+            {onToggleSafe && (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem icon={item.is_safe ? ToggleLeft : Star} onClick={onToggleSafe}>
+                  {item.is_safe ? 'Mark as NSFW (Remove Privacy)' : 'Mark as SFW (Add Privacy)'}
+                </ContextMenuItem>
+              </>
+            )}
           </>
         )
       }

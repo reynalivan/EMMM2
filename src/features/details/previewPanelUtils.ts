@@ -1,3 +1,5 @@
+import { validateKeyBinding } from './keybindingValidator';
+
 export interface IniVariableLike {
   name: string;
   value: string;
@@ -242,6 +244,15 @@ export function toIniWritePayload(
     if (error) {
       fieldErrors[field.id] = error;
       continue;
+    }
+
+    // Key/back fields require keybinding-specific validation
+    if (field.label === 'key' || field.label === 'back') {
+      const kbError = validateKeyBinding(draft);
+      if (kbError) {
+        fieldErrors[field.id] = kbError;
+        continue;
+      }
     }
 
     const updates = updatesByFile[field.fileName] ?? [];

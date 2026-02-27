@@ -60,6 +60,12 @@ pub async fn sync_database_cmd(
         })
         .collect();
 
+    let keywords = app
+        .state::<crate::services::config::ConfigService>()
+        .get_settings()
+        .safe_mode
+        .keywords;
+
     // 3. Commit the results to DB
     sync::commit_scan_results(
         &pool,
@@ -69,6 +75,7 @@ pub async fn sync_database_cmd(
         &mods_path,
         confirmed_items,
         resource_dir.as_deref(),
+        &keywords,
     )
     .await
 }
@@ -134,6 +141,12 @@ pub async fn commit_scan_cmd(
 
     let resource_dir = app.path().resource_dir().ok();
 
+    let keywords = app
+        .state::<crate::services::config::ConfigService>()
+        .get_settings()
+        .safe_mode
+        .keywords;
+
     sync::commit_scan_results(
         &pool,
         &game_id,
@@ -142,6 +155,7 @@ pub async fn commit_scan_cmd(
         &mods_path,
         items,
         resource_dir.as_deref(),
+        &keywords,
     )
     .await
 }

@@ -1,8 +1,8 @@
-import { Monitor, Languages, Database } from 'lucide-react';
+import { Monitor, Languages, Database, LogOut } from 'lucide-react';
+import { useAppStore } from '../../../stores/useAppStore';
 
 export default function GeneralTab() {
-  // Theme logic would hook into a ThemeContext or useTheme store.
-  // For now, these are UI placeholders as per plan.
+  const { autoCloseLauncher, setAutoCloseLauncher } = useAppStore();
 
   return (
     <div className="space-y-6">
@@ -54,6 +54,31 @@ export default function GeneralTab() {
                 Only English is currently supported.
               </span>
             </label>
+          </div>
+        </div>
+      </div>
+
+      {/* App Behavior */}
+      <div className="card bg-base-200 shadow-sm border border-base-300">
+        <div className="card-body">
+          <h3 className="card-title text-lg flex items-center gap-2">
+            <LogOut size={20} className="text-secondary" />
+            App Behavior
+          </h3>
+
+          <div className="form-control max-w-sm mt-2">
+            <label className="label cursor-pointer justify-start gap-4">
+              <input
+                type="checkbox"
+                className="toggle toggle-primary"
+                checked={autoCloseLauncher}
+                onChange={(e) => setAutoCloseLauncher(e.target.checked)}
+              />
+              <span className="label-text font-medium">Auto-Close on Launch</span>
+            </label>
+            <p className="text-sm text-base-content/70 mt-1 pl-13">
+              Automatically close EMMM2 completely when you successfully launch a game.
+            </p>
           </div>
         </div>
       </div>

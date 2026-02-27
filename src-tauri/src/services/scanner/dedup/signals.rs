@@ -17,6 +17,7 @@ pub(crate) struct ModSnapshot {
     pub total_size_bytes: u64,
     pub ini_headers: BTreeSet<String>,
     pub keybindings: BTreeSet<String>,
+    pub target_hashes: BTreeSet<String>,
     pub extensions: HashMap<String, u64>,
 }
 
@@ -32,6 +33,7 @@ pub(crate) struct FileEntry {
 pub(crate) struct HashProfile {
     pub key_file_hashes: BTreeMap<String, String>,
     pub texture_samples: BTreeMap<String, String>,
+    pub mesh_hashes: BTreeMap<String, String>,
 }
 
 pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, String> {
@@ -39,6 +41,7 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
     let mut total_size = 0_u64;
     let mut ini_headers = BTreeSet::new();
     let mut keybindings = BTreeSet::new();
+    let mut target_hashes = BTreeSet::new();
     let mut extensions: HashMap<String, u64> = HashMap::new();
 
     for entry in WalkDir::new(&candidate.path)
@@ -62,9 +65,10 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
         total_size = total_size.saturating_add(size);
         *extensions.entry(extension.clone()).or_insert(0) += 1;
         if extension == "ini" {
-            let (headers, bindings) = read_ini_signals(&path);
+            let (headers, bindings, hashes) = read_ini_signals(&path);
             ini_headers.extend(headers);
             keybindings.extend(bindings);
+            target_hashes.extend(hashes);
         }
 
         files.push(FileEntry {
@@ -81,6 +85,7 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
         total_size_bytes: total_size,
         ini_headers,
         keybindings,
+        target_hashes,
         extensions,
     })
 }
@@ -104,10 +109,25 @@ pub(crate) fn hash_snapshot(snapshot: &ModSnapshot) -> HashProfile {
                 .insert(file.rel_path.clone(), value.clone());
             if TEXTURE_EXTS.contains(&file.extension.as_str()) {
                 profile.texture_samples.insert(file.rel_path.clone(), value);
+            } else if ["ib", "buf"].contains(&file.extension.as_str()) {
+                profile.mesh_hashes.insert(file.rel_path.clone(), value);
             }
         }
     }
     profile
+}
+
+static RE_VERSION: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(v|ver|version)\s*\d+(\.\d+)*\b").unwrap()
+});
+
+fn strip_version(name: &str) -> String {
+    RE_VERSION
+        .replace_all(name, "")
+        .to_string()
+        .replace("  ", " ")
+        .trim()
+        .to_lowercase()
 }
 
 pub(crate) fn aggregate_signals(
@@ -126,9 +146,29 @@ pub(crate) fn aggregate_signals(
 
     let extension_score = extension_distribution_score(&left.extensions, &right.extensions);
     let texture_score = texture_similarity(&left_hash.texture_samples, &right_hash.texture_samples);
-    let physical = ((extension_score * 0.5) + (texture_score * 0.5)).clamp(0.0, 1.0);
+    let (mesh_score, exact_mesh_match) =
+        hash_similarity(&left_hash.mesh_hashes, &right_hash.mesh_hashes);
 
-    let supporting = set_overlap_score(&left.keybindings, &right.keybindings);
+    let physical =
+        ((extension_score * 0.3) + (texture_score * 0.4) + (mesh_score * 0.3)).clamp(0.0, 1.0);
+
+    let keybinding_score = set_overlap_score(&left.keybindings, &right.keybindings);
+    let logical_overlap = set_overlap_score(&left.target_hashes, &right.target_hashes);
+
+    let supporting = ((keybinding_score * 0.5) + (logical_overlap * 0.5)).clamp(0.0, 1.0);
+
+    let left_clean_name = strip_version(&left.candidate.display_name);
+    let right_clean_name = strip_version(&right.candidate.display_name);
+    let is_version_upgrade = left_clean_name == right_clean_name
+        && !left_clean_name.is_empty()
+        && left.candidate.display_name != right.candidate.display_name;
+
+    let size_diff = ratio(left.total_size_bytes, right.total_size_bytes);
+    let is_potential_recolor = exact_mesh_match
+        && !left_hash.mesh_hashes.is_empty()
+        && size_diff > 0.95
+        && texture_score < 1.0;
+
     if exact_hash_match {
         let signals = vec![DupScanSignal {
             key: "content_hash".to_string(),
@@ -138,10 +178,24 @@ pub(crate) fn aggregate_signals(
         return (100, signals, "Exact hash match".to_string());
     }
 
-    let weighted =
-        (structural_name * 40.0) + (file_identity * 30.0) + (physical * 20.0) + (supporting * 10.0);
-    let score = weighted.round().clamp(0.0, 99.0) as u8;
-    let signals = vec![
+    let mut weighted =
+        (structural_name * 35.0) + (file_identity * 30.0) + (physical * 20.0) + (supporting * 15.0);
+
+    if is_potential_recolor {
+        weighted += 25.0;
+    }
+
+    if logical_overlap > 0.8 {
+        weighted += 15.0;
+    }
+
+    let mut score = weighted.round().clamp(0.0, 99.0) as u8;
+
+    if is_version_upgrade {
+        score = score.max(85);
+    }
+
+    let mut signals = vec![
         build_signal(
             "name_structure",
             "Front-name and tree similarity",
@@ -154,17 +208,36 @@ pub(crate) fn aggregate_signals(
         ),
         build_signal(
             "physical",
-            "Extension distribution and texture sample signal",
+            "Extension distribution, texture, and mesh signal",
             physical,
         ),
-        build_signal("supporting", "Keybinding/supporting signal", supporting),
+        build_signal(
+            "supporting",
+            "Keybinding and Logical INI Hash overlap",
+            supporting,
+        ),
     ];
 
-    let reason = if score >= 80 {
+    if logical_overlap > 0.0 {
+        signals.push(build_signal(
+            "logical_overlap",
+            "INI target hashes overlap (3DMigoto)",
+            logical_overlap,
+        ));
+    }
+
+    let reason = if is_potential_recolor {
+        "Potential Recolor / Retexture Variant".to_string()
+    } else if is_version_upgrade {
+        "Version Upgrade Detected".to_string()
+    } else if logical_overlap > 0.8 {
+        "Logical INI Hash Override Conflict".to_string()
+    } else if score >= 80 {
         "High name + structure similarity".to_string()
     } else {
         "Low confidence - manual review required".to_string()
     };
+
     (score, signals, reason)
 }
 
@@ -241,25 +314,29 @@ fn partial_blake3_hash(path: &Path) -> Result<String, String> {
     Ok(hasher.finalize().to_string())
 }
 
-fn read_ini_signals(path: &Path) -> (BTreeSet<String>, BTreeSet<String>) {
+fn read_ini_signals(path: &Path) -> (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) {
     let file = match File::open(path) {
         Ok(value) => value,
-        Err(_) => return (BTreeSet::new(), BTreeSet::new()),
+        Err(_) => return (BTreeSet::new(), BTreeSet::new(), BTreeSet::new()),
     };
     let mut headers = BTreeSet::new();
     let mut keybindings = BTreeSet::new();
+    let mut target_hashes = BTreeSet::new();
 
-    for line in BufReader::new(file).lines().map_while(Result::ok).take(40) {
+    for line in BufReader::new(file).lines().map_while(Result::ok).take(200) {
         let trimmed = line.trim().to_ascii_lowercase();
         if trimmed.starts_with(';') || trimmed.starts_with('[') {
             headers.insert(trimmed.clone());
-        }
-        if trimmed.contains("$swapvar") || trimmed.starts_with("key") {
-            keybindings.insert(trimmed);
+        } else if trimmed.contains("$swapvar") || trimmed.starts_with("key") {
+            keybindings.insert(trimmed.clone());
+        } else if trimmed.starts_with("hash") {
+            if let Some(hash_val) = trimmed.split('=').nth(1) {
+                target_hashes.insert(hash_val.trim().to_string());
+            }
         }
     }
 
-    (headers, keybindings)
+    (headers, keybindings, target_hashes)
 }
 
 fn normalize_name(value: &str) -> String {
@@ -344,4 +421,13 @@ fn build_signal(key: &str, detail: &str, score: f64) -> DupScanSignal {
         detail: detail.to_string(),
         score: (score * 100.0).round().clamp(0.0, 100.0) as u8,
     }
+}
+
+fn ratio(a: u64, b: u64) -> f64 {
+    let a = a as f64;
+    let b = b as f64;
+    if a.max(b) == 0.0 {
+        return 1.0;
+    }
+    a.min(b) / a.max(b)
 }

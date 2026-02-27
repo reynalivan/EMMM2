@@ -9,6 +9,7 @@ import UnsavedIniChangesModal from './components/UnsavedIniChangesModal';
 import GallerySection from './components/GallerySection';
 import MetadataSection from './components/MetadataSection';
 import IniEditorSection from './components/IniEditorSection';
+import { useActiveGame } from '../../hooks/useActiveGame';
 import { usePreviewPanelState } from './hooks/usePreviewPanelState';
 
 function toErrorMessage(error: unknown): string {
@@ -22,6 +23,7 @@ export default function PreviewPanel() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const { activeGame } = useActiveGame();
 
   const {
     activePath,
@@ -46,7 +48,6 @@ export default function PreviewPanel() {
     fieldErrors,
     variableSummaries,
     hasUnsavedEditorChanges,
-    updateModInfo,
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
@@ -313,8 +314,12 @@ export default function PreviewPanel() {
               checked={selectedFolder?.is_enabled ?? false}
               disabled={!selectedFolder || toggleMod.isPending}
               onChange={() => {
-                if (!selectedFolder) return;
-                toggleMod.mutate({ path: selectedFolder.path, enable: !selectedFolder.is_enabled });
+                if (!selectedFolder || !activeGame?.id) return;
+                toggleMod.mutate({
+                  path: selectedFolder.path,
+                  enable: !selectedFolder.is_enabled,
+                  gameId: activeGame.id,
+                });
               }}
             />
             <span className="text-sm font-medium text-white/60">
@@ -394,12 +399,10 @@ export default function PreviewPanel() {
         versionDraft={versionDraft}
         descriptionDraft={descriptionDraft}
         metadataDirty={metadataDirty}
-        isSaving={updateModInfo.isPending}
         onTitleChange={setTitleDraft}
         onAuthorChange={setAuthorDraft}
         onVersionChange={setVersionDraft}
         onDescriptionChange={setDescriptionDraft}
-        onSave={() => void saveMetadata()}
         onDiscard={discardMetadata}
       />
 

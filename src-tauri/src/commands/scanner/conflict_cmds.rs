@@ -174,7 +174,7 @@ pub async fn check_shader_conflicts(folder_path: String) -> Result<Vec<ConflictI
 }
 
 /// Walk a directory and collect all `.ini` files from immediate subdirectories.
-fn collect_ini_files(mods_dir: &Path) -> Result<Vec<PathBuf>, String> {
+fn collect_ini_files(mods_dir: &Path) -> Result<Vec<(PathBuf, PathBuf)>, String> {
     let mut ini_files = Vec::new();
 
     let entries =
@@ -191,14 +191,14 @@ fn collect_ini_files(mods_dir: &Path) -> Result<Vec<PathBuf>, String> {
             continue;
         }
         // Walk this mod folder for .ini files
-        walk_ini_recursive(&path, &mut ini_files);
+        walk_ini_recursive(&path, &path, &mut ini_files);
     }
 
     Ok(ini_files)
 }
 
 /// Recursively collect `.ini` files from a directory.
-fn walk_ini_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
+fn walk_ini_recursive(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, PathBuf)>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -207,12 +207,12 @@ fn walk_ini_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            walk_ini_recursive(&path, out);
+            walk_ini_recursive(root, &path, out);
         } else if path
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("ini"))
         {
-            out.push(path);
+            out.push((root.to_path_buf(), path));
         }
     }
 }
@@ -222,7 +222,17 @@ fn walk_ini_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
 /// # Covers: US-2.Z, TC-2.4-01
 #[tauri::command]
 pub async fn detect_conflicts_cmd(ini_paths: Vec<String>) -> Result<Vec<ConflictInfo>, String> {
-    let paths: Vec<PathBuf> = ini_paths.iter().map(PathBuf::from).collect();
+    let paths: Vec<(PathBuf, PathBuf)> = ini_paths
+        .into_iter()
+        .map(|p| {
+            let pb = PathBuf::from(p);
+            let root = pb
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| pb.clone());
+            (root, pb)
+        })
+        .collect();
     Ok(detect_conflicts(&paths))
 }
 
@@ -246,7 +256,9 @@ pub async fn detect_conflicts_in_folder_cmd(
         }
 
         let content = walker::scan_folder_content(&candidate.path, 3); // Depth 3 per Epic 2
-        all_inis.extend(content.ini_files);
+        for ini in content.ini_files {
+            all_inis.push((candidate.path.clone(), ini));
+        }
     }
 
     Ok(detect_conflicts(&all_inis))

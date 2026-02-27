@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT folder_path FROM objects WHERE game_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "folder_path",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "64ca1a2fb8d708c3de2f0bd82fdc93b1592b08ab724a4747e4b1bf4c44eb8617"
+}

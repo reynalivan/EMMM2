@@ -2,13 +2,16 @@ import { Play, Shuffle, AlertTriangle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useActiveConflicts } from '../../hooks/useFolders';
+import { useAppStore } from '../../stores/useAppStore';
 import { invoke } from '@tauri-apps/api/core';
+import { exit } from '@tauri-apps/plugin-process';
 import RandomizerModal from '../Randomizer/RandomizerModal';
 import ConflictModal from '../ConflictReport/ConflictModal';
 import ConflictToast from '../scanner/ConflictToast';
 
 export default function LaunchBar() {
   const { activeGame } = useActiveGame();
+  const { autoCloseLauncher } = useAppStore();
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
@@ -30,6 +33,10 @@ export default function LaunchBar() {
 
     try {
       await invoke('launch_game', { gameId: activeGame.id });
+
+      if (autoCloseLauncher) {
+        await exit(0);
+      }
     } catch (e) {
       setError(String(e));
       setTimeout(() => setError(null), 5000);

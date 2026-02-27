@@ -37,7 +37,6 @@ export function useMetadataDraft({
 
   useEffect(() => {
     if (!activePath) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTitleDraft('');
       setAuthorDraft('');
       setVersionDraft('');
@@ -96,6 +95,11 @@ export function useMetadataDraft({
       return;
     }
 
+    if (titleDraft.trim() === '') {
+      toast.warning('Title cannot be empty');
+      return;
+    }
+
     try {
       const saved = await onSave(activePath, {
         actual_name: titleDraft,
@@ -107,11 +111,30 @@ export function useMetadataDraft({
       setSyncedAuthor(saved.author);
       setSyncedVersion(saved.version);
       setSyncedDescription(saved.description);
-      toast.success('Metadata saved.');
+      toast.success('Metadata auto-saved.');
     } catch (error) {
       toast.error(`Cannot save metadata: ${toErrorMessage(error)}`);
     }
   };
+
+  // Auto-save with long debounce
+  useEffect(() => {
+    if (!metadataDirty || !activePath) {
+      return;
+    }
+
+    // validasi kalau isinya nol > akan diabaikan
+    if (titleDraft.trim() === '') {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void saveMetadata();
+    }, 2500); // 2.5 seconds duration to allow reverting back
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePath, metadataDirty, titleDraft, authorDraft, versionDraft, descriptionDraft]);
 
   const discardMetadata = () => {
     setTitleDraft(syncedTitle);

@@ -10,6 +10,7 @@ use tauri::State;
 /// Moves selected mods to `Mods/{Category}/{ObjectName}/{ModName}`.
 #[tauri::command]
 pub async fn auto_organize_mods(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     paths: Vec<String>,
     target_root: String,
     db_json: String,
@@ -29,11 +30,28 @@ pub async fn auto_organize_mods(
         let _guard = SuppressionGuard::new(&watcher.suppressor);
 
         match organizer::organize_mod(path, root, &db) {
-            Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
-            Err(e) => failures.push(BulkActionError {
-                path: path_str,
-                error: e,
-            }),
+            Ok(res) => {
+                let new_path = res.new_path.to_string_lossy().to_string();
+                // Sync DB: update folder_path to new location
+                let _ = sqlx::query(
+                    "UPDATE mods SET folder_path = ? WHERE folder_path = ?",
+                )
+                .bind(&new_path)
+                .bind(&path_str)
+                .execute(&*pool)
+                .await;
+                success.push(new_path);
+            }
+            Err(e) => {
+                let error_str = match e {
+                    organizer::OrganizeError::Duplicate { dest } => format!("DUPLICATE|{}", dest),
+                    organizer::OrganizeError::Generic(msg) => msg,
+                };
+                failures.push(BulkActionError {
+                    path: path_str,
+                    error: error_str,
+                });
+            }
         }
     }
 

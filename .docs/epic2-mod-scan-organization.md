@@ -41,15 +41,15 @@
     - **Pre-Extraction Analysis**: Scan the archive up to a depth of 5 levels. If no `.ini` file is found, provide a `has_ini_warning` in the confirmation dialog.
     - Extract to a new folder with the same name as the archive file.
     - The original archive file is moved to the `.archive_backup` folder.
+    - **Trigger Zones**: Archive extraction should also trigger when archives are dropped via Drag & Drop onto the auto-organize Sidebar (ObjectList) or the Folder Grid (main area).
 
-### US-2.X: Instant Startup (Cache Strategy)
+### US-2.X: Instant Startup (Filesystem Source of Truth)
 
-**As a** user with thousands of mods, **I want** the application to open instantly (< 3 seconds) without repeated scanning processes.
+**As a** user with thousands of mods, **I want** the application to treat my folder structure as the absolute source of truth, reading data directly from the disk.
 
 - **Acceptance Criteria:**
-  - **Cache First**: The application loads data from the SQLite Cache at startup.
-  - **Lazy Verify**: File integrity verification is performed in the background _after_ the UI appears.
-  - **Ready Indicator**: Display a "System Ready" indicator as soon as the cache is loaded.
+  - **Filesystem First**: The application reads the `.ini` and folder states directly from the filesystem (or a highly synced cache mirror representation) such that manual explorer changes are the primary source.
+  - **Ready Indicator**: Display a "System Ready" indicator as soon as the initial UI data is processed.
 
 ### US-2.Y: Background Sync (Watchdog)
 

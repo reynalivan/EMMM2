@@ -21,12 +21,12 @@ export function ExternalChangeHandler() {
 
   // 1. Start Watcher when game changes
   useEffect(() => {
-    if (activeGame?.mod_path) {
-      invoke('start_watcher_cmd', { path: activeGame.mod_path }).catch((err) =>
-        console.error('Failed to start watcher:', err),
+    if (activeGame?.mod_path && activeGame?.id) {
+      invoke('start_watcher_cmd', { path: activeGame.mod_path, gameId: activeGame.id }).catch(
+        (err) => console.error('Failed to start watcher:', err),
       );
     }
-  }, [activeGame?.mod_path]);
+  }, [activeGame?.mod_path, activeGame?.id]);
 
   // 2. Listen for events
   useEffect(() => {
@@ -65,18 +65,14 @@ export function ExternalChangeHandler() {
         const getFolderName = (p?: string) => p?.split(/[\\/]/).pop() ?? 'Unknown Item';
 
         if (payload.type === 'Removed' && isModFolder(payload.path)) {
-          toast.warning(
-            `External Deletion: "${getFolderName(payload.path)}" was removed. Database auto-updated.`,
-          );
+          toast.warning(`"${getFolderName(payload.path)}" was removed externally. View refreshed.`);
         } else if (payload.type === 'Created' && isModFolder(payload.path)) {
-          toast.info(
-            `External Creation: "${getFolderName(payload.path)}" was added. Database auto-updated.`,
-          );
+          toast.info(`"${getFolderName(payload.path)}" was added externally. View refreshed.`);
         } else if (payload.type === 'Renamed') {
           // If either the old or new name is a mod folder, notify
           if (isModFolder(payload.from) || isModFolder(payload.to)) {
             toast.info(
-              `External Rename: "${getFolderName(payload.from)}" renamed to "${getFolderName(payload.to)}". Database auto-updated.`,
+              `"${getFolderName(payload.from)}" renamed to "${getFolderName(payload.to)}" externally. View refreshed.`,
             );
           }
         }

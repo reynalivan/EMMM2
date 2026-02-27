@@ -264,5 +264,11 @@ export function useObjectListLogic() {
     handleDropOnItem: handlers.handleDropOnItem,
     handleDropAutoOrganize: handlers.handleDropAutoOrganize,
     handleDropNewObject: handlers.handleDropNewObject,
+    handleDropOnNewObjectSubmit: handlers.handleDropOnNewObjectSubmit,
+
+    // Archive Modal
+    archiveModal: handlers.archiveModal,
+    handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,
+    handleArchiveExtractSkip: handlers.handleArchiveExtractSkip,
   };
 }

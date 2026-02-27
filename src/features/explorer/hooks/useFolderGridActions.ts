@@ -2,7 +2,7 @@
  * useFolderGridActions — Single-item action handlers extracted from useFolderGrid.
  *
  * Handles: toggle enabled (with duplicate check), toggle favorite,
- * enable only this, rename, delete, move to object.
+ * enable only this, rename, delete, move to object, toggle safe.
  */
 
 import { useState, useCallback } from 'react';
@@ -14,10 +14,12 @@ import {
   useDeleteMod,
   useEnableOnlyThis,
   useCheckDuplicate,
+  useToggleModSafe,
   folderKeys,
   ModFolder,
 } from '../../../hooks/useFolders';
 import type { DuplicateInfo } from '../../../types/mod';
+import { useAppStore } from '../../../stores/useAppStore';
 
 interface FolderGridActionsOptions {
   sortedFolders: ModFolder[];
@@ -35,9 +37,16 @@ export function useFolderGridActions({
   const deleteMod = useDeleteMod();
   const enableOnlyThis = useEnableOnlyThis();
   const checkDuplicate = useCheckDuplicate();
+  const toggleModSafe = useToggleModSafe();
 
   // Move To Object dialog state
   const [moveDialog, setMoveDialog] = useState<{ open: boolean; folder: ModFolder | null }>({
+    open: false,
+    folder: null,
+  });
+
+  // Pin / Safe mode dialog state
+  const [pinSafeDialog, setPinSafeDialog] = useState<{ open: boolean; folder: ModFolder | null }>({
     open: false,
     folder: null,
   });
@@ -62,14 +71,16 @@ export function useFolderGridActions({
   const handleToggleEnabled = useCallback(
     async (folder: ModFolder) => {
       if (folder.is_enabled) {
-        // Disabling — no duplicate check needed
-        toggleMod.mutate({ path: folder.path, enable: false });
+        if (activeGame?.id) {
+          toggleMod.mutate({ path: folder.path, enable: false, gameId: activeGame.id });
+        }
         return;
       }
 
-      // Enabling — check for duplicates first
       if (!activeGame?.id) {
-        toggleMod.mutate({ path: folder.path, enable: true });
+        if (activeGame?.id) {
+          toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
+        }
         return;
       }
 
@@ -80,26 +91,26 @@ export function useFolderGridActions({
         });
 
         if (duplicates.length > 0) {
-          // Show warning modal
           setDuplicateWarning({ open: true, folder, duplicates });
         } else {
-          // No duplicates — enable directly
-          toggleMod.mutate({ path: folder.path, enable: true });
+          if (activeGame?.id) {
+            toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
+          }
         }
       } catch {
-        // Check failed — enable anyway
-        toggleMod.mutate({ path: folder.path, enable: true });
+        if (activeGame?.id) {
+          toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
+        }
       }
     },
     [toggleMod, activeGame, checkDuplicate],
   );
 
-  // Duplicate Warning Modal handlers
   const handleDuplicateForceEnable = useCallback(() => {
-    if (!duplicateWarning.folder) return;
-    toggleMod.mutate({ path: duplicateWarning.folder.path, enable: true });
+    if (!duplicateWarning.folder || !activeGame?.id) return;
+    toggleMod.mutate({ path: duplicateWarning.folder.path, enable: true, gameId: activeGame.id });
     setDuplicateWarning({ open: false, folder: null, duplicates: [] });
-  }, [duplicateWarning.folder, toggleMod]);
+  }, [duplicateWarning.folder, toggleMod, activeGame]);
 
   const handleDuplicateEnableOnly = useCallback(() => {
     if (!duplicateWarning.folder || !activeGame?.id) return;
@@ -114,7 +125,6 @@ export function useFolderGridActions({
     setDuplicateWarning({ open: false, folder: null, duplicates: [] });
   }, []);
 
-  // Enable Only This — disable siblings, enable target
   const handleEnableOnlyThis = useCallback(
     (folder: ModFolder) => {
       if (!activeGame?.id) return;
@@ -123,17 +133,14 @@ export function useFolderGridActions({
     [activeGame, enableOnlyThis],
   );
 
-  // Toggle Favorite
   const handleToggleFavorite = useCallback(
     async (folder: ModFolder) => {
-      if (!folder.id) {
-        console.warn('Cannot favorite folder without ID');
-        return;
-      }
+      if (!activeGame?.id) return;
       try {
         await import('@tauri-apps/api/core').then((m) =>
           m.invoke('toggle_favorite', {
-            id: folder.id,
+            gameId: activeGame.id,
+            folderPath: folder.path,
             favorite: !folder.is_favorite,
           }),
         );
@@ -142,10 +149,9 @@ export function useFolderGridActions({
         console.error('Failed to toggle favorite:', e);
       }
     },
-    [queryClient],
+    [queryClient, activeGame?.id],
   );
 
-  // Rename
   const handleRenameRequest = useCallback((folder: ModFolder) => {
     setRenamingId(folder.path);
   }, []);
@@ -157,21 +163,22 @@ export function useFolderGridActions({
       if (!folder) return;
 
       try {
-        await renameMod.mutateAsync({ folderPath: folder.path, newName });
+        if (activeGame?.id) {
+          await renameMod.mutateAsync({ folderPath: folder.path, newName, gameId: activeGame.id });
+        }
         setRenamingId(null);
         clearGridSelection();
       } catch (err) {
         console.error('Rename failed', err);
       }
     },
-    [renamingId, renameMod, sortedFolders, clearGridSelection],
+    [renamingId, renameMod, sortedFolders, clearGridSelection, activeGame?.id],
   );
 
   const handleRenameCancel = useCallback(() => {
     setRenamingId(null);
   }, []);
 
-  // Delete
   const handleDeleteRequest = useCallback((folder: ModFolder) => {
     setDeleteConfirm({ open: true, folder });
   }, []);
@@ -187,7 +194,6 @@ export function useFolderGridActions({
     }
   }, [deleteConfirm.folder, deleteMod, clearGridSelection]);
 
-  // Move mod to a different object — open/close dialog
   const openMoveDialog = useCallback((folder: ModFolder) => {
     setMoveDialog({ open: true, folder });
   }, []);
@@ -196,21 +202,18 @@ export function useFolderGridActions({
     setMoveDialog({ open: false, folder: null });
   }, []);
 
-  // Move mod to a different object with status
   const handleMoveToObject = useCallback(
     async (
       folder: ModFolder,
       targetObjectId: string,
       status: 'disabled' | 'only-enable' | 'keep',
     ) => {
-      if (!folder.id) {
-        console.warn('Cannot move folder without DB ID');
-        return;
-      }
+      if (!activeGame?.id) return;
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('move_mod_to_object', {
-          modId: folder.id,
+          gameId: activeGame.id,
+          folderPath: folder.path,
           targetObjectId,
           status,
         });
@@ -220,37 +223,67 @@ export function useFolderGridActions({
         console.error('Failed to move mod to object:', err);
       }
     },
-    [queryClient],
+    [queryClient, activeGame?.id],
   );
 
+  // Toggle Safe Mode per-mod
+  const handleToggleSafeRequest = useCallback(
+    (folder: ModFolder) => {
+      if (!activeGame?.id) return;
+
+      const safeMode = useAppStore.getState().safeMode;
+      // If Safe Mode is ON globally, configuring a mod as NSFW (is_safe -> false) requires PIN
+      if (safeMode && folder.is_safe) {
+        setPinSafeDialog({ open: true, folder });
+      } else {
+        // Otherwise, allow direct toggle without pin
+        toggleModSafe.mutate({
+          gameId: activeGame.id,
+          folderPath: folder.path,
+          safe: !folder.is_safe,
+        });
+      }
+    },
+    [toggleModSafe, activeGame?.id],
+  );
+
+  const handleToggleSafeSubmit = useCallback(() => {
+    if (!pinSafeDialog.folder || !activeGame?.id) return;
+    toggleModSafe.mutate({
+      gameId: activeGame.id,
+      folderPath: pinSafeDialog.folder.path,
+      safe: false,
+    });
+    setPinSafeDialog({ open: false, folder: null });
+  }, [pinSafeDialog.folder, toggleModSafe, activeGame?.id]);
+
+  const handleToggleSafeCancel = useCallback(() => {
+    setPinSafeDialog({ open: false, folder: null });
+  }, []);
+
   return {
-    // Toggle
     handleToggleEnabled,
     handleToggleFavorite,
     handleEnableOnlyThis,
-
-    // Duplicate Warning
     duplicateWarning,
     handleDuplicateForceEnable,
     handleDuplicateEnableOnly,
     handleDuplicateCancel,
-
-    // Rename
     renamingId,
     handleRenameRequest,
     handleRenameSubmit,
     handleRenameCancel,
-
-    // Delete
     deleteConfirm,
     setDeleteConfirm,
     handleDeleteRequest,
     handleDeleteConfirm,
-
-    // Move To Object
     moveDialog,
     openMoveDialog,
     closeMoveDialog,
     handleMoveToObject,
+    pinSafeDialog,
+    handleToggleSafeRequest,
+    handleToggleSafeSubmit,
+    handleToggleSafeCancel,
   };
 }

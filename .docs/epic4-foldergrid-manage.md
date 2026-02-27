@@ -31,7 +31,7 @@
 **As a** user, **I want to** explore subfolders freely with the help of _breadcrumbs_ and _sorting_ features, **So that** I have full control similar to using Windows Explorer.
 
 - **Acceptance Criteria:**
-  - **Breadcrumbs**: ✅ Interactive navigation bar (`Breadcrumbs.tsx`) to jump to any parent folder. Home (ROOT) button returns to root. Overflow truncation when depth > 4 segments (middle segments replaced with `…`).
+  - **Breadcrumbs**: ✅ Interactive navigation bar (`Breadcrumbs.tsx`) to jump to any parent folder. Home (ROOT) button returns to root. Overflow truncation when depth > 4 segments. Displays logical `name` (aliases) but drives navigation via physical `folder_path`.
   - **Deep Navigation**: ✅ Supports entering subfolders via _double-click_ without level restrictions. Back button returns to parent folder.
   - **Advanced Sorting**: ✅ Sortable by **Name** (A-Z / Z-A) and **Date Modified** (Newest / Oldest) via dropdown in the toolbar.
   - **Favorites System**: ✅ Users can mark folders as "Favorite" (Star icon), which are _pinned_ to the top of the grid list. Synced to both DB (`is_favorite`) and `info.json`.
@@ -174,13 +174,15 @@ static THUMBNAIL_CACHE: OnceLock<Mutex<ThumbnailCache>> = OnceLock::new();
 3. Double-check L1 (another task may have resolved while waiting)
 4. Cold-resolve in `spawn_blocking` (FS traversal + image processing)
 
-### E. Self-Healing DB Sync ✅ _(Added Value)_
+### E. Self-Healing DB Sync & Structure ✅ _(Added Value)_
 
-The `list_mod_folders_inner` function implements a self-healing mechanism:
+The system now operates with the **Filesystem as the Source of Truth**. The DB acts as a metadata indexing layer.
 
+- `get_objects_cmd` actively scans the disk directory to construct the object list.
+- **Visual Name vs Physical Path**: UI elements (breadcrumbs, sidebar) display the object's `name` (DB alias), while internal filesystem interactions use `folder_path` (physical directory name).
 - When a DB path is stale (folder moved/renamed externally), `try_resolve_alternate()` checks if the alternate-prefixed version exists (add/remove `DISABLED ` prefix).
 - If found, DB is auto-corrected with the new path and status.
-- If truly gone, stale DB rows are cleaned up.
+- If truly gone, stale DB rows are cleaned up automatically on read.
 - Safe Mode filter (`apply_safe_mode_filter`) hides NSFW content based on `is_safe` flag and configurable keywords.
 
 ### F. Drag & Drop Import ✅ _(Added Value)_

@@ -24,6 +24,7 @@ interface FolderCardContextMenuProps {
   onEnableOnlyThis?: () => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
   onNavigate?: (folderName: string) => void;
+  onToggleSafe?: () => void;
 }
 
 export default function FolderCardContextMenu({
@@ -35,6 +36,7 @@ export default function FolderCardContextMenu({
   onEnableOnlyThis,
   onOpenMoveDialog,
   onNavigate,
+  onToggleSafe,
 }: FolderCardContextMenuProps) {
   const pasteThumbnail = usePasteThumbnail();
 
@@ -130,6 +132,14 @@ export default function FolderCardContextMenu({
       <ContextMenuItem icon={Trash2} danger onClick={onDelete}>
         Delete to Trash
       </ContextMenuItem>
+      {onToggleSafe && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem icon={folder.is_safe ? ToggleLeft : Star} onClick={onToggleSafe}>
+            {folder.is_safe ? 'Mark as NSFW (Remove Privacy)' : 'Mark as SFW (Add Privacy)'}
+          </ContextMenuItem>
+        </>
+      )}
     </>
   );
 }

@@ -26,7 +26,7 @@ pub struct ConflictInfo {
 struct HashEntry {
     hash: String,
     section: String,
-    source_path: PathBuf,
+    mod_root: PathBuf,
 }
 
 /// Detect shader/buffer conflicts across multiple INI files.
@@ -38,11 +38,11 @@ struct HashEntry {
 /// - A `Vec<ConflictInfo>` for each hash that appears in 2+ different mod paths.
 ///
 /// # Covers: TC-2.4-01
-pub fn detect_conflicts(ini_files: &[PathBuf]) -> Vec<ConflictInfo> {
+pub fn detect_conflicts(ini_files: &[(PathBuf, PathBuf)]) -> Vec<ConflictInfo> {
     let mut hash_map: HashMap<String, Vec<HashEntry>> = HashMap::new();
 
-    for ini_path in ini_files {
-        let entries = parse_ini_hashes(ini_path);
+    for (mod_root, ini_path) in ini_files {
+        let entries = parse_ini_hashes(ini_path, mod_root);
         for entry in entries {
             hash_map.entry(entry.hash.clone()).or_default().push(entry);
         }
@@ -55,7 +55,7 @@ pub fn detect_conflicts(ini_files: &[PathBuf]) -> Vec<ConflictInfo> {
             // Deduplicate by mod root path
             let unique_paths: Vec<String> = entries
                 .iter()
-                .map(|e| get_mod_root(&e.source_path))
+                .map(|e| e.mod_root.to_string_lossy().to_string())
                 .collect::<std::collections::HashSet<_>>()
                 .into_iter()
                 .collect();
@@ -81,7 +81,7 @@ pub fn detect_conflicts(ini_files: &[PathBuf]) -> Vec<ConflictInfo> {
 /// Parse a single INI file for TextureOverride hash entries.
 ///
 /// Looks for sections matching `[TextureOverride...]` and extracts `hash` values.
-fn parse_ini_hashes(ini_path: &Path) -> Vec<HashEntry> {
+fn parse_ini_hashes(ini_path: &Path, mod_root: &Path) -> Vec<HashEntry> {
     let content = match fs::read_to_string(ini_path) {
         Ok(c) => c,
         Err(e) => {
@@ -117,7 +117,7 @@ fn parse_ini_hashes(ini_path: &Path) -> Vec<HashEntry> {
                 entries.push(HashEntry {
                     hash: hash_val,
                     section: current_section.clone(),
-                    source_path: ini_path.to_path_buf(),
+                    mod_root: mod_root.to_path_buf(),
                 });
             }
         }
@@ -148,20 +148,7 @@ fn parse_hash_line(line: &str) -> Option<String> {
     if value.is_empty() {
         return None;
     }
-
     Some(value)
-}
-
-/// Get the mod root directory from an INI file path.
-///
-/// Assumes structure: `.../ModRoot/some/path/file.ini` → returns `ModRoot` path.
-fn get_mod_root(ini_path: &Path) -> String {
-    // Walk up parents to find a reasonable root
-    // For simplicity, use the grandparent or parent depending on depth
-    ini_path
-        .parent()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| ini_path.to_string_lossy().to_string())
 }
 
 #[cfg(test)]

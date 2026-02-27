@@ -14,6 +14,7 @@ pub async fn commit_scan_results(
     mods_path: &str,
     items: Vec<ConfirmedScanItem>,
     resource_dir: Option<&Path>,
+    safe_mode_keywords: &[String],
 ) -> Result<SyncResult, String> {
     let _ = resource_dir; // reserved for future thumbnail resolution
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -46,8 +47,14 @@ pub async fn commit_scan_results(
                         if !target_dir.exists() {
                             let _ = std::fs::create_dir_all(&target_dir);
                         }
+
+                        // Check collision
+                        if target_path.exists() {
+                            return Err(format!("DUPLICATE|{}", target_path.to_string_lossy()));
+                        }
+
                         if let Err(e) = std::fs::rename(source_path, &target_path) {
-                            log::error!("Failed to move temp folder: {}", e);
+                            return Err(format!("Failed to move temp folder: {}", e));
                         } else {
                             actual_folder_path = target_path.to_string_lossy().into_owned();
                         }
@@ -129,9 +136,13 @@ pub async fn commit_scan_results(
             (clean_name, None, "[]", "{}")
         };
 
-        // Calculate the physical object folder path relative to mods_path
+        // Calculate the physical object folder path relative to mods_path.
+        // IMPORTANT: folder_path must always point to an actual filesystem directory,
+        // NOT the matched display name (obj_name). When a mod is directly under
+        // mods_path/ (parent is empty), use the mod's own folder name so the
+        // FolderGrid can resolve the path correctly.
         let object_folder_path = if item.move_from_temp {
-            obj_name.clone() // Assuming Auto-Organize drops them directly into mods_path/obj_name
+            obj_name.clone() // Auto-Organize drops them directly into mods_path/obj_name
         } else {
             let actual_path = Path::new(&actual_folder_path);
             let mods_dir = Path::new(mods_path);
@@ -139,12 +150,13 @@ pub async fn commit_scan_results(
                 if let Some(parent) = rel_path.parent() {
                     let parent_str = parent.to_string_lossy().to_string();
                     if parent_str.is_empty() {
-                        obj_name.clone() // It's directly in mods_path
+                        // Mod is directly in mods_path — use its own folder name
+                        rel_path.to_string_lossy().to_string()
                     } else {
                         parent_str
                     }
                 } else {
-                    obj_name.clone()
+                    rel_path.to_string_lossy().to_string()
                 }
             } else {
                 obj_name.clone()
@@ -171,6 +183,31 @@ pub async fn commit_scan_results(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Handle auto-classification
+        let folder_name_lower = item.display_name.to_lowercase();
+        let mut is_safe = true;
+        for kw in safe_mode_keywords {
+            if folder_name_lower.contains(&kw.to_lowercase()) {
+                is_safe = false;
+                break;
+            }
+        }
+
+        if !is_safe {
+            sqlx::query("UPDATE objects SET is_safe = 0 WHERE id = ?")
+                .bind(&object_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let update = crate::services::mod_files::info_json::ModInfoUpdate {
+                is_safe: Some(false),
+                ..Default::default()
+            };
+            let path = std::path::Path::new(&actual_folder_path);
+            let _ = crate::services::mod_files::info_json::update_info_json(path, &update);
+        }
     }
 
     let deleted_mods_count = handle_deletions(&mut tx, game_id, &processed_paths).await?;

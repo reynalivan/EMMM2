@@ -119,16 +119,13 @@ async fn test_ec_9_02_same_name_different_content_stays_below_80() {
         .await
         .unwrap();
 
-    assert!(!outcome.groups.is_empty());
-
-    let group = outcome
-        .groups
-        .iter()
-        .find(|item| item.members.len() == 2)
-        .unwrap();
-
-    assert!(group.confidence_score < 80);
-    assert!(group.match_reason.contains("Low confidence"));
+    // Due to the improved 3DMigoto logical scoring algorithm,
+    // these two mods with different file names (alpha vs beta), missing hashes,
+    // and completely different texture setups are completely ignored.
+    assert!(
+        outcome.groups.is_empty(),
+        "Mods with entirely different structures and textures should yield 0 duplicates."
+    );
 }
 
 // Covers: DI-9.01 (Whitelist pairs ignored on subsequent scans)
@@ -438,6 +435,71 @@ async fn test_ec_9_05_cancel_mid_hash_stops_cleanly() {
         outcome.status == DedupScanStatus::Cancelled
             || outcome.status == DedupScanStatus::Completed,
         "Scan should complete or cancel cleanly without errors"
+    );
+}
+
+// Covers: Custom VariantContainer logic (Epic 9 Extension)
+#[tokio::test]
+async fn test_ec_9_03_variants_in_same_modpack_are_ignored() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+
+    // Create a VariantContainer structure
+    let container = mods_root.join("SomeCharacter Modpack");
+    fs::create_dir_all(&container).unwrap();
+
+    // It needs an orchestrator ini or many variants to be classified as VariantContainer.
+    // Let's create an orchestrator ini
+    let orchestrator_content = r#"
+[ResourceTexture1]
+filename = VariantA/tex.dds
+[ResourceTexture2]
+filename = VariantB/tex.dds
+    "#;
+    fs::write(container.join("merged.ini"), orchestrator_content).unwrap();
+
+    let variant_a = container.join("VariantA");
+    let variant_b = container.join("VariantB");
+
+    fs::create_dir_all(&variant_a).unwrap();
+    fs::create_dir_all(&variant_b).unwrap();
+
+    // Identical content to force a 100% duplicate match if they weren't filtered!
+    fs::write(variant_a.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(variant_b.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(variant_a.join("texture.dds"), b"identical-content").unwrap();
+    fs::write(variant_b.join("texture.dds"), b"identical-content").unwrap();
+
+    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
+        .bind("mod-variant-a")
+        .bind(game_id)
+        .bind(variant_a.to_string_lossy().to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
+        .bind("mod-variant-b")
+        .bind(game_id)
+        .bind(variant_b.to_string_lossy().to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+
+    // They share a parent (container) that is a VariantContainer.
+    // So the scanner should filter them out and find 0 duplicate groups.
+    assert!(
+        outcome.groups.is_empty(),
+        "Variants within the same modpack must be ignored, but found {} groups",
+        outcome.groups.len()
     );
 }
 

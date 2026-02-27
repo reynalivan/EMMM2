@@ -101,18 +101,48 @@ export function useDeleteCollection() {
   });
 }
 
-export function useApplyCollection() {
+export function useUndoCollection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ collectionId, gameId }: { collectionId: string; gameId: string }) =>
-      invoke<ApplyCollectionResult>('apply_collection', { collectionId, gameId }),
+    mutationFn: ({ gameId }: { gameId: string }) =>
+      invoke<ApplyCollectionResult>('undo_collection', { gameId }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
       queryClient.invalidateQueries({ queryKey: ['mods'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      toast.success(`Applied collection (${result.changed_count} changes)`);
+      toast.success(`Undid collection application (${result.changed_count} changes reverted)`);
+    },
+    onError: (err) => {
+      toast.error(String(err));
+    },
+  });
+}
+export function useApplyCollection() {
+  const queryClient = useQueryClient();
+  const undoCollection = useUndoCollection();
+
+  return useMutation({
+    mutationFn: ({ collectionId, gameId }: { collectionId: string; gameId: string }) =>
+      invoke<ApplyCollectionResult>('apply_collection', { collectionId, gameId }),
+    onSuccess: (result, variables) => {
+      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['mods'] });
+      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+
+      toast.withAction(
+        'success',
+        `Applied collection (${result.changed_count} changes)`,
+        {
+          label: 'Undo',
+          onClick: () => {
+            undoCollection.mutate({ gameId: variables.gameId });
+          },
+        },
+        7000,
+      );
     },
     onError: (err) => {
       toast.error(String(err));

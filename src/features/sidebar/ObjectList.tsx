@@ -19,6 +19,7 @@ import ObjectListContent from './ObjectListContent';
 import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
 import { classifyDroppedPaths, validateDropForZone, type DropZone } from './dropUtils';
 import DropConfirmModal, { type DropValidation } from './DropConfirmModal';
+import ArchiveModal from '../../components/scanner/ArchiveModal';
 import { scanService } from '../../services/scanService';
 import { toast } from '../../stores/useToastStore';
 
@@ -79,13 +80,15 @@ export default function ObjectList() {
     handleCloseScanReview,
     handleDropOnItem,
     handleDropAutoOrganize,
+    handleDropOnNewObjectSubmit,
+    archiveModal,
+    handleArchiveExtractSubmit,
+    handleArchiveExtractSkip,
   } = useObjectListLogic();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   /** Pending paths for the "create new object with pre-selected files" flow */
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
-  // TODO: Wire pendingPaths to CreateObjectModal as a prop for pre-selected files
-  void pendingPaths; // referenced in setPendingPaths; will be used when CreateObjectModal is enhanced
 
   // --- Refs for zone hit-testing ---
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -542,6 +545,8 @@ export default function ObjectList() {
         onCommitScan={handleCommitScan}
         onCloseScanReview={handleCloseScanReview}
         createModalOpen={createModalOpen}
+        pendingPaths={pendingPaths}
+        onImportDropped={handleDropOnNewObjectSubmit}
         onCloseCreate={() => {
           setCreateModalOpen(false);
           setPendingPaths(null);
@@ -555,6 +560,16 @@ export default function ObjectList() {
         onMoveToSuggested={handleConfirmMoveToSuggested}
         onCancel={handleCancelDrop}
         onSkipValidation={handleSkipValidation}
+      />
+
+      {/* Archive extraction modal triggered during DnD */}
+      <ArchiveModal
+        isOpen={archiveModal.open}
+        archives={archiveModal.archives}
+        isExtracting={archiveModal.isExtracting}
+        error={archiveModal.error}
+        onExtract={handleArchiveExtractSubmit}
+        onSkip={handleArchiveExtractSkip}
       />
     </div>
   );

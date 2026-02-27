@@ -36,10 +36,15 @@ impl ConfigService {
         // 2. Load current settings from DB
         let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
+        let mut pin_guard = PinGuardState::default();
+        if let Some(failed) = settings.safe_mode.failed_attempts {
+            pin_guard = PinGuardState::new(failed, settings.safe_mode.lockout_until_ts);
+        }
+
         Self {
             pool,
             settings: Mutex::new(settings),
-            pin_guard: Mutex::new(PinGuardState::default()),
+            pin_guard: Mutex::new(pin_guard),
         }
     }
 
@@ -51,10 +56,15 @@ impl ConfigService {
 
         let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
+        let mut pin_guard = PinGuardState::default();
+        if let Some(failed) = settings.safe_mode.failed_attempts {
+            pin_guard = PinGuardState::new(failed, settings.safe_mode.lockout_until_ts);
+        }
+
         Self {
             pool,
             settings: Mutex::new(settings),
-            pin_guard: Mutex::new(PinGuardState::default()),
+            pin_guard: Mutex::new(pin_guard),
         }
     }
 
@@ -99,6 +109,8 @@ impl ConfigService {
             "ALTER TABLE collections ADD COLUMN is_favorite BOOLEAN DEFAULT 0;",
             "ALTER TABLE objects ADD COLUMN is_pinned BOOLEAN DEFAULT 0;",
             "ALTER TABLE objects ADD COLUMN is_auto_sync BOOLEAN NOT NULL DEFAULT 0;",
+            "ALTER TABLE mods ADD COLUMN last_status_sfw BOOLEAN;",
+            "ALTER TABLE mods ADD COLUMN last_status_nsfw BOOLEAN;",
         ];
 
         for patch in patches {
@@ -128,15 +140,23 @@ impl ConfigService {
         let language = kv.get("language").cloned().unwrap_or_else(|| "en".into());
         let active_game_id = kv.get("active_game_id").cloned();
 
-        let safe_mode: SafeModeConfig = kv
+        let mut safe_mode: SafeModeConfig = kv
             .get("safe_mode")
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
+
+        // Epic 7 Requirement: App ALWAYS starts in SFW mode regardless of previous session.
+        safe_mode.enabled = true;
 
         let ai: AiConfig = kv
             .get("ai")
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
+
+        let auto_close_launcher = kv
+            .get("auto_close_launcher")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(false);
 
         AppSettings {
             theme,
@@ -145,6 +165,7 @@ impl ConfigService {
             active_game_id,
             safe_mode,
             ai,
+            auto_close_launcher,
         }
     }
 
@@ -165,6 +186,14 @@ impl ConfigService {
                 .await
                 .map_err(|e| e.to_string())?;
         }
+
+        settings_repo::set_setting(
+            pool,
+            "auto_close_launcher",
+            &settings.auto_close_launcher.to_string(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         let safe_mode_json =
             serde_json::to_string(&settings.safe_mode).map_err(|e| e.to_string())?;
@@ -211,17 +240,44 @@ impl ConfigService {
     }
 
     pub fn verify_pin_status(&self, pin: &str) -> PinVerifyStatus {
-        let pin_hash = self
-            .settings
+        let (pin_hash, original_snapshot) = {
+            let settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let safe_mode = &settings.safe_mode;
+            let snapshot = (
+                safe_mode.failed_attempts.unwrap_or(0),
+                safe_mode.lockout_until_ts,
+            );
+            (safe_mode.pin_hash.clone(), snapshot)
+        };
+
+        let new_status = {
+            let mut guard = self
+                .pin_guard
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard.verify(pin, pin_hash.as_deref())
+        };
+
+        let current_snapshot = self
+            .pin_guard
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .safe_mode
-            .pin_hash
-            .clone();
-        self.pin_guard
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .verify(pin, pin_hash.as_deref())
+            .snapshot();
+        if current_snapshot != original_snapshot {
+            let mut updated_settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            updated_settings.safe_mode.failed_attempts = Some(current_snapshot.0);
+            updated_settings.safe_mode.lockout_until_ts = current_snapshot.1;
+            let _ = self.save_settings(updated_settings);
+        }
+
+        new_status
     }
 
     pub fn verify_pin(&self, pin: &str) -> bool {
@@ -276,6 +332,16 @@ impl ConfigService {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         settings.safe_mode.enabled = enabled;
+        self.save_settings(settings)
+    }
+
+    pub fn set_auto_close_launcher(&self, enabled: bool) -> Result<(), String> {
+        let mut settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        settings.auto_close_launcher = enabled;
         self.save_settings(settings)
     }
 

@@ -19,15 +19,15 @@ pub use types::ModFolder;
 /// Covers: TC-4.1-01 (Deep Navigation), TC-4.1-02 (Sort by Date)
 #[tauri::command]
 pub async fn list_mod_folders(
-    pool: tauri::State<'_, sqlx::SqlitePool>,
+    _pool: tauri::State<'_, sqlx::SqlitePool>,
     config: tauri::State<'_, ConfigService>,
-    game_id: Option<String>,
+    _game_id: Option<String>,
     mods_path: String,
     sub_path: Option<String>,
-    object_id: Option<String>,
+    _object_id: Option<String>,
 ) -> Result<Vec<ModFolder>, String> {
     let folders =
-        listing::list_mod_folders_inner(Some(&*pool), game_id, mods_path, sub_path, object_id)
+        listing::list_mod_folders_inner(mods_path, sub_path)
             .await?;
     Ok(helpers::apply_safe_mode_filter(folders, &config))
 }

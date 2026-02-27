@@ -58,8 +58,8 @@
 - **Acceptance Criteria:**
   - **Scope:** Only applies to mods within the same **Character Category** (based on Master DB ID).
   - **Logic:**
-    1.  Scan all active mods with the same `char_id` (e.g., "Raiden Shogun").
-    2.  Disable all those mods.
+    1.  Scan all active mods within the same physical object directory (represented by `folder_path`).
+    2.  Disable all those mods by renaming them with the `DISABLED ` prefix on the filesystem.
     3.  Enable the selected target mod.
 
   - **Batch Operation:** This process must be atomic (one UI transaction).
@@ -71,9 +71,9 @@
 - **Acceptance Criteria:**
   - **Action:** Refresh button on the Toolbar.
   - **Process:**
-    1.  Re-scan the physical folders in the game directory.
-    2.  Remove DB entries whose physical paths no longer exist (Orphaned).
-    3.  Update status (Enabled/Disabled) for folders that have changed names.
+    1.  Re-scan the physical folders in the game directory (now integrated directly into `get_objects_cmd` as a self-healing mechanism).
+    2.  Register new physical folders into the database.
+    3.  Update status (Enabled/Disabled) for folders that have changed names on the filesystem.
     4.  Run **Prefix Standardization** on all folders detected as "Disabled" but with an incorrect format.
 
 ### US-5.5: Bulk Action Management

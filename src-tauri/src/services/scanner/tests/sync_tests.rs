@@ -148,6 +148,7 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         &temp_dir.path().to_string_lossy(),
         items,
         None,
+        &[],
     )
     .await
     .unwrap();
@@ -201,6 +202,7 @@ async fn test_ensure_object_case_insensitive_merge() {
         &temp_dir.path().to_string_lossy(),
         items_unmatched,
         None,
+        &[],
     )
     .await
     .unwrap();
@@ -236,6 +238,7 @@ async fn test_ensure_object_case_insensitive_merge() {
         &temp_dir.path().to_string_lossy(),
         items_matched,
         None,
+        &[],
     )
     .await
     .unwrap();

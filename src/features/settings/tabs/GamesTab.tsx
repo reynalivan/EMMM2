@@ -1,14 +1,18 @@
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Play } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, RefreshCcw } from 'lucide-react';
 import { useSettings, GameConfig } from '../../../hooks/useSettings';
 import GameFormModal from '../modals/GameFormModal';
 import { useAppStore } from '../../../stores/useAppStore';
+import { useToastStore } from '../../../stores/useToastStore';
+import { scanService } from '../../../services/scanService';
 
 export default function GamesTab() {
   const { settings, saveSettings } = useSettings();
   const { setActiveGameId, activeGameId } = useAppStore();
+  const { addToast } = useToastStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameConfig | null>(null);
+  const [scanningId, setScanningId] = useState<string | null>(null);
 
   const handleAdd = () => {
     setEditingGame(null);
@@ -48,6 +52,34 @@ export default function GamesTab() {
     }
 
     saveSettings({ ...settings, games: newGames });
+  };
+
+  const handleRescan = async (game: GameConfig) => {
+    if (scanningId) return;
+    setScanningId(game.id);
+    const toastId = addToast('info', `Scanning library for ${game.name}...`, 0); // Persist toast
+
+    try {
+      const result = await scanService.syncDatabase(
+        game.id,
+        game.name,
+        game.game_type,
+        game.mod_path,
+      );
+
+      // Update the toast after scan completes
+      useToastStore.getState().removeToast(toastId);
+      addToast(
+        'success',
+        `Scan complete! Found ${result.new_mods} new mods and ${result.updated_mods} updates.`,
+      );
+    } catch (e) {
+      console.error(e);
+      useToastStore.getState().removeToast(toastId);
+      addToast('error', `Scan failed: ${String(e)}`);
+    } finally {
+      setScanningId(null);
+    }
   };
 
   if (!settings) return <div>Loading...</div>;
@@ -110,14 +142,29 @@ export default function GamesTab() {
                     <Play size={16} />
                   </button>
                   <button
+                    className="btn btn-ghost btn-sm join-item text-secondary hover:bg-secondary/10"
+                    onClick={() => void handleRescan(game)}
+                    disabled={scanningId !== null}
+                    title="Rescan Library"
+                  >
+                    <RefreshCcw
+                      size={16}
+                      className={scanningId === game.id ? 'animate-spin' : ''}
+                    />
+                  </button>
+                  <button
                     className="btn btn-ghost btn-sm join-item"
                     onClick={() => handleEdit(game)}
+                    disabled={scanningId !== null}
+                    title="Edit Game"
                   >
                     <Edit2 size={16} />
                   </button>
                   <button
                     className="btn btn-ghost btn-sm join-item text-error hover:bg-error/10"
                     onClick={() => handleDelete(game.id)}
+                    disabled={scanningId !== null}
+                    title="Remove Game"
                   >
                     <Trash2 size={16} />
                   </button>

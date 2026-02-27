@@ -29,6 +29,10 @@ async fn setup_pool() -> sqlx::SqlitePool {
         include_str!("../migrations/20260222100000_fix_duplicate_objects.sql"),
         include_str!("../migrations/20260222103000_enforce_nocase_objects.sql"),
         include_str!("../migrations/20260222110000_add_unsaved_collection_flag.sql"),
+        include_str!("../migrations/20260222190000_add_mod_path_to_collection_items.sql"),
+        include_str!("../migrations/20260222230000_epic10_object_folder_path.sql"),
+        include_str!("../migrations/20260224000000_epic7_privacy.sql"),
+        include_str!("../migrations/20260224100000_epic12_app_meta.sql"),
     ];
 
     for migration in migrations {
@@ -185,21 +189,16 @@ async fn collections_apply_then_undo_restores_state() {
     assert_eq!(mod_a_status, "ENABLED");
     assert_eq!(mod_b_status, "DISABLED");
 
-    let snapshot_id: String = sqlx::query_scalar("SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1")
-        .bind(&game_id)
-        .fetch_one(&pool)
-        .await
-        .expect("snapshot collection");
+    let snapshot_id: String =
+        sqlx::query_scalar("SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1")
+            .bind(&game_id)
+            .fetch_one(&pool)
+            .await
+            .expect("snapshot collection");
 
-    let undo = apply_collection(
-        &pool,
-        &watcher_state,
-        &snapshot_id,
-        &game_id,
-        false,
-    )
-    .await
-    .expect("undo apply via snapshot");
+    let undo = apply_collection(&pool, &watcher_state, &snapshot_id, &game_id, false)
+        .await
+        .expect("undo apply via snapshot");
 
     assert_eq!(undo.changed_count, 2);
 

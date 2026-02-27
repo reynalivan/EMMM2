@@ -4,6 +4,7 @@ import { Trash2, Wrench, Eraser, RotateCcw } from 'lucide-react';
 import { useSettings } from '../../../hooks/useSettings';
 import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '../../../stores/useToastStore';
+import DedupFeature from '../../scanner/DedupFeature';
 
 export default function MaintenanceTab() {
   const { runMaintenance } = useSettings();
@@ -35,6 +36,19 @@ export default function MaintenanceTab() {
     });
   };
 
+  const handleClearCache = async () => {
+    setIsProcessing(true);
+    try {
+      const msg = await invoke<string>('clear_old_thumbnails');
+      addToast('success', msg);
+    } catch (e) {
+      console.error(e);
+      addToast('error', `Failed to clear cache: ${String(e)}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleResetDatabase = async () => {
     resetModalRef.current?.close();
     setIsProcessing(true);
@@ -53,6 +67,8 @@ export default function MaintenanceTab() {
 
   return (
     <div className="space-y-6">
+      <DedupFeature />
+
       <div className="card bg-base-200 shadow-sm border border-base-300">
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
@@ -95,18 +111,23 @@ export default function MaintenanceTab() {
         </div>
       </div>
 
-      <div className="card bg-base-200 shadow-sm border border-base-300 opacity-50 cursor-not-allowed">
+      <div className="card bg-base-200 shadow-sm border border-base-300">
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
-            <Eraser size={20} />
+            <Eraser className="text-secondary" size={20} />
             Clear Image Cache
           </h3>
           <p className="text-sm opacity-70">
-            Remove generated thumbnails to save space. They will be regenerated as needed.
+            Remove old generated thumbnails (older than 30 days) to save space. They will be
+            regenerated as needed.
           </p>
           <div className="card-actions justify-end mt-4">
-            <button className="btn btn-neutral gap-2" disabled>
-              Coming Soon
+            <button
+              className="btn btn-secondary btn-outline gap-2"
+              onClick={() => void handleClearCache()}
+              disabled={isProcessing}
+            >
+              <Eraser size={18} /> Clear Old Cache
             </button>
           </div>
         </div>

@@ -7,6 +7,21 @@ use crate::services::scanner::deep_matcher::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum OrganizeError {
+    Duplicate { dest: String },
+    Generic(String),
+}
+
+impl std::fmt::Display for OrganizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrganizeError::Duplicate { dest } => write!(f, "Destination already exists: {}", dest),
+            OrganizeError::Generic(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
 /// Result of an organization operation.
 pub struct OrganizeResult {
     pub original_path: PathBuf,
@@ -36,9 +51,12 @@ pub fn organize_mod(
     path: &Path,
     target_root: &Path,
     db: &MasterDb,
-) -> Result<OrganizeResult, String> {
+) -> Result<OrganizeResult, OrganizeError> {
     if !path.exists() {
-        return Err(format!("Path does not exist: {}", path.display()));
+        return Err(OrganizeError::Generic(format!(
+            "Path does not exist: {}",
+            path.display()
+        )));
     }
 
     // 1. Scan Content
@@ -48,7 +66,7 @@ pub fn organize_mod(
     // 2. Candidate wrapper
     let folder_name = path
         .file_name()
-        .ok_or("Invalid folder name")?
+        .ok_or_else(|| OrganizeError::Generic("Invalid folder name".to_string()))?
         .to_string_lossy()
         .to_string();
 
@@ -109,18 +127,19 @@ pub fn organize_mod(
     }
 
     // Ensure parent exists
-    fs::create_dir_all(&target_parent).map_err(|e| format!("Failed to create parent dir: {e}"))?;
+    fs::create_dir_all(&target_parent)
+        .map_err(|e| OrganizeError::Generic(format!("Failed to create parent dir: {e}")))?;
 
     // Check collision
     if target_path.exists() {
-        return Err(format!(
-            "Destination already exists: {}",
-            target_path.display()
-        ));
+        return Err(OrganizeError::Duplicate {
+            dest: target_path.to_string_lossy().to_string(),
+        });
     }
 
     // Move
-    fs::rename(path, &target_path).map_err(|e| format!("Failed to move folder: {e}"))?;
+    fs::rename(path, &target_path)
+        .map_err(|e| OrganizeError::Generic(format!("Failed to move folder: {e}")))?;
 
     // Update info.json
     let mut meta = std::collections::HashMap::from([("character".to_string(), obj_name.clone())]);

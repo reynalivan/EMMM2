@@ -4,9 +4,9 @@ use tauri_plugin_log::{Target, TargetKind};
 pub mod commands;
 pub mod database;
 pub mod services;
-pub mod types;
 #[cfg(test)]
 pub mod test_utils;
+pub mod types;
 
 /// Standard prefix for disabled mod folders. Shared across commands.
 pub const DISABLED_PREFIX: &str = "DISABLED ";
@@ -24,6 +24,7 @@ pub fn run() {
         }))
         // tauri_plugin_store removed: all settings now persisted in SQLite
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_log::Builder::default()
                 .targets([
@@ -37,6 +38,11 @@ pub fn run() {
         )
         .setup(move |app| {
             let app_handle = app.handle();
+
+            // Epic 12: Register app updater plugin
+            #[cfg(desktop)]
+            app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
+
             // Initialize services
             if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
                 services::images::thumbnail_cache::ThumbnailCache::init(&app_data_dir);
@@ -80,7 +86,10 @@ pub fn run() {
             }
             // Initialize ConfigService
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
-            app.manage(services::config::ConfigService::init(app_handle, pool_ref.inner().clone()));
+            app.manage(services::config::ConfigService::init(
+                app_handle,
+                pool_ref.inner().clone(),
+            ));
 
             Ok(())
         })
@@ -90,6 +99,8 @@ pub fn run() {
         .manage(services::core::operation_lock::OperationLock::new())
         .invoke_handler(tauri::generate_handler![
             commands::app::app_cmds::check_config_status,
+            commands::app::dashboard_cmds::get_dashboard_stats,
+            commands::app::dashboard_cmds::get_active_keybindings,
             commands::app::app_cmds::get_log_lines,
             commands::app::app_cmds::open_log_folder,
             commands::app::app_cmds::reset_database,
@@ -130,7 +141,8 @@ pub fn run() {
             commands::mods::mod_meta_cmds::repair_orphan_mods,
             commands::mods::mod_meta_cmds::pin_mod,
             commands::mods::mod_meta_cmds::toggle_favorite,
-            commands::mods::mod_meta_cmds::pick_random_mod,
+            commands::mods::mod_meta_cmds::toggle_mod_safe,
+            commands::mods::mod_meta_cmds::suggest_random_mods,
             commands::mods::mod_meta_cmds::get_active_mod_conflicts,
             commands::mods::mod_meta_cmds::read_mod_info,
             commands::mods::mod_meta_cmds::update_mod_info,
@@ -157,7 +169,9 @@ pub fn run() {
             commands::app::settings_cmds::verify_pin,
             commands::app::settings_cmds::set_active_game,
             commands::app::settings_cmds::set_safe_mode_enabled,
+            commands::app::settings_cmds::set_auto_close_launcher,
             commands::app::settings_cmds::run_maintenance,
+            commands::app::settings_cmds::clear_old_thumbnails,
             commands::scanner::conflict_cmds::enable_only_this,
             commands::scanner::conflict_cmds::check_duplicate_enabled,
             commands::scanner::conflict_cmds::check_shader_conflicts,
@@ -171,6 +185,7 @@ pub fn run() {
             commands::collections::collection_cmds::update_collection,
             commands::collections::collection_cmds::delete_collection,
             commands::collections::collection_cmds::apply_collection,
+            commands::collections::collection_cmds::undo_collection,
             commands::collections::collection_cmds::get_collection_preview,
             commands::scanner::sync_cmds::sync_database_cmd,
             commands::scanner::sync_cmds::scan_preview_cmd,
@@ -182,6 +197,8 @@ pub fn run() {
             commands::duplicates::dup_scan_cmds::dup_scan_cancel,
             commands::duplicates::dup_scan_cmds::dup_scan_get_report,
             commands::duplicates::dup_resolve_cmds::dup_resolve_batch,
+            commands::app::update_cmds::check_metadata_update,
+            commands::app::update_cmds::fetch_missing_asset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

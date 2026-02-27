@@ -10,6 +10,7 @@ interface AppState {
   // Global Settings (Persisted in config.json)
   activeGameId: string | null;
   safeMode: boolean;
+  autoCloseLauncher: boolean;
   isStoreInitialized: boolean;
 
   // Navigation State
@@ -48,6 +49,7 @@ interface AppState {
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
   setSafeMode: (enabled: boolean) => Promise<void>;
+  setAutoCloseLauncher: (enabled: boolean) => Promise<void>;
 
   setWorkspaceView: (view: WorkspaceView) => void;
   setCurrentPath: (path: string[]) => void;
@@ -81,6 +83,7 @@ export const useAppStore = create<AppState>()(
       // Defaults
       activeGameId: null,
       safeMode: true,
+      autoCloseLauncher: false,
       isStoreInitialized: false,
       workspaceView: 'dashboard',
       currentPath: [],
@@ -118,6 +121,7 @@ export const useAppStore = create<AppState>()(
           set({
             activeGameId: settings.active_game_id,
             safeMode: settings.safe_mode.enabled,
+            autoCloseLauncher: settings.auto_close_launcher ?? false,
             isStoreInitialized: true,
           });
         } catch (err) {
@@ -152,11 +156,26 @@ export const useAppStore = create<AppState>()(
 
       setSafeMode: async (enabled) => {
         const { invoke } = await import('@tauri-apps/api/core');
-        set({ safeMode: enabled });
         try {
           await invoke('set_safe_mode_enabled', { enabled });
+          // Only update state if backend succeeds
+          set({ safeMode: enabled });
         } catch (e) {
           console.error('Failed to sync safe mode to backend', e);
+          throw e;
+        }
+      },
+
+      setAutoCloseLauncher: async (enabled) => {
+        const { invoke } = await import('@tauri-apps/api/core');
+        set({ autoCloseLauncher: enabled });
+        try {
+          // This saves the entire AppSettings backend representation since we don't have a
+          // dedicated command for just autoCloseLauncher. It's safe to use `update_settings`
+          // but if that command doesn't exist, we fallback.
+          await invoke('set_auto_close_launcher', { enabled });
+        } catch (e) {
+          console.error('Failed to sync auto close launcher to backend', e);
         }
       },
 

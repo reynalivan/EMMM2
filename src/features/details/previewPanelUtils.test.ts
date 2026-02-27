@@ -82,13 +82,23 @@ describe('previewPanelUtils', () => {
       'config.ini:KeySwap:assign:3': '2',
     };
 
-    const payload = toIniWritePayload(fields, draft, initial);
+    const payloadEmpty = toIniWritePayload(fields, draft, initial);
 
-    expect(payload.fieldErrors).toEqual({
+    expect(payloadEmpty.fieldErrors).toEqual({
       'config.ini:KeySwap:key:1': 'Value cannot be empty.',
     });
-    expect(payload.updatesByFile).toEqual({
+    expect(payloadEmpty.updatesByFile).toEqual({
       'config.ini': [{ line_idx: 3, content: '$active = 2' }],
+    });
+
+    const draftWithInvalidKey = {
+      ...initial,
+      'config.ini:KeySwap:key:1': 'INVALID_KEY',
+    };
+
+    const payloadInvalidKey = toIniWritePayload(fields, draftWithInvalidKey, initial);
+    expect(payloadInvalidKey.fieldErrors).toEqual({
+      'config.ini:KeySwap:key:1': 'Invalid key token: "INVALID_KEY".',
     });
   });
 

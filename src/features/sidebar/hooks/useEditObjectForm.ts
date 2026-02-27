@@ -261,9 +261,11 @@ export function useEditObjectForm(
         // 1. Rename — capture new path to avoid stale reference
         let currentPath = folder.path;
         if (data.name !== folder.name) {
+          if (!activeGame?.id) throw new Error('No active game selected');
           const result = await renameMod.mutateAsync({
             folderPath: folder.path,
             newName: data.name,
+            gameId: activeGame.id,
           });
           currentPath = result.new_path;
         }

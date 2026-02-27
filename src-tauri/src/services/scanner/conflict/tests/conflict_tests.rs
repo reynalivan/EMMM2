@@ -28,7 +28,7 @@ fn test_detect_conflict() {
         "[TextureOverrideBody]\nhash = abc123\n",
     );
 
-    let conflicts = detect_conflicts(&[ini_a, ini_b]);
+    let conflicts = detect_conflicts(&[(mod_a.clone(), ini_a), (mod_b.clone(), ini_b)]);
 
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].hash, "abc123");
@@ -48,7 +48,7 @@ fn test_no_conflict_same_mod() {
         "[TextureOverrideBody]\nhash = abc123\n[TextureOverrideHead]\nhash = abc123\n",
     );
 
-    let conflicts = detect_conflicts(&[ini]);
+    let conflicts = detect_conflicts(&[(mod_dir.clone(), ini)]);
 
     assert!(conflicts.is_empty());
 }
@@ -73,7 +73,7 @@ fn test_no_conflict_different_hashes() {
         "[TextureOverrideBody]\nhash = def456\n",
     );
 
-    let conflicts = detect_conflicts(&[ini_a, ini_b]);
+    let conflicts = detect_conflicts(&[(mod_a.clone(), ini_a), (mod_b.clone(), ini_b)]);
     assert!(conflicts.is_empty());
 }
 
@@ -81,9 +81,11 @@ fn test_no_conflict_different_hashes() {
 #[test]
 fn test_empty_ini_file() {
     let dir = TempDir::new().unwrap();
-    let ini = create_ini(dir.path(), "empty.ini", "");
+    let mod_dir = dir.path().join("ModA");
+    fs::create_dir(&mod_dir).unwrap();
+    let ini = create_ini(&mod_dir, "empty.ini", "");
 
-    let conflicts = detect_conflicts(&[ini]);
+    let conflicts = detect_conflicts(&[(mod_dir.clone(), ini)]);
     assert!(conflicts.is_empty());
 }
 
@@ -98,7 +100,7 @@ fn test_non_texture_override_section_ignored() {
     let ini_a = create_ini(&mod_a, "config.ini", "[Constants]\nhash = abc123\n");
     let ini_b = create_ini(&mod_b, "config.ini", "[Constants]\nhash = abc123\n");
 
-    let conflicts = detect_conflicts(&[ini_a, ini_b]);
+    let conflicts = detect_conflicts(&[(mod_a.clone(), ini_a), (mod_b.clone(), ini_b)]);
     // Should be empty because [Constants] is not [TextureOverride...]
     assert!(conflicts.is_empty());
 }

@@ -4,14 +4,31 @@
  * Covers: TC-9.5-02 (UI controls for resolution actions)
  */
 
-import { FileWarning } from 'lucide-react';
+import { FileWarning, Image as ImageIcon } from 'lucide-react';
 import type { DupScanGroup, ResolutionAction } from '../../../types/dedup';
+import { usePreviewImages } from '../../details/hooks/usePreviewData';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface Props {
   groups: DupScanGroup[];
   selections: Map<string, ResolutionAction>;
   onSelectionChange: (groupId: string, action: ResolutionAction) => void;
   disabled?: boolean;
+}
+
+function MemberThumbnail({ folderPath }: { folderPath: string }) {
+  const { data: images } = usePreviewImages(folderPath);
+  const firstImage = images && images.length > 0 ? images[0] : null;
+
+  return (
+    <div className="w-10 h-10 shrink-0 bg-base-300 rounded overflow-hidden flex items-center justify-center border border-base-content/10">
+      {firstImage ? (
+        <img src={convertFileSrc(firstImage)} alt="Thumb" className="w-full h-full object-cover" />
+      ) : (
+        <ImageIcon className="w-4 h-4 text-base-content/30" />
+      )}
+    </div>
+  );
 }
 
 /**
@@ -75,7 +92,7 @@ export default function DuplicateTable({
                 {/* Match Reason */}
                 <td>
                   <div className="flex items-start gap-2">
-                    <FileWarning className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+                    <FileWarning className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                     <div>
                       <p className="font-medium truncate max-w-xs" title={group.matchReason}>
                         {group.matchReason}
@@ -91,18 +108,25 @@ export default function DuplicateTable({
 
                 {/* Members */}
                 <td>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-2">
                     {group.members.slice(0, 2).map((member, idx) => (
                       <div
                         key={member.folderPath}
-                        className="text-xs bg-base-200 px-2 py-1 rounded truncate max-w-xs"
+                        className="flex items-center gap-2 bg-base-200 p-1.5 rounded pr-3"
                         title={member.folderPath}
                       >
-                        <span className="font-mono text-primary">{idx === 0 ? 'A' : 'B'}:</span>{' '}
-                        {member.displayName}
-                        <span className="text-base-content/50 ml-1">
-                          ({formatBytes(member.totalSizeBytes)})
-                        </span>
+                        <MemberThumbnail folderPath={member.folderPath} />
+                        <div className="flex flex-col min-w-0">
+                          <div className="text-xs font-medium truncate max-w-[200px]">
+                            <span className="font-mono text-primary mr-1">
+                              {idx === 0 ? 'A' : 'B'}:
+                            </span>
+                            {member.displayName}
+                          </div>
+                          <div className="text-[10px] text-base-content/50">
+                            {formatBytes(member.totalSizeBytes)} • {member.fileCount} files
+                          </div>
+                        </div>
                       </div>
                     ))}
                     {group.members.length > 2 && (

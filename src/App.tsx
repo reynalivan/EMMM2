@@ -31,6 +31,9 @@ function AppRouter() {
 
     // Initialize the store (load config.json)
     useAppStore.getState().initStore();
+
+    // Epic 12: Silent background metadata sync on startup
+    invoke('check_metadata_update').catch((e) => console.warn('Metadata sync skipped:', e));
   }, [navigate]);
 
   return (

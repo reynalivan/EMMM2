@@ -60,6 +60,28 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     isCommitting: boolean;
   }>({ open: false, items: [], masterDbEntries: [], isCommitting: false });
 
+  // Archive modal state (US-2.1)
+  const [archiveModal, setArchiveModal] = useState<{
+    open: boolean;
+    archives: import('../../types/scanner').ArchiveInfo[];
+    isExtracting: boolean;
+    error: string | null;
+    pendingDropContext: {
+      type: 'item' | 'auto-organize' | 'new-object';
+      pathsToIngest: string[]; // For item drop and new-object
+      targetFolder?: string; // For item drop and new-object
+      targetObjectId?: string; // For item drop and new-object
+      baseFolderPaths?: string[]; // For auto-organize
+      baseLooseFiles?: string[]; // For auto-organize
+    } | null;
+  }>({
+    open: false,
+    archives: [],
+    isExtracting: false,
+    error: null,
+    pendingDropContext: null,
+  });
+
   // Single-object DB sync state
   const [syncConfirm, setSyncConfirm] = useState<{
     open: boolean;
@@ -89,9 +111,10 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
 
   const handleToggle = useCallback(
     (path: string, currentEnabled: boolean) => {
-      toggleMod.mutate({ path, enable: !currentEnabled });
+      if (!activeGame?.id) return;
+      toggleMod.mutate({ path, enable: !currentEnabled, gameId: activeGame.id });
     },
-    [toggleMod],
+    [toggleMod, activeGame],
   );
 
   const handleOpen = async (path: string) => {
@@ -222,7 +245,15 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         setScanReview({ open: false, items: [], masterDbEntries: [], isCommitting: false });
       } catch (e) {
         console.error('Commit scan failed:', e);
-        toast.error(`Commit failed: ${e instanceof Error ? e.message : String(e)}`);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        if (errMsg.includes('DUPLICATE|')) {
+          const dest = errMsg.split('DUPLICATE|')[1] || '';
+          toast.error(
+            `Destination exists: ${dest}. Please rename the folder or skip it to continue.`,
+          );
+        } else {
+          toast.error(`Commit failed: ${errMsg}`);
+        }
         setScanReview((prev) => ({ ...prev, isCommitting: false }));
       }
     },
@@ -404,20 +435,21 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
   const handleFavorite = useCallback(
     async (pathOrId: string) => {
       try {
-        // pathOrId could be path (from folder view) or id? folder view uses path as key.
         const folder = folders.find((f) => f.path === pathOrId);
 
-        if (folder && folder.id) {
-          await invoke('toggle_favorite', { id: folder.id, favorite: !folder.is_favorite });
+        if (folder && activeGame?.id) {
+          await invoke('toggle_favorite', {
+            gameId: activeGame.id,
+            folderPath: folder.path,
+            favorite: !folder.is_favorite,
+          });
           queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-        } else {
-          console.warn('Cannot favorite - folder has no ID (not in DB yet?)');
         }
       } catch (e) {
         console.error('Failed to favorite:', e);
       }
     },
-    [folders, queryClient],
+    [folders, queryClient, activeGame?.id],
   );
 
   const handleMoveCategory = useCallback(
@@ -478,37 +510,70 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
 
   // US-3.Z: Zone-aware DnD handlers
 
-  /** Drop on specific object row — move items into that object's folder */
-  const handleDropOnItem = useCallback(
-    async (objectId: string, paths: string[]) => {
-      if (!activeGame || paths.length === 0) return;
+  /** Common helper to launch ArchiveModal if archives are present */
+  const handleArchivesInteractively = useCallback(
+    async (archivePaths: string[], context: typeof archiveModal.pendingDropContext) => {
+      // Analyze archives to get size and has_ini flag
+      const archiveInfos = await Promise.all(
+        archivePaths.map(async (path) => {
+          try {
+            return await invoke<import('../../types/scanner').ArchiveInfo>('analyze_archive_cmd', {
+              archivePath: path,
+            });
+          } catch (e) {
+            console.error(`Failed to analyze archive ${path}:`, e);
+            const name = await basename(path);
+            return {
+              path,
+              name,
+              extension: name.split('.').pop() || '',
+              size_bytes: 0,
+              has_ini: null,
+            } as import('../../types/scanner').ArchiveInfo;
+          }
+        }),
+      );
 
-      const obj = objects.find((o) => o.id === objectId);
-      if (!obj) {
-        toast.error('Could not find target object.');
-        return;
-      }
+      setArchiveModal({
+        open: true,
+        archives: archiveInfos,
+        isExtracting: false,
+        error: null,
+        pendingDropContext: context,
+      });
+    },
+    [archiveModal],
+  );
 
-      toast.info(`Moving ${paths.length} item(s) to ${obj.name}...`);
+  /** Handles the actual extraction and resuming the drop flow, called from ArchiveModal */
+  const handleArchiveExtractSubmit = useCallback(
+    async (selectedPaths: string[], _password?: string, _overwrite?: boolean) => {
+      const { pendingDropContext } = archiveModal;
+      if (!pendingDropContext || !activeGame) return;
 
-      // Suppress watcher during file operations to avoid "External Deletion" dialogs
+      setArchiveModal((prev) => ({ ...prev, isExtracting: true, error: null }));
+
+      // Suppress watcher during file operations
       await invoke('set_watcher_suppression_cmd', { suppressed: true });
+
       try {
-        const classified = classifyDroppedPaths(paths);
+        const extractedFolders: string[] = [];
 
-        // Extract archives first, then ingest the extracted folders + non-archive items
-        const pathsToIngest: string[] = [
-          ...classified.folders,
-          ...classified.iniFiles,
-          ...classified.images,
-        ];
+        // Determine extraction target Temp for auto-organize, Target for item
+        const extractTarget =
+          pendingDropContext.type === 'item'
+            ? pendingDropContext.targetFolder!
+            : `${activeGame.mod_path}\\.emmm2_temp`;
 
-        const objectFolderPath = `${activeGame.mod_path}\\${obj.folder_path}`;
+        if (pendingDropContext.type === 'auto-organize' && !(await exists(extractTarget))) {
+          await mkdir(extractTarget, { recursive: true });
+        }
 
-        for (const archivePath of classified.archives) {
-          const result = await scanService.extractArchive(archivePath, objectFolderPath);
+        for (const archivePath of selectedPaths) {
+          const result = await scanService.extractArchive(archivePath, extractTarget);
           if (result.success) {
-            pathsToIngest.push(result.dest_path);
+            extractedFolders.push(result.dest_path);
+            // Move original archive
             try {
               const dir = await dirname(archivePath);
               const base = await basename(archivePath);
@@ -521,16 +586,305 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
               console.warn(`Failed to move extracted archive ${archivePath}:`, e);
             }
           } else {
-            toast.error(`Failed to extract: ${result.error ?? 'Unknown error'}`);
+            throw new Error(`Failed to extract ${await basename(archivePath)}: ${result.error}`);
           }
         }
 
-        if (pathsToIngest.length === 0) {
-          toast.info('No items to import after extraction.');
+        // Close modal on success
+        setArchiveModal((prev) => ({ ...prev, open: false, isExtracting: false }));
+
+        // Resume flow depending on context
+        if (pendingDropContext.type === 'item' || pendingDropContext.type === 'new-object') {
+          const obj = objects.find((o) => o.id === pendingDropContext.targetObjectId);
+          const pathsToIngest = [...pendingDropContext.pathsToIngest, ...extractedFolders];
+          const isNewObject = pendingDropContext.type === 'new-object';
+
+          if (pathsToIngest.length === 0) {
+            toast.info('No items to import.');
+            return;
+          }
+
+          const result = await invoke<{
+            success: string[];
+            failures: { path: string; error: string }[];
+          }>('import_mods_from_paths', {
+            paths: pathsToIngest,
+            targetDir: pendingDropContext.targetFolder,
+            strategy: 'Raw',
+            dbJson: null,
+          });
+
+          queryClient.invalidateQueries({ queryKey: ['objects'] });
+          queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+          queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+          const movedCount = result.success.length;
+          const failCount = result.failures.length;
+
+          if (movedCount > 0) {
+            if (isNewObject) {
+              toast.success(
+                `Created ${obj?.name} with ${movedCount} item(s)${failCount > 0 ? `, ${failCount} failed` : ''}`,
+              );
+            } else {
+              toast.success(
+                `Moved ${movedCount} item(s)${obj ? ` to ${obj.name}` : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
+              );
+            }
+          } else if (failCount > 0) {
+            toast.error(`Failed to move items: ${result.failures[0].error}`);
+          }
+        } else if (pendingDropContext.type === 'auto-organize') {
+          // Auto-organize continuation
+          const folderPaths = [...(pendingDropContext.baseFolderPaths || []), ...extractedFolders];
+          const looseFiles = pendingDropContext.baseLooseFiles || [];
+
+          if (looseFiles.length > 0) {
+            const ingestResult = await invoke<{
+              moved: string[];
+              skipped: string[];
+              not_dirs: string[];
+              sync: { new_mods: number; new_objects: number };
+            }>('ingest_dropped_folders', {
+              paths: looseFiles,
+              modsPath: extractTarget,
+              gameId: activeGame.id,
+              gameName: activeGame.name,
+              gameType: activeGame.game_type,
+            });
+            folderPaths.push(...ingestResult.moved);
+          }
+
+          setIsSyncing(true);
+          const previewItemsRaw = await scanService.scanPreview(
+            activeGame.id,
+            activeGame.game_type,
+            activeGame.mod_path,
+            undefined,
+            folderPaths,
+          );
+
+          const previewItems = previewItemsRaw.map((item) => ({
+            ...item,
+            moveFromTemp: folderPaths.includes(item.folderPath), // Simplified temp marking
+          }));
+
+          // Load MasterDB...
+          const dbJson = await scanService.getMasterDb(activeGame.game_type);
+          let masterEntries: MasterDbEntry[] = [];
+          try {
+            const parsed = JSON.parse(dbJson);
+            if (Array.isArray(parsed)) {
+              masterEntries = parsed.map((e: Record<string, unknown>) => ({
+                name: String(e.name ?? ''),
+                object_type: String(e.object_type ?? 'Other'),
+                tags: Array.isArray(e.tags) ? (e.tags as string[]) : [],
+                metadata: (e.metadata as Record<string, unknown>) ?? null,
+                thumbnail_path: e.thumbnail_path ? String(e.thumbnail_path) : null,
+              }));
+            }
+          } catch (e) {
+            console.error('MasterDB parse failed:', e);
+          }
+
+          setScanReview({
+            open: true,
+            items: previewItems,
+            masterDbEntries: masterEntries,
+            isCommitting: false,
+          });
+        }
+      } catch (e: unknown) {
+        console.error('Extraction flow failed:', e);
+        setArchiveModal((prev) => ({
+          ...prev,
+          isExtracting: false,
+          error: e instanceof Error ? e.message : String(e),
+        }));
+      } finally {
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        if (pendingDropContext.type === 'auto-organize') {
+          setIsSyncing(false);
+        }
+      }
+    },
+    [archiveModal, activeGame, objects, queryClient, setArchiveModal],
+  );
+
+  /** Called when user skips extraction in the ArchiveModal */
+  const handleArchiveExtractSkip = useCallback(async () => {
+    const { pendingDropContext } = archiveModal;
+    setArchiveModal((prev) => ({ ...prev, open: false }));
+
+    if (!pendingDropContext || !activeGame) return;
+
+    // Proceed with non-archive items
+    if (pendingDropContext.type === 'item' || pendingDropContext.type === 'new-object') {
+      const obj = objects.find((o) => o.id === pendingDropContext.targetObjectId);
+      const isNewObject = pendingDropContext.type === 'new-object';
+      if (pendingDropContext.pathsToIngest.length === 0) {
+        toast.info('No items to import.');
+        return;
+      }
+
+      try {
+        await invoke('set_watcher_suppression_cmd', { suppressed: true });
+        const result = await invoke<{
+          success: string[];
+          failures: { path: string; error: string }[];
+        }>('import_mods_from_paths', {
+          paths: pendingDropContext.pathsToIngest,
+          targetDir: pendingDropContext.targetFolder,
+          strategy: 'Raw',
+          dbJson: null,
+        });
+
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+        const movedCount = result.success.length;
+        const failCount = result.failures.length;
+
+        if (movedCount > 0) {
+          if (isNewObject) {
+            toast.success(
+              `Created ${obj?.name} with ${movedCount} item(s)${failCount > 0 ? `, ${failCount} failed` : ''}`,
+            );
+          } else {
+            toast.success(
+              `Moved ${movedCount} item(s)${obj ? ` to ${obj.name}` : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
+            );
+          }
+        } else if (failCount > 0) {
+          toast.error(`Failed to move items: ${result.failures[0].error}`);
+        }
+      } catch (e) {
+        console.error('Drop on item failed after skipping archives:', e);
+        toast.error('Failed to import items');
+      } finally {
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+      }
+    } else if (pendingDropContext.type === 'auto-organize') {
+      try {
+        // Auto-organize continuation without archives
+        const folderPaths = [...(pendingDropContext.baseFolderPaths || [])];
+        const looseFiles = pendingDropContext.baseLooseFiles || [];
+
+        if (folderPaths.length === 0 && looseFiles.length === 0) {
+          toast.info('No items to auto-organize.');
           return;
         }
 
-        // Use import_mods_from_paths with the object's target directory
+        setIsSyncing(true);
+        await invoke('set_watcher_suppression_cmd', { suppressed: true });
+
+        const extractTarget = `${activeGame.mod_path}\\.emmm2_temp`;
+        if (looseFiles.length > 0) {
+          if (!(await exists(extractTarget))) {
+            await mkdir(extractTarget, { recursive: true });
+          }
+          const ingestResult = await invoke<{
+            moved: string[];
+            skipped: string[];
+            not_dirs: string[];
+            sync: { new_mods: number; new_objects: number };
+          }>('ingest_dropped_folders', {
+            paths: looseFiles,
+            modsPath: extractTarget,
+            gameId: activeGame.id,
+            gameName: activeGame.name,
+            gameType: activeGame.game_type,
+          });
+          folderPaths.push(...ingestResult.moved);
+        }
+
+        const previewItemsRaw = await scanService.scanPreview(
+          activeGame.id,
+          activeGame.game_type,
+          activeGame.mod_path,
+          undefined,
+          folderPaths,
+        );
+
+        const previewItems = previewItemsRaw.map((item) => ({
+          ...item,
+          moveFromTemp: folderPaths.includes(item.folderPath),
+        }));
+
+        const dbJson = await scanService.getMasterDb(activeGame.game_type);
+        let masterEntries: MasterDbEntry[] = [];
+        try {
+          const parsed = JSON.parse(dbJson);
+          if (Array.isArray(parsed)) {
+            masterEntries = parsed.map((e: Record<string, unknown>) => ({
+              name: String(e.name ?? ''),
+              object_type: String(e.object_type ?? 'Other'),
+              tags: Array.isArray(e.tags) ? (e.tags as string[]) : [],
+              metadata: (e.metadata as Record<string, unknown>) ?? null,
+              thumbnail_path: e.thumbnail_path ? String(e.thumbnail_path) : null,
+            }));
+          }
+        } catch (e) {
+          console.error('MasterDB parse failed:', e);
+        }
+
+        setScanReview({
+          open: true,
+          items: previewItems,
+          masterDbEntries: masterEntries,
+          isCommitting: false,
+        });
+      } catch (e: unknown) {
+        console.error('Auto-organize failed post-skip:', e);
+        toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setIsSyncing(false);
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+      }
+    }
+  }, [archiveModal, activeGame, objects, queryClient, setArchiveModal]);
+
+  /** Drop on specific object row — move items into that object's folder */
+  const handleDropOnItem = useCallback(
+    async (objectId: string, paths: string[]) => {
+      if (!activeGame || paths.length === 0) return;
+
+      const obj = objects.find((o) => o.id === objectId);
+      if (!obj) {
+        toast.error('Could not find target object.');
+        return;
+      }
+
+      toast.info(`Importing item(s) to ${obj.name}...`);
+      const classified = classifyDroppedPaths(paths);
+      const objectFolderPath = `${activeGame.mod_path}\\${obj.folder_path}`;
+
+      const pathsToIngest: string[] = [
+        ...classified.folders,
+        ...classified.iniFiles,
+        ...classified.images,
+      ];
+
+      // If there are archives, delegate to ArchiveModal
+      if (classified.archives.length > 0) {
+        handleArchivesInteractively(classified.archives, {
+          type: 'item',
+          pathsToIngest,
+          targetFolder: objectFolderPath,
+          targetObjectId: objectId,
+        });
+        return;
+      }
+
+      // No archives, proceed normally
+      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      try {
+        if (pathsToIngest.length === 0) {
+          toast.info('No items to import.');
+          return;
+        }
+
         const result = await invoke<{
           success: string[];
           failures: { path: string; error: string }[];
@@ -561,7 +915,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         await invoke('set_watcher_suppression_cmd', { suppressed: false });
       }
     },
-    [activeGame, objects, queryClient],
+    [activeGame, objects, queryClient, handleArchivesInteractively],
   );
 
   /** Drop on Auto Organize zone — extract archives → scan → open review */
@@ -570,46 +924,31 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
       if (!activeGame) return;
 
       const classified = classifyDroppedPaths(paths);
-
       toast.info('Preparing Auto Organize...');
+
+      const folderPaths: string[] = [...classified.folders];
+      const looseFiles = [...classified.iniFiles, ...classified.images];
+
+      // If there are archives, delegate to ArchiveModal
+      if (classified.archives.length > 0) {
+        handleArchivesInteractively(classified.archives, {
+          type: 'auto-organize',
+          baseFolderPaths: folderPaths,
+          baseLooseFiles: looseFiles,
+          pathsToIngest: [], // Unused for auto-organize but required by type
+        });
+        return;
+      }
 
       // Suppress watcher during file operations
       await invoke('set_watcher_suppression_cmd', { suppressed: true });
       try {
         const tempPath = `${activeGame.mod_path}\\.emmm2_temp`;
-        if (!(await exists(tempPath))) {
+        if (looseFiles.length > 0 && !(await exists(tempPath))) {
           await mkdir(tempPath, { recursive: true });
         }
 
-        // Step 1: Extract archives to temp dir
-        const folderPaths: string[] = [...classified.folders]; // These will be scanned in-place
         const tempPaths: string[] = [];
-
-        for (const archivePath of classified.archives) {
-          const result = await scanService.extractArchive(archivePath, tempPath);
-          if (result.success) {
-            folderPaths.push(result.dest_path);
-            tempPaths.push(result.dest_path);
-            try {
-              const dir = await dirname(archivePath);
-              const base = await basename(archivePath);
-              const extractedDir = await join(dir, '.extracted');
-              if (!(await exists(extractedDir))) {
-                await mkdir(extractedDir, { recursive: true });
-              }
-              await rename(archivePath, await join(extractedDir, base));
-            } catch (e) {
-              console.warn(`Failed to move extracted archive ${archivePath}:`, e);
-            }
-          } else {
-            toast.error(`Failed to extract: ${result.error ?? 'Unknown error'}`);
-          }
-        }
-
-        // We only pass remaining non-folder files (ini, images) to ingest_dropped_folders.
-        // We do NOT pass classified.folders here, because they are scanned in-place
-        // and shouldn't be permanently moved until user clicks Confirm.
-        const looseFiles = [...classified.iniFiles, ...classified.images];
         if (looseFiles.length > 0) {
           const ingestResult = await invoke<{
             moved: string[];
@@ -641,18 +980,12 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         // Mark items inside the temp folders so they can be moved on commit
         const previewItems = previewItemsRaw.map((item) => ({
           ...item,
-          moveFromTemp: tempPaths.includes(item.folderPath),
+          moveFromTemp: folderPaths.includes(item.folderPath),
         }));
 
         // Load MasterDB entries for override search
         const dbJson = await scanService.getMasterDb(activeGame.game_type);
-        let masterEntries: {
-          name: string;
-          object_type: string;
-          tags: string[];
-          metadata: Record<string, unknown> | null;
-          thumbnail_path: string | null;
-        }[] = [];
+        let masterEntries: MasterDbEntry[] = [];
         try {
           const parsed = JSON.parse(dbJson);
           if (Array.isArray(parsed)) {
@@ -664,8 +997,8 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
               thumbnail_path: e.thumbnail_path ? String(e.thumbnail_path) : null,
             }));
           }
-        } catch {
-          // MasterDB parse failed — proceed with empty entries
+        } catch (e) {
+          console.error('MasterDB parse failed in auto-organize:', e);
         }
 
         setScanReview({
@@ -682,7 +1015,90 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         await invoke('set_watcher_suppression_cmd', { suppressed: false });
       }
     },
-    [activeGame],
+    [activeGame, handleArchivesInteractively],
+  );
+
+  /**
+   * Called by CreateObjectModal after creating a DB shell to physically ingest files
+   */
+  const handleDropOnNewObjectSubmit = useCallback(
+    async (newObjectId: string, objectName: string, paths: string[]) => {
+      if (!activeGame || paths.length === 0) return;
+
+      toast.info(`Importing item(s) to ${objectName}...`);
+      const classified = classifyDroppedPaths(paths);
+      // Construct physically matching folder path utilizing objectName directly
+      // Note: We use objectName because for newly created objects,
+      // CreateObjectModal uses input.name as folder_path unless overridden
+      const objectFolderPath = `${activeGame.mod_path}\\${objectName}`;
+
+      const pathsToIngest: string[] = [
+        ...classified.folders,
+        ...classified.iniFiles,
+        ...classified.images,
+      ];
+
+      // Step 1: Ensure directory exists physically if not already
+      try {
+        if (!(await exists(objectFolderPath))) {
+          await mkdir(objectFolderPath, { recursive: true });
+        }
+      } catch (e) {
+        console.error('Failed to create object directory on disk:', e);
+        toast.error('Failed to create object directory on disk.');
+        return;
+      }
+
+      // Step 2: Extract & inject if we have archives
+      if (classified.archives.length > 0) {
+        handleArchivesInteractively(classified.archives, {
+          type: 'new-object',
+          pathsToIngest,
+          targetFolder: objectFolderPath,
+          targetObjectId: newObjectId,
+        });
+        return;
+      }
+
+      // Step 3: No archives, proceed normally
+      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      try {
+        if (pathsToIngest.length === 0) {
+          toast.success(`Created ${objectName} successfully (no items imported).`);
+          return;
+        }
+
+        const result = await invoke<{
+          success: string[];
+          failures: { path: string; error: string }[];
+        }>('import_mods_from_paths', {
+          paths: pathsToIngest,
+          targetDir: objectFolderPath,
+          strategy: 'Raw',
+          dbJson: null,
+        });
+
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+        const movedCount = result.success.length;
+        const failCount = result.failures.length;
+        if (movedCount > 0) {
+          toast.success(
+            `Created ${objectName} with ${movedCount} item(s)${failCount > 0 ? `, ${failCount} failed` : ''}`,
+          );
+        } else if (failCount > 0) {
+          toast.error(`Created Object but failed to move items: ${result.failures[0].error}`);
+        }
+      } catch (e) {
+        console.error('Drop on new object failed:', e);
+        toast.error('Failed to import dropped items');
+      } finally {
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+      }
+    },
+    [activeGame, queryClient, handleArchivesInteractively],
   );
 
   /**
@@ -828,5 +1244,9 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handleDropOnItem,
     handleDropAutoOrganize,
     handleDropNewObject,
+    handleDropOnNewObjectSubmit,
+    archiveModal,
+    handleArchiveExtractSubmit,
+    handleArchiveExtractSkip,
   };
 }

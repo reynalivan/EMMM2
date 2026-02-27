@@ -1,8 +1,5 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-
-use sqlx::Row;
 
 use crate::DISABLED_PREFIX;
 
@@ -10,11 +7,11 @@ use super::helpers::analyze_mod_metadata;
 use super::types::ModFolder;
 
 /// Read the filesystem, build `ModFolder` entries, then optionally enrich with DB IDs.
+/// Missing mods are automatically inserted into the database.
 pub(crate) async fn scan_fs_folders(
     target: &Path,
+    _mods_path: &Path,
     sub_path: Option<&str>,
-    pool: Option<&sqlx::SqlitePool>,
-    game_id: Option<&str>,
 ) -> Result<Vec<ModFolder>, String> {
     let entries = match std::fs::read_dir(target) {
         Ok(e) => e,
@@ -31,37 +28,8 @@ pub(crate) async fn scan_fs_folders(
 
     folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-    // Enrich FS folders with DB metadata to mark registered mods.
-    if let (Some(p), Some(gid)) = (pool, game_id) {
-        let like_pattern = format!("{}%", target.to_string_lossy());
-        let db_rows = sqlx::query(
-            "SELECT id, folder_path FROM mods WHERE game_id = ? AND folder_path LIKE ?",
-        )
-        .bind(gid)
-        .bind(&like_pattern)
-        .fetch_all(p)
-        .await
-        .unwrap_or_default();
-
-        let mod_map: HashMap<String, String> = db_rows
-            .into_iter()
-            .filter_map(|r| {
-                let fp: String = r.try_get("folder_path").ok()?;
-                let id: String = r.try_get("id").ok()?;
-                Some((fp, id))
-            })
-            .collect();
-
-        for folder in &mut folders {
-            if let Some(id) = mod_map.get(&folder.path) {
-                folder.id = Some(id.clone());
-            }
-        }
-    }
-
     Ok(folders)
 }
-
 
 /// Builds a `ModFolder` from a filesystem `DirEntry`. Returns `None` if the entry
 /// should be skipped (non-directory, hidden, or no file name).
@@ -121,11 +89,8 @@ pub(crate) fn build_mod_folder_from_fs_entry(
 }
 
 pub(crate) async fn list_mod_folders_inner(
-    pool: Option<&sqlx::SqlitePool>,
-    game_id: Option<String>,
     mods_path: String,
     sub_path: Option<String>,
-    _object_id: Option<String>,
 ) -> Result<Vec<ModFolder>, String> {
     let base = Path::new(&mods_path);
 
@@ -144,11 +109,28 @@ pub(crate) async fn list_mod_folders_inner(
         _ => base.to_path_buf(),
     };
 
-    // Always scan the filesystem as the source of truth.
-    // scan_fs_folders will automatically enrich FS results with DB metadata if game_id/pool are provided.
+    // Case-insensitive fallback: even on NTFS with case-sensitivity "disabled",
+    // some systems still treat paths case-sensitively. Zero cost when target exists.
+    let target = if target.exists() {
+        target
+    } else if let (Some(parent), Some(name)) = (target.parent(), target.file_name()) {
+        let needle = name.to_string_lossy().to_lowercase();
+        std::fs::read_dir(parent)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .flatten()
+                    .find(|e| e.file_name().to_string_lossy().to_lowercase() == needle)
+            })
+            .map(|e| e.path())
+            .unwrap_or(target)
+    } else {
+        target
+    };
+
     log::info!("Scanning filesystem for mods at {}", target.display());
 
-    let folders = scan_fs_folders(&target, sub_path.as_deref(), pool, game_id.as_deref()).await?;
+    let folders = scan_fs_folders(&target, base, sub_path.as_deref()).await?;
 
     log::info!(
         "Listed {} mod folders from {} (sub: {:?})",

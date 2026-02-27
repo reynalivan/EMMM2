@@ -25,10 +25,17 @@ type CreateFormData = z.infer<typeof createSchema>;
 
 interface CreateObjectModalProps {
   open: boolean;
+  pendingPaths?: string[] | null;
+  onImportDropped?: (newObjectId: string, objectName: string, paths: string[]) => void;
   onClose: () => void;
 }
 
-export default function CreateObjectModal({ open, onClose }: CreateObjectModalProps) {
+export default function CreateObjectModal({
+  open,
+  pendingPaths,
+  onImportDropped,
+  onClose,
+}: CreateObjectModalProps) {
   const { activeGame } = useActiveGame();
   const { data: gameSchema } = useGameSchema();
   const createObject = useCreateObject();
@@ -75,7 +82,7 @@ export default function CreateObjectModal({ open, onClose }: CreateObjectModalPr
 
   const onSubmit = async (data: CreateFormData) => {
     try {
-      await createObject.mutateAsync({
+      const newObjectId = await createObject.mutateAsync({
         game_id: activeGame.id,
         name: data.name,
         object_type: data.object_type,
@@ -83,7 +90,14 @@ export default function CreateObjectModal({ open, onClose }: CreateObjectModalPr
         is_safe: data.is_safe,
         metadata: data.metadata,
       });
-      toast.success(`Object "${data.name}" created`);
+
+      // If we have items to import specifically for this new object
+      if (pendingPaths && pendingPaths.length > 0 && onImportDropped) {
+        onImportDropped(newObjectId, data.name, pendingPaths);
+      } else {
+        toast.success(`Object "${data.name}" created`);
+      }
+
       reset();
       onClose();
     } catch (err) {

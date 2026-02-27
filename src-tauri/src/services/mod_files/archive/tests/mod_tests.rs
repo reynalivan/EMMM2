@@ -135,7 +135,11 @@ fn test_extract_duplicate_dest() {
     let result = extract_archive(&zip_path, dir.path(), None, false).unwrap();
     assert!(result.success);
     assert!(result.dest_path.ends_with("existing_mod (1)"));
-    assert!(dir.path().join("existing_mod (1)").join("file.txt").exists());
+    assert!(dir
+        .path()
+        .join("existing_mod (1)")
+        .join("file.txt")
+        .exists());
 
     // Re-create the test zip since extract_archive moves it to backup
     let zip_path2 = create_test_zip(dir.path(), "existing_mod2.zip", &[("file.txt", b"data")]);

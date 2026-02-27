@@ -182,8 +182,6 @@ To ensure collection identity is preserved when a mod folder is physically moved
 - [ ] **Create Collection**: Select 5 mods → "Create Preset" → Name "Abyss Team" → Preset saved to DB.
 - [ ] **Apply Preset**: Click "Apply Abyss Team" → Confirm Modal → Current mods disabled → Preset mods enabled.
 - [ ] **Undo Function**: Click "Undo" on Success Toast → Mods revert to exact previous state instantly.
-- [ ] **Context Switch**: User in "Star Rail" mode → Presets list only shows SR presets.
-- [ ] **Export/Import**: Export "Abyss Team" as JSON → Share file → Import on another machine → Preset created with matched mods.
 
 ### 2. Negative Cases (Error Handling)
 

@@ -18,6 +18,24 @@ pub struct PinGuardState {
 }
 
 impl PinGuardState {
+    pub fn new(failed_attempts: u8, locked_until_ts: Option<u64>) -> Self {
+        let locked_until =
+            locked_until_ts.map(|ts| SystemTime::UNIX_EPOCH + Duration::from_secs(ts));
+        Self {
+            failed_attempts,
+            locked_until,
+        }
+    }
+
+    pub fn snapshot(&self) -> (u8, Option<u64>) {
+        let ts = self.locked_until.map(|t| {
+            t.duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs()
+        });
+        (self.failed_attempts, ts)
+    }
+
     pub fn reset(&mut self) {
         self.failed_attempts = 0;
         self.locked_until = None;

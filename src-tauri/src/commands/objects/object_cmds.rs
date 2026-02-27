@@ -40,12 +40,20 @@ pub async fn get_objects_cmd(
     filter: ObjectFilter,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CommandResult<Vec<ObjectSummary>> {
+    get_objects_cmd_inner(filter, &*pool).await
+}
+
+pub async fn get_objects_cmd_inner(
+    filter: ObjectFilter,
+    pool: &sqlx::SqlitePool,
+) -> CommandResult<Vec<ObjectSummary>> {
     // Phase 1: Filesystem as source of truth for instance existence
     // We scan the mod folder for this game and ensure a basic DB object exists for it
-    if let Ok(Some(mod_path)) = sqlx::query_scalar::<_, String>("SELECT mod_path FROM games WHERE id = ?")
-        .bind(&filter.game_id)
-        .fetch_optional(&*pool)
-        .await
+    if let Ok(Some(mod_path)) =
+        sqlx::query_scalar::<_, String>("SELECT mod_path FROM games WHERE id = ?")
+            .bind(&filter.game_id)
+            .fetch_optional(&*pool)
+            .await
     {
         let p = std::path::Path::new(&mod_path);
         if p.exists() && p.is_dir() {
@@ -55,48 +63,94 @@ pub async fn get_objects_cmd(
                     let path = entry.path();
                     if path.is_dir() {
                         let folder_name = entry.file_name().to_string_lossy().to_string();
-                        // Ignore hidden config dirs and disabled states handled elsewhere
-                        if !folder_name.starts_with('.') && !folder_name.starts_with(crate::DISABLED_PREFIX) {
+                        // Ignore hidden config dirs but DO NOT ignore DISABLED-prefixed folders
+                        if !folder_name.starts_with('.')
+                        {
                             fs_folders.insert(folder_name);
                         }
                     }
                 }
             }
 
-            let current_objects = sqlx::query!("SELECT folder_path FROM objects WHERE game_id = ?", filter.game_id)
-                .fetch_all(&*pool)
-                .await?;
+            let current_objects = sqlx::query!(
+                "SELECT folder_path FROM objects WHERE game_id = ?",
+                filter.game_id
+            )
+            .fetch_all(&*pool)
+            .await?;
 
             let mut db_folders = std::collections::HashSet::new();
-            for o in current_objects {
-                if let Some(fp) = o.folder_path {
-                    db_folders.insert(fp);
+            for o in &current_objects {
+                if let Some(ref fp) = o.folder_path {
+                    db_folders.insert(fp.to_lowercase());
                 }
             }
 
             let mut new_objects_count = 0;
             if let Ok(mut tx) = pool.begin().await {
                 let mut changes = false;
-                for folder in fs_folders {
-                    if !db_folders.contains(&folder) {
+                for folder in &fs_folders {
+                    // Case-insensitive check: FS "archeron" matches DB "Acheron"
+                    if !db_folders.contains(&folder.to_lowercase()) {
                         changes = true;
+                        let obj_name = folder
+                            .strip_prefix(crate::DISABLED_PREFIX)
+                            .unwrap_or(folder);
+
                         let _ = crate::services::scanner::sync::helpers::ensure_object_exists(
                             &mut tx,
                             &filter.game_id,
-                            &folder, // folder_path
-                            &folder, // default alias name
+                            folder, // folder_path
+                            obj_name, // stripped alias name
                             "Other", // default obj_type
                             None,
                             "[]",
                             "{}",
                             &mut new_objects_count,
-                        ).await;
+                        )
+                        .await;
                     }
                 }
                 if changes {
                     let _ = tx.commit().await;
                 }
             }
+
+            // Fix stale folder_path casing: reuse fs_folders to correct existing objects.
+            // Uses a lowercase→actual map so mismatches like DB "Acheron" → FS "archeron" are fixed.
+            //
+            // TODO: TEMP DEBUG — remove after investigation
+            for o in &current_objects {
+                if let Some(ref fp) = o.folder_path {
+                    log::info!("[DEBUG-OBJECTS] folder_path = {:?}", fp);
+                }
+            }
+            log::info!("[DEBUG-FS] fs_folders = {:?}", fs_folders);
+            // END TEMP DEBUG
+            {
+                let fs_map: std::collections::HashMap<String, &String> = fs_folders
+                    .iter()
+                    .map(|f| (f.to_lowercase(), f))
+                    .collect();
+                for o in &current_objects {
+                    if let Some(ref fp) = o.folder_path {
+                        if let Some(actual) = fs_map.get(&fp.to_lowercase()) {
+                            if fp != *actual {
+                                let _ = sqlx::query(
+                                    "UPDATE objects SET folder_path = ? WHERE game_id = ? AND folder_path = ?",
+                                )
+                                .bind(*actual)
+                                .bind(&filter.game_id)
+                                .bind(fp)
+                                .execute(&*pool)
+                                .await;
+                                log::info!("Fixed objects.folder_path: {} → {}", fp, actual);
+                            }
+                        }
+                    }
+                }
+            }
+
         }
     }
 
@@ -395,3 +449,7 @@ pub async fn delete_object_cmd(id: String, pool: State<'_, sqlx::SqlitePool>) ->
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/object_cmds_tests.rs"]
+mod tests;

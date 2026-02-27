@@ -3,6 +3,12 @@
   "productName": "EMMM2",
   "version": "0.1.0",
   "identifier": "com.emmm2.app",
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/reynalivan/EMMM2/releases/latest/download/latest.json"],
+      "pubkey": "REPLACE_WITH_ED25519_PUBLIC_KEY"
+    }
+  },
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",

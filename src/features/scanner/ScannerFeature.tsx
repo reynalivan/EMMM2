@@ -222,7 +222,9 @@ export default function ScannerFeature() {
               onRename={(path, newName) => {
                 // Determine folderName from path for display, but hook expects full path?
                 // useRenameMod expects { folderPath, newName }
-                renameMod.mutate({ folderPath: path, newName });
+                if (activeGame?.id) {
+                  renameMod.mutate({ folderPath: path, newName, gameId: activeGame.id });
+                }
               }}
               onBulkEnable={(paths) => bulkToggle.mutate({ paths, enable: true })}
               onBulkDisable={(paths) => bulkToggle.mutate({ paths, enable: false })}

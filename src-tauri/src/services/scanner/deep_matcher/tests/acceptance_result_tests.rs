@@ -198,10 +198,7 @@ fn test_summary_text_is_deterministic_for_auto_review_and_no_match() {
     )
     .expect("auto match result");
     assert_eq!(auto_result.status, MatchStatus::AutoMatched);
-    assert_eq!(
-        auto_result.summary(),
-        "Verified by file signature"
-    );
+    assert_eq!(auto_result.summary(), "Verified by file signature");
 
     let review_states = HashMap::from([
         (
@@ -236,10 +233,7 @@ fn test_summary_text_is_deterministic_for_auto_review_and_no_match() {
         },
     );
     assert_eq!(review_result.status, MatchStatus::NeedsReview);
-    assert_eq!(
-        review_result.summary(),
-        "Multiple possible matches found"
-    );
+    assert_eq!(review_result.summary(), "Multiple possible matches found");
 
     let no_match_states = HashMap::from([(
         0,

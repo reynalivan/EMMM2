@@ -18,14 +18,13 @@ import ExplorerBreadcrumbs from './Breadcrumbs';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import DuplicateWarningModal from './DuplicateWarningModal';
 import { BulkTagModal } from './BulkTagModal';
+import PinEntryModal from '../../components/modals/PinEntryModal';
 import DragOverlay from './DragOverlay';
 import BulkProgressBar from './BulkProgressBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
-import { useAppStore } from '../../stores/useAppStore';
 import { useActiveConflicts } from '../../hooks/useFolders';
 
 export default function FolderGrid() {
-  const safeMode = useAppStore((state) => state.safeMode);
   const {
     // Data & State
     sortedFolders,
@@ -105,9 +104,14 @@ export default function FolderGrid() {
     handleBulkPin,
     handleBulkMoveToObject,
 
-    // DnD
+    pinSafeDialog,
+    handleToggleSafeRequest,
+    handleToggleSafeSubmit,
+    handleToggleSafeCancel,
+
     isDragging,
     selectedObject,
+    handleImportFiles,
   } = useFolderGrid();
 
   // Duplicate / Conflict Detection Visual
@@ -123,9 +127,8 @@ export default function FolderGrid() {
     return s;
   }, [conflicts]);
 
-  const visibleFolders = safeMode
-    ? sortedFolders.filter((folder) => folder.is_safe)
-    : sortedFolders;
+  // Safe-mode filtering is already applied in useFolderGrid (via filteredFolders)
+  const visibleFolders = sortedFolders;
 
   return (
     <div
@@ -262,8 +265,8 @@ export default function FolderGrid() {
                       filters: [{ name: 'Archives', extensions: ['zip', 'rar', '7z'] }],
                     });
                     if (selected) {
-                      // TODO: Wire to import pipeline
-                      console.log('Import archives:', selected);
+                      const paths = Array.isArray(selected) ? selected : [selected];
+                      handleImportFiles(paths);
                     }
                   }}
                 >
@@ -276,8 +279,8 @@ export default function FolderGrid() {
                     const { open } = await import('@tauri-apps/plugin-dialog');
                     const selected = await open({ directory: true, multiple: false });
                     if (selected) {
-                      // TODO: Wire to import pipeline
-                      console.log('Import folder:', selected);
+                      const paths = Array.isArray(selected) ? selected : [selected];
+                      handleImportFiles(paths);
                     }
                   }}
                 >
@@ -339,6 +342,7 @@ export default function FolderGrid() {
                           onBulkPin={handleBulkPin}
                           onBulkMoveToObject={handleBulkMoveToObject}
                           onOpenMoveDialog={openMoveDialog}
+                          onToggleSafe={() => handleToggleSafeRequest(folder)}
                           hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
                         />
                       </div>
@@ -378,6 +382,7 @@ export default function FolderGrid() {
                     onDelete={() => handleDeleteRequest(folder)}
                     onToggleFavorite={handleToggleFavorite}
                     onOpenMoveDialog={openMoveDialog}
+                    onToggleSafe={() => handleToggleSafeRequest(folder)}
                     hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
                   />
                 </div>
@@ -440,6 +445,12 @@ export default function FolderGrid() {
         onForceEnable={handleDuplicateForceEnable}
         onEnableOnlyThis={handleDuplicateEnableOnly}
         onCancel={handleDuplicateCancel}
+      />
+
+      <PinEntryModal
+        open={pinSafeDialog.open}
+        onClose={handleToggleSafeCancel}
+        onSuccess={handleToggleSafeSubmit}
       />
 
       <BulkProgressBar />

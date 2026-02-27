@@ -87,7 +87,12 @@ export function useToggleMod() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { path: string; enable: boolean }) => invoke<string>('toggle_mod', params),
+    mutationFn: (params: { path: string; enable: boolean; gameId: string }) =>
+      invoke<string>('toggle_mod', {
+        path: params.path,
+        enable: params.enable,
+        game_id: params.gameId,
+      }),
 
     // Optimistic UI: flip is_enabled instantly in cache
     onMutate: async (variables) => {
@@ -115,6 +120,7 @@ export function useToggleMod() {
           invoke<string>('toggle_mod', {
             path: newPath,
             enable: !variables.enable,
+            game_id: variables.gameId,
           }).then(() => {
             queryClient.invalidateQueries({ queryKey: folderKeys.all });
             queryClient.invalidateQueries({ queryKey: ['objects'] });
@@ -129,6 +135,7 @@ export function useToggleMod() {
             if (conflicts.length > 0) {
               const names = conflicts.map((c) => c.mod_paths.join(', ')).join('; ');
               toast.info(`Shader collision detected: ${names}`);
+              queryClient.invalidateQueries({ queryKey: ['conflicts'] });
             }
           })
           .catch(() => {
@@ -151,6 +158,7 @@ export function useToggleMod() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['conflicts'] });
     },
   });
 }
@@ -160,8 +168,12 @@ export function useRenameMod() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; newName: string }) =>
-      invoke<RenameResult>('rename_mod_folder', params),
+    mutationFn: (params: { folderPath: string; newName: string; gameId: string }) =>
+      invoke<RenameResult>('rename_mod_folder', {
+        folder_path: params.folderPath,
+        new_name: params.newName,
+        game_id: params.gameId,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
@@ -249,6 +261,20 @@ export function useUpdateModThumbnail() {
   });
 }
 
+/** Hook to toggle a mod's safe classification. */
+export function useToggleModSafe() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
+      invoke<void>('toggle_mod_safe', params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+    },
+  });
+}
+
 /** Hook to delete a mod's thumbnail file. */
 export function useDeleteModThumbnail() {
   const queryClient = useQueryClient();
@@ -283,8 +309,14 @@ export function useBulkToggle() {
   return useMutation({
     mutationFn: (params: { paths: string[]; enable: boolean }) =>
       invoke<BulkResult>('bulk_toggle_mods', params),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      if (result.success.length > 0) {
+        toast.success(`Toggled ${result.success.length} items successfully`);
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Failed to toggle ${result.failures.length} items`);
+      }
     },
   });
 }
@@ -296,13 +328,18 @@ export function useBulkDelete() {
   return useMutation({
     mutationFn: (params: { paths: string[]; gameId?: string }) =>
       invoke<BulkResult>('bulk_delete_mods', params),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      if (result.success.length > 0) {
+        toast.success(`Deleted ${result.success.length} items successfully`);
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Failed to delete ${result.failures.length} items`);
+      }
     },
   });
 }
 
-/** Hook to bulk update info.json. */
 /** Hook to bulk update info.json. */
 export function useBulkUpdateInfo() {
   const queryClient = useQueryClient();
@@ -310,8 +347,14 @@ export function useBulkUpdateInfo() {
   return useMutation({
     mutationFn: (params: { paths: string[]; update: ModInfoUpdate }) =>
       invoke<BulkResult>('bulk_update_info', params),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      if (result.success.length > 0) {
+        toast.success(`Updated ${result.success.length} items successfully`);
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Failed to update ${result.failures.length} items`);
+      }
     },
   });
 }

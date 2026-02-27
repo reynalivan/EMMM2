@@ -32,6 +32,7 @@ interface FolderCardProps {
   onBulkPin?: (pin: boolean) => void;
   onBulkMoveToObject?: () => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
+  onToggleSafe?: () => void;
   hasConflict?: boolean;
 }
 
@@ -59,6 +60,7 @@ function FolderCardInner({
   onBulkPin,
   onBulkMoveToObject,
   onOpenMoveDialog,
+  onToggleSafe,
   hasConflict = false,
 }: FolderCardProps) {
   const [imgError, setImgError] = useState(false);
@@ -131,6 +133,7 @@ function FolderCardInner({
             onEnableOnlyThis={onEnableOnlyThis ? () => onEnableOnlyThis(folder) : undefined}
             onOpenMoveDialog={onOpenMoveDialog}
             onNavigate={onNavigate}
+            onToggleSafe={onToggleSafe}
           />
         )
       }
