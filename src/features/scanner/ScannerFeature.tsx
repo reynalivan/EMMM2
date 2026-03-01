@@ -4,8 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { dirname, basename, join } from '@tauri-apps/api/path';
 import { mkdir, exists, rename } from '@tauri-apps/plugin-fs';
 import { Play, ScanSearch } from 'lucide-react';
-import { useScannerStore } from '../../stores/scannerStore';
-import { scanService } from '../../services/scanService';
+import { useScannerStore } from '../../stores/useScannerStore';
+import { scanService } from '../../lib/services/scanService';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import {
   useBulkToggle,
@@ -16,9 +16,9 @@ import {
 import type { ArchiveInfo } from '../../types/scanner';
 import { toast } from '../../stores/useToastStore';
 
-import ArchiveModal from '../../components/scanner/ArchiveModal';
-import ScanOverlay from '../../components/scanner/ScanOverlay';
-import ReviewTable from '../../components/scanner/ReviewTable';
+import ArchiveModal from './components/ArchiveModal';
+import ScanOverlay from './components/ScanOverlay';
+import ReviewTable from './components/ReviewTable';
 
 export default function ScannerFeature() {
   const queryClient = useQueryClient();

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO download_sessions\n           (id, source, submission_id, mod_title, profile_url, game_id, expected_keywords, created_at)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "b82c8507b0a2225892e55b43831de1d03fa55b8ed44171fa249b318e8aebf3df"
+}

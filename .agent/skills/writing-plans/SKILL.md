@@ -19,11 +19,11 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 **Each step is one action (2-5 minutes):**
 
--   "Write the failing test" - step
--   "Run it to make sure it fails" - step
--   "Implement the minimal code to make the test pass" - step
--   "Run the tests and make sure they pass" - step
--   "Commit" - step
+- "Write the failing test" - step
+- "Run it to make sure it fails" - step
+- "Implement the minimal code to make the test pass" - step
+- "Run the tests and make sure they pass" - step
+- "Commit" - step
 
 ## Plan Document Header
 
@@ -43,10 +43,11 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 ## Task Structure
 
-```markdown
+````markdown
 ### Task N: [Component Name]
 
 **Files:**
+
 - Create: `exact/path/to/file.ts`
 - Modify: `exact/path/to/existing.ts:123-145`
 - Test: `src/features/feature/tests/test.test.tsx`
@@ -55,9 +56,10 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 ```typescript
 test('specific behavior', () => {
-    // ...
-})
+  // ...
+});
 ```
+````
 
 **Step 2: Run test to verify it fails**
 
@@ -68,7 +70,7 @@ Expected: FAIL with "function not defined"
 
 ```typescript
 export function implementation() {
-    // ...
+  // ...
 }
 ```
 
@@ -86,11 +88,11 @@ git commit -m "feat: add specific feature"
 
 ## Remember
 
--   Exact file paths always
--   Complete code in plan (not "add validation")
--   Exact commands with expected output
--   Reference relevant skills with @ syntax
--   DRY, YAGNI, TDD, frequent commits
+- Exact file paths always
+- Complete code in plan (not "add validation")
+- Exact commands with expected output
+- Reference relevant skills with @ syntax
+- DRY, YAGNI, TDD, frequent commits
 
 ## Execution Handoff
 

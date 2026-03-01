@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT value FROM browser_settings WHERE key = 'allowed_extensions'",
+  "describe": {
+    "columns": [
+      {
+        "name": "value",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cc57ad3fb1739df60578081a9c4adf1cfb3c78a154fcb32d5fdb6aeaf3f0cbe5"
+}

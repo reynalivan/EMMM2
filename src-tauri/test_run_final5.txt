@@ -1,0 +1,11 @@
+   Compiling emmm2 v0.1.0 (E:\Dev\EMMM2NEW\src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.30s
+     Running unittests src\lib.rs (target\debug\deps\emmm2_lib-edbc55fa894915fb.exe)
+
+running 3 tests
+test services::objects::tests::query_tests::test_get_filtered_objects_with_conflict_check ... ok
+test services::objects::tests::query_tests::test_get_category_counts_service ... ok
+test services::objects::tests::query_tests::test_get_object_by_id_service ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 340 filtered out; finished in 0.03s
+

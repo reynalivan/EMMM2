@@ -199,3 +199,33 @@ fn test_list_preview_images_ignores_depth_over_three() {
         "Depth > 3 images should not be included"
     );
 }
+
+// Covers: TC-41-003 (Image-first priority sorting: PNG > JPG > WEBP)
+#[test]
+fn test_find_thumbnail_image_extension_priority() {
+    let dir = TempDir::new().unwrap();
+    let mod_dir = dir.path().join("test_mod");
+    fs::create_dir(&mod_dir).unwrap();
+
+    fs::write(mod_dir.join("preview.webp"), "fake webp").unwrap();
+    fs::write(mod_dir.join("preview.jpg"), "fake jpg").unwrap();
+    fs::write(mod_dir.join("preview.png"), "fake png").unwrap();
+
+    let result = find_thumbnail(&mod_dir).unwrap();
+
+    // PNG should win over JPG and WEBP
+    assert_eq!(
+        result.file_name().unwrap().to_string_lossy(),
+        "preview.png",
+        "PNG should have highest priority"
+    );
+
+    // Remove PNG, JPG should win
+    fs::remove_file(mod_dir.join("preview.png")).unwrap();
+    let result = find_thumbnail(&mod_dir).unwrap();
+    assert_eq!(
+        result.file_name().unwrap().to_string_lossy(),
+        "preview.jpg",
+        "JPG should win over WEBP"
+    );
+}

@@ -165,18 +165,9 @@ async fn request_with_retry(
 // ── DB helpers for app_meta key-value store ──
 
 async fn get_meta(pool: &SqlitePool, key: &str) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT value FROM app_meta WHERE key = ?")
-        .bind(key)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
+    crate::database::settings_repo::get_app_meta(pool, key).await
 }
 
 async fn set_meta(pool: &SqlitePool, key: &str, value: &str) {
-    let _ = sqlx::query("INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)")
-        .bind(key)
-        .bind(value)
-        .execute(pool)
-        .await;
+    crate::database::settings_repo::set_app_meta(pool, key, value).await;
 }

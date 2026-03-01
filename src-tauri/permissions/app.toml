@@ -1,0 +1,22 @@
+[[permission]]
+identifier = "allow-browser-commands"
+description = "Allows browser-related commands"
+commands.allow = [
+    "browser_open_tab",
+    "browser_navigate",
+    "browser_reload_tab",
+    "browser_clear_data",
+    "browser_get_homepage",
+    "browser_set_homepage",
+    "browser_list_downloads",
+    "browser_cancel_download",
+    "browser_delete_download",
+    "browser_clear_imported",
+    "browser_clear_old_downloads",
+    "browser_import_selected",
+    "import_get_queue",
+    "import_confirm_review",
+    "import_skip",
+    "create_download_session",
+]
+

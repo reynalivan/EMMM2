@@ -48,7 +48,7 @@ fn test_restore_from_trash() {
     let meta = move_to_trash(&mod_dir, &trash, None).unwrap();
     assert!(!mod_dir.exists());
 
-    let result = restore_from_trash(&meta.id, &trash);
+    let result = restore_from_trash(&meta.id, &trash, None);
     assert!(result.is_ok());
     assert!(mod_dir.exists());
     assert!(mod_dir.join("test.txt").exists());
@@ -109,7 +109,22 @@ fn test_restore_conflict() {
     // Re-create the original folder
     fs::create_dir(&mod_dir).unwrap();
 
-    let result = restore_from_trash(&meta.id, &trash);
+    let result = restore_from_trash(&meta.id, &trash, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("already exists"));
+}
+
+#[test]
+fn test_restore_context_mismatch() {
+    let (_tmp, mods, trash) = setup_trash();
+    let mod_dir = mods.join("Mismatch");
+    fs::create_dir(&mod_dir).unwrap();
+
+    let game1 = "game1".to_string();
+    let game2 = "game2".to_string();
+    let meta = move_to_trash(&mod_dir, &trash, Some(game1)).unwrap();
+
+    let result = restore_from_trash(&meta.id, &trash, Some(&game2));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Context mismatch"));
 }

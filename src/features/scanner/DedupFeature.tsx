@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Play, StopCircle, HardDrive } from 'lucide-react';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useStartDedupScan, useCancelDedupScan } from '../../hooks/useDedup';
+import { useStartDedupScan, useCancelDedupScan } from './hooks/useDedup';
 import type { DupScanEvent } from '../../types/dedup';
 import DuplicateReport from './components/DuplicateReport';
 

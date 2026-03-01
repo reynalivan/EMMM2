@@ -13,6 +13,7 @@ This skill transforms user-provided prompts into high-quality, clear, and effect
 ## When to Use This Skill
 
 Activate this skill when users:
+
 - Explicitly request prompt optimization or improvement
 - Provide vague or unclear instructions that need refinement
 - Ask for help making their requests more effective
@@ -29,27 +30,32 @@ Follow this systematic process to optimize any prompt:
 Examine the user's prompt and identify:
 
 **Clarity issues:**
+
 - Ambiguous terms or vague requirements
 - Implicit assumptions that should be explicit
 - Missing context or background information
 
 **Specificity gaps:**
+
 - Lack of concrete constraints or requirements
 - Undefined success criteria
 - Missing audience or purpose information
 - Unclear scope or boundaries
 
 **Structure problems:**
+
 - Disorganized or stream-of-consciousness format
 - Missing logical flow
 - Lack of clear sections or hierarchy
 
 **Format considerations:**
+
 - No specified output format
 - Unclear expectations about length, tone, or style
 - Missing examples or templates
 
 **Complexity assessment:**
+
 - Determine if the task is too complex for a single prompt
 - Identify if the request would benefit from prompt chaining
 - Assess if step-by-step reasoning is needed
@@ -70,32 +76,38 @@ Clarify these points with the user if they are not evident from the original pro
 Enhance the prompt using these core principles:
 
 **Make it clear and direct:**
+
 - State requirements explicitly without assuming inference
 - Remove ambiguity and vague language
 - Use concrete, specific terms
 
 **Provide context and motivation:**
+
 - Explain WHY certain requirements matter
 - Include relevant background information
 - Describe the use case or scenario
 
 **Add specificity:**
+
 - Define concrete constraints (length, format, scope)
 - Specify target audience
 - Include quality criteria
 - State any limitations or boundaries
 
 **Structure the request:**
+
 - Organize information logically
 - Use clear sections or numbered points
 - Separate different types of information (context, requirements, format)
 
 **Include examples when helpful:**
+
 - Provide input-output examples for complex formats
 - Show desired tone or style through examples
 - Demonstrate edge case handling
 
 **Allow for uncertainty:**
+
 - Explicitly permit expressing "I don't know"
 - Request acknowledgment of limitations
 - Prevent hallucination by encouraging honesty
@@ -105,21 +117,25 @@ Enhance the prompt using these core principles:
 Evaluate if any advanced techniques would enhance the prompt:
 
 **Chain of Thought:**
+
 - Apply when the task requires reasoning or analysis
 - Request step-by-step thinking for complex problems
 - Use structured format to separate reasoning from answer
 
 **Prefilling:**
+
 - Use when a specific format is absolutely required (JSON, XML)
 - Apply to eliminate unwanted preambles
 - Utilize to establish immediate tone or style
 
 **Prompt Chaining:**
+
 - Break complex tasks into sequential steps
 - Create a multi-stage workflow for intricate projects
 - Design each prompt to build on previous outputs
 
 **Structured Output:**
+
 - Specify exact format requirements
 - Provide schemas or templates
 - Use tags or delimiters for different sections
@@ -131,17 +147,20 @@ Consult `references/prompt-best-practices.md` for detailed guidance on these tec
 Deliver the optimization in this format:
 
 **Analysis Section:**
+
 ```
 Original prompt issues identified:
 - [List key problems with the original prompt]
 ```
 
 **Optimized Prompt:**
+
 ```
 [Present the complete optimized prompt in a code block for easy copying]
 ```
 
 **Improvement Explanation:**
+
 ```
 Key improvements made:
 - [Explain major enhancements]
@@ -151,6 +170,7 @@ Key improvements made:
 ```
 
 **Optional - Usage Tips:**
+
 ```
 [If applicable, provide brief tips on how to further customize or use the optimized prompt]
 ```
@@ -181,23 +201,27 @@ After presenting the optimized prompt:
 This skill includes comprehensive reference materials:
 
 **references/prompt-best-practices.md**
+
 - Detailed explanations of all core principles
 - Advanced techniques with examples
 - Troubleshooting guide for common issues
 - Quality checklist and decision frameworks
 
 Load this reference when:
+
 - Users ask about specific prompt engineering concepts
 - Deep explanation of a technique is needed
 - Troubleshooting unusual or complex prompting challenges
 - Users want to learn prompt engineering principles
 
 **references/examples.md**
+
 - Before-and-after optimization examples across multiple domains
 - Real-world scenarios demonstrating transformation
 - Pattern library showing common improvements
 
 Load this reference when:
+
 - Users want to see concrete examples
 - Illustrating a specific type of optimization
 - Users are learning and need to understand patterns
@@ -218,22 +242,27 @@ Ensure every optimized prompt includes:
 ## Common Optimization Patterns
 
 **Pattern 1: Vague Request → Specific Structured Task**
+
 - Original: "Write about marketing"
 - Optimized: Adds audience, scope, length, structure, key points, tone
 
 **Pattern 2: Implicit Context → Explicit Context**
+
 - Original: Assumes AI knows the background
 - Optimized: States context, explains why it matters, provides relevant details
 
 **Pattern 3: Single Complex Prompt → Prompt Chain**
+
 - Original: Tries to do everything in one request
 - Optimized: Breaks into logical sequential steps with clear outputs
 
 **Pattern 4: Generic Output → Formatted Output**
+
 - Original: No format specification
 - Optimized: Provides schema, template, or explicit structure
 
 **Pattern 5: Assumed Constraints → Stated Constraints**
+
 - Original: Expects AI to infer limits
 - Optimized: Explicitly states length, tone, scope, what to include/exclude
 

@@ -26,6 +26,7 @@ This document contains reusable templates and patterns for transforming prompts.
 ```
 
 **Example:**
+
 ```
 Implement user email verification [WHAT]
 in src/auth/verification.ts [WHERE]
@@ -46,6 +47,7 @@ run the auth test suite and verify a test user can complete the flow [VERIFY]
 ```
 
 **Example:**
+
 ```
 Users see "undefined" instead of their username after login [SYMPTOM]
 Check the user context provider in src/context/UserContext.tsx and the login handler in src/api/auth.ts [LOCATION]
@@ -67,6 +69,7 @@ Run the auth test suite and manually verify the login flow [VERIFY]
 ```
 
 **Example:**
+
 ```
 Add a "remember me" option to the login form [GOAL]
 Follow the existing form patterns in @src/components/LoginForm.tsx [CONTEXT]
@@ -92,6 +95,7 @@ Add tests for both checked and unchecked states, verify session duration in DevT
 ```
 
 **Example:**
+
 ```
 Refactor the OrderProcessor class in src/services/OrderProcessor.ts [TARGET]
 Convert from class-based to functional approach for better testability [GOAL]
@@ -117,6 +121,7 @@ run the tests after implementing.
 ```
 
 **Example:**
+
 ```
 write a slugify function. test cases:
 - "Hello World" → "hello-world"
@@ -140,6 +145,7 @@ verify at [breakpoints] widths.
 ```
 
 **Example:**
+
 ```
 [paste mockup]
 implement this card design for the product listing.
@@ -160,6 +166,7 @@ address the root cause, don't suppress errors.
 ```
 
 **Example:**
+
 ```
 the TypeScript build fails with "Property 'user' does not exist on type 'Session'".
 add the user property to the Session interface in src/types/auth.ts.
@@ -190,6 +197,7 @@ follow the same pattern to [action].
 ```
 
 **Example:**
+
 ```
 look at @src/components/UserCard.tsx to understand the card component pattern.
 follow the same pattern to create a ProductCard component.
@@ -218,6 +226,7 @@ identify all places where [condition].
 ```
 
 **Example:**
+
 ```
 search the codebase for uses of the deprecated `oldApiCall` function.
 identify all places where it's imported or called.
@@ -247,6 +256,7 @@ do not [out of scope action].
 ```
 
 **Example:**
+
 ```
 add validation for the email field only.
 do not change other form fields or validation logic.
@@ -267,6 +277,7 @@ test email validation with valid, invalid, and edge case inputs.
 ```
 
 **Example:**
+
 ```
 implement the calculateDiscount function covering these cases:
 - standard percentage discount (10% off $100 = $90)
@@ -290,6 +301,7 @@ specifically:
 ```
 
 **Example:**
+
 ```
 refactor the utility functions in src/utils/.
 specifically:

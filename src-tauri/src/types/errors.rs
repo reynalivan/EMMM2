@@ -11,6 +11,8 @@ pub enum CommandError {
     NotFound(String),
     #[error("Internal error: {0}")]
     Internal(String),
+    #[error("App error: {0}")]
+    App(String),
 }
 
 impl From<sqlx::Error> for CommandError {

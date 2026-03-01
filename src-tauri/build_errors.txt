@@ -1,0 +1,13 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+   Compiling emmm2 v0.1.0 (E:\Dev\EMMM2NEW\src-tauri)
+memory allocation of 1572864 bytes failed
+stack backtrace:
+memory allocation of 2097152 bytes failed
+stack backtrace:
+memory allocation of 2097152 bytes failed
+stack backtrace:
+   0:     0x7ff8e57e4b12 - <unknown>

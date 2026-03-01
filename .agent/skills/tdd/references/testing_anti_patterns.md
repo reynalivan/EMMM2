@@ -31,9 +31,10 @@ test('renders sidebar', () => {
 ```
 
 **Why this is wrong:**
--   You're verifying the mock works, not that the component works.
--   Test passes when mock is present, fails when it's not.
--   Tells you nothing about real behavior.
+
+- You're verifying the mock works, not that the component works.
+- Test passes when mock is present, fails when it's not.
+- Tells you nothing about real behavior.
 
 **The Fix:**
 
@@ -46,6 +47,7 @@ test('renders sidebar', () => {
 ```
 
 ### Gate Function
+
 ```
 BEFORE asserting on any mock element:
   Ask: "Am I testing real component behavior or just mock existence?"
@@ -59,7 +61,8 @@ BEFORE asserting on any mock element:
 ```typescript
 // ❌ BAD: destroy() only used in tests
 class Session {
-  async destroy() {  // Looks like production API!
+  async destroy() {
+    // Looks like production API!
     await this.workspaceManager?.destroy(this.id);
   }
 }
@@ -69,9 +72,10 @@ afterEach(() => session.destroy());
 ```
 
 **Why this is wrong:**
--   Production class polluted with test-only code.
--   Dangerous if accidentally called in production.
--   Violates YAGNI.
+
+- Production class polluted with test-only code.
+- Dangerous if accidentally called in production.
+- Violates YAGNI.
 
 **The Fix:**
 
@@ -88,6 +92,7 @@ afterEach(() => cleanupSession(session));
 ```
 
 ### Gate Function
+
 ```
 BEFORE adding any method to production class:
   Ask: "Is this only used by tests?"
@@ -103,17 +108,18 @@ BEFORE adding any method to production class:
 test('detects duplicate server', async () => {
   // Mock prevents config write that test depends on!
   vi.mock('ConfigManager', () => ({
-    write: vi.fn().mockResolvedValue(undefined)
+    write: vi.fn().mockResolvedValue(undefined),
   }));
 
   await addServer(config);
-  await addServer(config);  // Should throw - but won't because 'write' was mocked out!
+  await addServer(config); // Should throw - but won't because 'write' was mocked out!
 });
 ```
 
 **Why this is wrong:**
--   Mocked method had side effect test depended on.
--   Test passes for wrong reason or fails mysteriously.
+
+- Mocked method had side effect test depended on.
+- Test passes for wrong reason or fails mysteriously.
 
 **The Fix:**
 
@@ -122,18 +128,19 @@ test('detects duplicate server', async () => {
 test('detects duplicate server', () => {
   // Mock the slow part (File System), preserve behavior (Config Logic)
   // Or use a real in-memory adapter
-  
+
   await addServer(config);
-  await addServer(config);  // Duplicate detected ✓
+  await addServer(config); // Duplicate detected ✓
 });
 ```
 
 ### Gate Function
+
 ```
 BEFORE mocking any method:
   1. Ask: "What side effects does the real method have?"
   2. Ask: "Does this test depend on any of those side effects?"
-  
+
   IF depends on side effects:
     Mock at lower level (e.g. IO) or use Test Doubles.
 ```
@@ -146,15 +153,16 @@ BEFORE mocking any method:
 // ❌ BAD: Partial mock - only fields you think you need
 const mockUser = {
   id: '123',
-  name: 'Alice'
+  name: 'Alice',
   // Missing: preferences, roles, etc.
 };
 // Later: Code crashes when accessing user.preferences.theme
 ```
 
 **Why this is wrong:**
--   **Partial mocks hide structural assumptions.**
--   **Silent failures** in downstream code.
+
+- **Partial mocks hide structural assumptions.**
+- **Silent failures** in downstream code.
 
 **The Fix:**
 
@@ -164,12 +172,13 @@ const mockUser: User = {
   id: '123',
   name: 'Alice',
   preferences: { theme: 'dark' },
-  roles: ['admin']
+  roles: ['admin'],
   // Matches interface completely
 };
 ```
 
 ### Gate Function
+
 ```
 BEFORE creating mock responses:
   Check: "What fields does the real API response contain?"
@@ -179,6 +188,7 @@ BEFORE creating mock responses:
 ## Anti-Pattern 5: Integration Tests as Afterthought
 
 **The violation:**
+
 ```
 ✅ Implementation complete
 ❌ No tests written
@@ -186,16 +196,17 @@ BEFORE creating mock responses:
 ```
 
 **The fix:**
+
 1.  **RED**: Write failing integration test (e.g., `sqlx::test`).
 2.  **GREEN**: Implement.
 3.  **REFACTOR**.
 
 ## Red Flags
 
--   Classes polluted with `#[cfg(test)]` methods that leak into logic.
--   Mock setup is >50% of test.
--   Test fails when you remove a mock.
--   "I'll mock this just to be safe." (Safety comes from testing real code).
+- Classes polluted with `#[cfg(test)]` methods that leak into logic.
+- Mock setup is >50% of test.
+- Test fails when you remove a mock.
+- "I'll mock this just to be safe." (Safety comes from testing real code).
 
 ## The Bottom Line
 

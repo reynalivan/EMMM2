@@ -1,9 +1,7 @@
-use crate::commands::mods::mod_bulk_cmds::{BulkActionError, BulkProgressPayload, BulkResult};
-use crate::services::core::operation_lock::OperationLock;
-use crate::services::mod_files::archive::{extract_archive, ArchiveFormat};
+use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::mods::archive::{extract_archive, ArchiveFormat};
+use crate::services::mods::bulk::{BulkActionError, BulkProgressPayload, BulkResult};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
-use crate::DISABLED_PREFIX;
-use std::fs;
 use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
 
@@ -88,7 +86,7 @@ pub async fn import_mods_from_paths(
             continue;
         }
 
-        if let Some(_) = ArchiveFormat::from_path(path) {
+        if ArchiveFormat::from_path(path).is_some() {
             handle_archive_import(
                 &state,
                 path,
@@ -123,20 +121,14 @@ pub async fn import_mods_from_paths(
 
         let _guard = SuppressionGuard::new(&state.suppressor);
 
-        // Try std::fs::rename first, fallback to copy via fs_extra if cross-device
-        if let Err(e) = fs::rename(path, &dest) {
-            log::warn!("Rename failed (cross-device?): {}", e);
-            let mut options = fs_extra::dir::CopyOptions::new();
-            options.copy_inside = false;
-            options.overwrite = false;
-            if fs_extra::dir::move_dir(path, target, &options).is_ok() {
-                success.push(path_str.to_string());
-            } else {
-                failures.push(BulkActionError {
-                    path: path_str.clone(),
-                    error: format!("Failed to move: {}", e),
-                });
-            }
+        if let Err(e) =
+            crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &dest)
+        {
+            log::warn!("Move failed (fallback failed): {}", e);
+            failures.push(BulkActionError {
+                path: path_str.clone(),
+                error: format!("Failed to move: {}", e),
+            });
         } else {
             success.push(path_str.to_string());
         }
@@ -174,16 +166,23 @@ fn handle_archive_import(
                 .unwrap_or_default()
                 .to_string_lossy();
 
-            let final_path = if !folder_name.starts_with(DISABLED_PREFIX) {
-                let new_path = target.join(format!("{}{}", DISABLED_PREFIX, folder_name));
-                if fs::rename(extracted_path, &new_path).is_ok() {
-                    new_path
+            let final_path =
+                if !crate::services::scanner::core::normalizer::is_disabled_folder(&folder_name) {
+                    let new_path =
+                        target.join(format!("{}{}", crate::DISABLED_PREFIX, folder_name));
+                    if crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
+                        extracted_path,
+                        &new_path,
+                    )
+                    .is_ok()
+                    {
+                        new_path
+                    } else {
+                        extracted_path.to_path_buf()
+                    }
                 } else {
                     extracted_path.to_path_buf()
-                }
-            } else {
-                extracted_path.to_path_buf()
-            };
+                };
 
             if let Some(master_db) = db {
                 match crate::services::scanner::core::organizer::organize_mod(
@@ -217,6 +216,7 @@ pub struct IngestResult {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_dropped_folders(
     _app: tauri::AppHandle,
     _pool: tauri::State<'_, sqlx::SqlitePool>,
@@ -229,6 +229,14 @@ pub async fn ingest_dropped_folders(
     _game_type: String,
 ) -> Result<IngestResult, String> {
     let _lock = op_lock.acquire().await?;
+    ingest_dropped_folders_inner(&state, paths, mods_path).await
+}
+
+pub async fn ingest_dropped_folders_inner(
+    state: &WatcherState,
+    paths: Vec<String>,
+    mods_path: String,
+) -> Result<IngestResult, String> {
     let target = Path::new(&mods_path);
 
     if !target.exists() || !target.is_dir() {
@@ -262,18 +270,10 @@ pub async fn ingest_dropped_folders(
             continue;
         }
 
-        if fs::rename(src, &dest).is_ok() {
+        if crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &dest).is_ok() {
             moved.push(basename);
         } else {
-            let mut options = fs_extra::dir::CopyOptions::new();
-            options.copy_inside = false;
-            options.overwrite = false;
-
-            if fs_extra::dir::move_dir(src, target, &options).is_ok() {
-                moved.push(basename);
-            } else {
-                skipped.push(basename);
-            }
+            skipped.push(basename);
         }
     }
 
@@ -294,3 +294,7 @@ pub async fn ingest_dropped_folders(
         sync: sync_result,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/mod_import_cmds_tests.rs"]
+mod tests;

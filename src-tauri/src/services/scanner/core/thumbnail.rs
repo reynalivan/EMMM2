@@ -102,7 +102,25 @@ fn find_preview_in_root(mod_path: &Path) -> Option<PathBuf> {
         .filter(|path| path.is_file())
         .collect();
 
-    // Priority 1: exact preview_custom first
+    fn ext_weight(path: &Path) -> usize {
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase()
+            .as_str()
+        {
+            "png" => 0,
+            "jpg" | "jpeg" => 1,
+            "webp" => 2,
+            "gif" => 3,
+            _ => 99,
+        }
+    }
+
+    let mut custom_cands = Vec::new();
+    let mut other_cands = Vec::new();
+
     for path in &entries {
         let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().to_lowercase()) else {
             continue;
@@ -115,30 +133,22 @@ fn find_preview_in_root(mod_path: &Path) -> Option<PathBuf> {
             continue;
         };
 
-        if stem == "preview_custom" && IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-            return Some(path.clone());
+        if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+            if stem == "preview_custom" {
+                custom_cands.push(path.clone());
+            } else if stem.starts_with("preview") {
+                other_cands.push(path.clone());
+            }
         }
     }
 
-    // Priority 2: other preview* files
-    for path in &entries {
-        let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().to_lowercase()) else {
-            continue;
-        };
-        let Some(ext) = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-        else {
-            continue;
-        };
+    custom_cands.sort_by_key(|p| ext_weight(p));
+    other_cands.sort_by_key(|p| ext_weight(p));
 
-        if stem.starts_with("preview") && IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-            return Some(path.clone());
-        }
-    }
-
-    None
+    custom_cands
+        .into_iter()
+        .next()
+        .or_else(|| other_cands.into_iter().next())
 }
 
 /// Search recursively up to max_depth for any image file.

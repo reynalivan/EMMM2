@@ -1,0 +1,20 @@
+src/features/folder-grid/BulkProgressBar.test.tsx(1,1): error TS6133: 'React' is declared but its value is never read.
+src/features/folder-grid/FolderListRow.test.tsx(39,5): error TS2353: Object literal may only specify known properties, and 'mod_count' does not exist in type 'ModFolder'.
+src/features/folder-grid/MoveToObjectDialog.test.tsx(4,36): error TS2307: Cannot find module '@/types/object' or its corresponding type declarations.
+src/features/object-list/ObjectListContent.test.tsx(58,9): error TS2740: Type '{ getTotalSize: () => number; getVirtualItems: () => { index: number; size: number; start: number; }[]; }' is missing the following properties from type 'Virtualizer<HTMLDivElement, Element>': unsubs, options, scrollElement, targetWindow, and 44 more.
+src/features/object-list/useObjectListHandlers.test.ts(94,49): error TS2304: Cannot find name 'ObjectListModals'.
+src/features/object-list/useObjectListHandlers.test.ts(185,87): error TS2339: Property '0' does not exist on type 'Promise<ScanPreviewItem[]>'.
+src/features/object-list/useObjectListVirtualizer.test.ts(67,11): error TS2344: Type '({ objects, schema, selectedObject, isMobile, }: VirtualizerOptions) => { parentRef: RefObject<HTMLDivElement | null>; rowVirtualizer: Virtualizer<HTMLDivElement, Element>; ... 4 more ...; scrollToSelected: () => void; }' does not satisfy the constraint 'JSXElementConstructor<any> | keyof IntrinsicElements'.
+  Type '({ objects, schema, selectedObject, isMobile, }: VirtualizerOptions) => { parentRef: RefObject<HTMLDivElement | null>; rowVirtualizer: Virtualizer<HTMLDivElement, Element>; ... 4 more ...; scrollToSelected: () => void; }' is not assignable to type '(props: any) => ReactNode | Promise<ReactNode>'.
+    Type '{ parentRef: RefObject<HTMLDivElement | null>; rowVirtualizer: Virtualizer<HTMLDivElement, Element>; flatObjectItems: FlatItem[]; totalItems: number; stickyPosition: "top" | ... 1 more ... | null; selectedIndex: number; scrollToSelected: () => void; }' is not assignable to type 'ReactNode | Promise<ReactNode>'.
+src/features/object-list/useObjectListVirtualizer.test.ts(68,11): error TS2339: Property 'schema' does not exist on type '{}'.
+src/features/object-list/useObjectListVirtualizer.test.ts(114,81): error TS2345: Argument of type '{ objects: ObjectSummary[]; schema: Record<string, unknown>; selectedObject: string; isMobile: boolean; }' is not assignable to parameter of type 'VirtualizerOptions'.
+  Types of property 'schema' are incompatible.
+    Type 'Record<string, unknown>' is missing the following properties from type 'GameSchema': categories, filters
+src/features/scanner/components/useReviewTable.test.tsx(12,5): error TS2740: Type '{ path: string; rawName: string; displayName: string; matchedObject: string; confidence: "High"; isDisabled: false; }' is missing the following properties from type 'ScanResultItem': matchLevel, confidenceScore, matchDetail, detectedSkin, and 2 more.
+src/hooks/useSettings.test.ts(104,7): error TS2578: Unused '@ts-expect-error' directive.
+src/lib/disabledPrefix.test.ts(6,3): error TS6133: 'DISABLED_PREFIX' is declared but its value is never read.
+src/lib/services/scanService.test.ts(91,14): error TS18046: 'channelInstance' is of type 'unknown'.
+src/lib/services/scanService.test.ts(94,7): error TS18046: 'channelInstance' is of type 'unknown'.
+src/lib/services/scanService.test.ts(155,7): error TS18046: 'syncCallArgs.onProgress' is of type 'unknown'.
+src/lib/services/scanService.test.ts(191,7): error TS18046: 'previewCallArgs.onProgress' is of type 'unknown'.

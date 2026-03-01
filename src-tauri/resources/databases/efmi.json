@@ -25,10 +25,7 @@
     {
       "name": "Endministrator",
       "hash_db": {},
-      "tags": [
-        "Admin",
-        "Player Character"
-      ],
+      "tags": ["Admin", "Player Character"],
       "object_type": "Character",
       "custom_skins": [],
       "metadata": {
@@ -39,10 +36,7 @@
     {
       "name": "Chen Qianyu",
       "hash_db": {},
-      "tags": [
-        "Chen",
-        "Qianyu"
-      ],
+      "tags": ["Chen", "Qianyu"],
       "object_type": "Character",
       "custom_skins": [],
       "metadata": {
@@ -75,10 +69,7 @@
     {
       "name": "Standard Assault Rifle",
       "hash_db": {},
-      "tags": [
-        "AR",
-        "Assault Rifle"
-      ],
+      "tags": ["AR", "Assault Rifle"],
       "object_type": "Weapon",
       "custom_skins": [],
       "metadata": {
@@ -88,10 +79,7 @@
     {
       "name": "Tactical Blade",
       "hash_db": {},
-      "tags": [
-        "Blade",
-        "Sword"
-      ],
+      "tags": ["Blade", "Sword"],
       "object_type": "Weapon",
       "custom_skins": [],
       "metadata": {
@@ -101,9 +89,7 @@
     {
       "name": "Heavy Shield",
       "hash_db": {},
-      "tags": [
-        "Shield"
-      ],
+      "tags": ["Shield"],
       "object_type": "Weapon",
       "custom_skins": [],
       "metadata": {
@@ -113,10 +99,7 @@
     {
       "name": "Deployment UI",
       "hash_db": {},
-      "tags": [
-        "Deploy Screen",
-        "Placement"
-      ],
+      "tags": ["Deploy Screen", "Placement"],
       "object_type": "UI",
       "custom_skins": [],
       "metadata": {}
@@ -124,10 +107,7 @@
     {
       "name": "Resource Bar",
       "hash_db": {},
-      "tags": [
-        "DP Bar",
-        "Cost Bar"
-      ],
+      "tags": ["DP Bar", "Cost Bar"],
       "object_type": "UI",
       "custom_skins": [],
       "metadata": {}
@@ -135,10 +115,7 @@
     {
       "name": "Originium Slug",
       "hash_db": {},
-      "tags": [
-        "Slug",
-        "Basic Enemy"
-      ],
+      "tags": ["Slug", "Basic Enemy"],
       "object_type": "Other",
       "custom_skins": [],
       "metadata": {
@@ -148,10 +125,7 @@
     {
       "name": "Drone",
       "hash_db": {},
-      "tags": [
-        "Attack Drone",
-        "Flying Enemy"
-      ],
+      "tags": ["Attack Drone", "Flying Enemy"],
       "object_type": "Other",
       "custom_skins": [],
       "metadata": {

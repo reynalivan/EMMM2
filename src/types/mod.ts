@@ -41,10 +41,46 @@ export interface ModFolder {
   metadata: Record<string, string> | null;
   /** Category from info.json metadata */
   category: string | null;
+  /** Conflict group ID if this folder is part of a name collision */
+  conflict_group_id?: string | null;
+  /** Conflict state: "EnabledDisabledBothPresent" when both X and DISABLED X exist */
+  conflict_state?: string | null;
 }
 
 /** Possible folder classification values from the backend classifier. */
-export type NodeType = 'ContainerFolder' | 'ModPackRoot' | 'VariantContainer' | 'InternalAssets';
+export type NodeType =
+  | 'ContainerFolder'
+  | 'ModPackRoot'
+  | 'VariantContainer'
+  | 'InternalAssets'
+  | 'FlatModRoot';
+
+/** Response from the `list_mod_folders` backend command. */
+export interface FolderGridResponse {
+  self_node_type: string | null;
+  self_is_mod: boolean;
+  self_is_enabled: boolean;
+  self_classification_reasons: string[];
+  children: ModFolder[];
+  /** Conflict groups detected in children (empty if none) */
+  conflicts: ConflictGroup[];
+}
+
+/** A single member of a conflict group. */
+export interface ConflictMember {
+  path: string;
+  folder_name: string;
+  is_enabled: boolean;
+  modified_at: number;
+  size_bytes: number;
+}
+
+/** A group of folders sharing the same base name in the same parent directory. */
+export interface ConflictGroup {
+  group_id: string;
+  base_name: string;
+  members: ConflictMember[];
+}
 
 /** Only ContainerFolder allows double-click drill-down navigation. */
 export function isNavigable(folder: ModFolder): boolean {

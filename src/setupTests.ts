@@ -6,10 +6,17 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(vi.fn()),
+  emit: vi.fn(),
+}));
+
 vi.mock('@tauri-apps/plugin-log', () => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
+  trace: vi.fn(),
+  debug: vi.fn(),
   attachConsole: vi.fn(),
 }));
 

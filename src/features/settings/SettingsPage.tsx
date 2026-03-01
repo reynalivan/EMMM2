@@ -9,8 +9,19 @@ import GeneralTab from './tabs/GeneralTab';
 import LogsTab from './tabs/LogsTab';
 import AITab from './tabs/AITab';
 import UpdateTab from './tabs/UpdateTab';
+import HotkeyTab from './tabs/HotkeyTab';
+import BrowserTab from './tabs/BrowserTab';
 
-type Tab = 'general' | 'games' | 'privacy' | 'ai' | 'maintenance' | 'updates' | 'logs';
+type Tab =
+  | 'general'
+  | 'games'
+  | 'browser'
+  | 'privacy'
+  | 'hotkeys'
+  | 'ai'
+  | 'maintenance'
+  | 'updates'
+  | 'logs';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('general');
@@ -59,10 +70,26 @@ export default function SettingsPage() {
             </li>
             <li>
               <button
+                className={activeTab === 'browser' ? 'active' : ''}
+                onClick={() => setActiveTab('browser')}
+              >
+                Browser & Import
+              </button>
+            </li>
+            <li>
+              <button
                 className={activeTab === 'privacy' ? 'active' : ''}
                 onClick={() => setActiveTab('privacy')}
               >
                 Privacy & Safe Mode
+              </button>
+            </li>
+            <li>
+              <button
+                className={activeTab === 'hotkeys' ? 'active' : ''}
+                onClick={() => setActiveTab('hotkeys')}
+              >
+                Hotkeys & KeyViewer
               </button>
             </li>
             <li>
@@ -106,7 +133,9 @@ export default function SettingsPage() {
           <div className="max-w-4xl mx-auto p-6">
             {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'games' && <GamesTab />}
+            {activeTab === 'browser' && <BrowserTab />}
             {activeTab === 'privacy' && <PrivacyTab />}
+            {activeTab === 'hotkeys' && <HotkeyTab />}
             {activeTab === 'ai' && <AITab />}
             {activeTab === 'maintenance' && <MaintenanceTab />}
             {activeTab === 'updates' && <UpdateTab />}

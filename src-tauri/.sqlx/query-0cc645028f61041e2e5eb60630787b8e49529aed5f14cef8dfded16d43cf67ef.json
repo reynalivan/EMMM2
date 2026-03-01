@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs SET is_duplicate = 1 WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "0cc645028f61041e2e5eb60630787b8e49529aed5f14cef8dfded16d43cf67ef"
+}

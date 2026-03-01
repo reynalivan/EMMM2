@@ -11,7 +11,14 @@ pub async fn auto_detect_games(
     state: tauri::State<'_, ConfigService>,
     root_path: String,
 ) -> Result<Vec<GameConfig>, String> {
-    let root = Path::new(&root_path);
+    auto_detect_games_inner(&state, &root_path).await
+}
+
+pub async fn auto_detect_games_inner(
+    service: &ConfigService,
+    root_path: &str,
+) -> Result<Vec<GameConfig>, String> {
+    let root = Path::new(root_path);
     if !root.exists() {
         return Err(format!("Path does not exist: {root_path}"));
     }
@@ -22,7 +29,7 @@ pub async fn auto_detect_games(
     }
 
     let mut new_games: Vec<GameConfig> = Vec::new();
-    let mut settings = state.get_settings();
+    let mut settings = service.get_settings();
 
     for (info, game_type_str, display_name) in &found {
         let id = Uuid::new_v4().to_string();
@@ -57,7 +64,7 @@ pub async fn auto_detect_games(
     }
 
     // Save updated settings (DB + memory)
-    state.save_settings(settings)?;
+    service.save_settings(settings)?;
 
     log::info!(
         "Auto-detect complete: added {} new game(s)",
@@ -75,14 +82,22 @@ pub async fn add_game_manual(
     game_type: String,
     path: String,
 ) -> Result<GameConfig, String> {
+    add_game_manual_inner(&state, &game_type, &path).await
+}
+
+pub async fn add_game_manual_inner(
+    service: &ConfigService,
+    game_type: &str,
+    path: &str,
+) -> Result<GameConfig, String> {
     // Parse game type
     let gt: GameType = game_type.parse().map_err(|e: String| e)?;
-    let folder = Path::new(&path);
+    let folder = Path::new(path);
 
     // Validate folder structure
     let info = validator::validate_instance(folder)?;
 
-    let mut settings = state.get_settings();
+    let mut settings = service.get_settings();
 
     // Duplicate path check (TC-1.5-01, NC-1.3-02)
     let normalized_path = info.path.replace('\\', "/").to_lowercase();
@@ -114,7 +129,7 @@ pub async fn add_game_manual(
     settings.games.push(game.clone());
 
     // Save updated settings (DB + memory)
-    state.save_settings(settings)?;
+    service.save_settings(settings)?;
 
     log::info!("Game added manually: {} ({})", game.name, game.game_type);
 
@@ -128,21 +143,7 @@ pub async fn remove_game(
     state: tauri::State<'_, ConfigService>,
     game_id: String,
 ) -> Result<(), String> {
-    let mut settings = state.get_settings();
-    settings.games.retain(|g| g.id != game_id);
-
-    // Save updated settings (DB + memory)
-    state.save_settings(settings)?;
-
-    // Extra DB cleanup to physically remove from games table,
-    // since write_settings_to_db only UPSERTs existing games.
-    use crate::database::settings_repo;
-    settings_repo::delete_game(state.pool(), &game_id)
-        .await
-        .map_err(|e| format!("Failed to remove game from db: {e}"))?;
-
-    log::info!("Game removed: {}", game_id);
-    Ok(())
+    crate::services::game::game_service::remove_game_service(&state, &game_id).await
 }
 
 /// Get all configured games.
@@ -255,3 +256,7 @@ pub async fn launch_game(
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/game_cmds_tests.rs"]
+mod tests;

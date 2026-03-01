@@ -20,9 +20,9 @@ Follow this 4-Layer Pipeline strictly. Do not skip steps.
 
 ## Performance Constraints
 
--   **Threading:** MUST run inside `tokio::spawn_blocking` or `rayon` thread pool. Never block the main thread.
--   **Recursion:** Limit `WalkDir` to max depth **3** to prevent deep scanning hang.
--   **Caching:** Hash strings (Name/Tokens) once during initialization, reuse for comparisons.
+- **Threading:** MUST run inside `tokio::spawn_blocking` or `rayon` thread pool. Never block the main thread.
+- **Recursion:** Limit `WalkDir` to max depth **3** to prevent deep scanning hang.
+- **Caching:** Hash strings (Name/Tokens) once during initialization, reuse for comparisons.
 
 ## Implementation Pattern
 

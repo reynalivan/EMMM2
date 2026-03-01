@@ -89,6 +89,6 @@ pub(crate) fn empty_evidence(
     }
 }
 
-fn entry_tokens<'a>(db: &'a MasterDb, entry_id: usize) -> &'a HashSet<String> {
+fn entry_tokens(db: &MasterDb, entry_id: usize) -> &HashSet<String> {
     &db.keywords[entry_id].1
 }

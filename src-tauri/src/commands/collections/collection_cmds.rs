@@ -7,7 +7,7 @@ use crate::services::collections::{
     CollectionDetails, CollectionPreviewMod, CreateCollectionInput, UpdateCollectionInput,
 };
 use crate::services::config::ConfigService;
-use crate::services::core::operation_lock::OperationLock;
+use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::WatcherState;
 use sqlx::SqlitePool;
 use tauri::State;
@@ -89,3 +89,6 @@ pub async fn undo_collection(
     let safe_mode_enabled = config.get_settings().safe_mode.enabled;
     undo_collection_service(pool.inner(), &watcher_state, &game_id, safe_mode_enabled).await
 }
+#[cfg(test)]
+#[path = "tests/collection_cmds_tests.rs"]
+mod tests;

@@ -198,16 +198,16 @@ pub fn apply_root_folder_rescue(db: &MasterDb, signals: &FolderSignals) -> Stage
         }
 
         // Tag substring check
-        if !matched {
-            if entry.tags.iter().any(|tag| {
+        if !matched
+            && entry.tags.iter().any(|tag| {
                 let tag_norm = normalizer::normalize_for_matching_default(tag);
                 !tag_norm.is_empty()
                     && tag_norm.len() >= MIN_TERM_LEN
                     && (folder_norm.contains(&tag_norm) || tag_norm.contains(folder_norm.as_str()))
-            }) {
-                matched = true;
-                score += SCORE_FOLDER_RESCUE;
-            }
+            })
+        {
+            matched = true;
+            score += SCORE_FOLDER_RESCUE;
         }
 
         if matched {

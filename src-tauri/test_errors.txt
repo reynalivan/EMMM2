@@ -1,0 +1,24 @@
+   Compiling emmm2 v0.1.0 (E:\Dev\EMMM2NEW\src-tauri)
+warning: unused import: `std::fs`
+ --> src\services\explorer\tests\helpers_tests.rs:3:5
+  |
+3 | use std::fs;
+  |     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tempfile::TempDir`
+ --> src\services\objects\tests\mutate_tests.rs:6:5
+  |
+6 | use tempfile::TempDir;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: `emmm2` (lib test) generated 2 warnings (run `cargo fix --lib -p emmm2 --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.07s
+  Executable unittests src\lib.rs (target\debug\deps\emmm2_lib-edbc55fa894915fb.exe)
+  Executable unittests src\main.rs (target\debug\deps\emmm2-63d5d49aa8b8e3fa.exe)
+  Executable tests\bulk_ops.rs (target\debug\deps\bulk_ops-2b499d50407642b4.exe)
+  Executable tests\collections_service.rs (target\debug\deps\collections_service-9e14c2bd88419d84.exe)
+  Executable tests\config_atomic_write.rs (target\debug\deps\config_atomic_write-8398ce3a7fde3af0.exe)
+  Executable tests\config_service.rs (target\debug\deps\config_service-230447ba51d62f9d.exe)
+  Executable tests\epic4_integration.rs (target\debug\deps\epic4_integration-b7163311135016b0.exe)

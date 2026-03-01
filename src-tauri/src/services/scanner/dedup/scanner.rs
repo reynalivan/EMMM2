@@ -1,7 +1,7 @@
 use crate::services::scanner::core::walker::ModCandidate;
 use crate::types::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
 use rayon::prelude::*;
-use sqlx::Row;
+
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -141,13 +141,15 @@ fn apply_modpack_filter(
                         .entry(parent_path.clone())
                         .or_insert_with(|| {
                             let (node_type, _) =
-                                crate::commands::explorer::classifier::classify_folder(
+                                crate::commands::folder_grid::classifier::classify_folder(
                                     &parent_path,
                                 );
                             node_type
-                                == crate::commands::explorer::classifier::NodeType::VariantContainer
+                                == crate::commands::folder_grid::classifier::NodeType::VariantContainer
                                 || node_type
-                                    == crate::commands::explorer::classifier::NodeType::ModPackRoot
+                                    == crate::commands::folder_grid::classifier::NodeType::ModPackRoot
+                                || node_type
+                                    == crate::commands::folder_grid::classifier::NodeType::FlatModRoot
                         });
 
                     if is_variant_container {
@@ -199,21 +201,14 @@ async fn fetch_mod_id_map(
     db: &SqlitePool,
     game_id: &str,
 ) -> Result<HashMap<String, String>, String> {
-    let rows = sqlx::query("SELECT id, folder_path FROM mods WHERE game_id = ?")
-        .bind(game_id)
-        .fetch_all(db)
+    let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
+    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut *conn, game_id)
         .await
         .map_err(|error| format!("Failed to fetch mod mapping for duplicate scan: {error}"))?;
 
     let mut mapping = HashMap::new();
-    for row in rows {
-        let mod_id: String = row
-            .try_get("id")
-            .map_err(|error| format!("Invalid mods.id value during duplicate scan: {error}"))?;
-        let folder_path: String = row.try_get("folder_path").map_err(|error| {
-            format!("Invalid mods.folder_path value during duplicate scan: {error}")
-        })?;
-        mapping.insert(folder_path, mod_id);
+    for (id, folder_path) in rows {
+        mapping.insert(folder_path, id);
     }
 
     Ok(mapping)
@@ -224,19 +219,16 @@ async fn fetch_candidates_from_db(
     game_id: &str,
     mods_root: &Path,
 ) -> Result<Vec<ModCandidate>, String> {
-    let rows = sqlx::query("SELECT folder_path FROM mods WHERE game_id = ?")
-        .bind(game_id)
-        .fetch_all(db)
+    let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
+    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut *conn, game_id)
         .await
         .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
 
+    let paths: Vec<String> = rows.into_iter().map(|(_, path)| path).collect();
+
     let mut candidates = Vec::new();
 
-    for row in rows {
-        let folder_path: String = row.try_get("folder_path").map_err(|error| {
-            format!("Invalid mods.folder_path value during duplicate scan: {error}")
-        })?;
-
+    for folder_path in paths {
         let path = Path::new(&folder_path);
 
         // Skip paths that no longer physically exist
@@ -273,21 +265,12 @@ async fn fetch_whitelist_pairs(
     db: &SqlitePool,
     game_id: &str,
 ) -> Result<HashSet<(String, String)>, String> {
-    let rows =
-        sqlx::query("SELECT folder_a_id, folder_b_id FROM duplicate_whitelist WHERE game_id = ?")
-            .bind(game_id)
-            .fetch_all(db)
-            .await
-            .map_err(|error| format!("Failed to fetch duplicate whitelist pairs: {error}"))?;
+    let rows = crate::database::dedup_repo::get_duplicate_whitelist_pairs(db, game_id)
+        .await
+        .map_err(|error| format!("Failed to fetch duplicate whitelist pairs: {error}"))?;
 
     let mut pairs = HashSet::new();
-    for row in rows {
-        let folder_a_id: String = row
-            .try_get("folder_a_id")
-            .map_err(|error| format!("Invalid duplicate_whitelist.folder_a_id value: {error}"))?;
-        let folder_b_id: String = row
-            .try_get("folder_b_id")
-            .map_err(|error| format!("Invalid duplicate_whitelist.folder_b_id value: {error}"))?;
+    for (folder_a_id, folder_b_id) in rows {
         pairs.insert(canonical_pair(&folder_a_id, &folder_b_id));
     }
 

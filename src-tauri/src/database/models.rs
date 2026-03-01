@@ -101,7 +101,7 @@ impl Serialize for AppError {
 }
 
 /// Startup config status returned to frontend
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConfigStatus {
     FreshInstall,
     HasConfig,
@@ -109,5 +109,5 @@ pub enum ConfigStatus {
 }
 
 #[cfg(test)]
-#[path = "tests/models_tests.rs"]
+#[path = "tests/models_test.rs"]
 mod tests;

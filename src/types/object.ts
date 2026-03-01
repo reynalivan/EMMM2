@@ -36,6 +36,8 @@ export interface ObjectSummary {
   created_at?: string;
   metadata: string;
   tags: string;
+  /** True when both "X" and "DISABLED X" exist on disk. */
+  has_naming_conflict: boolean;
 }
 
 /** Filter criteria sent to DB queries */

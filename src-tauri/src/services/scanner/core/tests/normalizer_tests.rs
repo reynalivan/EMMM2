@@ -54,9 +54,19 @@ fn test_normalize_display_name() {
 
 #[test]
 fn test_is_disabled_folder() {
+    // Canonical
     assert!(is_disabled_folder("DISABLED some_mod"));
+    // Case variants
+    assert!(is_disabled_folder("disabled some_mod"));
+    assert!(is_disabled_folder("Disabled some_mod"));
+    assert!(is_disabled_folder("DISabled some_mod"));
+    // Separator variants
+    assert!(is_disabled_folder("disabled_some_mod"));
+    assert!(is_disabled_folder("DISABLED-some_mod"));
+    assert!(is_disabled_folder("dis some_mod"));
+    // Not disabled
     assert!(!is_disabled_folder("some_mod"));
-    assert!(!is_disabled_folder("disabled some_mod")); // Case-sensitive
+    assert!(!is_disabled_folder("a_disabled_mod"));
 }
 
 #[test]

@@ -7,10 +7,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from '../stores/useToastStore';
+import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
 import type {
   ModFolder,
+  FolderGridResponse,
   RenameResult,
   SortField,
   SortOrder,
@@ -23,7 +25,7 @@ import type {
 } from '../types/mod';
 
 // Re-export for consumers that import from here
-export type { ModFolder, ModInfo };
+export type { ModFolder, FolderGridResponse, ModInfo };
 
 /** Query key factory for folder cache management */
 export const folderKeys = {
@@ -33,6 +35,38 @@ export const folderKeys = {
 };
 
 /**
+ * Helper to update folders in the query cache instead of full refetch.
+ * Supports updating fields or removing the folder entirely.
+ */
+export function updateFolderCache(
+  queryClient: import('@tanstack/react-query').QueryClient,
+  pathsToUpdate: string[],
+  updater?: (folder: ModFolder) => ModFolder,
+  remove: boolean = false,
+) {
+  if (pathsToUpdate.length === 0) return;
+
+  const queries = queryClient.getQueriesData<FolderGridResponse>({ queryKey: folderKeys.all });
+  queries.forEach(([queryKey, data]) => {
+    if (!data) return;
+
+    let updatedChildren;
+    if (remove) {
+      updatedChildren = data.children.filter((f) => !pathsToUpdate.includes(f.path));
+    } else if (updater) {
+      updatedChildren = data.children.map((f) => (pathsToUpdate.includes(f.path) ? updater(f) : f));
+    } else {
+      updatedChildren = data.children;
+    }
+
+    queryClient.setQueryData(queryKey, {
+      ...data,
+      children: updatedChildren,
+    });
+  });
+}
+
+/**
  * Fetch mod folders from the active game's mods_path directory.
  * Supports sub_path for deep navigation and objectId for DB-level filtering by object.
  */
@@ -40,10 +74,10 @@ export function useModFolders(subPath?: string, objectId?: string) {
   const { activeGame } = useActiveGame();
   const modsPath = activeGame?.mod_path;
 
-  return useQuery<ModFolder[]>({
+  return useQuery<FolderGridResponse>({
     queryKey: folderKeys.list(modsPath ?? '', subPath, objectId),
     queryFn: () =>
-      invoke<ModFolder[]>('list_mod_folders', {
+      invoke<FolderGridResponse>('list_mod_folders', {
         gameId: activeGame?.id ?? null,
         modsPath: modsPath!,
         subPath: subPath || null,
@@ -91,7 +125,7 @@ export function useToggleMod() {
       invoke<string>('toggle_mod', {
         path: params.path,
         enable: params.enable,
-        game_id: params.gameId,
+        gameId: params.gameId,
       }),
 
     // Optimistic UI: flip is_enabled instantly in cache
@@ -100,28 +134,39 @@ export function useToggleMod() {
       await queryClient.cancelQueries({ queryKey: folderKeys.all });
 
       // Snapshot previous folder lists for rollback
-      const previousQueries = queryClient.getQueriesData<ModFolder[]>({
+      const previousQueries = queryClient.getQueriesData<FolderGridResponse>({
         queryKey: folderKeys.all,
       });
 
       // Optimistically flip the folder's is_enabled in every matching query
-      queryClient.setQueriesData<ModFolder[]>({ queryKey: folderKeys.all }, (old) =>
-        old?.map((f) => (f.path === variables.path ? { ...f, is_enabled: variables.enable } : f)),
-      );
+      // Also flip self_is_enabled if the toggled path is the folder itself (FlatModRoot)
+      queryClient.setQueriesData<FolderGridResponse>({ queryKey: folderKeys.all }, (old) => {
+        if (!old) return old;
+        const childMatch = old.children.some((f) => f.path === variables.path);
+        return {
+          ...old,
+          children: old.children.map((f) =>
+            f.path === variables.path ? { ...f, is_enabled: variables.enable } : f,
+          ),
+          // If no child matched, this folder itself is being toggled (FlatModRoot case)
+          self_is_enabled: childMatch ? old.self_is_enabled : variables.enable,
+        };
+      });
 
       return { previousQueries };
     },
 
     onSuccess: (newPath, variables) => {
       const action = variables.enable ? 'Enabled' : 'Disabled';
+      queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) }); // Invalidate old thumbnail URI
       toast.withAction('success', `${action} mod`, {
         label: 'Undo',
         onClick: () => {
           invoke<string>('toggle_mod', {
             path: newPath,
             enable: !variables.enable,
-            game_id: variables.gameId,
           }).then(() => {
+            queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) }); // Invalidate interim thumbnail
             queryClient.invalidateQueries({ queryKey: folderKeys.all });
             queryClient.invalidateQueries({ queryKey: ['objects'] });
           });
@@ -151,6 +196,17 @@ export function useToggleMod() {
           queryClient.setQueryData(queryKey, data);
         }
       }
+      // Detect structured RenameConflict error → open Resolve dialog
+      const errStr = String(error);
+      if (errStr.includes('"type":"RenameConflict"')) {
+        try {
+          const conflict = JSON.parse(errStr);
+          useAppStore.getState().openConflictDialog(conflict);
+          return;
+        } catch {
+          /* parse failed, fall through to generic toast */
+        }
+      }
       toast.error(String(error));
     },
 
@@ -174,7 +230,8 @@ export function useRenameMod() {
         new_name: params.newName,
         game_id: params.gameId,
       }),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
@@ -186,7 +243,8 @@ export function useDeleteMod() {
 
   return useMutation({
     mutationFn: (params: { path: string; gameId?: string }) => invoke<void>('delete_mod', params),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
@@ -197,7 +255,8 @@ export function useRestoreMod() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (trashId: string) => invoke<string>('restore_mod', { trashId }),
+    mutationFn: (params: { trashId: string; gameId?: string }) =>
+      invoke<string>('restore_mod', { trashId: params.trashId, gameId: params.gameId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['trash'] });
@@ -309,8 +368,16 @@ export function useBulkToggle() {
   return useMutation({
     mutationFn: (params: { paths: string[]; enable: boolean }) =>
       invoke<BulkResult>('bulk_toggle_mods', params),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+    onSuccess: (result, variables) => {
+      result.success.forEach((path) => {
+        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
+      });
+      // Targeted cache update instead of full refetch
+      updateFolderCache(queryClient, result.success, (f) => ({
+        ...f,
+        is_enabled: variables.enable,
+      }));
+
       if (result.success.length > 0) {
         toast.success(`Toggled ${result.success.length} items successfully`);
       }
@@ -329,7 +396,12 @@ export function useBulkDelete() {
     mutationFn: (params: { paths: string[]; gameId?: string }) =>
       invoke<BulkResult>('bulk_delete_mods', params),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      result.success.forEach((path) => {
+        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
+      });
+      // Targeted cache update instead of full refetch: remove deleted folders
+      updateFolderCache(queryClient, result.success, undefined, true);
+
       if (result.success.length > 0) {
         toast.success(`Deleted ${result.success.length} items successfully`);
       }
@@ -347,8 +419,17 @@ export function useBulkUpdateInfo() {
   return useMutation({
     mutationFn: (params: { paths: string[]; update: ModInfoUpdate }) =>
       invoke<BulkResult>('bulk_update_info', params),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+    onSuccess: (result, variables) => {
+      // Targeted cache update instead of full refetch
+      updateFolderCache(queryClient, result.success, (f) => {
+        const update = variables.update;
+        return {
+          ...f,
+          is_favorite: update.is_favorite ?? f.is_favorite,
+          is_safe: update.is_safe ?? f.is_safe,
+          metadata: update.metadata ? { ...f.metadata, ...update.metadata } : f.metadata,
+        };
+      });
       if (result.success.length > 0) {
         toast.success(`Updated ${result.success.length} items successfully`);
       }
@@ -422,6 +503,9 @@ export function useEnableOnlyThis() {
     mutationFn: (params: { targetPath: string; gameId: string }) =>
       invoke<BulkResult>('enable_only_this', params),
     onSuccess: (result) => {
+      result.success.forEach((path) => {
+        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
+      });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       const disabled = result.success.length - 1; // -1 for target itself
       if (disabled > 0) {

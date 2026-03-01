@@ -1,6 +1,7 @@
 # TSDoc Standards (React)
 
 ## 1. Component Documentation
+
 Document the component and its Props interface.
 
 ```tsx

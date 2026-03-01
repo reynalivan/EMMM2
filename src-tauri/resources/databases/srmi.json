@@ -3,19 +3,9 @@
     {
       "name": "Acheron",
       "hash_db": {
-        "Default": [
-          "9de39691"
-        ]
+        "Default": ["9de39691"]
       },
-      "tags": [
-        "Galaxy Ranger",
-        "黄泉",
-        "Huángquán",
-        "黄泉",
-        "Kōsen",
-        "황천",
-        "Hwangcheon"
-      ],
+      "tags": ["Galaxy Ranger", "黄泉", "Huángquán", "黄泉", "Kōsen", "황천", "Hwangcheon"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/acheron.png",
@@ -31,11 +21,7 @@
     {
       "name": "Aglaea",
       "hash_db": {},
-      "tags": [
-        "Cosmic Station",
-        "アグライアー",
-        "Aglaia"
-      ],
+      "tags": ["Cosmic Station", "アグライアー", "Aglaia"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/aglaea.png",
@@ -51,9 +37,7 @@
     {
       "name": "Anaxa",
       "hash_db": {
-        "Default": [
-          "468acfca"
-        ]
+        "Default": ["468acfca"]
       },
       "tags": [],
       "object_type": "Character",
@@ -71,9 +55,7 @@
     {
       "name": "Argenti",
       "hash_db": {
-        "Default": [
-          "18af7e1c"
-        ]
+        "Default": ["18af7e1c"]
       },
       "tags": [
         "Knights of Beauty",
@@ -99,19 +81,9 @@
     {
       "name": "Arlan",
       "hash_db": {
-        "Default": [
-          "40436908"
-        ]
+        "Default": ["40436908"]
       },
-      "tags": [
-        "Security Department",
-        "阿兰",
-        "Ālán",
-        "アーラン",
-        "Āran",
-        "아를란",
-        "Areullan"
-      ],
+      "tags": ["Security Department", "阿兰", "Ālán", "アーラン", "Āran", "아를란", "Areullan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/arlan.png",
@@ -127,19 +99,9 @@
     {
       "name": "Asta",
       "hash_db": {
-        "Default": [
-          "0b10db89"
-        ]
+        "Default": ["0b10db89"]
       },
-      "tags": [
-        "Lead Researcher",
-        "艾丝妲",
-        "Àisīdá",
-        "アスター",
-        "Asutā",
-        "아스타",
-        "Aseuta"
-      ],
+      "tags": ["Lead Researcher", "艾丝妲", "Àisīdá", "アスター", "Asutā", "아스타", "Aseuta"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/asta.png",
@@ -155,9 +117,7 @@
     {
       "name": "Aventurine",
       "hash_db": {
-        "Default": [
-          "53bdb739"
-        ]
+        "Default": ["53bdb739"]
       },
       "tags": [
         "Strategic Investment Dept.",
@@ -185,20 +145,9 @@
     {
       "name": "Bailu",
       "hash_db": {
-        "Default": [
-          "7955d970"
-        ]
+        "Default": ["7955d970"]
       },
-      "tags": [
-        "Vidyadhara",
-        "Healer",
-        "白露",
-        "Báilù",
-        "白露",
-        "Hakuro",
-        "백로",
-        "Baekro"
-      ],
+      "tags": ["Vidyadhara", "Healer", "白露", "Báilù", "白露", "Hakuro", "백로", "Baekro"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/bailu.png",
@@ -214,9 +163,7 @@
     {
       "name": "Black Swan",
       "hash_db": {
-        "Default": [
-          "562fbdb4"
-        ]
+        "Default": ["562fbdb4"]
       },
       "tags": [
         "Memokeeper",
@@ -242,9 +189,7 @@
     {
       "name": "Blade",
       "hash_db": {
-        "Default": [
-          "553ae2f8"
-        ]
+        "Default": ["553ae2f8"]
       },
       "tags": [
         "High-Cloud Quintet",
@@ -272,19 +217,9 @@
     {
       "name": "Boothill",
       "hash_db": {
-        "Default": [
-          "be7282b3"
-        ]
+        "Default": ["be7282b3"]
       },
-      "tags": [
-        "Cyborg",
-        "波提欧",
-        "Bōtí'ōu",
-        "ブートヒル",
-        "Būtohiru",
-        "부트힐",
-        "Buteuhil"
-      ],
+      "tags": ["Cyborg", "波提欧", "Bōtí'ōu", "ブートヒル", "Būtohiru", "부트힐", "Buteuhil"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/boothill.png",
@@ -300,9 +235,7 @@
     {
       "name": "Bronya",
       "hash_db": {
-        "Default": [
-          "0d67a9c3"
-        ]
+        "Default": ["0d67a9c3"]
       },
       "tags": [
         "Supreme Guardian",
@@ -329,9 +262,7 @@
     {
       "name": "Castorice",
       "hash_db": {
-        "Default": [
-          "e28bb3dd"
-        ]
+        "Default": ["e28bb3dd"]
       },
       "tags": [],
       "object_type": "Character",
@@ -349,9 +280,7 @@
     {
       "name": "Clara",
       "hash_db": {
-        "Default": [
-          "6615fbf6"
-        ]
+        "Default": ["6615fbf6"]
       },
       "tags": [
         "Prospectors",
@@ -378,9 +307,7 @@
     {
       "name": "Cipher",
       "hash_db": {
-        "Default": [
-          "739a6c23"
-        ]
+        "Default": ["739a6c23"]
       },
       "tags": [],
       "object_type": "Character",
@@ -398,19 +325,9 @@
     {
       "name": "Dan Heng",
       "hash_db": {
-        "Default": [
-          "2c5a53ab"
-        ]
+        "Default": ["2c5a53ab"]
       },
-      "tags": [
-        "Vidyadhara",
-        "丹恒",
-        "Dānhéng",
-        "丹恒",
-        "Tankō",
-        "단항",
-        "Danhan"
-      ],
+      "tags": ["Vidyadhara", "丹恒", "Dānhéng", "丹恒", "Tankō", "단항", "Danhan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/dan_heng.png",
@@ -426,9 +343,7 @@
     {
       "name": "Dan Heng Imbibitor Lunae",
       "hash_db": {
-        "Default": [
-          "0f8da6ba"
-        ]
+        "Default": ["0f8da6ba"]
       },
       "tags": [
         "High Elder of the Luofu",
@@ -455,9 +370,7 @@
     {
       "name": "Dr. Ratio",
       "hash_db": {
-        "Default": [
-          "03a0eb05"
-        ]
+        "Default": ["03a0eb05"]
       },
       "tags": [
         "Veritas Ratio",
@@ -483,19 +396,9 @@
     {
       "name": "Feixiao",
       "hash_db": {
-        "Default": [
-          "83d2adc9"
-        ]
+        "Default": ["83d2adc9"]
       },
-      "tags": [
-        "Feixing Quintet",
-        "飞霄",
-        "Fēixiāo",
-        "飛霄",
-        "Hishō",
-        "비소",
-        "Biso"
-      ],
+      "tags": ["Feixing Quintet", "飞霄", "Fēixiāo", "飛霄", "Hishō", "비소", "Biso"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/feixiao.png",
@@ -511,20 +414,9 @@
     {
       "name": "Firefly",
       "hash_db": {
-        "Default": [
-          "87e84993"
-        ]
+        "Default": ["87e84993"]
       },
-      "tags": [
-        "SAM",
-        "Iron Cavalry",
-        "流萤",
-        "Liúyíng",
-        "ホタル",
-        "Hotaru",
-        "반디",
-        "Bandi"
-      ],
+      "tags": ["SAM", "Iron Cavalry", "流萤", "Liúyíng", "ホタル", "Hotaru", "반디", "Bandi"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/firefly.png",
@@ -540,9 +432,7 @@
     {
       "name": "Fu Xuan",
       "hash_db": {
-        "Default": [
-          "45b0663d"
-        ]
+        "Default": ["45b0663d"]
       },
       "tags": [
         "Divination Commission",
@@ -569,9 +459,7 @@
     {
       "name": "Fugue",
       "hash_db": {
-        "Default": [
-          "7b083f20"
-        ]
+        "Default": ["7b083f20"]
       },
       "tags": [],
       "object_type": "Character",
@@ -589,9 +477,7 @@
     {
       "name": "Gallagher",
       "hash_db": {
-        "Default": [
-          "57c512df"
-        ]
+        "Default": ["57c512df"]
       },
       "tags": [
         "Bloodhound Family",
@@ -617,9 +503,7 @@
     {
       "name": "Gepard",
       "hash_db": {
-        "Default": [
-          "04094d7e"
-        ]
+        "Default": ["04094d7e"]
       },
       "tags": [
         "Silvermane Guards",
@@ -646,9 +530,7 @@
     {
       "name": "Guinaifen",
       "hash_db": {
-        "Default": [
-          "2eeff76f"
-        ]
+        "Default": ["2eeff76f"]
       },
       "tags": [
         "Street Performer",
@@ -675,20 +557,9 @@
     {
       "name": "Hanya",
       "hash_db": {
-        "Default": [
-          "69a81bdb"
-        ]
+        "Default": ["69a81bdb"]
       },
-      "tags": [
-        "Ten-Lords Commission",
-        "Judge",
-        "寒鸦",
-        "Hányā",
-        "寒鴉",
-        "Kan'a",
-        "한아",
-        "Hana"
-      ],
+      "tags": ["Ten-Lords Commission", "Judge", "寒鸦", "Hányā", "寒鴉", "Kan'a", "한아", "Hana"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/hanya.png",
@@ -704,27 +575,14 @@
     {
       "name": "Herta",
       "hash_db": {
-        "Default": [
-          "91c0cb8e"
-        ]
+        "Default": ["91c0cb8e"]
       },
-      "tags": [
-        "Genius Society #83",
-        "黑塔",
-        "Hēitǎ",
-        "ヘルタ",
-        "Heruta",
-        "헤르타",
-        "Hereuta"
-      ],
+      "tags": ["Genius Society #83", "黑塔", "Hēitǎ", "ヘルタ", "Heruta", "헤르타", "Hereuta"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "The Doll's Gala",
-          "aliases": [
-            "HertaGala",
-            "Herta2"
-          ],
+          "aliases": ["HertaGala", "Herta2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -742,20 +600,9 @@
     {
       "name": "Himeko",
       "hash_db": {
-        "Default": [
-          "2bf29f1f"
-        ]
+        "Default": ["2bf29f1f"]
       },
-      "tags": [
-        "Navigator",
-        "Scientist",
-        "姬子",
-        "Jīzǐ",
-        "姫子",
-        "Himeko",
-        "히메코",
-        "Himeko"
-      ],
+      "tags": ["Navigator", "Scientist", "姬子", "Jīzǐ", "姫子", "Himeko", "히메코", "Himeko"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/himeko.png",
@@ -771,19 +618,9 @@
     {
       "name": "Hook",
       "hash_db": {
-        "Default": [
-          "20825705"
-        ]
+        "Default": ["20825705"]
       },
-      "tags": [
-        "The Moles",
-        "虎克",
-        "Hǔkè",
-        "フック",
-        "Fukku",
-        "훅",
-        "Huk"
-      ],
+      "tags": ["The Moles", "虎克", "Hǔkè", "フック", "Fukku", "훅", "Huk"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/hook.png",
@@ -799,9 +636,7 @@
     {
       "name": "Huohuo",
       "hash_db": {
-        "Default": [
-          "2a306f9c"
-        ]
+        "Default": ["2a306f9c"]
       },
       "tags": [
         "Ten-Lords Commission",
@@ -829,9 +664,7 @@
     {
       "name": "Hyacine",
       "hash_db": {
-        "Default": [
-          "ae3b4d8a"
-        ]
+        "Default": ["ae3b4d8a"]
       },
       "tags": [],
       "object_type": "Character",
@@ -849,9 +682,7 @@
     {
       "name": "Jade",
       "hash_db": {
-        "Default": [
-          "08f5f722"
-        ]
+        "Default": ["08f5f722"]
       },
       "tags": [
         "Strategic Investment Dept.",
@@ -878,9 +709,7 @@
     {
       "name": "Jiaoqiu",
       "hash_db": {
-        "Default": [
-          "4554deab"
-        ]
+        "Default": ["4554deab"]
       },
       "tags": [
         "Xianzhou Yaoqing",
@@ -907,9 +736,7 @@
     {
       "name": "Jing Yuan",
       "hash_db": {
-        "Default": [
-          "0b529127"
-        ]
+        "Default": ["0b529127"]
       },
       "tags": [
         "Cloud Knights General",
@@ -936,9 +763,7 @@
     {
       "name": "Jingliu",
       "hash_db": {
-        "Default": [
-          "24c37e04"
-        ]
+        "Default": ["24c37e04"]
       },
       "tags": [
         "High-Cloud Quintet",
@@ -965,26 +790,14 @@
     {
       "name": "Kafka",
       "hash_db": {
-        "Default": [
-          "6d45dac8"
-        ]
+        "Default": ["6d45dac8"]
       },
-      "tags": [
-        "卡芙卡",
-        "Kǎfúkǎ",
-        "カフカ",
-        "Kafuka",
-        "카프카",
-        "Kapeuka"
-      ],
+      "tags": ["卡芙卡", "Kǎfúkǎ", "カフカ", "Kafuka", "카프카", "Kapeuka"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Night of the Spider",
-          "aliases": [
-            "KafkaNight",
-            "Kafka2"
-          ],
+          "aliases": ["KafkaNight", "Kafka2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1002,19 +815,9 @@
     {
       "name": "Lingsha",
       "hash_db": {
-        "Default": [
-          "05bd3b66"
-        ]
+        "Default": ["05bd3b66"]
       },
-      "tags": [
-        "Feixing Quintet",
-        "灵砂",
-        "Língshā",
-        "霊砂",
-        "Reisa",
-        "영사",
-        "Yeongsa"
-      ],
+      "tags": ["Feixing Quintet", "灵砂", "Língshā", "霊砂", "Reisa", "영사", "Yeongsa"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/lingsha.png",
@@ -1030,20 +833,9 @@
     {
       "name": "Luka",
       "hash_db": {
-        "Default": [
-          "11dd3da1"
-        ]
+        "Default": ["11dd3da1"]
       },
-      "tags": [
-        "Wildfire",
-        "Fighter",
-        "卢卡",
-        "Lúkǎ",
-        "ルカ",
-        "Ruka",
-        "루카",
-        "Ruka"
-      ],
+      "tags": ["Wildfire", "Fighter", "卢卡", "Lúkǎ", "ルカ", "Ruka", "루카", "Ruka"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/luka.png",
@@ -1059,19 +851,9 @@
     {
       "name": "Luocha",
       "hash_db": {
-        "Default": [
-          "194a6495"
-        ]
+        "Default": ["194a6495"]
       },
-      "tags": [
-        "Intergalactic Merchant",
-        "罗刹",
-        "Luóchà",
-        "羅刹",
-        "Rasetsu",
-        "나찰",
-        "Nachal"
-      ],
+      "tags": ["Intergalactic Merchant", "罗刹", "Luóchà", "羅刹", "Rasetsu", "나찰", "Nachal"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/luocha.png",
@@ -1087,9 +869,7 @@
     {
       "name": "Lynx",
       "hash_db": {
-        "Default": [
-          "156d0dec"
-        ]
+        "Default": ["156d0dec"]
       },
       "tags": [
         "Landau Family",
@@ -1129,10 +909,7 @@
       "custom_skins": [
         {
           "name": "Be the Show's Star",
-          "aliases": [
-            "MarchShow",
-            "March2"
-          ],
+          "aliases": ["MarchShow", "March2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -1163,10 +940,7 @@
       "custom_skins": [
         {
           "name": "Be the Show's Star",
-          "aliases": [
-            "MarchShow",
-            "March2"
-          ],
+          "aliases": ["MarchShow", "March2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -1184,9 +958,7 @@
     {
       "name": "Misha",
       "hash_db": {
-        "Default": [
-          "6454786c"
-        ]
+        "Default": ["6454786c"]
       },
       "tags": [
         "The Reverie Hotel",
@@ -1213,17 +985,9 @@
     {
       "name": "Moze",
       "hash_db": {
-        "Default": [
-          "0bcc8d2f"
-        ]
+        "Default": ["0bcc8d2f"]
       },
-      "tags": [
-        "墨泽",
-        "Mòzé",
-        "Moze",
-        "모제",
-        "Moje"
-      ],
+      "tags": ["墨泽", "Mòzé", "Moze", "모제", "Moje"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/moze.png",
@@ -1239,9 +1003,7 @@
     {
       "name": "Mydei",
       "hash_db": {
-        "Default": [
-          "b3b22e61"
-        ]
+        "Default": ["b3b22e61"]
       },
       "tags": [],
       "object_type": "Character",
@@ -1259,9 +1021,7 @@
     {
       "name": "Natasha",
       "hash_db": {
-        "Default": [
-          "be164341"
-        ]
+        "Default": ["be164341"]
       },
       "tags": [
         "Wildfire",
@@ -1288,9 +1048,7 @@
     {
       "name": "Pela",
       "hash_db": {
-        "Default": [
-          "5778182b"
-        ]
+        "Default": ["5778182b"]
       },
       "tags": [
         "Silvermane Guards",
@@ -1318,19 +1076,9 @@
     {
       "name": "Qingque",
       "hash_db": {
-        "Default": [
-          "311daa47"
-        ]
+        "Default": ["311daa47"]
       },
-      "tags": [
-        "Divination Commission",
-        "青雀",
-        "Qīngquè",
-        "青雀",
-        "Seijaku",
-        "청작",
-        "Cheongjak"
-      ],
+      "tags": ["Divination Commission", "青雀", "Qīngquè", "青雀", "Seijaku", "청작", "Cheongjak"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/qingque.png",
@@ -1346,9 +1094,7 @@
     {
       "name": "Rappa",
       "hash_db": {
-        "Default": [
-          "22b20c79"
-        ]
+        "Default": ["22b20c79"]
       },
       "tags": [],
       "object_type": "Character",
@@ -1366,9 +1112,7 @@
     {
       "name": "Robin",
       "hash_db": {
-        "Default": [
-          "5cd081cc"
-        ]
+        "Default": ["5cd081cc"]
       },
       "tags": [
         "Halovian",
@@ -1396,28 +1140,14 @@
     {
       "name": "Ruan Mei",
       "hash_db": {
-        "Default": [
-          "18bd4eab"
-        ]
+        "Default": ["18bd4eab"]
       },
-      "tags": [
-        "Genius Society #81",
-        "阮•梅",
-        "Ruǎn•Méi",
-        "阮•梅",
-        "Gen•Bai",
-        "완•매",
-        "Wan•Mae"
-      ],
+      "tags": ["Genius Society #81", "阮•梅", "Ruǎn•Méi", "阮•梅", "Gen•Bai", "완•매", "Wan•Mae"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Plumblossom Letter",
-          "aliases": [
-            "RuanPlum",
-            "Ruan2",
-            "RuanLetter"
-          ],
+          "aliases": ["RuanPlum", "Ruan2", "RuanLetter"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1435,20 +1165,9 @@
     {
       "name": "Sampo",
       "hash_db": {
-        "Default": [
-          "56c66568"
-        ]
+        "Default": ["56c66568"]
       },
-      "tags": [
-        "The Moles",
-        "Masked Fools",
-        "桑博",
-        "Sāngbó",
-        "サンポ",
-        "Sanpo",
-        "삼포",
-        "Sampo"
-      ],
+      "tags": ["The Moles", "Masked Fools", "桑博", "Sāngbó", "サンポ", "Sanpo", "삼포", "Sampo"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/sampo.png",
@@ -1464,19 +1183,9 @@
     {
       "name": "Seele",
       "hash_db": {
-        "Default": [
-          "17cba38d"
-        ]
+        "Default": ["17cba38d"]
       },
-      "tags": [
-        "Wildfire",
-        "希儿",
-        "Xī'ér",
-        "ゼーレ",
-        "Zēre",
-        "제레",
-        "Jere"
-      ],
+      "tags": ["Wildfire", "希儿", "Xī'ér", "ゼーレ", "Zēre", "제레", "Jere"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/seele.png",
@@ -1492,9 +1201,7 @@
     {
       "name": "Serval",
       "hash_db": {
-        "Default": [
-          "4481e0a3"
-        ]
+        "Default": ["4481e0a3"]
       },
       "tags": [
         "Landau Family",
@@ -1521,19 +1228,9 @@
     {
       "name": "Silver Wolf",
       "hash_db": {
-        "Default": [
-          "6bb20ea8"
-        ]
+        "Default": ["6bb20ea8"]
       },
-      "tags": [
-        "Hacker",
-        "银狼",
-        "Yínláng",
-        "銀狼",
-        "Ginrō",
-        "은랑",
-        "Eunrang"
-      ],
+      "tags": ["Hacker", "银狼", "Yínláng", "銀狼", "Ginrō", "은랑", "Eunrang"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/silver_wolf.png",
@@ -1549,19 +1246,9 @@
     {
       "name": "Sparkle",
       "hash_db": {
-        "Default": [
-          "7e488505"
-        ]
+        "Default": ["7e488505"]
       },
-      "tags": [
-        "Hanabi",
-        "花火",
-        "Huāhuǒ",
-        "花火",
-        "Hanabi",
-        "스파클",
-        "Seupakeul"
-      ],
+      "tags": ["Hanabi", "花火", "Huāhuǒ", "花火", "Hanabi", "스파클", "Seupakeul"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/sparkle.png",
@@ -1577,19 +1264,9 @@
     {
       "name": "Sunday",
       "hash_db": {
-        "Default": [
-          "1f30e676"
-        ]
+        "Default": ["1f30e676"]
       },
-      "tags": [
-        "The Family",
-        "星期日",
-        "Xīngqírì",
-        "サンデー",
-        "Sandē",
-        "선데이",
-        "Seondei"
-      ],
+      "tags": ["The Family", "星期日", "Xīngqírì", "サンデー", "Sandē", "선데이", "Seondei"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/sunday.png",
@@ -1605,19 +1282,9 @@
     {
       "name": "Sushang",
       "hash_db": {
-        "Default": [
-          "1cfe532b"
-        ]
+        "Default": ["1cfe532b"]
       },
-      "tags": [
-        "Cloud Knights",
-        "素裳",
-        "Sùshāng",
-        "蘇裳",
-        "Sushō",
-        "소상",
-        "Sosang"
-      ],
+      "tags": ["Cloud Knights", "素裳", "Sùshāng", "蘇裳", "Sushō", "소상", "Sosang"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/sushang.png",
@@ -1633,13 +1300,9 @@
     {
       "name": "The Herta",
       "hash_db": {
-        "Default": [
-          "4e369eb5"
-        ]
+        "Default": ["4e369eb5"]
       },
-      "tags": [
-        "Genius Society"
-      ],
+      "tags": ["Genius Society"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/the_herta.png",
@@ -1655,19 +1318,9 @@
     {
       "name": "Tingyun",
       "hash_db": {
-        "Default": [
-          "6a4333dc"
-        ]
+        "Default": ["6a4333dc"]
       },
-      "tags": [
-        "Whistling Flames",
-        "停云",
-        "Tíngyún",
-        "停雲",
-        "Teiun",
-        "정운",
-        "Jeong-un"
-      ],
+      "tags": ["Whistling Flames", "停云", "Tíngyún", "停雲", "Teiun", "정운", "Jeong-un"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/tingyun.png",
@@ -1721,11 +1374,7 @@
       "custom_skins": [
         {
           "name": "Vim and Vigor",
-          "aliases": [
-            "TBVigor",
-            "TB2",
-            "Trailblazer2"
-          ],
+          "aliases": ["TBVigor", "TB2", "Trailblazer2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1755,11 +1404,7 @@
       "custom_skins": [
         {
           "name": "Vim and Vigor",
-          "aliases": [
-            "TBVigor",
-            "TB2",
-            "Trailblazer2"
-          ],
+          "aliases": ["TBVigor", "TB2", "Trailblazer2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1775,9 +1420,7 @@
     {
       "name": "Tribbie",
       "hash_db": {
-        "Default": [
-          "90844efd"
-        ]
+        "Default": ["90844efd"]
       },
       "tags": [],
       "object_type": "Character",
@@ -1795,9 +1438,7 @@
     {
       "name": "Welt",
       "hash_db": {
-        "Default": [
-          "381a994e"
-        ]
+        "Default": ["381a994e"]
       },
       "tags": [
         "Former Herrscher",
@@ -1813,10 +1454,7 @@
       "custom_skins": [
         {
           "name": "Back to the Past",
-          "aliases": [
-            "WeltPast",
-            "Welt2"
-          ],
+          "aliases": ["WeltPast", "Welt2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1834,9 +1472,7 @@
     {
       "name": "Xueyi",
       "hash_db": {
-        "Default": [
-          "03ff3d10"
-        ]
+        "Default": ["03ff3d10"]
       },
       "tags": [
         "Ten-Lords Commission",
@@ -1863,9 +1499,7 @@
     {
       "name": "Yanqing",
       "hash_db": {
-        "Default": [
-          "9801327a"
-        ]
+        "Default": ["9801327a"]
       },
       "tags": [
         "Cloud Knights",
@@ -1892,9 +1526,7 @@
     {
       "name": "Yukong",
       "hash_db": {
-        "Default": [
-          "e2d592d3"
-        ]
+        "Default": ["e2d592d3"]
       },
       "tags": [
         "Sky-Faring Commission",
@@ -1921,19 +1553,9 @@
     {
       "name": "Yunli",
       "hash_db": {
-        "Default": [
-          "1c4648ec"
-        ]
+        "Default": ["1c4648ec"]
       },
-      "tags": [
-        "Sword Hunter",
-        "云璃",
-        "Yúnlí",
-        "雲璃",
-        "Unri",
-        "운리",
-        "Unri"
-      ],
+      "tags": ["Sword Hunter", "云璃", "Yúnlí", "雲璃", "Unri", "운리", "Unri"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/srmi/char/yunli.png",

@@ -191,7 +191,7 @@ fn to_bucket_set(tokens: &[String]) -> BTreeSet<String> {
 
 // ── Shared scoring stages (used by both quick and full pipelines) ──
 
-pub(super) fn entry_tokens<'a>(db: &'a MasterDb, entry_id: usize) -> &'a HashSet<String> {
+pub(super) fn entry_tokens(db: &MasterDb, entry_id: usize) -> &HashSet<String> {
     &db.keywords[entry_id].1
 }
 

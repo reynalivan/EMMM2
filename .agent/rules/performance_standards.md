@@ -16,6 +16,7 @@ description: When optimizing code speed, memory usage, or handling large dataset
 
 ## 2. Frontend Constraints
 
+- **Offload Heavy Computation:** Move heavy client-side operations (e.g., DP-based fuzzy matching in `useMasterDbSync.ts`) to a Rust Tauri Command to keep the UI thread unblocked and leverage compiled speed.
 - **Virtualization:** MANDATORY for lists > 50 items (`@tanstack/react-virtual`).
 - **Re-renders:** Use `React.memo` and Split Contexts.
 - **Images:** WebP cache + Lazy Load.
@@ -28,4 +29,5 @@ description: When optimizing code speed, memory usage, or handling large dataset
 
 ## 4. Database
 
+- **Schema & Query Optimization:** Enforce strict indexing on frequently queried columns (`game_id`, `is_safe`). Avoid `SELECT *`.
 - **SQLx:** Use Connection Pooling & WAL Mode.

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT staging_path FROM import_jobs WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "staging_path",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "87e6bf8e215a3bab22bbdec1a29130041254d9f032c469404588bf96ff9c2ae4"
+}

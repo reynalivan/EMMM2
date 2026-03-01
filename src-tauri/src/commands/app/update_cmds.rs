@@ -32,3 +32,7 @@ pub async fn fetch_missing_asset(
 
     Ok(result.map(|p| p.to_string_lossy().to_string()))
 }
+
+#[cfg(test)]
+#[path = "tests/update_cmds_tests.rs"]
+mod tests;

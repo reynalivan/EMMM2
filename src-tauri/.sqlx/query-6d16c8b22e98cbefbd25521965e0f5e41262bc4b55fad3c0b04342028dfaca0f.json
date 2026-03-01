@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs SET archive_hash = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "6d16c8b22e98cbefbd25521965e0f5e41262bc4b55fad3c0b04342028dfaca0f"
+}

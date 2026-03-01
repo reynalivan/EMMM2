@@ -10,6 +10,9 @@ pub mod state;
 
 // Test-only modules
 #[cfg(test)]
+#[path = "tests/alias_resolution_tests.rs"]
+mod alias_resolution_tests;
+#[cfg(test)]
 pub mod golden_corpus;
 #[cfg(test)]
 #[path = "tests/required_tests.rs"]

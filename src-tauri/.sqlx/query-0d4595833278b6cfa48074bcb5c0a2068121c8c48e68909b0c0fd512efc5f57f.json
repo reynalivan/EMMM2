@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs SET status = ?, error_msg = COALESCE(?, error_msg), updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "0d4595833278b6cfa48074bcb5c0a2068121c8c48e68909b0c0fd512efc5f57f"
+}

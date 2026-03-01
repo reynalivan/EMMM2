@@ -374,6 +374,7 @@ export default function CollectionsPage() {
                 Cancel
               </button>
               <button
+                data-testid="modal-apply-btn"
                 className="btn btn-primary btn-sm min-w-[80px]"
                 onClick={confirmApplyAction}
                 disabled={applyMutation.isPending}

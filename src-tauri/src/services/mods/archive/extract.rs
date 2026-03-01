@@ -30,6 +30,36 @@ pub fn extract_archive(
 
     let mut dest_path = mods_dir.join(&archive_name);
 
+    // Pre-extract disk space check
+    let analysis = crate::services::mods::archive::analyze::analyze_archive(archive_path)?;
+    // Require uncompressed size + 50MB buffer
+    let required_space = analysis.uncompressed_size + (50 * 1024 * 1024);
+
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let search_path = mods_dir
+        .canonicalize()
+        .unwrap_or_else(|_| mods_dir.to_path_buf());
+
+    let mut available_space = 0;
+    let mut matched_len = 0;
+    for disk in disks.list() {
+        let mount = disk.mount_point();
+        if search_path.starts_with(mount) {
+            let mount_len = mount.as_os_str().len();
+            if mount_len > matched_len {
+                matched_len = mount_len;
+                available_space = disk.available_space();
+            }
+        }
+    }
+
+    if matched_len > 0 && available_space < required_space {
+        return Err(format!(
+            "Insufficient disk space. Requires {} bytes, but only {} bytes available.",
+            required_space, available_space
+        ));
+    }
+
     // Guard: destination already exists
     if dest_path.exists() {
         if !overwrite {
@@ -90,22 +120,28 @@ fn extract_zip_inner(
     for i in 0..archive.len() {
         // Use password-aware read if password provided
         let mut entry = match password {
-            Some(pw) => archive.by_index_decrypt(i, pw.as_bytes()).map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("Password") || msg.contains("password") {
-                    "Password required to extract this archive".to_string()
-                } else {
-                    format!("Failed to read entry {i}: {e}")
+            Some(pw) => match archive.by_index_decrypt(i, pw.as_bytes()) {
+                Ok(file) => file,
+                Err(e) => {
+                    let msg = e.to_string();
+                    if msg.contains("Password") || msg.contains("password") {
+                        return Err("Password required to extract this archive".to_string());
+                    } else {
+                        return Err(format!("Failed to decrypt entry {i}: {e}"));
+                    }
                 }
-            })?,
-            None => archive.by_index(i).map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("Password") || msg.contains("password") {
-                    "Password required to extract this archive".to_string()
-                } else {
-                    format!("Failed to read entry {i}: {e}")
+            },
+            None => match archive.by_index(i) {
+                Ok(file) => file,
+                Err(e) => {
+                    let msg = e.to_string();
+                    if msg.contains("Password") || msg.contains("password") {
+                        return Err("Password required to extract this archive".to_string());
+                    } else {
+                        return Err(format!("Failed to read entry {i}: {e}"));
+                    }
                 }
-            })?,
+            },
         };
 
         let entry_path = match entry.enclosed_name() {
@@ -151,6 +187,7 @@ fn extract_7z_inner(
 
     // Count extracted files
     let count = walkdir::WalkDir::new(dest_path)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
@@ -177,6 +214,7 @@ fn extract_rar_inner(
 
     // Count extracted files
     let count = walkdir::WalkDir::new(dest_path)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
@@ -222,8 +260,11 @@ pub fn flatten_if_needed(dest_path: &Path) -> Result<(), String> {
             continue;
         }
 
-        fs::rename(child.path(), &new_location)
-            .map_err(|e| format!("Failed to move {}: {e}", child_name.to_string_lossy()))?;
+        crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
+            &child.path(),
+            &new_location,
+        )
+        .map_err(|e| format!("Failed to move {}: {e}", child_name.to_string_lossy()))?;
     }
 
     // Remove empty wrapper
@@ -245,7 +286,7 @@ fn move_to_backup(archive_path: &Path, mods_dir: &Path) -> Result<(), String> {
     let file_name = archive_path.file_name().ok_or("No filename")?;
     let backup_path = backup_dir.join(file_name);
 
-    fs::rename(archive_path, &backup_path)
+    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(archive_path, &backup_path)
         .map_err(|e| format!("Failed to move archive to backup: {e}"))?;
 
     Ok(())

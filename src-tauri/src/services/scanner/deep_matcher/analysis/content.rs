@@ -135,7 +135,7 @@ fn decode_ini_bytes(bytes: &[u8]) -> String {
     }
 
     // Try UTF-16 LE
-    if bytes.len() % 2 == 0 {
+    if bytes.len().is_multiple_of(2) {
         let mut utf16_bytes = bytes.to_vec();
         // Check for UTF-16 LE BOM
         if bytes.starts_with(&[0xFF, 0xFE]) {
@@ -153,7 +153,7 @@ fn decode_ini_bytes(bytes: &[u8]) -> String {
 
 /// Decode UTF-16 LE bytes to String.
 fn decode_utf16_le(bytes: &[u8]) -> Result<String, String> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err("Odd byte count for UTF-16".to_string());
     }
 

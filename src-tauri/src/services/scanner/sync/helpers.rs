@@ -1,5 +1,5 @@
 use crate::services::scanner::deep_matcher;
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 
 /// Generate a deterministic mod ID from `game_id` + `relative_path`.
 /// Uses BLAKE3 hash (first 32 hex chars) so the same folder always gets the same ID.
@@ -29,12 +29,9 @@ pub fn auto_matched_candidate(
 /// and replaces them with `generate_stable_id(game_id, folder_path)`.
 /// Also updates FK references in `collection_items`.
 pub async fn migrate_to_stable_ids(pool: &SqlitePool) -> Result<usize, String> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT id, game_id, folder_path FROM mods WHERE length(id) = 36 AND id LIKE '%-%-%-%-%'",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("Failed to query mods for ID migration: {e}"))?;
+    let rows = crate::database::mod_repo::get_mods_with_uuid_format(pool)
+        .await
+        .map_err(|e| format!("Failed to query mods for ID migration: {e}"))?;
 
     if rows.is_empty() {
         return Ok(0);
@@ -49,17 +46,13 @@ pub async fn migrate_to_stable_ids(pool: &SqlitePool) -> Result<usize, String> {
             continue;
         }
 
-        sqlx::query("UPDATE collection_items SET mod_id = ? WHERE mod_id = ?")
-            .bind(&new_id)
-            .bind(old_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+        crate::database::collection_repo::update_collection_item_mod_id_global(
+            &mut *tx, old_id, &new_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
-        sqlx::query("UPDATE mods SET id = ? WHERE id = ?")
-            .bind(&new_id)
-            .bind(old_id)
-            .execute(&mut *tx)
+        crate::database::mod_repo::update_mod_id(&mut *tx, old_id, &new_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -83,14 +76,11 @@ pub async fn ensure_game_exists(
     game_type: &str,
     mods_path: &str,
 ) -> Result<(), String> {
-    sqlx::query("INSERT OR IGNORE INTO games (id, name, game_type, path) VALUES (?, ?, ?, ?)")
-        .bind(game_id)
-        .bind(game_name)
-        .bind(game_type)
-        .bind(mods_path)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
+    crate::database::game_repo::ensure_game_exists(
+        &mut **tx, game_id, game_name, game_type, mods_path,
+    )
+    .await
+    .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
     Ok(())
 }
 
@@ -106,96 +96,16 @@ pub async fn ensure_object_exists(
     db_metadata_json: &str,
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
-    // Case-insensitive lookup to prevent duplicates (e.g. folder "archeron" vs DB "Acheron")
-    // Or if the alias name matches, it's the same object (important when DISABLED folders are toggled)
-    let existing = sqlx::query(
-        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)",
+    crate::database::object_repo::ensure_object_exists(
+        tx,
+        game_id,
+        folder_path,
+        obj_name,
+        obj_type,
+        db_thumbnail,
+        db_tags_json,
+        db_metadata_json,
+        new_objects_count,
     )
-    .bind(game_id)
-    .bind(folder_path)
-    .bind(obj_name)
-    .fetch_optional(&mut **tx)
     .await
-    .map_err(|e| e.to_string())?;
-
-    if let Some(row) = existing {
-        let id: String = row.try_get("id").map_err(|e| e.to_string())?;
-        let existing_name: String = row.try_get("name").map_err(|e| e.to_string())?;
-        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
-        let existing_type: String = row
-            .try_get("object_type")
-            .unwrap_or_else(|_| "Other".to_string());
-
-        // Always sync folder_path to match FS truth (input folder_path)
-        if existing_fp != folder_path {
-            sqlx::query("UPDATE objects SET folder_path = ? WHERE id = ?")
-                .bind(folder_path)
-                .bind(&id)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        // Upgrade name + type when incoming data has richer info (thumbnail from MasterDB)
-        if (existing_name != obj_name || existing_type != obj_type) && db_thumbnail.is_some() {
-            sqlx::query("UPDATE objects SET name = ?, object_type = ? WHERE id = ?")
-                .bind(obj_name)
-                .bind(obj_type)
-                .bind(&id)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        let existing_thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
-        if existing_thumb.is_none() && db_thumbnail.is_some() {
-            sqlx::query("UPDATE objects SET thumbnail_path = ? WHERE id = ?")
-                .bind(db_thumbnail)
-                .bind(&id)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        let existing_tags: String = row.try_get("tags").unwrap_or_else(|_| "[]".to_string());
-        if existing_tags == "[]" && db_tags_json != "[]" {
-            sqlx::query("UPDATE objects SET tags = ? WHERE id = ?")
-                .bind(db_tags_json)
-                .bind(&id)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        let existing_meta: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
-        if existing_meta == "{}" && db_metadata_json != "{}" {
-            sqlx::query("UPDATE objects SET metadata = ? WHERE id = ?")
-                .bind(db_metadata_json)
-                .bind(&id)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        return Ok(id);
-    }
-
-    let new_id = uuid::Uuid::new_v4().to_string();
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, thumbnail_path, tags, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    )
-        .bind(&new_id)
-        .bind(game_id)
-        .bind(obj_name)
-        .bind(folder_path)
-        .bind(obj_type)
-        .bind(db_thumbnail)
-        .bind(db_tags_json)
-        .bind(db_metadata_json)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    *new_objects_count += 1;
-    Ok(new_id)
 }

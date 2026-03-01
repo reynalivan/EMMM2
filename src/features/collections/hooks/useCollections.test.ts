@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { createWrapper } from '../../../test-utils';
+import { createWrapper } from '../../../testing/test-utils';
 import { useCollections } from './useCollections';
 
 vi.mock('@tauri-apps/api/core', () => ({

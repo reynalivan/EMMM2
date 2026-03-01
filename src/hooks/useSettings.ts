@@ -26,6 +26,25 @@ export interface AiConfig {
   base_url: string | null;
 }
 
+export interface HotkeyConfig {
+  enabled: boolean;
+  game_focus_only: boolean;
+  cooldown_ms: number;
+  toggle_safe_mode: string;
+  next_preset: string;
+  prev_preset: string;
+  next_variant: string;
+  prev_variant: string;
+  toggle_overlay: string;
+}
+
+export interface KeyViewerConfig {
+  enabled: boolean;
+  status_ttl_seconds: number;
+  overlay_toggle_key: string;
+  keybinds_dir: string;
+}
+
 export interface AppSettings {
   theme: string;
   language: string;
@@ -33,6 +52,8 @@ export interface AppSettings {
   active_game_id: string | null;
   safe_mode: SafeModeConfig;
   ai: AiConfig;
+  hotkeys: HotkeyConfig;
+  keyviewer: KeyViewerConfig;
 }
 
 export const settingsKeys = {

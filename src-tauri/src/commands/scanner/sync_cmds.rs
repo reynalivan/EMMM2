@@ -184,35 +184,20 @@ pub async fn score_candidates_batch_cmd(
     Ok(res)
 }
 
-/// A single file/folder entry for the tooltip preview.
-#[derive(serde::Serialize)]
-pub struct FolderEntry {
-    pub name: String,
-    pub is_dir: bool,
-}
-
-/// List files and folders inside a directory (max 50 entries, sorted).
-/// Used by the Scan Review tooltip to preview folder contents on hover.
 #[tauri::command]
-pub async fn list_folder_entries_cmd(folder_path: String) -> Result<Vec<FolderEntry>, String> {
-    let path = std::path::Path::new(&folder_path);
-    if !path.is_dir() {
-        return Err(format!("Not a directory: {}", folder_path));
-    }
-
-    let read_dir = std::fs::read_dir(path).map_err(|e| format!("Cannot read directory: {}", e))?;
-
-    let mut entries: Vec<FolderEntry> = read_dir
-        .filter_map(|e| e.ok())
-        .map(|e| FolderEntry {
-            name: e.file_name().to_string_lossy().to_string(),
-            is_dir: e.file_type().map(|ft| ft.is_dir()).unwrap_or(false),
-        })
-        .take(50)
-        .collect();
-
-    // Sort: directories first, then alphabetically
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
-
-    Ok(entries)
+pub async fn list_folder_entries_cmd(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    folder_path: String,
+    game_id: String,
+) -> Result<Vec<crate::services::scanner::folder_entries::FolderEntry>, String> {
+    crate::services::scanner::folder_entries::list_folder_entries(
+        pool.inner(),
+        &game_id,
+        &folder_path,
+    )
+    .await
 }
+
+#[cfg(test)]
+#[path = "tests/sync_cmds_tests.rs"]
+mod tests;

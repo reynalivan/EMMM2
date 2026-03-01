@@ -109,3 +109,25 @@ async fn test_get_scan_result_needs_review_does_not_auto_assign_object() {
     assert_eq!(item.match_level, "NeedsReview");
     assert_eq!(item.matched_object, None);
 }
+
+#[tokio::test]
+async fn test_scan_state_halts_iteration() {
+    let state = ScanState::new();
+    state.cancel();
+
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("Mod1")).unwrap();
+    fs::create_dir(dir.path().join("Mod2")).unwrap();
+
+    let candidates = crate::services::scanner::core::walker::scan_mod_folders(dir.path()).unwrap();
+
+    let mut processed = 0;
+    for _ in candidates.iter() {
+        if state.is_cancelled() {
+            break;
+        }
+        processed += 1;
+    }
+
+    assert_eq!(processed, 0, "Iteration should halt immediately");
+}

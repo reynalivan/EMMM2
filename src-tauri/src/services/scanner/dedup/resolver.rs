@@ -1,5 +1,5 @@
-use crate::services::core::operation_lock::OperationLock;
-use crate::services::mod_files::trash;
+use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::mods::trash;
 use crate::services::scanner::watcher::SuppressionGuard;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -167,51 +167,34 @@ async fn persist_whitelist_pair(
 
     let (canonical_a, canonical_b) = canonicalize_pair(&folder_a_id, &folder_b_id);
 
-    sqlx::query(
-        "INSERT OR IGNORE INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id, reason)
-         VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(uuid::Uuid::new_v4().to_string())
-    .bind(game_id)
-    .bind(canonical_a)
-    .bind(canonical_b)
-    .bind("Manual duplicate ignore")
-    .execute(db)
-    .await
-    .map_err(|error| format!("Failed to persist duplicate whitelist pair: {error}"))?;
+    crate::database::dedup_repo::insert_whitelist_pair(db, game_id, canonical_a, canonical_b)
+        .await
+        .map_err(|error| format!("Failed to persist duplicate whitelist pair: {error}"))?;
 
     Ok(())
 }
 
 async fn fetch_mod_id(db: &SqlitePool, game_id: &str, folder_path: &str) -> Result<String, String> {
-    sqlx::query_scalar::<_, String>("SELECT id FROM mods WHERE game_id = ? AND folder_path = ?")
-        .bind(game_id)
-        .bind(folder_path)
-        .fetch_optional(db)
+    let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
+    crate::database::mod_repo::get_mod_id_and_status_by_path(&mut *conn, folder_path, game_id)
         .await
         .map_err(|error| format!("Failed to resolve mod id for '{folder_path}': {error}"))?
+        .map(|(id, _, _)| id)
         .ok_or_else(|| {
             format!("Mod entry not found for game '{game_id}' and folder '{folder_path}'")
         })
 }
 
 async fn set_group_status(db: &SqlitePool, group_id: &str, status: &str) -> Result<(), String> {
-    let query = if status == "resolved" || status == "ignored" {
-        "UPDATE dedup_groups SET resolution_status = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?"
-    } else {
-        "UPDATE dedup_groups SET resolution_status = ? WHERE id = ?"
-    };
+    let set_resolved_at = status == "resolved" || status == "ignored";
+    let rows_affected =
+        crate::database::dedup_repo::update_group_status(db, group_id, status, set_resolved_at)
+            .await
+            .map_err(|error| {
+                format!("Failed to update resolution status for group '{group_id}': {error}")
+            })?;
 
-    let result = sqlx::query(query)
-        .bind(status)
-        .bind(group_id)
-        .execute(db)
-        .await
-        .map_err(|error| {
-            format!("Failed to update resolution status for group '{group_id}': {error}")
-        })?;
-
-    if result.rows_affected() == 0 {
+    if rows_affected == 0 {
         log::warn!(
             "No dedup_groups row updated for group_id='{}' and status='{}'",
             group_id,

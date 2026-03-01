@@ -1,4 +1,5 @@
-use crate::database::settings_repo;
+use crate::database::game_repo;
+use crate::services::hotkeys::{HotkeyConfig, KeyViewerConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -36,21 +37,11 @@ impl Default for SafeModeConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct AiConfig {
     pub enabled: bool,
     pub api_key: Option<String>,
     pub base_url: Option<String>,
-}
-
-impl Default for AiConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            api_key: None,
-            base_url: None,
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -62,6 +53,10 @@ pub struct AppSettings {
     pub safe_mode: SafeModeConfig,
     pub ai: AiConfig,
     pub auto_close_launcher: bool,
+    #[serde(default)]
+    pub hotkeys: HotkeyConfig,
+    #[serde(default)]
+    pub keyviewer: KeyViewerConfig,
 }
 
 impl Default for AppSettings {
@@ -74,24 +69,26 @@ impl Default for AppSettings {
             safe_mode: SafeModeConfig::default(),
             ai: AiConfig::default(),
             auto_close_launcher: false,
+            hotkeys: HotkeyConfig::default(),
+            keyviewer: KeyViewerConfig::default(),
         }
     }
 }
 
-pub fn game_row_to_config(row: settings_repo::GameRow) -> GameConfig {
+pub fn game_row_to_config(row: game_repo::GameRow) -> GameConfig {
     GameConfig {
         id: row.id,
         name: row.name,
         game_type: row.game_type,
         mod_path: PathBuf::from(row.mod_path.unwrap_or_else(|| row.path.clone())),
-        game_exe: PathBuf::from(row.game_exe.unwrap_or_else(|| row.path)),
+        game_exe: PathBuf::from(row.game_exe.unwrap_or(row.path)),
         loader_exe: row.loader_exe.or(row.launcher_path).map(PathBuf::from),
         launch_args: row.launch_args,
     }
 }
 
-pub fn config_to_game_row(config: &GameConfig) -> settings_repo::GameRow {
-    settings_repo::GameRow {
+pub fn config_to_game_row(config: &GameConfig) -> game_repo::GameRow {
+    game_repo::GameRow {
         id: config.id.clone(),
         name: config.name.clone(),
         game_type: config.game_type.clone(),

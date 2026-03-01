@@ -6,9 +6,9 @@ import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
 import ManualSetupForm from './ManualSetupForm';
 import AutoDetectResult from './AutoDetectResult';
-import AuroraBackground from '../../components/welcome/AuroraBackground';
-import SmartDemoStrip from '../../components/welcome/SmartDemoStrip';
-import AnimatedLogo from '../../components/welcome/AnimatedLogo';
+import AuroraBackground from '../welcome/AuroraBackground';
+import SmartDemoStrip from '../welcome/SmartDemoStrip';
+import AnimatedLogo from '../welcome/AnimatedLogo';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 

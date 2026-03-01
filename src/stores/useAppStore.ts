@@ -3,7 +3,15 @@ import { persist } from 'zustand/middleware';
 
 import type { SortField, SortOrder, ViewMode } from '../types/mod';
 
-type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings';
+/** Structured error returned by toggle_mod when target path already exists. */
+export interface RenameConflictError {
+  type: 'RenameConflict';
+  attempted_target: string;
+  existing_path: string;
+  base_name: string;
+}
+
+type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings' | 'browser';
 type MobilePane = 'sidebar' | 'grid' | 'details';
 
 interface AppState {
@@ -45,6 +53,11 @@ interface AppState {
   explorerSearchQuery: string;
   explorerScrollOffset: number;
 
+  // Conflict Resolution State
+  conflictDialog: { open: boolean; conflict: RenameConflictError | null };
+  openConflictDialog: (conflict: RenameConflictError) => void;
+  closeConflictDialog: () => void;
+
   // Actions
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
@@ -57,6 +70,7 @@ interface AppState {
   setSelectedObject: (id: string | null) => void;
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
+  setGridSelection: (selection: Set<string>) => void;
   setPanelWidths: (left: number, right: number) => void;
 
   // Responsive Actions
@@ -76,6 +90,27 @@ interface AppState {
   setExplorerSearch: (query: string) => void;
   setExplorerScrollOffset: (offset: number) => void;
 }
+
+import { createJSONStorage } from 'zustand/middleware';
+
+// Custom debounced storage to prevent LocalStorage spam
+const debouncedStorage = {
+  getItem: (name: string) => {
+    return localStorage.getItem(name);
+  },
+  setItem: (() => {
+    let timeoutId: number | null = null;
+    return (name: string, value: string) => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        localStorage.setItem(name, value);
+      }, 300); // 300ms debounce
+    };
+  })(),
+  removeItem: (name: string) => {
+    localStorage.removeItem(name);
+  },
+};
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -109,6 +144,11 @@ export const useAppStore = create<AppState>()(
       explorerSubPath: undefined,
       explorerSearchQuery: '',
       explorerScrollOffset: 0,
+
+      // Conflict Resolution State
+      conflictDialog: { open: false, conflict: null },
+      openConflictDialog: (conflict) => set({ conflictDialog: { open: true, conflict } }),
+      closeConflictDialog: () => set({ conflictDialog: { open: false, conflict: null } }),
 
       // Store Initialization
       initStore: async () => {
@@ -210,6 +250,13 @@ export const useAppStore = create<AppState>()(
 
       clearGridSelection: () => set({ gridSelection: new Set() }),
 
+      setGridSelection: (selection) =>
+        set((state) => {
+          // Auto-navigate to details on mobile when item selected (single select)
+          const nextMobilePane = selection.size === 1 ? 'details' : state.mobileActivePane;
+          return { gridSelection: selection, mobileActivePane: nextMobilePane };
+        }),
+
       setPanelWidths: (left, right) => set({ leftPanelWidth: left, rightPanelWidth: right }),
 
       setMobilePane: (pane) => set({ mobileActivePane: pane }),
@@ -239,6 +286,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibecode-storage',
+      storage: createJSONStorage(() => debouncedStorage),
       partialize: (state) => ({
         leftPanelWidth: state.leftPanelWidth,
         rightPanelWidth: state.rightPanelWidth,
@@ -250,7 +298,20 @@ export const useAppStore = create<AppState>()(
         currentPath: state.currentPath,
         explorerSubPath: state.explorerSubPath,
         explorerScrollOffset: state.explorerScrollOffset,
+        // Epic 3: Persist collapsed categories (serializable array)
+        collapsedCategories: Array.from(state.collapsedCategories),
       }),
+      merge: (persistedState: unknown, currentState) => {
+        const pState = persistedState as Partial<AppState>;
+        return {
+          ...currentState,
+          ...pState,
+          // Deserialize array back to Set when loading
+          collapsedCategories: pState?.collapsedCategories
+            ? new Set(pState.collapsedCategories)
+            : currentState.collapsedCategories,
+        };
+      },
     },
   ),
 );

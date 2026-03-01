@@ -1,0 +1,406 @@
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> src\services\app\tests\app_service_tests.rs:3:5
+  |
+3 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> src\services\app\tests\dashboard_tests.rs:2:5
+  |
+2 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> src\services\app\tests\maintenance_service_tests.rs:3:5
+  |
+3 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> src\services\objects\tests\mutate_tests.rs:5:5
+  |
+5 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tempfile::TempDir`
+ --> src\services\objects\tests\mutate_tests.rs:6:5
+  |
+6 | use tempfile::TempDir;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> src\services\update\tests\update_service_tests.rs:3:5
+  |
+3 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `emmm2` (lib test) generated 6 warnings (run `cargo fix --lib -p emmm2 --tests` to apply 6 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+     Running unittests src\lib.rs (target\debug\deps\emmm2_lib-edbc55fa894915fb.exe)
+
+running 341 tests
+test commands::app::dashboard_cmds::tests::test_dashboard_cmds_coverage ... ok
+test commands::app::update_cmds::tests::test_update_cmds_coverage ... ok
+test commands::duplicates::tests::dup_resolve_cmds_tests::test_dup_resolve_cmds_coverage ... ok
+test commands::collections::collection_cmds::tests::test_mid_fail_rollback ... ok
+test commands::folder_grid::listing::tests::test_folder_grid_listing_coverage ... ok
+test commands::duplicates::tests::dup_scan_cmds_tests::test_dup_scan_cmds_coverage ... ok
+test commands::folder_grid::helpers::tests::test_folder_grid_helpers_coverage ... ok
+test commands::folder_grid::tests::test_list_mod_folders_nonexistent_path ... ok
+test commands::folder_grid::types::tests::test_folder_grid_types_coverage ... ok
+test commands::app::app_cmds::tests::test_check_config_status_fresh_install ... ok
+test commands::folder_grid::tests::test_list_mod_folders_empty_dir ... ok
+test commands::app::app_cmds::tests::test_check_config_status_has_config ... ok
+test commands::mods::conflict_cmds::tests::test_find_unique_name ... ok
+test commands::folder_grid::tests::test_list_mod_folders_invalid_subpath ... ok
+test commands::app::settings_cmds::tests::test_cleanup_old_empty_trash_entries ... ok
+test commands::mods::mod_core_cmds::tests::check_folder_contents_empty ... ok
+test commands::folder_grid::tests::test_list_mod_folders_has_modified_at ... ok
+test commands::folder_grid::tests::test_list_mod_folders_malformed_info_json ... ok
+test commands::folder_grid::tests::test_list_mod_folders_thumbnail_deferred ... ok
+test commands::mods::mod_core_cmds::tests::standardize_prefix_dash_variant ... ok
+test commands::folder_grid::tests::test_list_mod_folders_info_json_detection ... ok
+test commands::folder_grid::tests::test_list_mod_folders_double_disabled ... ok
+test commands::folder_grid::tests::test_list_mod_folders_basic ... ok
+test commands::collections::collection_cmds::tests::test_create_and_list_collection ... ok
+test commands::mods::mod_core_cmds::tests::standardize_prefix_lowercase_underscore ... ok
+test commands::folder_grid::tests::test_list_mod_folders_deep_navigation ... ok
+test commands::mods::conflict_cmds::tests::test_resolve_conflict_keep_enabled ... ok
+test commands::folder_grid::tests::test_list_mod_folders_skips_files_and_hidden ... ok
+test commands::mods::conflict_cmds::tests::test_resolve_conflict_separate ... ok
+test commands::mods::mod_core_cmds::tests::check_folder_contents_non_empty ... ok
+test commands::mods::mod_import_cmds::tests::test_import_mods_target_not_exists ... ok
+test commands::mods::mod_meta_cmds::tests::test_pin_mod_updates_db ... ok
+test commands::mods::mod_import_cmds::tests::test_ingest_dropped_folders_success ... ok
+test commands::mods::mod_meta_cmds::tests::test_move_mod_to_object ... ok
+test commands::collections::collection_cmds::tests::test_undo_action ... ok
+test commands::app::game_cmds::tests::test_add_game_manual_and_duplicate ... ok
+test commands::app::game_cmds::tests::test_auto_detect_games ... ok
+test commands::collections::collection_cmds::tests::test_apply_collection_atomic ... ok
+test commands::mods::mod_bulk_cmds::tests::test_bulk_toggle_partial_failure ... ok
+test commands::mods::mod_core_cmds::tests::delete_mod_moves_to_trash ... ok
+test commands::mods::trash_cmds::tests::test_trash_cmds_coverage ... ok
+test commands::mods::mod_meta_cmds::tests::test_toggle_favorite_writes_info_json ... ok
+test commands::app::game_cmds::tests::test_remove_game_cascading ... ok
+test commands::mods::mod_core_cmds::tests::rename_path_collision ... ok
+test commands::mods::mod_core_cmds::tests::rename_enabled_mod_success ... ok
+test commands::objects::master_db_cmds::tests::test_object_service_auto_matched_uses_staged_status_adapters ... ok
+test commands::mods::mod_meta_cmds::tests::test_suggest_random_mods ... ok
+test commands::mods::mod_core_cmds::tests::rename_rejects_invalid_chars ... ok
+test commands::scanner::archive_cmds::tests::test_archive_cmds_coverage ... ok
+test commands::mods::mod_core_cmds::tests::rename_disabled_mod_preserves_prefix ... ok
+test commands::mods::preview_cmds::tests::details_command_rejects_path_escape ... ok
+test commands::mods::preview_cmds::tests::details_command_remove_and_clear_preview_images ... ok
+test commands::scanner::scan_cmds::tests::test_scan_state_cancellation ... ok
+test commands::scanner::watcher_cmds::tests::test_watcher_cmds_coverage ... ok
+test commands::tests::error_handling_tests::tests::test_command_error_serialization ... ok
+test commands::mods::mod_core_cmds::tests::rename_rejects_case_insensitive_duplicate ... ok
+test commands::mods::mod_bulk_cmds::tests::test_bulk_delete_moves_to_trash ... ok
+test commands::mods::mod_core_cmds::tests::rename_updates_info_json_preserves_other_keys ... ok
+test commands::mods::mod_core_cmds::tests::toggle_with_bad_prefix_filesystem ... ok
+test commands::mods::mod_thumbnail_cmds::tests::paste_thumbnail_rejects_oversize ... ok
+test commands::mods::mod_core_cmds::tests::toggle_mod_collision ... ok
+test commands::scanner::scan_cmds::tests::test_get_scan_result_needs_review_does_not_auto_assign_object ... ok
+test commands::scanner::scan_cmds::tests::test_scan_state_halts_iteration ... ok
+test commands::scanner::organize_cmds::tests::test_auto_organize_mods_success ... ok
+test commands::scanner::scan_cmds::tests::test_get_scan_result_auto_matched_uses_staged_status_semantics ... ok
+test commands::mods::preview_cmds::tests::details_command_list_preview_images_scan_depth ... ok
+test commands::mods::preview_cmds::tests::details_command_bridge_smoke ... ok
+test database::models::tests::test_app_error_display ... ok
+test database::models::tests::test_game_type_display ... ok
+test commands::scanner::conflict_cmds::tests::test_detect_conflicts_in_folder_integration ... ok
+test database::models::tests::test_game_type_from_str_invalid ... ok
+test database::models::tests::test_game_type_from_str_valid ... ok
+test commands::objects::object_cmds::tests::test_create_object_cmd ... ok
+test commands::objects::object_cmds::tests::test_pin_object_cmd ... ok
+test commands::objects::object_cmds::tests::test_update_object_cmd ... ok
+test commands::objects::object_cmds::tests::test_get_objects_with_disabled_prefix ... ok
+test commands::objects::object_cmds::tests::test_delete_object_fk_constraints ... ok
+test commands::objects::object_cmds::tests::test_get_objects_safe_mode_filtering ... ok
+test database::settings_repo::tests::test_kv_setting_round_trip ... ok
+test database::settings_repo::tests::test_get_all_settings ... ok
+test database::game_repo::tests::test_game_crud ... ok
+test services::app::tests::log_service_tests::test_read_last_n_lines ... ok
+test database::dashboard_repo::tests::test_game_distribution ... ok
+test services::app::tests::maintenance_service_tests::test_cleanup_old_empty_trash_entries ... ok
+test database::dashboard_repo::tests::test_negative_size_clamped ... ok
+test services::app::tests::log_service_tests::test_read_last_n_lines_missing_file ... ok
+test services::app::tests::log_service_tests::test_open_log_folder_service_creates_dir ... ok
+test services::config::pin_guard::tests::test_validate_pin_format ... ok
+test database::dedup_repo::tests::test_whitelist_pairs ... ok
+test services::explorer::helpers::tests::test_contains_filtered_keyword ... ok
+test services::explorer::helpers::tests::test_normalize_keywords ... ok
+test services::explorer::helpers::tests::test_analyze_mod_metadata_missing ... ok
+test services::explorer::classifier::tests::empty_dir_is_container ... ok
+test database::game_repo::tests::test_count_games ... ok
+test services::explorer::listing::tests::test_scan_fs_folders_empty ... ok
+test services::explorer::listing::tests::test_build_mod_folder_from_fs_entry ... ok
+test services::fs_utils::operation_lock::tests::test_lock_acquisition ... ok
+test services::fs_utils::operation_lock::tests::test_lock_release_on_drop ... ok
+test services::explorer::listing::tests::test_scan_fs_folders_with_mods ... ok
+test services::app::tests::app_service_tests::test_check_config_status_fresh ... ok
+test database::dedup_repo::tests::test_update_group_status ... FAILED
+test services::game::schema_loader::tests::test_default_schema_has_four_categories ... ok
+test database::dashboard_repo::tests::test_category_distribution ... ok
+test services::game::schema_loader::tests::test_load_schema_case_insensitive_game_type ... ok
+test database::game_repo::tests::test_get_mod_path ... ok
+test services::game::schema_loader::tests::test_normalize_game_type ... ok
+test services::game::schema_loader::tests::test_load_schema_corrupt_json_returns_default ... ok
+test services::game::schema_loader::tests::test_load_schema_missing_file_returns_default ... ok
+test database::object_repo::tests::test_object_crud ... ok
+test services::game::schema_loader::tests::test_load_schema_with_legacy_game_type ... ok
+test services::game::validator::tests::test_loader_priority ... ok
+test services::game::validator::tests::test_missing_d3dx_ini ... ok
+test services::game::validator::tests::test_missing_dll ... ok
+test services::game::validator::tests::test_nonexistent_path ... ok
+test services::game::validator::tests::test_missing_mods_folder ... ok
+test services::game::validator::tests::test_no_exe_found ... ok
+test services::game::validator::tests::test_mixed_separators ... ok
+test database::dashboard_repo::tests::test_zero_data_empty_db ... ok
+test database::settings_repo::tests::test_reset_all_data ... ok
+test services::game::validator::tests::test_unicode_path ... ok
+test services::game::validator::tests::test_scan_xxmi_partial ... ok
+test database::dashboard_repo::tests::test_recent_mods_limit ... ok
+test services::game::validator::tests::test_valid_instance_passes ... ok
+test database::mod_repo::tests::test_mod_repo_crud ... ok
+test services::ini::document::tests::test_list_ini_files_filters_non_ini_noise ... ok
+test services::game::schema_loader::tests::test_load_schema_valid_json_returns_parsed ... ok
+test services::app::tests::app_service_tests::test_check_config_status_has_config ... ok
+test database::dashboard_repo::tests::test_safe_mode_filter ... ok
+test services::ini::document::tests::test_read_ini_document_malformed_section_falls_back_to_raw_mode ... ok
+test database::dashboard_repo::tests::test_stats_accuracy ... ok
+test services::ini::document::tests::test_read_ini_document_detects_and_strips_bom_in_memory ... ok
+test services::game::schema_loader::tests::test_load_schema_empty_categories_returns_default ... ok
+test services::ini::document::tests::test_read_ini_document_parses_variable_lines ... ok
+test services::ini::write::tests::test_save_ini_rejects_raw_fallback_document ... ok
+test services::app::tests::app_service_tests::test_reset_database_service ... ok
+test services::ini::document::tests::test_read_ini_decodes_shift_jis_gracefully ... ok
+test services::ini::write::tests::test_save_ini_creates_bak_and_updates_only_target_line ... ok
+test services::ini::write::tests::test_save_ini_preserves_crlf_style ... ok
+test services::mods::archive::tests::test_format_detection ... ok
+test services::mods::archive::tests::test_unsupported_format ... ok
+test services::fs_utils::infra_tests::test_db_initialization ... ok
+test services::ini::write::tests::test_save_ini_preserves_bom_when_original_had_bom ... ok
+test services::mods::archive::tests::test_extract_corrupt_archive ... ok
+test services::mods::archive::tests::test_analyze_zip_single_root ... ok
+test services::mods::archive::tests::test_analyze_zip_archive ... ok
+test services::ini::document::tests::test_read_ini_document_detects_crlf_newline_style ... ok
+test services::ini::document::tests::test_read_ini_document_parses_keybinding_section ... ok
+test services::ini::document::tests::test_read_ini_aborts_over_2mb ... ok
+test services::app::tests::dashboard_tests::test_get_dashboard_payload_empty ... ok
+test services::app::tests::dashboard_tests::test_get_active_keybindings_service_with_ini ... ok
+test services::mods::info_json::tests::test_read_info_json_nonexistent ... ok
+test services::mods::info_json::tests::test_create_does_not_overwrite ... ok
+test services::mods::preview_image::tests::sanitize_object_name_fallbacks_to_mod ... ok
+test services::app::tests::maintenance_service_tests::test_run_maintenance ... FAILED
+test services::mods::info_json::tests::test_create_default_strips_disabled_prefix ... ok
+test services::mods::info_json::tests::test_create_default_info_json ... ok
+test services::mods::info_json::tests::test_read_info_json_with_empty_object ... ok
+test services::app::tests::dashboard_tests::test_get_dashboard_payload_populated ... ok
+test services::mods::info_json::tests::test_read_info_json_valid ... ok
+test services::mods::info_json::tests::test_read_info_json_malformed ... ok
+test services::mods::preview_image::tests::preview_filename_uses_first_available_suffix_gap ... ok
+test services::mods::trash::tests::test_move_to_trash_nonexistent ... ok
+test services::mods::archive::tests::test_extract_zip_basic ... ok
+test services::mods::preview_image::tests::clear_preview_images_removes_discovered_files ... ok
+test services::mods::trash::tests::test_empty_trash ... ok
+test services::mods::archive::tests::test_extract_zip_smart_flatten ... ok
+test services::objects::tests::query_tests::test_object_query_coverage ... ok
+test services::privacy::tests::test_privacy_service_coverage ... ok
+test services::mods::info_json::tests::test_update_creates_if_missing ... ok
+test services::mods::archive::tests::test_extract_duplicate_dest ... ok
+test services::mods::info_json::tests::test_update_info_json_merge ... ok
+test services::mods::trash::tests::test_move_to_trash_basic ... ok
+test services::mods::trash::tests::test_restore_conflict ... ok
+test services::images::thumbnail_cache::tests::test_get_thumbnail_generates_webp ... ok
+test services::mods::trash::tests::test_restore_context_mismatch ... ok
+test services::scanner::conflict::tests::test_empty_ini_file ... ok
+test services::scanner::core::normalizer::tests::test_is_disabled_folder ... ok
+test services::scanner::core::normalizer::tests::test_normalize_display_name ... ok
+test services::scanner::core::normalizer::tests::test_preprocess_text_basic ... ok
+test services::images::thumbnail_cache::tests::test_cache_hits_for_toggled_disabled_state ... ok
+test services::scanner::conflict::tests::test_ambiguous_hash_within_same_mod_is_not_a_conflict ... ok
+test services::scanner::conflict::tests::test_detect_conflict ... ok
+test services::scanner::core::normalizer::tests::test_preprocess_text_empty ... ok
+test services::scanner::core::normalizer::tests::test_preprocess_text_cjk ... ok
+test services::scanner::conflict::tests::test_multiple_conflicting_hashes_each_produce_a_conflict ... ok
+test services::mods::trash::tests::test_list_trash ... ok
+test services::scanner::core::normalizer::tests::test_preprocess_text_with_symbols ... ok
+test services::scanner::conflict::tests::test_duplicate_hash_merges_all_mod_paths ... ok
+test services::scanner::core::normalizer::tests::test_strip_noise_prefixes ... ok
+test services::scanner::core::normalizer::tests::test_sanitize_filename ... ok
+test services::mods::archive::tests::test_extract_zip_with_password ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_nonexistent_path ... ok
+test services::mods::trash::tests::test_restore_from_trash ... ok
+test services::scanner::conflict::tests::test_non_texture_override_section_ignored ... ok
+test services::scanner::conflict::tests::test_no_conflict_different_hashes ... ok
+test services::scanner::core::organizer::organizer_tests::test_organize_mod_no_match_keeps_folder_unmoved ... ok
+test services::scanner::core::organizer::organizer_tests::test_organize_mod_needs_review_keeps_folder_unmoved ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_preview_priority ... ok
+test services::scanner::core::types::tests::test_staged_labels_and_detail_are_deterministic ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_any_root_image ... ok
+test services::scanner::core::types::tests::test_staged_primary_candidate_is_status_aware ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_nested ... ok
+test services::scanner::conflict::tests::test_no_conflict_same_mod ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_no_image ... ok
+test services::objects::tests::mutate_tests::test_delete_object_empty ... ok
+test services::scanner::core::walker::tests::test_scan_mod_folders_nonexistent ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_prefers_preview_custom_over_preview ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_depth_three_nested_image ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_skips_extensionless_files ... ok
+test services::scanner::core::thumbnail::tests::test_list_preview_images_fallback_deep_scan ... ok
+test services::scanner::core::thumbnail::tests::test_find_thumbnail_image_extension_priority ... ok
+test services::scanner::core::walker::tests::test_scan_folder_content_zero_byte_ini ... ok
+test services::scanner::core::thumbnail::tests::test_list_preview_images_ordering ... ok
+test services::scanner::core::walker::tests::test_detect_archives ... ok
+test services::scanner::core::walker::tests::test_scan_mod_folders_basic ... ok
+test services::scanner::core::walker::tests::test_scan_folder_content ... ok
+test services::scanner::core::thumbnail::tests::test_list_preview_images_ignores_depth_over_three ... ok
+test services::scanner::core::walker::tests::test_scan_mod_folders_disabled_detection ... ok
+test services::objects::tests::mutate_tests::test_create_object_cmd_inner_conflict ... ok
+test services::objects::tests::mutate_tests::test_create_object_cmd_inner_success ... ok
+test services::objects::tests::mutate_tests::test_delete_object_with_mods ... ok
+test services::scanner::dedup::resolver::tests::test_tc_9_2_01_keep_a_moves_b_to_trash ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_di_9_02_blake3_hash_algorithm_is_used ... ok
+test services::scanner::dedup::resolver::tests::test_tc_9_2_02_ignore_persists_whitelist ... ok
+test services::scanner::deep_matcher::alias_resolution_tests::test_alias_resolution_conflict_traps ... ok
+test services::scanner::deep_matcher::alias_resolution_tests::test_alias_resolution_dirty_input_name ... ok
+test services::scanner::deep_matcher::analysis::ai_rerank::ai_rerank_tests::test_ai_rerank_cache_key_includes_signals_hash_and_db_version ... ok
+test services::scanner::deep_matcher::analysis::ai_rerank::ai_rerank_tests::test_ai_rerank_cache_reuses_cached_result_deterministically ... ok
+test services::scanner::deep_matcher::alias_resolution_tests::test_alias_resolution_stopword_parsing_strip ... ok
+test services::scanner::deep_matcher::analysis::ai_rerank::ai_rerank_tests::test_ai_rerank_config_default_is_disabled ... ok
+test services::scanner::deep_matcher::analysis::ai_rerank::ai_rerank_tests::test_ai_rerank_disabled_does_not_call_provider ... ok
+test services::scanner::deep_matcher::analysis::ai_rerank::ai_rerank_tests::test_ai_rerank_only_needs_review_path_can_invoke_provider ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_ec_9_02_same_name_different_content_stays_below_80 ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_ec_9_03_variants_in_same_modpack_are_ignored ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_di_9_01_whitelist_pair_is_filtered_out ... ok
+test services::objects::tests::mutate_tests::test_toggle_pin_object ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_decode_nonexistent_file ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_tc_9_1_01_exact_hash_duplicate_has_100_confidence ... ok
+test services::objects::tests::mutate_tests::test_update_object ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_empty_text ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_hash_16hex_tail ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_hash_no_space ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_hash_uppercase ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_hash_with_0x_prefix ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_ignores_invalid_hash ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_ignores_non_hash_keys ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_multiple_hashes ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_plain_hash ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_decode_empty_ini ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_normalize_hash_lowercase ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_normalize_hash_rejects_invalid_length ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_normalize_hash_rejects_non_hex ... ok
+test commands::mods::preview_cmds::tests::details_command_write_respects_operation_lock ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_normalize_hash_strips_0x ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_normalize_hash_takes_last_8_of_16 ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_structural_tokenization_applies_blacklist_and_schema_whitelist ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_structural_tokenization_extracts_section_key_and_path_buckets ... ok
+test services::scanner::deep_matcher::analysis::gamebanana::tests::test_game_enum_resolution ... ok
+test services::scanner::deep_matcher::analysis::indexes::tests::test_index_build_empty_db_safe ... ok
+test services::scanner::deep_matcher::analysis::indexes::tests::test_index_build_is_deterministic ... ok
+test services::scanner::deep_matcher::analysis::mechanical_rerank::tests::test_gb_category_mismatch_penalty ... ok
+test services::scanner::deep_matcher::analysis::mechanical_rerank::tests::test_gb_description_keywords_bonus ... ok
+test services::scanner::deep_matcher::analysis::mechanical_rerank::tests::test_gb_exact_mod_name_bonus ... ok
+test services::scanner::deep_matcher::analysis::scoring::tests::test_direct_name_support_only_is_not_primary_evidence ... ok
+test services::scanner::deep_matcher::analysis::gamebanana::tests::test_detect_gamebanana_ids_from_text ... ok
+test services::scanner::deep_matcher::analysis::scoring::tests::test_score_clamped_reason_capped_and_evidence_capped_deterministically ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_decode_fallback_lossy ... ok
+test services::scanner::dedup::resolver::tests::test_nc_9_2_01_file_locked_graceful_skip ... ok
+test services::scanner::dedup::resolver::tests::test_tc_9_2_01_keep_b_moves_a_to_trash ... ok
+test services::scanner::deep_matcher::golden_corpus::tests::test_golden_direct_name_only_no_auto ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_collect_deep_signals_quick_budget_enforces_two_root_ini_sorted ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_decode_utf16le_with_bom ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_decode_utf8_ini ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_extract_from_decoded_utf8 ... ok
+test services::scanner::deep_matcher::golden_corpus::tests::test_golden_mismatch_detection_no_match_expected_auto - should panic ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_result_tests::test_review_result_assembles_deterministic_best_topk_and_evidence ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_result_tests::test_summary_text_is_deterministic_for_auto_review_and_no_match ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_tests::test_negative_evidence_penalty_mixed_signal_forces_review ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_tests::test_object_type_mismatch_penalty_applies_when_context_exists ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_tests::test_pack_multi_entity_primary_evidence_forces_review_even_with_margin_pass ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_tests::test_score_and_margin_pass_but_primary_evidence_gate_blocks_auto_match ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_tests::test_ultra_close_top2_with_primary_evidence_forces_review ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_tests::test_ultra_close_under_half_forces_review_even_without_top2_primary ... ok
+test services::scanner::deep_matcher::models::acceptance::acceptance_result_tests::test_review_evidence_caps_are_deterministic_in_final_result ... ok
+test services::scanner::deep_matcher::golden_corpus::tests::test_golden_deep_scan_fallback_no_hash ... ok
+test services::scanner::deep_matcher::golden_corpus::tests::test_golden_mismatch_detection_status - should panic ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_deduper_ignores_symlinks ... ok
+test services::scanner::deep_matcher::golden_corpus::tests::test_golden_no_match_insufficient_signals ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_3_folder_rescue_exact ... ok
+test services::scanner::deep_matcher::pipeline::full_pipeline::full_pipeline_tests::test_full_pipeline_has_no_fuzzy_fallback_for_near_name_only ... ok
+test services::scanner::deep_matcher::golden_corpus::tests::test_golden_unique_hash_auto_match ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_2_prefix_numbers_ayaka ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_5_folder_rescue_last_resort ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_4_different_character_ini ... ok
+test services::scanner::deep_matcher::pipeline::stages::tests::test_replenish_candidates_when_below_min_pool ... ok
+test services::scanner::deep_matcher::pipeline::stages::tests::test_seed_candidates_empty_signals_safe ... ok
+test services::scanner::deep_matcher::pipeline::stages::tests::test_seed_candidates_rarity_first_with_seed_cap ... ok
+test services::scanner::deep_matcher::required_tests::test_ai_disabled_by_default_in_config ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_1_ayaka_ini_substring ... ok
+test services::scanner::deep_matcher::pipeline::quick_pipeline::quick_pipeline_tests::test_quick_direct_name_support_only_does_not_auto_match ... ok
+test services::scanner::deep_matcher::pipeline::full_pipeline::full_pipeline_tests::test_full_alias_recheck_rescues_match_after_deep_ini_collection ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_tc_9_1_03_name_size_match_disabled_prefix_normalization ... ok
+test services::scanner::deep_matcher::required_tests::test_hash_normalization_via_extraction ... ok
+test services::scanner::deep_matcher::required_tests::test_margin_not_met_forces_needs_review ... ok
+test services::scanner::deep_matcher::required_tests::test_negative_evidence_penalty_reduces_score_on_mixed_signals ... ok
+test services::scanner::deep_matcher::required_tests::test_ultra_close_margin_forces_review_with_primary_evidence ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_7_skipword_stripping ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_8_cross_word_boundary ... ok
+test services::scanner::deep_matcher::pipeline::name_rescue::name_rescue_tests::test_case_6_short_term_rejection ... ok
+test services::scanner::deep_matcher::pipeline::quick_pipeline::quick_pipeline_tests::test_quick_pipeline_has_no_fuzzy_fallback_for_near_name_only ... ok
+test services::scanner::deep_matcher::analysis::content::tests::test_collect_deep_signals_full_budget_caps_total_bytes ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_tc_9_1_02_structure_match_confidence_70_to_90 ... ok
+test services::scanner::watcher::tests::test_watcher_nonexistent_path ... ok
+test services::scanner::deep_matcher::pipeline::quick_pipeline::quick_pipeline_tests::test_quick_hash_stage_accepts_early_with_unique_hash ... ok
+test services::scanner::deep_matcher::required_tests::test_alias_recheck_after_deep_scan_rescues_match ... ok
+test services::scanner::deep_matcher::required_tests::test_direct_name_support_only_never_auto_matches ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_tc_9_3_02_cancel_scan_leaves_db_unchanged ... ok
+test services::scanner::sync::sync_tests::test_commit_rolls_back_on_failure ... ok
+test services::scanner::sync::sync_tests::test_commit_scan_results_non_auto_links_to_other ... ok
+test services::scanner::deep_matcher::required_tests::test_deep_scan_primary_fallback_no_hashes_can_automatch ... ok
+test services::scanner::sync::sync_tests::test_commit_garbage_collects_ghost_objects ... ok
+test types::tests::test_command_error_from_sqlx ... ok
+test types::tests::test_command_error_serialization ... ok
+test services::scanner::sync::sync_tests::test_ensure_object_case_insensitive_merge ... ok
+test services::scanner::sync::sync_tests::test_scan_preview_needs_review_has_no_auto_assignment ... ok
+test services::update::tests::test_fetch_asset_if_missing_already_cached ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group ... ok
+test services::scanner::sync::sync_tests::test_commit_creates_new_mods_and_objects_safely ... ok
+test services::scanner::deep_matcher::pipeline::full_pipeline::full_pipeline_tests::test_full_budget_overflow_keeps_partial_signals_and_continues_matching ... ok
+test services::scanner::dedup::scanner::dedup_scanner_tests::test_ec_9_05_cancel_mid_hash_stops_cleanly ... ok
+test services::images::thumbnail_cache::tests::test_resolve_large_8k_image_without_blocking ... ok
+test services::scanner::dedup::resolver::tests::test_tc_9_2_03_bulk_resolution_with_progress_events ... ok
+test services::update::tests::test_check_and_sync_metadata_graceful_handling ... ok
+test services::scanner::watcher::tests::test_watcher_detects_file_creation ... ok
+test services::fs_utils::operation_lock::tests::test_lock_contention ... ok
+test services::scanner::dedup::resolver::tests::test_nc_9_2_03_lock_contention_returns_clear_error ... ok
+test services::scanner::watcher::tests::test_watcher_suppression ... ok
+test services::config::pin_guard::tests::test_verify_success_resets_attempts ... ok
+test services::scanner::deep_matcher::analysis::gamebanana::tests::test_live_api_fetch_and_validate ... ok
+test services::config::pin_guard::tests::test_lockout_on_max_attempts ... ok
+test services::mods::preview_image::tests::save_preview_image_resizes_to_epic_limits_and_writes_webp ... ok
+
+failures:
+
+---- database::dedup_repo::tests::test_update_group_status stdout ----
+
+thread 'database::dedup_repo::tests::test_update_group_status' (36528) panicked at src\database\tests\dedup_repo_test.rs:67:10:
+called `Result::unwrap()` on an `Err` value: Database(SqliteError { code: 275, message: "CHECK constraint failed: status IN ('in_progress', 'completed', 'cancelled')" })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- services::app::tests::maintenance_service_tests::test_run_maintenance stdout ----
+
+thread 'services::app::tests::maintenance_service_tests::test_run_maintenance' (12432) panicked at src\services\app\tests\maintenance_service_tests.rs:20:58:
+called `Result::unwrap()` on an `Err` value: "Failed to fetch thumbnails: error returned from database: (code: 1) no such column: thumbnail_path"
+
+
+failures:
+    database::dedup_repo::tests::test_update_group_status
+    services::app::tests::maintenance_service_tests::test_run_maintenance
+
+test result: FAILED. 339 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.69s
+
+error: test failed, to rerun pass `--lib`

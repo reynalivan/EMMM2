@@ -1,6 +1,6 @@
 //! Commands related to archive detection and extraction.
 
-use crate::services::mod_files::archive::{self, ArchiveAnalysis, ExtractionResult};
+use crate::services::mods::archive::{self, ArchiveAnalysis, ExtractionResult};
 use crate::services::scanner::core::walker::{self, ArchiveInfo};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
@@ -45,3 +45,7 @@ pub async fn analyze_archive_cmd(archive_path: String) -> Result<ArchiveAnalysis
     let path = Path::new(&archive_path);
     archive::analyze_archive(path)
 }
+
+#[cfg(test)]
+#[path = "tests/archive_cmds_tests.rs"]
+mod tests;

@@ -1,4 +1,5 @@
-use crate::services::core::operation_lock::OperationLock;
+use crate::services::fs_utils::operation_lock::OperationLock;
+
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use regex::Regex;
 use serde::Serialize;
@@ -55,35 +56,7 @@ pub async fn reveal_object_in_explorer(
 }
 
 async fn resolve_and_heal_db_path(pool: &sqlx::SqlitePool, object_id: &str) -> Option<String> {
-    use sqlx::Row;
-
-    let row = sqlx::query("SELECT id, folder_path FROM mods WHERE object_id = ? LIMIT 1")
-        .bind(object_id)
-        .fetch_optional(pool)
-        .await
-        .ok()??;
-
-    let mod_id: String = row.try_get("id").ok()?;
-    let folder_path: String = row.try_get("folder_path").ok()?;
-    let path = Path::new(&folder_path);
-
-    if path.exists() {
-        return Some(folder_path);
-    }
-
-    // Since the filesystem is the source of truth, if the folder path in the DB
-    // doesn't exist, we just log it and delete the stale row.
-    let _ = sqlx::query("DELETE FROM mods WHERE id = ?")
-        .bind(&mod_id)
-        .execute(pool)
-        .await;
-
-    log::warn!(
-        "Deleted stale mod {} (folder gone): {}",
-        mod_id,
-        folder_path
-    );
-    None
+    crate::services::mods::stale_mod_service::resolve_mod_path_for_object(pool, object_id).await
 }
 
 fn find_fallback_path(mods_path: &str, object_name: &str) -> Result<String, String> {
@@ -127,42 +100,15 @@ pub async fn toggle_mod(
     enable: bool,
     game_id: String,
 ) -> Result<String, String> {
-    let _lock = op_lock.acquire().await?;
-
-    // 1. Get the base mods_path for the active game to compute relative paths
-    let mods_path: String = sqlx::query_scalar("SELECT mod_path FROM games WHERE id = ?")
-        .bind(&game_id)
-        .fetch_one(&*pool)
-        .await
-        .map_err(|e| format!("Failed to fetch game mods path: {}", e))?;
-
-    let base = Path::new(&mods_path);
-
-    let new_absolute_path = toggle_mod_inner(&state, path.clone(), enable).await?;
-    let new_status = if enable { "ENABLED" } else { "DISABLED" };
-
-    // 2. Compute relative paths because the DB stores relative paths (e.g. "Acheron\ModName")
-    let new_rel = Path::new(&new_absolute_path)
-        .strip_prefix(base)
-        .unwrap_or(Path::new(&new_absolute_path))
-        .to_string_lossy()
-        .to_string();
-
-    let old_rel = Path::new(&path)
-        .strip_prefix(base)
-        .unwrap_or(Path::new(&path))
-        .to_string_lossy()
-        .to_string();
-
-    let _ = sqlx::query("UPDATE mods SET folder_path = ?, status = ? WHERE folder_path = ? AND game_id = ?")
-        .bind(&new_rel)
-        .bind(new_status)
-        .bind(&old_rel)
-        .bind(&game_id)
-        .execute(&*pool)
-        .await;
-
-    Ok(new_absolute_path)
+    crate::services::mods::core_ops::toggle_mod_inner_service(
+        pool.inner(),
+        &state,
+        &op_lock,
+        path,
+        enable,
+        &game_id,
+    )
+    .await
 }
 
 pub async fn toggle_mod_inner(
@@ -185,16 +131,30 @@ pub async fn toggle_mod_inner(
 
     let new_path = parent.join(&new_name);
 
-    {
-        let _guard = SuppressionGuard::new(&state.suppressor);
-        fs::rename(src, &new_path).map_err(|e| format!("Failed to rename mod folder: {e}"))?;
+    // Guard: target already exists → rename collision (both X and DISABLED X on disk)
+    if new_path.exists() {
+        let base = crate::services::scanner::core::normalizer::normalize_display_name(&old_name);
+        return Err(format!(
+            r#"{{"type":"RenameConflict","attempted_target":"{}","existing_path":"{}","base_name":"{}"}}"#,
+            new_path
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\""),
+            new_path
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\""),
+            base.replace('"', "\\\""),
+        ));
     }
 
-    log::info!(
-        "Toggled mod: '{}' -> '{}'",
-        old_name,
-        new_path.display()
-    );
+    {
+        let _guard = SuppressionGuard::new(&state.suppressor);
+        crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path)
+            .map_err(|e| format!("Failed to rename mod folder: {e}"))?;
+    }
+
+    log::info!("Toggled mod: '{}' -> '{}'", old_name, new_path.display());
 
     Ok(new_path.to_string_lossy().to_string())
 }
@@ -215,38 +175,15 @@ pub async fn rename_mod_folder(
     new_name: String,
     game_id: String,
 ) -> Result<RenameResult, String> {
-    let _lock = op_lock.acquire().await?;
-
-    let mods_path: String = sqlx::query_scalar("SELECT mod_path FROM games WHERE id = ?")
-        .bind(&game_id)
-        .fetch_one(&*pool)
-        .await
-        .map_err(|e| format!("Failed to fetch game mods path: {}", e))?;
-    let base = Path::new(&mods_path);
-
-    let result = rename_mod_folder_inner(&state, folder_path.clone(), new_name).await?;
-
-    let new_rel = Path::new(&result.new_path)
-        .strip_prefix(base)
-        .unwrap_or(Path::new(&result.new_path))
-        .to_string_lossy()
-        .to_string();
-
-    let old_rel = Path::new(&folder_path)
-        .strip_prefix(base)
-        .unwrap_or(Path::new(&folder_path))
-        .to_string_lossy()
-        .to_string();
-
-    // Sync DB: update mods.folder_path to match new FS path
-    let _ = sqlx::query("UPDATE mods SET folder_path = ? WHERE folder_path = ? AND game_id = ?")
-        .bind(&new_rel)
-        .bind(&old_rel)
-        .bind(&game_id)
-        .execute(&*pool)
-        .await;
-
-    Ok(result)
+    crate::services::mods::core_ops::rename_mod_folder_inner_service(
+        pool.inner(),
+        &state,
+        &op_lock,
+        folder_path.clone(),
+        new_name.clone(),
+        &game_id,
+    )
+    .await
 }
 
 pub async fn rename_mod_folder_inner(
@@ -270,11 +207,12 @@ pub async fn rename_mod_folder_inner(
         .to_string_lossy()
         .to_string();
 
-    let new_folder_name = if old_folder_name.starts_with(crate::DISABLED_PREFIX) {
-        format!("{}{}", crate::DISABLED_PREFIX, new_name)
-    } else {
-        new_name.clone()
-    };
+    let new_folder_name =
+        if crate::services::scanner::core::normalizer::is_disabled_folder(&old_folder_name) {
+            format!("{}{}", crate::DISABLED_PREFIX, new_name)
+        } else {
+            new_name.clone()
+        };
 
     let new_path = parent.join(&new_folder_name);
     if new_path.exists() {
@@ -286,7 +224,8 @@ pub async fn rename_mod_folder_inner(
 
     {
         let _guard = SuppressionGuard::new(&state.suppressor);
-        fs::rename(path, &new_path).map_err(|e| format!("Failed to rename folder: {e}"))?;
+        crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path)
+            .map_err(|e| format!("Failed to rename folder: {e}"))?;
     }
 
     update_info_json_name(&new_path, &new_name);
@@ -301,7 +240,7 @@ pub async fn rename_mod_folder_inner(
 }
 
 fn update_info_json_name(folder_path: &Path, new_name: &str) {
-    use crate::services::mod_files::info_json;
+    use crate::services::mods::info_json;
     if folder_path.join("info.json").exists() {
         let update = info_json::ModInfoUpdate {
             actual_name: Some(new_name.to_string()),

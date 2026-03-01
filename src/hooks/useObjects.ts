@@ -13,7 +13,7 @@ import {
   updateObject,
   deleteObject,
   createObject,
-} from '../services/objectService';
+} from '../lib/services/objectService';
 import type {
   ObjectSummary,
   ObjectFilter,

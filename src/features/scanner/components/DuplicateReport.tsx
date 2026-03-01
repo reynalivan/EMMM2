@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
-import { useDedupReport, useResolveDuplicates } from '../../../hooks/useDedup';
+import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
 import type { ResolutionAction, ResolutionRequest } from '../../../types/dedup';
 import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';

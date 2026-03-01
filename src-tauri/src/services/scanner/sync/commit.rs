@@ -1,4 +1,4 @@
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -6,6 +6,7 @@ use super::helpers::{ensure_game_exists, ensure_object_exists, generate_stable_i
 use super::types::{ConfirmedScanItem, SyncResult};
 
 /// Phase 2: Commit user-confirmed scan results to DB.
+#[allow(clippy::too_many_arguments)]
 pub async fn commit_scan_results(
     pool: &SqlitePool,
     game_id: &str,
@@ -38,29 +39,33 @@ pub async fn commit_scan_results(
         if item.move_from_temp {
             let obj_name = item.matched_object.as_deref().unwrap_or("Uncategorized");
             let source_path = Path::new(&item.folder_path);
-            match source_path.file_name() {
-                Some(folder_name) => {
-                    let target_dir = Path::new(mods_path).join(obj_name);
-                    let target_path = target_dir.join(folder_name);
+            if let Some(folder_name) = source_path.file_name() {
+                let target_dir = Path::new(mods_path).join(obj_name);
+                let target_path = target_dir.join(folder_name);
 
-                    if source_path.exists() {
-                        if !target_dir.exists() {
-                            let _ = std::fs::create_dir_all(&target_dir);
-                        }
-
-                        // Check collision
-                        if target_path.exists() {
-                            return Err(format!("DUPLICATE|{}", target_path.to_string_lossy()));
-                        }
-
-                        if let Err(e) = std::fs::rename(source_path, &target_path) {
-                            return Err(format!("Failed to move temp folder: {}", e));
-                        } else {
-                            actual_folder_path = target_path.to_string_lossy().into_owned();
-                        }
+                if source_path.exists() {
+                    if !target_dir.exists() {
+                        let _ = std::fs::create_dir_all(&target_dir);
                     }
+
+                    // Check collision
+                    if target_path.exists() {
+                        return Err(format!("DUPLICATE|{}", target_path.to_string_lossy()));
+                    }
+
+                    if let Err(e) = std::fs::rename(source_path, &target_path) {
+                        return Err(format!("Failed to move temp folder: {}", e));
+                    } else {
+                        actual_folder_path = target_path.to_string_lossy().into_owned();
+                    }
+                } else {
+                    return Err(format!(
+                        "Source path does not exist: {}",
+                        source_path.display()
+                    ));
                 }
-                _ => (),
+            } else {
+                return Err("Invalid folder path for move_from_temp".to_string());
             }
         }
 
@@ -70,23 +75,17 @@ pub async fn commit_scan_results(
             "ENABLED"
         };
 
-        let existing = sqlx::query(
-            "SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?",
+        let existing = crate::database::mod_repo::get_mod_id_and_status_by_path(
+            &mut *tx,
+            &actual_folder_path,
+            game_id,
         )
-        .bind(&actual_folder_path)
-        .bind(game_id)
-        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
-        let mod_id = if let Some(row) = existing {
-            let id: String = row.try_get("id").map_err(|e| e.to_string())?;
-            let db_status: String = row.try_get("status").map_err(|e| e.to_string())?;
+        let mod_id = if let Some((id, _, db_status)) = existing {
             if db_status != current_status {
-                sqlx::query("UPDATE mods SET status = ? WHERE id = ?")
-                    .bind(current_status)
-                    .bind(&id)
-                    .execute(&mut *tx)
+                crate::database::mod_repo::update_mod_status_tx(&mut *tx, &id, current_status)
                     .await
                     .map_err(|e| e.to_string())?;
                 updated_mods_count += 1;
@@ -95,17 +94,16 @@ pub async fn commit_scan_results(
         } else {
             let id = generate_stable_id(game_id, &actual_folder_path);
             let object_type = item.object_type.as_deref().unwrap_or("Other");
-            sqlx::query(
-                "INSERT INTO mods (id, game_id, actual_name, folder_path, status, object_type, is_favorite) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            crate::database::mod_repo::insert_mod_tx(
+                &mut *tx,
+                &id,
+                game_id,
+                &item.display_name,
+                &actual_folder_path,
+                current_status,
+                object_type,
+                false,
             )
-            .bind(&id)
-            .bind(game_id)
-            .bind(&item.display_name)
-            .bind(&actual_folder_path)
-            .bind(current_status)
-            .bind(object_type)
-            .bind(false)
-            .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
             new_mods_count += 1;
@@ -129,10 +127,8 @@ pub async fn commit_scan_results(
                 .to_string_lossy()
                 .into_owned();
             // Strip DISABLED prefix so we never create "DISABLED xyz" objects
-            let clean_name = folder_name
-                .strip_prefix(crate::DISABLED_PREFIX)
-                .unwrap_or(&folder_name)
-                .to_string();
+            let clean_name =
+                crate::services::scanner::core::normalizer::normalize_display_name(&folder_name);
             (clean_name, None, "[]", "{}")
         };
 
@@ -176,13 +172,11 @@ pub async fn commit_scan_results(
         )
         .await?;
 
-        sqlx::query("UPDATE mods SET object_id = ?, object_type = ? WHERE id = ?")
-            .bind(&object_id)
-            .bind(obj_type)
-            .bind(&mod_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+        crate::database::mod_repo::update_mod_object_id_and_type_tx(
+            &mut *tx, &mod_id, &object_id, obj_type,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         // Handle auto-classification
         let folder_name_lower = item.display_name.to_lowercase();
@@ -195,18 +189,16 @@ pub async fn commit_scan_results(
         }
 
         if !is_safe {
-            sqlx::query("UPDATE objects SET is_safe = 0 WHERE id = ?")
-                .bind(&object_id)
-                .execute(&mut *tx)
+            crate::database::object_repo::update_object_is_safe_tx(&mut *tx, &object_id, false)
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let update = crate::services::mod_files::info_json::ModInfoUpdate {
+            let update = crate::services::mods::info_json::ModInfoUpdate {
                 is_safe: Some(false),
                 ..Default::default()
             };
             let path = std::path::Path::new(&actual_folder_path);
-            let _ = crate::services::mod_files::info_json::update_info_json(path, &update);
+            let _ = crate::services::mods::info_json::update_info_json(path, &update);
         }
     }
 
@@ -215,24 +207,12 @@ pub async fn commit_scan_results(
     // Garbage Collector: Delete empty "Ghost" objects left behind after their mod is re-assigned
     // folder_path is an absolute path, so we use LIKE to match the folder basename
     // Also matches DISABLED-prefixed folders (e.g. object "hanya" matches folder "DISABLED hanya")
-    sqlx::query(
-        "DELETE FROM objects
-         WHERE game_id = $1
-           AND NOT EXISTS (SELECT 1 FROM mods WHERE object_id = objects.id)
-           AND EXISTS (
-             SELECT 1 FROM mods
-             WHERE (
-               folder_path LIKE '%/' || objects.name
-               OR folder_path LIKE '%\\' || objects.name
-               OR folder_path LIKE '%/DISABLED ' || objects.name
-               OR folder_path LIKE '%\\DISABLED ' || objects.name
-             ) AND game_id = $1
-           )",
-    )
-    .bind(game_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("Failed to clean ghost objects: {}", e))?;
+    // Garbage Collector: Delete empty "Ghost" objects
+    // Only delete objects that have NO associated mods.
+    // The previous logic incorrectly required a mod with a matching folder name to exist elsewhere.
+    crate::database::object_repo::delete_ghost_objects_gc(&mut *tx, game_id)
+        .await
+        .map_err(|e| format!("Failed to clean ghost objects: {}", e))?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
@@ -256,20 +236,14 @@ async fn handle_deletions(
     game_id: &str,
     processed_paths: &HashSet<String>,
 ) -> Result<usize, String> {
-    let all_mods = sqlx::query("SELECT id, folder_path FROM mods WHERE game_id = ?")
-        .bind(game_id)
-        .fetch_all(&mut **tx)
+    let all_mods = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut **tx, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
     let mut deleted_mods_count = 0;
-    for row in all_mods {
-        let fp: String = row.try_get("folder_path").map_err(|e| e.to_string())?;
+    for (id, fp) in all_mods {
         if !processed_paths.contains(&fp) && !Path::new(&fp).exists() {
-            let id: String = row.try_get("id").map_err(|e| e.to_string())?;
-            sqlx::query("DELETE FROM mods WHERE id = ?")
-                .bind(&id)
-                .execute(&mut **tx)
+            crate::database::mod_repo::delete_mod_tx(&mut **tx, &id)
                 .await
                 .map_err(|e| e.to_string())?;
             deleted_mods_count += 1;

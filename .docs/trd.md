@@ -16,7 +16,7 @@ This application uses a _hybrid_ architecture that combines _native_ execution s
 | **Backend**    | **Rust**       | Stable  | Memory safety, high _concurrency_ for I/O, fastest hashing. |
 | **Frontend**   | **React**      | v19+    | The most mature UI library with a broad ecosystem.          |
 | **Language**   | **TypeScript** | v5+     | Type safety to prevent bugs on the frontend.                |
-| **Database**   | **SQLite**     | v3+     | Structured relational local storage.                        |
+| **Database**   | **SQLite**     | v3+     | Structured relational local storage (SQLx).                 |
 | **Build Tool** | **Vite**       | Latest  | Instant HMR and build optimization.                         |
 
 ### 1.2 Library & Dependencies (Production Grade)
@@ -26,342 +26,175 @@ This application uses a _hybrid_ architecture that combines _native_ execution s
 - **Styling:** **daisyUI 5** + **Tailwind CSS 4** (Theming & Layout).
 - **State Management:** **Zustand** (Global App State: Safe Mode, Active Game).
 - **Async State:** **TanStack Query** (Caching layer between Rust & React).
-- **Virtualization:** **TanStack Virtual** (**CRITICAL**: Render 10k+ rows @ 60fps).
-- **Data Grid:** **TanStack Table** (Headless UI for report tables & settings).
+- **Virtualization:** **@tanstack/react-virtual** (**CRITICAL**: Render 10k+ rows @ 60fps).
+- **Data Grid:** **TanStack Table** (Headless UI for report tables).
 - **Forms:** **React Hook Form** + **Zod** (Metadata & settings input validation).
-- **Charts:** **Recharts** (Dashboard statistics visualization).
+- **Drag & Drop:** **dnd-kit** (For UI reordering and category changes).
 - **Icons:** **Lucide React** (Vector icons).
+- **Animations:** **Framer Motion** (Micro-animations and layout transitions).
 
 #### **Backend (Core Logic - Rust Crates)**
 
 - **Database:** **`sqlx`** (Async SQLite with compile-time query verification).
 - **Async Runtime:** **`tokio`** (For non-blocking I/O operations).
 - **File Watcher:** **`notify`** v7 (Real-time file monitoring with `RecommendedWatcher`).
-- **Serialization:** **`serde`** + **`serde_json`** (Parsing JSON config).
-- **Archive:** **`zip`** v2 (ZIP), **`sevenz-rust`** v0.6 (7z), **`rar`** v0.4 (RAR). All pure Rust, no C deps. Password-protected archives supported via `aes-crypto` (zip) and `aes256` (sevenz-rust) features.
-- **Image Proc:** **`image`** (Resize & Convert to WebP).
-- **Hashing:** **`blake3`** (Super-fast content hashing for duplicate detection).
-- **System Ops:** Custom soft-delete to `./app_data/trash/` with metadata-based restore (no `trash` crate).
-- **Single Instance:** **`single_instance`** via Tauri plugin (prevent multiple app windows).
-- **HTTP Client:** **`reqwest`** (For metadata updates & AI API).
-- **Logging:** **`log`** + **`tauri-plugin-log`**.
+- **Archive:** **`zip`** v2, **`sevenz-rust`** v0.6, **`rar`** v0.4. password-protected archives supported.
+- **Image Proc:** **`image`** (Resize & Convert to WebP thumbnails).
+- **Hashing:** **`blake3`** (Super-fast content hashing for deduplication).
+- **System Ops:** Custom soft-delete to `./app_data/trash/` (Safe Trash System).
+- **Plugins:** `tauri-plugin-single-instance`, `tauri-plugin-dialog`, `tauri-plugin-fs`, `tauri-plugin-log`.
+- **Security:** **`keyring`** (OS Keychain for API Keys).
 
 ---
 
-### 1.3 Testing Strategy (Quality Assurance)
+## 2. Global Architectural Principles
 
-The testing standard follows the TDD (_Test Driven Development_) approach to ensure stability at every layer.
+EMMM2 is governed by **42 detailed Requirement Specifications** (`req-*.md`). All development must adhere to the following absolute truths:
 
-| Layer        | Type               | Tool                      | Focus                                                                   |
-| :----------- | :----------------- | :------------------------ | :---------------------------------------------------------------------- |
-| **Backend**  | Unit & Integration | **`cargo test`**          | Core Rust logic (Scanner, Parser, Hashing).                             |
-| **Backend**  | Async Logic        | **`tokio::test`**         | Testing async I/O functions and Command handlers.                       |
-| **Database** | Integration        | **`sqlx::test`**          | SQL query verification with a temporary in-memory database.             |
-| **Frontend** | Unit & Component   | **Vitest**                | Fast testing framework replacing Jest (Native Vite support).            |
-| **Frontend** | User Interaction   | **React Testing Library** | Simulating user clicks/inputs on UI components.                         |
-| **System**   | End-to-End (E2E)   | **Playwright**            | Simulating full flow (Install -> Launch -> Modding) on the Desktop app. |
+### 2.1 The Filesystem is the Source of Truth
 
----
+- The database is merely a high-speed **Index Cache**.
+- A mod is `DISABLED` if and only if its physical folder name starts with the `DISABLED ` prefix (with a trailing space).
+- If the database desyncs from the filesystem, the filesystem wins.
 
-## 2. Database Schema Design (SQLite)
+### 2.2 Atomic Operations & Concurrency Safety
 
-The database serves as an _Index Cache_. The UI does not read physical folders directly; instead, it reads this table.
+- Destructive file operations (Toggle, Rename, Import, Delete, Safe Mode Switch) must be guarded.
+- Operations on multiple items (Bulk Toggle, Collections Apply) must be transactional: all succeed or all rollback.
+- Global `OperationLock` using `tokio::sync::Mutex<()>` prevents race conditions during heavy I/O.
 
-### 2.1 Table: `games` (Configuration)
+### 2.3 The Hybrid State Model & Watchdog
 
-Stores game instance configurations.
+- `notify` crate monitors `/Mods` for external user changes (Explorer).
+- In-app operations suppress the File Watcher to avoid infinite feedback loops.
+- All operations update the UI optimistically before the Rust backend completes the I/O.
 
-```sql
-CREATE TABLE games (
-    id TEXT PRIMARY KEY,              -- UUID v4
-    name TEXT NOT NULL,               -- e.g., "Genshin Impact"
-    game_type TEXT NOT NULL,          -- Enum: GIMI, SRMI, WWMI
-    path TEXT NOT NULL,               -- Absolute path to /Mods
-    launcher_path TEXT,               -- Path to 3DMigoto Loader
-    launch_args TEXT,                 -- Custom arguments
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+### 2.4 Maximum Frontend Alignment (Rust Offloading)
 
-### 2.2 Table: `mods` (Main Index)
-
-Stores the state and metadata of each mod folder.
-
-```sql
-CREATE TABLE mods (
-    id TEXT PRIMARY KEY,              -- blake3 hash of the relative path (Stable ID)
-    game_id TEXT NOT NULL,            -- FK -> games.id
-    actual_name TEXT NOT NULL,        -- Clean name (without DISABLED prefix)
-    folder_path TEXT NOT NULL,        -- Physical absolute path
-    status TEXT DEFAULT 'DISABLED',   -- 'ENABLED' | 'DISABLED'
-    is_pinned BOOLEAN DEFAULT 0,      -- Pin feature
-    is_safe BOOLEAN DEFAULT 0,        -- Safe Mode feature
-    last_status_active BOOLEAN,       -- State snapshot for Safe Mode toggle
-    size_bytes INTEGER,               -- Folder size (for Duplicate Scan)
-    object_type TEXT,                 -- 'Character', 'Weapon', 'UI'
-    metadata_blob JSON,               -- Full info.json cache
-    FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
-);
-```
-
-### 2.3 Table: `collections` & `collection_items` (Presets)
-
-Stores Virtual Collections data.
-
-```sql
-CREATE TABLE collections (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    game_id TEXT NOT NULL,
-    is_safe_context BOOLEAN DEFAULT 0,  -- SFW/NSFW context filtering
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE collection_items (
-    collection_id TEXT NOT NULL,
-    mod_id TEXT NOT NULL,
-    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-    FOREIGN KEY(mod_id) REFERENCES mods(id) ON DELETE CASCADE
-);
-```
+- **Decoupled Business Logic**: React runs exclusively as a Presentation and Remote Cache layer.
+- **Heavy Compute**: Intensive Client-Side operations (e.g., Dynamic Programming-based fuzzy matching in `useMasterDbSync.ts`) MUST be offloaded to Rust `tauri::command`s. Block the UI thread as little as possible.
+- **Data Access Layer**: Rust backend must strictly separate DB concerns (Repositories) from Business Logic (Services) to guarantee isolated Schema & Query Optimization.
 
 ---
 
-## 3. Core Functional Logic (Backend Requirements)
+## 3. Core Domain Models (Database Schema Overview)
 
-### 3.1 Advanced Logging System (Log Rotation)
+> Detailed schema specs reside in `req-09-object-schema.md` and `req-10-object-crud.md`.
 
-The logging system must be _robust_ for debugging on the user side without filling up the disk.
+### 3.1 `games` (Game Instances)
 
-- **Plugin:** `tauri-plugin-log`.
-- **Config:**
-  - **Rotation:** Keep the last 5 files.
-  - **Max Size:** 2MB per file.
-  - **Path:** `%AppData%/EMMM2/logs/`.
-  - **Format:** `[TIMESTAMP] [LEVEL] [MODULE] Message`.
+UUID-based tracking of installed games, their `game_type` (GIMI, SRMI, etc.), and paths to their `/Mods` directories.
 
-- **Levels:**
-  - `INFO`: Normal operation (App Start, Game Switch).
-  - `WARN`: Invalid mod, Failed to load thumbnail.
-  - `ERROR`: Failed to rename file, Database locked.
+### 3.2 `objects` (Categorical Grouping)
 
-### 3.2 Deep Matcher Engine (Porting Logic)
+Virtual containers representing a Character, Weapon, UI, or Other entity derived from the Master Schema JSON. A single object contains many `mods`.
 
-The "Brain" logic of the application running in a _background thread_.
+### 3.3 `mods` (The Mod Entries)
 
-1.  **Normalization:** Regex replace symbols -> Lowercase -> Unidecode (Rust crate `deunicode`).
-2.  **Pipeline Check:**
-    - _L1 Name Match:_ `str::contains` vs DB Aliases.
-    - _L2 Token Match:_ Intersection of folder token `HashSet<String>` vs DB Tags.
-    - _L3 Content Scan:_ `WalkDir` (crate) max depth 3 -> search for `.ini`/`.ib` files -> Match filename vs DB.
-    - _L4 Fuzzy:_ Levenshtein distance (crate `strsim`).
+Stable identifiers using the **SHA1 hash** of the relative path. Stores the `actual_name`, `folder_path`, `thumbnail_path`, `is_safe` flag, and aggregated JSON `metadata`.
 
-### 3.3 Custom INI Parser (Rust Implementation)
+### 3.4 `collections` (Virtual Presets)
 
-A standard INI parser crate cannot be used because 3DMigoto syntax is unique.
-
-- **Requirement:** Must support _Variables_ outside sections (`$var = 1`) and duplicate _Sections_ (`[TextureOverride...]`).
-- **Method:** _Lossless Editing_.
-  1.  Read the file as `Vec<String>` (Lines).
-  2.  Identify the target line (e.g., line 50 `key = ...`).
-  3.  Replace that line.
-  4.  Rewrite `Vec<String>` back to the file.
-
-- **Backup:** Always copy the original file to `.ini.bak` before writing.
-
-### 3.4 Smart Duplicate Scanner
-
-Rust optimization for speed.
-
-1.  **Filtering:** SQL query `SELECT path, size_bytes FROM mods WHERE game_id = ? ORDER BY size_bytes`.
-2.  **Grouping:** Group mods with a size difference < 1%.
-3.  **Hashing:** Use `blake3` (Multi-threaded hashing).
-    - Hash `.ini` files (excluding whitespace/comments).
-    - Hash a 4KB header of the largest `.dds` file.
-
-### 3.5 File Watcher Conflict Avoidance
-
-The `notify` crate watches `/Mods` for external changes, but EMMM2's own operations (toggle rename, import, delete) also produce file events. Without suppression, these cause infinite feedback loops.
-
-- **Suppression Strategy (In-App Action Guard):**
-  1.  Before any in-app file operation, register the target path(s) in a shared `suppressions: Arc<Mutex<HashSet<PathBuf>>>`.
-  2.  Execute the operation (`fs::rename`, `fs::create_dir`, etc.).
-  3.  The watcher's event handler checks `suppressions`. If the path exists → **skip** the event (do NOT update DB or emit to frontend).
-  4.  After a 500ms debounce, remove the path from `suppressions`.
-
-- **Debounce Strategy (External Change Batching):**
-  - All external events are batched in a 300ms window using `tokio::time::sleep`.
-  - Batch is processed as one DB sync, not N individual updates.
-
-- **Event Types & Behavior:**
-
-  | Event    | Source                              | Action                                          |
-  | -------- | ----------------------------------- | ----------------------------------------------- |
-  | `Create` | External (user copies folder)       | Insert new mod into DB, emit `MOD_ADDED`        |
-  | `Rename` | In-app (toggle/rename)              | **Suppressed** → no action                      |
-  | `Rename` | External (user renames in Explorer) | Update `folder_path` and `actual_name` in DB    |
-  | `Remove` | External (user deletes in Explorer) | Mark mod as `DELETED` in DB, emit `MOD_REMOVED` |
-  | `Remove` | In-app (trash/delete)               | **Suppressed** → no action                      |
-  | `Modify` | External (user edits ini/json)      | Re-parse affected file, update `metadata_blob`  |
-
-### 3.6 Operation Queue Lock (Concurrency Safety)
-
-Destructive file operations must not run concurrently.
-
-- **Implementation:** A global `OperationLock` using `tokio::sync::Mutex<()>`.
-- **Protected Operations:** Toggle, Rename, Import, Delete, Safe Mode Switch, Collection Apply.
-- **Behavior:**
-  - If a user triggers a protected operation while another is running → return `Err("Operation in progress. Please wait.")` and show a toast.
-  - The lock is acquired at the **Command** layer, not the **Service** layer, to keep services reusable.
-  - Lock has a 30s timeout via `tokio::time::timeout` to prevent deadlocks.
+Atomic groupings of enabled mods (loadouts) that can be applied in a single click with snapshot/undo support.
 
 ---
 
-## 4. Frontend Implementation Specifications
+## 4. Core Functional Pipelines
 
-### 4.1 Grid Virtualization Logic
+### 4.1 Deep Matcher Engine (`req-26`)
 
-Implementation of `TanStack Virtual` on the `FolderGrid` component.
+The "Brain" logic of the application running asynchronously:
 
-- **Measure:** Use a fixed `estimateSize` (e.g., 280px for mod cards) for the best scroll performance.
-- **Overscan:** Set `overscan: 5` (render 5 rows off-screen) so images are ready before the user scrolls.
+1. **Hash & Strict Alias:** Checks 3DMigoto `.ini` hashes and exact folder names against MasterDB.
+2. **Deep Content Scan:** Tokenizes subfolders, file stems, and INI strings for substring matching.
+3. **AI & Mechanical Reranks:** Uses GameBanana API and optional LLM context for ambiguous cases.
+4. **Gates:** Strict thresholds prevent false-positive auto-matching. Ambiguous items require UI Review.
 
-### 4.2 Dashboard Charts
+### 4.2 Custom INI Parser (`req-18`)
 
-Implementation of `Recharts` on `HomeDashboard`.
+Standard INI parser crates cannot be used because 3DMigoto syntax is unique (duplicate sections, naked global variables, inline comments). EMMM2 uses a custom Line-Based parser for **Lossless Editing**.
 
-- Data is retrieved via `TanStack Query` which calls the Tauri command `get_dashboard_stats`.
-- The Rust backend performs `COUNT()` and `SUM()` aggregations via SQL to minimize data transfer to the frontend.
+### 4.3 Safe Mode Filter (`req-30`)
 
-### 4.3 Drag & Drop Handler
-
-- Listen for global `tauri://file-drop` events.
-- If the file extension is `.zip/.rar/.7z` -> Trigger "Smart Import" modal.
-- The frontend displays a visual _Overlay Zone_ when a file is dragged over the window.
+- **Frontend Guard:** When `Zustand: safeMode = ON`, UI actively filters `is_safe: false` data.
+- **Backend Guard:** Rust SQL queries dynamically append `AND is_safe = 1` preventing data leakage at the source. Requires OS Keychain verification to disable.
 
 ---
 
 ## 5. Security & Deployment
 
-### 5.1 Zero Cost Updater Workflow
-
-- **Repo:** GitHub Public Repository.
-- **Artifacts:** `EMMM2-setup.exe` in GitHub Releases.
-- **Metadata:** `db_char.json`, etc., in the `main` branch (access via `raw.githubusercontent.com`).
-- **Tauri Updater:** `tauri.conf.json` configuration points to a static JSON endpoint on GitHub containing the update signature.
-
-### 5.2 Safe Mode Implementation
-
-- **Data Guard:** When `Safe Mode = ON` (in Zustand Store), the Frontend actively filters `is_safe: false` data so it is never rendered to the DOM.
-- **Backend Guard:** The Tauri Command `get_mods` receives a `safe_mode_active` parameter. If true, the SQL Query automatically adds `AND is_safe = 1`.
+- **Zero Cost Updater (`req-34`):** Uses Tauri Updater pointing to GitHub Releases. `schema.json` and MasterDB updates are fetched incrementally from raw GitHub URLs.
+- **Log Rotation:** `tauri-plugin-log` configured for max 5 files, 2MB each, stored in `%AppData%`.
+- **API Keys:** User AI API keys are stored in the secure OS keychain (`keyring` crate), never in plaintext databases.
 
 ---
 
 ## 6. Project Structure
 
-### Foundation
-
-- Setup Tauri v2 + React + daisyUI template.
-- Database configuration (SQLite) & initial migrations.
-- Logger implementation (`tauri-plugin-log`).
-
-### Structure
-
 **Root Project:** `EMMM2NEW/`
 
 ```text
 EMMM2NEW/
-├── .github/                     # CI/CD Workflow (Auto-build Release)
-├── .vscode/                     # Debug configuration for Rust + React
+├── .docs/                       # Documentation & Requirements
+│   ├── requirements/            # req-01 to req-43 (The absolute source of truth)
+│   ├── workflows/               # Automation standards
+│   └── rules/                   # Coding standards
+├── .github/                     # CI/CD Workflows
 ├── src-tauri/                   # [BACKEND - RUST CORE]
-│   ├── migrations/              # SQLx Migrations (001_init.sql, etc.)
+│   ├── migrations/              # SQLx Migrations
 │   ├── src/
-│   │   ├── commands/            # Bridge: Functions called by the Frontend
-│   │   │   ├── mod_cmds.rs      # invoke('scan_mods'), invoke('toggle_mod')
-│   │   │   ├── game_cmds.rs     # invoke('add_game'), invoke('launch_game')
-│   │   │   ├── app_cmds.rs      # invoke('get_system_stats')
-│   │   │   └── mod.rs           # Module export
-│   │   ├── database/            # Database Layer (SQLx)
-│   │   │   ├── connection.rs    # SQLite Connection Pool
-│   │   │   ├── repository.rs    # Query logic (SELECT/INSERT)
-│   │   │   └── models.rs        # Rust Structs <-> SQL Mapping
-│   │   ├── services/            # Business Logic ("The Brain")
-│   │   │   ├── scanner/
-│   │   │   │   ├── deep_matcher.rs  # Epic 2: Regex & Scoring Logic
-│   │   │   │   ├── duplicate.rs     # Epic 9: Hash & Size comparison
-│   │   │   │   └── walker.rs        # Efficient File Walking
-│   │   │   ├── parser/
-│   │   │   │   └── ini_parser.rs    # Epic 5: Custom 3DMigoto INI Parser
-│   │   │   ├── file_ops/
-│   │   │   │   ├── archive.rs       # Unzip/Unrar logic
-│   │   │   │   ├── io.rs            # Atomic Rename/Move/Delete
-│   │   │   │   └── trash.rs         # Epic 4: Soft Delete
-│   │   │   ├── images/
-│   │   │   │   └── thumbnail.rs     # Epic 4: Resize & WebP Cache
-│   │   │   └── sync/
-│   │   │       └── github.rs        # Epic 9: Update checker
-│   │   ├── utils/               # Shared helpers (Hashing, String ops)
-│   │   ├── lib.rs               # Library Entry
+│   │   ├── commands/            # Tauri IPC Endpoints
+│   │   ├── database/            # Data Access Layer (Repositories)
+│   │   ├── services/            # Business Logic (Decoupled from Schema)
+│   │   │   ├── scanner/         # req-25 (Scan Engine), req-26 (Deep Matcher)
+│   │   │   ├── mod_files/       # req-13 (Core Ops), req-22 (Trash), req-37 (Archives)
+│   │   │   ├── ini/             # req-18 (INI Parser)
+│   │   │   ├── collections/     # req-31 (Collections & Presets)
+│   │   │   ├── privacy/         # req-30 (Safe Mode Filter)
+│   │   │   └── update/          # req-34 (Zero Cost Updater)
+│   │   ├── types/               # Shared Rust types & models
+│   │   ├── lib.rs               # App Builder & setup
 │   │   └── main.rs              # App Entry Point
-│   ├── tauri.conf.json          # Config: Permissions, Icons, Window
-│   ├── Cargo.toml               # Rust Dependencies (sqlx, tokio, image, etc)
-│   └── build.rs
+│   ├── tauri.conf.json          # Desktop permissions & setup
+│   └── Cargo.toml
 ├── src/                         # [FRONTEND - REACT UI]
-│   ├── assets/                  # Static images
-│   ├── components/              # UI Components (Atomic)
-│   │   ├── ui/                  # Generic UI (Button, Input, Modal - daisyUI)
-│   │   └── virtual/             # TanStack Virtual wrappers
-│   ├── features/                # Domain Driven Design (By Epic)
-│   │   ├── onboarding/          # Epic 1: Welcome & Setup
-│   │   ├── dashboard/           # Epic 10: Charts & Summary
-│   │   ├── explorer/            # Epic 4: Grid, Filter, Breadcrumbs
-│   │   ├── sidebar/             # Epic 3: Object List & Game Switcher
-│   │   ├── details/             # Epic 5: Preview, INI Editor
-│   │   ├── scanner/             # Epic 2 & 9: Scan Results & Duplicate Report
-│   │   └── settings/            # Epic 11: Game Paths, Safe Mode PIN
-│   ├── hooks/                   # Custom Hooks
-│   │   ├── useTauri.ts          # Type-safe wrapper for invoke()
-│   │   ├── useSafeMode.ts       # Safe Mode Auth Logic
-│   │   └── useMods.ts           # TanStack Query hooks
-│   ├── stores/                  # Global State (Zustand)
-│   │   ├── appStore.ts          # UI State (Theme, Sidebar Open)
-│   │   └── sessionStore.ts      # Active Game, Filters
-│   ├── lib/                     # Utilities
-│   │   ├── db-types.ts          # TS Interface matching Rust Models
-│   │   └── utils.ts
-│   ├── App.tsx                  # Main Layout & Router
-│   ├── main.tsx                 # Entry
+│   ├── components/              # UI Components (Atomic Design)
+│   ├── features/                # Domain Driven Components
+│   │   ├── collections/         # req-31 (Collections UI)
+│   │   ├── dashboard/           # Home & Landing views
+│   │   ├── foldergrid/          # req-11, req-12 (Main Mod Listing)
+│   │   ├── objectlist/          # req-06, req-07 (Object Navigation)
+│   │   ├── onboarding/          # First-time App Setup wizard
+│   │   ├── preview/             # req-16, req-17, req-18 (Side Panel)
+│   │   ├── scanner/             # Dedup/Scanner Dashboard
+│   │   └── settings/            # App configuration & preferences
+│   ├── hooks/                   # Custom business logic hooks
+│   ├── stores/                  # Global State (Zustand: appStore, sessionStore)
+│   ├── App.tsx                  # Main Layout & Routing
 │   └── index.css                # Tailwind Directives
-├── public/                      # Public assets
-├── package.json                 # React Dependencies
-├── tsconfig.json
-├── vite.config.ts
-└── tailwind.config.js           # daisyUI Config
+└── package.json
 ```
 
-### Main Structure
+## 7. Quality Assurance & Automation
 
-#### 1. Backend (`src-tauri/src`)
+To ensure EMMM2 maintains stability across its hybrid architecture, the following testing layers are enforced:
 
-This is the main "engine" that runs heavy logic (Rust).
+### 7.1 Backend Unit & Integration Tests (Rust)
 
-- **`services/`**: This is where EMMM2's "brain" logic resides.
-  - **`scanner/`**: Contains the _Deep Matcher_ (Epic 2) and _Duplicate Scanner_ (Epic 9) logic. These files handle _multithreading_ and hashing.
-  - **`parser/`**: Custom `.ini` parser implementation (Epic 5) that preserves comments and original file structures.
-  - **`file_ops/`**: Handles physical file manipulation (Rename, Delete to Trash, Extract Archive) securely.
+- Framework: `cargo test`
+- Scope: Database operations (SQLx), file system watching, lock contention (`OperationLock`), JSON parsing, and archive extraction.
+- Edge Cases: Focus on path traversals, disk space limits, and concurrent mutation rollbacks.
 
-- **`commands/`**: Bridges the Frontend and Backend. The Frontend calls functions here (e.g., `invoke('scan_mods')`), and this file calls the relevant `services`.
-- **`database/`**: Manages the SQLite connection using `sqlx`. Migration files (`.sql`) are stored separately in the `migrations` folder for database versioning.
+### 7.2 Frontend Component Tests (React)
 
-#### 2. Frontend (`src/`)
+- Framework: `vitest` + `@testing-library/react`
+- Scope: React component rendering, Zustand store logic, TanStack Query caching, and UI focus management (e.g., Virtualizer arrow navigation).
+- Mocks: Full mocking of `window.__TAURI_INTERNALS__` for IPC endpoints.
 
-This is the user interface built with React.
+### 7.3 End-to-End (E2E) Testing
 
-- **`features/`**: Groups components based on feature (Domain Driven Design). Example: Everything related to the "Preview Panel" is in the `details/` folder. This makes maintenance easier than piling all components in a single folder.
-- **`stores/`**: Uses **Zustand** to store lightweight global states, such as "Is Safe Mode active?" or "Which game is currently selected?".
-- **`components/common/`**: Basic UI components (Button, Input) wrapped from **daisyUI**. This ensures design consistency throughout the application.
+- Framework: **WebdriverIO** with **Tauri WebDriver** native integration.
+- Scope: High-level user journeys crossing the IPC bridge (e.g., clicking 'Enable' in the React UI and verifying the actual folder rename on the host OS).
+- CI/CD: Automated native build tests via GitHub Actions.
 
-#### 3. Configuration (`Root`)
-
-- **`tailwind.config.js`**: daisyUI theme configuration (Light/Dark/Dracula) and the application's color palette.
-- **`tauri.conf.json`**: Manages file system access permissions, window configurations, and desktop application security rules.
+> **Note:** For granular implementation details on any specific feature, always consult the corresponding `req-*.md` file.

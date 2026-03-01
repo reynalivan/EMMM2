@@ -26,11 +26,13 @@ This document contains 50+ examples of prompt transformations organized by categ
 ### Example 1: Email Validation
 
 **BEFORE:**
+
 ```
 implement a function that validates email addresses
 ```
 
 **AFTER:**
+
 ```
 write a validateEmail function. test cases:
 - [email protected] → true
@@ -48,11 +50,13 @@ run the tests after implementing
 ### Example 2: Password Strength Checker
 
 **BEFORE:**
+
 ```
 create a password strength validator
 ```
 
 **AFTER:**
+
 ```
 create a checkPasswordStrength function that returns 'weak', 'medium', or 'strong'. test cases:
 - "abc" → weak (too short)
@@ -67,11 +71,13 @@ run tests after implementing. place in src/utils/validation.ts following existin
 ### Example 3: Date Parsing
 
 **BEFORE:**
+
 ```
 write a date parser
 ```
 
 **AFTER:**
+
 ```
 write a parseDate function in src/utils/dates.ts that handles multiple formats. test cases:
 - "2024-01-15" → Date object for Jan 15, 2024
@@ -89,11 +95,13 @@ follow the existing utility function patterns in @src/utils/. run tests after im
 ### Example 4: Generic Bug Report
 
 **BEFORE:**
+
 ```
 fix the login bug
 ```
 
 **AFTER:**
+
 ```
 users report that login fails after session timeout. check the auth flow in src/auth/, especially token refresh. write a failing test that reproduces the issue, then fix it. verify by running the auth test suite.
 ```
@@ -105,11 +113,13 @@ users report that login fails after session timeout. check the auth flow in src/
 ### Example 5: Build Failure
 
 **BEFORE:**
+
 ```
 the build is failing
 ```
 
 **AFTER:**
+
 ```
 the build fails with this error:
 [paste actual error message here]
@@ -122,11 +132,13 @@ fix it and verify the build succeeds. address the root cause, don't suppress the
 ### Example 6: Undefined Error
 
 **BEFORE:**
+
 ```
 getting undefined error
 ```
 
 **AFTER:**
+
 ```
 getting "Cannot read property 'user' of undefined" error on line 45 of src/components/Dashboard.tsx when loading the dashboard without being logged in. check the auth context provider and add proper null handling. write a test for the unauthenticated state, then fix it.
 ```
@@ -136,11 +148,13 @@ getting "Cannot read property 'user' of undefined" error on line 45 of src/compo
 ### Example 7: Race Condition
 
 **BEFORE:**
+
 ```
 there's a race condition somewhere
 ```
 
 **AFTER:**
+
 ```
 users intermittently see stale data after updating their profile. I suspect a race condition between the optimistic update and the API response in src/hooks/useProfile.ts. add console logs to trace the update flow, identify the race condition, then fix it. add a test that simulates the race condition by delaying the API response.
 ```
@@ -150,11 +164,13 @@ users intermittently see stale data after updating their profile. I suspect a ra
 ### Example 8: Memory Leak
 
 **BEFORE:**
+
 ```
 fix the memory leak
 ```
 
 **AFTER:**
+
 ```
 the app's memory usage grows over time when navigating between pages. I suspect event listeners aren't being cleaned up. check src/components/ for useEffect hooks that add listeners without cleanup. profile the heap in Chrome DevTools to identify the leak source. fix any missing cleanup functions and verify memory stays stable during navigation.
 ```
@@ -166,11 +182,13 @@ the app's memory usage grows over time when navigating between pages. I suspect 
 ### Example 9: Calendar Widget
 
 **BEFORE:**
+
 ```
 add a calendar widget
 ```
 
 **AFTER:**
+
 ```
 look at how existing widgets are implemented on the home page to understand the patterns. HotDogWidget.php is a good example. follow the pattern to implement a new calendar widget that lets the user select a month and paginate forwards/backwards to pick a year. build from scratch without libraries other than the ones already used in the codebase. add tests for month selection and pagination.
 ```
@@ -182,11 +200,13 @@ look at how existing widgets are implemented on the home page to understand the 
 ### Example 10: Search Feature
 
 **BEFORE:**
+
 ```
 add search functionality
 ```
 
 **AFTER:**
+
 ```
 add a search feature to the products page following the existing search pattern in @src/components/UserSearch.tsx. requirements:
 - debounce input by 300ms
@@ -201,11 +221,13 @@ add tests for debouncing and empty states. place component in src/components/Pro
 ### Example 11: Pagination
 
 **BEFORE:**
+
 ```
 add pagination to the list
 ```
 
 **AFTER:**
+
 ```
 add cursor-based pagination to the /api/products endpoint and ProductList component. follow the existing pagination pattern in @src/api/users.ts and @src/components/UserList.tsx. requirements:
 - 20 items per page
@@ -220,11 +242,13 @@ add API tests and component tests. verify by loading the products page and click
 ### Example 12: Dark Mode
 
 **BEFORE:**
+
 ```
 add dark mode
 ```
 
 **AFTER:**
+
 ```
 add dark mode toggle to the settings page. implementation:
 1. read src/styles/ to understand current theming approach
@@ -241,11 +265,13 @@ follow existing context patterns in @src/context/AuthContext.tsx. test the toggl
 ### Example 13: File Upload
 
 **BEFORE:**
+
 ```
 implement file upload
 ```
 
 **AFTER:**
+
 ```
 implement file upload for user avatars in the profile settings. requirements:
 - accept only jpg, png, webp under 5MB
@@ -262,11 +288,13 @@ follow the existing form patterns in @src/components/ProfileForm.tsx. backend en
 ### Example 14: Generic Refactor
 
 **BEFORE:**
+
 ```
 make the code better
 ```
 
 **AFTER:**
+
 ```
 refactor utils.js to use ES2024 features while maintaining the same behavior. specifically:
 - convert callbacks to async/await
@@ -280,11 +308,13 @@ run the existing test suite after each change to ensure nothing breaks.
 ### Example 15: Extract Component
 
 **BEFORE:**
+
 ```
 refactor this component
 ```
 
 **AFTER:**
+
 ```
 the UserDashboard component in @src/components/UserDashboard.tsx is 500+ lines. extract these sections into separate components:
 - UserStats (lines 45-120)
@@ -298,11 +328,13 @@ keep the parent component as the layout orchestrator. ensure props are typed cor
 ### Example 16: Remove Duplication
 
 **BEFORE:**
+
 ```
 DRY up this code
 ```
 
 **AFTER:**
+
 ```
 src/api/users.ts and src/api/products.ts have duplicate error handling logic (lines 20-45 in each). extract a shared handleApiError function to src/api/utils.ts. requirements:
 - handle 401, 403, 404, 500 errors
@@ -316,11 +348,13 @@ update both files to use the shared function. run the API tests after to verify 
 ### Example 17: Modernize Patterns
 
 **BEFORE:**
+
 ```
 update the old code
 ```
 
 **AFTER:**
+
 ```
 modernize src/legacy/OrderProcessor.js:
 - convert from class to functional approach with hooks
@@ -338,11 +372,13 @@ make one change at a time, running tests after each to catch regressions. the ex
 ### Example 18: UI Improvements
 
 **BEFORE:**
+
 ```
 make the dashboard look better
 ```
 
 **AFTER:**
+
 ```
 [paste screenshot of target design]
 
@@ -360,11 +396,13 @@ take a screenshot of the result and compare it to the original design. list diff
 ### Example 19: Form Styling
 
 **BEFORE:**
+
 ```
 style the form
 ```
 
 **AFTER:**
+
 ```
 [paste screenshot of design mockup]
 
@@ -381,11 +419,13 @@ use existing CSS variables from @src/styles/. verify all states: empty, filled, 
 ### Example 20: Animation
 
 **BEFORE:**
+
 ```
 add animations
 ```
 
 **AFTER:**
+
 ```
 add subtle entrance animations to the card grid on the home page. requirements:
 - cards fade in and slide up 20px
@@ -401,11 +441,13 @@ follow the existing animation patterns in @src/styles/animations.css. test with 
 ### Example 21: Accessibility
 
 **BEFORE:**
+
 ```
 make it accessible
 ```
 
 **AFTER:**
+
 ```
 audit the navigation component in @src/components/Nav.tsx for accessibility. check and fix:
 - keyboard navigation (Tab, Enter, Escape)
@@ -423,11 +465,13 @@ test with keyboard-only navigation and VoiceOver. run `npm run test:a11y` after 
 ### Example 22: Generic API Question
 
 **BEFORE:**
+
 ```
 why does ExecutionFactory have such a weird api?
 ```
 
 **AFTER:**
+
 ```
 look through ExecutionFactory's git history and summarize how its api came to be. specifically:
 - when was it created and by whom?
@@ -442,11 +486,13 @@ look through ExecutionFactory's git history and summarize how its api came to be
 ### Example 23: New Endpoint
 
 **BEFORE:**
+
 ```
 add an API endpoint
 ```
 
 **AFTER:**
+
 ```
 add a GET /api/products/:id endpoint following the pattern in @src/api/users.ts. requirements:
 - return 404 if product not found
@@ -462,11 +508,13 @@ add tests for success, not found, invalid id, and rate limiting. document in the
 ### Example 24: Authentication
 
 **BEFORE:**
+
 ```
 add auth
 ```
 
 **AFTER:**
+
 ```
 read src/auth/ to understand current session handling, then add Google OAuth. implementation plan:
 1. add Google OAuth credentials to .env.example
@@ -482,11 +530,13 @@ follow the existing auth patterns. write tests for the callback handler includin
 ### Example 25: Webhooks
 
 **BEFORE:**
+
 ```
 implement webhooks
 ```
 
 **AFTER:**
+
 ```
 add a webhook system for order status updates. requirements:
 - POST /api/webhooks/register endpoint to register URLs
@@ -504,11 +554,13 @@ follow the event pattern in @src/events/. store registrations in the webhooks ta
 ### Example 26: Migration
 
 **BEFORE:**
+
 ```
 add a new column
 ```
 
 **AFTER:**
+
 ```
 add an 'archived_at' nullable timestamp column to the products table. steps:
 1. create migration in db/migrations/
@@ -523,11 +575,13 @@ follow the migration pattern in @db/migrations/20240101_add_user_status.sql. run
 ### Example 27: Query Optimization
 
 **BEFORE:**
+
 ```
 the query is slow
 ```
 
 **AFTER:**
+
 ```
 the getOrdersWithProducts query in src/repositories/OrderRepository.ts takes 3+ seconds for users with many orders. current query is on line 45. profile the query with EXPLAIN ANALYZE:
 - identify missing indexes
@@ -541,11 +595,13 @@ add any needed indexes via migration. target: under 100ms for 1000 orders. run t
 ### Example 28: Seeding
 
 **BEFORE:**
+
 ```
 add test data
 ```
 
 **AFTER:**
+
 ```
 create a database seed script in db/seeds/development.ts that creates:
 - 10 users with varied roles (2 admin, 3 manager, 5 regular)
@@ -562,11 +618,13 @@ use Faker.js for realistic data. follow the seed pattern in @db/seeds/categories
 ### Example 29: Generic Test Request
 
 **BEFORE:**
+
 ```
 add tests for foo.py
 ```
 
 **AFTER:**
+
 ```
 write a test for foo.py covering the edge case where the user is logged out. avoid mocks. test cases:
 - logged_out_user returns 401
@@ -582,11 +640,13 @@ follow the test patterns in @tests/auth/. run the new tests after implementing.
 ### Example 30: Integration Tests
 
 **BEFORE:**
+
 ```
 add integration tests
 ```
 
 **AFTER:**
+
 ```
 add integration tests for the order checkout flow in tests/integration/checkout.test.ts. test the complete flow:
 1. add items to cart
@@ -603,11 +663,13 @@ cover error cases: invalid card, out of stock, expired discount. use the test da
 ### Example 31: Snapshot Tests
 
 **BEFORE:**
+
 ```
 add snapshot tests
 ```
 
 **AFTER:**
+
 ```
 add snapshot tests for the ProductCard component covering these variants:
 - default state
@@ -624,11 +686,13 @@ place in tests/components/ProductCard.snapshot.test.tsx. use the existing snapsh
 ### Example 32: API Docs
 
 **BEFORE:**
+
 ```
 document the API
 ```
 
 **AFTER:**
+
 ```
 add OpenAPI/Swagger documentation for the products API endpoints. include:
 - GET /api/products (list with pagination params)
@@ -644,11 +708,13 @@ document request/response schemas, auth requirements, and error responses. follo
 ### Example 33: README
 
 **BEFORE:**
+
 ```
 update the readme
 ```
 
 **AFTER:**
+
 ```
 update README.md with the new authentication flow. add:
 - environment variables needed (.env.example reference)
@@ -665,11 +731,13 @@ keep existing sections intact. follow the documentation style of existing README
 ### Example 34: Generic Review
 
 **BEFORE:**
+
 ```
 review my code
 ```
 
 **AFTER:**
+
 ```
 review the changes in @src/services/PaymentService.ts for:
 - security issues (especially around handling card data)
@@ -685,11 +753,13 @@ provide specific line references for any issues found.
 ### Example 35: PR Review
 
 **BEFORE:**
+
 ```
 review this PR
 ```
 
 **AFTER:**
+
 ```
 review PR #123 for the new notification system. focus on:
 - does the implementation match the spec in @docs/specs/notifications.md?
@@ -707,11 +777,13 @@ provide actionable feedback with code suggestions where applicable.
 ### Example 36: CI Setup
 
 **BEFORE:**
+
 ```
 set up CI
 ```
 
 **AFTER:**
+
 ```
 add GitHub Actions workflow for CI in .github/workflows/ci.yml. the workflow should:
 - run on push to main and all PRs
@@ -729,11 +801,13 @@ follow the workflow pattern in @.github/workflows/deploy.yml for caching strateg
 ### Example 37: Docker
 
 **BEFORE:**
+
 ```
 dockerize the app
 ```
 
 **AFTER:**
+
 ```
 create Dockerfile and docker-compose.yml for local development. requirements:
 - multi-stage build for smaller production image
@@ -752,11 +826,13 @@ follow the patterns in @infrastructure/docker/ if present. document docker comma
 ### Example 38: Security Audit
 
 **BEFORE:**
+
 ```
 check for security issues
 ```
 
 **AFTER:**
+
 ```
 audit the user input handling in @src/api/ for security vulnerabilities:
 - SQL injection in raw queries
@@ -773,11 +849,13 @@ provide specific file:line references for each issue with remediation steps. pri
 ### Example 39: Input Validation
 
 **BEFORE:**
+
 ```
 add validation
 ```
 
 **AFTER:**
+
 ```
 add input validation to the user registration endpoint in src/api/users.ts. validate:
 - email: valid format, not already registered
@@ -793,11 +871,13 @@ return specific error messages for each validation failure. use the validation p
 ### Example 40: Performance Investigation
 
 **BEFORE:**
+
 ```
 the page is slow
 ```
 
 **AFTER:**
+
 ```
 the product listing page takes 5+ seconds to load. investigate:
 1. run Lighthouse audit and report scores
@@ -813,11 +893,13 @@ then create an action plan with estimated impact for each fix. start with the hi
 ### Example 41: Bundle Optimization
 
 **BEFORE:**
+
 ```
 reduce bundle size
 ```
 
 **AFTER:**
+
 ```
 analyze and reduce the JavaScript bundle size. steps:
 1. run `npm run build` and report current bundle sizes
@@ -835,11 +917,13 @@ target: main bundle under 200KB gzipped. document changes and new bundle sizes.
 ### Example 42: Commit History
 
 **BEFORE:**
+
 ```
 look at the git history
 ```
 
 **AFTER:**
+
 ```
 trace the evolution of the payment processing module. check git history for:
 - when was src/payments/ first created?
@@ -854,11 +938,13 @@ summarize the key decisions and their rationale.
 ### Example 43: Merge Conflict
 
 **BEFORE:**
+
 ```
 fix the merge conflict
 ```
 
 **AFTER:**
+
 ```
 resolve the merge conflict in src/components/Header.tsx between feature/new-nav and main. context:
 - feature/new-nav adds a mobile menu
@@ -872,11 +958,13 @@ resolve to keep both features working together. run `npm run test` and `npm run 
 ### Example 44: Branch Cleanup
 
 **BEFORE:**
+
 ```
 clean up branches
 ```
 
 **AFTER:**
+
 ```
 identify branches that can be deleted:
 - list branches merged into main more than 30 days ago
@@ -892,11 +980,13 @@ show the list for review before deleting. after approval, delete the remote bran
 ### Example 45: Full Feature Implementation
 
 **BEFORE:**
+
 ```
 add user notifications
 ```
 
 **AFTER:**
+
 ```
 implement a user notification system. phase this work:
 
@@ -931,11 +1021,13 @@ PHASE 4 - Verify:
 ### Example 46: Legacy System Migration
 
 **BEFORE:**
+
 ```
 migrate from the old system
 ```
 
 **AFTER:**
+
 ```
 migrate OrderProcessor from the legacy PHP system to our Node.js backend.
 
@@ -968,11 +1060,13 @@ STEP 4 - Validate:
 ### Example 47: Debugging Session
 
 **BEFORE:**
+
 ```
 users can't checkout
 ```
 
 **AFTER:**
+
 ```
 users report "checkout failed" error intermittently. investigate:
 
@@ -1008,11 +1102,13 @@ users report "checkout failed" error intermittently. investigate:
 ### Example 48: API Versioning
 
 **BEFORE:**
+
 ```
 version the API
 ```
 
 **AFTER:**
+
 ```
 implement API versioning for our REST endpoints.
 
@@ -1045,11 +1141,13 @@ Follow the existing routing patterns in @src/router.ts.
 ### Example 49: Performance Critical Fix
 
 **BEFORE:**
+
 ```
 make the search faster
 ```
 
 **AFTER:**
+
 ```
 the product search takes 8+ seconds for queries with common terms. optimize:
 
@@ -1078,11 +1176,13 @@ Document the changes and performance improvements in a PR description.
 ### Example 50: Complete Testing Suite
 
 **BEFORE:**
+
 ```
 add tests for the payment module
 ```
 
 **AFTER:**
+
 ```
 create comprehensive tests for src/services/PaymentService.ts
 

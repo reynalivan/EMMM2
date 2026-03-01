@@ -3,7 +3,7 @@ pub mod pin_guard;
 
 pub use models::*;
 
-use crate::database::settings_repo;
+use crate::database::{game_repo, settings_repo};
 use pin_guard::{validate_pin_format, PinGuardState, PinVerifyStatus};
 use sqlx::SqlitePool;
 use std::sync::Mutex;
@@ -128,7 +128,7 @@ impl ConfigService {
             }
         };
 
-        let games = match settings_repo::get_all_games(pool).await {
+        let games = match game_repo::get_all_games(pool).await {
             Ok(rows) => rows.into_iter().map(game_row_to_config).collect(),
             Err(e) => {
                 log::error!("Failed to load games from DB: {e}");
@@ -158,6 +158,16 @@ impl ConfigService {
             .and_then(|v| v.parse().ok())
             .unwrap_or(false);
 
+        let hotkeys = kv
+            .get("hotkeys")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
+        let keyviewer = kv
+            .get("keyviewer")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
         AppSettings {
             theme,
             language,
@@ -166,6 +176,8 @@ impl ConfigService {
             safe_mode,
             ai,
             auto_close_launcher,
+            hotkeys,
+            keyviewer,
         }
     }
 
@@ -206,10 +218,21 @@ impl ConfigService {
             .await
             .map_err(|e| e.to_string())?;
 
+        let hotkeys_json = serde_json::to_string(&settings.hotkeys).map_err(|e| e.to_string())?;
+        settings_repo::set_setting(pool, "hotkeys", &hotkeys_json)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let keyviewer_json =
+            serde_json::to_string(&settings.keyviewer).map_err(|e| e.to_string())?;
+        settings_repo::set_setting(pool, "keyviewer", &keyviewer_json)
+            .await
+            .map_err(|e| e.to_string())?;
+
         // Persist games
         for game in &settings.games {
             let row = config_to_game_row(game);
-            settings_repo::upsert_game(pool, &row)
+            game_repo::upsert_game(pool, &row)
                 .await
                 .map_err(|e| e.to_string())?;
         }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Instant, SystemTime};
 
-use image::{imageops::FilterType, ImageFormat};
+use image::ImageFormat;
 use log::{debug, warn};
 use lru::LruCache;
 use tokio::sync::Semaphore;
@@ -222,9 +222,9 @@ impl ThumbnailCache {
             }
         }
 
-        // Generate: CatmullRom 256×256
+        // Generate: Fast thumbnail resize
         let img = image::open(original_path).map_err(|e| format!("Failed to open image: {}", e))?;
-        let resized = img.resize(THUMB_SIZE, THUMB_SIZE, FilterType::CatmullRom);
+        let resized = img.thumbnail(THUMB_SIZE, THUMB_SIZE);
 
         let mut bytes: Vec<u8> = Vec::new();
         resized
@@ -300,10 +300,8 @@ impl ThumbnailCache {
             if path.extension().is_some_and(|e| e == "webp") {
                 if let Ok(meta) = fs::metadata(&path) {
                     if let Ok(accessed) = meta.accessed().or_else(|_| meta.modified()) {
-                        if accessed < cutoff {
-                            if fs::remove_file(&path).is_ok() {
-                                deleted_count += 1;
-                            }
+                        if accessed < cutoff && fs::remove_file(&path).is_ok() {
+                            deleted_count += 1;
                         }
                     }
                 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id FROM download_sessions\n           WHERE status = 'awaiting_download'\n             AND created_at >= datetime('now', '-30 minutes')\n           ORDER BY created_at DESC\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "be0997620971d667da90c83915e9020baea61a98f4ee5d3a3245cb7bad8fa5af"
+}

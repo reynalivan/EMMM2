@@ -69,17 +69,14 @@ fn get_ai_provider(app_handle: &AppHandle) -> Option<HttpAiRerankProvider> {
     let config_service = app_handle.state::<crate::services::config::ConfigService>();
     let ai_settings = config_service.get_settings().ai;
 
-    if ai_settings.enabled
-        && ai_settings.api_key.is_some()
-        && !ai_settings.api_key.as_ref().unwrap().is_empty()
-    {
-        Some(HttpAiRerankProvider::new(
-            ai_settings.api_key.unwrap(),
-            ai_settings.base_url,
-        ))
-    } else {
-        None
+    if ai_settings.enabled {
+        if let Some(api_key) = ai_settings.api_key {
+            if !api_key.is_empty() {
+                return Some(HttpAiRerankProvider::new(api_key, ai_settings.base_url));
+            }
+        }
     }
+    None
 }
 
 /// Run the full scan pipeline with real-time progress events.

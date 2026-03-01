@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM browser_downloads WHERE status = 'imported'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "d85d71f1e4c34108b815ef523d63321eee2a3796d7c7a8e651327c435c4ca99a"
+}

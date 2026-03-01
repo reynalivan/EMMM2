@@ -104,3 +104,45 @@ fn details_command_remove_and_clear_preview_images() {
     assert_eq!(cleared.len(), 1);
     assert!(!mod_dir.join("preview_custom_1.png").exists());
 }
+
+// Covers: TC-19-010 (Scan depth to 3 subfolders)
+#[test]
+fn details_command_list_preview_images_scan_depth() {
+    let tmp = TempDir::new().unwrap();
+    let mod_dir = tmp.path().join("ModA");
+    fs::create_dir(&mod_dir).unwrap();
+
+    // Depth 0 (Root)
+    fs::write(mod_dir.join("root.png"), "img").unwrap();
+
+    // Depth 1
+    let d1 = mod_dir.join("variants");
+    fs::create_dir(&d1).unwrap();
+    fs::write(d1.join("v1.jpg"), "img").unwrap();
+
+    // Depth 2
+    let d2 = d1.join("hair_color");
+    fs::create_dir(&d2).unwrap();
+    fs::write(d2.join("v2.webp"), "img").unwrap();
+
+    // Depth 3 (WalkDir depth 3)
+    fs::write(d2.join("v3.png"), "img").unwrap();
+
+    // Depth 4 (WalkDir depth 4 - ignored)
+    let d3 = d2.join("blonde");
+    fs::create_dir(&d3).unwrap();
+    fs::write(d3.join("v4.png"), "img").unwrap();
+
+    let list = list_mod_preview_images_inner(&mod_dir).unwrap();
+
+    let paths: Vec<String> = list;
+
+    let has_d3_image = paths.iter().any(|p| p.ends_with("v3.png"));
+    assert!(has_d3_image, "Did not find image at nesting depth 3");
+
+    let has_d4_image = paths.iter().any(|p| p.ends_with("v4.png"));
+    assert!(
+        !has_d4_image,
+        "Found image at nesting depth 4, which should be ignored"
+    );
+}

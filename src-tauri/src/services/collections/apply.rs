@@ -1,7 +1,8 @@
 use super::types::{ApplyCollectionResult, ModState};
+use crate::database::collection_repo;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use regex::Regex;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -18,15 +19,15 @@ pub async fn apply_collection(
     game_id: &str,
     safe_mode_enabled: bool,
 ) -> Result<ApplyCollectionResult, String> {
-    let (collection_name, is_safe_context): (String, bool) = sqlx::query_as(
-        "SELECT name, is_safe_context FROM collections WHERE id = ? AND game_id = ?",
-    )
-    .bind(collection_id)
-    .bind(game_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or("Collection not found")?;
+    let (collection_name, is_safe_context): (String, bool) = if let Some(details) =
+        collection_repo::get_collection_details(pool, collection_id, game_id)
+            .await
+            .map_err(|e| e.to_string())?
+    {
+        (details.collection.name, details.collection.is_safe_context)
+    } else {
+        return Err("Collection not found".to_string());
+    };
 
     if safe_mode_enabled && !is_safe_context {
         return Err(
@@ -35,47 +36,34 @@ pub async fn apply_collection(
     }
 
     // Step 1: Get mod_ids that still exist in the mods table
-    let target_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT ci.mod_id FROM collection_items ci JOIN mods m ON m.id = ci.mod_id WHERE ci.collection_id = ? AND m.game_id = ?",
-    )
-    .bind(collection_id)
-    .bind(game_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let target_ids =
+        collection_repo::get_mod_ids_for_collection_in_game(pool, collection_id, game_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
     // Step 2: Reconcile orphaned items by mod_path (US-8.3 fallback)
-    let orphaned: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT ci.mod_id, ci.mod_path FROM collection_items ci WHERE ci.collection_id = ? AND ci.mod_id NOT IN (SELECT id FROM mods WHERE game_id = ?)",
-    )
-    .bind(collection_id)
-    .bind(game_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let orphaned =
+        collection_repo::get_collection_items_with_missing_mods(pool, collection_id, game_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let mut reconciled_ids = target_ids;
     let mut reconcile_warnings = Vec::new();
 
     for (old_id, maybe_path) in &orphaned {
         if let Some(path) = maybe_path {
-            let found: Option<String> =
-                sqlx::query_scalar("SELECT id FROM mods WHERE folder_path = ? AND game_id = ?")
-                    .bind(path)
-                    .bind(game_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
+            let found = collection_repo::get_mod_id_by_path(pool, path, game_id)
+                .await
+                .map_err(|e| e.to_string())?;
 
             if let Some(new_id) = found {
                 // Re-link: update collection_items to point to the new mod ID
-                sqlx::query(
-                    "UPDATE collection_items SET mod_id = ? WHERE collection_id = ? AND mod_id = ?",
+                collection_repo::update_collection_item_mod_id(
+                    pool,
+                    collection_id,
+                    old_id,
+                    &new_id,
                 )
-                .bind(&new_id)
-                .bind(collection_id)
-                .bind(old_id)
-                .execute(pool)
                 .await
                 .map_err(|e| e.to_string())?;
                 reconciled_ids.push(new_id);
@@ -100,14 +88,21 @@ pub async fn apply_collection(
         });
     }
 
-    let mut states = fetch_mod_states(pool, game_id, &target_ids).await?;
-    let object_ids: Vec<String> = sqlx::query_scalar("SELECT DISTINCT object_id FROM mods WHERE id IN (SELECT mod_id FROM collection_items WHERE collection_id = ?) AND object_id IS NOT NULL")
-        .bind(collection_id)
-        .fetch_all(pool)
+    let mut states = collection_repo::get_mod_states_by_ids(pool, game_id, &target_ids)
+        .await
+        .map_err(|e| e.to_string())?;
+    let object_ids = collection_repo::get_object_ids_for_collection(pool, collection_id)
         .await
         .map_err(|e| e.to_string())?;
 
-    let conflicts = fetch_enabled_conflicts(pool, game_id, &target_ids, &object_ids).await?;
+    let conflicts = collection_repo::get_enabled_conflicting_mod_states(
+        pool,
+        game_id,
+        &target_ids,
+        &object_ids,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     states.extend(conflicts);
 
     snapshot_current_state(pool, game_id, safe_mode_enabled).await?;
@@ -125,129 +120,40 @@ async fn snapshot_current_state(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Delete existing snapshot collection mapping and the collection itself for this game
-    sqlx::query("DELETE FROM collection_items WHERE collection_id IN (SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1)")
-        .bind(game_id)
-        .execute(&mut *tx)
+    collection_repo::delete_snapshot_collection(&mut tx, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
-    sqlx::query("DELETE FROM collections WHERE game_id = ? AND is_last_unsaved = 1")
-        .bind(game_id)
-        .execute(&mut *tx)
+    let currently_enabled = collection_repo::get_enabled_mod_ids(&mut tx, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
-    let currently_enabled: Vec<(String, String)> =
-        sqlx::query_as("SELECT id, folder_path FROM mods WHERE game_id = ? AND status = 'ENABLED'")
-            .bind(game_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    let paths = collection_repo::get_mod_paths_for_ids(&mut tx, &currently_enabled)
+        .await
+        .unwrap_or_default();
 
     let snapshot_id = Uuid::new_v4().to_string();
     let name = format!("Unsaved {}", Uuid::new_v4());
 
-    sqlx::query("INSERT INTO collections (id, name, game_id, is_safe_context, is_last_unsaved) VALUES (?, ?, ?, ?, 1)")
-        .bind(&snapshot_id)
-        .bind(&name)
-        .bind(game_id)
-        .bind(safe_mode_enabled)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    collection_repo::insert_snapshot_collection(
+        &mut tx,
+        &snapshot_id,
+        &name,
+        game_id,
+        safe_mode_enabled,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
-    for (mod_id, mod_path) in currently_enabled {
-        sqlx::query(
-            "INSERT INTO collection_items (collection_id, mod_id, mod_path) VALUES (?, ?, ?)",
-        )
-        .bind(&snapshot_id)
-        .bind(&mod_id)
-        .bind(&mod_path)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    for mod_id in currently_enabled {
+        let mod_path = paths.get(&mod_id).map(|s| s.as_str());
+        collection_repo::insert_collection_item(&mut tx, &snapshot_id, &mod_id, mod_path)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
-}
-
-async fn fetch_mod_states(
-    pool: &SqlitePool,
-    game_id: &str,
-    ids: &[String],
-) -> Result<Vec<ModState>, String> {
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut qb: QueryBuilder<'_, Sqlite> =
-        QueryBuilder::new("SELECT id, folder_path, status FROM mods WHERE game_id = ");
-    qb.push_bind(game_id).push(" AND id IN (");
-    let mut separated = qb.separated(", ");
-    for id in ids {
-        separated.push_bind(id);
-    }
-    qb.push(")");
-
-    qb.build_query_as::<(String, String, String)>()
-        .fetch_all(pool)
-        .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|(id, folder_path, status)| ModState {
-                    id,
-                    folder_path,
-                    status,
-                })
-                .collect()
-        })
-        .map_err(|e| e.to_string())
-}
-
-async fn fetch_enabled_conflicts(
-    pool: &SqlitePool,
-    game_id: &str,
-    target_ids: &[String],
-    object_ids: &[String],
-) -> Result<Vec<ModState>, String> {
-    if object_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut qb: QueryBuilder<'_, Sqlite> =
-        QueryBuilder::new("SELECT id, folder_path, status FROM mods WHERE game_id = ");
-    qb.push_bind(game_id)
-        .push(" AND status = 'ENABLED' AND object_id IN (");
-
-    let mut object_separated = qb.separated(", ");
-    for object_id in object_ids {
-        object_separated.push_bind(object_id);
-    }
-    qb.push(")");
-
-    if !target_ids.is_empty() {
-        qb.push(" AND id NOT IN (");
-        let mut id_separated = qb.separated(", ");
-        for id in target_ids {
-            id_separated.push_bind(id);
-        }
-        qb.push(")");
-    }
-
-    qb.build_query_as::<(String, String, String)>()
-        .fetch_all(pool)
-        .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|(id, folder_path, status)| ModState {
-                    id,
-                    folder_path,
-                    status,
-                })
-                .collect()
-        })
-        .map_err(|e| e.to_string())
 }
 
 pub async fn apply_state_change(
@@ -316,17 +222,9 @@ async fn apply_with_desired_status(
         }
     }
 
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    for (id, status, folder_path) in &updates {
-        sqlx::query("UPDATE mods SET status = ?, folder_path = ? WHERE id = ?")
-            .bind(status)
-            .bind(folder_path)
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    tx.commit().await.map_err(|e| e.to_string())?;
+    collection_repo::batch_update_mods_status_and_path(pool, &updates)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok((updates.len(), warnings))
 }

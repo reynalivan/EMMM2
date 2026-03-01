@@ -23,18 +23,28 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
     let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for i in 0..archive.len() {
-        let entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Failed to read entry: {e}"))?;
-        let name = entry.name().to_string();
-        uncompressed_size += entry.size();
+        match archive.by_index(i) {
+            Ok(entry) => {
+                let name = entry.name().to_string();
+                uncompressed_size += entry.size();
 
-        if name.to_lowercase().ends_with(".ini") {
-            has_ini = true;
-        }
-        if let Some(first) = name.split('/').next() {
-            if !first.is_empty() {
-                root_dirs.insert(first.to_string());
+                if name.to_lowercase().ends_with(".ini") {
+                    has_ini = true;
+                }
+                if let Some(first) = name.split('/').next() {
+                    if !first.is_empty() {
+                        root_dirs.insert(first.to_string());
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // Encrypted entries can't be read without a password at analysis time.
+                // Skip them gracefully; the actual extraction will use the password.
+                if msg.contains("Password") || msg.contains("password") || msg.contains("decrypt") {
+                    continue;
+                }
+                return Err(format!("Failed to read entry: {e}"));
             }
         }
     }

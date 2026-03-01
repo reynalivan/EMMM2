@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM browser_downloads\n           WHERE status IN ('finished', 'imported', 'failed', 'canceled')\n             AND finished_at < datetime('now', ? || ' days')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "4cc5f87b5d98a273822bb07be871a4bb800df001f675c1207b69e21cddb0afd3"
+}

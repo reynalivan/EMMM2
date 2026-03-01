@@ -15,11 +15,12 @@ Based on user's request:
 
 **User provides a prompt to transform:**
 → Ask using AskUserQuestion:
-  - **Question:** "How should I improve this prompt?"
-  - **Header:** "Mode"
-  - **Options:**
-    1. **Transform directly** — "I'll apply best practices and output an improved version"
-    2. **Build context first** — "I'll gather codebase context and intent analysis first"
+
+- **Question:** "How should I improve this prompt?"
+- **Header:** "Mode"
+- **Options:**
+  1. **Transform directly** — "I'll apply best practices and output an improved version"
+  2. **Build context first** — "I'll gather codebase context and intent analysis first"
 
 **User asks to learn/understand:**
 → Show the 5 Transformation Principles section
@@ -50,11 +51,11 @@ Run these agents IN PARALLEL using the Task tool:
 
 ### What Each Agent Returns
 
-| Agent | Mission | Returns |
-|-------|---------|---------|
-| **task-intent-analyzer** | Understand what user is trying to do | Task type, gaps, edge cases, transformation guidance |
+| Agent                         | Mission                                 | Returns                                                         |
+| ----------------------------- | --------------------------------------- | --------------------------------------------------------------- |
+| **task-intent-analyzer**      | Understand what user is trying to do    | Task type, gaps, edge cases, transformation guidance            |
 | **best-practices-referencer** | Find relevant patterns from references/ | Matching examples, anti-patterns to avoid, transformation rules |
-| **codebase-context-builder** | Explore THIS codebase | Specific file paths, similar implementations, conventions |
+| **codebase-context-builder**  | Explore THIS codebase                   | Specific file paths, similar implementations, conventions       |
 
 ### After Agents Return
 
@@ -67,6 +68,7 @@ Run these agents IN PARALLEL using the Task tool:
 ### Agent Definitions
 
 The agents are defined in `agents/`:
+
 - `agents/task-intent-analyzer.md` — Analyzes intent, gaps, and edge cases
 - `agents/best-practices-referencer.md` — Finds relevant examples and patterns from references/
 - `agents/codebase-context-builder.md` — Explores codebase for files and conventions
@@ -92,15 +94,15 @@ Apply these in order of priority:
 
 **The single highest-leverage improvement.** Claude performs dramatically better when it can verify its own work.
 
-| Missing | Add |
-|---------|-----|
-| No success criteria | Test cases with expected inputs/outputs |
-| UI changes | "take screenshot and compare to design" |
-| Bug fixes | "write a failing test, then fix it" |
-| Build issues | "verify the build succeeds after fixing" |
-| Refactoring | "run the test suite after each change" |
+| Missing                   | Add                                        |
+| ------------------------- | ------------------------------------------ |
+| No success criteria       | Test cases with expected inputs/outputs    |
+| UI changes                | "take screenshot and compare to design"    |
+| Bug fixes                 | "write a failing test, then fix it"        |
+| Build issues              | "verify the build succeeds after fixing"   |
+| Refactoring               | "run the test suite after each change"     |
 | No root cause enforcement | "address root cause, don't suppress error" |
-| No verification report | "summarize what you ran and what passed" |
+| No verification report    | "summarize what you ran and what passed"   |
 
 ```
 BEFORE: "implement email validation"
@@ -120,25 +122,26 @@ AFTER:  "the /api/orders endpoint returns 500 for large orders. check
 
 Replace vague references with precise locations and details.
 
-| Vague | Specific |
-|-------|----------|
-| "the code" | `src/auth/login.ts` |
-| "the bug" | "users report X happens when Y" |
-| "the API" | "the /api/users endpoint in routes.ts" |
-| "that function" | `processPayment()` on line 142 |
+| Vague           | Specific                               |
+| --------------- | -------------------------------------- |
+| "the code"      | `src/auth/login.ts`                    |
+| "the bug"       | "users report X happens when Y"        |
+| "the API"       | "the /api/users endpoint in routes.ts" |
+| "that function" | `processPayment()` on line 142         |
 
 **Four ways to add context:**
 
-| Strategy | Example |
-|----------|---------|
-| **Scope the task** | "write a test for foo.py covering the edge case where user is logged out. avoid mocks." |
-| **Point to sources** | "look through ExecutionFactory's git history and summarize how its API evolved" |
-| **Reference patterns** | "look at HotDogWidget.php and follow that pattern for the calendar widget" |
-| **Describe symptoms** | "users report login fails after session timeout. check src/auth/, especially token refresh" |
+| Strategy               | Example                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| **Scope the task**     | "write a test for foo.py covering the edge case where user is logged out. avoid mocks."     |
+| **Point to sources**   | "look through ExecutionFactory's git history and summarize how its API evolved"             |
+| **Reference patterns** | "look at HotDogWidget.php and follow that pattern for the calendar widget"                  |
+| **Describe symptoms**  | "users report login fails after session timeout. check src/auth/, especially token refresh" |
 
 **Respect Project CLAUDE.md:**
 
 If the project has a CLAUDE.md, the transformed prompt should:
+
 - Not contradict project conventions
 - Reference project-specific patterns when relevant
 - Note any project constraints that apply
@@ -161,13 +164,13 @@ AFTER:  "users report login fails after session timeout. check the auth flow
 
 Tell Claude what NOT to do. Prevents over-engineering and unwanted changes.
 
-| Constraint Type | Examples |
-|-----------------|----------|
-| **Dependencies** | "no new libraries", "only use existing deps" |
-| **Testing** | "avoid mocks", "use real database in tests" |
-| **Scope** | "don't refactor unrelated code", "only touch auth module" |
-| **Approach** | "address root cause, don't suppress error", "keep backward compat" |
-| **Patterns** | "follow existing codebase conventions", "match the style in utils.ts" |
+| Constraint Type  | Examples                                                              |
+| ---------------- | --------------------------------------------------------------------- |
+| **Dependencies** | "no new libraries", "only use existing deps"                          |
+| **Testing**      | "avoid mocks", "use real database in tests"                           |
+| **Scope**        | "don't refactor unrelated code", "only touch auth module"             |
+| **Approach**     | "address root cause, don't suppress error", "keep backward compat"    |
+| **Patterns**     | "follow existing codebase conventions", "match the style in utils.ts" |
 
 ```
 BEFORE: "add a calendar widget"
@@ -200,11 +203,13 @@ Phase 4: COMMIT
 ```
 
 **When to use phases:**
+
 - Uncertain about the approach
 - Change modifies multiple files
 - Unfamiliar with the code being modified
 
 **Skip phases when:**
+
 - Could describe the diff in one sentence
 - Fixing a typo, adding a log line, renaming a variable
 
@@ -219,13 +224,13 @@ AFTER:  "read src/auth/ and understand current session handling. create a plan
 
 Provide supporting materials that Claude can use directly.
 
-| Content Type | How to Provide |
-|--------------|----------------|
-| **Files** | Use `@filename` to reference files |
-| **Images** | Paste screenshots directly |
-| **Errors** | Paste actual error messages, not descriptions |
-| **Logs** | Pipe with `cat error.log \| claude` |
-| **URLs** | Link to relevant documentation |
+| Content Type | How to Provide                                |
+| ------------ | --------------------------------------------- |
+| **Files**    | Use `@filename` to reference files            |
+| **Images**   | Paste screenshots directly                    |
+| **Errors**   | Paste actual error messages, not descriptions |
+| **Logs**     | Pipe with `cat error.log \| claude`           |
+| **URLs**     | Link to relevant documentation                |
 
 ```
 BEFORE: "make the dashboard look better"
@@ -253,7 +258,9 @@ When transforming a prompt, output:
 
 **Improved:**
 ```
+
 [transformed prompt in code block]
+
 ```
 
 **Added:**
@@ -267,6 +274,7 @@ When transforming a prompt, output:
 ## Quick Transformation Examples
 
 ### Bug Fix
+
 ```
 BEFORE: "fix the login bug"
 
@@ -278,6 +286,7 @@ ADDED: symptom, location, verification (failing test), success criteria
 ```
 
 ### Feature Implementation
+
 ```
 BEFORE: "add a search feature"
 
@@ -290,6 +299,7 @@ ADDED: location, reference pattern, specific behavior, test cases, constraint
 ```
 
 ### Refactoring
+
 ```
 BEFORE: "make the code better"
 
@@ -302,6 +312,7 @@ ADDED: specific changes, constraint (same behavior), verification after each ste
 ```
 
 ### Testing
+
 ```
 BEFORE: "add tests for foo.py"
 
@@ -314,6 +325,7 @@ ADDED: specific edge case, constraint (no mocks), pattern reference, test cases
 ```
 
 ### Debugging
+
 ```
 BEFORE: "the API is slow"
 
@@ -325,6 +337,7 @@ ADDED: specific endpoint, location, what to look for, measurable success criteri
 ```
 
 ### UI Changes
+
 ```
 BEFORE: "fix the button styling"
 
@@ -336,6 +349,7 @@ ADDED: design reference, file locations, visual verification
 ```
 
 ### Exploration
+
 ```
 BEFORE: "how does auth work?"
 
@@ -347,6 +361,7 @@ ADDED: specific files, specific questions to answer, output format
 ```
 
 ### Migration
+
 ```
 BEFORE: "upgrade to React 18"
 
@@ -358,6 +373,7 @@ ADDED: phased approach, reference docs, incremental verification, scope constrai
 ```
 
 ### With Verification Report
+
 ```
 BEFORE: "fix the API error"
 
@@ -389,14 +405,15 @@ Before outputting, verify the improved prompt has:
 
 Rate the prompt against these dimensions:
 
-| Dimension | 0 (Missing) | 1 (Partial) | 2 (Complete) |
-|-----------|-------------|-------------|--------------|
-| **Verification** | None | "test it" | Specific test cases + report |
-| **Location** | "the code" | "auth module" | `src/auth/login.ts:42` |
-| **Constraints** | None | Implied | "avoid X, no Y, root cause only" |
-| **Scope** | Vague | Partial | Single clear task |
+| Dimension        | 0 (Missing) | 1 (Partial)   | 2 (Complete)                     |
+| ---------------- | ----------- | ------------- | -------------------------------- |
+| **Verification** | None        | "test it"     | Specific test cases + report     |
+| **Location**     | "the code"  | "auth module" | `src/auth/login.ts:42`           |
+| **Constraints**  | None        | Implied       | "avoid X, no Y, root cause only" |
+| **Scope**        | Vague       | Partial       | Single clear task                |
 
 **Quick assessment:**
+
 - 0-3: Needs significant work
 - 4-5: Needs some improvements
 - 6-8: Good, minor tweaks
@@ -415,13 +432,13 @@ Don't interrogate — one question is enough. Transform with what you learn.
 
 ## Common Anti-Patterns to Fix
 
-| Anti-Pattern | Problem | Fix |
-|--------------|---------|-----|
-| "fix the bug" | No symptom, no location | Add what users report + where to look |
-| "add tests" | No scope, no cases | Specify edge cases + test patterns |
-| "make it better" | No criteria for "better" | Define specific improvements |
-| "implement X" | No verification | Add test cases or success criteria |
-| "update the code" | No constraints | Add what to preserve, what to avoid |
+| Anti-Pattern      | Problem                  | Fix                                   |
+| ----------------- | ------------------------ | ------------------------------------- |
+| "fix the bug"     | No symptom, no location  | Add what users report + where to look |
+| "add tests"       | No scope, no cases       | Specify edge cases + test patterns    |
+| "make it better"  | No criteria for "better" | Define specific improvements          |
+| "implement X"     | No verification          | Add test cases or success criteria    |
+| "update the code" | No constraints           | Add what to preserve, what to avoid   |
 
 ---
 
@@ -430,51 +447,56 @@ Don't interrogate — one question is enough. Transform with what you learn.
 A well-transformed prompt passes these checks:
 
 ### Principle 1: Verification ✅
-| Check | Pass | Fail |
-|-------|------|------|
-| Has success criteria | "run tests", "screenshot matches" | Nothing |
-| Measurable outcome | "response < 500ms" | "make it faster" |
-| Self-verifiable | Claude can check its own work | Requires human judgment |
-| Root cause enforced | "don't suppress error" | Silent about approach |
+
+| Check                | Pass                              | Fail                    |
+| -------------------- | --------------------------------- | ----------------------- |
+| Has success criteria | "run tests", "screenshot matches" | Nothing                 |
+| Measurable outcome   | "response < 500ms"                | "make it faster"        |
+| Self-verifiable      | Claude can check its own work     | Requires human judgment |
+| Root cause enforced  | "don't suppress error"            | Silent about approach   |
 
 ### Principle 2: Specificity ✅
-| Check | Pass | Fail |
-|-------|------|------|
-| File locations | `src/auth/login.ts` | "the auth code" |
-| Function/class names | `processPayment()` | "that function" |
-| Line numbers (if relevant) | `:42` | "somewhere in there" |
-| CLAUDE.md respected | "check project conventions" | Ignores project rules |
+
+| Check                      | Pass                        | Fail                  |
+| -------------------------- | --------------------------- | --------------------- |
+| File locations             | `src/auth/login.ts`         | "the auth code"       |
+| Function/class names       | `processPayment()`          | "that function"       |
+| Line numbers (if relevant) | `:42`                       | "somewhere in there"  |
+| CLAUDE.md respected        | "check project conventions" | Ignores project rules |
 
 ### Principle 3: Constraints ✅
-| Check | Pass | Fail |
-|-------|------|------|
-| What NOT to do | "avoid mocks", "no new deps" | Open-ended |
-| Scope boundaries | "only touch auth module" | Unlimited scope |
-| Pattern to follow | "match UserService.ts style" | No reference |
+
+| Check             | Pass                         | Fail            |
+| ----------------- | ---------------------------- | --------------- |
+| What NOT to do    | "avoid mocks", "no new deps" | Open-ended      |
+| Scope boundaries  | "only touch auth module"     | Unlimited scope |
+| Pattern to follow | "match UserService.ts style" | No reference    |
 
 ### Principle 4: Structure ✅
-| Check | Pass | Fail |
-|-------|------|------|
-| Single task | One clear objective | Multiple goals |
+
+| Check               | Pass                         | Fail                  |
+| ------------------- | ---------------------------- | --------------------- |
+| Single task         | One clear objective          | Multiple goals        |
 | Phased (if complex) | "explore → plan → implement" | Jump straight to code |
-| Appropriate depth | Matches task complexity | Over/under-specified |
+| Appropriate depth   | Matches task complexity      | Over/under-specified  |
 
 ### Principle 5: Rich Content ✅
-| Check | Pass | Fail |
-|-------|------|------|
-| Actual errors | Pasted error message | "it's broken" |
-| Screenshots (UI) | Image attached | "the button looks wrong" |
-| File references | `@filename` or path | "that file" |
+
+| Check            | Pass                 | Fail                     |
+| ---------------- | -------------------- | ------------------------ |
+| Actual errors    | Pasted error message | "it's broken"            |
+| Screenshots (UI) | Image attached       | "the button looks wrong" |
+| File references  | `@filename` or path  | "that file"              |
 
 ### Overall Quality Score
 
-| Score | Meaning | Principles Passed |
-|-------|---------|-------------------|
-| ⭐⭐⭐⭐⭐ | Excellent | All 5 |
-| ⭐⭐⭐⭐ | Good | 4 of 5 |
-| ⭐⭐⭐ | Acceptable | 3 of 5 |
-| ⭐⭐ | Needs work | 2 of 5 |
-| ⭐ | Poor | 1 or 0 |
+| Score      | Meaning    | Principles Passed |
+| ---------- | ---------- | ----------------- |
+| ⭐⭐⭐⭐⭐ | Excellent  | All 5             |
+| ⭐⭐⭐⭐   | Good       | 4 of 5            |
+| ⭐⭐⭐     | Acceptable | 3 of 5            |
+| ⭐⭐       | Needs work | 2 of 5            |
+| ⭐         | Poor       | 1 or 0            |
 
 **Target:** Every transformed prompt should score ⭐⭐⭐⭐ or ⭐⭐⭐⭐⭐
 

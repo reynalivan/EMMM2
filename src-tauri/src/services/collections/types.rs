@@ -51,7 +51,7 @@ pub struct ApplyCollectionResult {
     pub warnings: Vec<String>,
 }
 
-pub(crate) struct ModState {
+pub struct ModState {
     pub id: String,
     pub folder_path: String,
     pub status: String,

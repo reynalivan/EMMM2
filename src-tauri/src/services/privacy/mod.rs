@@ -1,6 +1,6 @@
 use crate::commands::mods::mod_core_cmds::toggle_mod_inner;
 use crate::services::scanner::watcher::WatcherState;
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 
 pub struct PrivacyManager;
 
@@ -25,54 +25,41 @@ impl PrivacyManager {
             Mode::SFW => {
                 // Ensure NSFW mode was active previously by checking SFW mode active status implicitly
                 // 1. Snapshot current state of NSFW Mods
-                sqlx::query(
-                    "UPDATE mods SET last_status_nsfw = (CASE WHEN status = 'ENABLED' THEN 1 ELSE 0 END) WHERE is_safe = 0"
-                )
-                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                crate::database::mod_repo::snapshot_nsfw_mods_status_tx(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
 
                 // 2. Disable All NSFW Mods in Database
-                sqlx::query("UPDATE mods SET status = 'DISABLED' WHERE is_safe = 0")
-                    .execute(&mut *tx)
+                crate::database::mod_repo::disable_all_nsfw_mods_tx(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
 
                 // 3. Restore SFW State (Re-enable SFW mods previously active)
-                sqlx::query(
-                    "UPDATE mods SET status = 'ENABLED' WHERE is_safe = 1 AND last_status_sfw = 1",
-                )
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
+                crate::database::mod_repo::restore_sfw_mods_status_tx(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
 
                 // 4. Set SFW that was restored back to 0 so we don't accidentally enable it if we switch SFW->SFW.
-                sqlx::query(
-                    "UPDATE mods SET last_status_sfw = 0 WHERE is_safe = 1 AND last_status_sfw = 1",
-                )
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
+                crate::database::mod_repo::clear_sfw_last_status_tx(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
             Mode::NSFW => {
                 // SFW to NSFW
                 // 1. Snapshot current state of SFW Mods
-                sqlx::query(
-                    "UPDATE mods SET last_status_sfw = (CASE WHEN status = 'ENABLED' THEN 1 ELSE 0 END) WHERE is_safe = 1"
-                )
-                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                crate::database::mod_repo::snapshot_sfw_mods_status_tx(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
 
                 // 2. Restore NSFW State
-                sqlx::query(
-                    "UPDATE mods SET status = 'ENABLED' WHERE is_safe = 0 AND last_status_nsfw = 1",
-                )
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
+                crate::database::mod_repo::restore_nsfw_mods_status_tx(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
 
                 // 3. Clear the NSFW last_status to prevent double enable issue
-                sqlx::query(
-                    "UPDATE mods SET last_status_nsfw = 0 WHERE is_safe = 0 AND last_status_nsfw = 1"
-                )
-                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                crate::database::mod_repo::clear_nsfw_last_status_tx(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
         }
 
@@ -82,16 +69,11 @@ impl PrivacyManager {
 
         // 5. Physical Execution (Batch Rename)
         // Retrieve all mods whose physical state might need update
-        let rows = sqlx::query("SELECT id, folder_path, status FROM mods")
-            .fetch_all(pool)
+        let rows = crate::database::mod_repo::get_all_mods_id_path_status(pool)
             .await
             .map_err(|e| e.to_string())?;
 
-        for row in rows {
-            let id: String = row.try_get("id").map_err(|e| e.to_string())?;
-            let fp: String = row.try_get("folder_path").map_err(|e| e.to_string())?;
-            let status: String = row.try_get("status").map_err(|e| e.to_string())?;
-
+        for (id, fp, status) in rows {
             let should_be_enabled = status == "ENABLED";
 
             // Physically rename using the core module, which also handles watcher suppression
@@ -99,11 +81,9 @@ impl PrivacyManager {
                 Ok(new_path) => {
                     // Sync the new path back to DB if it changed
                     if new_path != fp {
-                        let _ = sqlx::query("UPDATE mods SET folder_path = ? WHERE id = ?")
-                            .bind(&new_path)
-                            .bind(&id)
-                            .execute(pool)
-                            .await;
+                        let _ =
+                            crate::database::mod_repo::update_mod_path_by_id(pool, &id, &new_path)
+                                .await;
                     }
                 }
                 Err(e) => {
@@ -122,3 +102,7 @@ impl PrivacyManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tests/privacy_service_tests.rs"]
+mod tests;

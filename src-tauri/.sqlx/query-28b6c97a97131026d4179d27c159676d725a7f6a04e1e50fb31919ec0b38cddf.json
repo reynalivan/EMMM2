@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO import_jobs\n           (id, download_id, game_id, archive_path, status, is_duplicate, created_at, updated_at)\n           VALUES (?, ?, ?, ?, 'queued', 0, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "28b6c97a97131026d4179d27c159676d725a7f6a04e1e50fb31919ec0b38cddf"
+}

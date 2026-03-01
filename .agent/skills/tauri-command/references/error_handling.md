@@ -1,6 +1,7 @@
 # Error Handling Patterns
 
 ## 1. The String Pattern (Simple)
+
 For most commands, returning `Result<T, String>` is sufficient. The frontend receives the error string directly.
 
 ```rust
@@ -15,6 +16,7 @@ pub fn simple_command() -> Result<String, String> {
 ```
 
 ## 2. The `anyhow` Pattern (Recommended)
+
 Use `anyhow` for easy error propagation, then map it to `String` at the boundary.
 
 ```rust
@@ -30,6 +32,7 @@ async fn internal_function() -> anyhow::Result<String> {
 ```
 
 ## 3. The Custom Enum Pattern (Advanced)
+
 If the frontend needs to react differently to specific errors (e.g., "AuthFailed" vs "NetworkError").
 
 ```rust

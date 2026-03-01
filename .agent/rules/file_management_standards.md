@@ -1,6 +1,6 @@
 ---
 trigger: model_decision
-description: File Management Rule - When manipulating the filesystem (rename, move, delete), toggling objects, or dealing with watcher suppression.
+description: File Management Rule - When manipulating the filesystem on the code (rename, move, delete), toggling objects, or dealing with watcher suppression.
 ---
 
 # 📁 File Management & Movement Standards

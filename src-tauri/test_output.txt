@@ -1,0 +1,79 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling emmm2 v0.1.0 (E:\Dev\EMMM2NEW\src-tauri)
+warning: unused import: `std::fs`
+ --> src\services\explorer\tests\helpers_tests.rs:3:5
+  |
+3 | use std::fs;
+  |     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tempfile::TempDir`
+ --> src\services\objects\tests\mutate_tests.rs:6:5
+  |
+6 | use tempfile::TempDir;
+  |     ^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `as_deref` found for struct `std::string::String` in the current scope
+   --> src\services\app\tests\dashboard_tests.rs:111:58
+    |
+111 |     assert_eq!(payload.category_distribution[0].category.as_deref(), Some("Character"));
+    |                                                          ^^^^^^^^
+    |
+help: there is a method `as_ref` with a similar name
+    |
+111 -     assert_eq!(payload.category_distribution[0].category.as_deref(), Some("Character"));
+111 +     assert_eq!(payload.category_distribution[0].category.as_ref(), Some("Character"));
+    |
+
+error[E0609]: no field `mod_count` on type `CategorySlice`
+   --> src\services\app\tests\dashboard_tests.rs:112:49
+    |
+112 |     assert_eq!(payload.category_distribution[0].mod_count, 1);
+    |                                                 ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `category`, `count`
+
+error[E0609]: no field `mod_count` on type `GameSlice`
+   --> src\services\app\tests\dashboard_tests.rs:116:45
+    |
+116 |     assert_eq!(payload.game_distribution[0].mod_count, 1);
+    |                                             ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `game_id`, `game_name`, `count`
+
+error[E0609]: no field `mod_name` on type `RecentMod`
+   --> src\services\app\tests\dashboard_tests.rs:119:39
+    |
+119 |     assert_eq!(payload.recent_mods[0].mod_name, "Mod 1");
+    |                                       ^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id`, `name`, `game_name`, `object_name`, `indexed_at`
+
+error[E0599]: no method named `clone` found for struct `object_repo::CreateObjectInput` in the current scope
+   --> src\services\objects\tests\mutate_tests.rs:130:43
+    |
+130 |     create_object_cmd_inner(&pool, input1.clone())
+    |                                           ^^^^^ method not found in `object_repo::CreateObjectInput`
+    |
+   ::: src\database\object_repo.rs:145:1
+    |
+145 | pub struct CreateObjectInput {
+    | ---------------------------- method `clone` not found for this struct
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `clone`, perhaps you need to implement it:
+            candidate #1: `Clone`
+
+error[E0560]: struct `object_repo::UpdateObjectInput` has no field named `apply_order`
+   --> src\services\objects\tests\mutate_tests.rs:179:9
+    |
+179 |         apply_order: None,
+    |         ^^^^^^^^^^^ `object_repo::UpdateObjectInput` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+Some errors have detailed explanations: E0560, E0599, E0609.
+For more information about an error, try `rustc --explain E0560`.
+warning: `emmm2` (lib test) generated 2 warnings
+error: could not compile `emmm2` (lib test) due to 6 previous errors; 2 warnings emitted

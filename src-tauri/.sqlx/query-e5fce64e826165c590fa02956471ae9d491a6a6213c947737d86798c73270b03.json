@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs\n               SET match_category = ?, match_object_id = ?, match_confidence = ?, match_reason = ?\n               WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "e5fce64e826165c590fa02956471ae9d491a6a6213c947737d86798c73270b03"
+}

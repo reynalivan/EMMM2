@@ -1,0 +1,14 @@
+    Checking emmm2 v0.1.0 (E:\Dev\EMMM2NEW\src-tauri)
+tests\collections_service.rs:8:5: error[E0252]: the name `TempDir` is defined multiple times: `TempDir` reimported here
+tests\collections_service.rs:8:5: warning: unused import: `tempfile::TempDir`
+warning: `emmm2` (test "collections_service") generated 1 warning
+error: could not compile `emmm2` (test "collections_service") due to 1 previous error; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+src\services\explorer\tests\helpers_tests.rs:3:5: warning: unused import: `std::fs`
+src\services\app\tests\dashboard_tests.rs:107:30: error[E0609]: no field `total_enabled_mods` on type `DashboardStats`: unknown field
+src\services\app\tests\dashboard_tests.rs:111:58: error[E0599]: no method named `as_deref` found for struct `std::string::String` in the current scope
+src\services\app\tests\dashboard_tests.rs:112:49: error[E0609]: no field `mod_count` on type `CategorySlice`: unknown field
+src\services\app\tests\dashboard_tests.rs:116:45: error[E0609]: no field `mod_count` on type `GameSlice`: unknown field
+src\services\app\tests\dashboard_tests.rs:119:39: error[E0609]: no field `mod_name` on type `RecentMod`: unknown field
+warning: `emmm2` (lib test) generated 1 warning
+error: could not compile `emmm2` (lib test) due to 5 previous errors; 1 warning emitted

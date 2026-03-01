@@ -98,6 +98,14 @@ pub fn read_ini_document(file_path: &Path) -> Result<IniDocument, String> {
         return Err(format!("INI file not found: {}", file_path.display()));
     }
 
+    let meta = fs::metadata(file_path).map_err(|e| format!("Failed to stat INI: {e}"))?;
+    if meta.len() > 2 * 1024 * 1024 {
+        return Err(
+            "INI file is too large to edit safely (>2MB). Please use an external editor."
+                .to_string(),
+        );
+    }
+
     let bytes = fs::read(file_path).map_err(|e| format!("Failed to read INI file: {e}"))?;
 
     let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
@@ -111,7 +119,14 @@ pub fn read_ini_document(file_path: &Path) -> Result<IniDocument, String> {
 
     let (text, utf8_ok) = match String::from_utf8(content_bytes.to_vec()) {
         Ok(s) => (s, true),
-        Err(_) => (String::from_utf8_lossy(content_bytes).to_string(), false),
+        Err(_) => {
+            let (cow, _encoding, had_errors) = encoding_rs::SHIFT_JIS.decode(content_bytes);
+            if !had_errors {
+                (cow.into_owned(), true)
+            } else {
+                (String::from_utf8_lossy(content_bytes).to_string(), false)
+            }
+        }
     };
 
     let raw_lines: Vec<String> = text.lines().map(ToString::to_string).collect();

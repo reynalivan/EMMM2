@@ -16,9 +16,12 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "EMMM2",
+        "url": "index.html",
         "width": 800,
         "height": 600
       }

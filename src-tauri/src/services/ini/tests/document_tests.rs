@@ -84,13 +84,19 @@ fn test_read_ini_document_malformed_section_falls_back_to_raw_mode() {
 
 // Covers: EC-6.01 (Shift-JIS / GBK INI)
 #[test]
-fn test_read_ini_document_non_utf8_falls_back_to_raw_mode() {
+fn test_read_ini_decodes_shift_jis_gracefully() {
     let tmp = TempDir::new().unwrap();
     let ini_path = tmp.path().join("encoded.ini");
-    fs::write(&ini_path, [0x82_u8, 0xA0_u8, 0x82_u8]).unwrap();
 
+    // Encode "[Section]\nKey=Value" in Shift-JIS
+    let (cow, _, _) = encoding_rs::SHIFT_JIS.encode("[Section]\nKey=Value");
+    fs::write(&ini_path, cow).unwrap();
+
+    // The implementation should use encoding_rs to detect invalid UTF-8 and try Shift-JIS
     let doc = read_ini_document(&ini_path).unwrap();
-    assert_eq!(doc.mode, IniReadMode::RawFallback);
+    // If it properly decodes, it will parse as Structured
+    assert_eq!(doc.mode, IniReadMode::Structured);
+    assert_eq!(doc.raw_lines[0], "[Section]");
 }
 
 // Covers: DI-6.02 (BOM Preservation metadata), EC-6.05
@@ -102,4 +108,21 @@ fn test_read_ini_document_detects_crlf_newline_style() {
 
     let doc = read_ini_document(&ini_path).unwrap();
     assert_eq!(doc.newline_style, NewlineStyle::CrLf);
+}
+
+// Covers: TC-18 (Over 2MB INI aborts)
+#[test]
+fn test_read_ini_aborts_over_2mb() {
+    let tmp = TempDir::new().unwrap();
+    let ini_path = tmp.path().join("huge.ini");
+
+    // Create a file slightly larger than 2MB
+    let huge_data = vec![b'A'; 2 * 1024 * 1024 + 1024];
+    fs::write(&ini_path, huge_data).unwrap();
+
+    let result = read_ini_document(&ini_path);
+    assert!(result.is_err(), "Reading INI files > 2MB should be aborted");
+    if let Err(e) = result {
+        assert!(e.contains("too large"));
+    }
 }

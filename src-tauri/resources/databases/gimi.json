@@ -3,9 +3,7 @@
     {
       "name": "Albedo",
       "hash_db": {
-        "Default": [
-          "df65bb00"
-        ]
+        "Default": ["df65bb00"]
       },
       "tags": [
         "Knights of Favonius",
@@ -34,9 +32,7 @@
     {
       "name": "Alhaitham",
       "hash_db": {
-        "Default": [
-          "3ef08385"
-        ]
+        "Default": ["3ef08385"]
       },
       "tags": [
         "Sumeru Akademiya",
@@ -65,9 +61,7 @@
     {
       "name": "Aloy",
       "hash_db": {
-        "Default": [
-          "46de82f3"
-        ]
+        "Default": ["46de82f3"]
       },
       "tags": [
         "Nora Huntress",
@@ -96,15 +90,9 @@
     {
       "name": "Amber",
       "hash_db": {
-        "Default": [
-          "a2ea4b2d"
-        ],
-        "100% Outrider": [
-          "557b2eff"
-        ],
-        "Amber2": [
-          "557b2eff"
-        ]
+        "Default": ["a2ea4b2d"],
+        "100% Outrider": ["557b2eff"],
+        "Amber2": ["557b2eff"]
       },
       "tags": [
         "Knights of Favonius",
@@ -122,10 +110,7 @@
       "custom_skins": [
         {
           "name": "100% Outrider",
-          "aliases": [
-            "AmberCN",
-            "Amber2"
-          ],
+          "aliases": ["AmberCN", "Amber2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -169,9 +154,7 @@
     {
       "name": "Arlecchino",
       "hash_db": {
-        "Default": [
-          "6895f405"
-        ]
+        "Default": ["6895f405"]
       },
       "tags": [
         "Fatui Harbingers",
@@ -201,9 +184,7 @@
     {
       "name": "Baizhu",
       "hash_db": {
-        "Default": [
-          "17baa562"
-        ]
+        "Default": ["17baa562"]
       },
       "tags": [
         "Bubu Pharmacy",
@@ -231,15 +212,9 @@
     {
       "name": "Barbara",
       "hash_db": {
-        "Default": [
-          "85282151"
-        ],
-        "Summertime Sparkle": [
-          "8b9e7c22"
-        ],
-        "Barbara2": [
-          "8b9e7c22"
-        ]
+        "Default": ["85282151"],
+        "Summertime Sparkle": ["8b9e7c22"],
+        "Barbara2": ["8b9e7c22"]
       },
       "tags": [
         "Church of Favonius",
@@ -258,10 +233,7 @@
       "custom_skins": [
         {
           "name": "Summertime Sparkle",
-          "aliases": [
-            "BarbaraSummer",
-            "Barbara2"
-          ],
+          "aliases": ["BarbaraSummer", "Barbara2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -279,9 +251,7 @@
     {
       "name": "Beidou",
       "hash_db": {
-        "Default": [
-          "51197c51"
-        ]
+        "Default": ["51197c51"]
       },
       "tags": [
         "Crux Fleet",
@@ -310,15 +280,9 @@
     {
       "name": "Bennett",
       "hash_db": {
-        "Default": [
-          "6cff51b4"
-        ],
-        "Sunspray Resort": [
-          "09b92379"
-        ],
-        "Bennett2": [
-          "09b92379"
-        ]
+        "Default": ["6cff51b4"],
+        "Sunspray Resort": ["09b92379"],
+        "Bennett2": ["09b92379"]
       },
       "tags": [
         "Adventurers' Guild",
@@ -336,10 +300,7 @@
       "custom_skins": [
         {
           "name": "Sunspray Resort",
-          "aliases": [
-            "BennettSunspray",
-            "Bennett2"
-          ],
+          "aliases": ["BennettSunspray", "Bennett2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -357,9 +318,7 @@
     {
       "name": "Candace",
       "hash_db": {
-        "Default": [
-          "9cee8711"
-        ]
+        "Default": ["9cee8711"]
       },
       "tags": [
         "Aaru Village",
@@ -388,9 +347,7 @@
     {
       "name": "Charlotte",
       "hash_db": {
-        "Default": [
-          "c5a6d98e"
-        ]
+        "Default": ["c5a6d98e"]
       },
       "tags": [
         "The Steambird",
@@ -419,13 +376,9 @@
     {
       "name": "Chasca",
       "hash_db": {
-        "Default": [
-          "b5a29a7d"
-        ]
+        "Default": ["b5a29a7d"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/chasca.png",
@@ -441,9 +394,7 @@
     {
       "name": "Chevreuse",
       "hash_db": {
-        "Default": [
-          "4d8d965a"
-        ]
+        "Default": ["4d8d965a"]
       },
       "tags": [
         "Special Security and Surveillance Patrol",
@@ -472,9 +423,7 @@
     {
       "name": "Chiori",
       "hash_db": {
-        "Default": [
-          "c8e25747"
-        ]
+        "Default": ["c8e25747"]
       },
       "tags": [
         "Chioriya Boutique",
@@ -503,9 +452,7 @@
     {
       "name": "Chongyun",
       "hash_db": {
-        "Default": [
-          "489e3621"
-        ]
+        "Default": ["489e3621"]
       },
       "tags": [
         "Exorcist",
@@ -533,13 +480,9 @@
     {
       "name": "Citlali",
       "hash_db": {
-        "Default": [
-          "362dc30c"
-        ]
+        "Default": ["362dc30c"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/citlali.png",
@@ -555,9 +498,7 @@
     {
       "name": "Clorinde",
       "hash_db": {
-        "Default": [
-          "07f8ad68"
-        ]
+        "Default": ["07f8ad68"]
       },
       "tags": [
         "Champion Duelist",
@@ -585,9 +526,7 @@
     {
       "name": "Collei",
       "hash_db": {
-        "Default": [
-          "348e58c4"
-        ]
+        "Default": ["348e58c4"]
       },
       "tags": [
         "Gandharva Ville",
@@ -616,9 +555,7 @@
     {
       "name": "Cyno",
       "hash_db": {
-        "Default": [
-          "226f076e"
-        ]
+        "Default": ["226f076e"]
       },
       "tags": [
         "General Mahamatra",
@@ -647,13 +584,9 @@
     {
       "name": "Dahlia",
       "hash_db": {
-        "Default": [
-          "39aa79bd"
-        ]
+        "Default": ["39aa79bd"]
       },
-      "tags": [
-        "Mondstadt"
-      ],
+      "tags": ["Mondstadt"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/dahlia.png",
@@ -669,9 +602,7 @@
     {
       "name": "Dehya",
       "hash_db": {
-        "Default": [
-          "9aeecbcb"
-        ]
+        "Default": ["9aeecbcb"]
       },
       "tags": [
         "Eremites",
@@ -700,15 +631,9 @@
     {
       "name": "Diluc",
       "hash_db": {
-        "Default": [
-          "71625c4d"
-        ],
-        "Red Dead of Night": [
-          "a2d909c8"
-        ],
-        "Diluc2": [
-          "a2d909c8"
-        ]
+        "Default": ["71625c4d"],
+        "Red Dead of Night": ["a2d909c8"],
+        "Diluc2": ["a2d909c8"]
       },
       "tags": [
         "Dawn Winery",
@@ -726,11 +651,7 @@
       "custom_skins": [
         {
           "name": "Red Dead of Night",
-          "aliases": [
-            "DilucRed",
-            "Diluc2",
-            "DilucNight"
-          ],
+          "aliases": ["DilucRed", "Diluc2", "DilucNight"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -748,9 +669,7 @@
     {
       "name": "Diona",
       "hash_db": {
-        "Default": [
-          "e8083f19"
-        ]
+        "Default": ["e8083f19"]
       },
       "tags": [
         "The Cat's Tail",
@@ -779,9 +698,7 @@
     {
       "name": "Dori",
       "hash_db": {
-        "Default": [
-          "2a2a63ab"
-        ]
+        "Default": ["2a2a63ab"]
       },
       "tags": [
         "The Palace of Alcazarzaray",
@@ -810,9 +727,7 @@
     {
       "name": "Emilie",
       "hash_db": {
-        "Default": [
-          "62679081"
-        ]
+        "Default": ["62679081"]
       },
       "tags": [
         "Perfumer",
@@ -840,14 +755,9 @@
     {
       "name": "Escoffier",
       "hash_db": {
-        "Default": [
-          "1569d000"
-        ]
+        "Default": ["1569d000"]
       },
-      "tags": [
-        "Fontaine",
-        "Chef"
-      ],
+      "tags": ["Fontaine", "Chef"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/escoffier.png",
@@ -863,9 +773,7 @@
     {
       "name": "Eula",
       "hash_db": {
-        "Default": [
-          "107ba6e7"
-        ]
+        "Default": ["107ba6e7"]
       },
       "tags": [
         "Knights of Favonius",
@@ -895,9 +803,7 @@
     {
       "name": "Faruzan",
       "hash_db": {
-        "Default": [
-          "6162188c"
-        ]
+        "Default": ["6162188c"]
       },
       "tags": [
         "Sumeru Akademiya",
@@ -926,15 +832,9 @@
     {
       "name": "Fischl",
       "hash_db": {
-        "Default": [
-          "bf6aef4d"
-        ],
-        "Ein Immernachtstraum": [
-          "8f473224"
-        ],
-        "Fischl2": [
-          "8f473224"
-        ]
+        "Default": ["bf6aef4d"],
+        "Ein Immernachtstraum": ["8f473224"],
+        "Fischl2": ["8f473224"]
       },
       "tags": [
         "Adventurers' Guild",
@@ -952,10 +852,7 @@
       "custom_skins": [
         {
           "name": "Ein Immernachtstraum",
-          "aliases": [
-            "FischlFantasy",
-            "Fischl2"
-          ],
+          "aliases": ["FischlFantasy", "Fischl2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -973,9 +870,7 @@
     {
       "name": "Freminet",
       "hash_db": {
-        "Default": [
-          "86559a85"
-        ]
+        "Default": ["86559a85"]
       },
       "tags": [
         "House of the Hearth",
@@ -1004,9 +899,7 @@
     {
       "name": "Furina",
       "hash_db": {
-        "Default": [
-          "8294fe98"
-        ]
+        "Default": ["8294fe98"]
       },
       "tags": [
         "Focalors",
@@ -1035,9 +928,7 @@
     {
       "name": "Gaming",
       "hash_db": {
-        "Default": [
-          "b94ef036"
-        ]
+        "Default": ["b94ef036"]
       },
       "tags": [
         "Sword and Strongbox Secure Transport",
@@ -1066,15 +957,9 @@
     {
       "name": "Ganyu",
       "hash_db": {
-        "Default": [
-          "a5169f1d"
-        ],
-        "Twilight Blossom": [
-          "9b3f356e"
-        ],
-        "Ganyu2": [
-          "9b3f356e"
-        ]
+        "Default": ["a5169f1d"],
+        "Twilight Blossom": ["9b3f356e"],
+        "Ganyu2": ["9b3f356e"]
       },
       "tags": [
         "Liyue Qixing",
@@ -1093,10 +978,7 @@
       "custom_skins": [
         {
           "name": "Twilight Blossom",
-          "aliases": [
-            "GanyuTwilight",
-            "Ganyu2"
-          ],
+          "aliases": ["GanyuTwilight", "Ganyu2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1114,9 +996,7 @@
     {
       "name": "Gorou",
       "hash_db": {
-        "Default": [
-          "3ce94cac"
-        ]
+        "Default": ["3ce94cac"]
       },
       "tags": [
         "Watatsumi Army",
@@ -1145,12 +1025,8 @@
     {
       "name": "Hu Tao",
       "hash_db": {
-        "Default": [
-          "dd16576c"
-        ],
-        "Hutao2": [
-          "a78db232"
-        ]
+        "Default": ["dd16576c"],
+        "Hutao2": ["a78db232"]
       },
       "tags": [
         "Wangsheng Funeral Parlor",
@@ -1179,17 +1055,9 @@
     {
       "name": "Iansan",
       "hash_db": {
-        "Default": [
-          "6891e2e2"
-        ]
+        "Default": ["6891e2e2"]
       },
-      "tags": [
-        "Natlan",
-        "伊安珊",
-        "Yī'ānshān",
-        "イアンサ",
-        "Iansa"
-      ],
+      "tags": ["Natlan", "伊安珊", "Yī'ānshān", "イアンサ", "Iansa"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/iansan.png",
@@ -1205,13 +1073,9 @@
     {
       "name": "Ifa",
       "hash_db": {
-        "Default": [
-          "2f2a744d"
-        ]
+        "Default": ["2f2a744d"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/ifa.png",
@@ -1227,18 +1091,9 @@
     {
       "name": "Ineffa",
       "hash_db": {
-        "Default": [
-          "29fbb239"
-        ]
+        "Default": ["29fbb239"]
       },
-      "tags": [
-        "Natlan",
-        "Nod-Krai",
-        "伊涅芙",
-        "イネファ",
-        "이네파",
-        "Инеффа"
-      ],
+      "tags": ["Natlan", "Nod-Krai", "伊涅芙", "イネファ", "이네파", "Инеффа"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/Ineffa.png",
@@ -1254,21 +1109,11 @@
     {
       "name": "Jean",
       "hash_db": {
-        "Default": [
-          "191af650"
-        ],
-        "Gunnhildr's Heritage": [
-          "93bb2522"
-        ],
-        "Sea Breeze Dandelion": [
-          "16fef1eb"
-        ],
-        "Jean2": [
-          "93bb2522"
-        ],
-        "Jean3": [
-          "16fef1eb"
-        ]
+        "Default": ["191af650"],
+        "Gunnhildr's Heritage": ["93bb2522"],
+        "Sea Breeze Dandelion": ["16fef1eb"],
+        "Jean2": ["93bb2522"],
+        "Jean3": ["16fef1eb"]
       },
       "tags": [
         "Knights of Favonius",
@@ -1287,20 +1132,13 @@
       "custom_skins": [
         {
           "name": "Gunnhildr's Heritage",
-          "aliases": [
-            "JeanCN",
-            "Jean2"
-          ],
+          "aliases": ["JeanCN", "Jean2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         },
         {
           "name": "Sea Breeze Dandelion",
-          "aliases": [
-            "JeanSea",
-            "Jean Sea Breeze",
-            "Jean3"
-          ],
+          "aliases": ["JeanSea", "Jean Sea Breeze", "Jean3"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1318,13 +1156,9 @@
     {
       "name": "Kachina",
       "hash_db": {
-        "Default": [
-          "888c4b7c"
-        ]
+        "Default": ["888c4b7c"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/kachina.png",
@@ -1367,15 +1201,9 @@
     {
       "name": "Kaeya",
       "hash_db": {
-        "Default": [
-          "8a081f34"
-        ],
-        "Sailwind Shadow": [
-          "b9b77eff"
-        ],
-        "Kaeya2": [
-          "b9b77eff"
-        ]
+        "Default": ["8a081f34"],
+        "Sailwind Shadow": ["b9b77eff"],
+        "Kaeya2": ["b9b77eff"]
       },
       "tags": [
         "Knights of Favonius",
@@ -1393,10 +1221,7 @@
       "custom_skins": [
         {
           "name": "Sailwind Shadow",
-          "aliases": [
-            "KaeyaSailwind",
-            "Kaeya2"
-          ],
+          "aliases": ["KaeyaSailwind", "Kaeya2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -1414,9 +1239,7 @@
     {
       "name": "Kamisato Ayaka",
       "hash_db": {
-        "Springbloom Missive": [
-          "cf78a1d0"
-        ]
+        "Springbloom Missive": ["cf78a1d0"]
       },
       "tags": [
         "Yashiro Commission",
@@ -1434,10 +1257,7 @@
       "custom_skins": [
         {
           "name": "Springbloom Missive",
-          "aliases": [
-            "AyakaSpringbloom",
-            "Ayaka2"
-          ],
+          "aliases": ["AyakaSpringbloom", "Ayaka2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1482,9 +1302,7 @@
     {
       "name": "Kaveh",
       "hash_db": {
-        "Default": [
-          "b56fd424"
-        ]
+        "Default": ["b56fd424"]
       },
       "tags": [
         "Sumeru Akademiya",
@@ -1513,15 +1331,9 @@
     {
       "name": "Keqing",
       "hash_db": {
-        "Default": [
-          "3aaf3e94"
-        ],
-        "Opulent Splendor": [
-          "0d7e3cc5"
-        ],
-        "Keqing2": [
-          "0d7e3cc5"
-        ]
+        "Default": ["3aaf3e94"],
+        "Opulent Splendor": ["0d7e3cc5"],
+        "Keqing2": ["0d7e3cc5"]
       },
       "tags": [
         "Liyue Qixing",
@@ -1539,10 +1351,7 @@
       "custom_skins": [
         {
           "name": "Opulent Splendor",
-          "aliases": [
-            "KeqingOpulent",
-            "Keqing2"
-          ],
+          "aliases": ["KeqingOpulent", "Keqing2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1560,13 +1369,9 @@
     {
       "name": "Kinich",
       "hash_db": {
-        "Default": [
-          "42796c33"
-        ]
+        "Default": ["42796c33"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/kinich.png",
@@ -1582,15 +1387,9 @@
     {
       "name": "Kirara",
       "hash_db": {
-        "Default": [
-          "b57d7fe2"
-        ],
-        "Phantom in Boots": [
-          "f8013ba9"
-        ],
-        "Kirara2": [
-          "f8013ba9"
-        ]
+        "Default": ["b57d7fe2"],
+        "Phantom in Boots": ["f8013ba9"],
+        "Kirara2": ["f8013ba9"]
       },
       "tags": [
         "Komaniya Express",
@@ -1608,10 +1407,7 @@
       "custom_skins": [
         {
           "name": "Phantom in Boots",
-          "aliases": [
-            "KiraraBoots",
-            "Kirara2"
-          ],
+          "aliases": ["KiraraBoots", "Kirara2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -1629,15 +1425,9 @@
     {
       "name": "Klee",
       "hash_db": {
-        "Default": [
-          "dcd74904"
-        ],
-        "Blossoming Starlight": [
-          "0f5fedb4"
-        ],
-        "Klee2": [
-          "0f5fedb4"
-        ]
+        "Default": ["dcd74904"],
+        "Blossoming Starlight": ["0f5fedb4"],
+        "Klee2": ["0f5fedb4"]
       },
       "tags": [
         "Knights of Favonius",
@@ -1655,10 +1445,7 @@
       "custom_skins": [
         {
           "name": "Blossoming Starlight",
-          "aliases": [
-            "KleeBlossoming",
-            "Klee2"
-          ],
+          "aliases": ["KleeBlossoming", "Klee2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1730,13 +1517,9 @@
     {
       "name": "Lan Yan",
       "hash_db": {
-        "Default": [
-          "ee60b28c"
-        ]
+        "Default": ["ee60b28c"]
       },
-      "tags": [
-        "Liyue"
-      ],
+      "tags": ["Liyue"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/lan_yan.png",
@@ -1752,9 +1535,7 @@
     {
       "name": "Layla",
       "hash_db": {
-        "Default": [
-          "2656ccca"
-        ]
+        "Default": ["2656ccca"]
       },
       "tags": [
         "Sumeru Akademiya",
@@ -1783,15 +1564,9 @@
     {
       "name": "Lisa",
       "hash_db": {
-        "Default": [
-          "2a557add"
-        ],
-        "A Sobriquet Under Shade": [
-          "37c70461"
-        ],
-        "Lisa2": [
-          "37c70461"
-        ]
+        "Default": ["2a557add"],
+        "A Sobriquet Under Shade": ["37c70461"],
+        "Lisa2": ["37c70461"]
       },
       "tags": [
         "Knights of Favonius",
@@ -1810,10 +1585,7 @@
       "custom_skins": [
         {
           "name": "A Sobriquet Under Shade",
-          "aliases": [
-            "LisaScholar",
-            "Lisa2"
-          ],
+          "aliases": ["LisaScholar", "Lisa2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -1831,9 +1603,7 @@
     {
       "name": "Lynette",
       "hash_db": {
-        "Default": [
-          "98eb2db4"
-        ]
+        "Default": ["98eb2db4"]
       },
       "tags": [
         "House of the Hearth",
@@ -1862,9 +1632,7 @@
     {
       "name": "Lyney",
       "hash_db": {
-        "Default": [
-          "6f7b7740"
-        ]
+        "Default": ["6f7b7740"]
       },
       "tags": [
         "House of the Hearth",
@@ -1893,13 +1661,9 @@
     {
       "name": "Mavuika",
       "hash_db": {
-        "Default": [
-          "039618b0"
-        ]
+        "Default": ["039618b0"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/mavuika.png",
@@ -1915,9 +1679,7 @@
     {
       "name": "Mika",
       "hash_db": {
-        "Default": [
-          "1876e82e"
-        ]
+        "Default": ["1876e82e"]
       },
       "tags": [
         "Knights of Favonius",
@@ -1946,35 +1708,16 @@
     {
       "name": "Mona",
       "hash_db": {
-        "Default": [
-          "7a1dc890"
-        ],
-        "Pact of Stars and Moon": [
-          "515f3ce6"
-        ],
-        "Mona2": [
-          "515f3ce6"
-        ]
+        "Default": ["7a1dc890"],
+        "Pact of Stars and Moon": ["515f3ce6"],
+        "Mona2": ["515f3ce6"]
       },
-      "tags": [
-        "Astrologist",
-        "莫娜",
-        "Mònà",
-        "モナ",
-        "Mona",
-        "모나",
-        "Mona",
-        "Мона",
-        "Mona"
-      ],
+      "tags": ["Astrologist", "莫娜", "Mònà", "モナ", "Mona", "모나", "Mona", "Мона", "Mona"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Pact of Stars and Moon",
-          "aliases": [
-            "MonaCN",
-            "Mona2"
-          ],
+          "aliases": ["MonaCN", "Mona2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1992,13 +1735,9 @@
     {
       "name": "Mualani",
       "hash_db": {
-        "Default": [
-          "03872d46"
-        ]
+        "Default": ["03872d46"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/mualani.png",
@@ -2014,9 +1753,7 @@
     {
       "name": "Nahida",
       "hash_db": {
-        "Default": [
-          "7106f05d"
-        ]
+        "Default": ["7106f05d"]
       },
       "tags": [
         "Lesser Lord Kusanali",
@@ -2045,9 +1782,7 @@
     {
       "name": "Navia",
       "hash_db": {
-        "Default": [
-          "f4e09bd7"
-        ]
+        "Default": ["f4e09bd7"]
       },
       "tags": [
         "Spina di Rosula",
@@ -2075,9 +1810,7 @@
     {
       "name": "Neuvillette",
       "hash_db": {
-        "Default": [
-          "cad3a022"
-        ]
+        "Default": ["cad3a022"]
       },
       "tags": [
         "Iudex of Fontaine",
@@ -2094,10 +1827,7 @@
       "custom_skins": [
         {
           "name": "Lunar Splendor",
-          "aliases": [
-            "NeuvilletteLunar",
-            "Neuvillette2"
-          ],
+          "aliases": ["NeuvilletteLunar", "Neuvillette2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -2115,15 +1845,9 @@
     {
       "name": "Nilou",
       "hash_db": {
-        "Default": [
-          "b2acc1df"
-        ],
-        "Breeze of Sabaa": [
-          "7d53d78f"
-        ],
-        "Nilou2": [
-          "7d53d78f"
-        ]
+        "Default": ["b2acc1df"],
+        "Breeze of Sabaa": ["7d53d78f"],
+        "Nilou2": ["7d53d78f"]
       },
       "tags": [
         "Zubayr Theater",
@@ -2140,10 +1864,7 @@
       "custom_skins": [
         {
           "name": "Breeze of Sabaa",
-          "aliases": [
-            "NilouBreeze",
-            "Nilou2"
-          ],
+          "aliases": ["NilouBreeze", "Nilou2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -2161,15 +1882,9 @@
     {
       "name": "Ningguang",
       "hash_db": {
-        "Default": [
-          "f9e1b52b"
-        ],
-        "Orchid's Evening Gown": [
-          "db37b198"
-        ],
-        "Ningguang2": [
-          "db37b198"
-        ]
+        "Default": ["f9e1b52b"],
+        "Orchid's Evening Gown": ["db37b198"],
+        "Ningguang2": ["db37b198"]
       },
       "tags": [
         "Liyue Qixing",
@@ -2187,10 +1902,7 @@
       "custom_skins": [
         {
           "name": "Orchid's Evening Gown",
-          "aliases": [
-            "NingguangOrchid",
-            "Ningguang2"
-          ],
+          "aliases": ["NingguangOrchid", "Ningguang2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -2208,9 +1920,7 @@
     {
       "name": "Noelle",
       "hash_db": {
-        "Default": [
-          "d1384d15"
-        ]
+        "Default": ["d1384d15"]
       },
       "tags": [
         "Knights of Favonius",
@@ -2239,13 +1949,9 @@
     {
       "name": "Ororon",
       "hash_db": {
-        "Default": [
-          "effae185"
-        ]
+        "Default": ["effae185"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/ororon.png",
@@ -2261,9 +1967,7 @@
     {
       "name": "Qiqi",
       "hash_db": {
-        "Default": [
-          "cad5bebb"
-        ]
+        "Default": ["cad5bebb"]
       },
       "tags": [
         "Bubu Pharmacy",
@@ -2320,9 +2024,7 @@
     {
       "name": "Razor",
       "hash_db": {
-        "Default": [
-          "4662c505"
-        ]
+        "Default": ["4662c505"]
       },
       "tags": [
         "Wolvendom",
@@ -2350,15 +2052,9 @@
     {
       "name": "Rosaria",
       "hash_db": {
-        "Default": [
-          "748f40a5"
-        ],
-        "To the Church's Free Spirit": [
-          "59a1f8b1"
-        ],
-        "Rosaria2": [
-          "59a1f8b1"
-        ]
+        "Default": ["748f40a5"],
+        "To the Church's Free Spirit": ["59a1f8b1"],
+        "Rosaria2": ["59a1f8b1"]
       },
       "tags": [
         "Church of Favonius",
@@ -2375,10 +2071,7 @@
       "custom_skins": [
         {
           "name": "To the Church's Free Spirit",
-          "aliases": [
-            "RosariaCN",
-            "Rosaria2"
-          ],
+          "aliases": ["RosariaCN", "Rosaria2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -2423,9 +2116,7 @@
     {
       "name": "Sayu",
       "hash_db": {
-        "Default": [
-          "c70b7fce"
-        ]
+        "Default": ["c70b7fce"]
       },
       "tags": [
         "Shuumatsuban",
@@ -2454,9 +2145,7 @@
     {
       "name": "Sethos",
       "hash_db": {
-        "Default": [
-          "60d33d25"
-        ]
+        "Default": ["60d33d25"]
       },
       "tags": [
         "Temple of Silence",
@@ -2484,15 +2173,9 @@
     {
       "name": "Shenhe",
       "hash_db": {
-        "Default": [
-          "e44b58b5"
-        ],
-        "Frostflower Dew": [
-          "ee0980eb"
-        ],
-        "Shenhe2": [
-          "ee0980eb"
-        ]
+        "Default": ["e44b58b5"],
+        "Frostflower Dew": ["ee0980eb"],
+        "Shenhe2": ["ee0980eb"]
       },
       "tags": [
         "Cloud Retainer's disciple",
@@ -2510,10 +2193,7 @@
       "custom_skins": [
         {
           "name": "Frostflower Dew",
-          "aliases": [
-            "ShenheFrostflower",
-            "Shenhe2"
-          ],
+          "aliases": ["ShenheFrostflower", "Shenhe2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -2558,9 +2238,7 @@
     {
       "name": "Sigewinne",
       "hash_db": {
-        "Default": [
-          "c883a144"
-        ]
+        "Default": ["c883a144"]
       },
       "tags": [
         "Fortress of Meropide",
@@ -2589,13 +2267,9 @@
     {
       "name": "Skirk",
       "hash_db": {
-        "Default": [
-          "9ce8105a"
-        ]
+        "Default": ["9ce8105a"]
       },
-      "tags": [
-        "Abyss"
-      ],
+      "tags": ["Abyss"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/skirk.png",
@@ -2610,9 +2284,7 @@
     {
       "name": "Sucrose",
       "hash_db": {
-        "Default": [
-          "b655c335"
-        ]
+        "Default": ["b655c335"]
       },
       "tags": [
         "Knights of Favonius",
@@ -2641,9 +2313,7 @@
     {
       "name": "Tartaglia",
       "hash_db": {
-        "Default": [
-          "186eac84"
-        ]
+        "Default": ["186eac84"]
       },
       "tags": [
         "Fatui Harbingers",
@@ -2672,9 +2342,7 @@
     {
       "name": "Thoma",
       "hash_db": {
-        "Default": [
-          "24ecd71a"
-        ]
+        "Default": ["24ecd71a"]
       },
       "tags": [
         "Yashiro Commission",
@@ -2704,9 +2372,7 @@
     {
       "name": "Tighnari",
       "hash_db": {
-        "Default": [
-          "ed2e7d59"
-        ]
+        "Default": ["ed2e7d59"]
       },
       "tags": [
         "Gandharva Ville",
@@ -2735,9 +2401,7 @@
     {
       "name": "Aether",
       "hash_db": {
-        "Default": [
-          "c77e380b"
-        ]
+        "Default": ["c77e380b"]
       },
       "tags": [
         "Aether",
@@ -2755,10 +2419,7 @@
       "custom_skins": [
         {
           "name": "Origin of the Stars",
-          "aliases": [
-            "TravelerOrigin",
-            "Traveler2"
-          ],
+          "aliases": ["TravelerOrigin", "Traveler2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -2774,9 +2435,7 @@
     {
       "name": "Lumine",
       "hash_db": {
-        "Default": [
-          "8239be13"
-        ]
+        "Default": ["8239be13"]
       },
       "tags": [
         "Traveler",
@@ -2796,10 +2455,7 @@
       "custom_skins": [
         {
           "name": "Origin of the Stars",
-          "aliases": [
-            "TravelerOrigin",
-            "Traveler2"
-          ],
+          "aliases": ["TravelerOrigin", "Traveler2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -2815,13 +2471,9 @@
     {
       "name": "Varesa",
       "hash_db": {
-        "Default": [
-          "9784dbe3"
-        ]
+        "Default": ["9784dbe3"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/varesa.png",
@@ -2837,9 +2489,7 @@
     {
       "name": "Venti",
       "hash_db": {
-        "Default": [
-          "09a91a5c"
-        ]
+        "Default": ["09a91a5c"]
       },
       "tags": [
         "Anemo Archon",
@@ -2868,9 +2518,7 @@
     {
       "name": "Wanderer",
       "hash_db": {
-        "Default": [
-          "0110e1c7"
-        ]
+        "Default": ["0110e1c7"]
       },
       "tags": [
         "Scaramouche",
@@ -2900,9 +2548,7 @@
     {
       "name": "Wriothesley",
       "hash_db": {
-        "Default": [
-          "aa6f1268"
-        ]
+        "Default": ["aa6f1268"]
       },
       "tags": [
         "Fortress of Meropide",
@@ -2931,12 +2577,8 @@
     {
       "name": "Xiangling",
       "hash_db": {
-        "Default": [
-          "9427917d"
-        ],
-        "Xiangling2": [
-          "05a65c3f"
-        ]
+        "Default": ["9427917d"],
+        "Xiangling2": ["05a65c3f"]
       },
       "tags": [
         "Wanmin Restaurant",
@@ -2965,9 +2607,7 @@
     {
       "name": "Xianyun",
       "hash_db": {
-        "Default": [
-          "39838e8f"
-        ]
+        "Default": ["39838e8f"]
       },
       "tags": [
         "Cloud Retainer",
@@ -2996,23 +2636,9 @@
     {
       "name": "Xiao",
       "hash_db": {
-        "Default": [
-          "9464bf2d"
-        ]
+        "Default": ["9464bf2d"]
       },
-      "tags": [
-        "Yaksha",
-        "Adeptus",
-        "Alatus",
-        "魈",
-        "Xiāo",
-        "魈",
-        "Shō",
-        "소",
-        "So",
-        "Сяо",
-        "Syao"
-      ],
+      "tags": ["Yaksha", "Adeptus", "Alatus", "魈", "Xiāo", "魈", "Shō", "소", "So", "Сяо", "Syao"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/xiao.png",
@@ -3028,13 +2654,9 @@
     {
       "name": "Xilonen",
       "hash_db": {
-        "Default": [
-          "a4571ede"
-        ]
+        "Default": ["a4571ede"]
       },
-      "tags": [
-        "Natlan"
-      ],
+      "tags": ["Natlan"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/xilonen.png",
@@ -3050,15 +2672,9 @@
     {
       "name": "Xingqiu",
       "hash_db": {
-        "Default": [
-          "25aed172"
-        ],
-        "Bamboo Rain": [
-          "cc158a1e"
-        ],
-        "Xingqiu2": [
-          "cc158a1e"
-        ]
+        "Default": ["25aed172"],
+        "Bamboo Rain": ["cc158a1e"],
+        "Xingqiu2": ["cc158a1e"]
       },
       "tags": [
         "Feiyun Commerce Guild",
@@ -3076,10 +2692,7 @@
       "custom_skins": [
         {
           "name": "Bamboo Rain",
-          "aliases": [
-            "XingqiuBamboo",
-            "Xingqiu2"
-          ],
+          "aliases": ["XingqiuBamboo", "Xingqiu2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -3097,9 +2710,7 @@
     {
       "name": "Xinyan",
       "hash_db": {
-        "Default": [
-          "76ed85f0"
-        ]
+        "Default": ["76ed85f0"]
       },
       "tags": [
         "Rock 'n' Roll Musician",
@@ -3155,9 +2766,7 @@
     {
       "name": "Yanfei",
       "hash_db": {
-        "Default": [
-          "eb8b62d3"
-        ]
+        "Default": ["eb8b62d3"]
       },
       "tags": [
         "Legal Advisor",
@@ -3185,9 +2794,7 @@
     {
       "name": "Yaoyao",
       "hash_db": {
-        "Default": [
-          "293449d6"
-        ]
+        "Default": ["293449d6"]
       },
       "tags": [
         "Streetward Rambler's disciple",
@@ -3204,10 +2811,7 @@
       "custom_skins": [
         {
           "name": "Spring Celebration",
-          "aliases": [
-            "YaoyaoSpring",
-            "Yaoyao2"
-          ],
+          "aliases": ["YaoyaoSpring", "Yaoyao2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -3225,12 +2829,8 @@
     {
       "name": "Yelan",
       "hash_db": {
-        "Default": [
-          "c58c76f9"
-        ],
-        "Yelan2": [
-          "02c325ef"
-        ]
+        "Default": ["c58c76f9"],
+        "Yelan2": ["02c325ef"]
       },
       "tags": [
         "Yanshang Teahouse",
@@ -3258,9 +2858,7 @@
     {
       "name": "Yoimiya",
       "hash_db": {
-        "Default": [
-          "65618289"
-        ]
+        "Default": ["65618289"]
       },
       "tags": [
         "Naganohara Fireworks",
@@ -3288,9 +2886,7 @@
     {
       "name": "Yumemizuki Mizuki",
       "hash_db": {},
-      "tags": [
-        "Inazuma"
-      ],
+      "tags": ["Inazuma"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/gimi/char/yumemizuki_mizuki.png",
@@ -3306,9 +2902,7 @@
     {
       "name": "Yun Jin",
       "hash_db": {
-        "Default": [
-          "221f052e"
-        ]
+        "Default": ["221f052e"]
       },
       "tags": [
         "Yun-Han Opera Troupe",
@@ -3336,9 +2930,7 @@
     {
       "name": "Zhongli",
       "hash_db": {
-        "Default": [
-          "a75ba32e"
-        ]
+        "Default": ["a75ba32e"]
       },
       "tags": [
         "Geo Archon",

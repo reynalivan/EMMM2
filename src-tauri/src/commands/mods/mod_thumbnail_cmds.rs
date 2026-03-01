@@ -1,5 +1,5 @@
 use crate::services::images::thumbnail_cache::ThumbnailCache;
-use crate::services::mod_files::metadata;
+use crate::services::mods::metadata;
 use crate::services::scanner::core::thumbnail::find_thumbnail;
 use std::path::Path;
 

@@ -26,7 +26,13 @@ You MUST NOT write implementation code without a failing test or a clear verific
 - **Component Tests:** Vitest + React Testing Library (RTL). Test Behavior, not Implementation (e.g., test roles, not `onClick` props).
 - **Mocking:** Mock all `invoke` calls (`vi.mock()`).
 
-## 4. Test Case Compliance
+## 4. E2E Automation Testing (WebdriverIO)
+
+- **Tooling:** **WebdriverIO** + Tauri WebDriver.
+- **Scope:** Integration across the IPC bridge. E2E tests MUST launch the actual built binary.
+- **Workflow:** Use E2E tests for complex user journeys (e.g., full lifecycle of Mod installation/toggling) rather than trivial component states. To run specs, use `npm run test:e2e`.
+
+## 5. Test Case Compliance
 
 All unit/integration tests must link to Test Cases from `@/.docs/.testcase/`.
 

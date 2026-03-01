@@ -1,15 +1,15 @@
-import { render, screen, fireEvent, waitFor } from '../../test-utils';
+import { render, screen, fireEvent, waitFor } from '../../testing/test-utils';
 import ScannerFeature from './ScannerFeature';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { scanService } from '../../services/scanService';
+import { scanService } from '../../lib/services/scanService';
 
 // Mock dependencies
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
 
-vi.mock('../../services/scanService', () => ({
+vi.mock('../../lib/services/scanService', () => ({
   scanService: {
     detectArchives: vi.fn().mockResolvedValue([]),
     extractArchive: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('../../services/scanService', () => ({
 }));
 
 // Mock child components to simplify testing focus
-vi.mock('../../components/scanner/ArchiveModal', () => ({
+vi.mock('./components/ArchiveModal', () => ({
   default: ({
     error,
     onExtract,
@@ -38,11 +38,11 @@ vi.mock('../../components/scanner/ArchiveModal', () => ({
   ),
 }));
 
-vi.mock('../../components/scanner/ScanOverlay', () => ({
+vi.mock('./components/ScanOverlay', () => ({
   default: () => <div data-testid="scan-overlay">Scan Overlay</div>,
 }));
 
-vi.mock('../../components/scanner/ReviewTable', () => ({
+vi.mock('./components/ReviewTable', () => ({
   default: () => <div data-testid="review-table">Review Table</div>,
 }));
 

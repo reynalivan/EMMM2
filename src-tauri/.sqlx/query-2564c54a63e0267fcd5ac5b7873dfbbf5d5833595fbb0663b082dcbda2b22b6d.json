@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT CAST(value AS INTEGER) FROM browser_settings WHERE key = 'retention_days'",
+  "describe": {
+    "columns": [
+      {
+        "name": "CAST(value AS INTEGER)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2564c54a63e0267fcd5ac5b7873dfbbf5d5833595fbb0663b082dcbda2b22b6d"
+}

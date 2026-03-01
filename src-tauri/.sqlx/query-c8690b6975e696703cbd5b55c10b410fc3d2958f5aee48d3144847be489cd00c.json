@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE download_sessions SET status = 'downloading' WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c8690b6975e696703cbd5b55c10b410fc3d2958f5aee48d3144847be489cd00c"
+}

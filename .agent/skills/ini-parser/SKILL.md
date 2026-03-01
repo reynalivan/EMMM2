@@ -11,19 +11,26 @@ Implements **Lossless Editing** for 3DMigoto (`d3dx.ini`) files.
 ## Implementation Strategy
 
 ### 1. Read (Line-Based)
+
 Do NOT parse into a HashMap. Read as `Vec<String>`.
--   **Preserves:** Deduplicate sections (`[TextureOverride]`), Comments, Formatting.
+
+- **Preserves:** Deduplicate sections (`[TextureOverride]`), Comments, Formatting.
 
 ### 2. Modify (Regex Targeting)
+
 Target specific lines using Regex patterns.
--   **Variables:** `^\s*(\$variable)\s*=\s*(.*)`
--   **Key-Value:** `^\s*(key)\s*=\s*(.*)`
+
+- **Variables:** `^\s*(\$variable)\s*=\s*(.*)`
+- **Key-Value:** `^\s*(key)\s*=\s*(.*)`
 
 ### 3. Write (Atomic)
+
 Join lines with `\n` and use `atomic-fs` to save.
 
 ## Reference
+
 > **Syntax Quirks:** See [syntax_guide.md](references/syntax_guide.md) for details on Duplicates & Global Vars.
 
 ## Examples
+
 > **Code:** See [parser_test.rs](examples/parser_test.rs) for correct implementation pattern.

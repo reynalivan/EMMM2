@@ -23,8 +23,8 @@
   "permission": {
     "skill": {
       "*": "allow"
-		},
-		"task": "deny"
+    },
+    "task": "deny"
   },
   "mcp": {
     "daisyui": {

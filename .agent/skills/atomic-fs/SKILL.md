@@ -16,20 +16,28 @@ Implements **Zero Data Loss** policy for file operations.
 ## Usage Patterns
 
 ### 1. Safe Rename / Move
+
 **Goal:** Move file `A` to `B` without losing `A` if `B` fails.
+
 > **Code:** See [safe_ops.rs](examples/safe_ops.rs) for `safe_rename`.
 
 ### 2. Soft Delete
+
 **Goal:** User deletes a mod.
 **Action:** Move to System Trash (Recycle Bin).
+
 > **Code:** See [safe_ops.rs](examples/safe_ops.rs) for `safe_trash`.
 
 ### 3. Atomic Write
+
 **Goal:** Write config `config.json`.
 **Action:** Write to `config.json.tmp` -> Rename to `config.json`.
+
 > **Strategy:** See [atomic_write.md](references/atomic_write.md).
 
 ## Error Handling
+
 Map all IO errors to user-understandable context.
--   `PermissionDenied` -> "File is open in another app (Game/Explorer)?"
--   `AlreadyExists` -> "Destination file already exists."
+
+- `PermissionDenied` -> "File is open in another app (Game/Explorer)?"
+- `AlreadyExists` -> "Destination file already exists."

@@ -1,6 +1,7 @@
 # Service Pattern (Clean Architecture)
 
 ## 1. Structure
+
 ```
 src-tauri/src/
 ├── commands/       # API Layer (Controller)
@@ -14,7 +15,9 @@ src-tauri/src/
 ## 2. Implementation Guide
 
 ### A. The Repository (Data Access)
+
 Responsible ONLY for talking to SQLite. Partition by Table.
+
 ```rust
 // database/mod_repo.rs
 pub struct ModRepository<'a> {
@@ -31,7 +34,9 @@ impl<'a> ModRepository<'a> {
 ```
 
 ### B. The Service (Business Logic)
+
 Orchestrates Repositories and Logic (Hashing, Parsing).
+
 ```rust
 // services/mod_service.rs
 pub struct ModService;
@@ -40,18 +45,20 @@ impl ModService {
     pub async fn toggle_mod(pool: &SqlitePool, id: &str) -> AppResult<()> {
         let repo = ModRepository::new(pool);
         let mod_item = repo.get_by_id(id).await?.ok_or(AppError::NotFound)?;
-        
+
         // Logic: Rename Folder -> Update DB
         fs_ops::rename(&mod_item.path, &new_path)?;
         repo.update_status(id, "ENABLED").await?;
-        
+
         Ok(())
     }
 }
 ```
 
 ### C. The Command (Presentation)
+
 Accepts Input -> Calls Service -> Returns JSON.
+
 ```rust
 // commands/mod_cmds.rs
 #[tauri::command]

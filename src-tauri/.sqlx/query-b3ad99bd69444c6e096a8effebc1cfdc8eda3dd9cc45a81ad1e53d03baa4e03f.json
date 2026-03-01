@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO browser_downloads\n           (id, session_id, filename, file_path, source_url, status, bytes_received, started_at)\n           VALUES (?, ?, ?, ?, ?, 'requested', 0, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "b3ad99bd69444c6e096a8effebc1cfdc8eda3dd9cc45a81ad1e53d03baa4e03f"
+}

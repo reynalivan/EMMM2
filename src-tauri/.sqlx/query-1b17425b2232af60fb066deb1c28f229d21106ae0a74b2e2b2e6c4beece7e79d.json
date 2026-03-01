@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs SET staging_path = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "1b17425b2232af60fb066deb1c28f229d21106ae0a74b2e2b2e6c4beece7e79d"
+}

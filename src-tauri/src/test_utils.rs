@@ -23,8 +23,8 @@ pub async fn init_test_db() -> TestContext {
         .expect("Failed to create in-memory database");
 
     // Run migrations
-    sqlx::query(include_str!("../migrations/001_init.sql"))
-        .execute(&pool)
+    sqlx::migrate!("./migrations")
+        .run(&pool)
         .await
         .expect("Failed to run migrations");
 

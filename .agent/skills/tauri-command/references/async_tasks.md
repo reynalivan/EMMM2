@@ -1,10 +1,12 @@
 # Async Tasks & specialized Threads
 
 ## 1. The Golden Rule
+
 **NEVER BLOCK THE MAIN THREAD.**
 If a command takes >10ms, it must be `async` or run in a separate thread.
 
 ## 2. Tokio (I/O Bound)
+
 Use `tokio` for File I/O, Database queries, and Network requests.
 
 ```rust
@@ -19,6 +21,7 @@ pub async fn scan_folder(path: String) -> Result<Vec<String>, String> {
 ```
 
 ## 3. Std Thread (CPU Bound)
+
 For heavy computation (Hashing, Image Processing, Deep Matcher), `tokio` threads can still be blocked. Use `std::thread::spawn` or `rayon`.
 
 ```rust
@@ -35,6 +38,7 @@ pub async fn heavy_compute(data: Vec<u8>) -> Result<String, String> {
 ```
 
 ## 4. Long Running Tasks (Progress)
+
 For tasks taking seconds/minutes, emit events instead of waiting.
 
 ```rust

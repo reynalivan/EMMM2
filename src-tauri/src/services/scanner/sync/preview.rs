@@ -1,4 +1,4 @@
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 use std::path::Path;
 use tauri::ipc::Channel;
 
@@ -52,13 +52,13 @@ pub async fn scan_preview(
 
         let folder_path_str = candidate.path.to_string_lossy().to_string();
 
-        let existing =
-            sqlx::query("SELECT id, object_id FROM mods WHERE folder_path = ? AND game_id = ?")
-                .bind(&folder_path_str)
-                .bind(game_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| e.to_string())?;
+        let existing = crate::database::mod_repo::get_mod_id_and_object_id_by_path(
+            pool,
+            &folder_path_str,
+            game_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         let already_in_db = existing.is_some();
         let already_matched = check_already_matched(pool, &existing, master_db).await?;
@@ -145,31 +145,27 @@ pub async fn scan_preview(
 
 async fn check_already_matched(
     pool: &SqlitePool,
-    existing: &Option<sqlx::sqlite::SqliteRow>,
+    existing: &Option<(String, Option<String>)>,
     master_db: &deep_matcher::MasterDb,
 ) -> Result<bool, String> {
-    let row = match existing {
+    let (_, obj_id) = match existing {
         Some(r) => r,
         None => return Ok(false),
     };
 
-    let obj_id: Option<String> = row.try_get("object_id").unwrap_or(None);
     let Some(id) = obj_id else {
         return Ok(false);
     };
 
-    let obj_row = sqlx::query("SELECT name FROM objects WHERE id = ?")
-        .bind(&id)
-        .fetch_optional(pool)
+    let obj_name = crate::database::object_repo::get_object_name_by_id(pool, id)
         .await
         .map_err(|e| e.to_string())?;
 
-    match obj_row {
-        Some(r) => {
-            let obj_name: String = r.try_get("name").unwrap_or_default();
+    match obj_name {
+        Some(name) => {
             // Only "already matched" if the object name exists in MasterDB
             // (i.e., it was matched to a real character/weapon, not a folder-name placeholder)
-            Ok(master_db.entries.iter().any(|e| e.name == obj_name))
+            Ok(master_db.entries.iter().any(|e| e.name == name))
         }
         None => Ok(false),
     }

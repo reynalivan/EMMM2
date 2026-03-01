@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs SET game_id = ?, match_category = ?, match_object_id = ?, status = 'placing', updated_at = datetime('now') WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "2c19bae8744e4a355463ffd258228bd1f060ad20508bcb8e9ca420f0675ca7d7"
+}

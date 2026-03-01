@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE browser_downloads SET\n            status         = ?,\n            bytes_received = COALESCE(?, bytes_received),\n            bytes_total    = COALESCE(?, bytes_total),\n            error_msg      = ?,\n            file_path      = COALESCE(?, file_path),\n            finished_at    = COALESCE(?, finished_at)\n          WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "c4a5d49a459720c08cccd9afb3a8d1b52c2867af078b8f2fec09e5de18371bf4"
+}

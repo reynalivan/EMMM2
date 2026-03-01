@@ -444,8 +444,8 @@ fn strip_html_tags(html: &str) -> String {
 
 fn capitalize_type(raw: &str) -> String {
     // GameBanana web URLs use plural (mods/skins), API uses singular (Mod/Skin)
-    let base = if raw.ends_with('s') {
-        &raw[..raw.len() - 1]
+    let base = if let Some(stripped) = raw.strip_suffix('s') {
+        stripped
     } else {
         raw
     };

@@ -16,6 +16,7 @@ description: Troubleshooting Rule When debugging crashes, handling runtime error
 
 - **Backend (Rust):** Return `Result<T, CommandError>`. Use `?` operator. No `panic!`. Use `thiserror`. Log `warn!` or `error!` appropriately.
 - **Frontend (TS):** `try-catch` all Tauri `invoke` calls. `catch (e) {}` is FORBIDDEN. Always log and show UI feedback (Toast).
+- **E2E (WebdriverIO):** If `npm run test:e2e` fails to launch the app, ensure you have built the application (`npm run tauri build`) first. Check browser logs (`browser.getLogs('browser')`) for unhandled React mount failures or stale elements.
 
 ## 3. Repairing Code (Anti-Patch)
 

@@ -1,9 +1,10 @@
 # Rust Documentation Standards
 
 ## 1. Doc Comments (`///`)
+
 Use for all public structs, enums, and functions.
 
-```rust
+````rust
 /// Calculates the BLAKE3 hash of a file.
 ///
 /// # Arguments
@@ -17,9 +18,10 @@ Use for all public structs, enums, and functions.
 /// let hash = hash_file("C:/mod.ini")?;
 /// ```
 pub fn hash_file(path: &str) -> AppResult<String> { ... }
-```
+````
 
 ## 2. Module Documentation (`//!`)
+
 Place at the top of `mod.rs` or `lib.rs`.
 
 ```rust
@@ -32,6 +34,7 @@ Place at the top of `mod.rs` or `lib.rs`.
 ```
 
 ## 3. Tauri Commands
+
 Document the Frontend <-> Backend contract.
 
 ```rust

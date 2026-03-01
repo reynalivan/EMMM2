@@ -1,6 +1,7 @@
 # React Frontend Testing Templates (Vitest + RTL)
 
 ## 1. Component Rendering & Interaction
+
 **Use for:** Buttons, Forms, Displays.
 
 ```tsx
@@ -22,6 +23,7 @@ describe('Button', () => {
 ```
 
 ## 2. Hook Testing
+
 **Use for:** Custom hooks with complex state (`useSafeMode`).
 
 ```tsx
@@ -44,6 +46,7 @@ describe('useSafeMode', () => {
 ```
 
 ## 3. Mocking Tauri Commands
+
 **Use for:** Components that call backend via `invoke`.
 
 ```tsx

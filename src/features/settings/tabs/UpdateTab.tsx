@@ -1,6 +1,6 @@
 import { RefreshCw, Download, CheckCircle, AlertTriangle, Database } from 'lucide-react';
-import { useAppUpdater } from '../../../hooks/useAppUpdater';
-import { useMetadataSyncMutation } from '../../../hooks/useMetadataSync';
+import { useAppUpdater } from '../hooks/useAppUpdater';
+import { useMetadataSyncMutation } from '../hooks/useMetadataSync';
 import { useToastStore } from '../../../stores/useToastStore';
 import { getVersion } from '@tauri-apps/api/app';
 import { useEffect, useState } from 'react';

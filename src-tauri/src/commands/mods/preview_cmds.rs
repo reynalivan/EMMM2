@@ -1,7 +1,7 @@
-use crate::services::core::operation_lock::OperationLock;
+use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::ini::document::{self as ini_document, IniDocument};
 use crate::services::ini::write as ini_write;
-use crate::services::mod_files::preview_image;
+use crate::services::mods::preview_image;
 use crate::services::scanner::core::thumbnail;
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};

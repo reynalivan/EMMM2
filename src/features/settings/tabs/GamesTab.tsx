@@ -4,7 +4,7 @@ import { useSettings, GameConfig } from '../../../hooks/useSettings';
 import GameFormModal from '../modals/GameFormModal';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useToastStore } from '../../../stores/useToastStore';
-import { scanService } from '../../../services/scanService';
+import { scanService } from '../../../lib/services/scanService';
 
 export default function GamesTab() {
   const { settings, saveSettings } = useSettings();

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT game_id FROM import_jobs WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "game_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "dbb8382f152425548fa788cb9d1dedb3fedcab1575c0c5224be41f01fc955a7e"
+}

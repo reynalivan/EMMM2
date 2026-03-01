@@ -42,4 +42,8 @@ impl SignalCache {
     pub fn len(&self) -> usize {
         self.store.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }

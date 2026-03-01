@@ -5,17 +5,20 @@ This document provides before-and-after examples of prompt optimization across d
 ## Example 1: Code Review Request
 
 ### Before (Poor Quality)
+
 ```
 Review my code
 ```
 
 **Problems:**
+
 - No context about what type of review is needed
 - No information about the code's purpose
 - No guidance on what to focus on
 - Missing any quality criteria
 
 ### After (Optimized)
+
 ```
 Review this Python authentication module for a web application. Focus on:
 
@@ -30,6 +33,7 @@ If any security issue is found, explain the potential impact and provide a secur
 ```
 
 **Improvements:**
+
 - Specifies code type and purpose
 - Lists explicit review criteria
 - Provides usage context
@@ -41,11 +45,13 @@ If any security issue is found, explain the potential impact and provide a secur
 ## Example 2: Content Creation
 
 ### Before (Poor Quality)
+
 ```
 Write a blog post about AI
 ```
 
 **Problems:**
+
 - Topic too broad
 - No target audience specified
 - Missing tone/style guidance
@@ -53,6 +59,7 @@ Write a blog post about AI
 - Unclear purpose or angle
 
 ### After (Optimized)
+
 ```
 Write a 1,200-word blog post about practical applications of AI in small business operations.
 
@@ -71,6 +78,7 @@ Include at least one concrete example with specific numbers. Avoid overly techni
 ```
 
 **Improvements:**
+
 - Specific topic scope
 - Defined target audience
 - Clear tone expectations
@@ -83,17 +91,20 @@ Include at least one concrete example with specific numbers. Avoid overly techni
 ## Example 3: Data Analysis
 
 ### Before (Poor Quality)
+
 ```
 Analyze this sales data
 ```
 
 **Problems:**
+
 - No analysis objective
 - Missing key questions to answer
 - No output format specified
 - Unclear what insights are valuable
 
 ### After (Optimized)
+
 ```
 Analyze the attached Q4 sales data to identify growth opportunities for Q1 planning.
 
@@ -114,6 +125,7 @@ If the data is insufficient to answer any question confidently, state what addit
 ```
 
 **Improvements:**
+
 - Clear analysis objective
 - Specific questions to answer
 - Business context provided
@@ -125,17 +137,20 @@ If the data is insufficient to answer any question confidently, state what addit
 ## Example 4: Technical Documentation
 
 ### Before (Poor Quality)
+
 ```
 Document this API
 ```
 
 **Problems:**
+
 - No audience specified
 - Missing documentation scope
 - Unclear what level of detail is needed
 - No format preferences
 
 ### After (Optimized)
+
 ```
 Create API documentation for the User Management endpoints intended for external third-party developers integrating with our platform.
 
@@ -159,6 +174,7 @@ Include a "Quick Start" section at the beginning with a complete authentication 
 ```
 
 **Improvements:**
+
 - Defined target audience
 - Explicit scope and structure
 - Detailed content requirements
@@ -171,17 +187,20 @@ Include a "Quick Start" section at the beginning with a complete authentication 
 ## Example 5: Problem Solving
 
 ### Before (Poor Quality)
+
 ```
 My app is slow. Fix it.
 ```
 
 **Problems:**
+
 - No diagnostic information
 - Unclear what "slow" means
 - Missing context about the application
 - No information about what's been tried
 
 ### After (Optimized)
+
 ```
 Help me diagnose and resolve performance issues in a React web application.
 
@@ -211,6 +230,7 @@ If you need additional diagnostic information to provide better recommendations,
 ```
 
 **Improvements:**
+
 - Quantified the problem ("8-12 seconds")
 - Provided relevant technical context
 - Listed what's been investigated
@@ -222,11 +242,13 @@ If you need additional diagnostic information to provide better recommendations,
 ## Example 6: Creative Writing
 
 ### Before (Poor Quality)
+
 ```
 Write a story
 ```
 
 **Problems:**
+
 - No genre, theme, or setting
 - Missing tone/mood guidance
 - No length specification
@@ -234,6 +256,7 @@ Write a story
 - No creative constraints or requirements
 
 ### After (Optimized)
+
 ```
 Write a 1,500-word science fiction short story for adult readers.
 
@@ -258,6 +281,7 @@ Focus on: Character psychology, moral ambiguity, and atmospheric world-building
 ```
 
 **Improvements:**
+
 - Specific genre and audience
 - Clear setting and premise
 - Defined tone and mood
@@ -270,17 +294,20 @@ Focus on: Character psychology, moral ambiguity, and atmospheric world-building
 ## Example 7: Learning/Education
 
 ### Before (Poor Quality)
+
 ```
 Teach me Python
 ```
 
 **Problems:**
+
 - Scope impossibly broad
 - No information about current skill level
 - Missing learning goals
 - No time constraints or format preference
 
 ### After (Optimized)
+
 ```
 Create a focused Python lesson on list comprehensions for someone who understands basic Python syntax (variables, loops, conditionals, lists) but hasn't used list comprehensions.
 
@@ -303,6 +330,7 @@ Keep total lesson under 1,000 words so it can be completed in one focused sessio
 ```
 
 **Improvements:**
+
 - Narrow, specific topic
 - Current skill level stated
 - Clear learning objectives
@@ -315,17 +343,20 @@ Keep total lesson under 1,000 words so it can be completed in one focused sessio
 ## Example 8: Research Synthesis
 
 ### Before (Poor Quality)
+
 ```
 Summarize these articles
 ```
 
 **Problems:**
+
 - No synthesis goal or angle
 - Missing target length
 - Unclear what aspects to focus on
 - No guidance on handling contradictions
 
 ### After (Optimized)
+
 ```
 Synthesize findings from the attached 5 research papers on remote work productivity to answer: "What factors most significantly impact productivity in remote work environments?"
 
@@ -348,6 +379,7 @@ If studies use different definitions of "productivity," note this explicitly and
 ```
 
 **Improvements:**
+
 - Clear synthesis goal (answer specific question)
 - Defined focus areas
 - Structured output format

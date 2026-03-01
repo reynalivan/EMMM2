@@ -1,4 +1,4 @@
-use crate::services::core::operation_lock::OperationLock;
+use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::dedup::resolver::{
     ResolutionProgress, ResolutionRequest, ResolutionSummary,
 };

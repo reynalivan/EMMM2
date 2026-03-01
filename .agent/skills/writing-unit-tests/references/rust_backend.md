@@ -1,6 +1,7 @@
 # Rust Backend Testing Templates
 
 ## 1. Pure Unit Test (Logic)
+
 **Use for:** Parsers, Hashing, Utilities.
 
 ```rust
@@ -18,6 +19,7 @@ mod tests {
 ```
 
 ## 2. Async Service Test
+
 **Use for:** Logic involving I/O or Tasks.
 
 ```rust
@@ -29,10 +31,10 @@ mod tests {
     async fn it_scans_directory() {
         // Setup
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         // Act
         let result = scan_dir(temp_dir.path()).await;
-        
+
         // Assert
         assert!(result.is_ok());
     }
@@ -40,6 +42,7 @@ mod tests {
 ```
 
 ## 3. Database Integration Test (CRITICAL)
+
 **Use for:** All Repository methods or logic touching SQLite.
 **Rule:** MUST use `#[sqlx::test]` for isolation and transaction rollback.
 

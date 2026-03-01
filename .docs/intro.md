@@ -1,65 +1,73 @@
-# EMMM2 Mod Manager: Technical Roadmap & Architecture
+# EMMM2 Mod Manager
 
-> **Philosophy:** Zero-Compromise. Native Performance. Data Safety. Premium Aesthetics.
-> **Core Stack:** Tauri v2 (Rust), React v19, SQLite, Tailwind v4, DaisyUI 5.
+> **Premium Mod Orchestrator for the 3DMigoto Ecosystem**
 
-**EMMM2** is an intelligent **Mod Orchestrator** for the 3DMigoto ecosystem (Genshin Impact, HSR, ZZZ, WW). This application bridges the gap between tedious manual file management and the needs of modern users who demand instant speed and absolute data safety.
+**EMMM2** is a high-performance, intelligent mod manager designed specifically for 3DMigoto-based games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, and Arknights: Endfield).
+
+Built to replace tedious manual file management, EMMM2 bridges the gap between raw filesystem operations and the modern user's expectation for speed, safety, and visual excellence.
 
 ---
 
-## 🗺️ Epic Roadmap: The 13 Pillars
+## 🎯 Why EMMM2 Exists
 
-Here is the mapping of features (Epics) that build the foundation of EMMM2. Each Epic is designed to be independent yet modularly integrated.
+Managing 3DMigoto mods manually involves extracting archives, dealing with deeply nested folders, renaming files to toggle them on/off, and resolving hash conflicts by hand. For users with hundreds or thousands of mods, this becomes unmanageable.
 
-| No     | Epic Module                                                    | Core Responsibility (High Level)                                                                     | Technology Key                          |
-| :----- | :------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------- | :-------------------------------------- |
-| **01** | [Onboarding & Config](@/.docs/epic1-onboarding-config.md)      | **First Impression.** Heuristic game installation detection & folder integrity validation.           | `Rust WalkDir`, `tauri-plugin-store`    |
-| **02** | [Intelligent Scanning](@/.docs/epic2-mod-scan-organization.md) | **The Brain.** Mod identification pipeline (Name -> Content -> AI -> Fuzzy) for auto-categorization. | `Regex`, `Levenshtein`, `Gemini API`    |
-| **03** | [Game & Object Mgr](@/.docs/epic3-game-object-manage.md)       | **Structure.** Multi-game management & dynamic category schemas (Character, Weapon, UI).             | `SQLite Relational`, `Web Worker`       |
-| **04** | [Folder Grid Explorer](@/.docs/epic4-foldergrid-manage.md)     | **Interface.** Hybrid file navigation (Explorer-style) with virtualization & thumbnail caching.      | `Virtual Grid`, `L1/L2 Cache`           |
-| **05** | [Core Operations](@/.docs/epic5-core-mod-manage.md)            | **Action.** Atomic execution of toggle (Enable/Disable), Import, and Rename operations.              | `std::fs::rename`, `Atomic Transaction` |
-| **06** | [Preview & INI Editor](@/.docs/epic6-previewpanel.md)          | **Control.** Detail panel, image gallery, and `.ini` configuration editor (Keybinding/Var).          | `Rust INI Parser`, `Image Slider`       |
-| **07** | [Privacy Mode (Safe)](@/.docs/epic7-privacy-mode.md)           | **Protection.** Exclusive SFW/NSFW switch with PIN encryption & total isolation.                     | `Argon2`, `Bulk SQL Update`             |
-| **08** | [Virtual Collections](@/.docs/epic8-collection.md)             | **Loadouts.** Mass mod presets with an instant Snapshot & Undo system.                               | `JSON Snapshot`, `State Restore`        |
-| **09** | [Duplicate Scanner](@/.docs/epic9-duplicate-scan.md)           | **Optimization.** Hash & structural analysis to remove file duplicates.                              | `Rayon Parallel Hash`, `BLAKE3`         |
-| **10** | [QoL Automation](@/.docs/epic10-qol.md)                        | **Convenience.** Integrated game launcher (Admin), Randomizer (Gacha Mod), & Pinning.                | `std::process::Command`, `Rand`         |
-| **11** | [Settings Infrastructure](@/.docs/epic11-settings.md)          | **Foundation.** Global configuration, game path management, & maintenance tools.                     | `Serde JSON`, `Atomic Write`            |
-| **12** | [System Updates](@/.docs/epic12-system-update.md)              | **Evolution.** Application self-updater & database metadata synchronization (Characters/Weapons).    | `Tauri Updater`, `GitHub Raw`           |
-| **13** | [Dashboard & Analytics](@/.docs/epic13-dashboard.md)           | **Insight.** Main page with usage statistics & quick access.                                         | `SQL Aggregation`, `Recharts`           |
+EMMM2 was built with the following core principles to solve these pain points:
+
+1. **Zero Data Loss & Safety First:** Atomic operations, soft-deletion (Trash system), collision detection, and Safe Mode for privacy.
+2. **The Filesystem is the Source of Truth:** `DISABLED ` folder prefixes are the sole determinant of mod status. EMMM2 reads what's on disk, ensuring it never desyncs from reality.
+3. **Instant Responsiveness:** Render 10,000+ items without lag. Optimistic UI updates provide immediate feedback before disk I/O completes.
+4. **Intelligent Automation:** The Deep Matcher pipeline auto-categorizes unstructured mod folders into the correct Characters/Weapons without manual tagging.
 
 ---
 
 ## 🏗️ Technical Architecture Context
 
-### 1. The Hybrid State Model (Performance vs Truth)
+> **Core Stack:** Tauri v2 (Rust Backend), React v19, TypeScript, SQLite (SQLx), Tailwind CSS v4, DaisyUI 5, Zustand, TanStack Query.
 
-We do not trust a single source of truth.
+EMMM2 is built on a robust hybrid architecture that separates physical reality from logical presentation:
 
-- **Physical Truth (Disk):** Folders with the `DISABLED ` prefix are the sole determinant of mod status in the eyes of the game.
-- **Logical Truth (DB):** SQLite acts as a _High-Speed Index_ for the UI. All physical operations (Rename) must be synchronized to the DB via `Watchdog` or `Scan`.
-- **Portable Truth (JSON):** Each mod has its own `info.json` so that metadata (Author, Tags) survives when files are moved between PCs.
+### 1. The Hybrid State Model
 
-### 2. The Deep Matcher Pipeline (Intelligent Ingestion)
+- **Physical Truth (Disk):** Mod status is entirely driven by the `DISABLED ` prefix on folders. Fast, recursive filesystem scanning guarantees true representation.
+- **Logical Truth (DB):** SQLite acts as a _High-Speed Index_. It stores metadata, object hierarchies, and custom tags for instant filtering and searching.
+- **Portable Truth (JSON):** Each mod maintains an `info.json` inside its folder. Metadata (Author, Tags, Element) survives perfectly even if the mod is manually moved to another PC.
+- **Decoupled Compute Layer:** The React Frontend is strictly a presentation layer. Heavy computations like DP-based fuzzy matching and database queries are completely offloaded to optimized Rust Services and a distinct Data Access Layer (Repositories).
 
-No more "Unknown" folders. Our system dissects every new mod folder:
+### 2. The Deep Matcher Pipeline (The Brain)
 
-1.  **Level 1 (Name):** Does the folder name match the Character Database?
-2.  **Level 2 (Content):** Are there unique `.ini` or `.dds` files inside?
-3.  **Level 3 (AI):** (Optional) LLM-based structure analysis for complex patterns.
-4.  **Level 4 (Fuzzy):** "Raiden" ≈ "Raiden Shogun".
+To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`), EMMM2 uses a staged, deterministic matching engine:
 
-### 3. Atomic Safety Protocols
+1. **Quick Hash & Alias:** Scans `.ini` file contents and exact folder names against a bundled `schema.json`.
+2. **Deep Content Scan:** Tokenizes subfolders, file stems, and INI keys to build strong evidence.
+3. **AI & Mechanical Reranks:** Leverages GameBanana API and optional AI trait-matching for ambiguous cases.
+4. **Evidence Gating:** Guarantees zero false positives. Ambiguous matches are sent to a manual Review UI.
 
-- **Crash-Proof Writes:** No configuration files are partially written. We write to `.tmp` then rename.
-- **Transactional Toggles:** Changing the status of 100 mods (Preset) is done in a single database transaction. If one fails, all are cancelled (Rollback).
-- **Non-Destructive Deletion:** "Delete" means moving to the application's Trash folder, not permanent deletion.
+### 3. Bulletproof Operations
+
+- **Transactional Toggles:** Changing the status of a 50-mod Collection (Preset) is atomic. If the filesystem blocks one rename, the entire operation is rolled back.
+- **Background Watchdog:** The app monitors the filesystem for external changes (renames, deletions outside the app) and gracefully updates the UI with built-in loop prevention.
+- **Smart Extraction:** Extracts messy `.rar`/`.zip` files natively via Rust, applying smart-flattening to prevent `Nested/Nested/Mod` folder structures.
 
 ### 4. Zero-Compromise UI/UX
 
-- **Virtualization:** Render 10,000 mods without any lag using `@tanstack/react-virtual`.
-- **Optimistic UI:** The UI changes color/status _before_ the disk operation completes (with a rollback mechanism if it fails), creating the illusion of instant speed.
-- **Native Dark Mode:** Color themes are calibrated for eye comfort (Dracula-based), not just simple color inversion.
+- **Virtualized Grids:** `@tanstack/react-virtual` powers both the ObjectList and the main Folder Grid, allowing 60fps scrolling through massive libraries.
+- **Immersive Metadata:** Built-in `.ini` editor with syntax highlighting, a lightbox image gallery, and a direct GameBanana metadata fetcher.
+- **Premium Aesthetics:** Dark-mode optimized, glassmorphic interfaces, and satisfying micro-animations built strictly with Tailwind and DaisyUI.
 
 ---
 
-> _This document governs all development. Every PR (Pull Request) or new feature must refer to one of the Epics above._
+## 🚀 Scope of Capabilities
+
+EMMM2's capabilities are thoroughly documented across **42 dedicated requirement specifications**, grouped into major feature domains:
+
+- **Bootstrap & Game Management (req-01 to req-05):** Single-instance guards, DB migrations, and auto-discovery of game installations.
+- **Object Schema & ObjectList Navigation (req-06 to req-09):** Schema-driven categories, dynamic element/rarity filtering, and a virtualized object tree.
+- **Folder Grid & Core Operations (req-10 to req-14):** Thumbnail virtualization, instant search via Web Workers, bulk toggling, and fast renaming.
+- **Preview & Metadata Editing (req-16 to req-19):** INI inspection, image gallery auto-detection, and JSON metadata editing.
+- **Scan Engine & Storage (req-22 to req-28):** Multi-threaded scanning, Trash safety, deep archive extraction, and deduplication (hashing).
+- **Advanced Features (req-30 to req-43):** Privacy Safe Mode, Collections (Presets), Dashboard analytics, Smart Randomizers, and In-Game Hotkey integration.
+
+---
+
+> _This document serves as the high-level introduction to the EMMM2 ecosystem. For specific implementation details, refer to the individual `req-*.md` specification files in the `.docs/requirements` directory._

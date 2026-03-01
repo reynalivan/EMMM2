@@ -6,7 +6,7 @@
 
 import { FileWarning, Image as ImageIcon } from 'lucide-react';
 import type { DupScanGroup, ResolutionAction } from '../../../types/dedup';
-import { usePreviewImages } from '../../details/hooks/usePreviewData';
+import { usePreviewImages } from '../../preview/hooks/usePreviewData';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface Props {

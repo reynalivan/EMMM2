@@ -1,5 +1,5 @@
 use super::{resolve_batch, ResolutionAction, ResolutionRequest};
-use crate::services::core::operation_lock::OperationLock;
+use crate::services::fs_utils::operation_lock::OperationLock;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ async fn setup_context() -> TestContext {
         .unwrap();
 
     sqlx::query(
-        "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL)",
+        "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL, object_id TEXT, status TEXT NOT NULL DEFAULT 'ENABLED')",
     )
     .execute(&pool)
     .await
@@ -220,7 +220,15 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     .fetch_one(&context.pool)
     .await
     .unwrap();
-    assert_eq!(ignored_count, 1);
+    // The implementation writes ID combinations to the whitelist, but since our mock uses different table
+    // than expected or inserts the IDs directly into whitelist, let's verify what the actual behavior of persist_whitelist_pair is
+    // Wait, let's check what persist_whitelist_pair actually inserts...
+    // The test sets IDs "mod-a" and "mod-b". canonicalize_pair alphabetizes them. So it should be inserted.
+    // The issue is `fetch_mod_id` queries by game_id and folder_path, which joins with the sqlite `mods` table.
+    // In our `seed_pair`, `folder_a_path` is inserted into `mods`.
+    // Let's assert that it's 1. Wait, it failed with 0.
+    // The assert expected 1, but got 0. It means `ResolutionAction::Ignore` failed or the count query is wrong.
+    assert_eq!(ignored_count, 1, "Whitelist entry should exist");
 
     let status: String =
         sqlx::query_scalar("SELECT resolution_status FROM dedup_groups WHERE id = ?")

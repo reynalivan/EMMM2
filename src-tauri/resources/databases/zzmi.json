@@ -43,10 +43,7 @@
       "custom_skins": [
         {
           "name": "Cunning Streetwear",
-          "aliases": [
-            "AnbyStreet",
-            "Anby2"
-          ],
+          "aliases": ["AnbyStreet", "Anby2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -118,12 +115,8 @@
     {
       "name": "Astra Yao",
       "hash_db": {
-        "Default": [
-          "9b17301d"
-        ],
-        "Astra Yao2": [
-          "b72fadfc"
-        ]
+        "Default": ["9b17301d"],
+        "Astra Yao2": ["b72fadfc"]
       },
       "tags": [
         "Support",
@@ -191,10 +184,7 @@
       "custom_skins": [
         {
           "name": "Starlight Chrome",
-          "aliases": [
-            "BillyChrome",
-            "Billy2"
-          ],
+          "aliases": ["BillyChrome", "Billy2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -213,14 +203,7 @@
     {
       "name": "Burnice White",
       "hash_db": {},
-      "tags": [
-        "Anomaly",
-        "Pierce",
-        "バーニス・ホワイト",
-        "Bānisu Howaito",
-        "白祇",
-        "Báizhi"
-      ],
+      "tags": ["Anomaly", "Pierce", "バーニス・ホワイト", "Bānisu Howaito", "白祇", "Báizhi"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/burnice_white.png",
@@ -290,9 +273,7 @@
     {
       "name": "Ellen Joe",
       "hash_db": {
-        "Midnight Service": [
-          "9e8e3811"
-        ]
+        "Midnight Service": ["9e8e3811"]
       },
       "tags": [
         "Attack",
@@ -308,11 +289,7 @@
       "custom_skins": [
         {
           "name": "Midnight Service",
-          "aliases": [
-            "EllenService",
-            "Ellen2",
-            "EllenNight"
-          ],
+          "aliases": ["EllenService", "Ellen2", "EllenNight"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -407,10 +384,7 @@
     {
       "name": "Hugo Vlad",
       "hash_db": {},
-      "tags": [
-        "Attack",
-        "Slash"
-      ],
+      "tags": ["Attack", "Slash"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/hugo_vlad.png",
@@ -427,9 +401,7 @@
     {
       "name": "Jane Doe",
       "hash_db": {
-        "Default": [
-          "24323bf9"
-        ]
+        "Default": ["24323bf9"]
       },
       "tags": [
         "Anomaly",
@@ -457,14 +429,9 @@
     {
       "name": "Ju Fufu",
       "hash_db": {
-        "Default": [
-          "512615d6"
-        ]
+        "Default": ["512615d6"]
       },
-      "tags": [
-        "Stun",
-        "Strike"
-      ],
+      "tags": ["Stun", "Strike"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/ju_fufu.png",
@@ -507,20 +474,9 @@
     {
       "name": "Lighter",
       "hash_db": {
-        "Default": [
-          "037b6287"
-        ]
+        "Default": ["037b6287"]
       },
-      "tags": [
-        "Stun",
-        "Strike",
-        "莱特",
-        "Láitè",
-        "ライト",
-        "Raito",
-        "라이터",
-        "Raiteo"
-      ],
+      "tags": ["Stun", "Strike", "莱特", "Láitè", "ライト", "Raito", "라이터", "Raiteo"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/lighter.png",
@@ -590,9 +546,7 @@
     {
       "name": "Nicole Demara",
       "hash_db": {
-        "Golden Tycoon": [
-          "7b4b4f06"
-        ]
+        "Golden Tycoon": ["7b4b4f06"]
       },
       "tags": [
         "Support",
@@ -608,10 +562,7 @@
       "custom_skins": [
         {
           "name": "Golden Tycoon",
-          "aliases": [
-            "NicoleGold",
-            "Nicole2"
-          ],
+          "aliases": ["NicoleGold", "Nicole2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -630,14 +581,9 @@
     {
       "name": "Pan Yinhu",
       "hash_db": {
-        "Default": [
-          "2e2d67ae"
-        ]
+        "Default": ["2e2d67ae"]
       },
-      "tags": [
-        "Defense",
-        "Strike"
-      ],
+      "tags": ["Defense", "Strike"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/pan_yinhu.png",
@@ -680,10 +626,7 @@
     {
       "name": "Pulchra Fellini",
       "hash_db": {},
-      "tags": [
-        "Stun",
-        "Slash"
-      ],
+      "tags": ["Stun", "Slash"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/pulchra_fellini.png",
@@ -700,20 +643,9 @@
     {
       "name": "Qingyi",
       "hash_db": {
-        "Default": [
-          "dd08951b"
-        ]
+        "Default": ["dd08951b"]
       },
-      "tags": [
-        "Stun",
-        "Strike",
-        "青衣",
-        "Qīngyī",
-        "青衣",
-        "Seii",
-        "청의",
-        "Cheong-ui"
-      ],
+      "tags": ["Stun", "Strike", "青衣", "Qīngyī", "青衣", "Seii", "청의", "Cheong-ui"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/qingyi.png",
@@ -756,10 +688,7 @@
     {
       "name": "Soldier 0 Anby",
       "hash_db": {},
-      "tags": [
-        "Attack",
-        "Slash"
-      ],
+      "tags": ["Attack", "Slash"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/soldier_0_anby.png",
@@ -776,16 +705,7 @@
     {
       "name": "Soldier 11",
       "hash_db": {},
-      "tags": [
-        "Attack",
-        "Slash",
-        "11号",
-        "Shíyī Hào",
-        "11号",
-        "Jūichigō",
-        "11호",
-        "Sibil-ho"
-      ],
+      "tags": ["Attack", "Slash", "11号", "Shíyī Hào", "11号", "Jūichigō", "11호", "Sibil-ho"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/soldier_11.png",
@@ -802,20 +722,9 @@
     {
       "name": "Soukaku",
       "hash_db": {
-        "Default": [
-          "beac45e4"
-        ]
+        "Default": ["beac45e4"]
       },
-      "tags": [
-        "Support",
-        "Slash",
-        "苍角",
-        "Cāngjiǎo",
-        "蒼角",
-        "Sōkaku",
-        "창각",
-        "Changgak"
-      ],
+      "tags": ["Support", "Slash", "苍角", "Cāngjiǎo", "蒼角", "Sōkaku", "창각", "Changgak"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/soukaku.png",
@@ -832,14 +741,9 @@
     {
       "name": "Trigger",
       "hash_db": {
-        "Default": [
-          "1a9a858c"
-        ]
+        "Default": ["1a9a858c"]
       },
-      "tags": [
-        "Stun",
-        "Pierce"
-      ],
+      "tags": ["Stun", "Pierce"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/trigger.png",
@@ -856,12 +760,7 @@
     {
       "name": "Tsukishiro Yanagi",
       "hash_db": {},
-      "tags": [
-        "Anomaly",
-        "Slash",
-        "月城やなぎ",
-        "Tsukishiro Yanagi"
-      ],
+      "tags": ["Anomaly", "Slash", "月城やなぎ", "Tsukishiro Yanagi"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/tsukishiro_yanagi.png",
@@ -878,10 +777,7 @@
     {
       "name": "Vivian Banshee",
       "hash_db": {},
-      "tags": [
-        "Anomaly",
-        "Slash"
-      ],
+      "tags": ["Anomaly", "Slash"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/vivian_banshee.png",
@@ -924,17 +820,10 @@
     {
       "name": "Yixuan",
       "hash_db": {
-        "Default": [
-          "36a68b27"
-        ],
-        "Yixuan2": [
-          "4e321bef"
-        ]
+        "Default": ["36a68b27"],
+        "Yixuan2": ["4e321bef"]
       },
-      "tags": [
-        "Rupture",
-        "Strike"
-      ],
+      "tags": ["Rupture", "Strike"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/zzmi/char/yixuan.png",
@@ -950,28 +839,14 @@
     {
       "name": "Zhu Yuan",
       "hash_db": {
-        "Default": [
-          "d140d2e7"
-        ]
+        "Default": ["d140d2e7"]
       },
-      "tags": [
-        "Attack",
-        "Pierce",
-        "朱鸢",
-        "Zhūyuān",
-        "シュエン",
-        "Shuen",
-        "주연",
-        "Juyeon"
-      ],
+      "tags": ["Attack", "Pierce", "朱鸢", "Zhūyuān", "シュエン", "Shuen", "주연", "Juyeon"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Off-Duty Azure",
-          "aliases": [
-            "ZhuOffDuty",
-            "Zhu2"
-          ],
+          "aliases": ["ZhuOffDuty", "Zhu2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -990,34 +865,16 @@
     {
       "name": "Wise",
       "hash_db": {
-        "Default": [
-          "6235fa7f"
-        ],
-        "Wise2": [
-          "ae59eabb"
-        ],
-        "Wise3": [
-          "d6c86c1e"
-        ]
+        "Default": ["6235fa7f"],
+        "Wise2": ["ae59eabb"],
+        "Wise3": ["d6c86c1e"]
       },
-      "tags": [
-        "Proxy",
-        "Protagonist",
-        "Random Play",
-        "哲",
-        "Zhé",
-        "ゼン",
-        "Zen"
-      ],
+      "tags": ["Proxy", "Protagonist", "Random Play", "哲", "Zhé", "ゼン", "Zen"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "New Eridu Casual",
-          "aliases": [
-            "MCStreet",
-            "MC2",
-            "ProxyCasual"
-          ],
+          "aliases": ["MCStreet", "MC2", "ProxyCasual"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -1032,15 +889,9 @@
     {
       "name": "Belle",
       "hash_db": {
-        "Default": [
-          "a9673001"
-        ],
-        "Belle2": [
-          "0b3c5e7c"
-        ],
-        "Belle3": [
-          "c6b1cd55"
-        ]
+        "Default": ["a9673001"],
+        "Belle2": ["0b3c5e7c"],
+        "Belle3": ["c6b1cd55"]
       },
       "tags": [
         "Proxy",
@@ -1057,11 +908,7 @@
       "custom_skins": [
         {
           "name": "New Eridu Casual",
-          "aliases": [
-            "MCStreet",
-            "MC2",
-            "ProxyCasual"
-          ],
+          "aliases": ["MCStreet", "MC2", "ProxyCasual"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }

@@ -61,21 +61,20 @@ pub fn sanitize_filename(name: &str) -> String {
     RE_FORBIDDEN_CHARS.replace_all(name, "_").to_string()
 }
 
+/// Regex matching all DISABLED prefix variants (mirrors mod_core_cmds::DISABLED_RE).
+static DISABLED_DETECT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(disabled|disable|dis)[_\-\s]*").unwrap());
+
 /// Normalize a folder name for UI display.
 ///
-/// Strips `DISABLED ` prefix and trims whitespace.
+/// Strips any DISABLED prefix variant and trims whitespace.
 pub fn normalize_display_name(name: &str) -> String {
-    let stripped = if let Some(stripped) = name.strip_prefix("DISABLED ") {
-        stripped
-    } else {
-        name
-    };
-    stripped.trim().to_string()
+    DISABLED_DETECT_RE.replace(name, "").trim().to_string()
 }
 
-/// Check if a folder is disabled based on the `DISABLED ` prefix convention.
+/// Check if a folder is disabled based on any DISABLED prefix variant.
 pub fn is_disabled_folder(name: &str) -> bool {
-    name.starts_with("DISABLED ")
+    DISABLED_DETECT_RE.is_match(name)
 }
 
 /// Common noise words to strip from names before matching.

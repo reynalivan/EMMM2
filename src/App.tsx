@@ -59,12 +59,14 @@ function AppRouter() {
 }
 
 import { ToastContainer } from './components/ui/Toast';
+import ConflictResolveDialog from './features/folder-grid/ConflictResolveDialog';
 
 export default function App() {
   return (
     <div className="flex flex-col h-screen bg-base-100 text-base-content overflow-hidden font-sans antialiased selection:bg-primary selection:text-primary-content">
       <AppRouter />
       <ToastContainer />
+      <ConflictResolveDialog />
     </div>
   );
 }

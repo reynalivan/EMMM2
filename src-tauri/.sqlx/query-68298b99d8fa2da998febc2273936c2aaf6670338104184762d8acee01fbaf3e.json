@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT download_id FROM import_jobs WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "download_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "68298b99d8fa2da998febc2273936c2aaf6670338104184762d8acee01fbaf3e"
+}

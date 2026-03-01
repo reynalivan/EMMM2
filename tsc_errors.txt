@@ -1,0 +1,59 @@
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/focusManager.d.ts(6,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(9,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(115,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(156,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(205,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(266,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(427,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/hydration-BlEVG2Lp.d.ts(444,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/onlineManager.d.ts(6,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/queriesObserver.d.ts(11,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/removable.d.ts(2,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tanstack+query-core@5.90.20/node_modules/@tanstack/query-core/build/legacy/timeoutManager.d.ts(41,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tauri-apps+api@2.10.1/node_modules/@tauri-apps/api/core.d.ts(62,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tauri-apps+api@2.10.1/node_modules/@tauri-apps/api/core.d.ts(182,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/.pnpm/@tauri-apps+api@2.10.1/node_modules/@tauri-apps/api/menu/base.d.ts(11,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+src/features/browser/components/BrowserPage.tsx(8,38): error TS6142: Module './DownloadManagerPanel' was resolved to 'E:/Dev/EMMM2NEW/src/features/browser/components/DownloadManagerPanel.tsx', but '--jsx' is not set.
+src/features/browser/components/BrowserPage.tsx(9,33): error TS6142: Module './GamePickerModal' was resolved to 'E:/Dev/EMMM2NEW/src/features/browser/components/GamePickerModal.tsx', but '--jsx' is not set.
+src/features/browser/components/BrowserPage.tsx(10,34): error TS6142: Module './ImportQueuePanel' was resolved to 'E:/Dev/EMMM2NEW/src/features/browser/components/ImportQueuePanel.tsx', but '--jsx' is not set.
+src/features/browser/components/BrowserPage.tsx(247,5): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(249,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(251,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(268,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(275,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(279,15): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(283,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(288,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(293,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(295,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(296,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(302,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(307,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(313,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(318,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(319,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(327,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(333,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(338,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(339,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(345,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(348,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(354,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(356,15): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(367,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(370,11): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(371,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(372,15): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(373,15): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(374,17): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(375,17): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(380,15): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(381,17): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(387,17): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(402,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(407,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(408,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(412,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(413,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(417,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/features/browser/components/BrowserPage.tsx(418,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.

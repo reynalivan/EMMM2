@@ -3,9 +3,7 @@
     {
       "name": "Aalto",
       "hash_db": {
-        "Default": [
-          "93bbbdc0"
-        ]
+        "Default": ["93bbbdc0"]
       },
       "tags": [
         "Black Shores",
@@ -32,9 +30,7 @@
     {
       "name": "Baizhi",
       "hash_db": {
-        "Default": [
-          "4a2b2eca"
-        ]
+        "Default": ["4a2b2eca"]
       },
       "tags": [
         "Huaxu Academy",
@@ -51,10 +47,7 @@
       "custom_skins": [
         {
           "name": "Ethereal Frost",
-          "aliases": [
-            "BaizhiFrost",
-            "Baizhi2"
-          ],
+          "aliases": ["BaizhiFrost", "Baizhi2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -71,14 +64,9 @@
     {
       "name": "Brant",
       "hash_db": {
-        "Default": [
-          "5943f99a"
-        ]
+        "Default": ["5943f99a"]
       },
-      "tags": [
-        "Troupe of Fools",
-        "Natural"
-      ],
+      "tags": ["Troupe of Fools", "Natural"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/brant.png",
@@ -93,9 +81,7 @@
     {
       "name": "Calcharo",
       "hash_db": {
-        "Default": [
-          "63e02559"
-        ]
+        "Default": ["63e02559"]
       },
       "tags": [
         "Ghost Hounds",
@@ -121,14 +107,9 @@
     {
       "name": "Camellya",
       "hash_db": {
-        "Default": [
-          "7748c1d8"
-        ]
+        "Default": ["7748c1d8"]
       },
-      "tags": [
-        "Black Shores",
-        "Artificial"
-      ],
+      "tags": ["Black Shores", "Artificial"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/camellya.png",
@@ -143,10 +124,7 @@
     {
       "name": "Cantarella",
       "hash_db": {},
-      "tags": [
-        "Fisalia Family",
-        "Unknown"
-      ],
+      "tags": ["Fisalia Family", "Unknown"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/cantarella.png",
@@ -161,14 +139,9 @@
     {
       "name": "Carlotta",
       "hash_db": {
-        "Default": [
-          "4ba716ae"
-        ]
+        "Default": ["4ba716ae"]
       },
-      "tags": [
-        "Montelli Family",
-        "Mutant"
-      ],
+      "tags": ["Montelli Family", "Mutant"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/carlotta.png",
@@ -183,10 +156,7 @@
     {
       "name": "Cartethyia",
       "hash_db": {},
-      "tags": [
-        "Order of the Deep",
-        "Congenital"
-      ],
+      "tags": ["Order of the Deep", "Congenital"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/cartethyia.png",
@@ -201,29 +171,14 @@
     {
       "name": "Changli",
       "hash_db": {
-        "Default": [
-          "d14bed8b"
-        ]
+        "Default": ["d14bed8b"]
       },
-      "tags": [
-        "City Hall",
-        "Natural",
-        "长离",
-        "Chánglí",
-        "長離",
-        "Chōri",
-        "장리",
-        "Jangli"
-      ],
+      "tags": ["City Hall", "Natural", "长离", "Chánglí", "長離", "Chōri", "장리", "Jangli"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Vermillion Feathers",
-          "aliases": [
-            "ChangliFeathers",
-            "Changli2",
-            "ChangliRed"
-          ],
+          "aliases": ["ChangliFeathers", "Changli2", "ChangliRed"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -240,9 +195,7 @@
     {
       "name": "Chixia",
       "hash_db": {
-        "Default": [
-          "1606ae41"
-        ]
+        "Default": ["1606ae41"]
       },
       "tags": [
         "Public Security Bureau",
@@ -258,10 +211,7 @@
       "custom_skins": [
         {
           "name": "Blazing Heroine",
-          "aliases": [
-            "ChixiaHero",
-            "Chixia2"
-          ],
+          "aliases": ["ChixiaHero", "Chixia2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -278,9 +228,7 @@
     {
       "name": "Ciaccona",
       "hash_db": {},
-      "tags": [
-        "Fisalia Family"
-      ],
+      "tags": ["Fisalia Family"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/ciaccona.png",
@@ -295,20 +243,9 @@
     {
       "name": "Danjin",
       "hash_db": {
-        "Default": [
-          "6aefd9b3"
-        ]
+        "Default": ["6aefd9b3"]
       },
-      "tags": [
-        "Midnight Rangers",
-        "Mutant",
-        "丹瑾",
-        "Dānjǐn",
-        "丹瑾",
-        "Tankin",
-        "단근",
-        "Dangeun"
-      ],
+      "tags": ["Midnight Rangers", "Mutant", "丹瑾", "Dānjǐn", "丹瑾", "Tankin", "단근", "Dangeun"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/danjin.png",
@@ -323,20 +260,9 @@
     {
       "name": "Encore",
       "hash_db": {
-        "Default": [
-          "592add5c"
-        ]
+        "Default": ["592add5c"]
       },
-      "tags": [
-        "Black Shores",
-        "Congenital",
-        "安可",
-        "Ānkě",
-        "アンコ",
-        "Anko",
-        "앙코",
-        "Angko"
-      ],
+      "tags": ["Black Shores", "Congenital", "安可", "Ānkě", "アンコ", "Anko", "앙코", "Angko"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/encore.png",
@@ -351,20 +277,9 @@
     {
       "name": "Jianxin",
       "hash_db": {
-        "Default": [
-          "9b60ec42"
-        ]
+        "Default": ["9b60ec42"]
       },
-      "tags": [
-        "Fengyiquan",
-        "Natural",
-        "鉴心",
-        "Jiànxīn",
-        "鑑心",
-        "Kanshin",
-        "감심",
-        "Gamsim"
-      ],
+      "tags": ["Fengyiquan", "Natural", "鉴心", "Jiànxīn", "鑑心", "Kanshin", "감심", "Gamsim"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/jianxin.png",
@@ -379,32 +294,15 @@
     {
       "name": "Jinhsi",
       "hash_db": {
-        "Default": [
-          "243b7e59"
-        ],
-        "Jinhsi2": [
-          "493ff3b9"
-        ]
+        "Default": ["243b7e59"],
+        "Jinhsi2": ["493ff3b9"]
       },
-      "tags": [
-        "City Hall",
-        "Congenital",
-        "今汐",
-        "Jīnxī",
-        "今汐",
-        "Konshi",
-        "금희",
-        "Geumhui"
-      ],
+      "tags": ["City Hall", "Congenital", "今汐", "Jīnxī", "今汐", "Konshi", "금희", "Geumhui"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Resplendent Moon",
-          "aliases": [
-            "JinshiMoon",
-            "Jinshi2",
-            "JinshiPremium"
-          ],
+          "aliases": ["JinshiMoon", "Jinshi2", "JinshiPremium"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -421,20 +319,9 @@
     {
       "name": "Jiyan",
       "hash_db": {
-        "Default": [
-          "31b50c1d"
-        ]
+        "Default": ["31b50c1d"]
       },
-      "tags": [
-        "Midnight Rangers",
-        "Mutant",
-        "忌炎",
-        "Jìyán",
-        "忌炎",
-        "Kien",
-        "기염",
-        "Giyeom"
-      ],
+      "tags": ["Midnight Rangers", "Mutant", "忌炎", "Jìyán", "忌炎", "Kien", "기염", "Giyeom"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/jiyan.png",
@@ -449,9 +336,7 @@
     {
       "name": "Lingyang",
       "hash_db": {
-        "Default": [
-          "8b3c13f9"
-        ]
+        "Default": ["8b3c13f9"]
       },
       "tags": [
         "Liondance Troupe",
@@ -477,14 +362,9 @@
     {
       "name": "Lumi",
       "hash_db": {
-        "Default": [
-          "78b79747"
-        ]
+        "Default": ["78b79747"]
       },
-      "tags": [
-        "Lollo Logistics",
-        "Congenital"
-      ],
+      "tags": ["Lollo Logistics", "Congenital"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/lumi.png",
@@ -499,9 +379,7 @@
     {
       "name": "Mortefi",
       "hash_db": {
-        "Default": [
-          "7b29fedf"
-        ]
+        "Default": ["7b29fedf"]
       },
       "tags": [
         "Huaxu Academy",
@@ -527,14 +405,9 @@
     {
       "name": "Phoebe",
       "hash_db": {
-        "Default": [
-          "8ee2fb7c"
-        ]
+        "Default": ["8ee2fb7c"]
       },
-      "tags": [
-        "Order of the Deep",
-        "Unknown"
-      ],
+      "tags": ["Order of the Deep", "Unknown"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/phoebe.png",
@@ -549,14 +422,9 @@
     {
       "name": "Roccia",
       "hash_db": {
-        "Default": [
-          "8d97c1bd"
-        ]
+        "Default": ["8d97c1bd"]
       },
-      "tags": [
-        "Troupe of Fools",
-        "Acquired"
-      ],
+      "tags": ["Troupe of Fools", "Acquired"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/roccia.png",
@@ -571,9 +439,7 @@
     {
       "name": "Rover Male",
       "hash_db": {
-        "Default": [
-          "c9db8418"
-        ]
+        "Default": ["c9db8418"]
       },
       "tags": [
         "Black Shores",
@@ -592,11 +458,7 @@
       "custom_skins": [
         {
           "name": "Tides of Destiny",
-          "aliases": [
-            "RoverTides",
-            "Rover2",
-            "MCRover2"
-          ],
+          "aliases": ["RoverTides", "Rover2", "MCRover2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -614,9 +476,7 @@
     {
       "name": "Rover Female",
       "hash_db": {
-        "Default": [
-          "e8b5a730"
-        ]
+        "Default": ["e8b5a730"]
       },
       "tags": [
         "Black Shores",
@@ -635,11 +495,7 @@
       "custom_skins": [
         {
           "name": "Tides of Destiny",
-          "aliases": [
-            "RoverTides",
-            "Rover2",
-            "MCRover2"
-          ],
+          "aliases": ["RoverTides", "Rover2", "MCRover2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -657,34 +513,16 @@
     {
       "name": "Sanhua",
       "hash_db": {
-        "Default": [
-          "33e4890f"
-        ],
-        "Glacial Grace": [
-          "b101dcf3"
-        ],
-        "Sanhua2": [
-          "b101dcf3"
-        ]
+        "Default": ["33e4890f"],
+        "Glacial Grace": ["b101dcf3"],
+        "Sanhua2": ["b101dcf3"]
       },
-      "tags": [
-        "City Hall",
-        "Mutant",
-        "散华",
-        "Sànhuà",
-        "サンカ",
-        "Sanka",
-        "산화",
-        "Sanhwa"
-      ],
+      "tags": ["City Hall", "Mutant", "散华", "Sànhuà", "サンカ", "Sanka", "산화", "Sanhwa"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Glacial Grace",
-          "aliases": [
-            "SanhuaGrace",
-            "Sanhua2"
-          ],
+          "aliases": ["SanhuaGrace", "Sanhua2"],
           "thumbnail_skin_path": null,
           "rarity": "4"
         }
@@ -701,21 +539,14 @@
     {
       "name": "Shorekeeper",
       "hash_db": {
-        "Default": [
-          "0266ab77"
-        ]
+        "Default": ["0266ab77"]
       },
-      "tags": [
-        "Black Shores"
-      ],
+      "tags": ["Black Shores"],
       "object_type": "Character",
       "custom_skins": [
         {
           "name": "Abyssal Echo",
-          "aliases": [
-            "ShorekeeperEcho",
-            "Shorekeeper2"
-          ],
+          "aliases": ["ShorekeeperEcho", "Shorekeeper2"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -732,9 +563,7 @@
     {
       "name": "Taoqi",
       "hash_db": {
-        "Default": [
-          "e2685889"
-        ]
+        "Default": ["e2685889"]
       },
       "tags": [
         "Ministry of Development",
@@ -760,9 +589,7 @@
     {
       "name": "Verina",
       "hash_db": {
-        "Default": [
-          "82aa82e1"
-        ]
+        "Default": ["82aa82e1"]
       },
       "tags": [
         "Pioneer Association",
@@ -788,10 +615,7 @@
     {
       "name": "Xiangli Yao",
       "hash_db": {},
-      "tags": [
-        "Huaxu Academy",
-        "Mutant"
-      ],
+      "tags": ["Huaxu Academy", "Mutant"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/xiangli_yao.png",
@@ -806,9 +630,7 @@
     {
       "name": "Yangyang",
       "hash_db": {
-        "Default": [
-          "249200ff"
-        ]
+        "Default": ["249200ff"]
       },
       "tags": [
         "Midnight Rangers",
@@ -834,9 +656,7 @@
     {
       "name": "Yinlin",
       "hash_db": {
-        "Default": [
-          "42702199"
-        ]
+        "Default": ["42702199"]
       },
       "tags": [
         "Public Security Bureau",
@@ -852,11 +672,7 @@
       "custom_skins": [
         {
           "name": "Nightshade Bloom",
-          "aliases": [
-            "YinlinNight",
-            "Yinlin2",
-            "YinlinBloom"
-          ],
+          "aliases": ["YinlinNight", "Yinlin2", "YinlinBloom"],
           "thumbnail_skin_path": null,
           "rarity": "5"
         }
@@ -873,13 +689,9 @@
     {
       "name": "Youhu",
       "hash_db": {
-        "Default": [
-          "03eea2d0"
-        ]
+        "Default": ["03eea2d0"]
       },
-      "tags": [
-        "Mutant"
-      ],
+      "tags": ["Mutant"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/youhu.png",
@@ -894,19 +706,9 @@
     {
       "name": "Yuanwu",
       "hash_db": {
-        "Default": [
-          "51c230c2"
-        ]
+        "Default": ["51c230c2"]
       },
-      "tags": [
-        "Natural",
-        "渊武",
-        "Yuānwǔ",
-        "エンブ",
-        "Enbu",
-        "원무",
-        "Wonmu"
-      ],
+      "tags": ["Natural", "渊武", "Yuānwǔ", "エンブ", "Enbu", "원무", "Wonmu"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/yuanwu.png",
@@ -921,10 +723,7 @@
     {
       "name": "Zani",
       "hash_db": {},
-      "tags": [
-        "Montelli Family",
-        "Mutant"
-      ],
+      "tags": ["Montelli Family", "Mutant"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/zani.png",
@@ -939,13 +738,9 @@
     {
       "name": "Zhezhi",
       "hash_db": {
-        "Default": [
-          "c8b08afd"
-        ]
+        "Default": ["c8b08afd"]
       },
-      "tags": [
-        "Congenital"
-      ],
+      "tags": ["Congenital"],
       "object_type": "Character",
       "custom_skins": [],
       "thumbnail_path": "databases/thumbnails/wwmi/char/zhezhi.png",

@@ -565,3 +565,58 @@ async fn test_di_9_02_blake3_hash_algorithm_is_used() {
     // The fact that identical files produce deterministic high-confidence results
     // demonstrates that a cryptographic hash function (BLAKE3 per TRD) is in use.
 }
+
+// Covers: TC-32 (Follow Links = False on Dedup)
+#[tokio::test]
+async fn test_deduper_ignores_symlinks() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path().join("mods");
+    let external_dir = temp.path().join("external");
+
+    fs::create_dir_all(&mods_root).unwrap();
+    fs::create_dir_all(&external_dir).unwrap();
+
+    // Create a file in the external dir that we DO NOT want to hash
+    fs::write(external_dir.join("massive.dds"), b"huge_fake_data").unwrap();
+
+    let first_mod = mods_root.join("BaseMod");
+    fs::create_dir_all(&first_mod).unwrap();
+    fs::write(first_mod.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(first_mod.join("texture.dds"), b"normal_data").unwrap();
+
+    // Create a symlink inside BaseMod pointing to external_dir
+    let symlink_path = first_mod.join("linked_folder");
+
+    #[cfg(windows)]
+    let sym_res = std::os::windows::fs::symlink_dir(&external_dir, &symlink_path);
+    #[cfg(unix)]
+    let sym_res = std::os::unix::fs::symlink(&external_dir, &symlink_path);
+
+    if sym_res.is_err() {
+        println!(
+            "Skipping symlink test due to OS privileges (e.g., Windows without Developer Mode)"
+        );
+        return;
+    }
+
+    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
+        .bind("mod-base")
+        .bind(game_id)
+        .bind(first_mod.to_string_lossy().to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = scan_duplicates(&mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    // There shouldn't be any duplicates found since we only registered one mod and its linked content is ignored
+    assert!(
+        outcome.groups.is_empty(),
+        "Symlinked content must not be indexed as duplicates"
+    );
+}

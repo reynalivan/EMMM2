@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE browser_downloads SET status = 'imported' WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "9940d43f9a9553fe2e73451918893ad02876636dcd928688a65e67b021a35408"
+}

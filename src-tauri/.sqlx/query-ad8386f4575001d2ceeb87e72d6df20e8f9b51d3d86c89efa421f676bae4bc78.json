@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT game_id FROM download_sessions WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "game_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ad8386f4575001d2ceeb87e72d6df20e8f9b51d3d86c89efa421f676bae4bc78"
+}

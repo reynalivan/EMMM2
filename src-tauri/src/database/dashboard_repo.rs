@@ -168,5 +168,5 @@ pub async fn fetch_recent_mods(
 }
 
 #[cfg(test)]
-#[path = "tests/dashboard_repo_tests.rs"]
+#[path = "tests/dashboard_repo_test.rs"]
 mod tests;

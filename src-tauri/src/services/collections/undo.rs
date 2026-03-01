@@ -12,24 +12,21 @@ pub async fn undo_collection(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Find the snapshot collection
-    let (collection_id, is_safe_context): (String, bool) = sqlx::query_as(
-        "SELECT id, is_safe_context FROM collections WHERE game_id = ? AND is_last_unsaved = 1",
-    )
-    .bind(game_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or("No recent action to undo")?;
+    let (collection_id, is_safe_context) =
+        crate::database::collection_repo::get_last_unsaved_collection_id_and_safe_context(
+            &mut *tx, game_id,
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("No recent action to undo")?;
 
     if safe_mode_enabled && !is_safe_context {
         return Err("Snapshot contains non-safe context. Disable Safe Mode to undo.".to_string());
     }
 
     // Get the target IDs from the snapshot
-    let snapshot_mod_ids: Vec<String> =
-        sqlx::query_scalar("SELECT mod_id FROM collection_items WHERE collection_id = ?")
-            .bind(&collection_id)
-            .fetch_all(&mut *tx)
+    let snapshot_mod_ids =
+        crate::database::collection_repo::get_collection_item_mod_ids(&mut *tx, &collection_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -37,10 +34,8 @@ pub async fn undo_collection(
     tx.commit().await.map_err(|e| e.to_string())?;
 
     // Get all currently enabled mods for this game
-    let currently_enabled: Vec<(String, String)> =
-        sqlx::query_as("SELECT id, folder_path FROM mods WHERE game_id = ? AND status = 'ENABLED'")
-            .bind(game_id)
-            .fetch_all(pool)
+    let currently_enabled =
+        crate::database::collection_repo::get_enabled_mod_id_and_paths(pool, game_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -59,10 +54,6 @@ pub async fn undo_collection(
 
     let all_involved_ids_vec: Vec<String> = all_involved_ids.into_iter().collect();
 
-    let mut qb: sqlx::QueryBuilder<'_, sqlx::Sqlite> =
-        sqlx::QueryBuilder::new("SELECT id, folder_path, status FROM mods WHERE game_id = ");
-    qb.push_bind(game_id).push(" AND id IN (");
-
     if all_involved_ids_vec.is_empty() {
         // Nothing to do if both currently enabled and snapshot are completely empty
         delete_snapshot(pool, &collection_id).await?;
@@ -72,26 +63,13 @@ pub async fn undo_collection(
         });
     }
 
-    let mut separated = qb.separated(", ");
-    for id in &all_involved_ids_vec {
-        separated.push_bind(id);
-    }
-    qb.push(")");
-
-    let states: Vec<ModState> = qb
-        .build_query_as::<(String, String, String)>()
-        .fetch_all(pool)
-        .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|(id, folder_path, status)| ModState {
-                    id,
-                    folder_path,
-                    status,
-                })
-                .collect()
-        })
-        .map_err(|e| e.to_string())?;
+    let states: Vec<ModState> = crate::database::collection_repo::get_mod_states_by_ids(
+        pool,
+        game_id,
+        &all_involved_ids_vec,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let result = apply_state_change(pool, watcher_state, states, &snapshot_mod_ids).await?;
 
@@ -103,14 +81,10 @@ pub async fn undo_collection(
 
 async fn delete_snapshot(pool: &SqlitePool, collection_id: &str) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    sqlx::query("DELETE FROM collection_items WHERE collection_id = ?")
-        .bind(collection_id)
-        .execute(&mut *tx)
+    crate::database::collection_repo::delete_collection_items(&mut *tx, collection_id)
         .await
         .map_err(|e| e.to_string())?;
-    sqlx::query("DELETE FROM collections WHERE id = ?")
-        .bind(collection_id)
-        .execute(&mut *tx)
+    crate::database::collection_repo::delete_collection_by_id(&mut *tx, collection_id)
         .await
         .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;

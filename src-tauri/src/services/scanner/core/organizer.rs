@@ -1,4 +1,4 @@
-use crate::services::mod_files::info_json;
+use crate::services::mods::info_json;
 use crate::services::scanner::core::walker;
 use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::{
@@ -138,7 +138,7 @@ pub fn organize_mod(
     }
 
     // Move
-    fs::rename(path, &target_path)
+    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &target_path)
         .map_err(|e| OrganizeError::Generic(format!("Failed to move folder: {e}")))?;
 
     // Update info.json

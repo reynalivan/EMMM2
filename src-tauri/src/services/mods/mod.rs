@@ -1,5 +1,9 @@
 pub mod archive;
+pub mod bulk;
+pub mod core_ops;
 pub mod info_json;
 pub mod metadata;
+pub mod organizer_ext;
 pub mod preview_image;
+pub mod stale_mod_service;
 pub mod trash;

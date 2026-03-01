@@ -3,8 +3,10 @@ import {
   CircuitBoard,
   Clock,
   Copy,
+  Download,
   FolderOpen,
   Gamepad2,
+  Globe,
   HardDrive,
   Keyboard,
   Layers,
@@ -173,7 +175,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Quick Actions Launcher ──────────────────────────────────── */}
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-4">
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-4">
           <button
             onClick={() => {
               if (activeGame) invoke('launch_game', { gameId: activeGame.id }).catch(console.error);
@@ -230,6 +232,34 @@ export default function Dashboard() {
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-accent transition-colors">
               Settings
+            </span>
+          </button>
+
+          {/* Epic 44: Discover Hub */}
+          <button
+            id="dashboard-discover-btn"
+            onClick={() => setWorkspaceView('browser')}
+            className="flex flex-col items-center gap-3 py-6 px-4 rounded-2xl bg-base-200/60 border border-base-300 hover:bg-info/10 hover:border-info/30 hover:shadow-lg hover:shadow-info/5 hover:scale-[1.04] active:scale-[0.96] transition-all cursor-pointer group"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-info/20 flex items-center justify-center group-hover:bg-info/30 transition-colors">
+              <Globe size={28} className="text-info" />
+            </div>
+            <span className="text-sm font-semibold text-base-content/80 group-hover:text-info transition-colors">
+              Discover
+            </span>
+          </button>
+
+          {/* Epic 44: Download Manager */}
+          <button
+            id="dashboard-downloads-btn"
+            onClick={() => setWorkspaceView('browser')}
+            className="flex flex-col items-center gap-3 py-6 px-4 rounded-2xl bg-base-200/60 border border-base-300 hover:bg-error/10 hover:border-error/30 hover:shadow-lg hover:shadow-error/5 hover:scale-[1.04] active:scale-[0.96] transition-all cursor-pointer group relative"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-error/20 flex items-center justify-center group-hover:bg-error/30 transition-colors">
+              <Download size={28} className="text-error" />
+            </div>
+            <span className="text-sm font-semibold text-base-content/80 group-hover:text-error transition-colors">
+              Downloads
             </span>
           </button>
         </div>
