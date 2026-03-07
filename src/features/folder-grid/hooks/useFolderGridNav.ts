@@ -80,7 +80,7 @@ export function useFolderGridNav({
         const subSegments = explorerSubPath.split('/');
         // In object mode: currentPath[0] = display name, subSegments[0] = physical folder
         // Clicking index 0 → keep 1 segment; clicking index 1 → keep 2 segments; etc.
-        const keepCount = selectedObject ? index + 1 : index + 1;
+        const keepCount = index + 1;
         const truncated = subSegments.slice(0, keepCount);
         setExplorerSubPath(truncated.length > 0 ? truncated.join('/') : undefined);
       }
