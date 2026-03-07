@@ -14,7 +14,7 @@ import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers'
 import { classifyDroppedPaths } from './dropUtils';
 import type { ObjectSummary } from '../../types/object';
 import type { ScanPreviewItem } from '../../lib/services/scanService';
-import type { MasterDbEntry } from './ScanReviewModal';
+import type { MasterDbEntry } from './scanReviewHelpers';
 
 interface DropDeps {
   objects: ObjectSummary[];

@@ -19,7 +19,7 @@ import { parseMasterDb } from './objHandlersHelpers';
 import type { ObjectSummary } from '../../types/object';
 import type { ModFolder } from '../../hooks/useFolders';
 import type { MatchedDbEntry } from './SyncConfirmModal';
-import type { MasterDbEntry } from './ScanReviewModal';
+import type { MasterDbEntry } from './scanReviewHelpers';
 
 interface ScanDeps {
   objects: ObjectSummary[];

@@ -15,7 +15,7 @@ import { scanService, type ScanPreviewItem } from '../../lib/services/scanServic
 import { toast } from '../../stores/useToastStore';
 import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
 import type { ObjectSummary } from '../../types/object';
-import type { MasterDbEntry } from './ScanReviewModal';
+import type { MasterDbEntry } from './scanReviewHelpers';
 
 interface ArchiveDeps {
   objects: ObjectSummary[];

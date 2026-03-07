@@ -12,7 +12,7 @@ import AutoSetupModal from './AutoSetupModal';
 import type { ObjectSummary } from '../../types/object';
 import type { MatchedDbEntry } from './SyncConfirmModal';
 import type { ScanPreviewItem, ConfirmedScanItem } from '../../lib/services/scanService';
-import type { MasterDbEntry } from './ScanReviewModal';
+import type { MasterDbEntry } from './scanReviewHelpers';
 import type { GameConfig } from '../../types/game';
 
 interface SyncConfirmState {

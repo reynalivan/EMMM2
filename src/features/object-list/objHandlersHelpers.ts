@@ -4,7 +4,7 @@
  */
 
 import { useAppStore } from '../../stores/useAppStore';
-import type { MasterDbEntry } from './ScanReviewModal';
+import type { MasterDbEntry } from './scanReviewHelpers';
 
 /** Sync explorer navigation after a folder rename on disk. */
 export function syncExplorerAfterRename(modPath: string, oldPath: string, newPath: string): void {
