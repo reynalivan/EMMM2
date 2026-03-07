@@ -19,6 +19,7 @@ import { useFolderGridActions } from './useFolderGridActions';
 import { useFolderGridBulk } from './useFolderGridBulk';
 import { useFolderGridLayout } from './useFolderGridLayout';
 import { useFolderGridImport } from './useFolderGridImport';
+import { syncExplorerAfterRename } from '../../object-list/objHandlersHelpers';
 
 export function useFolderGrid() {
   'use no memo';
@@ -150,31 +151,14 @@ export function useFolderGrid() {
         {
           onSuccess: (newPath) => {
             if (!activeGame.mod_path) return;
-            // Extract new subPath from returned absolute path
-            const cleanModPath = activeGame.mod_path.replace(/\\/g, '/');
-            const cleanNewPath = newPath.replace(/\\/g, '/');
-            let newSubPath = cleanNewPath.substring(cleanModPath.length);
-            if (newSubPath.startsWith('/')) newSubPath = newSubPath.substring(1);
-            if (newSubPath) {
-              setExplorerSubPath(newSubPath);
-              setCurrentPath(newSubPath.split('/'));
-            }
-            // Refresh ObjectList + category counts so sidebar reflects the new state
+            syncExplorerAfterRename(activeGame.mod_path, targetPath, newPath);
             queryClient.invalidateQueries({ queryKey: ['objects'] });
             queryClient.invalidateQueries({ queryKey: ['category-counts'] });
           },
         },
       );
     },
-    [
-      activeGame?.id,
-      activeGame?.mod_path,
-      explorerSubPath,
-      toggleMod,
-      setExplorerSubPath,
-      setCurrentPath,
-      queryClient,
-    ],
+    [activeGame?.id, activeGame?.mod_path, explorerSubPath, toggleMod, queryClient],
   );
 
   const bulk = useFolderGridBulk({

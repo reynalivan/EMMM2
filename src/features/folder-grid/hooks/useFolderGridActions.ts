@@ -69,17 +69,14 @@ export function useFolderGridActions({
     duplicates: DuplicateInfo[];
   }>({ open: false, folder: null, duplicates: [] });
 
-  // Toggle enabled — check for duplicates when enabling
   const handleToggleEnabled = useCallback(
     async (folder: ModFolder) => {
+      if (!activeGame?.id) return;
+
       if (folder.is_enabled) {
-        if (activeGame?.id) {
-          toggleMod.mutate({ path: folder.path, enable: false, gameId: activeGame.id });
-        }
+        toggleMod.mutate({ path: folder.path, enable: false, gameId: activeGame.id });
         return;
       }
-
-      if (!activeGame?.id) return;
 
       try {
         const duplicates = await checkDuplicate.mutateAsync({
@@ -89,16 +86,13 @@ export function useFolderGridActions({
 
         if (duplicates.length > 0) {
           setDuplicateWarning({ open: true, folder, duplicates });
-        } else {
-          if (activeGame?.id) {
-            toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
-          }
+          return;
         }
       } catch {
-        if (activeGame?.id) {
-          toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
-        }
+        // Duplicate check failed — proceed with enable anyway
       }
+
+      toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
     },
     [toggleMod, activeGame, checkDuplicate],
   );
@@ -148,14 +142,12 @@ export function useFolderGridActions({
 
   const handleRenameSubmit = useCallback(
     async (newName: string) => {
-      if (!renamingId) return;
+      if (!renamingId || !activeGame?.id) return;
       const folder = sortedFolders.find((f) => f.path === renamingId);
       if (!folder) return;
 
       try {
-        if (activeGame?.id) {
-          await renameMod.mutateAsync({ folderPath: folder.path, newName, gameId: activeGame.id });
-        }
+        await renameMod.mutateAsync({ folderPath: folder.path, newName, gameId: activeGame.id });
         setRenamingId(null);
         clearGridSelection();
       } catch (err) {
