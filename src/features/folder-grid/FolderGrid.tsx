@@ -33,6 +33,7 @@ export default function FolderGrid() {
     isLoading,
     isError,
     error,
+    isPlaceholderData,
     selfNodeType,
     selfIsMod,
     selfIsEnabled,
@@ -409,7 +410,9 @@ export default function FolderGrid() {
       {!isLoading && !isError && visibleFolders.length > 0 && (
         <div
           ref={parentRef}
-          className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40"
+          className={`flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40 transition-opacity duration-150 ${
+            isPlaceholderData ? 'opacity-70 pointer-events-none select-none' : 'opacity-100'
+          }`}
         >
           <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {

@@ -33,11 +33,17 @@ export interface ObjectSummary {
   is_safe: boolean;
   is_pinned: boolean;
   is_auto_sync: boolean;
+  is_object_disabled: boolean;
   created_at?: string;
   metadata: string;
   tags: string;
   /** True when both "X" and "DISABLED X" exist on disk. */
   has_naming_conflict: boolean;
+}
+
+export interface GetObjectsResult {
+  objects: ObjectSummary[];
+  lost_objects: string[];
 }
 
 /** Filter criteria sent to DB queries */
@@ -100,4 +106,5 @@ export interface CreateObjectInput {
   sub_category?: string | null;
   is_safe?: boolean;
   metadata?: Record<string, unknown>;
+  thumbnail_url?: string | null;
 }

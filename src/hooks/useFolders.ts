@@ -4,7 +4,7 @@
  * Enhanced for Epic 4 with sub_path navigation, mutations, and sorting.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from '../stores/useToastStore';
 import { useAppStore } from '../stores/useAppStore';
@@ -84,9 +84,10 @@ export function useModFolders(subPath?: string, objectId?: string) {
         objectId: objectId || null,
       }),
     enabled: !!modsPath,
-    staleTime: 10_000,
+    staleTime: 30_000,
     refetchOnWindowFocus: false,
     retry: 2,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -159,14 +160,25 @@ export function useToggleMod() {
     onSuccess: (newPath, variables) => {
       const action = variables.enable ? 'Enabled' : 'Disabled';
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) }); // Invalidate old thumbnail URI
+
+      // Opt-Z1: Fix path instability. The folder was physically renamed on disk.
+      // We must update its path in the cache so subsequent actions (like Delete) don't use the old stale path.
+      updateFolderCache(queryClient, [variables.path], (f) => ({
+        ...f,
+        path: newPath,
+        is_enabled: variables.enable,
+      }));
+
       toast.withAction('success', `${action} mod`, {
         label: 'Undo',
         onClick: () => {
+          useAppStore.getState().setWatcherCooldown(Date.now() + 500);
           invoke<string>('toggle_mod', {
             path: newPath,
             enable: !variables.enable,
+            gameId: variables.gameId,
           }).then(() => {
-            queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) }); // Invalidate interim thumbnail
+            queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
             queryClient.invalidateQueries({ queryKey: folderKeys.all });
             queryClient.invalidateQueries({ queryKey: ['objects'] });
           });
@@ -210,11 +222,14 @@ export function useToggleMod() {
       toast.error(String(error));
     },
 
-    // Always re-fetch after to get the real filesystem state
+    // Mark data as stale — don't force immediate refetch.
+    // Optimistic update already shows the correct state in cache.
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['conflicts'] });
+      // Suppress leaked watcher events for 500ms after mutation settles
+      useAppStore.getState().setWatcherCooldown(Date.now() + 500);
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['conflicts'], refetchType: 'none' });
     },
   });
 }
@@ -230,9 +245,22 @@ export function useRenameMod() {
         new_name: params.newName,
         game_id: params.gameId,
       }),
-    onSuccess: (_, variables) => {
+    onSuccess: (result, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+
+      // Opt-Z2: Fix path instability. The folder was physically renamed.
+      // We must update both its name and its path so it stays interactive in the current view.
+      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
+        ...f,
+        name: result.new_name,
+        path: result.new_path,
+      }));
+
+      // Path changed — mark stale, refetch deferred until next user interaction
+      // Suppress leaked watcher events for 500ms after rename settles
+      useAppStore.getState().setWatcherCooldown(Date.now() + 500);
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
     },
   });
 }
@@ -245,7 +273,9 @@ export function useDeleteMod() {
     mutationFn: (params: { path: string; gameId?: string }) => invoke<void>('delete_mod', params),
     onSuccess: (_, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      // Targeted: remove deleted folder from cache instead of full re-listing
+      updateFolderCache(queryClient, [variables.path], undefined, true);
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
     },
   });
 }
@@ -258,7 +288,9 @@ export function useRestoreMod() {
     mutationFn: (params: { trashId: string; gameId?: string }) =>
       invoke<string>('restore_mod', { trashId: params.trashId, gameId: params.gameId }),
     onSuccess: () => {
+      // New folder appears on disk — active refetch needed (no optimistic data)
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['trash'] });
     },
   });
@@ -299,8 +331,12 @@ export function useUpdateModCategory() {
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; category: string }) =>
       invoke<void>('set_mod_category', params),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+    onSuccess: (_data, variables) => {
+      // Targeted: update category in cache instead of full re-listing
+      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
+        ...f,
+        category: variables.category,
+      }));
       queryClient.invalidateQueries({ queryKey: ['objects'] });
     },
   });
@@ -314,7 +350,7 @@ export function useUpdateModThumbnail() {
     mutationFn: (params: { folderPath: string; sourcePath: string }) =>
       invoke<string>('update_mod_thumbnail', params),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
     },
   });
@@ -327,8 +363,12 @@ export function useToggleModSafe() {
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
       invoke<void>('toggle_mod_safe', params),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+    onSuccess: (_data, variables) => {
+      // Targeted: update safe flag in cache instead of full re-listing
+      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
+        ...f,
+        is_safe: variables.safe,
+      }));
       queryClient.invalidateQueries({ queryKey: ['objects'] });
     },
   });
@@ -341,7 +381,7 @@ export function useDeleteModThumbnail() {
   return useMutation({
     mutationFn: (folderPath: string) => invoke<void>('delete_mod_thumbnail', { folderPath }),
     onSuccess: (_data, folderPath) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(folderPath) });
     },
   });
@@ -355,7 +395,7 @@ export function usePasteThumbnail() {
     mutationFn: (params: { folderPath: string; imageData: number[] }) =>
       invoke<string>('paste_thumbnail', params),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
     },
   });
@@ -368,15 +408,16 @@ export function useBulkToggle() {
   return useMutation({
     mutationFn: (params: { paths: string[]; enable: boolean }) =>
       invoke<BulkResult>('bulk_toggle_mods', params),
-    onSuccess: (result, variables) => {
+    onSuccess: (result) => {
       result.success.forEach((path) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
       });
-      // Targeted cache update instead of full refetch
-      updateFolderCache(queryClient, result.success, (f) => ({
-        ...f,
-        is_enabled: variables.enable,
-      }));
+      // Opt-AA: Revert to full active refetch. Bulk operations alter
+      // physical directory paths. Trying to accurately map all new paths
+      // inside the frontend cache is a massive architectural risk that leads
+      // directly to Path Instability and silent UI failures.
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
 
       if (result.success.length > 0) {
         toast.success(`Toggled ${result.success.length} items successfully`);
@@ -401,6 +442,7 @@ export function useBulkDelete() {
       });
       // Targeted cache update instead of full refetch: remove deleted folders
       updateFolderCache(queryClient, result.success, undefined, true);
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
 
       if (result.success.length > 0) {
         toast.success(`Deleted ${result.success.length} items successfully`);
@@ -446,27 +488,90 @@ export function useUpdateModInfo() {
   return useMutation({
     mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) =>
       invoke<ModInfo>('update_mod_info', params),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+    onSuccess: (_data, variables) => {
+      // Targeted: update the specific folder in cache
+      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
+        ...f,
+        metadata: variables.update.metadata
+          ? { ...f.metadata, ...variables.update.metadata }
+          : f.metadata,
+        is_favorite: variables.update.is_favorite ?? f.is_favorite,
+        is_safe: variables.update.is_safe ?? f.is_safe,
+      }));
     },
   });
 }
 
 export type ImportStrategy = 'Raw' | 'AutoOrganize';
 
+/** Hook to bulk toggle favorite with targeted cache update. */
+export function useBulkFavorite() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: { gameId: string; folderPaths: string[]; favorite: boolean }) =>
+      invoke<BulkResult>('bulk_toggle_favorite', params),
+    onSuccess: (result, variables) => {
+      updateFolderCache(queryClient, result.success, (f) => ({
+        ...f,
+        is_favorite: variables.favorite,
+      }));
+      if (result.success.length > 0) {
+        toast.success(
+          `${variables.favorite ? 'Favorited' : 'Unfavorited'} ${result.success.length} items`,
+        );
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Failed to update ${result.failures.length} items`);
+      }
+    },
+  });
+}
+
+/** Hook to bulk pin/unpin mods with targeted cache update. */
+export function useBulkPin() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
+      invoke<BulkResult>('bulk_pin_mods', params),
+    onSuccess: (result, variables) => {
+      updateFolderCache(queryClient, result.success, (f) => ({
+        ...f,
+        is_pinned: variables.pin,
+      }));
+      if (result.success.length > 0) {
+        toast.success(`${variables.pin ? 'Pinned' : 'Unpinned'} ${result.success.length} items`);
+      }
+      if (result.failures.length > 0) {
+        toast.error(`Failed to update ${result.failures.length} items`);
+      }
+    },
+  });
+}
+
 /** Hook to import mods from external paths (Drag & Drop). */
 export function useImportMods() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: {
+    mutationFn: async (params: {
       paths: string[];
       targetDir: string;
       strategy: ImportStrategy;
       dbJson?: string | null;
-    }) => invoke<BulkResult>('import_mods_from_paths', params),
+    }) => {
+      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      try {
+        return await invoke<BulkResult>('import_mods_from_paths', params);
+      } finally {
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+      }
+    },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
       if (result.success.length > 0) {
         toast.success(`Imported ${result.success.length} items`);
       }
@@ -486,6 +591,8 @@ export function useAutoOrganizeMods() {
       invoke<BulkResult>('auto_organize_mods', params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
     },
   });
 }
@@ -506,8 +613,13 @@ export function useEnableOnlyThis() {
       result.success.forEach((path) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
       });
+      // Opt-Z3: Revert to full invalidation. This touches potentially hundreds of
+      // folders physically, and guessing all their new paths in cache is a massive
+      // desync risk. It is a rare operation where an active refetch is 100% justified.
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      const disabled = result.success.length - 1; // -1 for target itself
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+
+      const disabled = result.success.length - 1;
       if (disabled > 0) {
         toast.info(`Disabled ${disabled} other mod(s)`);
       }
@@ -543,6 +655,6 @@ export function useActiveConflicts() {
         ? invoke<ConflictInfo[]>('get_active_mod_conflicts', { gameId: activeGame.id })
         : Promise.resolve([]),
     enabled: !!activeGame?.id,
-    staleTime: 5000,
+    staleTime: 60_000, // Conflicts rarely change — watcher invalidates on toggle
   });
 }

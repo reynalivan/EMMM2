@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
-import { dirname, basename, join } from '@tauri-apps/api/path';
-import { mkdir, exists, rename } from '@tauri-apps/plugin-fs';
 import { Play, ScanSearch } from 'lucide-react';
 import { useScannerStore } from '../../stores/useScannerStore';
 import { scanService } from '../../lib/services/scanService';
@@ -66,33 +64,42 @@ export default function ScannerFeature() {
       overwrite,
     }: {
       paths: string[];
-      pwd?: string;
+      pwd?: Record<string, string>;
       overwrite?: boolean;
     }) => {
       if (!activeGame) throw new Error('No active game config');
 
-      for (const archivePath of paths) {
+      // Helper to extract a single archive
+      const extractSingle = async (archivePath: string, password?: string) => {
         const result = await scanService.extractArchive(
           archivePath,
           activeGame.mod_path,
-          pwd,
+          password,
           overwrite,
         );
-        if (result.success) {
-          try {
-            const dir = await dirname(archivePath);
-            const base = await basename(archivePath);
-            const extractedDir = await join(dir, '.extracted');
-            if (!(await exists(extractedDir))) {
-              await mkdir(extractedDir, { recursive: true });
-            }
-            await rename(archivePath, await join(extractedDir, base));
-          } catch (e) {
-            console.warn(`Failed to move extracted archive ${archivePath}:`, e);
-          }
-        } else {
+        if (!result.success) {
           throw new Error(result.error ?? 'Unknown error during extraction');
         }
+      };
+
+      // Split into non-encrypted and encrypted
+      const nonEncrypted = paths.filter((p) => {
+        const info = archives.find((a) => a.path === p);
+        return !info?.is_encrypted;
+      });
+      const encrypted = paths.filter((p) => {
+        const info = archives.find((a) => a.path === p);
+        return !!info?.is_encrypted;
+      });
+
+      // Extract non-encrypted first
+      for (const archivePath of nonEncrypted) {
+        await extractSingle(archivePath);
+      }
+
+      // Extract encrypted with their respective passwords
+      for (const archivePath of encrypted) {
+        await extractSingle(archivePath, pwd?.[archivePath]);
       }
     },
     onSuccess: () => {
@@ -153,8 +160,12 @@ export default function ScannerFeature() {
     scanMutation.mutate({ gameType: game_type, modsPath: mod_path });
   };
 
-  const handleExtract = async (selectedPaths: string[], password?: string, overwrite?: boolean) => {
-    extractMutation.mutate({ paths: selectedPaths, pwd: password, overwrite });
+  const handleExtract = async (
+    selectedPaths: string[],
+    passwords: Record<string, string>,
+    overwrite?: boolean,
+  ) => {
+    extractMutation.mutate({ paths: selectedPaths, pwd: passwords, overwrite });
   };
 
   return (

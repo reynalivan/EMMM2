@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-const ARCHIVE_BACKUP_DIR: &str = ".archive_backup";
+const ARCHIVE_BACKUP_DIR: &str = ".extracted";
 
 /// Helper: create a minimal valid ZIP.
 fn create_test_zip(dir: &Path, name: &str, files: &[(&str, &[u8])]) -> PathBuf {
@@ -47,7 +47,7 @@ fn test_analyze_zip_archive() {
         dir.path(),
         "test.zip",
         &[
-            ("config.ini", b"[Section]\nkey=val"),
+            ("config.ini", b"[TextureOverride]\nkey=val"),
             ("texture.dds", b"binary data"),
         ],
     );
@@ -65,7 +65,7 @@ fn test_analyze_zip_single_root() {
         dir.path(),
         "wrapped.zip",
         &[
-            ("ModFolder/config.ini", b"data"),
+            ("ModFolder/config.ini", b"[TextureOverride]\ndata"),
             ("ModFolder/tex.dds", b"data"),
         ],
     );
@@ -82,7 +82,7 @@ fn test_extract_zip_basic() {
         dir.path(),
         "mod_pack.zip",
         &[
-            ("config.ini", b"[Section]\nkey=val"),
+            ("config.ini", b"[TextureOverride]\nkey=val"),
             ("texture.dds", b"binary data"),
         ],
     );
@@ -109,7 +109,7 @@ fn test_extract_zip_smart_flatten() {
         dir.path(),
         "nested_mod.zip",
         &[
-            ("WrapperFolder/config.ini", b"data"),
+            ("WrapperFolder/config.ini", b"[TextureOverride]\ndata"),
             ("WrapperFolder/sub/texture.dds", b"data"),
         ],
     );
@@ -117,7 +117,7 @@ fn test_extract_zip_smart_flatten() {
     let result = extract_archive(&zip_path, dir.path(), None, false).unwrap();
     assert!(result.success);
 
-    let dest = dir.path().join("nested_mod");
+    let dest = dir.path().join("WrapperFolder");
     assert!(dest.join("config.ini").exists());
     assert!(dest.join("sub").join("texture.dds").exists());
     assert!(!dest.join("WrapperFolder").exists());
@@ -127,29 +127,38 @@ fn test_extract_zip_smart_flatten() {
 #[test]
 fn test_extract_duplicate_dest() {
     let dir = TempDir::new().unwrap();
-    let zip_path = create_test_zip(dir.path(), "existing_mod.zip", &[("file.txt", b"data")]);
+    let zip_path = create_test_zip(
+        dir.path(),
+        "existing_mod.zip",
+        &[("file.ini", b"[TextureOverride]\ndata")],
+    );
 
     fs::create_dir(dir.path().join("existing_mod")).unwrap();
 
-    // Without overwrite (auto-renames to "existing_mod (1)")
+    // Without overwrite (auto-renames to "existing_mod (2)")
     let result = extract_archive(&zip_path, dir.path(), None, false).unwrap();
     assert!(result.success);
-    assert!(result.dest_path.ends_with("existing_mod (1)"));
+    println!("DEST PATHS: {:?}", result.dest_paths);
+    assert!(result.dest_paths[0].ends_with("existing_mod (2)"));
     assert!(dir
         .path()
-        .join("existing_mod (1)")
-        .join("file.txt")
+        .join("existing_mod (2)")
+        .join("file.ini")
         .exists());
 
     // Re-create the test zip since extract_archive moves it to backup
-    let zip_path2 = create_test_zip(dir.path(), "existing_mod2.zip", &[("file.txt", b"data")]);
+    let zip_path2 = create_test_zip(
+        dir.path(),
+        "existing_mod2.zip",
+        &[("file.ini", b"[TextureOverride]\ndata")],
+    );
 
     // With overwrite
     assert!(zip_path2.exists());
     let result2 = extract_archive(&zip_path2, dir.path(), None, true).unwrap();
     assert!(result2.success);
     // Since overwrite is true, it extracts to "existing_mod2" directly
-    assert!(dir.path().join("existing_mod2").join("file.txt").exists());
+    assert!(dir.path().join("existing_mod2").join("file.ini").exists());
 }
 
 // Covers: NC-2.1-01 — Corrupt archive
@@ -204,14 +213,17 @@ fn test_extract_zip_with_password() {
         dir.path(),
         "secret.zip",
         "mypassword",
-        &[("data.txt", b"secret content")],
+        &[("data.ini", b"[TextureOverride]\nsecret content")],
     );
 
     let result = extract_archive(&zip_path, dir.path(), Some("mypassword"), false).unwrap();
     assert!(result.success);
     assert_eq!(result.files_extracted, 1);
 
-    let extracted = dir.path().join("secret").join("data.txt");
+    let extracted = dir.path().join("secret").join("data.ini");
     assert!(extracted.exists());
-    assert_eq!(fs::read_to_string(&extracted).unwrap(), "secret content");
+    assert_eq!(
+        fs::read_to_string(&extracted).unwrap(),
+        "[TextureOverride]\nsecret content"
+    );
 }

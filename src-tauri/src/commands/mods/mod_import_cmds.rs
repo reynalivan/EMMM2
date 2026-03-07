@@ -160,14 +160,16 @@ fn handle_archive_import(
                 return;
             }
 
-            let extracted_path = Path::new(&result.dest_path);
-            let folder_name = extracted_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
+            for extracted_dest in &result.dest_paths {
+                let extracted_path = Path::new(extracted_dest);
+                let folder_name = extracted_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
 
-            let final_path =
-                if !crate::services::scanner::core::normalizer::is_disabled_folder(&folder_name) {
+                let final_path = if !crate::services::scanner::core::normalizer::is_disabled_folder(
+                    &folder_name,
+                ) {
                     let new_path =
                         target.join(format!("{}{}", crate::DISABLED_PREFIX, folder_name));
                     if crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
@@ -178,26 +180,28 @@ fn handle_archive_import(
                     {
                         new_path
                     } else {
+                        // If rename fails, at least keep the original extracted path
                         extracted_path.to_path_buf()
                     }
                 } else {
                     extracted_path.to_path_buf()
                 };
 
-            if let Some(master_db) = db {
-                match crate::services::scanner::core::organizer::organize_mod(
-                    &final_path,
-                    target,
-                    master_db,
-                ) {
-                    Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
-                    Err(e) => {
-                        log::warn!("Smart Organization failed: {}", e);
-                        success.push(final_path.to_string_lossy().to_string());
+                if let Some(master_db) = db {
+                    match crate::services::scanner::core::organizer::organize_mod(
+                        &final_path,
+                        target,
+                        master_db,
+                    ) {
+                        Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
+                        Err(e) => {
+                            log::warn!("Smart Organization failed: {}", e);
+                            success.push(final_path.to_string_lossy().to_string());
+                        }
                     }
+                } else {
+                    success.push(final_path.to_string_lossy().to_string());
                 }
-            } else {
-                success.push(final_path.to_string_lossy().to_string());
             }
         }
         Err(e) => failures.push(BulkActionError {
@@ -281,7 +285,7 @@ pub async fn ingest_dropped_folders_inner(
 
     let sync_result = crate::services::scanner::sync::SyncResult {
         total_scanned: moved.len(),
-        new_mods: 0,
+        new_mods: moved.len(),
         updated_mods: 0,
         deleted_mods: 0,
         new_objects: 0,

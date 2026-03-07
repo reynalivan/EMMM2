@@ -17,7 +17,8 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             game_type TEXT NOT NULL,
-            mod_path TEXT NOT NULL
+            mod_path TEXT NOT NULL,
+            path TEXT NOT NULL
         )",
     )
     .execute(&pool)
@@ -68,7 +69,7 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
     fs::create_dir(&mods_path).unwrap();
 
     sqlx::query(
-        "INSERT INTO games (id, name, game_type, mod_path) VALUES (?, 'Test Game', 'GIMI', ?)",
+        "INSERT INTO games (id, name, game_type, mod_path, path) VALUES (?, 'Test Game', 'GIMI', ?, '/')",
     )
     .bind(&game_id)
     .bind(mods_path.to_string_lossy().to_string())
@@ -117,7 +118,7 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
         .await
         .expect("sync_objects_for_game failed");
 
-    let objects = get_objects_cmd_inner(filter, &pool).await?;
+    let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
 
     // We expect the object to be indexed
     assert_eq!(objects.len(), 1, "Expected 1 object to be discovered");
@@ -142,8 +143,11 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
 
     // Insert an unsafe object manually into DB
     let obj_id = "test_unsafe_obj";
+    let mods_path = _tmp.path().join("Mods");
+    std::fs::create_dir_all(mods_path.join("NSFW_Mod_Folder")).unwrap();
+
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type, is_safe) VALUES (?, ?, 'NSFW_Mod', 'Character', 0)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe) VALUES (?, ?, 'NSFW_Mod', 'NSFW_Mod_Folder', 'Character', 0)"
     )
     .bind(obj_id)
     .bind(&game_id)
@@ -161,7 +165,9 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
         sort_by: None,
         status_filter: None,
     };
-    let results_unfiltered = get_objects_cmd_inner(filter_unfiltered, &pool).await?;
+    let results_unfiltered = get_objects_cmd_inner(filter_unfiltered, &pool)
+        .await?
+        .objects;
     assert_eq!(
         results_unfiltered.len(),
         1,
@@ -178,7 +184,7 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
         sort_by: None,
         status_filter: None,
     };
-    let results_safe = get_objects_cmd_inner(filter_safe, &pool).await?;
+    let results_safe = get_objects_cmd_inner(filter_safe, &pool).await?.objects;
     assert_eq!(
         results_safe.len(),
         0,
@@ -200,9 +206,10 @@ async fn test_create_object_cmd() -> CommandResult<()> {
         sub_category: None,
         is_safe: Some(true),
         metadata: Some(serde_json::json!({})),
+        thumbnail_url: None,
     };
 
-    let obj_id_result = create_object_cmd_inner(payload, &pool).await?;
+    let obj_id_result = create_object_cmd_inner(payload, &pool, None).await?;
 
     // Verify it exists in DB
     let filter = ObjectFilter {
@@ -214,7 +221,7 @@ async fn test_create_object_cmd() -> CommandResult<()> {
         sort_by: None,
         status_filter: None,
     };
-    let objects = get_objects_cmd_inner(filter, &pool).await?;
+    let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
     assert_eq!(objects.len(), 1, "Created object must be retrievable");
     let result = &objects[0];
 
@@ -239,8 +246,11 @@ async fn test_update_object_cmd() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
 
     let obj_id = "test_obj_update";
+    let mods_path = _tmp.path().join("Mods");
+    std::fs::create_dir_all(mods_path.join("test_obj_folder")).unwrap();
+
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type, is_safe) VALUES (?, ?, 'OldName', 'Other', 1)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe) VALUES (?, ?, 'OldName', 'test_obj_folder', 'Other', 1)"
     )
     .bind(obj_id)
     .bind(&game_id)
@@ -270,7 +280,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         sort_by: None,
         status_filter: None,
     };
-    let objects = get_objects_cmd_inner(filter, &pool).await?;
+    let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
     let updated = objects.into_iter().find(|o| o.id == obj_id).unwrap();
 
     assert_eq!(updated.name, "NewName", "TC-10-04: Name must be updated");
@@ -286,6 +296,10 @@ async fn test_update_object_cmd() -> CommandResult<()> {
 #[tokio::test]
 async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
+    let trash_dir = _tmp.path().join("trash");
+    fs::create_dir(&trash_dir).unwrap();
+    let watcher_state = crate::services::scanner::watcher::WatcherState::default();
+    let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
 
     // Create an empty object
     let empty_obj_id = "empty_obj";
@@ -318,19 +332,41 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     .await
     .unwrap();
 
-    // Attempt to delete empty object (should succeed)
-    let res_empty = delete_object_cmd_inner(empty_obj_id.to_string(), &pool).await;
+    // Delete empty object (should succeed)
+    let res_empty = crate::services::objects::mutate::delete_object(
+        &pool,
+        empty_obj_id,
+        &trash_dir,
+        &watcher_state,
+        &op_lock,
+    )
+    .await;
     assert!(
         res_empty.is_ok(),
         "TC-10-07: Empty object should be deleted successfully"
     );
 
-    // Attempt to delete full object (should fail)
-    let res_full = delete_object_cmd_inner(full_obj_id.to_string(), &pool).await;
+    // Delete object with mods (should now cascade-delete mods and succeed)
+    let res_full = crate::services::objects::mutate::delete_object(
+        &pool,
+        full_obj_id,
+        &trash_dir,
+        &watcher_state,
+        &op_lock,
+    )
+    .await;
     assert!(
-        res_full.is_err(),
-        "TC-10-08: Deleting object with mods attached MUST fail due to FK/application logic constraints"
+        res_full.is_ok(),
+        "Deleting object with mods should succeed via cascade delete"
     );
+
+    // Verify the mod row was also removed
+    let mod_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE object_id = ?")
+        .bind(full_obj_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(mod_count, 0, "Child mods should be cascade-deleted");
 
     Ok(())
 }
@@ -340,8 +376,11 @@ async fn test_pin_object_cmd() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
 
     let obj_id = "test_obj_pin";
+    let mods_path = _tmp.path().join("Mods");
+    std::fs::create_dir_all(mods_path.join("test_obj_pin_folder")).unwrap();
+
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type, is_pinned) VALUES (?, ?, 'Normal', 'Character', 0)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_pinned) VALUES (?, ?, 'Normal', 'test_obj_pin_folder', 'Character', 0)"
     )
     .bind(obj_id)
     .bind(&game_id)
@@ -366,7 +405,7 @@ async fn test_pin_object_cmd() -> CommandResult<()> {
         sort_by: None,
         status_filter: None,
     };
-    let objects = get_objects_cmd_inner(filter, &pool).await?;
+    let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
     assert_eq!(
         objects[0].is_pinned, true,
         "TC-10-09: Object should be pinned"

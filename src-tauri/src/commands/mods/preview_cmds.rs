@@ -3,6 +3,7 @@ use crate::services::ini::document::{self as ini_document, IniDocument};
 use crate::services::ini::write as ini_write;
 use crate::services::mods::preview_image;
 use crate::services::scanner::core::thumbnail;
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use tauri::State;
@@ -216,6 +217,7 @@ pub async fn list_mod_preview_images(folder_path: String) -> Result<Vec<String>,
 #[tauri::command]
 pub async fn save_mod_preview_image(
     op_lock: State<'_, OperationLock>,
+    watcher: State<'_, WatcherState>,
     folder_path: String,
     object_name: String,
     image_data: Vec<u8>,
@@ -228,27 +230,32 @@ pub async fn save_mod_preview_image(
 
     let mod_root = validate_mod_root(&folder_path)?;
     let _lock = op_lock.acquire().await?;
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
     save_mod_preview_image_inner(&mod_root, &object_name, &image_data)
 }
 
 #[tauri::command]
 pub async fn remove_mod_preview_image(
     op_lock: State<'_, OperationLock>,
+    watcher: State<'_, WatcherState>,
     folder_path: String,
     image_path: String,
 ) -> Result<(), String> {
     let mod_root = validate_mod_root(&folder_path)?;
     let _lock = op_lock.acquire().await?;
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
     remove_mod_preview_image_inner(&mod_root, &image_path)
 }
 
 #[tauri::command]
 pub async fn clear_mod_preview_images(
     op_lock: State<'_, OperationLock>,
+    watcher: State<'_, WatcherState>,
     folder_path: String,
 ) -> Result<Vec<String>, String> {
     let mod_root = validate_mod_root(&folder_path)?;
     let _lock = op_lock.acquire().await?;
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
     clear_mod_preview_images_inner(&mod_root)
 }
 

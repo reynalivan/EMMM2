@@ -182,7 +182,7 @@ export function usePastePreviewImage() {
     mutationFn: (input: PastePreviewImageInput) => invoke<string>('paste_thumbnail', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
     },
   });
 }
@@ -195,7 +195,7 @@ export function useSavePreviewImage() {
       invoke<string>('save_mod_preview_image', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
     },
   });
 }
@@ -208,7 +208,7 @@ export function useRemovePreviewImage() {
       invoke<void>('remove_mod_preview_image', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
     },
   });
 }
@@ -221,7 +221,7 @@ export function useClearPreviewImages() {
       invoke<string[]>('clear_mod_preview_images', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
     },
   });
 }
@@ -233,7 +233,7 @@ export function useUpdateModInfoDetails() {
     mutationFn: (input: UpdateModInfoInput) => invoke<ModInfo>('update_mod_info', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.modInfo(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
     },
   });
 }

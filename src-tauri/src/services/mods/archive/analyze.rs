@@ -4,6 +4,20 @@ use std::path::Path;
 
 /// Analyze any supported archive without extracting.
 pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
+    // AC-37.1.4: Block multi-volume archives early to prevent partial extractions
+    let file_name = archive_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    if file_name.contains(".part")
+        || file_name.contains(".z0")
+        || file_name.contains(".r0")
+        || file_name.ends_with(".001")
+    {
+        return Err("Multi-volume archives not supported".into());
+    }
+
     let format = ArchiveFormat::from_path(archive_path)
         .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
 
@@ -19,6 +33,7 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP: {e}"))?;
 
     let mut has_ini = false;
+    let mut is_encrypted = false;
     let mut uncompressed_size: u64 = 0;
     let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -40,8 +55,8 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
             Err(e) => {
                 let msg = e.to_string();
                 // Encrypted entries can't be read without a password at analysis time.
-                // Skip them gracefully; the actual extraction will use the password.
                 if msg.contains("Password") || msg.contains("password") || msg.contains("decrypt") {
+                    is_encrypted = true;
                     continue;
                 }
                 return Err(format!("Failed to read entry: {e}"));
@@ -59,6 +74,7 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         } else {
             None
         },
+        is_encrypted,
     })
 }
 
@@ -67,8 +83,9 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
     let mut file_count: usize = 0;
     let mut uncompressed_size: u64 = 0;
     let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut is_encrypted = false;
 
-    sevenz_rust::decompress_with_extract_fn(
+    let result = sevenz_rust::decompress_with_extract_fn(
         fs::File::open(archive_path).map_err(|e| format!("Failed to open 7z: {e}"))?,
         ".",
         |entry, _, _| {
@@ -88,8 +105,17 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
             }
             Ok(true) // skip actual extraction
         },
-    )
-    .map_err(|e| format!("Failed to analyze 7z: {e}"))?;
+    );
+
+    if let Err(e) = result {
+        let msg = e.to_string();
+        if msg.contains("password") || msg.contains("Password") || msg.contains("decrypt") {
+            is_encrypted = true;
+            // Return partial analysis with encryption flag
+        } else {
+            return Err(format!("Failed to analyze 7z: {e}"));
+        }
+    }
 
     Ok(ArchiveAnalysis {
         format,
@@ -101,16 +127,81 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
         } else {
             None
         },
+        is_encrypted,
+    })
+}
+
+fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
+    use std::process::Command;
+    // 7z l -slt <path>
+    let output = Command::new("7z")
+        .arg("l")
+        .arg("-slt")
+        .arg(archive_path)
+        .output()
+        .map_err(|e| format!("7z CLI not found or failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err("7z CLI execution failed".into());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut has_ini = false;
+    let mut file_count = 0;
+    let mut uncompressed_size = 0;
+    let mut root_dirs = std::collections::HashSet::new();
+    let mut is_encrypted = false;
+
+    for line in stdout.lines() {
+        if line.starts_with("Encrypted = +") {
+            is_encrypted = true;
+        } else if line.starts_with("Path = ") {
+            let name = &line[7..].trim();
+            if !name.is_empty() && *name != archive_path.to_string_lossy().as_ref() {
+                file_count += 1;
+                if name.to_lowercase().ends_with(".ini") {
+                    has_ini = true;
+                }
+                let normalized = name.replace('\\', "/");
+                if let Some(first) = normalized.split('/').next() {
+                    if !first.is_empty() {
+                        root_dirs.insert(first.to_string());
+                    }
+                }
+            }
+        } else if line.starts_with("Size = ") {
+            if let Ok(size) = line[7..].trim().parse::<u64>() {
+                uncompressed_size += size;
+            }
+        }
+    }
+
+    Ok(ArchiveAnalysis {
+        format,
+        file_count,
+        has_ini,
+        uncompressed_size,
+        single_root_folder: if root_dirs.len() == 1 {
+            root_dirs.into_iter().next()
+        } else {
+            None
+        },
+        is_encrypted,
     })
 }
 
 fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
+    // 1. FAST PATH: Use 7z CLI if available on system (Sub-millisecond header read, 0 bytes extracted)
+    if let Ok(fast_analysis) = analyze_rar_cli(archive_path, format) {
+        return Ok(fast_analysis);
+    }
+
+    // 2. SLOW FALLBACK: Use `rar` crate (Forces full temp extraction to read contents)
     let path_str = archive_path
         .to_str()
         .ok_or("RAR path contains invalid UTF-8")?;
 
-    // Extract to temp dir to read structure
-    // note: rar crate limitations often force extract_all for metadata
+    // First try without password to detect encryption
     let temp_dir = tempfile::tempdir()
         .map_err(|e| format!("Failed to create temp dir for RAR analysis: {e}"))?;
     let temp_str = temp_dir
@@ -118,8 +209,28 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         .to_str()
         .ok_or("Temp path contains invalid UTF-8")?;
 
-    let archive = rar::Archive::extract_all(path_str, temp_str, "")
-        .map_err(|e| format!("Failed to parse RAR: {e:?}"))?;
+    let mut is_encrypted = false;
+
+    let archive_result = rar::Archive::extract_all(path_str, temp_str, "");
+    let archive = match archive_result {
+        Ok(a) => a,
+        Err(e) => {
+            let msg = format!("{e:?}");
+            if msg.contains("password") || msg.contains("Password") || msg.contains("encrypted") {
+                is_encrypted = true;
+                // Return partial analysis with encryption flag
+                return Ok(ArchiveAnalysis {
+                    format,
+                    file_count: 0,
+                    has_ini: false,
+                    uncompressed_size: 0,
+                    single_root_folder: None,
+                    is_encrypted,
+                });
+            }
+            return Err(format!("Failed to parse RAR: {e:?}"));
+        }
+    };
 
     let mut has_ini = false;
     let mut file_count: usize = 0;
@@ -152,5 +263,6 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         } else {
             None
         },
+        is_encrypted,
     })
 }

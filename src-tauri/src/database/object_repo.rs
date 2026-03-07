@@ -13,6 +13,12 @@ pub struct ObjectFilter {
     pub status_filter: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct GetObjectsResult {
+    pub objects: Vec<ObjectSummary>,
+    pub lost_objects: Vec<String>,
+}
+
 #[derive(Clone, Serialize, sqlx::FromRow)]
 pub struct ObjectSummary {
     pub id: String,
@@ -29,6 +35,7 @@ pub struct ObjectSummary {
     pub created_at: Option<String>,
     pub mod_count: i64,
     pub enabled_count: i64,
+    pub is_object_disabled: bool,
     #[sqlx(skip)]
     pub has_naming_conflict: bool,
 }
@@ -59,7 +66,8 @@ pub async fn get_filtered_objects(
             o.thumbnail_path,
             o.created_at,
             COUNT(m.id) as mod_count,
-            COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) as enabled_count
+            COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) as enabled_count,
+            (o.folder_path LIKE '%/DISABLED %' OR o.folder_path LIKE '%\\DISABLED %') as is_object_disabled
         FROM objects o
         LEFT JOIN mods m ON m.object_id = o.id
         WHERE o.game_id = "#,
@@ -150,6 +158,7 @@ pub struct CreateObjectInput {
     pub sub_category: Option<String>,
     pub is_safe: Option<bool>,
     pub metadata: Option<serde_json::Value>,
+    pub thumbnail_url: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -163,11 +172,12 @@ pub async fn create_object(
     sub_category: Option<&String>,
     is_safe: bool,
     metadata_str: &str,
+    thumbnail_path: Option<&String>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, datetime('now'))
+        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, thumbnail_path, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, datetime('now'))
         "#,
         id,
         game_id,
@@ -176,7 +186,8 @@ pub async fn create_object(
         object_type,
         sub_category,
         is_safe,
-        metadata_str
+        metadata_str,
+        thumbnail_path
     )
     .execute(pool)
     .await?;
@@ -195,6 +206,18 @@ pub async fn get_mod_count_for_object(pool: &SqlitePool, id: &str) -> Result<i64
         .bind(id)
         .fetch_one(pool)
         .await
+}
+
+/// Delete all mod rows belonging to an object (cascade helper).
+pub async fn delete_mods_for_object(
+    pool: &SqlitePool,
+    object_id: &str,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM mods WHERE object_id = ?")
+        .bind(object_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn get_objects_folder_paths(

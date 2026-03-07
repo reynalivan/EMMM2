@@ -27,9 +27,10 @@ async fn test_create_object_cmd_inner_success() {
         sub_category: None,
         is_safe: Some(true),
         metadata: None,
+        thumbnail_url: None,
     };
 
-    let id = create_object_cmd_inner(&pool, input)
+    let id = create_object_cmd_inner(&pool, None, input)
         .await
         .expect("Creation failed");
 
@@ -61,15 +62,18 @@ async fn test_create_object_cmd_inner_conflict() {
         sub_category: None,
         is_safe: Some(true),
         metadata: None,
+        thumbnail_url: None,
     };
 
     // First creation should succeed
-    create_object_cmd_inner(&pool, input1.clone())
+    create_object_cmd_inner(&pool, None, input1.clone())
         .await
         .unwrap();
 
     // Second creation should fail due to unique constraint
-    let err = create_object_cmd_inner(&pool, input1).await.unwrap_err();
+    let err = create_object_cmd_inner(&pool, None, input1)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("already exists"));
 }
 
@@ -139,6 +143,11 @@ async fn test_update_object() {
 #[tokio::test]
 async fn test_delete_object_empty() {
     let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let trash_dir = tmp.path().join("trash");
+    std::fs::create_dir(&trash_dir).unwrap();
+    let watcher_state = crate::services::scanner::watcher::WatcherState::default();
+    let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
 
     sqlx::query(
         "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
@@ -149,7 +158,9 @@ async fn test_delete_object_empty() {
     sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES ('o1', 'g1', 'Obj1', 'path', 'Char')")
         .execute(&pool).await.unwrap();
 
-    delete_object(&pool, "o1").await.unwrap();
+    delete_object(&pool, "o1", &trash_dir, &watcher_state, &op_lock)
+        .await
+        .unwrap();
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)
@@ -159,8 +170,13 @@ async fn test_delete_object_empty() {
 }
 
 #[tokio::test]
-async fn test_delete_object_with_mods() {
+async fn test_delete_object_cascade_mods() {
     let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let trash_dir = tmp.path().join("trash");
+    std::fs::create_dir(&trash_dir).unwrap();
+    let watcher_state = crate::services::scanner::watcher::WatcherState::default();
+    let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
 
     sqlx::query(
         "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
@@ -170,10 +186,25 @@ async fn test_delete_object_with_mods() {
     .unwrap();
     sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES ('o1', 'g1', 'Obj1', 'path', 'Char')")
         .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, object_id, status, is_safe) VALUES ('m1', 'Mod1', 'p', 'g1', 'o1', 'ENABLED', 1)")
+    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, object_id, status, is_safe) VALUES ('m1', 'Mod1', 'p1', 'g1', 'o1', 'ENABLED', 1)")
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, object_id, status, is_safe) VALUES ('m2', 'Mod2', 'p2', 'g1', 'o1', 'ENABLED', 1)")
         .execute(&pool).await.unwrap();
 
-    // Deletion should fail because mods exist
-    let err = delete_object(&pool, "o1").await.unwrap_err();
-    assert!(err.to_string().contains("contains mods"));
+    // Deletion should cascade — remove mods + object
+    delete_object(&pool, "o1", &trash_dir, &watcher_state, &op_lock)
+        .await
+        .unwrap();
+
+    let obj_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'o1'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(obj_count, 0, "Object should be deleted");
+
+    let mod_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE object_id = 'o1'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(mod_count, 0, "Child mods should be cascade-deleted");
 }

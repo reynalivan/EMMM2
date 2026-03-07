@@ -4,6 +4,11 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
+use crate::services::scanner::core::walker::ModCandidate;
+use crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
+use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::{match_folder_phased, MasterDb};
+
 /// DTO returned to the frontend for import queue display.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ImportJobDto {
@@ -375,9 +380,9 @@ struct MatchResult {
 /// Attempt deep match. If the scanner service has a `quick_folder_match` function, call it.
 /// Falls back to confidence 0.0 (needs_review) if the scanner is unavailable.
 async fn try_deep_match(
-    _app: &AppHandle,
+    app: &AppHandle,
     extract_dir: &Path,
-    _game_id: Option<&str>,
+    game_id: Option<&str>,
 ) -> Option<MatchResult> {
     // Load all .ini files for basic heuristic
     let ini_count = walkdir::WalkDir::new(extract_dir)
@@ -391,15 +396,90 @@ async fn try_deep_match(
         return None;
     }
 
-    // TODO (Phase 8+): Wire to scanner::deep_matcher::analyze(extract_dir, game_id)
-    // For now return 0.0 so all imports go through needs_review for user confirmation.
+    let game_id_str = game_id?;
+
+    // Get the sqlite pool
+    let pool = app.state::<sqlx::SqlitePool>();
+
+    // Determine the game_type for the given game_id to load the correct MasterDb schema
+    let game_type_res: Option<String> =
+        sqlx::query_scalar!("SELECT game_type FROM games WHERE id = ?", game_id_str)
+            .fetch_optional(pool.inner())
+            .await
+            .ok()
+            .flatten();
+
+    let game_type = game_type_res?;
+
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .ok()?
+        .join("resources")
+        .join("databases")
+        .join(format!("{}.json", game_type.to_lowercase()));
+
+    if !resource_path.exists() {
+        return Some(MatchResult {
+            category: None,
+            object_id: None,
+            confidence: 0.0,
+            reason: Some(format!(
+                "Master DB not found at: {}",
+                resource_path.display()
+            )),
+        });
+    }
+
+    let json_content = std::fs::read_to_string(&resource_path).ok()?;
+    let master_db = MasterDb::from_json(&json_content).ok()?;
+
+    // Build candidate from extract_dir
+    let raw_name = extract_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let display_name =
+        crate::services::scanner::core::normalizer::normalize_display_name(&raw_name);
+    let candidate = ModCandidate {
+        path: extract_dir.to_path_buf(),
+        raw_name: raw_name.clone(),
+        display_name,
+        is_disabled: crate::services::scanner::core::normalizer::is_disabled_folder(&raw_name),
+    };
+
+    let content = crate::services::scanner::core::walker::scan_folder_content(extract_dir, 3);
+    let ini_config = IniTokenizationConfig::default();
+    let ai_config = AiRerankConfig::default();
+
+    let result = match_folder_phased(&candidate, &master_db, &content, &ini_config, &ai_config);
+
+    let top = match result.best {
+        Some(c) => c,
+        None => {
+            return Some(MatchResult {
+                category: None,
+                object_id: None,
+                confidence: 0.0,
+                reason: Some("No match found by deep matcher.".to_string()),
+            })
+        }
+    };
+
+    // Extract numeric confidence for sorting
+    let conf_val = match top.confidence {
+        crate::services::scanner::deep_matcher::models::types::Confidence::Excellent => 1.0,
+        crate::services::scanner::deep_matcher::models::types::Confidence::High => 0.8,
+        crate::services::scanner::deep_matcher::models::types::Confidence::Medium => 0.5,
+        crate::services::scanner::deep_matcher::models::types::Confidence::Low => 0.2,
+        crate::services::scanner::deep_matcher::models::types::Confidence::None => 0.0,
+    };
+
     Some(MatchResult {
-        category: None,
-        object_id: None,
-        confidence: 0.0,
-        reason: Some(
-            "Automatic deep match not yet available — please confirm manually.".to_string(),
-        ),
+        category: Some(top.object_type),
+        object_id: Some(top.name),
+        confidence: conf_val,
+        reason: top.reasons.first().map(|r| format!("{:?}", r)),
     })
 }
 

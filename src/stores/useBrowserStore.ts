@@ -116,8 +116,6 @@ export const useBrowserStore = create<BrowserStore>()(
     {
       name: 'emmm2-browser-store',
       partialize: (state) => ({
-        tabs: state.tabs,
-        activeTabId: state.activeTabId,
         autoImport: state.autoImport,
         skipGamePicker: state.skipGamePicker,
         allowedExtensions: state.allowedExtensions,

@@ -15,7 +15,8 @@ import {
   useEnableOnlyThis,
   useCheckDuplicate,
   useToggleModSafe,
-  folderKeys,
+  useBulkFavorite,
+  updateFolderCache,
   ModFolder,
 } from '../../../hooks/useFolders';
 import type { DuplicateInfo } from '../../../types/mod';
@@ -38,6 +39,7 @@ export function useFolderGridActions({
   const enableOnlyThis = useEnableOnlyThis();
   const checkDuplicate = useCheckDuplicate();
   const toggleModSafe = useToggleModSafe();
+  const bulkFavorite = useBulkFavorite();
 
   // Move To Object dialog state
   const [moveDialog, setMoveDialog] = useState<{ open: boolean; folder: ModFolder | null }>({
@@ -77,12 +79,7 @@ export function useFolderGridActions({
         return;
       }
 
-      if (!activeGame?.id) {
-        if (activeGame?.id) {
-          toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
-        }
-        return;
-      }
+      if (!activeGame?.id) return;
 
       try {
         const duplicates = await checkDuplicate.mutateAsync({
@@ -134,22 +131,15 @@ export function useFolderGridActions({
   );
 
   const handleToggleFavorite = useCallback(
-    async (folder: ModFolder) => {
+    (folder: ModFolder) => {
       if (!activeGame?.id) return;
-      try {
-        await import('@tauri-apps/api/core').then((m) =>
-          m.invoke('toggle_favorite', {
-            gameId: activeGame.id,
-            folderPath: folder.path,
-            favorite: !folder.is_favorite,
-          }),
-        );
-        queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      } catch (e) {
-        console.error('Failed to toggle favorite:', e);
-      }
+      bulkFavorite.mutate({
+        gameId: activeGame.id,
+        folderPaths: [folder.path],
+        favorite: !folder.is_favorite,
+      });
     },
-    [queryClient, activeGame?.id],
+    [activeGame, bulkFavorite],
   );
 
   const handleRenameRequest = useCallback((folder: ModFolder) => {
@@ -217,13 +207,14 @@ export function useFolderGridActions({
           targetObjectId,
           status,
         });
-        queryClient.invalidateQueries({ queryKey: folderKeys.all });
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        // Targeted: remove moved folder from current view
+        updateFolderCache(queryClient, [folder.path], undefined, true);
+        queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
       } catch (err) {
         console.error('Failed to move mod to object:', err);
       }
     },
-    [queryClient, activeGame?.id],
+    [queryClient, activeGame],
   );
 
   // Toggle Safe Mode per-mod

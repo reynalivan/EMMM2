@@ -1,5 +1,5 @@
 import { useState, memo, useCallback } from 'react';
-import { Folder, Star, Copy, Package, Layers, AlertTriangle } from 'lucide-react';
+import { Folder, Star, Copy, Package, Layers, AlertTriangle, PowerOff } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { ModFolder } from '../../types/mod';
@@ -178,6 +178,7 @@ function FolderCardInner({
           group relative flex flex-col rounded-lg overflow-hidden cursor-pointer
           transition-all duration-200 border w-full
           ${folder.node_type === 'InternalAssets' ? 'opacity-50' : ''}
+          ${!localEnabled ? 'opacity-[0.65] grayscale-[0.8]' : ''}
           ${
             hasNamingConflict
               ? 'border-warning/60 ring-1 ring-warning/40'
@@ -231,6 +232,13 @@ function FolderCardInner({
             <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-secondary/90 text-secondary-content rounded-md z-10 shadow-sm">
               <Layers size={10} />
               <span className="text-[9px] font-bold uppercase">Variants</span>
+            </div>
+          )}
+
+          {/* Disabled Power Off Overlay */}
+          {!localEnabled && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 pointer-events-none">
+              <PowerOff size={24} className="text-white/75 drop-shadow" />
             </div>
           )}
 
@@ -293,7 +301,8 @@ function FolderCardInner({
         <div className="p-2.5 flex-1 flex flex-col justify-between min-h-0">
           <h3
             className={`font-medium text-sm truncate leading-tight select-none transition-colors
-              ${isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}`}
+              ${isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}
+              ${!localEnabled ? 'line-through text-base-content/50' : ''}`}
             title={folder.name}
           >
             {isRenaming ? (

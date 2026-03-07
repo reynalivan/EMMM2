@@ -42,102 +42,63 @@ const MOD_SECTION_PREFIXES: &[&str] = &["textureoverride", "shaderoverride", "re
 /// Classify a folder based on its contents.
 ///
 /// Returns the node type and a list of human-readable reasons for the classification.
+///
+/// **Opt-G:** Single-pass implementation — does ONE `fs::read_dir` to collect:
+///   - ini files (scanned for mod sections + filename= references)
+///   - mod asset files (.buf/.ib/.dds/.hlsl/.vb)
+///   - child directory names (for meaningful-subdirs and variant-container checks)
 pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>) {
     if !path.is_dir() {
         return (NodeType::ContainerFolder, vec![]);
     }
 
-    let (has_mod_ini, referenced_subs, mut reasons) = scan_ini_files(path);
-
-    if !has_mod_ini {
-        return (NodeType::ContainerFolder, reasons);
-    }
-
-    let mut has_assets = false;
-    if has_mod_assets(path) {
-        has_assets = true;
-        reasons.push("Has mod asset files (.buf/.ib/.dds/.hlsl/.vb)".into());
-    }
-
-    // According to TC-11-16: ModPackRoot > VariantContainer
-    // If it has mod assets, it explicitly resolves to ModPackRoot (or FlatModRoot)
-    // rather than VariantContainer, even if it has multiple variant sub-folders.
-    if !has_assets {
-        // Check for variant pattern: ≥3 child dirs each with their own mod ini
-        let child_dirs_with_ini = count_child_dirs_with_mod_ini(path);
-        if child_dirs_with_ini >= 3 || (!referenced_subs.is_empty() && child_dirs_with_ini >= 2) {
-            reasons.push(format!("{child_dirs_with_ini} child dirs with mod ini"));
-            return (NodeType::VariantContainer, reasons);
-        }
-    }
-
-    if !has_meaningful_child_dirs(path, &referenced_subs) {
-        reasons.push("No meaningful subfolders (all children are internal/assets)".into());
-        return (NodeType::FlatModRoot, reasons);
-    }
-
-    (NodeType::ModPackRoot, reasons)
-}
-
-/// Check if a folder has any meaningful subfolders (navigable).
-/// Subfolders that are referenced by INI files (InternalAssets) or start with '.' are not meaningful.
-fn has_meaningful_child_dirs(path: &Path, referenced_subs: &[String]) -> bool {
-    let entries = match std::fs::read_dir(path) {
+    let entries = match fs::read_dir(path) {
         Ok(e) => e,
-        Err(_) => return false,
+        Err(_) => return (NodeType::ContainerFolder, vec![]),
     };
+
+    // Single pass: collect ini files, asset presence, and child dir paths
+    let mut ini_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut has_assets = false;
+    let mut child_dirs: Vec<std::path::PathBuf> = Vec::new();
 
     for entry in entries.filter_map(|e| e.ok()) {
         let p = entry.path();
-        if !p.is_dir() {
-            continue;
-        }
-        let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-        if fname.starts_with('.') {
-            continue;
-        }
+        if p.is_dir() {
+            let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if !fname.starts_with('.') {
+                child_dirs.push(p);
+            }
+        } else if p.is_file() {
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+                .to_lowercase();
 
-        let is_internal = referenced_subs
-            .iter()
-            .any(|sub| sub.eq_ignore_ascii_case(fname));
-
-        if !is_internal {
-            return true;
+            if ext == "ini" {
+                let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                if !fname.eq_ignore_ascii_case("desktop.ini") {
+                    ini_files.push(p);
+                }
+            } else if !has_assets && MOD_ASSET_EXTENSIONS.contains(&ext.as_str()) {
+                has_assets = true;
+            }
         }
     }
-    false
-}
 
-/// Scan `.ini` files at the root of a folder for 3DMigoto mod sections.
-///
-/// Returns: (has_valid_mod_ini, referenced_subfolder_names, reasons)
-fn scan_ini_files(path: &Path) -> (bool, Vec<String>, Vec<String>) {
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return (false, vec![], vec![]),
-    };
-
+    // Scan ini files for mod sections and referenced subfolders
     let mut has_mod_ini = false;
     let mut referenced_subs: Vec<String> = Vec::new();
     let mut reasons: Vec<String> = Vec::new();
 
-    for entry in entries.filter_map(|e| e.ok()) {
-        let p = entry.path();
-        if !p.is_file() {
-            continue;
-        }
-        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or_default();
-        if !ext.eq_ignore_ascii_case("ini") {
-            continue;
-        }
-        // Skip desktop.ini
-        let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-        if fname.eq_ignore_ascii_case("desktop.ini") {
-            continue;
-        }
+    for ini_path in &ini_files {
+        let fname = ini_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
 
-        // Read and scan the file (lightweight line-based scan, not full parse)
-        let content = match fs::read_to_string(&p) {
+        let content = match fs::read_to_string(ini_path) {
             Ok(c) => c,
             Err(_) => continue,
         };
@@ -157,7 +118,72 @@ fn scan_ini_files(path: &Path) -> (bool, Vec<String>, Vec<String>) {
         ));
     }
 
-    (has_mod_ini, referenced_subs, reasons)
+    if !has_mod_ini {
+        return (NodeType::ContainerFolder, reasons);
+    }
+
+    if has_assets {
+        reasons.push("Has mod asset files (.buf/.ib/.dds/.hlsl/.vb)".into());
+    }
+
+    // According to TC-11-16: ModPackRoot > VariantContainer
+    // If it has mod assets, it explicitly resolves to ModPackRoot (or FlatModRoot)
+    if !has_assets {
+        // Count child dirs with mod ini (variant check)
+        // This still needs to read_dir each child, but only if we got this far (no assets scenario)
+        let child_dirs_with_ini = child_dirs.iter().filter(|dir| has_any_mod_ini(dir)).count();
+        if child_dirs_with_ini >= 3 || (!referenced_subs.is_empty() && child_dirs_with_ini >= 2) {
+            reasons.push(format!("{child_dirs_with_ini} child dirs with mod ini"));
+            return (NodeType::VariantContainer, reasons);
+        }
+    }
+
+    // Check for meaningful child dirs (not internal/referenced by INI)
+    let has_meaningful_children = child_dirs.iter().any(|dir| {
+        let fname = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        !referenced_subs
+            .iter()
+            .any(|sub| sub.eq_ignore_ascii_case(fname))
+    });
+
+    if !has_meaningful_children {
+        reasons.push("No meaningful subfolders (all children are internal/assets)".into());
+        return (NodeType::FlatModRoot, reasons);
+    }
+
+    (NodeType::ModPackRoot, reasons)
+}
+
+/// Quick check: does a directory contain at least one valid mod ini file?
+/// Used for variant-container detection (called on child dirs only when needed).
+fn has_any_mod_ini(path: &Path) -> bool {
+    let entries = match fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let p = entry.path();
+        if !p.is_file() {
+            continue;
+        }
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or_default();
+        if !ext.eq_ignore_ascii_case("ini") {
+            continue;
+        }
+        let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        if fname.eq_ignore_ascii_case("desktop.ini") {
+            continue;
+        }
+        // Quick scan: just check for section headers, don't parse filename= refs
+        if let Ok(content) = fs::read_to_string(&p) {
+            let (has_mod, _) = scan_ini_content(&content, fname);
+            if has_mod {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Scan INI content for mod section headers and `filename=` references.
@@ -201,47 +227,6 @@ fn scan_ini_content(content: &str, _ini_filename: &str) -> (bool, Vec<String>) {
     }
 
     (has_mod_section, referenced_subs)
-}
-
-/// Check if a folder contains typical 3DMigoto mod asset files at root.
-fn has_mod_assets(path: &Path) -> bool {
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-
-    for entry in entries.filter_map(|e| e.ok()) {
-        let p = entry.path();
-        if !p.is_file() {
-            continue;
-        }
-        let ext = p
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or_default()
-            .to_lowercase();
-        if MOD_ASSET_EXTENSIONS.contains(&ext.as_str()) {
-            return true;
-        }
-    }
-    false
-}
-
-/// Count how many immediate child directories contain a valid mod ini.
-fn count_child_dirs_with_mod_ini(path: &Path) -> usize {
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .filter(|e| {
-            let (has_ini, _, _) = scan_ini_files(&e.path());
-            has_ini
-        })
-        .count()
 }
 
 #[cfg(test)]

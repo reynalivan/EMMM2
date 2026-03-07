@@ -82,6 +82,7 @@ const mockObject: ObjectSummary = {
   is_safe: true,
   is_pinned: false,
   is_auto_sync: false,
+  is_object_disabled: false,
   has_naming_conflict: false,
   metadata: '{"element":"Pyro"}',
   tags: '[]',

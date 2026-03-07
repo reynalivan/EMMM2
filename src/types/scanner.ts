@@ -8,7 +8,10 @@ export interface ArchiveInfo {
   name: string;
   extension: string;
   size_bytes: number;
-  has_ini: boolean | null;
+  has_ini: boolean;
+  file_count: number;
+  /** Whether the archive requires a password for extraction. */
+  is_encrypted: boolean;
 }
 
 export interface ArchiveAnalysis {
@@ -17,12 +20,18 @@ export interface ArchiveAnalysis {
   top_level_folders: string[];
   has_ini: boolean;
   total_size_bytes: number;
+  is_encrypted: boolean;
 }
 
 export interface ExtractionResult {
   archive_name: string;
+  /** Primary destination path (backward compat — first mod root moved). */
   dest_path: string;
+  /** All destination paths (for multi-mod packs, may be > 1). */
+  dest_paths: string[];
   files_extracted: number;
+  /** Number of independent mod roots found and moved. */
+  mod_count: number;
   success: boolean;
   error?: string;
 }

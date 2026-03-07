@@ -6,12 +6,12 @@
  */
 
 import { useState, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   useBulkToggle,
   useBulkDelete,
   useBulkUpdateInfo,
-  folderKeys,
+  useBulkFavorite,
+  useBulkPin,
   ModFolder,
 } from '../../../hooks/useFolders';
 import { useActiveGame } from '../../../hooks/useActiveGame';
@@ -29,11 +29,12 @@ export function useFolderGridBulk({
   clearGridSelection,
   openMoveDialog,
 }: FolderGridBulkOptions) {
-  const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
   const bulkToggle = useBulkToggle();
   const bulkDelete = useBulkDelete();
   const bulkUpdateInfo = useBulkUpdateInfo();
+  const bulkFavorite = useBulkFavorite();
+  const bulkPin = useBulkPin();
 
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
@@ -69,24 +70,14 @@ export function useFolderGridBulk({
     );
   }, [gridSelection, bulkDelete, clearGridSelection]);
 
-  // Bulk Favorite/Unfavorite
+  // Bulk Favorite/Unfavorite — uses proper mutation hook with targeted cache
   const handleBulkFavorite = useCallback(
-    async (favorite: boolean) => {
+    (favorite: boolean) => {
       const paths = Array.from(gridSelection);
       if (paths.length === 0 || !activeGame?.id) return;
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('bulk_toggle_favorite', {
-          gameId: activeGame.id,
-          folderPaths: paths,
-          favorite,
-        });
-        queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      } catch (e) {
-        console.error('Bulk favorite failed:', e);
-      }
+      bulkFavorite.mutate({ gameId: activeGame.id, folderPaths: paths, favorite });
     },
-    [gridSelection, queryClient, activeGame?.id],
+    [gridSelection, activeGame, bulkFavorite],
   );
 
   // Bulk Safe/Unsafe — uses existing bulk_update_info
@@ -99,20 +90,14 @@ export function useFolderGridBulk({
     [gridSelection, bulkUpdateInfo],
   );
 
-  // Bulk Pin/Unpin
+  // Bulk Pin/Unpin — uses proper mutation hook with targeted cache
   const handleBulkPin = useCallback(
-    async (pin: boolean) => {
+    (pin: boolean) => {
       const paths = Array.from(gridSelection);
       if (paths.length === 0 || !activeGame?.id) return;
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('bulk_pin_mods', { gameId: activeGame.id, folderPaths: paths, pin });
-        queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      } catch (e) {
-        console.error('Bulk pin failed:', e);
-      }
+      bulkPin.mutate({ gameId: activeGame.id, folderPaths: paths, pin });
     },
-    [gridSelection, queryClient, activeGame?.id],
+    [gridSelection, activeGame, bulkPin],
   );
 
   // Bulk Move to Object

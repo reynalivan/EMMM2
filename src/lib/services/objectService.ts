@@ -5,7 +5,9 @@ import type {
   CategoryCount,
   UpdateObjectInput,
   CreateObjectInput,
+  GetObjectsResult,
 } from '../../types/object';
+import { useToastStore } from '../../stores/useToastStore';
 
 export function validateObjectName(name: string): string | null {
   const trimmed = name.trim();
@@ -38,8 +40,21 @@ export function validateObjectName(name: string): string | null {
   return null;
 }
 
-export function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]> {
-  return invoke<ObjectSummary[]>('get_objects_cmd', { filter });
+export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]> {
+  const result = await invoke<GetObjectsResult>('get_objects_cmd', { filter });
+
+  if (result.lost_objects && result.lost_objects.length > 0) {
+    // Show a consolidated toast message indicating what was lost
+    const count = result.lost_objects.length;
+    let message = `Lost ${count} object${count > 1 ? 's' : ''} (directory missing on disk). Local DB synchronized.`;
+    if (count <= 3) {
+      message += `\n(${result.lost_objects.join(', ')})`;
+    }
+
+    useToastStore.getState().addToast('warning', message, 5000);
+  }
+
+  return result.objects;
 }
 
 export function getCategoryCounts(gameId: string, safeMode: boolean): Promise<CategoryCount[]> {
@@ -64,4 +79,9 @@ export function updateObject(id: string, updates: UpdateObjectInput): Promise<vo
 
 export function deleteObject(id: string): Promise<void> {
   return invoke('delete_object_cmd', { id });
+}
+
+/** Garbage-collect objects whose disk folders are missing. Called at sync points only. */
+export function gcLostObjects(gameId: string): Promise<string[]> {
+  return invoke<string[]>('gc_lost_objects_cmd', { gameId });
 }

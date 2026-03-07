@@ -44,46 +44,59 @@ pub fn start_watcher(
     let mods_path_root = path.clone();
 
     std::thread::spawn(move || {
-        while let Ok(event) = rx.recv() {
-            // 1. Sync DB mirror
-            tauri::async_runtime::block_on(sync_watcher_event(
-                &db_pool,
-                &game_id,
-                Path::new(&mods_path_root),
-                &event,
-            ));
+        // Imp 10: drain-and-batch pattern for rapid event bursts
+        loop {
+            // Block until at least one event arrives
+            let first = match rx.recv() {
+                Ok(ev) => ev,
+                Err(_) => break,
+            };
+            let mut batch = vec![first];
 
-            // 2. Notify frontend to refresh queries
-            match event {
-                ModWatchEvent::Created(p) => {
-                    let _ = app_handle.emit(
-                        "mod_watch:event",
-                        serde_json::json!({ "type": "Created", "path": p }),
-                    );
-                }
-                ModWatchEvent::Modified(p) => {
-                    let _ = app_handle.emit(
-                        "mod_watch:event",
-                        serde_json::json!({ "type": "Modified", "path": p }),
-                    );
-                }
-                ModWatchEvent::Removed(p) => {
-                    let _ = app_handle.emit(
-                        "mod_watch:event",
-                        serde_json::json!({ "type": "Removed", "path": p }),
-                    );
-                }
-                ModWatchEvent::Renamed { from, to } => {
-                    let _ = app_handle.emit(
-                        "mod_watch:event",
-                        serde_json::json!({ "type": "Renamed", "from": from, "to": to }),
-                    );
-                }
-                ModWatchEvent::Error(e) => {
-                    let _ = app_handle.emit(
-                        "mod_watch:event",
-                        serde_json::json!({ "type": "Error", "error": e }),
-                    );
+            // Drain any additional events that arrived during processing
+            while let Ok(ev) = rx.try_recv() {
+                batch.push(ev);
+            }
+
+            // 1. Sync DB mirror for all events in batch
+            for event in &batch {
+                tauri::async_runtime::block_on(sync_watcher_event(
+                    &db_pool,
+                    &game_id,
+                    Path::new(&mods_path_root),
+                    event,
+                ));
+            }
+
+            // 2. Notify frontend for all events in batch
+            // Imp 6: `Modified` arm removed — translate_event no longer produces it
+            for event in batch {
+                match event {
+                    ModWatchEvent::Created(p) => {
+                        let _ = app_handle.emit(
+                            "mod_watch:event",
+                            serde_json::json!({ "type": "Created", "path": p }),
+                        );
+                    }
+                    ModWatchEvent::Removed(p) => {
+                        let _ = app_handle.emit(
+                            "mod_watch:event",
+                            serde_json::json!({ "type": "Removed", "path": p }),
+                        );
+                    }
+                    ModWatchEvent::Renamed { from, to } => {
+                        let _ = app_handle.emit(
+                            "mod_watch:event",
+                            serde_json::json!({ "type": "Renamed", "from": from, "to": to }),
+                        );
+                    }
+                    ModWatchEvent::Error(e) => {
+                        let _ = app_handle.emit(
+                            "mod_watch:event",
+                            serde_json::json!({ "type": "Error", "error": e }),
+                        );
+                    }
+                    _ => {} // Modified — never produced, but handle for completeness
                 }
             }
         }
@@ -102,7 +115,9 @@ async fn sync_watcher_event(
     match event {
         ModWatchEvent::Created(p) => {
             let p_obj = Path::new(&p);
-            if p_obj.is_dir() {
+            // Imp 7: use extension check instead of is_dir() syscall.
+            // Directories have no extension; files always have one (filtered by translate_event).
+            if p_obj.extension().is_none() {
                 if let Ok(rel) = p_obj.strip_prefix(mods_path) {
                     let components: Vec<_> = rel.components().collect();
                     if components.len() == 2 {

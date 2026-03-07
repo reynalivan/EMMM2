@@ -116,6 +116,10 @@ pub async fn toggle_mod_inner(
     path: String,
     enable: bool,
 ) -> Result<String, String> {
+    // Hold suppression for the entire function so watcher events don't
+    // leak through between the fs::rename and function return.
+    let _guard = SuppressionGuard::new(&state.suppressor);
+
     let src = Path::new(&path);
     if !src.exists() || !src.is_dir() {
         return Err(format!("Mod folder does not exist: {path}"));
@@ -148,11 +152,8 @@ pub async fn toggle_mod_inner(
         ));
     }
 
-    {
-        let _guard = SuppressionGuard::new(&state.suppressor);
-        crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path)
-            .map_err(|e| format!("Failed to rename mod folder: {e}"))?;
-    }
+    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path)
+        .map_err(|e| format!("Failed to rename mod folder: {e}"))?;
 
     log::info!("Toggled mod: '{}' -> '{}'", old_name, new_path.display());
 
@@ -191,6 +192,10 @@ pub async fn rename_mod_folder_inner(
     folder_path: String,
     new_name: String,
 ) -> Result<RenameResult, String> {
+    // Hold suppression for the entire function so watcher events don't
+    // leak through between the fs::rename and function return.
+    let _guard = SuppressionGuard::new(&state.suppressor);
+
     let path = Path::new(&folder_path);
     if !path.exists() || !path.is_dir() {
         return Err(format!("Folder does not exist: {folder_path}"));
@@ -222,11 +227,8 @@ pub async fn rename_mod_folder_inner(
         ));
     }
 
-    {
-        let _guard = SuppressionGuard::new(&state.suppressor);
-        crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path)
-            .map_err(|e| format!("Failed to rename folder: {e}"))?;
-    }
+    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path)
+        .map_err(|e| format!("Failed to rename folder: {e}"))?;
 
     update_info_json_name(&new_path, &new_name);
 

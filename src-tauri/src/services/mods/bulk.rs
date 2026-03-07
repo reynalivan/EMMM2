@@ -54,16 +54,21 @@ pub async fn bulk_toggle(
     let mut failures = Vec::new();
     let mut db_updates = Vec::new();
 
+    // Opt-O: Batch progress — emit every N items to reduce IPC overhead
+    let progress_interval = std::cmp::max(1, total / 10);
+
     for (i, path) in paths.iter().enumerate() {
-        let _ = app.emit(
-            "bulk-progress",
-            BulkProgressPayload {
-                label: format!("{} {}/{}", action_label, i + 1, total),
-                current: i + 1,
-                total,
-                active: true,
-            },
-        );
+        if i % progress_interval == 0 || i == total - 1 {
+            let _ = app.emit(
+                "bulk-progress",
+                BulkProgressPayload {
+                    label: format!("{} {}/{}", action_label, i + 1, total),
+                    current: i + 1,
+                    total,
+                    active: true,
+                },
+            );
+        }
 
         match toggle_mod_inner(state, path.clone(), enable).await {
             Ok(new_path) => {
@@ -133,16 +138,21 @@ pub async fn bulk_delete(
     let mut failures = Vec::new();
     let mut db_deletes = Vec::new();
 
+    // Opt-O: Batch progress — emit every N items
+    let progress_interval = std::cmp::max(1, total / 10);
+
     for (i, path) in paths.iter().enumerate() {
-        let _ = app.emit(
-            "bulk-progress",
-            BulkProgressPayload {
-                label: format!("Deleting {}/{}", i + 1, total),
-                current: i + 1,
-                total,
-                active: true,
-            },
-        );
+        if i % progress_interval == 0 || i == total - 1 {
+            let _ = app.emit(
+                "bulk-progress",
+                BulkProgressPayload {
+                    label: format!("Deleting {}/{}", i + 1, total),
+                    current: i + 1,
+                    total,
+                    active: true,
+                },
+            );
+        }
 
         match trash::move_to_trash_guarded(state, &trash_dir, path.clone(), game_id.clone()).await {
             Ok(_) => {
@@ -230,18 +240,18 @@ pub async fn bulk_toggle_favorite(
         return Err(e.to_string());
     }
 
-    for folder_path in &folder_paths {
-        let full_path = std::path::Path::new(&folder_path);
+    // Opt-R: Parallel info.json writes using rayon
+    use rayon::prelude::*;
+    let update_for_parallel = info_json::ModInfoUpdate {
+        is_favorite: Some(favorite),
+        ..Default::default()
+    };
+    folder_paths.par_iter().for_each(|folder_path| {
+        let full_path = std::path::Path::new(folder_path);
         if full_path.exists() {
-            let _ = info_json::update_info_json(
-                full_path,
-                &info_json::ModInfoUpdate {
-                    is_favorite: Some(favorite),
-                    ..Default::default()
-                },
-            );
+            let _ = info_json::update_info_json(full_path, &update_for_parallel);
         }
-    }
+    });
     Ok(BulkResult {
         success: folder_paths,
         failures,

@@ -13,8 +13,8 @@ describe('ObjectListStates', () => {
     activeFilters: {},
     onClearFilters: vi.fn(),
     onClearSearch: vi.fn(),
-    isSyncing: false,
-    onSync: vi.fn(),
+    onCreateNew: vi.fn(),
+    onAutoSetup: vi.fn(),
   };
 
   it('renders loading state', () => {
@@ -34,7 +34,9 @@ describe('ObjectListStates', () => {
 
   it('renders empty state without filters', () => {
     render(<ObjectListStates {...defaultProps} isEmpty={true} />);
-    expect(screen.getByText('Drag mod folders here or create a new object')).toBeInTheDocument();
+    expect(screen.getByText('Drag mod folders here or create an object')).toBeInTheDocument();
+    expect(screen.getByText('Add New Folder')).toBeInTheDocument();
+    expect(screen.getByText('Auto Setup Folder')).toBeInTheDocument();
   });
 
   it('renders empty state with filters', () => {

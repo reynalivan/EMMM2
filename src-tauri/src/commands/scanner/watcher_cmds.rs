@@ -33,6 +33,23 @@ pub async fn start_watcher_cmd(
     crate::services::scanner::watcher::lifecycle::start_watcher(app, &state, db_pool, path, game_id)
 }
 
+/// Stop the file watcher. Cleanly drops the `RecommendedWatcher`,
+/// terminating the background event loop thread.
+///
+/// Called by the frontend in `useEffect` cleanup when the active game changes
+/// or the component unmounts.
+///
+/// # Covers: req-05 AC-05.2.2, req-28 (Game Switch → stop → init)
+#[tauri::command]
+pub async fn stop_watcher_cmd(watcher: State<'_, WatcherState>) -> Result<(), String> {
+    let mut w = watcher.watcher.lock().unwrap();
+    if w.is_some() {
+        log::info!("Stopping watcher via command");
+        *w = None;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/watcher_cmds_tests.rs"]
 mod tests;

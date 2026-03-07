@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Webview } from '@tauri-apps/api/webview';
@@ -178,27 +179,23 @@ export function BrowserPage() {
 
   // Listen for navigation changes from the backend (run ONCE on mount)
   useEffect(() => {
-    let unlistenUrl: (() => void) | undefined;
-    let unlistenNewTab: (() => void) | undefined;
+    const unlistenUrlPromise = listen<{ label: string; url: string; title: string }>(
+      'browser:url-changed',
+      (event) => {
+        const { label, url, title } = event.payload;
+        useBrowserStore.getState().updateTab(label, { url, title: title || url });
+      },
+    );
 
-    listen<{ label: string; url: string; title: string }>('browser:url-changed', (event) => {
-      const { label, url, title } = event.payload;
-      useBrowserStore.getState().updateTab(label, { url, title: title || url });
-    }).then((f) => {
-      unlistenUrl = f;
-    });
-
-    listen<{ url: string }>('browser:new-tab-requested', (event) => {
+    const unlistenNewTabPromise = listen<{ url: string }>('browser:new-tab-requested', (event) => {
       if (navigateRef.current) {
         navigateRef.current(event.payload.url, true);
       }
-    }).then((f) => {
-      unlistenNewTab = f;
     });
 
     return () => {
-      if (unlistenUrl) unlistenUrl();
-      if (unlistenNewTab) unlistenNewTab();
+      unlistenUrlPromise.then((f) => f());
+      unlistenNewTabPromise.then((f) => f());
     };
   }, []);
 
@@ -422,32 +419,41 @@ export function BrowserPage() {
         )}
       </div>
 
-      {/* ── Download Manager Panel (slide-in) ─────────────────────────── */}
-      {/* Overlay backdrop */}
-      {isDownloadPanelOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-60"
-          onClick={() => useBrowserStore.getState().closeDownloadPanel()}
-        />
+      {/* ── Overlays (Rendered via Portal to avoid clipping) ──────────────────────── */}
+      {createPortal(
+        <>
+          {/* Download Manager Panel Backdrop (slide-in) */}
+          <div
+            className={`fixed inset-0 bg-black/40 z-9998 transition-opacity duration-300 ${
+              isDownloadPanelOpen
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none'
+            }`}
+            onClick={() => useBrowserStore.getState().closeDownloadPanel()}
+          />
+
+          {/* Download Manager Panel */}
+          <div className="relative z-9999">
+            <DownloadManagerPanel onImportSelected={handleImportSelected} />
+          </div>
+
+          {/* Import Queue (floating bottom-left) */}
+          <div className="relative z-10000">
+            <ImportQueuePanel />
+          </div>
+
+          {/* Game Picker Modal */}
+          <div className="relative z-10010">
+            <GamePickerModal
+              downloadIds={importIds}
+              open={isGamePickerOpen}
+              onClose={() => setIsGamePickerOpen(false)}
+              onConfirm={handleGameConfirm}
+            />
+          </div>
+        </>,
+        document.body,
       )}
-      <div className="z-70 relative">
-        <DownloadManagerPanel onImportSelected={handleImportSelected} />
-      </div>
-
-      {/* ── Import Queue (floating bottom-left) ───────────────────────── */}
-      <div className="z-70 relative">
-        <ImportQueuePanel />
-      </div>
-
-      {/* ── Game Picker Modal ─────────────────────────────────────────── */}
-      <div className="z-80 relative">
-        <GamePickerModal
-          downloadIds={importIds}
-          open={isGamePickerOpen}
-          onClose={() => setIsGamePickerOpen(false)}
-          onConfirm={handleGameConfirm}
-        />
-      </div>
     </div>
   );
 }

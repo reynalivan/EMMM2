@@ -11,7 +11,7 @@ export interface RenameConflictError {
   base_name: string;
 }
 
-type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings' | 'browser';
+type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings' | 'browser' | 'downloads';
 type MobilePane = 'sidebar' | 'grid' | 'details';
 
 interface AppState {
@@ -57,6 +57,10 @@ interface AppState {
   conflictDialog: { open: boolean; conflict: RenameConflictError | null };
   openConflictDialog: (conflict: RenameConflictError) => void;
   closeConflictDialog: () => void;
+
+  // Watcher cooldown: skip external change events during active mutations
+  watcherCooldownUntil: number;
+  setWatcherCooldown: (until: number) => void;
 
   // Actions
   initStore: () => Promise<void>;
@@ -149,6 +153,10 @@ export const useAppStore = create<AppState>()(
       conflictDialog: { open: false, conflict: null },
       openConflictDialog: (conflict) => set({ conflictDialog: { open: true, conflict } }),
       closeConflictDialog: () => set({ conflictDialog: { open: false, conflict: null } }),
+
+      // Watcher cooldown
+      watcherCooldownUntil: 0,
+      setWatcherCooldown: (until) => set({ watcherCooldownUntil: until }),
 
       // Store Initialization
       initStore: async () => {

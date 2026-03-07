@@ -21,6 +21,7 @@ import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
 import { classifyDroppedPaths, validateDropForZone, type DropZone } from './dropUtils';
 import DropConfirmModal, { type DropValidation } from './DropConfirmModal';
 import ArchiveModal from '../scanner/components/ArchiveModal';
+import BulkTagModal from './BulkTagModal';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
@@ -55,6 +56,9 @@ export default function ObjectList() {
     handleDelete,
     confirmDelete,
     handleDeleteObject,
+    deleteObjectDialog,
+    setDeleteObjectDialog,
+    confirmDeleteObject,
     handleFilterChange,
     handleClearFilters,
     sortBy,
@@ -84,11 +88,24 @@ export default function ObjectList() {
     handleDropAutoOrganize,
     handleDropOnNewObjectSubmit,
     archiveModal,
+    handleArchivesInteractively,
     handleArchiveExtractSubmit,
     handleArchiveExtractSkip,
+    // Bulk
+    bulkSelect,
+    bulkTagModal,
+    setBulkTagModal,
+    handleBulkDelete,
+    handleBulkPin,
+    handleBulkEnable,
+    handleBulkDisable,
+    handleBulkAddTags,
+    handleBulkRemoveTags,
+    handleBulkAutoOrganize,
   } = useObjectListLogic();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [autoSetupOpen, setAutoSetupOpen] = useState(false);
   /** Pending paths for the "create new object with pre-selected files" flow */
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
 
@@ -375,11 +392,24 @@ export default function ObjectList() {
     };
     window.addEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
 
+    // Listen to archive import requests from FolderGrid
+    const onArchiveImportRequest = (e: Event) => {
+      const { archives, nonArchivePaths, targetDir } = (e as CustomEvent).detail;
+      handleArchivesInteractively(archives, {
+        type: 'item',
+        pathsToIngest: nonArchivePaths || [],
+        targetFolder: targetDir,
+        targetObjectId: '',
+      });
+    };
+    window.addEventListener('request-archive-import', onArchiveImportRequest);
+
     return () => {
       window.removeEventListener('request-auto-organize', onAutoOrganizeRequest);
       window.removeEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
+      window.removeEventListener('request-archive-import', onArchiveImportRequest);
     };
-  }, [handleSync, handleDropAutoOrganize]);
+  }, [handleSync, handleDropAutoOrganize, handleArchivesInteractively]);
 
   const isEmpty = !isLoading && !isError && objects.length === 0;
   const hasNoGame = !activeGame;
@@ -430,6 +460,23 @@ export default function ObjectList() {
           onStatusFilterChange={setStatusFilter}
           isDragging={isDragging}
           isActiveZone={activeDropZone === 'auto-organize'}
+          bulkSelect={{
+            isAnySelected: bulkSelect.isAnySelected,
+            selectionCount: bulkSelect.selectionCount,
+            onDelete: () =>
+              handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
+            onPin: (pin) =>
+              handleBulkPin(bulkSelect.selectedIds, pin).then(bulkSelect.clearSelection),
+            onEnable: () =>
+              handleBulkEnable(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
+            onDisable: () =>
+              handleBulkDisable(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
+            onAddTags: () => setBulkTagModal({ open: true, mode: 'add' }),
+            onRemoveTags: () => setBulkTagModal({ open: true, mode: 'remove' }),
+            onAutoOrganize: () =>
+              handleBulkAutoOrganize(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
+            onClear: bulkSelect.clearSelection,
+          }}
         />
       </div>
 
@@ -478,10 +525,10 @@ export default function ObjectList() {
         isEmpty={isEmpty}
         sidebarSearchQuery={sidebarSearchQuery}
         activeFilters={activeFilters}
-        isSyncing={isSyncing}
         onClearFilters={handleClearFilters}
         onClearSearch={() => setSidebarSearch('')}
-        onSync={handleSync}
+        onCreateNew={() => setCreateModalOpen(true)}
+        onAutoSetup={() => setAutoSetupOpen(true)}
       />
 
       {/* Virtualized list (objects or folders) — item drop zone */}
@@ -502,6 +549,9 @@ export default function ObjectList() {
             contextMenuProps={contextMenuProps}
             isDragging={isDragging}
             hoveredItemId={hoveredItemId}
+            isAnyBulkSelected={bulkSelect.isAnySelected}
+            isBulkSelected={bulkSelect.isSelected}
+            onToggleBulkSelect={bulkSelect.toggleSelection}
           />
         )}
       </div>
@@ -592,6 +642,11 @@ export default function ObjectList() {
           setCreateModalOpen(false);
           setPendingPaths(null);
         }}
+        autoSetupOpen={autoSetupOpen}
+        onCloseAutoSetup={() => setAutoSetupOpen(false)}
+        deleteObjectDialog={deleteObjectDialog}
+        onConfirmDeleteObject={confirmDeleteObject}
+        onCancelDeleteObject={() => setDeleteObjectDialog({ open: false, id: '', name: '' })}
       />
 
       {/* Pre-drop validation modal */}
@@ -605,12 +660,37 @@ export default function ObjectList() {
 
       {/* Archive extraction modal triggered during DnD */}
       <ArchiveModal
+        key={archiveModal.archives.length > 0 ? archiveModal.archives[0].path : 'empty'}
         isOpen={archiveModal.open}
         archives={archiveModal.archives}
         isExtracting={archiveModal.isExtracting}
         error={archiveModal.error}
         onExtract={handleArchiveExtractSubmit}
         onSkip={handleArchiveExtractSkip}
+      />
+
+      {/* Bulk tag modal */}
+      <BulkTagModal
+        open={bulkTagModal.open}
+        mode={bulkTagModal.mode}
+        existingTags={[...bulkSelect.selectedIds]
+          .map((id) => objects.find((o) => o.id === id))
+          .filter(Boolean)
+          .flatMap((obj) => {
+            try {
+              return JSON.parse(obj!.tags || '[]') as string[];
+            } catch {
+              return [];
+            }
+          })}
+        onSubmit={(tags) => {
+          if (bulkTagModal.mode === 'add') {
+            handleBulkAddTags(bulkSelect.selectedIds, tags).then(bulkSelect.clearSelection);
+          } else {
+            handleBulkRemoveTags(bulkSelect.selectedIds, tags).then(bulkSelect.clearSelection);
+          }
+        }}
+        onClose={() => setBulkTagModal({ open: false, mode: 'add' })}
       />
     </div>
   );

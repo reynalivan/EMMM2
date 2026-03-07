@@ -33,9 +33,14 @@ describe('useFolders Hook - useImportMods (TC-37)', () => {
   );
 
   it('mutates successfully and invalidates folder cache for valid archives (TC-37)', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      success: ['path/to/extracted'],
-      failures: [],
+    (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+      if (cmd === 'import_mods_from_paths') {
+        return Promise.resolve({
+          success: [{ path: 'path/to/extracted' }],
+          failures: [],
+        });
+      }
+      return Promise.resolve();
     });
 
     const { result } = renderHook(() => useImportMods(), { wrapper });
@@ -58,9 +63,14 @@ describe('useFolders Hook - useImportMods (TC-37)', () => {
   });
 
   it('handles extraction failures (e.g., password protected or corrupt)', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      success: [],
-      failures: [{ path: 'C:\\Mods\\Encrypted.zip', error: 'PasswordRequired' }],
+    (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+      if (cmd === 'import_mods_from_paths') {
+        return Promise.resolve({
+          success: [],
+          failures: [{ path: 'C:\\Mods\\Encrypted.zip', error: 'PasswordRequired' }],
+        });
+      }
+      return Promise.resolve();
     });
 
     const { result } = renderHook(() => useImportMods(), { wrapper });
@@ -92,9 +102,14 @@ describe('useFolders Hook - useAutoOrganizeMods (TC-38)', () => {
   );
 
   it('calls backend auto_organize_mods and invalidates cache on success', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      success: ['path/to/extracted'],
-      failures: [],
+    (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+      if (cmd === 'auto_organize_mods') {
+        return Promise.resolve({
+          success: [{ path: 'path/to/extracted' }],
+          failures: [],
+        });
+      }
+      return Promise.resolve();
     });
 
     const { result } = renderHook(() => useAutoOrganizeMods(), { wrapper });

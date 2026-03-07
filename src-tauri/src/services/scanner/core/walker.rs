@@ -95,6 +95,11 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
             None => continue,
         };
 
+        // Skip hidden/system folders (.temp_extract, .extracted, .archive_backup, etc.)
+        if raw_name.starts_with('.') {
+            continue;
+        }
+
         let is_disabled = normalizer::is_disabled_folder(&raw_name);
         let display_name = normalizer::normalize_display_name(&raw_name);
 

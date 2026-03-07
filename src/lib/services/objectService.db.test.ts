@@ -25,7 +25,7 @@ describe('objectService API tests', () => {
       status_filter: 'enabled' as const,
     };
 
-    vi.mocked(invoke).mockResolvedValue([]);
+    vi.mocked(invoke).mockResolvedValue({ objects: [], lost_objects: [] });
 
     // Act
     await getObjects(filter);

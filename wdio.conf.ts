@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 
+// @ts-expect-error This package does not have TypeScript definitions
+import edgeDriver from 'msedgedriver';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -50,11 +53,10 @@ export const config = {
       // ignore
     }
 
-    tauriDriver = spawn(
-      'tauri-driver',
-      ['--native-driver', path.resolve(__dirname, 'msedgedriver.exe')],
-      { stdio: [null, process.stdout, process.stderr], shell: true },
-    );
+    tauriDriver = spawn('tauri-driver', ['--native-driver', edgeDriver.path], {
+      stdio: [null, process.stdout, process.stderr],
+      shell: true,
+    });
 
     // give tauri-driver some time to start up and listen on port 4444
     await new Promise((resolve) => setTimeout(resolve, 20000));

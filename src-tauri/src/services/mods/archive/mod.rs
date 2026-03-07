@@ -4,6 +4,7 @@
 //! # Covers: US-2.1, TC-2.1-01, TC-2.1-02
 
 mod analyze;
+pub mod classify;
 mod extract;
 mod types;
 

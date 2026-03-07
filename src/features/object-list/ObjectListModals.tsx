@@ -8,6 +8,7 @@ import EditObjectModal from './EditObjectModal';
 import SyncConfirmModal from './SyncConfirmModal';
 import CreateObjectModal from './CreateObjectModal';
 import ScanReviewModal from './ScanReviewModal';
+import AutoSetupModal from './AutoSetupModal';
 import type { ObjectSummary } from '../../types/object';
 import type { MatchedDbEntry } from './SyncConfirmModal';
 import type { ScanPreviewItem, ConfirmedScanItem } from '../../lib/services/scanService';
@@ -67,6 +68,13 @@ interface ModalsProps {
   pendingPaths?: string[] | null;
   onImportDropped?: (newObjectId: string, objectName: string, paths: string[]) => void;
   onCloseCreate: () => void;
+  /* Auto Setup modal */
+  autoSetupOpen: boolean;
+  onCloseAutoSetup: () => void;
+  /* Delete Object dialog */
+  deleteObjectDialog: { open: boolean; id: string; name: string };
+  onConfirmDeleteObject: () => void;
+  onCancelDeleteObject: () => void;
 }
 
 export default function ObjectListModals({
@@ -87,6 +95,11 @@ export default function ObjectListModals({
   pendingPaths,
   onImportDropped,
   onCloseCreate,
+  autoSetupOpen,
+  onCloseAutoSetup,
+  deleteObjectDialog,
+  onConfirmDeleteObject,
+  onCancelDeleteObject,
 }: ModalsProps) {
   return (
     <>
@@ -134,6 +147,21 @@ export default function ObjectListModals({
         onClose={onCloseCreate}
         pendingPaths={pendingPaths}
         onImportDropped={onImportDropped}
+      />
+
+      {/* Auto Setup Modal */}
+      <AutoSetupModal open={autoSetupOpen} onClose={onCloseAutoSetup} />
+
+      {/* Delete Object confirmation dialog */}
+      <ConfirmDialog
+        open={deleteObjectDialog.open}
+        title="Delete Object?"
+        message={`Delete "${deleteObjectDialog.name}"? The folder and its contents will be moved to trash.`}
+        confirmLabel="Move to Trash"
+        cancelLabel="Cancel"
+        danger
+        onConfirm={onConfirmDeleteObject}
+        onCancel={onCancelDeleteObject}
       />
     </>
   );

@@ -56,6 +56,9 @@ interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
   ref?: Ref<HTMLDivElement>;
   /** When true, show a "Move to {name}" overlay for DnD */
   isDropTarget?: boolean;
+  /** Bulk-select state */
+  isBulkSelected?: boolean;
+  onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
 }
 
 export default function ObjectRowItem({
@@ -66,6 +69,8 @@ export default function ObjectRowItem({
   ref,
   className,
   isDropTarget,
+  isBulkSelected = false,
+  onToggleBulkSelect,
   ...rest
 }: ObjectRowItemProps) {
   const thumbnailUrl = obj.thumbnail_path ? getFileUrl(obj.thumbnail_path) : null;
@@ -75,8 +80,8 @@ export default function ObjectRowItem({
 
   const ElementIcon = meta.element ? ELEMENT_ICONS[meta.element] : null;
 
-  /** Fully disabled = all mods are off (none enabled, but at least one exists) */
-  const isDisabled = obj.enabled_count === 0 && obj.mod_count > 0;
+  /** Fully disabled: explicitly from DB folder path, or 0 enabled children */
+  const isDisabled = obj.is_object_disabled || (obj.enabled_count === 0 && obj.mod_count > 0);
 
   return (
     <div
@@ -104,51 +109,84 @@ export default function ObjectRowItem({
         }
       }}
     >
-      {/* Thumbnail — 20% larger, more rounded */}
+      {/* Thumbnail or Checkbox (replaces thumbnail on hover/check) */}
       <div
         className={cn(
-          'relative shrink-0 overflow-hidden rounded-xl bg-base-300 flex items-center justify-center border border-base-content/5',
+          'relative shrink-0 overflow-hidden rounded-xl bg-base-300 flex items-center justify-center border border-base-content/5 transition-all',
           isMobile ? 'w-16 h-16' : 'w-14 h-14',
           isSelected && 'border-primary/20 bg-base-100',
+          isBulkSelected && 'bg-primary/20 border-primary',
         )}
       >
-        {thumbnailUrl && !imgError ? (
-          <img
-            src={thumbnailUrl}
-            alt={obj.name}
-            className={cn(
-              'w-full h-full object-cover transition-transform duration-300 group-hover:scale-110',
-              isDisabled && 'grayscale brightness-75',
-            )}
-            loading="lazy"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <Component
-            size={isMobile ? 22 : 20}
-            className={cn(
-              'text-base-content/30 transition-colors',
-              isSelected && 'text-primary/60',
-              isDisabled && 'grayscale',
-            )}
-          />
-        )}
-        {/* Power-off overlay when fully disabled */}
-        {isDisabled && (
+        {/* Avatar Layer */}
+        <div
+          className={cn(
+            'absolute inset-0 flex items-center justify-center transition-opacity duration-200',
+            isBulkSelected ? 'opacity-0' : 'opacity-100 group-hover:opacity-0',
+          )}
+        >
+          {thumbnailUrl && !imgError ? (
+            <img
+              src={thumbnailUrl}
+              alt={obj.name}
+              className={cn(
+                'w-full h-full object-cover transition-transform duration-300 group-hover:scale-110',
+                isDisabled && 'grayscale brightness-75 opacity-90',
+              )}
+              loading="lazy"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <Component
+              size={isMobile ? 22 : 20}
+              className={cn(
+                'text-base-content/30 transition-colors',
+                isSelected && 'text-primary/60',
+                isDisabled && 'grayscale',
+              )}
+            />
+          )}
+          {/* Power-off overlay when fully disabled */}
+          {isDisabled && (
+            <div
+              data-testid="power-off-overlay"
+              className="absolute inset-0 flex items-center justify-center bg-black/45 rounded-xl pointer-events-none"
+            >
+              <PowerOff size={isMobile ? 18 : 15} className="text-white/75 drop-shadow" />
+            </div>
+          )}
+          {/* Naming Conflict overlay (both X and DISABLED X exist) */}
+          {obj.has_naming_conflict && (
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-warning/20 rounded-xl pointer-events-none"
+              title="Naming conflict: both enabled and disabled versions exist"
+            >
+              <AlertTriangle size={isMobile ? 16 : 13} className="text-warning drop-shadow" />
+            </div>
+          )}
+        </div>
+
+        {/* Checkbox Layer */}
+        {onToggleBulkSelect && (
           <div
-            data-testid="power-off-overlay"
-            className="absolute inset-0 flex items-center justify-center bg-black/45 rounded-xl"
+            className={cn(
+              'absolute inset-0 flex items-center justify-center transition-opacity duration-200',
+              isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            )}
           >
-            <PowerOff size={isMobile ? 18 : 15} className="text-white/75 drop-shadow" />
-          </div>
-        )}
-        {/* Naming Conflict overlay (both X and DISABLED X exist) */}
-        {obj.has_naming_conflict && (
-          <div
-            className="absolute inset-0 flex items-center justify-center bg-warning/20 rounded-xl"
-            title="Naming conflict: both enabled and disabled versions exist"
-          >
-            <AlertTriangle size={isMobile ? 16 : 13} className="text-warning drop-shadow" />
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary"
+              checked={isBulkSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                const isShift =
+                  e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey;
+                // Always toggle as ctrl-click so checking/unchecking doesn't clear others
+                onToggleBulkSelect(obj.id, true, isShift);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
         )}
       </div>
@@ -160,7 +198,7 @@ export default function ObjectRowItem({
             className={cn(
               'font-medium truncate text-sm transition-colors',
               isSelected ? 'text-primary' : 'text-base-content/90 group-hover:text-base-content',
-              isDisabled && 'line-through text-base-content/35',
+              isDisabled && 'line-through text-base-content/40',
             )}
           >
             {obj.name}
@@ -182,40 +220,57 @@ export default function ObjectRowItem({
         </div>
 
         {/* Metadata subtext — element icon, weapon, rarity, or fallback to mod count */}
-        <div className="flex items-center gap-1.5 text-xs text-base-content/40">
-          {ElementIcon && <ElementIcon size={11} className="shrink-0 text-base-content/50" />}
-          {meta.weapon_type && (
-            <>
-              <Sword size={10} className="shrink-0 text-base-content/30" />
-              <span className="truncate text-[11px]">{meta.weapon_type}</span>
-            </>
+        <div className="relative flex items-center min-h-4 w-full text-xs text-base-content/40">
+          {isDisabled && (
+            <div className="absolute inset-y-0 left-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 pointer-events-none">
+              <span className="font-bold text-[10px] text-error flex items-center gap-1 drop-shadow-sm uppercase tracking-wider">
+                <PowerOff size={10} /> Disabled
+              </span>
+            </div>
           )}
-          {meta.path && !meta.weapon_type && (
-            <span className="truncate text-[11px]">{meta.path}</span>
-          )}
-          {meta.rarity ? (
-            <span className="flex items-center gap-0.5 text-amber-400/70">
-              <Star size={10} className="fill-current" />
-              <span className="text-[10px] tabular-nums">{meta.rarity}</span>
-            </span>
-          ) : null}
-          {meta.gender && (
-            <span className="flex items-center gap-0.5">
-              <Users size={10} className="text-base-content/30" />
-              <span className="text-[10px]">{meta.gender}</span>
-            </span>
-          )}
-          {/* Fallback: mod count when no meaningful metadata */}
-          {!meta.element &&
-            !meta.weapon_type &&
-            !meta.rarity &&
-            !meta.path &&
-            (obj.mod_count > 0 ? <span className="text-[11px]">{obj.mod_count} mods</span> : null)}
+
+          <div
+            className={cn(
+              'flex items-center gap-1.5 transition-opacity duration-200',
+              isDisabled && 'group-hover:opacity-0',
+            )}
+          >
+            {ElementIcon && <ElementIcon size={11} className="shrink-0 text-base-content/50" />}
+            {meta.weapon_type && (
+              <>
+                <Sword size={10} className="shrink-0 text-base-content/30" />
+                <span className="truncate text-[11px]">{meta.weapon_type}</span>
+              </>
+            )}
+            {meta.path && !meta.weapon_type && (
+              <span className="truncate text-[11px]">{meta.path}</span>
+            )}
+            {meta.rarity ? (
+              <span className="flex items-center gap-0.5 text-amber-400/70">
+                <Star size={10} className="fill-current" />
+                <span className="text-[10px] tabular-nums">{meta.rarity}</span>
+              </span>
+            ) : null}
+            {meta.gender && (
+              <span className="flex items-center gap-0.5">
+                <Users size={10} className="text-base-content/30" />
+                <span className="text-[10px]">{meta.gender}</span>
+              </span>
+            )}
+            {/* Fallback: mod count when no meaningful metadata */}
+            {!meta.element &&
+              !meta.weapon_type &&
+              !meta.rarity &&
+              !meta.path &&
+              (obj.mod_count > 0 ? (
+                <span className="text-[11px]">{obj.mod_count} mods</span>
+              ) : null)}
+          </div>
         </div>
       </div>
 
       {/* Selection indicator bar */}
-      {isSelected && (
+      {isSelected && !isBulkSelected && (
         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-l-full shadow-[0_0_10px_rgba(var(--p),0.5)]" />
       )}
     </div>

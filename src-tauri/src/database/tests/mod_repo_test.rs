@@ -31,12 +31,13 @@ async fn test_mod_repo_crud() {
         &pool,
         "obj1",
         "g1",
-        "Obj Name",
-        "Mods/Obj1",
+        "Test Object",
+        "Test Object",
         "Character",
         None,
-        false,
+        true,
         "{}",
+        None,
     )
     .await
     .unwrap();

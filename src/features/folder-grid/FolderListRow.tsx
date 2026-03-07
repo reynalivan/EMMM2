@@ -157,6 +157,7 @@ function FolderListRowInner({
         className={`
         flex items-center gap-3 p-2 rounded-md border cursor-pointer active:scale-[0.99] transition-all h-full
         ${item.node_type === 'InternalAssets' ? 'opacity-50' : ''}
+        ${!item.is_enabled ? 'opacity-[0.65] grayscale-[0.8]' : ''}
         ${isSelected ? 'border-primary/50 bg-primary/10' : 'border-base-content/5 bg-base-200 hover:bg-base-300'}
       `}
       >
@@ -182,7 +183,8 @@ function FolderListRowInner({
         <div className="min-w-0 flex-1 flex items-center gap-3">
           <div
             className={`text-sm font-medium truncate leading-tight flex-1
-            ${isSelected ? 'text-primary' : 'text-base-content/80'}`}
+            ${isSelected ? 'text-primary' : 'text-base-content/80'}
+            ${!item.is_enabled ? 'line-through text-base-content/50' : ''}`}
           >
             {item.name}
           </div>

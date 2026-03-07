@@ -15,8 +15,8 @@ interface StatesProps {
   activeFilters: Record<string, string[]>;
   onClearFilters: () => void;
   onClearSearch: () => void;
-  isSyncing: boolean;
-  onSync: () => void;
+  onCreateNew: () => void;
+  onAutoSetup: () => void;
 }
 
 export default function ObjectListStates({
@@ -29,8 +29,8 @@ export default function ObjectListStates({
   activeFilters,
   onClearFilters,
   onClearSearch,
-  isSyncing,
-  onSync,
+  onCreateNew,
+  onAutoSetup,
 }: StatesProps) {
   if (isLoading) {
     return (
@@ -68,7 +68,7 @@ export default function ObjectListStates({
       ? 'No results match your search'
       : hasActiveFilters
         ? 'No objects match filter'
-        : 'Drag mod folders here or create a new object';
+        : 'Drag mod folders here or create an object';
 
     return (
       <div
@@ -96,14 +96,16 @@ export default function ObjectListStates({
           </button>
         )}
         {!sidebarSearchQuery && !hasActiveFilters && (
-          <button
-            className="btn btn-sm btn-outline btn-primary gap-2 mt-1"
-            onClick={onSync}
-            disabled={isSyncing}
-          >
-            <FolderPlus size={14} />
-            {isSyncing ? 'Scanning...' : 'Scan & Create Objects'}
-          </button>
+          <div className="flex flex-col gap-2 mt-4 w-full max-w-[200px] items-center">
+            <button className="btn btn-outline w-full gap-2" onClick={onCreateNew}>
+              <FolderPlus size={16} />
+              Add New Folder
+            </button>
+            <button className="btn btn-primary w-full gap-2" onClick={onAutoSetup}>
+              <FolderPlus size={16} />
+              Auto Setup Folder
+            </button>
+          </div>
         )}
       </div>
     );

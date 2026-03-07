@@ -2,6 +2,7 @@
 
 use crate::services::scanner::core::types;
 use crate::services::scanner::deep_matcher::MasterDb;
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 use tauri::{ipc::Channel, Manager, State};
 
@@ -13,6 +14,7 @@ use tauri::{ipc::Channel, Manager, State};
 #[allow(clippy::too_many_arguments)]
 pub async fn sync_database_cmd(
     app: tauri::AppHandle,
+    state: State<'_, WatcherState>,
     game_id: String,
     game_name: String,
     game_type: String,
@@ -22,6 +24,8 @@ pub async fn sync_database_cmd(
     on_progress: Channel<types::ScanEvent>,
 ) -> Result<crate::services::scanner::sync::SyncResult, String> {
     use crate::services::scanner::sync;
+
+    let _guard = SuppressionGuard::new(&state.suppressor);
 
     let mods = Path::new(&mods_path);
     if !mods.exists() {
@@ -130,6 +134,7 @@ pub async fn scan_preview_cmd(
 #[tauri::command]
 pub async fn commit_scan_cmd(
     app: tauri::AppHandle,
+    state: State<'_, WatcherState>,
     game_id: String,
     game_name: String,
     game_type: String,
@@ -138,6 +143,8 @@ pub async fn commit_scan_cmd(
     pool: State<'_, sqlx::SqlitePool>,
 ) -> Result<crate::services::scanner::sync::SyncResult, String> {
     use crate::services::scanner::sync;
+
+    let _guard = SuppressionGuard::new(&state.suppressor);
 
     let resource_dir = app.path().resource_dir().ok();
 

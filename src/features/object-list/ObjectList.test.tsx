@@ -13,7 +13,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ObjectList from './ObjectList';
 import { useAppStore } from '../../stores/useAppStore';
-import { useObjects, useGameSchema, useCategoryCounts } from '../../hooks/useObjects';
+import { useObjects, useGameSchema, useCategoryCounts, useMasterDb } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -59,6 +59,7 @@ const mockUseCategoryCounts = useCategoryCounts as unknown as ReturnType<typeof 
 const mockUseActiveGame = useActiveGame as unknown as ReturnType<typeof vi.fn>;
 const mockUseResponsive = useResponsive as unknown as ReturnType<typeof vi.fn>;
 const mockUseVirtualizer = useVirtualizer as unknown as ReturnType<typeof vi.fn>;
+const mockUseMasterDb = useMasterDb as unknown as ReturnType<typeof vi.fn>;
 
 const mockActiveGame = {
   id: 'uuid-gimi',
@@ -118,6 +119,7 @@ describe('ObjectList Component', () => {
     });
 
     mockUseCategoryCounts.mockReturnValue({ data: [] });
+    mockUseMasterDb.mockReturnValue({ data: [], isLoading: false });
 
     mockUseResponsive.mockReturnValue({ isMobile: false });
 
@@ -144,7 +146,7 @@ describe('ObjectList Component', () => {
 
   it('renders empty state with CTA when no data and game selected', () => {
     render(<ObjectList />);
-    expect(screen.getByText(/drag mod folders here or create a new object/i)).toBeInTheDocument();
+    expect(screen.getByText(/drag mod folders here or create an object/i)).toBeInTheDocument();
     expect(screen.getByTitle(/create new object/i)).toBeInTheDocument();
   });
 
@@ -275,7 +277,7 @@ describe('ObjectList Component', () => {
 
     // Should show the empty state
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
-    expect(screen.getByText(/drag mod folders here or create a new object/i)).toBeInTheDocument();
+    expect(screen.getByText(/drag mod folders here or create an object/i)).toBeInTheDocument();
   });
 
   // US-3.4: Sorting

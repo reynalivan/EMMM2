@@ -7,6 +7,7 @@ import { Search, RefreshCw, RotateCcw, Plus, SlidersHorizontal, X, Sparkles } fr
 import { useState, useMemo } from 'react';
 import type { GameSchema, FilterDef, CategoryDef } from '../../types/object';
 import FilterPanel from './FilterPanel';
+import ObjectBulkActionBar from './ObjectBulkActionBar';
 
 interface ToolbarProps {
   sidebarSearchQuery: string;
@@ -32,6 +33,19 @@ interface ToolbarProps {
   isDragging?: boolean;
   /** True when files are being specifically dragged over this toolbar zone */
   isActiveZone?: boolean;
+  /** Bulk selection state and handlers */
+  bulkSelect?: {
+    isAnySelected: boolean;
+    selectionCount: number;
+    onDelete: () => void;
+    onPin: (pin: boolean) => void;
+    onEnable: () => void;
+    onDisable: () => void;
+    onAddTags: () => void;
+    onRemoveTags: () => void;
+    onAutoOrganize: () => void;
+    onClear: () => void;
+  };
 }
 
 export default function ObjectListToolbar({
@@ -55,6 +69,7 @@ export default function ObjectListToolbar({
   showFilterPanel,
   isDragging,
   isActiveZone,
+  bulkSelect,
 }: ToolbarProps) {
   const [filterOpen, setFilterOpen] = useState(true);
 
@@ -90,64 +105,75 @@ export default function ObjectListToolbar({
             </div>
           </div>
         )}
-        <div className="relative flex-1 min-w-0">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30"
-          />
-          <input
-            type="text"
-            placeholder="Search..."
-            className="input input-sm w-full pl-8 bg-base-200/40 border-base-300/20 focus:border-primary/40 text-sm"
-            value={sidebarSearchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
+        <div className="relative flex-1 min-w-0 flex items-center h-8">
+          {bulkSelect?.isAnySelected ? (
+            <ObjectBulkActionBar count={bulkSelect.selectionCount} {...bulkSelect} />
+          ) : (
+            <>
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30"
+              />
+              <input
+                type="text"
+                placeholder="Search..."
+                className="input input-sm w-full pl-8 bg-base-200/40 border-base-300/20 focus:border-primary/40 text-sm focus:outline-none"
+                value={sidebarSearchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+              />
+            </>
+          )}
         </div>
 
-        {/* Filter toggle */}
-        {showFilterPanel && (
-          <button
-            className={`btn btn-sm btn-square relative transition-all duration-200 ${
-              filterOpen
-                ? 'btn-primary btn-outline'
-                : activeCount > 0
-                  ? 'btn-ghost text-primary'
-                  : 'btn-ghost text-base-content/50 hover:text-primary'
-            }`}
-            onClick={() => setFilterOpen((prev) => !prev)}
-            title={filterOpen ? 'Hide Filters' : 'Show Filters'}
-          >
-            <SlidersHorizontal size={15} />
-            {activeCount > 0 && !filterOpen && (
-              <span className="absolute -top-1 -right-1 badge badge-xs badge-primary font-bold">
-                {activeCount}
-              </span>
+        {/* Right-side buttons (hidden when bulk selection is active) */}
+        {!bulkSelect?.isAnySelected && (
+          <>
+            {/* Filter toggle */}
+            {showFilterPanel && (
+              <button
+                className={`btn btn-sm btn-square relative transition-all duration-200 ${
+                  filterOpen
+                    ? 'btn-primary btn-outline'
+                    : activeCount > 0
+                      ? 'btn-ghost text-primary'
+                      : 'btn-ghost text-base-content/50 hover:text-primary'
+                }`}
+                onClick={() => setFilterOpen((prev) => !prev)}
+                title={filterOpen ? 'Hide Filters' : 'Show Filters'}
+              >
+                <SlidersHorizontal size={15} />
+                {activeCount > 0 && !filterOpen && (
+                  <span className="absolute -top-1 -right-1 badge badge-xs badge-primary font-bold">
+                    {activeCount}
+                  </span>
+                )}
+              </button>
             )}
-          </button>
-        )}
 
-        <button
-          className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
-          onClick={onRefresh}
-          title="Refresh list"
-        >
-          <RotateCcw size={15} />
-        </button>
-        <button
-          className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
-          onClick={onSync}
-          title="Auto Reorganize (Full scan & sync)"
-          disabled={isSyncing}
-        >
-          <RefreshCw size={16} />
-        </button>
-        <button
-          className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
-          onClick={onCreateNew}
-          title="Create New Object"
-        >
-          <Plus size={16} />
-        </button>
+            <button
+              className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
+              onClick={onRefresh}
+              title="Refresh list"
+            >
+              <RotateCcw size={15} />
+            </button>
+            <button
+              className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
+              onClick={onSync}
+              title="Auto Reorganize (Full scan & sync)"
+              disabled={isSyncing}
+            >
+              <RefreshCw size={16} />
+            </button>
+            <button
+              className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
+              onClick={onCreateNew}
+              title="Create New Object"
+            >
+              <Plus size={16} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Filter panel — collapsible, with category + sort + status + metadata */}

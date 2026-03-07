@@ -128,30 +128,43 @@ pub fn watch_mod_directory(
     Ok((watcher, rx))
 }
 
+/// Extensions relevant to the mod manager.
+/// Everything else (`.dds`, `.buf`, `.hlsl`, `.blend`, `.dll`) is noise.
+const RELEVANT_EXTENSIONS: &[&str] = &["ini", "png", "jpg", "jpeg", "webp"];
+
+/// Check if a path is relevant to the mod manager.
+/// Directories (no extension) always pass; files must match the allowlist.
+fn is_relevant_path(path: &std::path::Path) -> bool {
+    match path.extension().and_then(|e| e.to_str()) {
+        None => true, // No extension = likely a directory
+        Some(ext) => {
+            let lower = ext.to_ascii_lowercase();
+            RELEVANT_EXTENSIONS.contains(&lower.as_str())
+        }
+    }
+}
+
 /// Translate a raw notify Event into our domain ModWatchEvents.
+///
+/// Filters: only relevant paths (directories + ini/image files) are forwarded.
+/// `Modify` events are dropped entirely per req-28 line 98.
 fn translate_event(event: Event) -> Vec<ModWatchEvent> {
     let mut results = Vec::new();
 
-    let paths: Vec<String> = event
-        .paths
-        .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-
     match event.kind {
         EventKind::Create(_) => {
-            for p in paths {
-                results.push(ModWatchEvent::Created(p));
+            for p in &event.paths {
+                if is_relevant_path(p) {
+                    results.push(ModWatchEvent::Created(p.to_string_lossy().to_string()));
+                }
             }
         }
-        EventKind::Modify(_) => {
-            for p in paths {
-                results.push(ModWatchEvent::Modified(p));
-            }
-        }
+        EventKind::Modify(_) => {} // req-28: only Create/Remove/Rename forwarded
         EventKind::Remove(_) => {
-            for p in paths {
-                results.push(ModWatchEvent::Removed(p));
+            for p in &event.paths {
+                if is_relevant_path(p) {
+                    results.push(ModWatchEvent::Removed(p.to_string_lossy().to_string()));
+                }
             }
         }
         _ => {} // Ignore Access, Other, etc.

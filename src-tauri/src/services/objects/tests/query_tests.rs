@@ -109,9 +109,19 @@ async fn test_get_filtered_objects_with_conflict_check() {
     .unwrap();
 
     // Another object without conflict
+    fs::create_dir(mod_path.join("clean_folder")).unwrap();
     sqlx::query(
         "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
          VALUES ('o2', 'g3', 'Obj2', 'clean_folder', 'Character', 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // A lost object (no physical folder)
+    sqlx::query(
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
+         VALUES ('o3', 'g3', 'MissingObj', 'deleted_folder', 'Character', 1)",
     )
     .execute(&pool)
     .await
@@ -127,10 +137,14 @@ async fn test_get_filtered_objects_with_conflict_check() {
         status_filter: None,
     };
 
-    let objects = get_filtered_objects_with_conflict_check(&pool, &filter)
+    let result = get_filtered_objects_with_conflict_check(&pool, &filter)
         .await
         .unwrap();
+
+    let objects = result.objects;
     assert_eq!(objects.len(), 2);
+    assert_eq!(result.lost_objects.len(), 1);
+    assert_eq!(result.lost_objects[0], "MissingObj");
 
     // Sort by name ASC -> Obj1, Obj2
     assert_eq!(objects[0].id, "o1");

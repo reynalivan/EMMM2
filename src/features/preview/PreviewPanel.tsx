@@ -146,7 +146,7 @@ export default function PreviewPanel() {
           <p className="text-xl font-bold text-white mb-2">No mod selected</p>
           <p className="text-sm">Select a folder to show detail and preview.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full max-w-xs flex-col gap-3">
           <button
             className="btn btn-outline btn-primary gap-2"
             onClick={async () => {

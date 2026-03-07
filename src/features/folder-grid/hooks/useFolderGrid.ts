@@ -75,6 +75,7 @@ export function useFolderGrid() {
     isLoading,
     isError,
     error,
+    isPlaceholderData,
   } = useModFolders(explorerSubPath, selectedObject ?? undefined);
 
   const rawFolders = useMemo(
@@ -90,14 +91,23 @@ export function useFolderGrid() {
   const { data: objects = [] } = useObjects();
 
   // Sync object selection → filesystem sub-path
-  const prevSelectedRef = useRef<string | null>(null);
+  // Uses composite key so it also re-syncs when folder_path changes (e.g., toggle rename)
+  const prevSyncKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedObject || selectedObject === prevSelectedRef.current) return;
-    prevSelectedRef.current = selectedObject;
     const obj = objects.find((o) => o.id === selectedObject);
-    if (obj) {
-      setExplorerSubPath(obj.folder_path);
-      setCurrentPath([obj.name]);
+    if (!selectedObject || !obj) return;
+
+    const syncKey = `${selectedObject}::${obj.folder_path}`;
+    if (syncKey === prevSyncKeyRef.current) return;
+
+    // Detect if this is a new object vs. same object with changed folder_path
+    const prevObjId = prevSyncKeyRef.current?.split('::')[0];
+    prevSyncKeyRef.current = syncKey;
+
+    setExplorerSubPath(obj.folder_path);
+    setCurrentPath([obj.name]);
+    // Only clear selection on actual object switch, not folder_path rename
+    if (prevObjId !== selectedObject) {
       clearGridSelection();
     }
   }, [selectedObject, objects, setExplorerSubPath, setCurrentPath, clearGridSelection]);
@@ -293,11 +303,32 @@ export function useFolderGrid() {
         ? await join(activeGame.mod_path, explorerSubPath)
         : activeGame.mod_path;
 
-      importMods.mutate({
-        paths,
-        targetDir,
-        strategy: 'Raw',
-      });
+      // Classify paths to separate archives from folders/files
+      const { classifyDroppedPaths } = await import('../../object-list/dropUtils');
+      const classified = classifyDroppedPaths(paths);
+
+      // Archives → dispatch to ObjectList's shared ArchiveModal for preview/extraction
+      if (classified.archives.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent('request-archive-import', {
+            detail: {
+              archives: classified.archives,
+              nonArchivePaths: [
+                ...classified.folders,
+                ...classified.iniFiles,
+                ...classified.images,
+              ],
+              targetDir,
+            },
+          }),
+        );
+      }
+
+      // Non-archive paths → import directly via shared hook
+      const nonArchivePaths = [...classified.folders, ...classified.iniFiles, ...classified.images];
+      if (nonArchivePaths.length > 0) {
+        importMods.mutate({ paths: nonArchivePaths, targetDir, strategy: 'Raw' });
+      }
     },
     [activeGame?.mod_path, explorerSubPath, importMods],
   );
@@ -320,6 +351,7 @@ export function useFolderGrid() {
     isLoading,
     isError,
     error,
+    isPlaceholderData,
     selfNodeType,
     selfIsMod,
     selfIsEnabled,

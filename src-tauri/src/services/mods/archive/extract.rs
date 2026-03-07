@@ -1,110 +1,134 @@
+use super::classify::{collect_loose_files_recursive, find_mod_roots, resolve_unique_dest};
 use super::types::{ArchiveFormat, ExtractionResult};
+use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use std::fs;
 use std::io;
 use std::path::Path;
 
-const ARCHIVE_BACKUP_DIR: &str = ".archive_backup";
-
-/// Extract any supported archive to a destination directory.
+/// Extract any supported archive with smart mod root detection.
 ///
-/// Steps:
-/// 1. Create destination folder (named after archive, sans extension)
-/// 2. Extract all files (with optional password for encrypted archives)
-/// 3. Apply smart flattening if single wrapper folder detected
-/// 4. Move original archive to `.archive_backup/`
+/// Pipeline:
+/// 1. Extract to `{mods_dir}/.temp_extract/<uuid>/`
+/// 2. Find mod roots (shallowest folders with valid 3DMigoto .ini)
+/// 3. Collect loose files (readme, images) from wrapper layers
+/// 4. Route based on classification:
+///    - Single mod → move to `mods_dir/{name}/`
+///    - Multi-mod pack → move each subfolder independently
+///    - Invalid → delete temp, return error
+/// 5. Move source archive to `{source_dir}/.extracted/`
 ///
-/// # Covers: TC-2.1-01, TC-2.1-02, TC-2.1-04, TC-2.1-05, EC-2.07 (Overwrite)
+/// # Covers: TC-2.1-01, TC-2.1-02, TC-2.1-04, TC-2.1-05, EC-2.07
 pub fn extract_archive(
     archive_path: &Path,
     mods_dir: &Path,
     password: Option<&str>,
-    overwrite: bool,
+    _overwrite: bool,
 ) -> Result<ExtractionResult, String> {
     let format = ArchiveFormat::from_path(archive_path)
         .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
 
-    let mut archive_name = archive_path
+    let archive_name = archive_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "extracted_mod".to_string());
 
-    let mut dest_path = mods_dir.join(&archive_name);
-
     // Pre-extract disk space check
-    let analysis = crate::services::mods::archive::analyze::analyze_archive(archive_path)?;
-    // Require uncompressed size + 50MB buffer
+    let analysis = crate::services::mods::archive::analyze_archive(archive_path)?;
     let required_space = analysis.uncompressed_size + (50 * 1024 * 1024);
+    check_disk_space(mods_dir, required_space)?;
 
-    let disks = sysinfo::Disks::new_with_refreshed_list();
-    let search_path = mods_dir
-        .canonicalize()
-        .unwrap_or_else(|_| mods_dir.to_path_buf());
+    // Phase 1: Extract to temp staging
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let temp_dir = mods_dir.join(".temp_extract").join(&uuid);
+    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
-    let mut available_space = 0;
-    let mut matched_len = 0;
-    for disk in disks.list() {
-        let mount = disk.mount_point();
-        if search_path.starts_with(mount) {
-            let mount_len = mount.as_os_str().len();
-            if mount_len > matched_len {
-                matched_len = mount_len;
-                available_space = disk.available_space();
-            }
+    let files_extracted = match extract_to_dir(archive_path, &temp_dir, password, format) {
+        Ok(count) => count,
+        Err(e) => {
+            fs::remove_dir_all(&temp_dir).ok();
+            return Err(e);
         }
-    }
-
-    if matched_len > 0 && available_space < required_space {
-        return Err(format!(
-            "Insufficient disk space. Requires {} bytes, but only {} bytes available.",
-            required_space, available_space
-        ));
-    }
-
-    // Guard: destination already exists
-    if dest_path.exists() {
-        if !overwrite {
-            let mut counter = 1;
-            loop {
-                let new_name = format!("{} ({})", archive_name, counter);
-                let check_path = mods_dir.join(&new_name);
-                if !check_path.exists() {
-                    archive_name = new_name;
-                    dest_path = check_path;
-                    break;
-                }
-                counter += 1;
-            }
-        } else {
-            log::info!("Overwriting destination: {}", dest_path.display());
-            // We allow overwrite/merge
-        }
-    }
-
-    fs::create_dir_all(&dest_path).map_err(|e| format!("Failed to create destination: {e}"))?;
-
-    let files_extracted = match format {
-        ArchiveFormat::Zip => extract_zip_inner(archive_path, &dest_path, password)?,
-        ArchiveFormat::SevenZ => extract_7z_inner(archive_path, &dest_path, password)?,
-        ArchiveFormat::Rar => extract_rar_inner(archive_path, &dest_path, password)?,
     };
 
-    // Smart flattening
-    if let Err(e) = flatten_if_needed(&dest_path) {
-        log::warn!("Smart flattening failed (non-fatal): {e}");
+    // Phase 2: Find mod roots
+    let mod_roots = find_mod_roots(&temp_dir, 5);
+
+    if mod_roots.is_empty() {
+        fs::remove_dir_all(&temp_dir).ok();
+        return Err("Not a valid 3DMigoto mod archive (no valid .ini found)".into());
     }
 
-    // Move original to backup
-    if let Err(e) = move_to_backup(archive_path, mods_dir) {
-        log::warn!("Failed to move archive to backup (non-fatal): {e}");
+    // Phase 3: Collect loose files from wrapper layers above mod roots
+    let loose_files = collect_loose_files_recursive(&temp_dir, &mod_roots);
+
+    // Phase 4: Route based on classification
+    let mut dest_paths = Vec::new();
+
+    if mod_roots.len() == 1 && mod_roots[0] == temp_dir {
+        // Case 1: Mod at temp root (already flat) → wrap in archive name
+        let dest = resolve_unique_dest(mods_dir, &archive_name);
+        rename_cross_drive_fallback(&temp_dir, &dest)
+            .map_err(|e| format!("Failed to move mod to destination: {e}"))?;
+        dest_paths.push(dest.to_string_lossy().to_string());
+    } else {
+        // Cases 2-6: Move each mod root independently
+        for (i, root) in mod_roots.iter().enumerate() {
+            let name = root
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| archive_name.clone());
+            let dest = resolve_unique_dest(mods_dir, &name);
+            rename_cross_drive_fallback(root, &dest)
+                .map_err(|e| format!("Failed to move mod '{}' to destination: {e}", name))?;
+
+            // Copy loose files into first mod folder only
+            if i == 0 {
+                for lf in &loose_files {
+                    if let Some(fname) = lf.file_name() {
+                        let target = dest.join(fname);
+                        if !target.exists() {
+                            rename_cross_drive_fallback(lf, &target).ok();
+                        }
+                    }
+                }
+            }
+
+            dest_paths.push(dest.to_string_lossy().to_string());
+        }
+
+        // Clean remaining temp junk (wrapper dirs, loose files already copied)
+        fs::remove_dir_all(&temp_dir).ok();
     }
+
+    // Phase 5: Move source archive to .extracted/
+    if let Err(e) = move_to_extracted_dir(archive_path) {
+        log::warn!("Failed to move archive to .extracted/ (non-fatal): {e}");
+    }
+
+    let mod_count = dest_paths.len();
 
     Ok(ExtractionResult {
         archive_name,
-        dest_path: dest_path.to_string_lossy().to_string(),
+        dest_paths,
         files_extracted,
+        mod_count,
         success: true,
         error: None,
     })
+}
+
+/// Extract archive contents to a destination directory.
+fn extract_to_dir(
+    archive_path: &Path,
+    dest_path: &Path,
+    password: Option<&str>,
+    format: ArchiveFormat,
+) -> Result<usize, String> {
+    match format {
+        ArchiveFormat::Zip => extract_zip_inner(archive_path, dest_path, password),
+        ArchiveFormat::SevenZ => extract_7z_inner(archive_path, dest_path, password),
+        ArchiveFormat::Rar => extract_rar_inner(archive_path, dest_path, password),
+    }
 }
 
 fn extract_zip_inner(
@@ -118,7 +142,6 @@ fn extract_zip_inner(
 
     let mut count: usize = 0;
     for i in 0..archive.len() {
-        // Use password-aware read if password provided
         let mut entry = match password {
             Some(pw) => match archive.by_index_decrypt(i, pw.as_bytes()) {
                 Ok(file) => file,
@@ -146,7 +169,7 @@ fn extract_zip_inner(
 
         let entry_path = match entry.enclosed_name() {
             Some(p) => p.to_path_buf(),
-            None => continue, // Skip unsafe paths
+            None => continue,
         };
 
         let output_path = dest_path.join(&entry_path);
@@ -185,7 +208,6 @@ fn extract_7z_inner(
         }
     })?;
 
-    // Count extracted files
     let count = walkdir::WalkDir::new(dest_path)
         .follow_links(false)
         .into_iter()
@@ -212,7 +234,6 @@ fn extract_rar_inner(
     rar::Archive::extract_all(path_str, dest_str, pw)
         .map_err(|e| format!("Failed to extract RAR: {e:?}"))?;
 
-    // Count extracted files
     let count = walkdir::WalkDir::new(dest_path)
         .follow_links(false)
         .into_iter()
@@ -223,71 +244,86 @@ fn extract_rar_inner(
     Ok(count)
 }
 
-/// Smart flattening: if extracted folder contains a single subfolder,
-/// move its contents up one level and remove the wrapper.
+/// Move source archive to `.extracted/` subfolder in its original location.
 ///
-/// # Covers: TC-2.1-02
-pub fn flatten_if_needed(dest_path: &Path) -> Result<(), String> {
-    let entries: Vec<_> = fs::read_dir(dest_path)
-        .map_err(|e| format!("Failed to read dest: {e}"))?
-        .filter_map(|e| e.ok())
-        .collect();
+/// Example: `C:/Downloads/mod.zip` → `C:/Downloads/.extracted/mod.zip`
+/// This is instant (same-drive rename) and hides the file from the user.
+fn move_to_extracted_dir(archive_path: &Path) -> Result<(), String> {
+    let parent = archive_path
+        .parent()
+        .ok_or("Archive has no parent directory")?;
+    let extracted_dir = parent.join(".extracted");
+    fs::create_dir_all(&extracted_dir)
+        .map_err(|e| format!("Failed to create .extracted dir: {e}"))?;
 
-    if entries.len() != 1 {
-        return Ok(());
-    }
+    let file_name = archive_path.file_name().ok_or("No filename")?;
+    let mut dest = extracted_dir.join(file_name);
 
-    let single_entry = &entries[0];
-    if !single_entry.path().is_dir() {
-        return Ok(());
-    }
-
-    let wrapper_path = single_entry.path();
-    let wrapper_children: Vec<_> = fs::read_dir(&wrapper_path)
-        .map_err(|e| format!("Failed to read wrapper: {e}"))?
-        .filter_map(|e| e.ok())
-        .collect();
-
-    for child in wrapper_children {
-        let child_name = child.file_name();
-        let new_location = dest_path.join(&child_name);
-
-        if new_location.exists() {
-            log::warn!(
-                "Skip flatten: {} already exists at destination",
-                child_name.to_string_lossy()
-            );
-            continue;
+    // Handle duplicate names in .extracted/
+    if dest.exists() {
+        let stem = archive_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ext = archive_path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut counter = 2u32;
+        loop {
+            let new_name = if ext.is_empty() {
+                format!("{} ({})", stem, counter)
+            } else {
+                format!("{} ({}).{}", stem, counter, ext)
+            };
+            let check = extracted_dir.join(&new_name);
+            if !check.exists() {
+                dest = check;
+                break;
+            }
+            counter += 1;
         }
-
-        crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
-            &child.path(),
-            &new_location,
-        )
-        .map_err(|e| format!("Failed to move {}: {e}", child_name.to_string_lossy()))?;
     }
 
-    // Remove empty wrapper
-    if fs::read_dir(&wrapper_path)
-        .map(|mut d| d.next().is_none())
-        .unwrap_or(false)
-    {
-        let _ = fs::remove_dir(&wrapper_path);
-    }
+    rename_cross_drive_fallback(archive_path, &dest)
+        .map_err(|e| format!("Failed to move archive to .extracted: {e}"))?;
 
     Ok(())
 }
 
-/// Move archive to `.archive_backup/` directory.
-fn move_to_backup(archive_path: &Path, mods_dir: &Path) -> Result<(), String> {
-    let backup_dir = mods_dir.join(ARCHIVE_BACKUP_DIR);
-    fs::create_dir_all(&backup_dir).map_err(|e| format!("Failed to create backup dir: {e}"))?;
+static DISKS_CACHE: std::sync::OnceLock<std::sync::Mutex<sysinfo::Disks>> =
+    std::sync::OnceLock::new();
 
-    let file_name = archive_path.file_name().ok_or("No filename")?;
-    let backup_path = backup_dir.join(file_name);
+/// Check available disk space at the target directory.
+fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(), String> {
+    let mutex = DISKS_CACHE
+        .get_or_init(|| std::sync::Mutex::new(sysinfo::Disks::new_with_refreshed_list()));
+    let mut disks = mutex.lock().unwrap();
+    disks.refresh(true);
 
-    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(archive_path, &backup_path)
-        .map_err(|e| format!("Failed to move archive to backup: {e}"))?;
+    let search_path = mods_dir
+        .canonicalize()
+        .unwrap_or_else(|_| mods_dir.to_path_buf());
+
+    let mut available_space = 0u64;
+    let mut matched_len = 0usize;
+    for disk in disks.list() {
+        let mount = disk.mount_point();
+        if search_path.starts_with(mount) {
+            let mount_len = mount.as_os_str().len();
+            if mount_len > matched_len {
+                matched_len = mount_len;
+                available_space = disk.available_space();
+            }
+        }
+    }
+
+    if matched_len > 0 && available_space < required_space {
+        return Err(format!(
+            "Insufficient disk space. Requires {} bytes, but only {} bytes available.",
+            required_space, available_space
+        ));
+    }
 
     Ok(())
 }

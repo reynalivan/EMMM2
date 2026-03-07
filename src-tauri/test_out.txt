@@ -1,0 +1,47 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.03s
+     Running unittests src\lib.rs (target\debug\deps\emmm2_lib-b436ee407e2b6559.exe)
+
+running 9 tests
+test services::mods::archive::tests::test_format_detection ... ok
+test services::mods::archive::tests::test_unsupported_format ... ok
+test services::mods::archive::tests::test_extract_corrupt_archive ... ok
+test services::mods::archive::tests::test_analyze_zip_single_root ... ok
+test services::mods::archive::tests::test_analyze_zip_archive ... ok
+test services::mods::archive::tests::test_extract_zip_with_password ... FAILED
+test services::mods::archive::tests::test_extract_zip_basic ... FAILED
+test services::mods::archive::tests::test_extract_duplicate_dest ... FAILED
+test services::mods::archive::tests::test_extract_zip_smart_flatten ... FAILED
+
+failures:
+
+---- services::mods::archive::tests::test_extract_zip_with_password stdout ----
+
+thread 'services::mods::archive::tests::test_extract_zip_with_password' (19704) panicked at src\services\mods\archive\tests\mod_tests.rs:210:84:
+called `Result::unwrap()` on an `Err` value: "Not a valid 3DMigoto mod archive (no valid .ini found)"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- services::mods::archive::tests::test_extract_zip_basic stdout ----
+
+thread 'services::mods::archive::tests::test_extract_zip_basic' (4840) panicked at src\services\mods\archive\tests\mod_tests.rs:90:70:
+called `Result::unwrap()` on an `Err` value: "Not a valid 3DMigoto mod archive (no valid .ini found)"
+
+---- services::mods::archive::tests::test_extract_duplicate_dest stdout ----
+
+thread 'services::mods::archive::tests::test_extract_duplicate_dest' (62456) panicked at src\services\mods\archive\tests\mod_tests.rs:135:70:
+called `Result::unwrap()` on an `Err` value: "Not a valid 3DMigoto mod archive (no valid .ini found)"
+
+---- services::mods::archive::tests::test_extract_zip_smart_flatten stdout ----
+
+thread 'services::mods::archive::tests::test_extract_zip_smart_flatten' (26740) panicked at src\services\mods\archive\tests\mod_tests.rs:117:70:
+called `Result::unwrap()` on an `Err` value: "Not a valid 3DMigoto mod archive (no valid .ini found)"
+
+
+failures:
+    services::mods::archive::tests::test_extract_duplicate_dest
+    services::mods::archive::tests::test_extract_zip_basic
+    services::mods::archive::tests::test_extract_zip_smart_flatten
+    services::mods::archive::tests::test_extract_zip_with_password
+
+test result: FAILED. 5 passed; 4 failed; 0 ignored; 0 measured; 456 filtered out; finished in 0.92s
+
+error: test failed, to rerun pass `--lib`

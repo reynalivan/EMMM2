@@ -1,4 +1,5 @@
 import { useBrowserStore } from '../../../stores/useBrowserStore';
+import { useAppStore } from '../../../stores/useAppStore';
 import { useDownloads } from '../hooks/useDownloads';
 import type { BrowserDownloadItem, DownloadStatus } from '../types';
 
@@ -90,14 +91,26 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
             )}
           </h2>
         </div>
-        <button
-          id="download-panel-close-btn"
-          className="btn btn-ghost btn-sm btn-circle"
-          onClick={closeDownloadPanel}
-          aria-label="Close download panel"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            className="btn btn-ghost btn-xs text-primary"
+            onClick={() => {
+              useAppStore.getState().setWorkspaceView('downloads');
+              closeDownloadPanel();
+            }}
+            title="View full page"
+          >
+            View detail
+          </button>
+          <button
+            id="download-panel-close-btn"
+            className="btn btn-ghost btn-sm btn-circle"
+            onClick={closeDownloadPanel}
+            aria-label="Close download panel"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* Toolbar */}

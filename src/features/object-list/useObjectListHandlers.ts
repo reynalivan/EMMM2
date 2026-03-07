@@ -6,9 +6,14 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
-import { dirname, basename, join } from '@tauri-apps/api/path';
-import { mkdir, exists, remove, rename } from '@tauri-apps/plugin-fs';
-import { useToggleMod, useDeleteMod, type ModFolder } from '../../hooks/useFolders';
+import { basename, join } from '@tauri-apps/api/path';
+import { mkdir, exists, remove } from '@tauri-apps/plugin-fs';
+import {
+  useToggleMod,
+  useDeleteMod,
+  type ModFolder,
+  type FolderGridResponse,
+} from '../../hooks/useFolders';
 import { useDeleteObject, useUpdateObject } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import {
@@ -18,6 +23,7 @@ import {
 } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
 import type { ObjectSummary, GameSchema } from '../../types/object';
+import type { BulkResult } from '../../types/mod';
 import type { MatchedDbEntry } from './SyncConfirmModal';
 import type { MasterDbEntry } from './ScanReviewModal';
 import { classifyDroppedPaths } from './dropUtils';
@@ -189,19 +195,34 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     setDeleteDialog({ open: false, path: '', name: '', itemCount: 0 });
   }, [deleteDialog.path, activeGame, deleteMod]);
 
+  const [deleteObjectDialog, setDeleteObjectDialog] = useState<{
+    open: boolean;
+    id: string;
+    name: string;
+  }>({ open: false, id: '', name: '' });
+
   const handleDeleteObject = useCallback(
-    async (id: string) => {
+    (id: string) => {
       const obj = objects.find((o) => o.id === id);
       if (!obj) return;
-      try {
-        await deleteObjectMutation.mutateAsync(id);
-        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      } catch (e) {
-        console.error('Failed to delete object:', e);
-      }
+      setDeleteObjectDialog({ open: true, id: obj.id, name: obj.name });
     },
-    [objects, deleteObjectMutation, queryClient],
+    [objects],
   );
+
+  const confirmDeleteObject = useCallback(async () => {
+    const { id, name } = deleteObjectDialog;
+    setDeleteObjectDialog({ open: false, id: '', name: '' });
+    try {
+      await deleteObjectMutation.mutateAsync(id);
+      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      toast.success(`Deleted "${name}" successfully.`);
+    } catch (e) {
+      console.error('Failed to delete object:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed to delete "${name}": ${msg}`);
+    }
+  }, [deleteObjectDialog, deleteObjectMutation, queryClient]);
 
   const handleEdit = useCallback(
     (id: string) => {
@@ -551,9 +572,22 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
       const archiveInfos = await Promise.all(
         archivePaths.map(async (path) => {
           try {
-            return await invoke<import('../../types/scanner').ArchiveInfo>('analyze_archive_cmd', {
-              archivePath: path,
-            });
+            const analysis = await invoke<import('../../types/scanner').ArchiveAnalysis>(
+              'analyze_archive_cmd',
+              {
+                archivePath: path,
+              },
+            );
+            const name = await basename(path);
+            return {
+              path,
+              name,
+              extension: name.split('.').pop() || '',
+              size_bytes: analysis.total_size_bytes ?? 0,
+              has_ini: analysis.has_ini,
+              file_count: analysis.file_count ?? 1,
+              is_encrypted: analysis.is_encrypted || false,
+            } as import('../../types/scanner').ArchiveInfo;
           } catch (e) {
             console.error(`Failed to analyze archive ${path}:`, e);
             const name = await basename(path);
@@ -562,7 +596,9 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
               name,
               extension: name.split('.').pop() || '',
               size_bytes: 0,
-              has_ini: null,
+              has_ini: false,
+              file_count: 0,
+              is_encrypted: false,
             } as import('../../types/scanner').ArchiveInfo;
           }
         }),
@@ -581,8 +617,8 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
 
   /** Handles the actual extraction and resuming the drop flow, called from ArchiveModal */
   const handleArchiveExtractSubmit = useCallback(
-    async (selectedPaths: string[], _password?: string, _overwrite?: boolean) => {
-      const { pendingDropContext } = archiveModal;
+    async (selectedPaths: string[], passwords: Record<string, string>, _overwrite?: boolean) => {
+      const { pendingDropContext, archives } = archiveModal;
       if (!pendingDropContext || !activeGame) return;
 
       setArchiveModal((prev) => ({ ...prev, isExtracting: true, error: null }));
@@ -603,25 +639,35 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
           await mkdir(extractTarget, { recursive: true });
         }
 
-        for (const archivePath of selectedPaths) {
-          const result = await scanService.extractArchive(archivePath, extractTarget);
+        // Split into non-encrypted and encrypted
+        const nonEncrypted = selectedPaths.filter((p) => {
+          const info = archives.find((a) => a.path === p);
+          return !info?.is_encrypted;
+        });
+        const encrypted = selectedPaths.filter((p) => {
+          const info = archives.find((a) => a.path === p);
+          return !!info?.is_encrypted;
+        });
+
+        // Helper to extract a single archive
+        const extractSingle = async (archivePath: string, pw?: string) => {
+          const result = await scanService.extractArchive(archivePath, extractTarget, pw);
           if (result.success) {
-            extractedFolders.push(result.dest_path);
-            // Move original archive
-            try {
-              const dir = await dirname(archivePath);
-              const base = await basename(archivePath);
-              const extractedDir = await join(dir, '.extracted');
-              if (!(await exists(extractedDir))) {
-                await mkdir(extractedDir, { recursive: true });
-              }
-              await rename(archivePath, await join(extractedDir, base));
-            } catch (e) {
-              console.warn(`Failed to move extracted archive ${archivePath}:`, e);
-            }
+            const paths = result.dest_paths ?? [];
+            extractedFolders.push(...paths);
           } else {
             throw new Error(`Failed to extract ${await basename(archivePath)}: ${result.error}`);
           }
+        };
+
+        // Extract non-encrypted first
+        for (const archivePath of nonEncrypted) {
+          await extractSingle(archivePath);
+        }
+
+        // Extract encrypted with their respective passwords
+        for (const archivePath of encrypted) {
+          await extractSingle(archivePath, passwords[archivePath]);
         }
 
         // Close modal on success
@@ -1159,15 +1205,17 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
       const label = enable ? 'Enable' : 'Disable';
       isTogglingObjectRef.current = true;
 
-      // Snapshot for rollback
-      const prevObjects = queryClient.getQueryData<ObjectSummary[]>(['objects']);
+      // Snapshot for rollback — use correct prefix key ['objects','list']
+      const prevObjectQueries = queryClient.getQueriesData<ObjectSummary[]>({
+        queryKey: ['objects', 'list'],
+      });
       const prevSubPath = useAppStore.getState().explorerSubPath;
 
       try {
         const targetPath = await join(activeGame.mod_path, obj.folder_path);
 
-        // 1. Optimistic update: adjust folder_path + enabled_count in sidebar cache
-        queryClient.setQueryData<ObjectSummary[]>(['objects'], (old) => {
+        // 1. Optimistic update: cache shape is ObjectSummary[] (plain array)
+        queryClient.setQueriesData<ObjectSummary[]>({ queryKey: ['objects', 'list'] }, (old) => {
           if (!old) return old;
           return old.map((o) => {
             if (o.id !== objectId) return o;
@@ -1175,6 +1223,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
               ...o,
               folder_path: toggleDisabledInPath(o.folder_path, enable),
               enabled_count: enable ? o.mod_count : 0,
+              is_object_disabled: !enable,
             };
           });
         });
@@ -1189,16 +1238,13 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
         // 3. Sync explorer navigation
         if (activeGame.mod_path) syncExplorerAfterRename(activeGame.mod_path, targetPath, newPath);
 
-        // 4. Invalidate caches
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+        // 4. Category counts may have changed
+        // Note: ['objects'] and ['mod-folders'] are already invalidated by useToggleMod.onSettled
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
       } catch (e) {
-        // Revert optimistic update
-        if (prevObjects) {
-          queryClient.setQueryData(['objects'], prevObjects);
-        } else {
-          queryClient.invalidateQueries({ queryKey: ['objects'] });
+        // Revert optimistic update — restore all matching queries
+        for (const [key, data] of prevObjectQueries) {
+          queryClient.setQueryData(key, data);
         }
         // Revert explorer navigation
         const curSub = useAppStore.getState().explorerSubPath;
@@ -1257,6 +1303,178 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     [activeGame, objects, queryClient],
   );
 
+  // --- Bulk action state & handlers ---
+  const [bulkTagModal, setBulkTagModal] = useState<{
+    open: boolean;
+    mode: 'add' | 'remove';
+  }>({ open: false, mode: 'add' });
+
+  const handleBulkDelete = useCallback(
+    async (ids: Set<string>) => {
+      let success = 0;
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await deleteObjectMutation.mutateAsync(id);
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      if (failed === 0) {
+        toast.success(`Deleted ${success} object${success !== 1 ? 's' : ''}.`);
+      } else {
+        toast.error(`Deleted ${success}, failed ${failed}.`);
+      }
+    },
+    [deleteObjectMutation, queryClient],
+  );
+
+  const handleBulkPin = useCallback(
+    async (ids: Set<string>, pin: boolean) => {
+      for (const id of ids) {
+        try {
+          await invoke('pin_object', { id, pin });
+        } catch (e) {
+          console.error('Bulk pin failed for', id, e);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      toast.success(
+        `${pin ? 'Pinned' : 'Unpinned'} ${ids.size} object${ids.size !== 1 ? 's' : ''}.`,
+      );
+    },
+    [queryClient],
+  );
+
+  const handleBulkEnable = useCallback(
+    async (ids: Set<string>) => {
+      for (const id of ids) {
+        await toggleObjectMods(id, true);
+      }
+      toast.success(`Enabled ${ids.size} object${ids.size !== 1 ? 's' : ''}.`);
+    },
+    [toggleObjectMods],
+  );
+
+  const handleBulkDisable = useCallback(
+    async (ids: Set<string>) => {
+      for (const id of ids) {
+        await toggleObjectMods(id, false);
+      }
+      toast.success(`Disabled ${ids.size} object${ids.size !== 1 ? 's' : ''}.`);
+    },
+    [toggleObjectMods],
+  );
+
+  const handleBulkAddTags = useCallback(
+    async (ids: Set<string>, tagsToAdd: string[]) => {
+      for (const id of ids) {
+        const obj = objects.find((o) => o.id === id);
+        if (!obj) continue;
+        const existing: string[] = (() => {
+          try {
+            return JSON.parse(obj.tags || '[]');
+          } catch {
+            return [];
+          }
+        })();
+        const merged = [...new Set([...existing, ...tagsToAdd])];
+        try {
+          await invoke('update_object_cmd', { id, updates: { tags: merged } });
+        } catch (e) {
+          console.error('Bulk add tags failed for', id, e);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      toast.success(
+        `Added ${tagsToAdd.length} tag${tagsToAdd.length !== 1 ? 's' : ''} to ${ids.size} object${ids.size !== 1 ? 's' : ''}.`,
+      );
+    },
+    [objects, queryClient],
+  );
+
+  const handleBulkRemoveTags = useCallback(
+    async (ids: Set<string>, tagsToRemove: string[]) => {
+      const removeSet = new Set(tagsToRemove);
+      for (const id of ids) {
+        const obj = objects.find((o) => o.id === id);
+        if (!obj) continue;
+        const existing: string[] = (() => {
+          try {
+            return JSON.parse(obj.tags || '[]');
+          } catch {
+            return [];
+          }
+        })();
+        const filtered = existing.filter((t) => !removeSet.has(t));
+        try {
+          await invoke('update_object_cmd', { id, updates: { tags: filtered } });
+        } catch (e) {
+          console.error('Bulk remove tags failed for', id, e);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      toast.success(
+        `Removed ${tagsToRemove.length} tag${tagsToRemove.length !== 1 ? 's' : ''} from ${ids.size} object${ids.size !== 1 ? 's' : ''}.`,
+      );
+    },
+    [objects, queryClient],
+  );
+
+  const handleBulkAutoOrganize = useCallback(
+    async (ids: Set<string>) => {
+      if (!activeGame) return;
+
+      try {
+        // 1. Resolve mod folder paths from selected objects
+        const selectedObjects = objects.filter((o) => ids.has(o.id));
+        const responses = await Promise.all(
+          selectedObjects.map((obj) =>
+            invoke<FolderGridResponse>('list_mod_folders', {
+              gameId: activeGame.id,
+              modsPath: activeGame.mod_path,
+              subPath: obj.folder_path,
+              objectId: null,
+            }),
+          ),
+        );
+        const allModPaths = responses.flatMap((r) => r.children.map((c) => c.path));
+
+        if (allModPaths.length === 0) {
+          toast.info('No mod folders found in the selected objects.');
+          return;
+        }
+
+        // 2. Get MasterDB
+        const dbJson = await scanService.getMasterDb(activeGame.game_type);
+
+        // 3. Call auto_organize_mods
+        const result = await invoke<BulkResult>('auto_organize_mods', {
+          paths: allModPaths,
+          targetRoot: activeGame.mod_path,
+          dbJson,
+        });
+
+        // 4. Invalidate and report
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+        const moved = result.success.length;
+        const failed = result.failures.length;
+        if (moved > 0) toast.success(`Auto-organized ${moved} mod(s).`);
+        if (failed > 0) toast.error(`Failed to organize ${failed} mod(s).`);
+      } catch (e) {
+        console.error('Auto-organize failed:', e);
+        toast.error(`Auto-organize failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [activeGame, objects, queryClient],
+  );
+
   return {
     // Dialog state
     deleteDialog,
@@ -1276,6 +1494,9 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handleDelete,
     confirmDelete,
     handleDeleteObject,
+    deleteObjectDialog,
+    setDeleteObjectDialog,
+    confirmDeleteObject,
     handleEdit,
     handleSync,
     handleSyncWithDb,
@@ -1292,7 +1513,19 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handleDropNewObject,
     handleDropOnNewObjectSubmit,
     archiveModal,
+    handleArchivesInteractively,
     handleArchiveExtractSubmit,
     handleArchiveExtractSkip,
+
+    // --- Bulk action handlers ---
+    bulkTagModal,
+    setBulkTagModal,
+    handleBulkDelete,
+    handleBulkPin,
+    handleBulkEnable,
+    handleBulkDisable,
+    handleBulkAddTags,
+    handleBulkRemoveTags,
+    handleBulkAutoOrganize,
   };
 }

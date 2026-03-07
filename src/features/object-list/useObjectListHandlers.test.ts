@@ -83,6 +83,7 @@ describe('useObjectListHandlers', () => {
         enabled_count: 0,
         is_safe: true,
         is_auto_sync: false,
+        is_object_disabled: false,
         tags: '',
         metadata: '{}',
         has_naming_conflict: false,

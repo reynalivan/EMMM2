@@ -6,6 +6,7 @@ import { useActiveGame } from '../../hooks/useActiveGame';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
+import { useObjectBulkSelect } from './useObjectBulkSelect';
 import { useSearchWorker } from './hooks/useSearchWorker';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
@@ -52,10 +53,13 @@ export function useObjectListLogic() {
   const queryClient = useQueryClient();
   const autoSyncTriggered = useRef<string | null>(null);
 
-  // US-3.6: Trigger worker search when query or data changes
+  // US-3.6: Trigger worker search when query or data changes (debounced)
   useEffect(() => {
-    const items = allObjects.map((o) => ({ id: o.id, name: o.name }));
-    workerSearch(items, sidebarSearchQuery);
+    const timeout = setTimeout(() => {
+      const items = allObjects.map((o) => ({ id: o.id, name: o.name }));
+      workerSearch(items, sidebarSearchQuery);
+    }, 150);
+    return () => clearTimeout(timeout);
   }, [allObjects, sidebarSearchQuery, workerSearch]);
 
   // Apply worker search filter
@@ -122,7 +126,20 @@ export function useObjectListLogic() {
       autoSyncTriggered.current = activeGame.id;
       (async () => {
         try {
-          // Direct DB check: only import if there are truly 0 mods for this game
+          // GC: remove objects whose disk folders are missing (Opt-A: sync-point-only GC)
+          const { gcLostObjects } = await import('../../lib/services/objectService');
+          const lostNames = await gcLostObjects(activeGame.id);
+          if (lostNames.length > 0) {
+            const { useToastStore } = await import('../../stores/useToastStore');
+            const count = lostNames.length;
+            let message = `Lost ${count} object${count > 1 ? 's' : ''} (directory missing). DB synchronized.`;
+            if (count <= 3) {
+              message += `\n(${lostNames.join(', ')})`;
+            }
+            useToastStore.getState().addToast('warning', message, 5000);
+          }
+
+          // Check if we need to quick-import (0 mods in DB for this game)
           const { getObjects } = await import('../../lib/services/objectService');
           const allGameObjects = await getObjects({
             game_id: activeGame.id,
@@ -185,6 +202,9 @@ export function useObjectListLogic() {
     setActiveFilters({});
   };
 
+  // Bulk selection
+  const bulkSelect = useObjectBulkSelect(flatObjectItems);
+
   return {
     // Refs
     parentRef,
@@ -230,6 +250,9 @@ export function useObjectListLogic() {
     handleDelete: handlers.handleDelete,
     confirmDelete: handlers.confirmDelete,
     handleDeleteObject: handlers.handleDeleteObject,
+    deleteObjectDialog: handlers.deleteObjectDialog,
+    setDeleteObjectDialog: handlers.setDeleteObjectDialog,
+    confirmDeleteObject: handlers.confirmDeleteObject,
     handleFilterChange,
     handleClearFilters,
 
@@ -268,7 +291,20 @@ export function useObjectListLogic() {
 
     // Archive Modal
     archiveModal: handlers.archiveModal,
+    handleArchivesInteractively: handlers.handleArchivesInteractively,
     handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,
     handleArchiveExtractSkip: handlers.handleArchiveExtractSkip,
+
+    // Bulk Select
+    bulkSelect,
+    bulkTagModal: handlers.bulkTagModal,
+    setBulkTagModal: handlers.setBulkTagModal,
+    handleBulkDelete: handlers.handleBulkDelete,
+    handleBulkPin: handlers.handleBulkPin,
+    handleBulkEnable: handlers.handleBulkEnable,
+    handleBulkDisable: handlers.handleBulkDisable,
+    handleBulkAddTags: handlers.handleBulkAddTags,
+    handleBulkRemoveTags: handlers.handleBulkRemoveTags,
+    handleBulkAutoOrganize: handlers.handleBulkAutoOrganize,
   };
 }

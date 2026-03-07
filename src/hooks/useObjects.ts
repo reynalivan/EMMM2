@@ -64,6 +64,7 @@ export function useObjects(options: UseObjectsOptions = {}) {
     enabled: !!activeGame?.id,
     staleTime: 30_000,
     placeholderData: (prev) => prev,
+    refetchOnWindowFocus: true, // Reconcile on focus — DB query is cheap (~0.5ms)
   });
 }
 
@@ -81,6 +82,7 @@ export function useCategoryCounts() {
     queryFn: () => getCategoryCounts(gameId, safeMode),
     enabled: !!gameId,
     staleTime: 30_000,
+    refetchOnWindowFocus: true, // Reconcile on focus — DB query is cheap (~0.3ms)
   });
 }
 

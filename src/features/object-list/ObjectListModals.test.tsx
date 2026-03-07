@@ -23,6 +23,10 @@ vi.mock('./ScanReviewModal', () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div data-testid="scan-modal">Scan Modal</div> : null,
 }));
+vi.mock('./AutoSetupModal', () => ({
+  default: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="autosetup-modal">Auto Setup Modal</div> : null,
+}));
 
 describe('ObjectListModals', () => {
   it('renders nothing when not explicitly opened', () => {
@@ -43,6 +47,11 @@ describe('ObjectListModals', () => {
         onCloseScanReview={vi.fn()}
         createModalOpen={false}
         onCloseCreate={vi.fn()}
+        autoSetupOpen={false}
+        onCloseAutoSetup={vi.fn()}
+        deleteObjectDialog={{ open: false, id: '', name: '' }}
+        onConfirmDeleteObject={vi.fn()}
+        onCancelDeleteObject={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('confirm-dialog')).toBeNull();
@@ -70,6 +79,11 @@ describe('ObjectListModals', () => {
         onCloseScanReview={vi.fn()}
         createModalOpen={true}
         onCloseCreate={vi.fn()}
+        autoSetupOpen={true}
+        onCloseAutoSetup={vi.fn()}
+        deleteObjectDialog={{ open: false, id: '', name: '' }}
+        onConfirmDeleteObject={vi.fn()}
+        onCancelDeleteObject={vi.fn()}
       />,
     );
 
@@ -78,5 +92,6 @@ describe('ObjectListModals', () => {
     expect(screen.getByTestId('sync-modal')).toBeInTheDocument();
     expect(screen.getByTestId('scan-modal')).toBeInTheDocument();
     expect(screen.getByTestId('create-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('autosetup-modal')).toBeInTheDocument();
   });
 });

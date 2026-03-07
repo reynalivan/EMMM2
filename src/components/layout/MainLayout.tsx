@@ -8,6 +8,7 @@ import SettingsPage from '../../features/settings/SettingsPage';
 import CollectionsPage from '../../features/collections/CollectionsPage';
 import ExplorerEmptyState from '../../features/folder-grid/ExplorerEmptyState';
 import { BrowserPage } from '../../features/browser/components/BrowserPage';
+import DownloadsPage from '../../features/downloads/DownloadsPage';
 import { useAppStore } from '../../stores/useAppStore';
 import { ExternalChangeHandler } from '../../features/file-watcher/ExternalChangeHandler';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
@@ -36,6 +37,8 @@ export default function MainLayout() {
             <SettingsPage />
           ) : workspaceView === 'browser' ? (
             <BrowserPage />
+          ) : workspaceView === 'downloads' ? (
+            <DownloadsPage />
           ) : (
             <ResizableWorkspace
               leftPanel={<ObjectList />}

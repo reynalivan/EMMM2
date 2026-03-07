@@ -1,16 +1,16 @@
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::types::errors::CommandResult;
 
 use crate::database::object_repo::{
-    CategoryCount, CreateObjectInput, ObjectFilter, ObjectSummary, UpdateObjectInput,
+    CategoryCount, CreateObjectInput, GetObjectsResult, ObjectFilter, UpdateObjectInput,
 };
 
 #[tauri::command]
 pub async fn get_objects_cmd(
     filter: ObjectFilter,
     pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<Vec<ObjectSummary>> {
+) -> CommandResult<GetObjectsResult> {
     get_objects_cmd_inner(filter, &pool).await
 }
 
@@ -25,7 +25,7 @@ pub async fn sync_objects_cmd(
 pub async fn get_objects_cmd_inner(
     filter: ObjectFilter,
     pool: &sqlx::SqlitePool,
-) -> CommandResult<Vec<ObjectSummary>> {
+) -> CommandResult<GetObjectsResult> {
     let objects =
         crate::services::objects::query::get_filtered_objects_with_conflict_check(pool, &filter)
             .await
@@ -52,15 +52,17 @@ pub async fn get_category_counts_cmd(
 pub async fn create_object_cmd(
     input: CreateObjectInput,
     pool: State<'_, sqlx::SqlitePool>,
+    app: tauri::AppHandle,
 ) -> CommandResult<String> {
-    create_object_cmd_inner(input, &pool).await
+    create_object_cmd_inner(input, &pool, Some(&app)).await
 }
 
 pub async fn create_object_cmd_inner(
     input: CreateObjectInput,
     pool: &sqlx::SqlitePool,
+    app_handle: Option<&tauri::AppHandle>,
 ) -> CommandResult<String> {
-    crate::services::objects::mutate::create_object_cmd_inner(pool, input).await
+    crate::services::objects::mutate::create_object_cmd_inner(pool, app_handle, input).await
 }
 
 #[tauri::command]
@@ -81,12 +83,34 @@ pub async fn update_object_cmd_inner(
 }
 
 #[tauri::command]
-pub async fn delete_object_cmd(id: String, pool: State<'_, sqlx::SqlitePool>) -> CommandResult<()> {
-    delete_object_cmd_inner(id, &pool).await
+pub async fn delete_object_cmd(
+    id: String,
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+    state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
+) -> CommandResult<()> {
+    let trash_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| {
+            crate::types::errors::CommandError::Io(format!("Failed to get app data dir: {}", e))
+        })?
+        .join("trash");
+    crate::services::objects::mutate::delete_object(&pool, &id, &trash_dir, &state, &op_lock).await
 }
 
-pub async fn delete_object_cmd_inner(id: String, pool: &sqlx::SqlitePool) -> CommandResult<()> {
-    crate::services::objects::mutate::delete_object(pool, &id).await
+/// Garbage-collect objects whose folders no longer exist on disk.
+/// Called at sync points (game switch, manual sync) — NOT on every ObjectList render.
+#[tauri::command]
+pub async fn gc_lost_objects_cmd(
+    game_id: String,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CommandResult<Vec<String>> {
+    let lost = crate::services::objects::query::gc_lost_objects(&pool, &game_id)
+        .await
+        .map_err(|e| crate::types::errors::CommandError::App(e))?;
+    Ok(lost)
 }
 
 #[cfg(test)]

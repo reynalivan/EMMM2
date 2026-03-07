@@ -31,6 +31,10 @@ interface ContentProps {
   /* DnD per-item highlight */
   isDragging?: boolean;
   hoveredItemId?: string | null;
+  /* Bulk select */
+  isAnyBulkSelected?: boolean;
+  isBulkSelected?: (id: string) => boolean;
+  onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
 }
 
 /** Shared props for building ObjectContextMenu */
@@ -90,6 +94,8 @@ export default function ObjectListContent({
   contextMenuProps,
   isDragging,
   hoveredItemId,
+  isBulkSelected,
+  onToggleBulkSelect,
 }: ContentProps) {
   const ctx = contextMenuProps;
 
@@ -179,6 +185,8 @@ export default function ObjectListContent({
                     isMobile={isMobile}
                     onClick={() => setSelectedObject(item.obj.id)}
                     isDropTarget={isDragging && hoveredItemId === item.obj.id}
+                    isBulkSelected={isBulkSelected?.(item.obj.id)}
+                    onToggleBulkSelect={onToggleBulkSelect}
                   />
                 </ContextMenu>
               </div>

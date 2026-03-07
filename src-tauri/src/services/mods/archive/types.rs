@@ -30,14 +30,19 @@ pub struct ArchiveAnalysis {
     pub has_ini: bool,
     pub uncompressed_size: u64,
     pub single_root_folder: Option<String>,
+    /// Whether the archive requires a password for extraction.
+    pub is_encrypted: bool,
 }
 
 /// Result of an extraction operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionResult {
     pub archive_name: String,
-    pub dest_path: String,
+    /// Paths to all extracted mod root folders
+    pub dest_paths: Vec<String>,
     pub files_extracted: usize,
+    /// Number of independent mod roots found and moved.
+    pub mod_count: usize,
     pub success: bool,
     pub error: Option<String>,
 }

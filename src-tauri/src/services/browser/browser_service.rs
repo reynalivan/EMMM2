@@ -3,8 +3,6 @@ use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
-use super::download_service;
-
 /// Illegal Windows filename characters to strip.
 const ILLEGAL_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 /// Maximum safe filename length (chars, excluding extension).
@@ -189,9 +187,7 @@ pub async fn open_child_webview(
     let session_id_dl = session_id.clone();
     let downloads_root_clone = downloads_root.clone();
     let db_for_start = db.clone();
-    let db_for_finish = db.clone();
     let app_for_finish = app.clone();
-    let label_clone = label.clone();
 
     // The main window must exist to attach a webview
     let window = app.get_window("main").ok_or("Main window not found")?;
@@ -312,53 +308,39 @@ pub async fn open_child_webview(
 
                 *destination = dest.clone();
 
-                // Record download in DB (fire-and-forget)
                 let db_c = db_for_start.clone();
                 let sid = session_id_dl.clone();
-                let dest_str = dest.to_string_lossy().to_string();
+                let dest_str = dest.clone();
                 let url_str = dl_url.to_string();
+                let app_c = app_for_finish.clone(); // Reused cloned AppHandle
+
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = download_service::create_download(
-                        &db_c,
-                        sid.as_deref(),
-                        &filename,
-                        &url_str,
-                        &dest_str,
-                    )
-                    .await
+                    if let Err(e) =
+                        crate::services::browser::download_handler::start_concurrent_download(
+                            app_c,
+                            db_c,
+                            url_str,
+                            filename.clone(),
+                            dest_str,
+                            sid,
+                        )
+                        .await
                     {
-                        log::error!("Failed to record download: {e}");
+                        log::error!(
+                            "Failed to start concurrent download for {}: {}",
+                            filename,
+                            e
+                        );
                     }
                 });
 
-                true // allow download
+                // RETURN FALSE to prevent the WebView native overlapping download mechanism.
+                // We're handling the download in our reqwest background task!
+                false
             }
-            tauri::webview::DownloadEvent::Finished {
-                url: dl_url,
-                path,
-                success,
-            } => {
-                let url_str = dl_url.to_string();
-                let path_str = path.as_ref().map(|p| p.to_string_lossy().to_string());
-                let db_c = db_for_finish.clone();
-                let app_c = app_for_finish.clone();
-                let lbl = label_clone.clone();
-
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = download_service::on_download_finished(
-                        &db_c,
-                        &app_c,
-                        &url_str,
-                        path_str.as_deref(),
-                        success,
-                        &lbl,
-                    )
-                    .await
-                    {
-                        log::error!("Failed to handle download finish: {e}");
-                    }
-                });
-
+            tauri::webview::DownloadEvent::Finished { .. } => {
+                // Since we returned false in Requested, the native downloader shouldn't fire this.
+                // All finishing logic (and Smart Import trigger) is now safely handled inside `download_handler.rs`.
                 true
             }
             _ => true,

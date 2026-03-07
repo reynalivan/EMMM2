@@ -1279,6 +1279,7 @@ dependencies = [
  "env_logger",
  "filetime",
  "fs_extra",
+ "futures-util",
  "global-hotkey",
  "image",
  "log",

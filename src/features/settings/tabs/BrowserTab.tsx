@@ -223,15 +223,6 @@ export default function BrowserTab() {
               <Trash2 size={18} />
               {clearOldDownloadsMutation.isPending ? 'Clearing...' : 'Clear Old Downloads Now'}
             </button>
-            <button
-              className="btn btn-outline gap-2"
-              onClick={() => {
-                // Future: implement invoke('browser_clear_cache') if available
-                addToast('info', 'Browser cache clearing is not implemented yet.');
-              }}
-            >
-              Clear Browser Cache
-            </button>
           </div>
         </div>
       </div>
