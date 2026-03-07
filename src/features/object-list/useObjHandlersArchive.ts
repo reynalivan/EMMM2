@@ -13,7 +13,7 @@ import { exists, mkdir } from '@tauri-apps/plugin-fs';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { scanService, type ScanPreviewItem } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
-import { parseMasterDb } from './objHandlersHelpers';
+import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
 import type { ObjectSummary } from '../../types/object';
 import type { MasterDbEntry } from './ScanReviewModal';
 
@@ -30,6 +30,15 @@ interface ArchiveDeps {
   setIsSyncing: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
+export type PendingDropContext = {
+  type: 'item' | 'auto-organize' | 'new-object';
+  pathsToIngest: string[];
+  targetFolder?: string;
+  targetObjectId?: string;
+  baseFolderPaths?: string[];
+  baseLooseFiles?: string[];
+};
+
 export function useObjHandlersArchive({ objects, setScanReview, setIsSyncing }: ArchiveDeps) {
   const { activeGame } = useActiveGame();
   const queryClient = useQueryClient();
@@ -39,14 +48,7 @@ export function useObjHandlersArchive({ objects, setScanReview, setIsSyncing }: 
     archives: import('../../types/scanner').ArchiveInfo[];
     isExtracting: boolean;
     error: string | null;
-    pendingDropContext: {
-      type: 'item' | 'auto-organize' | 'new-object';
-      pathsToIngest: string[];
-      targetFolder?: string;
-      targetObjectId?: string;
-      baseFolderPaths?: string[];
-      baseLooseFiles?: string[];
-    } | null;
+    pendingDropContext: PendingDropContext | null;
   }>({
     open: false,
     archives: [],
@@ -57,7 +59,7 @@ export function useObjHandlersArchive({ objects, setScanReview, setIsSyncing }: 
 
   /** Launch ArchiveModal after analyzing archive files */
   const handleArchivesInteractively = useCallback(
-    async (archivePaths: string[], context: typeof archiveModal.pendingDropContext) => {
+    async (archivePaths: string[], context: PendingDropContext | null) => {
       const archiveInfos = await Promise.all(
         archivePaths.map(async (path) => {
           try {
@@ -98,7 +100,7 @@ export function useObjHandlersArchive({ objects, setScanReview, setIsSyncing }: 
         pendingDropContext: context,
       });
     },
-    [archiveModal],
+    [],
   );
 
   /** Extract selected archives and resume the pending drop context flow */
@@ -154,30 +156,12 @@ export function useObjHandlersArchive({ objects, setScanReview, setIsSyncing }: 
             return;
           }
 
-          const result = await invoke<{
-            success: string[];
-            failures: { path: string; error: string }[];
-          }>('import_mods_from_paths', {
-            paths: pathsToIngest,
-            targetDir: pendingDropContext.targetFolder,
-            strategy: 'Raw',
-            dbJson: null,
-          });
-
-          queryClient.invalidateQueries({ queryKey: ['objects'] });
-          queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-          queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-
-          const movedCount = result.success.length;
-          const failCount = result.failures.length;
-          if (movedCount > 0) {
-            const label = isNewObject
-              ? `Created ${obj?.name} with ${movedCount} item(s)${failCount > 0 ? `, ${failCount} failed` : ''}`
-              : `Moved ${movedCount} item(s)${obj ? ` to ${obj.name}` : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`;
-            toast.success(label);
-          } else if (failCount > 0) {
-            toast.error(`Failed to move items: ${result.failures[0].error}`);
-          }
+          await executeImportAndInvalidate(
+            pathsToIngest,
+            pendingDropContext.targetFolder!,
+            queryClient,
+            { isNewObject, objectName: obj?.name },
+          );
         } else if (pendingDropContext.type === 'auto-organize') {
           const folderPaths = [...(pendingDropContext.baseFolderPaths || []), ...extractedFolders];
           const looseFiles = pendingDropContext.baseLooseFiles || [];
@@ -247,30 +231,12 @@ export function useObjHandlersArchive({ objects, setScanReview, setIsSyncing }: 
 
       try {
         await invoke('set_watcher_suppression_cmd', { suppressed: true });
-        const result = await invoke<{
-          success: string[];
-          failures: { path: string; error: string }[];
-        }>('import_mods_from_paths', {
-          paths: pendingDropContext.pathsToIngest,
-          targetDir: pendingDropContext.targetFolder,
-          strategy: 'Raw',
-          dbJson: null,
-        });
-
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-
-        const movedCount = result.success.length;
-        const failCount = result.failures.length;
-        if (movedCount > 0) {
-          const label = isNewObject
-            ? `Created ${obj?.name} with ${movedCount} item(s)${failCount > 0 ? `, ${failCount} failed` : ''}`
-            : `Moved ${movedCount} item(s)${obj ? ` to ${obj.name}` : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`;
-          toast.success(label);
-        } else if (failCount > 0) {
-          toast.error(`Failed to move items: ${result.failures[0].error}`);
-        }
+        await executeImportAndInvalidate(
+          pendingDropContext.pathsToIngest,
+          pendingDropContext.targetFolder!,
+          queryClient,
+          { isNewObject, objectName: obj?.name },
+        );
       } catch (e) {
         console.error('Drop on item failed after skipping archives:', e);
         toast.error('Failed to import items');

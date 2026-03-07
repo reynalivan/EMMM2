@@ -45,3 +45,51 @@ export function parseMasterDb(dbJson: string): MasterDbEntry[] {
     return [];
   }
 }
+
+import { invoke } from '@tauri-apps/api/core';
+import type { QueryClient } from '@tanstack/react-query';
+import { toast } from '../../stores/useToastStore';
+
+/**
+ * Executes the `import_mods_from_paths` command, invalidates the query cache,
+ * and shows standard success/error toasts based on the move counts.
+ */
+export async function executeImportAndInvalidate(
+  paths: string[],
+  targetDir: string,
+  queryClient: QueryClient,
+  options: {
+    isNewObject?: boolean;
+    objectName?: string;
+  },
+): Promise<void> {
+  const result = await invoke<{
+    success: string[];
+    failures: { path: string; error: string }[];
+  }>('import_mods_from_paths', {
+    paths,
+    targetDir,
+    strategy: 'Raw',
+    dbJson: null,
+  });
+
+  queryClient.invalidateQueries({ queryKey: ['objects'] });
+  queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+  queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+  const movedCount = result.success.length;
+  const failCount = result.failures.length;
+
+  if (movedCount > 0) {
+    const fails = failCount > 0 ? `, ${failCount} failed` : '';
+    const label = options.isNewObject
+      ? `Created ${options.objectName ?? 'Object'} with ${movedCount} item(s)${fails}`
+      : `Moved ${movedCount} item(s)${options.objectName ? ` to ${options.objectName}` : ''}${fails}`;
+    toast.success(label);
+  } else if (failCount > 0) {
+    const action = options.isNewObject
+      ? 'Created Object but failed to move items'
+      : 'Failed to move items';
+    toast.error(`${action}: ${result.failures[0].error}`);
+  }
+}

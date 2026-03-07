@@ -10,7 +10,7 @@ import { exists, mkdir } from '@tauri-apps/plugin-fs';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
-import { parseMasterDb } from './objHandlersHelpers';
+import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
 import { classifyDroppedPaths } from './dropUtils';
 import type { ObjectSummary } from '../../types/object';
 import type { ScanPreviewItem } from '../../lib/services/scanService';
@@ -83,29 +83,10 @@ export function useObjHandlersDrop({
           return;
         }
 
-        const result = await invoke<{
-          success: string[];
-          failures: { path: string; error: string }[];
-        }>('import_mods_from_paths', {
-          paths: pathsToIngest,
-          targetDir: objectFolderPath,
-          strategy: 'Raw',
-          dbJson: null,
+        await executeImportAndInvalidate(pathsToIngest, objectFolderPath, queryClient, {
+          isNewObject: false,
+          objectName: obj.name,
         });
-
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-
-        const movedCount = result.success.length;
-        const failCount = result.failures.length;
-        if (movedCount > 0) {
-          toast.success(
-            `Moved ${movedCount} item(s) to ${obj.name}${failCount > 0 ? `, ${failCount} failed` : ''}`,
-          );
-        } else if (failCount > 0) {
-          toast.error(`Failed to move items: ${result.failures[0].error}`);
-        }
       } catch (e) {
         console.error('Drop on item failed:', e);
         toast.error('Failed to import dropped items');
@@ -144,7 +125,6 @@ export function useObjHandlersDrop({
           await mkdir(tempPath, { recursive: true });
         }
 
-        const tempPaths: string[] = [];
         if (looseFiles.length > 0) {
           const ingestResult = await invoke<{
             moved: string[];
@@ -159,7 +139,6 @@ export function useObjHandlersDrop({
             gameType: activeGame.game_type,
           });
           folderPaths.push(...ingestResult.moved);
-          tempPaths.push(...ingestResult.moved);
         }
 
         setIsSyncing(true);
@@ -233,29 +212,10 @@ export function useObjHandlersDrop({
           return;
         }
 
-        const result = await invoke<{
-          success: string[];
-          failures: { path: string; error: string }[];
-        }>('import_mods_from_paths', {
-          paths: pathsToIngest,
-          targetDir: objectFolderPath,
-          strategy: 'Raw',
-          dbJson: null,
+        await executeImportAndInvalidate(pathsToIngest, objectFolderPath, queryClient, {
+          isNewObject: true,
+          objectName,
         });
-
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-
-        const movedCount = result.success.length;
-        const failCount = result.failures.length;
-        if (movedCount > 0) {
-          toast.success(
-            `Created ${objectName} with ${movedCount} item(s)${failCount > 0 ? `, ${failCount} failed` : ''}`,
-          );
-        } else if (failCount > 0) {
-          toast.error(`Created Object but failed to move items: ${result.failures[0].error}`);
-        }
       } catch (e) {
         console.error('Drop on new object failed:', e);
         toast.error('Failed to import dropped items');
