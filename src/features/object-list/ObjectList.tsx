@@ -12,18 +12,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { FolderPlus, FolderInput, AlertTriangle } from 'lucide-react';
 import { useObjectListLogic } from './useObjectListLogic';
-import { useFileDrop, type DragPosition } from '../../hooks/useFileDrop';
+import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
 import ObjectListToolbar from './ObjectListToolbar';
 import ObjectListStates from './ObjectListStates';
 import ObjectListContent from './ObjectListContent';
 import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
-import { classifyDroppedPaths, validateDropForZone, type DropZone } from './dropUtils';
-import DropConfirmModal, { type DropValidation } from './DropConfirmModal';
+import { useObjectListDropZones } from './useObjectListDropZones';
+import DropConfirmModal from './DropConfirmModal';
 import ArchiveModal from '../scanner/components/ArchiveModal';
 import BulkTagModal from './BulkTagModal';
-import { scanService } from '../../lib/services/scanService';
-import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
 
 export default function ObjectList() {
@@ -114,216 +112,26 @@ export default function ObjectList() {
   const contentRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  /** Resolve which drop zone the cursor is in */
-  const resolveDropZone = useCallback((position: DragPosition): DropZone | null => {
-    const toolbarEl = toolbarRef.current;
-    const bottomEl = bottomRef.current;
-
-    if (toolbarEl) {
-      const rect = toolbarEl.getBoundingClientRect();
-      if (
-        position.x >= rect.left &&
-        position.x <= rect.right &&
-        position.y >= rect.top &&
-        position.y <= rect.bottom
-      ) {
-        return 'auto-organize';
-      }
-    }
-
-    if (bottomEl) {
-      const rect = bottomEl.getBoundingClientRect();
-      if (
-        position.x >= rect.left &&
-        position.x <= rect.right &&
-        position.y >= rect.top &&
-        position.y <= rect.bottom
-      ) {
-        return 'new-object';
-      }
-    }
-
-    // Default to item zone if within content area
-    if (contentRef.current) {
-      const rect = contentRef.current.getBoundingClientRect();
-      if (
-        position.x >= rect.left &&
-        position.x <= rect.right &&
-        position.y >= rect.top &&
-        position.y <= rect.bottom
-      ) {
-        return 'item';
-      }
-    }
-
-    return null;
-  }, []);
-
-  /** Determine the active drop zone from dragPosition */
-  const [activeDropZone, setActiveDropZone] = useState<DropZone | null>(null);
-  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
-  const [tooltipTop, setTooltipTop] = useState<number>(0);
-  const [dropValidation, setDropValidation] = useState<DropValidation | null>(null);
-
-  /** Pre-drop validation: score the drop against candidates, show modal if low confidence */
-  const handleDropWithValidation = useCallback(
-    async (paths: string[], position: DragPosition) => {
-      if (!activeGame || !contentRef.current) return;
-
-      // Resolve target object from position
-      const element = document.elementFromPoint(position.x, position.y);
-      let current: HTMLElement | null = element as HTMLElement;
-      while (current && !current.dataset.objectId) {
-        current = current.parentElement;
-      }
-      if (!current?.dataset.objectId) {
-        toast.info('Drop on a specific object to move items there.');
-        return;
-      }
-
-      const targetId = current.dataset.objectId;
-      const targetObj = objects.find((o) => o.id === targetId);
-      if (!targetObj) {
-        toast.error('Target object not found.');
-        return;
-      }
-
-      // Only validate folders (not loose files)
-      const classified = classifyDroppedPaths(paths);
-      const foldersToValidate = classified.folders;
-
-      // If no folders, skip validation — just move directly
-      if (foldersToValidate.length === 0) {
-        handleDropOnItem(targetId, paths);
-        return;
-      }
-
-      // Show validating modal
-      setDropValidation({
-        paths,
-        targetId,
-        targetName: targetObj.name,
-        status: 'validating',
-      });
-
-      try {
-        // Score the first dropped folder against all object names
-        const candidateNames = objects.map((o) => o.name);
-        const scores = await scanService.scoreCandidatesBatch(
-          foldersToValidate[0],
-          candidateNames,
-          activeGame.game_type,
-        );
-
-        // Check if validation was cancelled (skip button)
-        // We use a check on the current state
-        const targetScore = scores[targetObj.name] ?? 0;
-
-        // Find best match
-        let bestName = targetObj.name;
-        let bestScore = targetScore;
-        for (const [name, score] of Object.entries(scores)) {
-          if (score > bestScore) {
-            bestName = name;
-            bestScore = score;
-          }
-        }
-
-        const bestObj = objects.find((o) => o.name === bestName);
-
-        // Confidence threshold: 50% or below → show warning
-        if (targetScore <= 50) {
-          setDropValidation({
-            paths,
-            targetId,
-            targetName: targetObj.name,
-            status: 'warning',
-            targetScore,
-            suggestedId: bestObj?.id,
-            suggestedName: bestName,
-            suggestedScore: bestScore,
-          });
-        } else {
-          // High confidence — move directly
-          setDropValidation(null);
-          handleDropOnItem(targetId, paths);
-        }
-      } catch (e) {
-        console.error('Pre-drop validation failed:', e);
-        // On validation failure, move directly (fail-open)
-        setDropValidation(null);
-        handleDropOnItem(targetId, paths);
-      }
-    },
-    [activeGame, objects, handleDropOnItem],
-  );
-
-  // US-3.Z: Zone-aware DnD handler
-  const onDrop = useCallback(
-    (paths: string[], position: DragPosition) => {
-      if (!activeGame || paths.length === 0) return;
-
-      const zone = resolveDropZone(position);
-      if (!zone) {
-        toast.info('Drop inside a zone to import items.');
-        return;
-      }
-
-      const classified = classifyDroppedPaths(paths);
-      const validation = validateDropForZone(zone, classified);
-
-      if (!validation.valid) {
-        toast.error(validation.reason ?? 'Invalid drop');
-        return;
-      }
-
-      switch (zone) {
-        case 'auto-organize':
-          handleDropAutoOrganize(paths);
-          break;
-        case 'item':
-          handleDropWithValidation(paths, position);
-          break;
-        case 'new-object':
-          setPendingPaths(paths);
-          setCreateModalOpen(true);
-          break;
-      }
-    },
-    [activeGame, resolveDropZone, handleDropAutoOrganize, handleDropWithValidation],
-  );
-
-  // Zone detection via onDragOver callback (React-compliant: setState from event handler)
-  const handleDragOver = useCallback(
-    (pos: DragPosition) => {
-      const zone = resolveDropZone(pos);
-      setActiveDropZone(zone);
-
-      // Track which object row the cursor is over (for per-item highlight)
-      if (zone === 'item') {
-        const el = document.elementFromPoint(pos.x, pos.y);
-        let current: HTMLElement | null = el as HTMLElement;
-        while (current && !current.dataset.objectId) {
-          current = current.parentElement;
-        }
-        setHoveredItemId(current?.dataset.objectId ?? null);
-        // Calculate tooltip Y relative to sidebar root
-        const sidebarRect = contentRef.current?.parentElement?.getBoundingClientRect();
-        setTooltipTop(sidebarRect ? pos.y - sidebarRect.top - 16 : pos.y);
-      } else {
-        setHoveredItemId(null);
-      }
-    },
-    [resolveDropZone],
-  );
-
-  const handleDragStateChange = useCallback((dragging: boolean) => {
-    if (!dragging) {
-      setActiveDropZone(null);
-      setHoveredItemId(null);
-      setTooltipTop(0);
-    }
-  }, []);
+  const {
+    activeDropZone,
+    hoveredItemId,
+    tooltipTop,
+    dropValidation,
+    setDropValidation,
+    onDrop,
+    handleDragOver,
+    handleDragStateChange,
+  } = useObjectListDropZones({
+    activeGame,
+    objects,
+    toolbarRef,
+    contentRef,
+    bottomRef,
+    handleDropOnItem,
+    handleDropAutoOrganize,
+    setPendingPaths,
+    setCreateModalOpen,
+  });
 
   const { isDragging, dragPosition } = useFileDrop({
     onDrop,
@@ -345,25 +153,25 @@ export default function ObjectList() {
     const { targetId, paths } = dropValidation;
     setDropValidation(null);
     handleDropOnItem(targetId, paths);
-  }, [dropValidation, handleDropOnItem]);
+  }, [dropValidation, handleDropOnItem, setDropValidation]);
 
   const handleConfirmMoveToSuggested = useCallback(() => {
     if (!dropValidation?.suggestedId) return;
     const { suggestedId, paths } = dropValidation;
     setDropValidation(null);
     handleDropOnItem(suggestedId, paths);
-  }, [dropValidation, handleDropOnItem]);
+  }, [dropValidation, handleDropOnItem, setDropValidation]);
 
   const handleCancelDrop = useCallback(() => {
     setDropValidation(null);
-  }, []);
+  }, [setDropValidation]);
 
   const handleSkipValidation = useCallback(() => {
     if (!dropValidation) return;
     const { targetId, paths } = dropValidation;
     setDropValidation(null);
     handleDropOnItem(targetId, paths);
-  }, [dropValidation, handleDropOnItem]);
+  }, [dropValidation, handleDropOnItem, setDropValidation]);
 
   const qc = useQueryClient();
   const handleRefresh = useCallback(async () => {

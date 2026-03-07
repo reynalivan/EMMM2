@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { ExternalChangeHandler } from './ExternalChangeHandler';
 import { toast } from '../../stores/useToastStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useAppStore } from '../../stores/useAppStore';
 import React from 'react';
 
 // Mock dependecies
@@ -49,6 +50,12 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.setState({ workspaceView: 'mods', watcherCooldownUntil: undefined });
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('TC-28-001: File Create triggers auto-refresh and toast info', () => {
@@ -61,6 +68,8 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
         path: 'C:\\Genshin\\Mods\\NewCharacter',
       },
     });
+
+    vi.advanceTimersByTime(350);
 
     expect(toast.info).toHaveBeenCalledWith(
       expect.stringContaining('"NewCharacter" was added externally. View refreshed.'),
@@ -78,6 +87,8 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
       },
     });
 
+    vi.advanceTimersByTime(350);
+
     expect(toast.warning).toHaveBeenCalledWith(
       expect.stringContaining('"OldCharacter" was removed externally. View refreshed.'),
     );
@@ -94,6 +105,8 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
         to: 'C:/Genshin/Mods/NewName',
       },
     });
+
+    vi.advanceTimersByTime(350);
 
     expect(toast.info).toHaveBeenCalledWith(
       expect.stringContaining('"OldName" renamed to "NewName" externally. View refreshed.'),
@@ -118,6 +131,8 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
         path: 'C:/Genshin/Mods/Characters/KeqingMod/textures',
       },
     });
+
+    vi.advanceTimersByTime(350);
 
     expect(toast.info).not.toHaveBeenCalled();
     expect(toast.warning).not.toHaveBeenCalled();
