@@ -45,6 +45,19 @@ vi.mock('../../../hooks/useFolders', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
   useBulkUpdateInfo: () => ({ mutate: vi.fn() }),
+  useBulkFavorite: () => ({ mutate: vi.fn() }),
+  useBulkPin: () => ({ mutate: vi.fn() }),
+  useUpdateModInfo: () => ({ mutate: vi.fn() }),
+  useAutoOrganizeMods: () => ({ mutate: vi.fn() }),
+  useActiveConflicts: () => ({ data: [] }),
+}));
+
+vi.mock('../../../hooks/useFileDrop', () => ({
+  useFileDrop: () => ({ isDragging: false, dragPosition: null }),
+}));
+
+vi.mock('../../../hooks/useDragAutoScroll', () => ({
+  useDragAutoScroll: vi.fn(),
 }));
 
 vi.mock('../../../hooks/useActiveGame', () => ({

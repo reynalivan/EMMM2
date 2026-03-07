@@ -1,39 +1,24 @@
 /**
  * useFolderGrid — Orchestrator hook for the FolderGrid component.
  *
- * Composes: useFolderGridNav, useFolderGridActions, useFolderGridBulk
- * and manages data fetching, virtualization, keyboard, DnD.
- * Refactored from 651 lines → <200 lines for 350-line compliance.
+ * Composes: useFolderGridNav, useFolderGridActions, useFolderGridBulk,
+ *           useFolderGridLayout, useFolderGridImport
+ * and manages data fetching, keyboard, and selection.
  */
 
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useResponsive } from '../../../hooks/useResponsive';
 import { useObjects } from '../../../hooks/useObjects';
-import {
-  useModFolders,
-  sortFolders,
-  folderKeys,
-  useImportMods,
-  ModFolder,
-  useToggleMod,
-} from '../../../hooks/useFolders';
+import { useModFolders, sortFolders, useToggleMod, ModFolder } from '../../../hooks/useFolders';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useFolderNavigation } from './useFolderNavigation';
-import { useFileDrop } from '../../../hooks/useFileDrop';
 import { useFolderGridNav } from './useFolderGridNav';
 import { useFolderGridActions } from './useFolderGridActions';
 import { useFolderGridBulk } from './useFolderGridBulk';
-import { useDragAutoScroll } from '../../../hooks/useDragAutoScroll';
-
-// Grid layout constants
-const CARD_MIN_W = 160;
-const CARD_MAX_W = 280;
-const CARD_INFO_H = 70;
-const LIST_ROW_HEIGHT = 52;
-const GAP = 12;
+import { useFolderGridLayout } from './useFolderGridLayout';
+import { useFolderGridImport } from './useFolderGridImport';
 
 export function useFolderGrid() {
   'use no memo';
@@ -65,7 +50,6 @@ export function useFolderGrid() {
 
   const { isMobile } = useResponsive();
   const parentRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(800);
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
 
@@ -125,55 +109,17 @@ export function useFolderGrid() {
     [filteredFolders, sortField, sortOrder],
   );
 
-  // ── Layout & Virtualization ───────────────────────────────────────────────
+  // ── Layout & Virtualization (extracted) ───────────────────────────────────
   const isGridView = viewMode === 'grid' && !isMobile;
-  const columnCount = isGridView
-    ? Math.max(1, Math.floor((containerWidth + GAP) / (CARD_MIN_W + GAP)))
-    : 1;
-  const cardWidth = isGridView
-    ? Math.min(CARD_MAX_W, Math.floor((containerWidth - GAP * (columnCount - 1)) / columnCount))
-    : 0;
-  const cardHeight = isGridView ? Math.round(cardWidth * (4 / 3)) + CARD_INFO_H : 0;
-  const rowCount = isGridView
-    ? Math.ceil(sortedFolders.length / columnCount)
-    : sortedFolders.length;
 
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) setContainerWidth(entry.contentRect.width);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const rowVirtualizer = useVirtualizer({
-    count: rowCount,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => (isGridView ? cardHeight + GAP : LIST_ROW_HEIGHT),
-    overscan: 5,
-    initialOffset: explorerScrollOffset,
+  const { rowVirtualizer, columnCount, cardWidth } = useFolderGridLayout({
+    parentRef,
+    explorerSubPath,
+    explorerScrollOffset,
+    setExplorerScrollOffset,
+    isGridView,
+    itemCount: sortedFolders.length,
   });
-
-  useEffect(() => {
-    rowVirtualizer.scrollToOffset(0);
-  }, [explorerSubPath]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    let rafId: number;
-    const handleScroll = () => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => setExplorerScrollOffset(el.scrollTop));
-    };
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      el.removeEventListener('scroll', handleScroll);
-      cancelAnimationFrame(rafId);
-    };
-  }, [setExplorerScrollOffset]);
 
   // ── Composed Sub-Hooks ────────────────────────────────────────────────────
   const nav = useFolderGridNav({
@@ -291,58 +237,12 @@ export function useFolderGrid() {
     },
   });
 
-  // ── DnD & Refresh ────────────────────────────────────────────────────────
-  const importMods = useImportMods();
-
-  const handleImportFiles = useCallback(
-    async (paths: string[]) => {
-      if (!activeGame?.mod_path || paths.length === 0) return;
-
-      const { join } = await import('@tauri-apps/api/path');
-      const targetDir = explorerSubPath
-        ? await join(activeGame.mod_path, explorerSubPath)
-        : activeGame.mod_path;
-
-      // Classify paths to separate archives from folders/files
-      const { classifyDroppedPaths } = await import('../../object-list/dropUtils');
-      const classified = classifyDroppedPaths(paths);
-
-      // Archives → dispatch to ObjectList's shared ArchiveModal for preview/extraction
-      if (classified.archives.length > 0) {
-        window.dispatchEvent(
-          new CustomEvent('request-archive-import', {
-            detail: {
-              archives: classified.archives,
-              nonArchivePaths: [
-                ...classified.folders,
-                ...classified.iniFiles,
-                ...classified.images,
-              ],
-              targetDir,
-            },
-          }),
-        );
-      }
-
-      // Non-archive paths → import directly via shared hook
-      const nonArchivePaths = [...classified.folders, ...classified.iniFiles, ...classified.images];
-      if (nonArchivePaths.length > 0) {
-        importMods.mutate({ paths: nonArchivePaths, targetDir, strategy: 'Raw' });
-      }
-    },
-    [activeGame?.mod_path, explorerSubPath, importMods],
-  );
-
-  const { isDragging, dragPosition } = useFileDrop({ onDrop: handleImportFiles });
-
-  useDragAutoScroll({
-    containerRef: parentRef,
-    dragPosition,
+  // ── DnD & Import (extracted) ──────────────────────────────────────────────
+  const { isDragging, handleImportFiles, handleRefresh } = useFolderGridImport({
+    parentRef,
+    activeModPath: activeGame?.mod_path,
+    explorerSubPath,
   });
-
-  const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: folderKeys.all });
-  }, [queryClient]);
 
   return {
     // Data & State
