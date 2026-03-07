@@ -57,7 +57,7 @@ export default function ExplorerBreadcrumbs({
               ) : (
                 <button
                   onClick={() => onNavigate(realIndex)}
-                  className="hover:text-primary transition-colors hover:underline truncate max-w-[120px] text-xs"
+                  className="hover:text-primary transition-colors hover:underline truncate max-w-30 text-xs"
                   title={segment}
                 >
                   {segment}
