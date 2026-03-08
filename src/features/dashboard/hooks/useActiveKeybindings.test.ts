@@ -3,8 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useActiveKeybindings } from './useActiveKeybindings';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { invoke } from '@tauri-apps/api/core';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import React from 'react';
+import { createWrapper } from '../../../testing/test-utils';
+
+// Restore real @tanstack/react-query — the global setupTests stub
+// replaces useQuery with a no-op, which prevents queryFn from running.
+vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -13,14 +16,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('../../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
-
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return ({ children }: { children: React.ReactNode }) =>
-    React.createElement(QueryClientProvider, { client: queryClient }, children);
-};
 
 describe('useActiveKeybindings', () => {
   beforeEach(() => {
@@ -31,7 +26,7 @@ describe('useActiveKeybindings', () => {
     vi.mocked(useActiveGame).mockReturnValue({ activeGame: null } as unknown as ReturnType<
       typeof useActiveGame
     >);
-    const { result } = renderHook(() => useActiveKeybindings(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useActiveKeybindings(), { wrapper: createWrapper });
 
     expect(result.current.isLoading).toBe(false); // Query stays disabled
     expect(invoke).not.toHaveBeenCalled();
@@ -44,7 +39,7 @@ describe('useActiveKeybindings', () => {
     const mockBindings = [{ id: '1', key: 'F1', action: 'test' }];
     vi.mocked(invoke).mockResolvedValue(mockBindings);
 
-    const { result } = renderHook(() => useActiveKeybindings(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useActiveKeybindings(), { wrapper: createWrapper });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -61,7 +56,7 @@ describe('useActiveKeybindings', () => {
     } as unknown as ReturnType<typeof useActiveGame>);
     vi.mocked(invoke).mockRejectedValue(new Error('Fetch failed'));
 
-    const { result } = renderHook(() => useActiveKeybindings(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useActiveKeybindings(), { wrapper: createWrapper });
 
     await waitFor(() => {
       expect(result.current.isError).toBe(true);

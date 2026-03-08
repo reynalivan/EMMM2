@@ -20,6 +20,7 @@ import {
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { ModFolder } from '../../types/mod';
 import BulkContextMenu from './BulkContextMenu';
+import { useAppStore } from '../../stores/useAppStore';
 
 import {
   ContextMenu,
@@ -71,11 +72,11 @@ function FolderListRowInner({
   onToggleSafe,
   hasConflict = false,
 }: FolderListRowProps) {
-  // Lazy thumbnail: resolved per-row via separate backend command
   const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(item.path);
   const [imgError, setImgError] = useState(false);
   const thumbnailSrc = thumbnailPath && !imgError ? convertFileSrc(thumbnailPath) : null;
-  const isBulkSelection = isSelected && selectionSize > 1;
+  const isBulkSelection =
+    isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
 
   // Reset error state when thumbnail path changes
   useEffect(() => {

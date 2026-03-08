@@ -167,7 +167,17 @@ async fn run_pipeline(
         .map_err(|e| format!("Failed to create extract dir: {e}"))?;
 
     let password: Option<&str> = None; // No password UI yet; extend later
-    crate::services::mods::archive::extract_archive(&staging_path, &extract_dir, password, true)?;
+    crate::services::mods::archive::extract_archive(
+        &staging_path,
+        &extract_dir,
+        password,
+        true,
+        None,
+        None,
+        false,
+        false,
+        None,
+    )?;
 
     // -- Step 5: Validate (check for at least one .ini file) --
     let ini_count = walkdir::WalkDir::new(&extract_dir)

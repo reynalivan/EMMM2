@@ -1,6 +1,7 @@
 //! File system walker for mod directory scanning.
 //! Uses `walkdir` crate for efficient recursive traversal per TRD §3.2.
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -39,14 +40,18 @@ pub struct FolderContent {
 }
 
 /// Info about a detected archive file.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveInfo {
     pub path: String,
     pub name: String,
     pub extension: String,
     pub size_bytes: u64,
-    /// Whether the archive contains at least one `.ini` file.
-    pub has_ini: Option<bool>,
+    pub has_ini: bool,
+    pub file_count: usize,
+    /// Whether the archive requires a password for extraction.
+    pub is_encrypted: bool,
+    /// Whether the archive contains other archives (e.g. .zip, .rar, .7z).
+    pub contains_nested_archives: bool,
 }
 
 /// Valid archive extensions we support.
@@ -246,7 +251,10 @@ pub fn detect_archives(mods_path: &Path) -> Result<Vec<ArchiveInfo>, String> {
             name,
             extension,
             size_bytes,
-            has_ini: None, // Determined later during pre-extraction analysis
+            has_ini: false, // Determined later during pre-extraction analysis
+            file_count: 0,
+            is_encrypted: false,
+            contains_nested_archives: false,
         });
     }
 

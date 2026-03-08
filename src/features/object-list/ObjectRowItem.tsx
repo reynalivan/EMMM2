@@ -1,4 +1,4 @@
-import { type Ref, useMemo } from 'react';
+import { type Ref, useMemo, useRef, useState } from 'react';
 import {
   Component,
   Flame,
@@ -15,10 +15,11 @@ import {
   PowerOff,
   AlertTriangle,
 } from 'lucide-react';
-import { useState } from 'react';
 import type { ObjectSummary } from '../../types/object';
-import { cn } from '../../lib/utils';
-import { getFileUrl } from '../../lib/utils';
+import { cn, getFileUrl } from '../../lib/utils';
+import { useActiveGame } from '../../hooks/useActiveGame';
+import { useThumbnail } from '../../hooks/useThumbnail';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 /** Element icon map for metadata display */
 const ELEMENT_ICONS: Record<string, typeof Flame> = {
@@ -73,8 +74,28 @@ export default function ObjectRowItem({
   onToggleBulkSelect,
   ...rest
 }: ObjectRowItemProps) {
-  const thumbnailUrl = obj.thumbnail_path ? getFileUrl(obj.thumbnail_path) : null;
+  const { activeGame } = useActiveGame();
+
+  // Dynamic thumbnail: resolve from physical folder (same as FolderGrid)
+  const absFolderPath =
+    activeGame?.mod_path && obj.folder_path ? `${activeGame.mod_path}\\${obj.folder_path}` : null;
+  const { data: dynamicThumb } = useThumbnail(absFolderPath ?? '', !!absFolderPath);
+
+  // Fallback chain: dynamic folder scan → DB thumbnail_path (MasterDB) → null
+  const thumbnailUrl = dynamicThumb
+    ? convertFileSrc(dynamicThumb)
+    : obj.thumbnail_path
+      ? getFileUrl(obj.thumbnail_path)
+      : null;
+
   const [imgError, setImgError] = useState(false);
+
+  // Reset imgError when thumbnailUrl changes (e.g., after toggle/refetch)
+  const prevUrlRef = useRef(thumbnailUrl);
+  if (prevUrlRef.current !== thumbnailUrl) {
+    prevUrlRef.current = thumbnailUrl;
+    if (imgError) setImgError(false);
+  }
 
   const meta = useMemo(() => parseMetadata(obj.metadata), [obj.metadata]);
 

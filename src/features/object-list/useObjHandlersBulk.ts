@@ -16,7 +16,7 @@ import type { BulkResult } from '../../types/mod';
 
 interface BulkDeps {
   objects: ObjectSummary[];
-  toggleObjectMods: (objectId: string, enable: boolean) => Promise<void>;
+  toggleObjectMods: (objectId: string, enable: boolean, suppressToast?: boolean) => Promise<void>;
 }
 
 export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
@@ -43,13 +43,25 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
       }
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+      const count = ids.size;
+      const displayNames = Array.from(ids).map((id) => {
+        const obj = objects.find((o) => o.id === id);
+        return obj ? obj.name : id;
+      });
+
+      const itemsStr =
+        count <= 4
+          ? displayNames.join(', ')
+          : `${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+
       if (failed === 0) {
-        toast.success(`Deleted ${success} object${success !== 1 ? 's' : ''}.`);
+        toast.success(`Deleted ${itemsStr}`);
       } else {
         toast.error(`Deleted ${success}, failed ${failed}.`);
       }
     },
-    [deleteObjectMutation, queryClient],
+    [deleteObjectMutation, queryClient, objects],
   );
 
   const handleBulkPin = useCallback(
@@ -62,27 +74,62 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      toast.success(
-        `${pin ? 'Pinned' : 'Unpinned'} ${ids.size} object${ids.size !== 1 ? 's' : ''}.`,
-      );
+
+      const count = ids.size;
+      const displayNames = Array.from(ids).map((id) => {
+        const obj = objects.find((o) => o.id === id);
+        return obj ? obj.name : id;
+      });
+
+      const action = pin ? 'Pinned' : 'Unpinned';
+      const toastMsg =
+        count <= 4
+          ? `${action} ${displayNames.join(', ')}`
+          : `${action} ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+
+      toast.success(toastMsg);
     },
-    [queryClient],
+    [queryClient, objects],
   );
 
   const handleBulkEnable = useCallback(
     async (ids: Set<string>) => {
-      for (const id of ids) await toggleObjectMods(id, true);
-      toast.success(`Enabled ${ids.size} object${ids.size !== 1 ? 's' : ''}.`);
+      for (const id of ids) await toggleObjectMods(id, true, true);
+
+      const count = ids.size;
+      const displayNames = Array.from(ids).map((id) => {
+        const obj = objects.find((o) => o.id === id);
+        return obj ? obj.name : id;
+      });
+
+      const toastMsg =
+        count <= 4
+          ? `Enabled ${displayNames.join(', ')}`
+          : `Enabled ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+
+      toast.success(toastMsg);
     },
-    [toggleObjectMods],
+    [toggleObjectMods, objects],
   );
 
   const handleBulkDisable = useCallback(
     async (ids: Set<string>) => {
-      for (const id of ids) await toggleObjectMods(id, false);
-      toast.success(`Disabled ${ids.size} object${ids.size !== 1 ? 's' : ''}.`);
+      for (const id of ids) await toggleObjectMods(id, false, true);
+
+      const count = ids.size;
+      const displayNames = Array.from(ids).map((id) => {
+        const obj = objects.find((o) => o.id === id);
+        return obj ? obj.name : id;
+      });
+
+      const toastMsg =
+        count <= 4
+          ? `Disabled ${displayNames.join(', ')}`
+          : `Disabled ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+
+      toast.success(toastMsg);
     },
-    [toggleObjectMods],
+    [toggleObjectMods, objects],
   );
 
   const handleBulkAddTags = useCallback(
@@ -105,8 +152,20 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+
+      const count = ids.size;
+      const displayNames = Array.from(ids).map((id) => {
+        const obj = objects.find((o) => o.id === id);
+        return obj ? obj.name : id;
+      });
+
+      const itemsStr =
+        count <= 4
+          ? displayNames.join(', ')
+          : `${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+
       toast.success(
-        `Added ${tagsToAdd.length} tag${tagsToAdd.length !== 1 ? 's' : ''} to ${ids.size} object${ids.size !== 1 ? 's' : ''}.`,
+        `Added ${tagsToAdd.length} tag${tagsToAdd.length !== 1 ? 's' : ''} to ${itemsStr}`,
       );
     },
     [objects, queryClient],
@@ -133,8 +192,20 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+
+      const count = ids.size;
+      const displayNames = Array.from(ids).map((id) => {
+        const obj = objects.find((o) => o.id === id);
+        return obj ? obj.name : id;
+      });
+
+      const itemsStr =
+        count <= 4
+          ? displayNames.join(', ')
+          : `${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+
       toast.success(
-        `Removed ${tagsToRemove.length} tag${tagsToRemove.length !== 1 ? 's' : ''} from ${ids.size} object${ids.size !== 1 ? 's' : ''}.`,
+        `Removed ${tagsToRemove.length} tag${tagsToRemove.length !== 1 ? 's' : ''} from ${itemsStr}`,
       );
     },
     [objects, queryClient],

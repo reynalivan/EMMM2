@@ -107,10 +107,14 @@ export function useObjectListLogic() {
     isMobile,
   });
 
+  const [mismatchConfirm, setMismatchConfirm] = useState<string[] | null>(null);
+
   // --- Delegated: Handlers (use allObjects for reliable ID lookups) ---
   const handlers = useObjectListHandlers({
     objects: allObjects,
     schema,
+    mismatchConfirm,
+    setMismatchConfirm,
   });
 
   // Auto-sync: when a game is selected but DB has 0 mods, quick-import all as "Other".
@@ -294,9 +298,14 @@ export function useObjectListLogic() {
     handleArchivesInteractively: handlers.handleArchivesInteractively,
     handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,
     handleArchiveExtractSkip: handlers.handleArchiveExtractSkip,
+    handleStopExtraction: handlers.handleStopExtraction,
 
     // Bulk Select
     bulkSelect,
+
+    // Mismatch Confirmation
+    mismatchConfirm,
+    setMismatchConfirm,
     bulkTagModal: handlers.bulkTagModal,
     setBulkTagModal: handlers.setBulkTagModal,
     handleBulkDelete: handlers.handleBulkDelete,

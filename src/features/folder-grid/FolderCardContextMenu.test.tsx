@@ -14,6 +14,9 @@ vi.mock('lucide-react', () => ({
   Image: () => <div data-testid="icon-image" />,
   ArrowRightLeft: () => <div data-testid="icon-arrow" />,
   FolderOpen: () => <div data-testid="icon-folder-open" />,
+  ShieldCheck: () => <div data-testid="icon-shield-check" />,
+  ShieldOff: () => <div data-testid="icon-shield-off" />,
+  ClipboardPaste: () => <div data-testid="icon-clipboard-paste" />,
 }));
 
 // Mock custom hooks

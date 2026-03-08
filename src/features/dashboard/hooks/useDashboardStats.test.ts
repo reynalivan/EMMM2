@@ -3,8 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboardStats } from './useDashboardStats';
 import { useAppStore } from '../../../stores/useAppStore';
 import { invoke } from '@tauri-apps/api/core';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import React from 'react';
+import { createWrapper } from '../../../testing/test-utils';
+
+// Restore real @tanstack/react-query — the global setupTests stub
+// replaces useQuery with a no-op, which prevents queryFn from running.
+vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -13,14 +16,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('../../../stores/useAppStore', () => ({
   useAppStore: vi.fn(),
 }));
-
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return ({ children }: { children: React.ReactNode }) =>
-    React.createElement(QueryClientProvider, { client: queryClient }, children);
-};
 
 describe('useDashboardStats', () => {
   beforeEach(() => {
@@ -35,7 +30,7 @@ describe('useDashboardStats', () => {
     const mockPayload = { games: 2, storage: 100 };
     vi.mocked(invoke).mockResolvedValue(mockPayload);
 
-    const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -53,7 +48,7 @@ describe('useDashboardStats', () => {
     const mockPayload = { games: 1, storage: 50 };
     vi.mocked(invoke).mockResolvedValue(mockPayload);
 
-    const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);

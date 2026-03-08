@@ -8,13 +8,14 @@
  * don't need to change their import paths.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
 import { folderKeys, updateFolderCache } from './useFolders';
 import type {
+  FolderGridResponse,
   BulkResult,
   ModInfo,
   ModInfoUpdate,
@@ -158,6 +159,31 @@ export function useUpdateModInfo() {
 
 export type ImportStrategy = 'Raw' | 'AutoOrganize';
 
+/** Helper to construct bulk toast messages with explicit names. */
+function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: string): string {
+  const count = paths.length;
+  if (count === 0) return '';
+
+  const displayNames = paths.map((p) => {
+    let name = p.split(/[/\\]/).pop() || '';
+    if (name.startsWith('DISABLED ')) name = name.substring(9);
+
+    const prevQueries = queryClient.getQueriesData<FolderGridResponse>({
+      queryKey: folderKeys.all,
+    });
+    for (const [, data] of prevQueries) {
+      if (!data) continue;
+      const match = data.children.find((f) => f.path === p);
+      if (match) return match.name;
+    }
+    return name;
+  });
+
+  return count <= 4
+    ? `${action} ${displayNames.join(', ')}`
+    : `${action} ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+}
+
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {
   const queryClient = useQueryClient();
@@ -165,7 +191,7 @@ export function useBulkToggle() {
   return useMutation({
     mutationFn: (params: { paths: string[]; enable: boolean }) =>
       invoke<BulkResult>('bulk_toggle_mods', params),
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       result.success.forEach((path) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
       });
@@ -177,7 +203,8 @@ export function useBulkToggle() {
       queryClient.invalidateQueries({ queryKey: ['objects'] });
 
       if (result.success.length > 0) {
-        toast.success(`Toggled ${result.success.length} items successfully`);
+        const action = variables.enable ? 'Enabled' : 'Disabled';
+        toast.success(getBulkToastMessage(queryClient, result.success, action));
       }
       if (result.failures.length > 0) {
         toast.error(`Failed to toggle ${result.failures.length} items`);
@@ -202,7 +229,7 @@ export function useBulkDelete() {
       queryClient.invalidateQueries({ queryKey: ['objects'] });
 
       if (result.success.length > 0) {
-        toast.success(`Deleted ${result.success.length} items successfully`);
+        toast.success(getBulkToastMessage(queryClient, result.success, 'Deleted'));
       }
       if (result.failures.length > 0) {
         toast.error(`Failed to delete ${result.failures.length} items`);
@@ -230,7 +257,7 @@ export function useBulkUpdateInfo() {
         };
       });
       if (result.success.length > 0) {
-        toast.success(`Updated ${result.success.length} items successfully`);
+        toast.success(getBulkToastMessage(queryClient, result.success, 'Updated'));
       }
       if (result.failures.length > 0) {
         toast.error(`Failed to update ${result.failures.length} items`);
@@ -252,9 +279,8 @@ export function useBulkFavorite() {
         is_favorite: variables.favorite,
       }));
       if (result.success.length > 0) {
-        toast.success(
-          `${variables.favorite ? 'Favorited' : 'Unfavorited'} ${result.success.length} items`,
-        );
+        const action = variables.favorite ? 'Favorited' : 'Unfavorited';
+        toast.success(getBulkToastMessage(queryClient, result.success, action));
       }
       if (result.failures.length > 0) {
         toast.error(`Failed to update ${result.failures.length} items`);
@@ -276,7 +302,8 @@ export function useBulkPin() {
         is_pinned: variables.pin,
       }));
       if (result.success.length > 0) {
-        toast.success(`${variables.pin ? 'Pinned' : 'Unpinned'} ${result.success.length} items`);
+        const action = variables.pin ? 'Pinned' : 'Unpinned';
+        toast.success(getBulkToastMessage(queryClient, result.success, action));
       }
       if (result.failures.length > 0) {
         toast.error(`Failed to update ${result.failures.length} items`);

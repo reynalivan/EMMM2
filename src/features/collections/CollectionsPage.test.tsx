@@ -4,6 +4,10 @@ import { invoke } from '@tauri-apps/api/core';
 import CollectionsPage from './CollectionsPage';
 import { useAppStore } from '../../stores/useAppStore';
 
+// Restore real @tanstack/react-query — the global setupTests stub replaces
+// useQuery/useMutation with no-ops, preventing invoke from ever being called.
+vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));

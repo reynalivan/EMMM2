@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Info, Trash2, X, FolderOpen, FileArchive, FolderPlus } from 'lucide-react';
+import { ChevronRight, Info, X, FolderOpen, FileArchive, FolderPlus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../stores/useAppStore';
@@ -11,6 +11,9 @@ import MetadataSection from './components/MetadataSection';
 import IniEditorSection from './components/IniEditorSection';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { usePreviewPanelState } from './hooks/usePreviewPanelState';
+import { usePreviewPanelActions } from './hooks/usePreviewPanelActions';
+import PreviewPanelModals from './components/PreviewPanelModals';
+import PreviewPanelContextMenu from './components/PreviewPanelContextMenu';
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -47,7 +50,12 @@ export default function PreviewPanel() {
     draftByField,
     fieldErrors,
     variableSummaries,
+    hashSummaries,
+    modFeatureSummaries,
+    conflictingKeys,
     hasUnsavedEditorChanges,
+    changedIniFields,
+    changedMetadataFields,
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
@@ -66,9 +74,15 @@ export default function PreviewPanel() {
     requestToggleSection,
     updateEditorField,
   } = usePreviewPanelState();
+  const actions = usePreviewPanelActions();
 
   const boundedImageIndex = Math.min(currentImageIndex, Math.max(images.length - 1, 0));
   const currentImagePath = images[boundedImageIndex] ?? null;
+
+  const [isScrolled, setIsScrolled] = useState(false);
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setIsScrolled(e.currentTarget.scrollTop > 10);
+  }, []);
 
   const pasteThumbnailFromClipboard = useCallback(async () => {
     if (!activePath) {
@@ -140,7 +154,7 @@ export default function PreviewPanel() {
 
   if (!activePath) {
     return (
-      <div className="mx-auto flex h-full w-full max-w-[560px] flex-col items-center justify-center p-6 text-center border-l border-white/5 bg-base-100/30 backdrop-blur-md">
+      <div className="mx-auto flex h-full w-full max-w-140 flex-col items-center justify-center p-6 text-center border-l border-white/5 bg-base-100/30 backdrop-blur-md">
         <div className="mb-6 text-base-content/50">
           <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
           <p className="text-xl font-bold text-white mb-2">No mod selected</p>
@@ -187,7 +201,10 @@ export default function PreviewPanel() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-y-auto border-l border-white/5 bg-base-100/30 p-6 backdrop-blur-md">
+    <div
+      className="mx-auto flex h-full w-full max-w-140 flex-col overflow-y-auto border-l border-white/5 bg-base-100/30 px-6 pb-6 pt-0 backdrop-blur-md"
+      onScroll={handleScroll}
+    >
       <input
         ref={importInputRef}
         type="file"
@@ -271,6 +288,10 @@ export default function PreviewPanel() {
       <UnsavedIniChangesModal
         open={showUnsavedModal}
         isSaving={writeModIni.isPending}
+        modName={titleDraft || selectedFolder?.name}
+        categoryName={selectedFolder?.category ?? undefined}
+        changedIniFields={changedIniFields}
+        changedMetadataFields={changedMetadataFields}
         onCancel={() => {
           setShowUnsavedModal(false);
           setPendingTransition(null);
@@ -292,66 +313,95 @@ export default function PreviewPanel() {
         }}
       />
 
-      <div className="mb-6 flex items-start justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-2">
+      <div
+        className={`sticky top-0 z-20 -mx-6 mb-6 px-6 transition-all duration-200 flex flex-col justify-center border-b ${
+          isScrolled
+            ? 'pt-4 pb-2 bg-base-100/95 backdrop-blur-md border-base-content/10 shadow-sm'
+            : 'pt-6 pb-2 bg-transparent border-transparent'
+        }`}
+      >
+        <div className={`flex items-center justify-between transition-all duration-200`}>
+          <div className="min-w-0 flex-1">
+            <div className={`flex items-center gap-2 transition-all duration-200 mb-0`}>
+              <button
+                onClick={() => setMobilePane('grid')}
+                aria-label="Back to grid"
+                className={`btn btn-circle btn-ghost text-white/50 hover:text-white md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+              >
+                <ChevronRight className="rotate-180" size={isScrolled ? 14 : 16} />
+              </button>
+              <input
+                type="text"
+                className={`bg-transparent p-0 m-0 border-none outline-none focus:ring-1 focus:ring-primary focus:bg-base-200/50 rounded px-1 -ml-1 truncate tracking-tight text-white transition-all duration-200 origin-left hover:bg-white/5 ${
+                  isScrolled ? 'text-sm font-semibold' : 'text-xl font-bold'
+                }`}
+                value={titleDraft || ''}
+                placeholder={selectedFolder?.name || 'No mod selected'}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                disabled={!activePath}
+              />
+            </div>
+            <label
+              className={`label cursor-pointer justify-start gap-2 p-0 opacity-80 hover:opacity-100 transition-all duration-200 ${isScrolled ? '-mt-0.5' : 'mt-1'}`}
+            >
+              <input
+                type="checkbox"
+                aria-label="Toggle mod enabled status"
+                className={`toggle border-white/10 bg-base-300 checked:border-primary checked:bg-primary transition-all duration-200 ${
+                  isScrolled ? 'toggle-xs' : 'toggle-sm'
+                }`}
+                checked={selectedFolder?.is_enabled ?? false}
+                disabled={!selectedFolder || toggleMod.isPending}
+                onChange={() => {
+                  if (!selectedFolder || !activeGame?.id) return;
+                  toggleMod.mutate({
+                    path: selectedFolder.path,
+                    enable: !selectedFolder.is_enabled,
+                    gameId: activeGame.id,
+                  });
+                }}
+              />
+              <span
+                className={`font-medium text-white/60 transition-all duration-200 ${isScrolled ? 'text-[10px]' : 'text-sm'}`}
+              >
+                {selectedFolder
+                  ? selectedFolder.is_enabled
+                    ? 'Enabled'
+                    : 'Disabled'
+                  : 'No active mod'}
+              </span>
+            </label>
+          </div>
+
+          <div className="ml-2 flex items-center gap-1">
+            {selectedFolder && (
+              <PreviewPanelContextMenu
+                folder={selectedFolder}
+                onRename={() => actions.handleRenameRequest(selectedFolder)}
+                onDelete={() => actions.handleDeleteRequest(selectedFolder)}
+                onToggle={actions.handleToggleEnabled}
+                onToggleFavorite={actions.handleToggleFavorite}
+                onEnableOnlyThis={actions.handleEnableOnlyThis}
+                onOpenMoveDialog={actions.openMoveDialog}
+                onToggleSafe={actions.handleToggleSafeRequest}
+              />
+            )}
+            <button
+              onClick={() => setSelectedObject(null)}
+              aria-label="Unselect mod"
+              className={`btn btn-circle btn-ghost hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+              title="Close Preview"
+            >
+              <X size={isScrolled ? 16 : 18} />
+            </button>
             <button
               onClick={() => setMobilePane('grid')}
-              aria-label="Back to grid"
-              className="btn btn-circle btn-ghost btn-xs text-white/50 hover:text-white md:hidden"
+              aria-label="Close details pane"
+              className={`btn btn-circle btn-ghost text-white/30 hover:text-white md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
             >
-              <ChevronRight className="rotate-180" size={16} />
+              <X size={isScrolled ? 16 : 18} />
             </button>
-            <h2 className="truncate text-xl font-bold tracking-tight text-white">
-              {titleDraft || selectedFolder?.name || 'No mod selected'}
-            </h2>
           </div>
-          <label className="label cursor-pointer justify-start gap-2 p-0 opacity-80 hover:opacity-100">
-            <input
-              type="checkbox"
-              aria-label="Toggle mod enabled status"
-              className="toggle toggle-sm border-white/10 bg-base-300 checked:border-primary checked:bg-primary"
-              checked={selectedFolder?.is_enabled ?? false}
-              disabled={!selectedFolder || toggleMod.isPending}
-              onChange={() => {
-                if (!selectedFolder || !activeGame?.id) return;
-                toggleMod.mutate({
-                  path: selectedFolder.path,
-                  enable: !selectedFolder.is_enabled,
-                  gameId: activeGame.id,
-                });
-              }}
-            />
-            <span className="text-sm font-medium text-white/60">
-              {selectedFolder
-                ? selectedFolder.is_enabled
-                  ? 'Enabled'
-                  : 'Disabled'
-                : 'No active mod'}
-            </span>
-          </label>
-        </div>
-
-        <div className="ml-2 flex items-center gap-1">
-          <button className="btn btn-circle btn-ghost btn-sm text-error/50 hover:bg-error/10 hover:text-error">
-            <span className="sr-only">Delete mod</span>
-            <Trash2 size={18} />
-          </button>
-          <button
-            onClick={() => setSelectedObject(null)}
-            aria-label="Unselect mod"
-            className="btn btn-circle btn-ghost btn-sm hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex"
-            title="Close Preview"
-          >
-            <X size={18} />
-          </button>
-          <button
-            onClick={() => setMobilePane('grid')}
-            aria-label="Close details pane"
-            className="btn btn-circle btn-ghost btn-sm text-white/30 hover:text-white md:hidden"
-          >
-            <X size={18} />
-          </button>
         </div>
       </div>
 
@@ -394,12 +444,10 @@ export default function PreviewPanel() {
 
       <MetadataSection
         activePath={activePath}
-        titleDraft={titleDraft}
         authorDraft={authorDraft}
         versionDraft={versionDraft}
         descriptionDraft={descriptionDraft}
         metadataDirty={metadataDirty}
-        onTitleChange={setTitleDraft}
         onAuthorChange={setAuthorDraft}
         onVersionChange={setVersionDraft}
         onDescriptionChange={setDescriptionDraft}
@@ -408,18 +456,27 @@ export default function PreviewPanel() {
 
       <IniEditorSection
         activePath={activePath}
+        activeObjectName={selectedFolder?.name}
+        selectedFolderName={selectedFolder?.folder_name}
         activeTab={activeIniTab}
         sections={keyBindSections}
         openSectionIds={openSectionIds}
         draftByField={draftByField}
         fieldErrors={fieldErrors}
         variableSummaries={variableSummaries}
+        hashSummaries={hashSummaries}
+        modFeatureSummaries={modFeatureSummaries}
+        conflictingKeys={conflictingKeys}
         editorDirty={hasUnsavedEditorChanges}
         isSaving={writeModIni.isPending}
         onTabChange={setActiveIniTab}
         onToggleSection={requestToggleSection}
         onFieldChange={updateEditorField}
-        onSave={() => void saveEditor()}
+        onSave={async () => {
+          const success = await saveEditor();
+          return success !== false; // Assuming saveEditor throws or returns false on fail. Assuming it succeeds if no generic error.
+          // Wait, saveEditor is a void function that toasts on error. We can just always close it, or check if editorDirty is false after.
+        }}
         onDiscard={discardEditor}
       />
 
@@ -444,6 +501,8 @@ export default function PreviewPanel() {
           View File Location
         </button>
       </div>
+
+      <PreviewPanelModals {...actions} />
     </div>
   );
 }

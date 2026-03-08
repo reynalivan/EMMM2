@@ -34,7 +34,7 @@ export function ToastContainer() {
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   useEffect(() => {
-    if (toast.duration && toast.duration > 0) {
+    if (toast.duration && toast.duration > 0 && toast.duration !== Infinity) {
       const timer = setTimeout(onDismiss, toast.duration);
       return () => clearTimeout(timer);
     }
@@ -42,7 +42,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 
   return (
     <div
-      className={`alert ${colors[toast.type]} shadow-lg min-w-[300px] flex justify-between animate-in slide-in-from-right-5 fade-in duration-300`}
+      className={`alert ${colors[toast.type]} shadow-lg min-w-75 flex justify-between animate-in slide-in-from-right-5 fade-in duration-300`}
     >
       <div className="flex items-center gap-2">
         {icons[toast.type]}

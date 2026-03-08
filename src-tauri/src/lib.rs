@@ -166,6 +166,7 @@ pub fn run() {
         .manage(services::scanner::watcher::WatcherState::new())
         .manage(services::fs_utils::operation_lock::OperationLock::new())
         .manage(commands::objects::master_db_cmds::MasterDbCache::new())
+        .manage(commands::scanner::archive_cmds::ExtractionState::new())
         .invoke_handler(tauri::generate_handler![
             commands::app::app_cmds::check_config_status,
             commands::app::dashboard_cmds::get_dashboard_stats,
@@ -188,6 +189,8 @@ pub fn run() {
             commands::scanner::archive_cmds::detect_archives_cmd,
             commands::scanner::archive_cmds::extract_archive_cmd,
             commands::scanner::archive_cmds::analyze_archive_cmd,
+            commands::scanner::archive_cmds::match_check_folder_cmd,
+            commands::scanner::archive_cmds::abort_extraction_cmd,
             commands::scanner::scan_cmds::start_scan,
             commands::scanner::organize_cmds::auto_organize_mods,
             commands::scanner::scan_cmds::get_scan_result,

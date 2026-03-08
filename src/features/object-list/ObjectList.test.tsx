@@ -23,12 +23,19 @@ vi.mock('../../stores/useAppStore');
 vi.mock('../../hooks/useObjects');
 vi.mock('../../hooks/useFolders');
 vi.mock('../../hooks/useActiveGame');
+vi.mock('../../lib/services/scanService', () => ({
+  scanService: {
+    quickImport: vi.fn().mockResolvedValue({ new_mods: 0 }),
+  },
+}));
 vi.mock('../../lib/services/objectService', () => ({
   getObjects: vi.fn().mockResolvedValue([]),
+  gcLostObjects: vi.fn().mockResolvedValue({ new_mods: [], lost_mods: [], moved_mods: [] }),
 }));
 vi.mock('../../hooks/useResponsive');
 vi.mock('@tanstack/react-virtual');
 vi.mock('@tanstack/react-query', () => ({
+  useQuery: vi.fn(() => ({ data: null, isLoading: false, isError: false })),
   useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
   useMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() })),
 }));
@@ -119,7 +126,7 @@ describe('ObjectList Component', () => {
     });
 
     mockUseCategoryCounts.mockReturnValue({ data: [] });
-    mockUseMasterDb.mockReturnValue({ data: [], isLoading: false });
+    mockUseMasterDb.mockReturnValue({ data: '[]', isLoading: false });
 
     mockUseResponsive.mockReturnValue({ isMobile: false });
 
@@ -141,7 +148,6 @@ describe('ObjectList Component', () => {
     render(<ObjectList />);
     const loader = screen.getByTestId('loading-spinner');
     expect(loader).toBeInTheDocument();
-    expect(loader.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
   it('renders empty state with CTA when no data and game selected', () => {

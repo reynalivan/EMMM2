@@ -14,6 +14,10 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
+vi.mock('../../hooks/useFolders', () => ({
+  useActiveConflicts: () => ({ data: [] }),
+}));
+
 vi.mock('../../hooks/useSettings', () => ({
   useSettings: () => ({ data: { organize_subfolders: true }, isLoading: false }),
 }));
@@ -50,6 +54,7 @@ const defaultHookReturn = {
   sortedFolders: [],
   conflicts: [],
   isLoading: false,
+  isPlaceholderData: false,
   isError: false,
   error: null,
   selfNodeType: null,
@@ -82,6 +87,7 @@ const defaultHookReturn = {
   setExplorerSearch: vi.fn(),
   handleSortToggle: vi.fn(),
   handleKeyDown: vi.fn(),
+  handleRefresh: vi.fn(),
   focusedId: null,
   gridSelection: new Set(),
   toggleGridSelection: vi.fn(),
@@ -89,6 +95,12 @@ const defaultHookReturn = {
   handleToggleSelf: vi.fn(),
   handleToggleEnabled: vi.fn(),
   handleToggleFavorite: vi.fn(),
+  handleEnableOnlyThis: vi.fn(),
+  handleMoveToObject: vi.fn(),
+  openMoveDialog: vi.fn(),
+  closeMoveDialog: vi.fn(),
+  objects: [],
+  moveDialog: { open: false, folder: null },
   renamingId: null,
   handleRenameRequest: vi.fn(),
   handleRenameSubmit: vi.fn(),
@@ -97,12 +109,15 @@ const defaultHookReturn = {
   setDeleteConfirm: vi.fn(),
   handleDeleteRequest: vi.fn(),
   handleDeleteConfirm: vi.fn(),
+  isPreviewOpen: false,
+  togglePreview: vi.fn(),
   bulkTagOpen: false,
   setBulkTagOpen: vi.fn(),
   bulkDeleteConfirm: false,
   setBulkDeleteConfirm: vi.fn(),
   handleBulkToggle: vi.fn(),
   handleBulkTagRequest: vi.fn(),
+  handleBulkDeleteRequest: vi.fn(),
   handleBulkDeleteConfirm: vi.fn(),
   handleBulkFavorite: vi.fn(),
   handleBulkSafe: vi.fn(),
@@ -123,17 +138,6 @@ const defaultHookReturn = {
   handleDuplicateForceEnable: vi.fn(),
   handleDuplicateEnableOnly: vi.fn(),
   handleDuplicateCancel: vi.fn(),
-
-  // Enable Only This
-  handleEnableOnlyThis: vi.fn(),
-
-  // Refresh
-  handleRefresh: vi.fn(),
-
-  // Move
-  moveDialog: { open: false, folder: null },
-  setMoveDialog: vi.fn(),
-  handleMoveRequest: vi.fn(),
 };
 
 describe('FolderGrid', () => {

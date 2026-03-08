@@ -23,6 +23,7 @@ import DropConfirmModal from './DropConfirmModal';
 import ArchiveModal from '../scanner/components/ArchiveModal';
 import BulkTagModal from './BulkTagModal';
 import { useAppStore } from '../../stores/useAppStore';
+import { cn } from '../../lib/utils';
 
 export default function ObjectList() {
   const {
@@ -79,16 +80,17 @@ export default function ObjectList() {
     handleEnableObject,
     handleDisableObject,
     categoryNames,
-    scanReview,
-    handleCommitScan,
-    handleCloseScanReview,
     handleDropOnItem,
     handleDropAutoOrganize,
     handleDropOnNewObjectSubmit,
-    archiveModal,
+    scanReview,
+    handleCommitScan,
+    handleCloseScanReview,
+    archiveModal, // Restored to original name
     handleArchivesInteractively,
     handleArchiveExtractSubmit,
     handleArchiveExtractSkip,
+    handleStopExtraction,
     // Bulk
     bulkSelect,
     bulkTagModal,
@@ -106,6 +108,7 @@ export default function ObjectList() {
   const [autoSetupOpen, setAutoSetupOpen] = useState(false);
   /** Pending paths for the "create new object with pre-selected files" flow */
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
+  const [mismatchConfirm, setMismatchConfirm] = useState<string[] | null>(null);
 
   // --- Refs for zone hit-testing ---
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -243,8 +246,50 @@ export default function ObjectList() {
     handleDisableObject,
   };
 
+  const activePane = useAppStore((state) => state.activePane);
+  const setActivePane = useAppStore((state) => state.setActivePane);
+
   return (
-    <div className={`flex flex-col h-full bg-base-100/50 relative`}>
+    <div
+      className={cn(
+        'flex flex-col h-full bg-base-100/50 relative outline-none transition-shadow duration-200',
+        activePane === 'objectList' && 'ring-1 ring-inset ring-primary/20',
+      )}
+      tabIndex={-1}
+      onFocus={(e) => {
+        // Prevent setting focus if clicking inside a modal or portal that bubbles up
+        if (!e.defaultPrevented) setActivePane('objectList');
+      }}
+      onKeyDown={(e) => {
+        if (activePane !== 'objectList') return;
+
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+          e.preventDefault();
+          bulkSelect.selectAll();
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          if (bulkSelect.isAnySelected) {
+            e.preventDefault();
+            bulkSelect.clearSelection();
+            return;
+          }
+        }
+
+        if (e.key === 'Delete') {
+          if (bulkSelect.isAnySelected) {
+            e.preventDefault();
+            handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection);
+            return;
+          } else if (selectedObject) {
+            e.preventDefault();
+            handleDeleteObject(selectedObject);
+            return;
+          }
+        }
+      }}
+    >
       {/* Toolbar: search, category selector, sort, actions — also Auto Organize drop zone */}
       <div ref={toolbarRef}>
         <ObjectListToolbar
@@ -269,7 +314,7 @@ export default function ObjectList() {
           isDragging={isDragging}
           isActiveZone={activeDropZone === 'auto-organize'}
           bulkSelect={{
-            isAnySelected: bulkSelect.isAnySelected,
+            isAnySelected: activePane === 'objectList' && bulkSelect.isAnySelected,
             selectionCount: bulkSelect.selectionCount,
             onDelete: () =>
               handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
@@ -445,7 +490,11 @@ export default function ObjectList() {
         onCloseScanReview={handleCloseScanReview}
         createModalOpen={createModalOpen}
         pendingPaths={pendingPaths}
-        onImportDropped={handleDropOnNewObjectSubmit}
+        onImportDropped={(newObjId, newObjName, paths) => {
+          handleDropOnNewObjectSubmit(newObjId, newObjName, paths);
+          setCreateModalOpen(false);
+          setPendingPaths(null);
+        }}
         onCloseCreate={() => {
           setCreateModalOpen(false);
           setPendingPaths(null);
@@ -455,6 +504,14 @@ export default function ObjectList() {
         deleteObjectDialog={deleteObjectDialog}
         onConfirmDeleteObject={confirmDeleteObject}
         onCancelDeleteObject={() => setDeleteObjectDialog({ open: false, id: '', name: '' })}
+        mismatchConfirm={mismatchConfirm}
+        onConfirmMismatchHandler={() => {
+          if (mismatchConfirm) {
+            handleDropAutoOrganize(mismatchConfirm);
+          }
+          setMismatchConfirm(null);
+        }}
+        onCancelMismatchHandler={() => setMismatchConfirm(null)}
       />
 
       {/* Pre-drop validation modal */}
@@ -473,8 +530,17 @@ export default function ObjectList() {
         archives={archiveModal.archives}
         isExtracting={archiveModal.isExtracting}
         error={archiveModal.error}
+        passwordError={archiveModal.passwordError}
+        extractProgress={archiveModal.extractProgress}
+        fileProgress={archiveModal.fileProgress}
         onExtract={handleArchiveExtractSubmit}
         onSkip={handleArchiveExtractSkip}
+        onStop={handleStopExtraction}
+        targetObjectName={
+          archiveModal.pendingDropContext?.targetObjectId
+            ? objects.find((o) => o.id === archiveModal.pendingDropContext?.targetObjectId)?.name
+            : undefined
+        }
       />
 
       {/* Bulk tag modal */}

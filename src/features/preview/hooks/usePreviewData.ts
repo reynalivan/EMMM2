@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { ModInfo, ModInfoUpdate } from '../../../types/mod';
+import type { ConflictInfo } from '../../../types/scanner';
 import { folderKeys } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
 
@@ -82,6 +83,7 @@ export const detailsKeys = {
     [...detailsKeys.all, 'ini-document', folderPath, fileName] as const,
   previewImages: (folderPath: string) =>
     [...detailsKeys.all, 'preview-images', folderPath] as const,
+  conflicts: (folderPath: string) => [...detailsKeys.all, 'conflicts', folderPath] as const,
 };
 
 function normalizeFolderPath(folderPath?: string | null): string | null {
@@ -113,6 +115,17 @@ export function useModIniFiles(folderPath?: string | null) {
     queryFn: () => invoke<IniFileEntry[]>('list_mod_ini_files', { folderPath: normalizedPath }),
     enabled: !!normalizedPath,
     staleTime: 10_000,
+  });
+}
+
+export function useIniConflicts(folderPath?: string | null, enabled?: boolean) {
+  const normalizedPath = normalizeFolderPath(folderPath);
+
+  return useQuery({
+    queryKey: detailsKeys.conflicts(normalizedPath ?? ''),
+    queryFn: () => invoke<ConflictInfo[]>('check_shader_conflicts', { folderPath: normalizedPath }),
+    enabled: !!normalizedPath && enabled !== false,
+    staleTime: 5000,
   });
 }
 
@@ -182,7 +195,7 @@ export function usePastePreviewImage() {
     mutationFn: (input: PastePreviewImageInput) => invoke<string>('paste_thumbnail', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
 }
@@ -195,7 +208,7 @@ export function useSavePreviewImage() {
       invoke<string>('save_mod_preview_image', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
 }
@@ -208,7 +221,7 @@ export function useRemovePreviewImage() {
       invoke<void>('remove_mod_preview_image', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
 }
@@ -221,7 +234,7 @@ export function useClearPreviewImages() {
       invoke<string[]>('clear_mod_preview_images', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
 }
@@ -233,7 +246,7 @@ export function useUpdateModInfoDetails() {
     mutationFn: (input: UpdateModInfoInput) => invoke<ModInfo>('update_mod_info', { ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.modInfo(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
     },
   });
 }

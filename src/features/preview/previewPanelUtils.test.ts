@@ -44,8 +44,10 @@ describe('previewPanelUtils', () => {
     ]);
 
     expect(sections).toHaveLength(1);
-    expect(sections[0].sectionName).toBe('KeySwap');
-    expect(sections[0].fields.map((field) => field.label)).toEqual([
+    expect(sections[0].fileName).toBe('config.ini');
+    expect(sections[0].sections).toHaveLength(1);
+    expect(sections[0].sections[0].sectionName).toBe('KeySwap');
+    expect(sections[0].sections[0].fields.map((field) => field.label)).toEqual([
       'key',
       'back',
       '$active',

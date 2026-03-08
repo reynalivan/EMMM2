@@ -62,6 +62,10 @@ interface AppState {
   watcherCooldownUntil: number;
   setWatcherCooldown: (until: number) => void;
 
+  // Context-Aware Selection
+  activePane: 'objectList' | 'folderGrid';
+  setActivePane: (pane: 'objectList' | 'folderGrid') => void;
+
   // Actions
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
@@ -157,6 +161,10 @@ export const useAppStore = create<AppState>()(
       // Watcher cooldown
       watcherCooldownUntil: 0,
       setWatcherCooldown: (until) => set({ watcherCooldownUntil: until }),
+
+      // Context-Aware Selection
+      activePane: 'objectList',
+      setActivePane: (pane) => set({ activePane: pane }),
 
       // Store Initialization
       initStore: async () => {

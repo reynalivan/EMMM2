@@ -133,6 +133,10 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
         obj.folder_path, "DISABLED MyFallbackMod",
         "Folder path must reflect physical directory"
     );
+    assert_eq!(
+        obj.is_object_disabled, true,
+        "TC-10-xx: Object disabled state should be reflected correctly"
+    );
 
     Ok(())
 }

@@ -17,6 +17,8 @@ import {
 } from './usePreviewData';
 import { useAppStore } from '../../../stores/useAppStore';
 
+vi.unmock('@tanstack/react-query');
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));

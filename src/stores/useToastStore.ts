@@ -65,7 +65,7 @@ export const toast = {
     useToastStore.getState().addToast('info', msg, duration),
   warning: (msg: string, duration?: number) =>
     useToastStore.getState().addToast('warning', msg, duration),
-  /** Show a toast with an action button (e.g. undo). Default 5s duration. */
+  /** Show a toast with an action button (e.g. undo). Pass Infinity to duration to keep it open. */
   withAction: (type: ToastType, msg: string, action: ToastAction, duration?: number) =>
     useToastStore.getState().addToastWithAction(type, msg, action, duration),
 };

@@ -19,6 +19,9 @@ import {
 import {
   buildKeyBindSections,
   buildVariableInfoSummaries,
+  buildHashSummaries,
+  buildModFeatureSummaries,
+  getConflictingKeys,
   toFieldValueMap,
   toIniWritePayload,
 } from '../previewPanelUtils';
@@ -94,20 +97,38 @@ export function usePreviewPanelState() {
 
   const keyBindSections = useMemo(() => buildKeyBindSections(iniDocuments), [iniDocuments]);
   const allKeyBindFields = useMemo(
-    () => keyBindSections.flatMap((section) => section.fields),
+    () => keyBindSections.flatMap((group) => group.sections.flatMap((section) => section.fields)),
     [keyBindSections],
   );
   const variableSummaries = useMemo(() => buildVariableInfoSummaries(iniDocuments), [iniDocuments]);
 
-  const hasUnsavedEditorChanges = useMemo(
-    () =>
-      allKeyBindFields.some(
-        (field) => (draftByField[field.id] ?? '') !== (initialByField[field.id] ?? ''),
-      ),
-    [allKeyBindFields, draftByField, initialByField],
+  const hashSummaries = useMemo(() => buildHashSummaries(iniDocuments), [iniDocuments]);
+  const modFeatureSummaries = useMemo(
+    () => buildModFeatureSummaries(variableSummaries, keyBindSections),
+    [variableSummaries, keyBindSections],
+  );
+  const conflictingKeys = useMemo(
+    () => getConflictingKeys(keyBindSections, draftByField),
+    [keyBindSections, draftByField],
   );
 
+  const changedIniFields = useMemo(() => {
+    return allKeyBindFields
+      .filter((field) => (draftByField[field.id] ?? '') !== (initialByField[field.id] ?? ''))
+      .map((field) => ({
+        label: field.label || field.id,
+        filename: field.id.split('::')[0] || 'Unknown INI',
+        oldValue: initialByField[field.id] ?? '',
+        newValue: draftByField[field.id] ?? '',
+      }));
+  }, [allKeyBindFields, draftByField, initialByField]);
+
+  const hasUnsavedEditorChanges = changedIniFields.length > 0;
+
   const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
+
+  const fallbackTitle = selectedFolder?.name ?? '';
+  const metaSource = modInfoQuery.data;
 
   const {
     titleDraft,
@@ -123,14 +144,53 @@ export function usePreviewPanelState() {
     discardMetadata,
   } = useMetadataDraft({
     activePath,
-    fallbackTitle: selectedFolder?.name ?? '',
-    source: modInfoQuery.data,
+    fallbackTitle,
+    source: metaSource,
     onSave: async (folderPath, draft) =>
       updateModInfo.mutateAsync({
         folderPath,
         update: draft,
       }),
   });
+
+  const changedMetadataFields = useMemo(() => {
+    const changes: { label: string; oldValue: string; newValue: string }[] = [];
+    if (!metadataDirty) return changes;
+
+    if (titleDraft !== (metaSource?.actual_name ?? fallbackTitle)) {
+      changes.push({
+        label: 'Title',
+        oldValue: metaSource?.actual_name ?? fallbackTitle,
+        newValue: titleDraft,
+      });
+    }
+    if (authorDraft !== (metaSource?.author ?? '')) {
+      changes.push({ label: 'Author', oldValue: metaSource?.author ?? '', newValue: authorDraft });
+    }
+    if (versionDraft !== (metaSource?.version ?? '')) {
+      changes.push({
+        label: 'Version',
+        oldValue: metaSource?.version ?? '',
+        newValue: versionDraft,
+      });
+    }
+    if (descriptionDraft !== (metaSource?.description ?? '')) {
+      changes.push({
+        label: 'Description',
+        oldValue: metaSource?.description ?? '',
+        newValue: descriptionDraft,
+      });
+    }
+    return changes;
+  }, [
+    metadataDirty,
+    titleDraft,
+    authorDraft,
+    versionDraft,
+    descriptionDraft,
+    metaSource,
+    fallbackTitle,
+  ]);
 
   const hasUnsavedChanges = hasUnsavedEditorChanges || metadataDirty;
 
@@ -326,7 +386,12 @@ export function usePreviewPanelState() {
     draftByField,
     fieldErrors,
     variableSummaries,
+    hashSummaries,
+    modFeatureSummaries,
+    conflictingKeys,
     hasUnsavedEditorChanges,
+    changedIniFields,
+    changedMetadataFields,
     updateModInfo,
     savePreviewImage,
     removePreviewImage,

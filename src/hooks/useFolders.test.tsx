@@ -5,6 +5,8 @@ import { useImportMods, useAutoOrganizeMods } from './useFolders';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from '../stores/useToastStore';
 
+vi.unmock('@tanstack/react-query');
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));

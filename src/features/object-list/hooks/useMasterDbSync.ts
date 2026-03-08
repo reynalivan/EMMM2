@@ -59,7 +59,9 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
   const [isDbOpen, setIsDbOpen] = useState(false);
 
   // Smart Suggestions (Top 4 matches for originalName) using Rust backend
-  const { data: suggestions = [] } = useQuery({
+  // Note: use `?? []` (not `= []`) so that both null AND undefined collapse to [].
+  // The global test mock returns data:null which bypasses the `= []` default.
+  const { data: rawSuggestions } = useQuery({
     queryKey: ['suggest-master-db', activeGame?.game_type, originalName],
     queryFn: async () => {
       if (!activeGame || !originalName) return [];
@@ -87,6 +89,9 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
     enabled: !!activeGame && !!originalName && isSyncMode,
     staleTime: 1000 * 60 * 60, // 1 hour for suggestions of the exact originalName
   });
+  // Normalise: global test mock returns data:null, which bypasses `= []` default.
+  // `?? []` handles both null and undefined safely.
+  const suggestions = rawSuggestions ?? [];
 
   // Filter DB options using Rust backend for exact and fuzzy matching
   const {

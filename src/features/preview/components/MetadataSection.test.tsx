@@ -5,12 +5,10 @@ import MetadataSection from './MetadataSection';
 describe('MetadataSection', () => {
   const defaultProps = {
     activePath: 'E:/Mods/TestMod',
-    titleDraft: 'Original Title',
     authorDraft: 'Author Name',
     versionDraft: '1.0.0',
     descriptionDraft: 'Original Description',
     metadataDirty: false,
-    onTitleChange: vi.fn(),
     onAuthorChange: vi.fn(),
     onVersionChange: vi.fn(),
     onDescriptionChange: vi.fn(),
@@ -26,10 +24,9 @@ describe('MetadataSection', () => {
     render(<MetadataSection {...defaultProps} />);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Original Title')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('Original Description')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('Author Name')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('1.0.0')).toBeInTheDocument();
+      expect(screen.getByText('Original Description')).toBeInTheDocument();
+      expect(screen.getByText('Author Name')).toBeInTheDocument();
+      expect(screen.getByText('v1.0.0')).toBeInTheDocument();
     });
   });
 
@@ -37,6 +34,9 @@ describe('MetadataSection', () => {
   it('should show auto-saving state and revert button when metadataDirty is true', async () => {
     const props = { ...defaultProps, metadataDirty: true };
     render(<MetadataSection {...props} />);
+
+    const editBtn = screen.getByTitle('Edit Metadata');
+    fireEvent.click(editBtn);
 
     await waitFor(() => {
       expect(screen.getByText('auto-saving…')).toBeInTheDocument();
@@ -49,6 +49,9 @@ describe('MetadataSection', () => {
     const onAuthorChangeMock = vi.fn();
     const props = { ...defaultProps, onAuthorChange: onAuthorChangeMock };
     render(<MetadataSection {...props} />);
+
+    const editBtn = screen.getByTitle('Edit Metadata');
+    fireEvent.click(editBtn);
 
     const authorInput = screen.getByDisplayValue('Author Name');
     fireEvent.change(authorInput, { target: { value: 'New Author' } });

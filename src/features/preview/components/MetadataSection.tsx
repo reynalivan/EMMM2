@@ -1,11 +1,12 @@
+import { useState, useEffect, useRef } from 'react';
+import { Pencil } from 'lucide-react';
+
 interface MetadataSectionProps {
   activePath: string | null;
-  titleDraft: string;
   authorDraft: string;
   versionDraft: string;
   descriptionDraft: string;
   metadataDirty: boolean;
-  onTitleChange: (value: string) => void;
   onAuthorChange: (value: string) => void;
   onVersionChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
@@ -14,23 +15,71 @@ interface MetadataSectionProps {
 
 export default function MetadataSection({
   activePath,
-  titleDraft,
   authorDraft,
   versionDraft,
   descriptionDraft,
   metadataDirty,
-  onTitleChange,
   onAuthorChange,
   onVersionChange,
   onDescriptionChange,
   onDiscard,
 }: MetadataSectionProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const prevDirty = useRef(metadataDirty);
+
+  useEffect(() => {
+    if (prevDirty.current && !metadataDirty) {
+      setTimeout(() => setIsEditing(false), 0);
+    }
+    prevDirty.current = metadataDirty;
+  }, [metadataDirty]);
+
+  if (!isEditing) {
+    return (
+      <div className="mb-6 flex flex-col">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Metadata</h3>
+          <button
+            className="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content"
+            onClick={() => setIsEditing(true)}
+            title="Edit Metadata"
+            disabled={!activePath}
+          >
+            <Pencil size={14} /> Edit
+          </button>
+        </div>
+
+        <div
+          className="flex-1 cursor-pointer rounded-lg hover:bg-white/5 p-2 -mx-2 transition-colors group"
+          onDoubleClick={() => {
+            if (activePath) setIsEditing(true);
+          }}
+          title={activePath ? 'Double click to edit' : undefined}
+        >
+          <div className="flex items-center gap-2 text-xs text-base-content/60 mb-3">
+            <span>{authorDraft || 'Unknown Author'}</span>
+            <span className="w-1 h-1 rounded-full bg-base-content/30" />
+            <span>v{versionDraft || '1.0'}</span>
+          </div>
+
+          {descriptionDraft ? (
+            <p className="text-sm text-base-content/80 whitespace-pre-wrap leading-relaxed">
+              {descriptionDraft}
+            </p>
+          ) : (
+            <p className="text-sm text-base-content/40 italic">No description available.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mb-6 flex flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Metadata</h3>
         <div className="flex items-center gap-2">
-          {metadataDirty && (
+          {metadataDirty ? (
             <>
               <span className="text-[10px] text-base-content/40 italic">auto-saving…</span>
               <button
@@ -41,25 +90,18 @@ export default function MetadataSection({
                 Revert
               </button>
             </>
+          ) : (
+            <button
+              className="btn btn-ghost btn-xs text-primary"
+              onClick={() => setIsEditing(false)}
+            >
+              Done
+            </button>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <label className="label py-1" htmlFor="metadata-title-input">
-          <span className="label-text text-xs">Title</span>
-        </label>
-        <input
-          id="metadata-title-input"
-          aria-label="Mod title"
-          type="text"
-          className="input input-bordered mb-2 w-full bg-transparent text-sm"
-          placeholder="Mod title"
-          value={titleDraft}
-          disabled={!activePath}
-          onChange={(event) => onTitleChange(event.target.value)}
-        />
-
         <div className="mb-2 grid grid-cols-2 gap-2">
           <div>
             <label className="label py-1" htmlFor="metadata-author-input">

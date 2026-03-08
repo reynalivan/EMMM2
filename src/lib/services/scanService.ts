@@ -3,6 +3,7 @@ import type {
   ArchiveInfo,
   ArchiveAnalysis,
   ExtractionResult,
+  ExtractionEvent,
   ScanResultItem,
   ScanEvent,
   ConflictInfo,
@@ -57,20 +58,175 @@ export const scanService = {
   },
 
   /**
-   * Extract an archive.
+   * Extract an archive. Optionally stream per-file progress via Channel.
    */
   async extractArchive(
     archivePath: string,
     modsDir: string,
     password?: string,
     overwrite: boolean = false,
+    customName?: string,
+    disableAfter: boolean = false,
+    unpackNested: boolean = true,
+    onFileProgress?: (event: ExtractionEvent) => void,
   ): Promise<ExtractionResult> {
+    const channel = new Channel<ExtractionEvent>();
+    if (onFileProgress) {
+      channel.onmessage = onFileProgress;
+    }
     return invoke('extract_archive_cmd', {
       archivePath,
       modsDir,
       password: password || null,
       overwrite,
+      customName: customName || null,
+      disableAfter,
+      unpackNested,
+      onProgress: channel,
     });
+  },
+
+  /**
+   * A1: Shared batch extraction utility with queue model.
+   * Splits archives into non-encrypted and encrypted, extracts sequentially.
+   * A non-password failure continues to the next archive (queue resilience).
+   * Password errors and user abort stop immediately for retry / cancellation.
+   *
+   * @returns Object with `extractedPaths`, per-archive `results`, and summary.
+   */
+  async extractArchiveBatch(
+    selectedPaths: string[],
+    archives: ArchiveInfo[],
+    modsDir: string,
+    passwords: Record<string, string>,
+    options?: {
+      autoRename?: boolean;
+      disableByDefault?: boolean;
+      folderNames?: Record<string, string>;
+      unpackNested?: boolean;
+    },
+    onProgress?: (current: number, total: number) => void,
+    onFileProgress?: (event: ExtractionEvent) => void,
+  ): Promise<{
+    extractedPaths: string[];
+    aborted: boolean;
+    results: Array<{
+      path: string;
+      status: 'done' | 'failed' | 'skipped' | 'aborted';
+      error?: string;
+      destPaths?: string[];
+    }>;
+    /** Set when a password error stops the queue (for retry flow). */
+    failedPath?: string;
+    isPasswordError?: boolean;
+    error?: string;
+  }> {
+    const overwrite = options?.autoRename === false;
+    const disableAfter = options?.disableByDefault ?? false;
+    const unpackNested = options?.unpackNested ?? true;
+    const folderNames = options?.folderNames ?? {};
+    const extractedPaths: string[] = [];
+    const results: Array<{
+      path: string;
+      status: 'done' | 'failed' | 'skipped' | 'aborted';
+      error?: string;
+      destPaths?: string[];
+    }> = [];
+
+    const nonEncrypted = selectedPaths.filter(
+      (p) => !archives.find((a) => a.path === p)?.is_encrypted,
+    );
+    const encrypted = selectedPaths.filter(
+      (p) => !!archives.find((a) => a.path === p)?.is_encrypted,
+    );
+
+    const ordered = [...nonEncrypted, ...encrypted];
+    const total = ordered.length;
+    let current = 0;
+
+    const PASSWORD_HINTS = ['password', 'encrypt', 'decrypt', 'wrong key', 'invalid key'];
+    const isPasswordRelated = (err: string) =>
+      PASSWORD_HINTS.some((h) => err.toLowerCase().includes(h));
+
+    for (const archivePath of ordered) {
+      const isEnc = !!archives.find((a) => a.path === archivePath)?.is_encrypted;
+      const pw = isEnc ? passwords[archivePath] : undefined;
+      const customName = folderNames[archivePath] || undefined;
+
+      try {
+        const result = await this.extractArchive(
+          archivePath,
+          modsDir,
+          pw,
+          overwrite,
+          customName,
+          disableAfter,
+          unpackNested,
+          onFileProgress,
+        );
+
+        if (result.aborted) {
+          // User cancelled — mark this as aborted, remaining as skipped
+          results.push({ path: archivePath, status: 'aborted' });
+          for (const remaining of ordered.slice(current + 1)) {
+            results.push({ path: remaining, status: 'skipped' });
+          }
+          return { extractedPaths, aborted: true, results };
+        }
+
+        if (!result.success) {
+          const errMsg = result.error ?? 'Unknown error';
+
+          // Password errors stop the queue for retry (#5 flow)
+          if (isPasswordRelated(errMsg)) {
+            results.push({ path: archivePath, status: 'failed', error: errMsg });
+            for (const remaining of ordered.slice(current + 1)) {
+              results.push({ path: remaining, status: 'skipped' });
+            }
+            return {
+              extractedPaths,
+              aborted: false,
+              results,
+              failedPath: archivePath,
+              isPasswordError: true,
+              error: errMsg,
+            };
+          }
+
+          // Non-password error → log and continue to next archive
+          results.push({ path: archivePath, status: 'failed', error: errMsg });
+        } else {
+          const destPaths = result.dest_paths ?? [];
+          extractedPaths.push(...destPaths);
+          results.push({ path: archivePath, status: 'done', destPaths });
+        }
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+
+        if (isPasswordRelated(errMsg)) {
+          results.push({ path: archivePath, status: 'failed', error: errMsg });
+          for (const remaining of ordered.slice(current + 1)) {
+            results.push({ path: remaining, status: 'skipped' });
+          }
+          return {
+            extractedPaths,
+            aborted: false,
+            results,
+            failedPath: archivePath,
+            isPasswordError: true,
+            error: errMsg,
+          };
+        }
+
+        // Non-password exception → log and continue
+        results.push({ path: archivePath, status: 'failed', error: errMsg });
+      }
+
+      current++;
+      onProgress?.(current, total);
+    }
+
+    return { extractedPaths, aborted: false, results };
   },
 
   /**
@@ -78,6 +234,25 @@ export const scanService = {
    */
   async analyzeArchive(archivePath: string): Promise<ArchiveAnalysis> {
     return invoke('analyze_archive_cmd', { archivePath });
+  },
+
+  /**
+   * Run a lightweight match check against an extracted folder to see if it belongs to a target object.
+   * @param folderPath The path to the extracted mod folder
+   * @param targetObjectName The expected object name (e.g., 'Keqing')
+   * @param gameType The active game type (e.g., 'GIMI') to load the correct MasterDB
+   */
+  async matchCheckFolder(
+    folderPath: string,
+    targetObjectName: string,
+    gameType: string,
+  ): Promise<import('../../types/scanner').MatchCheckResult> {
+    const dbJson = await scanService.getMasterDb(gameType);
+    return invoke('match_check_folder_cmd', {
+      folderPath,
+      targetObjectName,
+      dbJson,
+    });
   },
 
   /**

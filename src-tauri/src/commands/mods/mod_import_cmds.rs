@@ -148,7 +148,7 @@ fn handle_archive_import(
 ) {
     let _guard = SuppressionGuard::new(&state.suppressor);
 
-    match extract_archive(path, target, None, false) {
+    match extract_archive(path, target, None, false, None, None, false, false, None) {
         Ok(result) => {
             if !result.success {
                 failures.push(BulkActionError {

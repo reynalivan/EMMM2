@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useThumbnail, thumbnailKeys } from './useThumbnail';
 import { invoke } from '@tauri-apps/api/core';
 
+vi.unmock('@tanstack/react-query');
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));

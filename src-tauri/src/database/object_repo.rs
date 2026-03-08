@@ -67,7 +67,7 @@ pub async fn get_filtered_objects(
             o.created_at,
             COUNT(m.id) as mod_count,
             COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) as enabled_count,
-            (o.folder_path LIKE '%/DISABLED %' OR o.folder_path LIKE '%\\DISABLED %') as is_object_disabled
+            (o.folder_path LIKE 'DISABLED %' OR o.folder_path LIKE '%/DISABLED %' OR o.folder_path LIKE '%\\DISABLED %') as is_object_disabled
         FROM objects o
         LEFT JOIN mods m ON m.object_id = o.id
         WHERE o.game_id = "#,

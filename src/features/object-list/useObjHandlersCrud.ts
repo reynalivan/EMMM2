@@ -213,7 +213,7 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
 
   // ── Object Toggle (Enable/Disable root folder) ───────────────────
   const toggleObjectMods = useCallback(
-    async (objectId: string, enable: boolean) => {
+    async (objectId: string, enable: boolean, suppressToast: boolean = false) => {
       if (!activeGame || isTogglingObjectRef.current) return;
 
       const obj = objects.find((o) => o.id === objectId);
@@ -247,6 +247,7 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
           path: targetPath,
           enable,
           gameId: activeGame.id,
+          suppressToast,
         });
 
         if (activeGame.mod_path) syncExplorerAfterRename(activeGame.mod_path, targetPath, newPath);

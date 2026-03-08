@@ -17,7 +17,7 @@ import {
 import type { ObjectSummary, GameObject } from '../../../types/object';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 
-const schema = z
+export const schema = z
   .object({
     name: z.string().min(1, 'Name is required'),
     object_type: z.string().min(1, 'Type is required'),

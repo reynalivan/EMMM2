@@ -16,19 +16,19 @@ import type { ObjectSummary } from '../../types/object';
 import type { ScanPreviewItem } from '../../lib/services/scanService';
 import type { MasterDbEntry } from './scanReviewHelpers';
 
+interface PendingDropContext {
+  type: 'item' | 'auto-organize' | 'new-object';
+  pathsToIngest: string[];
+  targetFolder?: string;
+  targetObjectId?: string;
+  baseFolderPaths?: string[];
+  baseLooseFiles?: string[];
+}
+
 interface DropDeps {
   objects: ObjectSummary[];
-  handleArchivesInteractively: (
-    archivePaths: string[],
-    context: {
-      type: 'item' | 'auto-organize' | 'new-object';
-      pathsToIngest: string[];
-      targetFolder?: string;
-      targetObjectId?: string;
-      baseFolderPaths?: string[];
-      baseLooseFiles?: string[];
-    },
-  ) => Promise<void>;
+  handleArchivesInteractively: (paths: string[], context: PendingDropContext) => Promise<void>;
+  setMismatchConfirm: (paths: string[]) => void;
   setScanReview: React.Dispatch<
     React.SetStateAction<{
       open: boolean;
@@ -43,6 +43,7 @@ interface DropDeps {
 export function useObjHandlersDrop({
   objects,
   handleArchivesInteractively,
+  setMismatchConfirm,
   setScanReview,
   setIsSyncing,
 }: DropDeps) {
@@ -87,6 +88,41 @@ export function useObjHandlersDrop({
           isNewObject: false,
           objectName: obj.name,
         });
+
+        if (classified.folders.length > 0) {
+          try {
+            let mismatches = 0;
+            let firstMismatchMsg = '';
+            const mismatchedPaths: string[] = [];
+            for (const folder of classified.folders) {
+              const check = await scanService.matchCheckFolder(
+                folder,
+                obj.name,
+                activeGame.game_type,
+              );
+              if (!check.isMatch) {
+                mismatches++;
+                mismatchedPaths.push(folder);
+                if (!firstMismatchMsg) {
+                  firstMismatchMsg = `${folder.split('\\').pop()}: Best match is ${check.matchedName || 'Unknown'} (${check.matchScorePct}%)`;
+                }
+              }
+            }
+            if (mismatches > 0) {
+              toast.withAction(
+                'warning',
+                `${mismatches} of ${classified.folders.length} dropped folder(s) may not match ${obj.name}\n→ ${firstMismatchMsg}`,
+                {
+                  label: 'Fix',
+                  onClick: () => setMismatchConfirm(mismatchedPaths),
+                },
+                9999999,
+              );
+            }
+          } catch (err) {
+            console.warn('Post-drop match check failed:', err);
+          }
+        }
       } catch (e) {
         console.error('Drop on item failed:', e);
         toast.error('Failed to import dropped items');
@@ -94,7 +130,7 @@ export function useObjHandlersDrop({
         await invoke('set_watcher_suppression_cmd', { suppressed: false });
       }
     },
-    [activeGame, objects, queryClient, handleArchivesInteractively],
+    [activeGame, objects, queryClient, handleArchivesInteractively, setMismatchConfirm],
   );
 
   /** Drop on Auto Organize zone — extract archives → scan → open review */

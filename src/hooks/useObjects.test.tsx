@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAppStore } from '../stores/useAppStore';
 import React from 'react';
 
+vi.unmock('@tanstack/react-query');
+
 // Mock dependecies
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue({}),

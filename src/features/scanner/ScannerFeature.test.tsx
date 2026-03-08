@@ -4,6 +4,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { scanService } from '../../lib/services/scanService';
 
+vi.unmock('@tanstack/react-query');
+
 // Mock dependencies
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
@@ -13,6 +15,10 @@ vi.mock('../../lib/services/scanService', () => ({
   scanService: {
     detectArchives: vi.fn().mockResolvedValue([]),
     extractArchive: vi.fn(),
+    extractArchiveBatch: vi.fn(),
+    autoOrganizeArchive: vi.fn(),
+    dismissMismatchToast: vi.fn(),
+    getExtractionProgress: vi.fn().mockResolvedValue(null),
     startScan: vi.fn(),
     detectConflictsInFolder: vi.fn().mockResolvedValue([]),
     // Add other methods if needed
@@ -146,7 +152,7 @@ describe('ScannerFeature', () => {
 
     // Setup: Extraction fails with specific error
     const errorMsg = 'Password required for archive';
-    (scanService.extractArchive as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+    (scanService.extractArchiveBatch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error(errorMsg),
     );
 

@@ -1,6 +1,19 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Progress events streamed to frontend during archive extraction via `Channel<ExtractionEvent>`.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "event", content = "data")]
+pub enum ExtractionEvent {
+    /// One file has been extracted (or skipped as directory).
+    #[serde(rename_all = "camelCase")]
+    FileProgress {
+        file_name: String,
+        file_index: usize,
+        total_files: usize,
+    },
+}
+
 /// Supported archive format.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ArchiveFormat {
@@ -22,6 +35,14 @@ impl ArchiveFormat {
     }
 }
 
+/// A single entry in an archive (for file tree preview).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchiveEntryInfo {
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+}
+
 /// Result of analyzing an archive before extraction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveAnalysis {
@@ -29,9 +50,15 @@ pub struct ArchiveAnalysis {
     pub file_count: usize,
     pub has_ini: bool,
     pub uncompressed_size: u64,
+    /// The physical size of the archive file on disk.
+    pub file_size_bytes: u64,
     pub single_root_folder: Option<String>,
     /// Whether the archive requires a password for extraction.
     pub is_encrypted: bool,
+    /// Whether the archive contains other archives (e.g. .zip, .rar, .7z) inside it.
+    pub contains_nested_archives: bool,
+    /// Top entries for file tree preview (capped at 500).
+    pub entries: Vec<ArchiveEntryInfo>,
 }
 
 /// Result of an extraction operation.
@@ -45,4 +72,5 @@ pub struct ExtractionResult {
     pub mod_count: usize,
     pub success: bool,
     pub error: Option<String>,
+    pub aborted: bool,
 }

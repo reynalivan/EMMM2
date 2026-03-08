@@ -8,6 +8,7 @@ import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
 import { useThumbnail } from '../../hooks/useThumbnail';
 import { useDebounceCallback } from '../../hooks/useDebounceCallback';
+import { useAppStore } from '../../stores/useAppStore';
 
 interface FolderCardProps {
   folder: ModFolder;
@@ -138,7 +139,8 @@ function FolderCardInner({
     }
   };
 
-  const isBulkSelection = isSelected && selectionSize > 1;
+  const isBulkSelection =
+    isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
   const hasNamingConflict = !!folder.conflict_state;
 
   return (
@@ -194,7 +196,7 @@ function FolderCardInner({
         tabIndex={0}
       >
         {/* Thumbnail area — 3:4 portrait ratio */}
-        <div className="aspect-square bg-base-300/50 relative group overflow-hidden">
+        <div className="aspect-square bg-base-300/50 relative group overflow-hidden flex items-center justify-center">
           {/* Skeleton Shimmer — visible while thumbnail is loading or image hasn't decoded */}
           {(thumbLoading || (thumbnailSrc && !imgLoaded && !imgError)) && (
             <div className="absolute inset-0 skeleton bg-base-300" />
@@ -342,7 +344,7 @@ function FolderCardInner({
                 {localEnabled ? 'Enabled' : 'Disabled'}
               </span>
             </label>
-            {folder.is_directory && (
+            {isNavigable(folder) && (
               <span className="text-[9px] text-base-content/20 font-bold tracking-wider">DIR</span>
             )}
           </div>

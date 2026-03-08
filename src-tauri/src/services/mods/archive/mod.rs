@@ -11,7 +11,7 @@ mod types;
 // Re-export public API
 pub use analyze::analyze_archive;
 pub use extract::extract_archive;
-pub use types::{ArchiveAnalysis, ArchiveFormat, ExtractionResult};
+pub use types::{ArchiveAnalysis, ArchiveFormat, ExtractionEvent, ExtractionResult};
 
 #[cfg(test)]
 #[path = "tests/mod_tests.rs"]

@@ -75,6 +75,10 @@ interface ModalsProps {
   deleteObjectDialog: { open: boolean; id: string; name: string };
   onConfirmDeleteObject: () => void;
   onCancelDeleteObject: () => void;
+  /* Mismatch Auto-Organize confirm */
+  mismatchConfirm: string[] | null;
+  onConfirmMismatchHandler: () => void;
+  onCancelMismatchHandler: () => void;
 }
 
 export default function ObjectListModals({
@@ -100,6 +104,9 @@ export default function ObjectListModals({
   deleteObjectDialog,
   onConfirmDeleteObject,
   onCancelDeleteObject,
+  mismatchConfirm,
+  onConfirmMismatchHandler,
+  onCancelMismatchHandler,
 }: ModalsProps) {
   return (
     <>
@@ -162,6 +169,17 @@ export default function ObjectListModals({
         danger
         onConfirm={onConfirmDeleteObject}
         onCancel={onCancelDeleteObject}
+      />
+
+      {/* Mismatch Auto-Organize confirmation dialog */}
+      <ConfirmDialog
+        open={!!mismatchConfirm}
+        title="Auto-Organize Mismatches?"
+        message={`Are you sure you want to let the system auto-organize ${mismatchConfirm?.length || 0} folder(s)? This will move them to their best matched Object.`}
+        confirmLabel="Auto-Organize"
+        cancelLabel="Cancel"
+        onConfirm={onConfirmMismatchHandler}
+        onCancel={onCancelMismatchHandler}
       />
     </>
   );

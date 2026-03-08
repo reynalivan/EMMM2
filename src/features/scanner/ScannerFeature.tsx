@@ -56,53 +56,61 @@ export default function ScannerFeature() {
     onError: (err: unknown) => toast.error(`Failed to detect archives: ${err}`),
   });
 
-  // 2. Extract Mutation
+  // #5: Track password errors for inline retry
+  const [passwordError, setPasswordError] = useState<{ path: string; message: string } | null>(
+    null,
+  );
+
+  // 2. Extract Mutation — uses shared extractArchiveBatch (A1)
   const extractMutation = useMutation({
     mutationFn: async ({
       paths,
       pwd,
-      overwrite,
+      options,
     }: {
       paths: string[];
       pwd?: Record<string, string>;
-      overwrite?: boolean;
+      options?: {
+        autoRename?: boolean;
+        disableByDefault?: boolean;
+        folderNames?: Record<string, string>;
+        unpackNested?: boolean;
+      };
     }) => {
       if (!activeGame) throw new Error('No active game config');
 
-      // Helper to extract a single archive
-      const extractSingle = async (archivePath: string, password?: string) => {
-        const result = await scanService.extractArchive(
-          archivePath,
+      // B3: Suppress watcher for the entire batch
+      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+
+      try {
+        setPasswordError(null);
+        const result = await scanService.extractArchiveBatch(
+          paths,
+          archives,
           activeGame.mod_path,
-          password,
-          overwrite,
+          pwd ?? {},
+          options,
         );
-        if (!result.success) {
-          throw new Error(result.error ?? 'Unknown error during extraction');
+
+        if (result.error) {
+          // #5: Password error → keep modal open for retry
+          if (result.isPasswordError && result.failedPath) {
+            setPasswordError({ path: result.failedPath, message: result.error });
+            return; // don't throw — modal stays open
+          }
+          throw new Error(result.error);
         }
-      };
-
-      // Split into non-encrypted and encrypted
-      const nonEncrypted = paths.filter((p) => {
-        const info = archives.find((a) => a.path === p);
-        return !info?.is_encrypted;
-      });
-      const encrypted = paths.filter((p) => {
-        const info = archives.find((a) => a.path === p);
-        return !!info?.is_encrypted;
-      });
-
-      // Extract non-encrypted first
-      for (const archivePath of nonEncrypted) {
-        await extractSingle(archivePath);
-      }
-
-      // Extract encrypted with their respective passwords
-      for (const archivePath of encrypted) {
-        await extractSingle(archivePath, pwd?.[archivePath]);
+        // aborted is handled gracefully — no throw
+      } finally {
+        // B3: Always unsuppress + W2: scaled cooldown
+        const { useAppStore } = await import('../../stores/useAppStore');
+        const cooldown = Math.min(1000 + paths.length * 500, 5000);
+        useAppStore.getState().setWatcherCooldown(Date.now() + cooldown);
+        await invoke('set_watcher_suppression_cmd', { suppressed: false });
       }
     },
     onSuccess: () => {
+      if (passwordError) return; // modal still open for retry
       setShowArchiveModal(false);
       handleStartScan();
     },
@@ -163,9 +171,13 @@ export default function ScannerFeature() {
   const handleExtract = async (
     selectedPaths: string[],
     passwords: Record<string, string>,
-    overwrite?: boolean,
+    options?: {
+      autoRename?: boolean;
+      disableByDefault?: boolean;
+      folderNames?: Record<string, string>;
+    },
   ) => {
-    extractMutation.mutate({ paths: selectedPaths, pwd: passwords, overwrite });
+    extractMutation.mutate({ paths: selectedPaths, pwd: passwords, options });
   };
 
   return (
@@ -203,10 +215,20 @@ export default function ScannerFeature() {
           onExtract={handleExtract}
           onSkip={() => {
             setShowArchiveModal(false);
+            setPasswordError(null);
             handleStartScan();
           }}
           isExtracting={extractMutation.isPending}
           error={extractMutation.error ? String(extractMutation.error) : null}
+          passwordError={passwordError}
+          onStop={async () => {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              await invoke('abort_extraction_cmd');
+            } catch (e) {
+              console.error('Failed to abort scan extraction', e);
+            }
+          }}
         />
 
         <ScanOverlay

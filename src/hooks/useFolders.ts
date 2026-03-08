@@ -109,6 +109,26 @@ export function sortFolders(folders: ModFolder[], field: SortField, order: SortO
   return order === 'desc' ? sorted.reverse() : sorted;
 }
 
+/** Helper to trigger full GC + Sync fallback when a file operation fails due to missing files */
+async function fallbackSync(queryClient: ReturnType<typeof useQueryClient>, gameId: string | null) {
+  if (!gameId) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  toast.info('Syncing changes from disk...', 3000);
+  try {
+    await invoke('gc_lost_objects_cmd', { gameId });
+    await invoke('sync_objects_for_game_cmd', { gameId });
+    toast.success('Sync complete', 2000);
+  } catch (err) {
+    console.error('Fallback sync failed:', err);
+    toast.error('Sync failed', 3000);
+  } finally {
+    queryClient.invalidateQueries({ queryKey: folderKeys.all });
+    queryClient.invalidateQueries({ queryKey: ['objects'] });
+    queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+  }
+}
+
 /**
  * Toggle a mod's enabled/disabled state with undo toast.
  * Shows an "Undo" action button for 5 seconds after successful toggle.
@@ -118,7 +138,12 @@ export function useToggleMod() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { path: string; enable: boolean; gameId: string }) =>
+    mutationFn: (params: {
+      path: string;
+      enable: boolean;
+      gameId: string;
+      suppressToast?: boolean;
+    }) =>
       invoke<string>('toggle_mod', {
         path: params.path,
         enable: params.enable,
@@ -154,8 +179,26 @@ export function useToggleMod() {
     },
 
     onSuccess: (newPath, variables) => {
-      const action = variables.enable ? 'Enabled' : 'Disabled';
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) }); // Invalidate old thumbnail URI
+
+      const action = variables.enable ? 'Enabled' : 'Disabled';
+      let modName = variables.path.split(/[/\\]/).pop() || 'mod';
+      if (modName.startsWith('DISABLED ')) {
+        modName = modName.substring(9);
+      }
+
+      // Try to find the actual display name from the cache
+      const prevQueries = queryClient.getQueriesData<FolderGridResponse>({
+        queryKey: folderKeys.all,
+      });
+      for (const [, data] of prevQueries) {
+        if (!data) continue;
+        const match = data.children.find((f) => f.path === variables.path);
+        if (match) {
+          modName = match.name;
+          break;
+        }
+      }
 
       // Opt-Z1: Fix path instability. The folder was physically renamed on disk.
       // We must update its path in the cache so subsequent actions (like Delete) don't use the old stale path.
@@ -165,21 +208,23 @@ export function useToggleMod() {
         is_enabled: variables.enable,
       }));
 
-      toast.withAction('success', `${action} mod`, {
-        label: 'Undo',
-        onClick: () => {
-          useAppStore.getState().setWatcherCooldown(Date.now() + 500);
-          invoke<string>('toggle_mod', {
-            path: newPath,
-            enable: !variables.enable,
-            gameId: variables.gameId,
-          }).then(() => {
-            queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
-            queryClient.invalidateQueries({ queryKey: folderKeys.all });
-            queryClient.invalidateQueries({ queryKey: ['objects'] });
-          });
-        },
-      });
+      if (!variables.suppressToast) {
+        toast.withAction('success', `${action} ${modName}`, {
+          label: 'Undo',
+          onClick: () => {
+            useAppStore.getState().setWatcherCooldown(Date.now() + 500);
+            invoke<string>('toggle_mod', {
+              path: newPath,
+              enable: !variables.enable,
+              gameId: variables.gameId,
+            }).then(() => {
+              queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
+              queryClient.invalidateQueries({ queryKey: folderKeys.all });
+              queryClient.invalidateQueries({ queryKey: ['objects'] });
+            });
+          },
+        });
+      }
 
       // After enabling: check for shader conflicts (non-blocking)
       if (variables.enable) {
@@ -197,15 +242,25 @@ export function useToggleMod() {
       }
     },
 
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
       // Rollback optimistic update on failure
       if (context?.previousQueries) {
         for (const [queryKey, data] of context.previousQueries) {
           queryClient.setQueryData(queryKey, data);
         }
       }
-      // Detect structured RenameConflict error → open Resolve dialog
       const errStr = String(error);
+
+      // Detect "File Not Found" errors to trigger Fallback Sync
+      if (
+        errStr.toLowerCase().includes('not found') ||
+        errStr.toLowerCase().includes('os error 2')
+      ) {
+        fallbackSync(queryClient, variables.gameId);
+        return;
+      }
+
+      // Detect structured RenameConflict error → open Resolve dialog
       if (errStr.includes('"type":"RenameConflict"')) {
         try {
           const conflict = JSON.parse(errStr);
@@ -215,7 +270,7 @@ export function useToggleMod() {
           /* parse failed, fall through to generic toast */
         }
       }
-      toast.error(String(error));
+      toast.error(errStr);
     },
 
     // Mark data as stale — don't force immediate refetch.
@@ -258,6 +313,17 @@ export function useRenameMod() {
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
     },
+    onError: (error, variables) => {
+      const errStr = String(error);
+      if (
+        errStr.toLowerCase().includes('not found') ||
+        errStr.toLowerCase().includes('os error 2')
+      ) {
+        fallbackSync(queryClient, variables.gameId);
+      } else {
+        toast.error(`Rename failed: ${errStr}`);
+      }
+    },
   });
 }
 
@@ -272,6 +338,17 @@ export function useDeleteMod() {
       // Targeted: remove deleted folder from cache instead of full re-listing
       updateFolderCache(queryClient, [variables.path], undefined, true);
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+    },
+    onError: (error, variables) => {
+      const errStr = String(error);
+      if (
+        errStr.toLowerCase().includes('not found') ||
+        errStr.toLowerCase().includes('os error 2')
+      ) {
+        fallbackSync(queryClient, variables.gameId ?? null);
+      } else {
+        toast.error(`Delete failed: ${errStr}`);
+      }
     },
   });
 }

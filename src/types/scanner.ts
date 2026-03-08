@@ -12,15 +12,21 @@ export interface ArchiveInfo {
   file_count: number;
   /** Whether the archive requires a password for extraction. */
   is_encrypted: boolean;
+  contains_nested_archives: boolean;
+  /** File entries for tree preview (from analysis, capped at 500). */
+  entries?: Array<{ path: string; isDir: boolean; size: number }>;
 }
 
 export interface ArchiveAnalysis {
-  path: string;
+  format: string;
   file_count: number;
-  top_level_folders: string[];
   has_ini: boolean;
-  total_size_bytes: number;
+  uncompressed_size: number;
+  file_size_bytes: number;
+  single_root_folder: string | null;
   is_encrypted: boolean;
+  contains_nested_archives: boolean;
+  entries: Array<{ path: string; isDir: boolean; size: number }>;
 }
 
 export interface ExtractionResult {
@@ -34,6 +40,7 @@ export interface ExtractionResult {
   mod_count: number;
   success: boolean;
   error?: string;
+  aborted?: boolean;
 }
 
 export interface ScanResultItem {
@@ -58,8 +65,21 @@ export interface ConflictInfo {
   mod_paths: string[];
 }
 
+export interface MatchCheckResult {
+  matchedName: string | null;
+  matchScorePct: number;
+  targetScorePct: number;
+  isMatch: boolean;
+  confidence: string;
+}
+
 export type ScanEvent =
   | { event: 'started'; data: { totalFolders: number } }
   | { event: 'progress'; data: { current: number; folderName: string; etaMs: number } }
   | { event: 'matched'; data: { folderName: string; objectName: string; confidence: string } }
   | { event: 'finished'; data: { matched: number; unmatched: number } };
+
+export type ExtractionEvent = {
+  event: 'fileProgress';
+  data: { fileName: string; fileIndex: number; totalFiles: number };
+};

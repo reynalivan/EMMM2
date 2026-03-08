@@ -1,6 +1,5 @@
-use crate::database::object_repo::ObjectFilter;
 use crate::services::objects::query::{
-    get_category_counts_service, get_filtered_objects_with_conflict_check, get_object_by_id_service,
+    gc_lost_objects, get_category_counts_service, get_object_by_id_service,
 };
 use std::fs;
 use tempfile::TempDir;
@@ -84,15 +83,14 @@ async fn test_get_category_counts_service() {
 }
 
 #[tokio::test]
-async fn test_get_filtered_objects_with_conflict_check() {
+async fn test_gc_lost_objects_removes_missing() {
     let pool = setup_test_db().await;
     let temp_dir = TempDir::new().unwrap();
     let mod_path = temp_dir.path().join("mods_dir");
     fs::create_dir_all(&mod_path).unwrap();
 
-    // Create a conflict: "obj_folder" and "DISABLED obj_folder"
-    fs::create_dir(mod_path.join("obj_folder")).unwrap();
-    fs::create_dir(mod_path.join("DISABLED obj_folder")).unwrap();
+    // Create a physical folder
+    fs::create_dir(mod_path.join("clean_folder")).unwrap();
 
     sqlx::query("INSERT INTO games (id, name, game_type, path, mod_path) VALUES ('g3', 'ZZZ', 'type', '/', ?)")
         .bind(mod_path.to_str().unwrap())
@@ -100,16 +98,7 @@ async fn test_get_filtered_objects_with_conflict_check() {
         .await
         .unwrap();
 
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
-         VALUES ('o1', 'g3', 'Obj1', 'obj_folder', 'Character', 1)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    // Another object without conflict
-    fs::create_dir(mod_path.join("clean_folder")).unwrap();
+    // Insert object with physical folder
     sqlx::query(
         "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
          VALUES ('o2', 'g3', 'Obj2', 'clean_folder', 'Character', 1)",
@@ -127,35 +116,16 @@ async fn test_get_filtered_objects_with_conflict_check() {
     .await
     .unwrap();
 
-    let filter = ObjectFilter {
-        game_id: "g3".to_string(),
-        search_query: None,
-        object_type: None,
-        safe_mode: true,
-        meta_filters: None,
-        sort_by: Some("name".to_string()),
-        status_filter: None,
-    };
+    let lost = gc_lost_objects(&pool, "g3").await.unwrap();
 
-    let result = get_filtered_objects_with_conflict_check(&pool, &filter)
+    assert_eq!(lost.len(), 1);
+    assert_eq!(lost[0], "MissingObj");
+
+    let remaining: Vec<String> = sqlx::query_scalar("SELECT id FROM objects WHERE game_id = 'g3'")
+        .fetch_all(&pool)
         .await
         .unwrap();
 
-    let objects = result.objects;
-    assert_eq!(objects.len(), 2);
-    assert_eq!(result.lost_objects.len(), 1);
-    assert_eq!(result.lost_objects[0], "MissingObj");
-
-    // Sort by name ASC -> Obj1, Obj2
-    assert_eq!(objects[0].id, "o1");
-    assert!(
-        objects[0].has_naming_conflict,
-        "o1 should have a naming conflict"
-    );
-
-    assert_eq!(objects[1].id, "o2");
-    assert!(
-        !objects[1].has_naming_conflict,
-        "o2 should not have a naming conflict"
-    );
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0], "o2");
 }

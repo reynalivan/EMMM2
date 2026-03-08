@@ -4,6 +4,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../testing/test-utils';
 import { useCollections } from './useCollections';
 
+// Restore real @tanstack/react-query — the global setupTests stub
+// replaces useQuery with a no-op, which means queryFn never runs.
+vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));

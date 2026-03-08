@@ -1,4 +1,6 @@
-use super::types::{ArchiveAnalysis, ArchiveFormat};
+use super::types::{ArchiveAnalysis, ArchiveEntryInfo, ArchiveFormat};
+
+const MAX_ENTRIES: usize = 500;
 use std::fs;
 use std::path::Path;
 
@@ -30,22 +32,41 @@ pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
 
 fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
     let file = fs::File::open(archive_path).map_err(|e| format!("Failed to open archive: {e}"))?;
+    let file_size_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP: {e}"))?;
 
     let mut has_ini = false;
     let mut is_encrypted = false;
     let mut uncompressed_size: u64 = 0;
     let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut contains_nested_archives = false;
+    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
 
     for i in 0..archive.len() {
         match archive.by_index(i) {
             Ok(entry) => {
                 let name = entry.name().to_string();
-                uncompressed_size += entry.size();
+                let size = entry.size();
+                let is_dir = entry.is_dir();
+                uncompressed_size += size;
+
+                if entries.len() < MAX_ENTRIES {
+                    entries.push(ArchiveEntryInfo {
+                        path: name.clone(),
+                        is_dir,
+                        size,
+                    });
+                }
 
                 if name.to_lowercase().ends_with(".ini") {
                     has_ini = true;
                 }
+
+                let ext = name.split('.').last().unwrap_or("").to_lowercase();
+                if ext == "zip" || ext == "rar" || ext == "7z" {
+                    contains_nested_archives = true;
+                }
+
                 if let Some(first) = name.split('/').next() {
                     if !first.is_empty() {
                         root_dirs.insert(first.to_string());
@@ -69,12 +90,15 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         file_count: archive.len(),
         has_ini,
         uncompressed_size,
+        file_size_bytes,
         single_root_folder: if root_dirs.len() == 1 {
             root_dirs.into_iter().next()
         } else {
             None
         },
         is_encrypted,
+        contains_nested_archives,
+        entries,
     })
 }
 
@@ -84,18 +108,38 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
     let mut uncompressed_size: u64 = 0;
     let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut is_encrypted = false;
+    let mut contains_nested_archives = false;
+    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
+
+    let file_size_bytes = fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
 
     let result = sevenz_rust::decompress_with_extract_fn(
         fs::File::open(archive_path).map_err(|e| format!("Failed to open 7z: {e}"))?,
         ".",
         |entry, _, _| {
             let name = entry.name().to_string();
+            let size = entry.size();
+            let is_dir = entry.has_stream();
             file_count += 1;
-            uncompressed_size += entry.size();
+            uncompressed_size += size;
+
+            if entries.len() < MAX_ENTRIES {
+                entries.push(ArchiveEntryInfo {
+                    path: name.clone(),
+                    is_dir: !is_dir, // has_stream = is a file, so invert
+                    size,
+                });
+            }
 
             if name.to_lowercase().ends_with(".ini") {
                 has_ini = true;
             }
+
+            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+            if ext == "zip" || ext == "rar" || ext == "7z" {
+                contains_nested_archives = true;
+            }
+
             // Normalize path separators for root detection
             let normalized = name.replace('\\', "/");
             if let Some(first) = normalized.split('/').next() {
@@ -122,12 +166,15 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
         file_count,
         has_ini,
         uncompressed_size,
+        file_size_bytes,
         single_root_folder: if root_dirs.len() == 1 {
             root_dirs.into_iter().next()
         } else {
             None
         },
         is_encrypted,
+        contains_nested_archives,
+        entries,
     })
 }
 
@@ -145,23 +192,50 @@ fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<Archive
         return Err("7z CLI execution failed".into());
     }
 
+    let file_size_bytes = fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut has_ini = false;
     let mut file_count = 0;
     let mut uncompressed_size = 0;
     let mut root_dirs = std::collections::HashSet::new();
     let mut is_encrypted = false;
+    let mut contains_nested_archives = false;
+    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
+
+    let mut pending_name: Option<String> = None;
+    let mut pending_size: u64 = 0;
+    let mut pending_is_dir = false;
 
     for line in stdout.lines() {
         if line.starts_with("Encrypted = +") {
             is_encrypted = true;
         } else if line.starts_with("Path = ") {
+            // Flush previous entry
+            if let Some(prev_name) = pending_name.take() {
+                if entries.len() < MAX_ENTRIES {
+                    entries.push(ArchiveEntryInfo {
+                        path: prev_name,
+                        is_dir: pending_is_dir,
+                        size: pending_size,
+                    });
+                }
+            }
+            pending_size = 0;
+            pending_is_dir = false;
+
             let name = &line[7..].trim();
             if !name.is_empty() && *name != archive_path.to_string_lossy().as_ref() {
                 file_count += 1;
+                pending_name = Some(name.to_string());
                 if name.to_lowercase().ends_with(".ini") {
                     has_ini = true;
                 }
+                let ext = name.split('.').last().unwrap_or("").to_lowercase();
+                if ext == "zip" || ext == "rar" || ext == "7z" {
+                    contains_nested_archives = true;
+                }
+
                 let normalized = name.replace('\\', "/");
                 if let Some(first) = normalized.split('/').next() {
                     if !first.is_empty() {
@@ -172,7 +246,20 @@ fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<Archive
         } else if line.starts_with("Size = ") {
             if let Ok(size) = line[7..].trim().parse::<u64>() {
                 uncompressed_size += size;
+                pending_size = size;
             }
+        } else if line.starts_with("Folder = +") {
+            pending_is_dir = true;
+        }
+    }
+    // Flush last entry
+    if let Some(prev_name) = pending_name.take() {
+        if entries.len() < MAX_ENTRIES {
+            entries.push(ArchiveEntryInfo {
+                path: prev_name,
+                is_dir: pending_is_dir,
+                size: pending_size,
+            });
         }
     }
 
@@ -181,12 +268,15 @@ fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<Archive
         file_count,
         has_ini,
         uncompressed_size,
+        file_size_bytes,
         single_root_folder: if root_dirs.len() == 1 {
             root_dirs.into_iter().next()
         } else {
             None
         },
         is_encrypted,
+        contains_nested_archives,
+        entries,
     })
 }
 
@@ -209,6 +299,8 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         .to_str()
         .ok_or("Temp path contains invalid UTF-8")?;
 
+    let file_size_bytes = fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
+
     let mut is_encrypted = false;
 
     let archive_result = rar::Archive::extract_all(path_str, temp_str, "");
@@ -224,8 +316,11 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
                     file_count: 0,
                     has_ini: false,
                     uncompressed_size: 0,
+                    file_size_bytes,
                     single_root_folder: None,
                     is_encrypted,
+                    contains_nested_archives: false,
+                    entries: Vec::new(),
                 });
             }
             return Err(format!("Failed to parse RAR: {e:?}"));
@@ -236,15 +331,31 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
     let mut file_count: usize = 0;
     let mut uncompressed_size: u64 = 0;
     let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut contains_nested_archives = false;
+    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
 
     for entry in &archive.files {
         let name = entry.name.to_string();
         file_count += 1;
         uncompressed_size += entry.unpacked_size;
 
+        if entries.len() < MAX_ENTRIES {
+            entries.push(ArchiveEntryInfo {
+                path: name.clone(),
+                is_dir: name.ends_with('/') || name.ends_with('\\'),
+                size: entry.unpacked_size,
+            });
+        }
+
         if name.to_lowercase().ends_with(".ini") {
             has_ini = true;
         }
+
+        let ext = name.split('.').last().unwrap_or("").to_lowercase();
+        if ext == "zip" || ext == "rar" || ext == "7z" {
+            contains_nested_archives = true;
+        }
+
         let normalized = name.replace('\\', "/");
         if let Some(first) = normalized.split('/').next() {
             if !first.is_empty() {
@@ -258,11 +369,14 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         file_count,
         has_ini,
         uncompressed_size,
+        file_size_bytes,
         single_root_folder: if root_dirs.len() == 1 {
             root_dirs.into_iter().next()
         } else {
             None
         },
         is_encrypted,
+        contains_nested_archives,
+        entries,
     })
 }

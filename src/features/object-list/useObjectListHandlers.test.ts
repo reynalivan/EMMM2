@@ -93,6 +93,8 @@ describe('useObjectListHandlers', () => {
     schema: {
       categories: [{ name: 'Character', label: 'Characters' }],
     } as unknown as import('../../types/object').GameSchema,
+    mismatchConfirm: null,
+    setMismatchConfirm: vi.fn(),
   };
 
   it('handleToggle calls toggleMod mutation', () => {

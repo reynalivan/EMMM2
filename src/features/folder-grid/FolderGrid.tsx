@@ -10,6 +10,8 @@ import { Loader2 } from 'lucide-react';
 import BulkProgressBar from './BulkProgressBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
 import { useActiveConflicts } from '../../hooks/useFolders';
+import { useAppStore } from '../../stores/useAppStore';
+import { cn } from '../../lib/utils';
 
 export default function FolderGrid() {
   const {
@@ -130,11 +132,22 @@ export default function FolderGrid() {
 
   const isFlatModRoot = selfNodeType === 'FlatModRoot' || selfIsMod;
 
+  const activePane = useAppStore((state) => state.activePane);
+  const setActivePane = useAppStore((state) => state.setActivePane);
+
   return (
     <div
-      className="flex flex-col h-full bg-transparent p-4 relative outline-none"
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
+      className={cn(
+        'flex flex-col h-full bg-transparent p-4 relative outline-none transition-shadow duration-200',
+        activePane === 'folderGrid' && 'ring-1 ring-inset ring-primary/20',
+      )}
+      onKeyDown={(e) => {
+        if (activePane === 'folderGrid') handleKeyDown(e);
+      }}
+      tabIndex={-1}
+      onFocus={(e) => {
+        if (!e.defaultPrevented) setActivePane('folderGrid');
+      }}
     >
       <FolderGridToolbar
         isMobile={isMobile}
@@ -196,105 +209,105 @@ export default function FolderGrid() {
       )}
 
       {/* Virtualized Grid/List Content */}
-      {!isLoading && !isError && visibleFolders.length > 0 && (
-        <div
-          ref={parentRef}
-          className={`flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40 transition-opacity duration-150 ${
-            isPlaceholderData ? 'opacity-70 pointer-events-none select-none' : 'opacity-100'
-          }`}
-        >
-          <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
-            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              if (isGridView) {
-                // Grid mode: each virtual row = N columns
-                const fromIndex = virtualRow.index * columnCount;
-                const toIndex = Math.min(fromIndex + columnCount, visibleFolders.length);
-                const rowItems = visibleFolders.slice(fromIndex, toIndex);
-
-                return (
-                  <div
-                    key={virtualRow.index}
-                    className="absolute top-0 left-0 w-full flex gap-3"
-                    style={{
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {rowItems.map((folder) => (
-                      <div key={folder.path} className="flex-none" style={{ width: cardWidth }}>
-                        <FolderCard
-                          folder={folder}
-                          isSelected={gridSelection.has(folder.path)}
-                          onNavigate={handleNavigate}
-                          toggleSelection={toggleGridSelection}
-                          clearSelection={clearGridSelection}
-                          onToggleEnabled={handleToggleEnabled}
-                          onToggleFavorite={handleToggleFavorite}
-                          onEnableOnlyThis={handleEnableOnlyThis}
-                          isRenaming={renamingId === folder.path}
-                          onRenameSubmit={handleRenameSubmit}
-                          onRenameCancel={handleRenameCancel}
-                          onRename={() => handleRenameRequest(folder)}
-                          onDelete={() => handleDeleteRequest(folder)}
-                          isFocused={focusedId === folder.path}
-                          selectionSize={gridSelection.size}
-                          onBulkToggle={handleBulkToggle}
-                          onBulkDelete={handleBulkDeleteRequest}
-                          onBulkTag={handleBulkTagRequest}
-                          onBulkFavorite={handleBulkFavorite}
-                          onBulkSafe={handleBulkSafe}
-                          onBulkPin={handleBulkPin}
-                          onBulkMoveToObject={handleBulkMoveToObject}
-                          onOpenMoveDialog={openMoveDialog}
-                          onToggleSafe={() => handleToggleSafeRequest(folder)}
-                          hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                );
-              }
-
-              // List mode: each virtual row = 1 item
-              const folder = visibleFolders[virtualRow.index];
-              if (!folder) return null;
+      <div
+        ref={parentRef}
+        className={cn(
+          'flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40 transition-opacity duration-150',
+          isPlaceholderData ? 'opacity-70 pointer-events-none select-none' : 'opacity-100',
+          !isLoading && !isError && visibleFolders.length > 0 ? 'block' : 'hidden',
+        )}
+      >
+        <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            if (isGridView) {
+              // Grid mode: each virtual row = N columns
+              const fromIndex = virtualRow.index * columnCount;
+              const toIndex = Math.min(fromIndex + columnCount, visibleFolders.length);
+              const rowItems = visibleFolders.slice(fromIndex, toIndex);
 
               return (
                 <div
-                  key={folder.path}
-                  className="absolute top-0 left-0 w-full"
+                  key={virtualRow.index}
+                  className="absolute top-0 left-0 w-full flex gap-3"
                   style={{
                     height: `${virtualRow.size}px`,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <FolderListRow
-                    item={folder}
-                    isSelected={gridSelection.has(folder.path)}
-                    toggleSelection={(id: string, multi: boolean) => toggleGridSelection(id, multi)}
-                    clearSelection={clearGridSelection}
-                    onToggleEnabled={handleToggleEnabled}
-                    selectionSize={gridSelection.size}
-                    onBulkToggle={handleBulkToggle}
-                    onBulkDelete={handleBulkDeleteRequest}
-                    onBulkTag={handleBulkTagRequest}
-                    onBulkFavorite={handleBulkFavorite}
-                    onBulkSafe={handleBulkSafe}
-                    onBulkPin={handleBulkPin}
-                    onBulkMoveToObject={handleBulkMoveToObject}
-                    onRename={() => handleRenameRequest(folder)}
-                    onDelete={() => handleDeleteRequest(folder)}
-                    onToggleFavorite={handleToggleFavorite}
-                    onOpenMoveDialog={openMoveDialog}
-                    onToggleSafe={() => handleToggleSafeRequest(folder)}
-                    hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
-                  />
+                  {rowItems.map((folder) => (
+                    <div key={folder.path} className="flex-none" style={{ width: cardWidth }}>
+                      <FolderCard
+                        folder={folder}
+                        isSelected={gridSelection.has(folder.path)}
+                        onNavigate={handleNavigate}
+                        toggleSelection={toggleGridSelection}
+                        clearSelection={clearGridSelection}
+                        onToggleEnabled={handleToggleEnabled}
+                        onToggleFavorite={handleToggleFavorite}
+                        onEnableOnlyThis={handleEnableOnlyThis}
+                        isRenaming={renamingId === folder.path}
+                        onRenameSubmit={handleRenameSubmit}
+                        onRenameCancel={handleRenameCancel}
+                        onRename={() => handleRenameRequest(folder)}
+                        onDelete={() => handleDeleteRequest(folder)}
+                        isFocused={focusedId === folder.path}
+                        selectionSize={gridSelection.size}
+                        onBulkToggle={handleBulkToggle}
+                        onBulkDelete={handleBulkDeleteRequest}
+                        onBulkTag={handleBulkTagRequest}
+                        onBulkFavorite={handleBulkFavorite}
+                        onBulkSafe={handleBulkSafe}
+                        onBulkPin={handleBulkPin}
+                        onBulkMoveToObject={handleBulkMoveToObject}
+                        onOpenMoveDialog={openMoveDialog}
+                        onToggleSafe={() => handleToggleSafeRequest(folder)}
+                        hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
+                      />
+                    </div>
+                  ))}
                 </div>
               );
-            })}
-          </div>
+            }
+
+            // List mode: each virtual row = 1 item
+            const folder = visibleFolders[virtualRow.index];
+            if (!folder) return null;
+
+            return (
+              <div
+                key={folder.path}
+                className="absolute top-0 left-0 w-full"
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <FolderListRow
+                  item={folder}
+                  isSelected={gridSelection.has(folder.path)}
+                  toggleSelection={(id: string, multi: boolean) => toggleGridSelection(id, multi)}
+                  clearSelection={clearGridSelection}
+                  onToggleEnabled={handleToggleEnabled}
+                  selectionSize={gridSelection.size}
+                  onBulkToggle={handleBulkToggle}
+                  onBulkDelete={handleBulkDeleteRequest}
+                  onBulkTag={handleBulkTagRequest}
+                  onBulkFavorite={handleBulkFavorite}
+                  onBulkSafe={handleBulkSafe}
+                  onBulkPin={handleBulkPin}
+                  onBulkMoveToObject={handleBulkMoveToObject}
+                  onRename={() => handleRenameRequest(folder)}
+                  onDelete={() => handleDeleteRequest(folder)}
+                  onToggleFavorite={handleToggleFavorite}
+                  onOpenMoveDialog={openMoveDialog}
+                  onToggleSafe={() => handleToggleSafeRequest(folder)}
+                  hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
+                />
+              </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       <FolderGridModals
         moveDialog={moveDialog}

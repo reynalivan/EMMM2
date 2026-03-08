@@ -23,9 +23,16 @@ interface HandlerDeps {
   objects: ObjectSummary[];
   folders?: ModFolder[];
   schema: GameSchema | undefined;
+  mismatchConfirm: string[] | null;
+  setMismatchConfirm: React.Dispatch<React.SetStateAction<string[] | null>>;
 }
 
-export function useObjectListHandlers({ objects, folders = [], schema }: HandlerDeps) {
+export function useObjectListHandlers({
+  objects,
+  folders = [],
+  schema,
+  setMismatchConfirm,
+}: HandlerDeps) {
   // ── CRUD, misc, and object toggle ──────────────────────────────
   const crud = useObjHandlersCrud({ objects, folders, schema });
 
@@ -37,6 +44,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     objects,
     setScanReview: scan.setScanReview,
     setIsSyncing: scan.setIsSyncing,
+    setMismatchConfirm,
   });
 
   // ── DnD drop zones ─────────────────────────────────────────────
@@ -45,6 +53,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handleArchivesInteractively: archive.handleArchivesInteractively,
     setScanReview: scan.setScanReview,
     setIsSyncing: scan.setIsSyncing,
+    setMismatchConfirm,
   });
 
   // ── Bulk operations ────────────────────────────────────────────
@@ -94,6 +103,7 @@ export function useObjectListHandlers({ objects, folders = [], schema }: Handler
     handleArchivesInteractively: archive.handleArchivesInteractively,
     handleArchiveExtractSubmit: archive.handleArchiveExtractSubmit,
     handleArchiveExtractSkip: archive.handleArchiveExtractSkip,
+    handleStopExtraction: archive.handleStopExtraction,
 
     // Bulk action handlers
     bulkTagModal: bulk.bulkTagModal,

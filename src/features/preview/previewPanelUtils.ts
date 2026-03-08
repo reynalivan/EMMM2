@@ -32,10 +32,12 @@ export interface KeyBindEditableField {
 }
 
 export interface KeyBindSectionGroup {
-  id: string;
+  id: string; // usually the fileName
   fileName: string;
-  sectionName: string;
-  fields: KeyBindEditableField[];
+  sections: {
+    sectionName: string;
+    fields: KeyBindEditableField[];
+  }[];
   rangeLabel: string;
 }
 
@@ -52,6 +54,18 @@ export interface VariableInfoSummary {
   minValue: number | null;
   maxValue: number | null;
   occurrences: VariableOccurrenceInfo[];
+}
+
+export interface ModFeatureSummary {
+  featureName: string;
+  triggerKeys: string[];
+  statesCount: number;
+}
+
+export interface HashSummary {
+  fileName: string;
+  sectionName: string;
+  hash: string;
 }
 
 export interface IniWritePayload {
@@ -77,13 +91,6 @@ function buildSectionByLine(rawLines: string[]): Map<number, string> {
   }
 
   return sectionByLine;
-}
-
-function toRangeLabel(fields: KeyBindEditableField[]): string {
-  if (fields.length === 0) {
-    return '0 entries';
-  }
-  return fields.length === 1 ? '1 entry' : `${fields.length} entries`;
 }
 
 export function shouldLoadGalleryImage(
@@ -197,24 +204,41 @@ export function buildKeyBindSections(
       });
     }
 
+    // Re-structure the groups for this document by `fileName`
+    const fileSections: { sectionName: string; fields: KeyBindEditableField[] }[] = [];
+    let totalKeysInFile = 0;
+
     for (const [sectionName, fields] of groupsBySection.entries()) {
       const sortedFields = [...fields].sort((a, b) => a.lineIdx - b.lineIdx);
-      groups.push({
-        id: `${entry.fileName}:${sectionName}`,
-        fileName: entry.fileName,
+      fileSections.push({
         sectionName,
         fields: sortedFields,
-        rangeLabel: toRangeLabel(sortedFields),
+      });
+      totalKeysInFile += sortedFields.filter((f) => f.label === 'key').length;
+    }
+
+    // Sort sections alphabetically within the file
+    fileSections.sort((a, b) =>
+      a.sectionName.localeCompare(b.sectionName, undefined, { sensitivity: 'base' }),
+    );
+
+    if (fileSections.length > 0) {
+      groups.push({
+        id: entry.fileName, // The ID of the group is the file name
+        fileName: entry.fileName,
+        sections: fileSections,
+        rangeLabel:
+          totalKeysInFile === 0
+            ? '0 keys'
+            : totalKeysInFile === 1
+              ? '1 key'
+              : `${totalKeysInFile} keys`,
       });
     }
   }
 
   return groups.sort((a, b) => {
-    const byFile = a.fileName.localeCompare(b.fileName, undefined, { sensitivity: 'base' });
-    if (byFile !== 0) {
-      return byFile;
-    }
-    return a.sectionName.localeCompare(b.sectionName, undefined, { sensitivity: 'base' });
+    return a.fileName.localeCompare(b.fileName, undefined, { sensitivity: 'base' });
   });
 }
 
@@ -324,4 +348,108 @@ export function buildVariableInfoSummaries(
   }
 
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function buildHashSummaries(
+  documents: Array<{ fileName: string; document: IniDocumentLike | null | undefined }>,
+): HashSummary[] {
+  const hashes: HashSummary[] = [];
+
+  for (const entry of documents) {
+    const document = entry.document;
+    if (!document || document.mode !== 'Structured') continue;
+
+    const sectionByLine = buildSectionByLine(document.raw_lines);
+    for (let i = 0; i < document.raw_lines.length; i++) {
+      const line = document.raw_lines[i];
+      const sectionName = sectionByLine.get(i) ?? 'Global';
+
+      if (!sectionName.toLowerCase().includes('override')) continue;
+
+      const hashMatch = line.match(/^\s*hash\s*=\s*([a-fA-F0-9]+)\s*$/i);
+      if (hashMatch) {
+        // Prevent pure duplicates from the same section
+        const hashVal = hashMatch[1].toLowerCase();
+        if (!hashes.some((h) => h.sectionName === sectionName && h.hash === hashVal)) {
+          hashes.push({
+            fileName: entry.fileName,
+            sectionName,
+            hash: hashVal,
+          });
+        }
+      }
+    }
+  }
+
+  return hashes;
+}
+
+export function buildModFeatureSummaries(
+  variableSummaries: VariableInfoSummary[],
+  keyBindSections: KeyBindSectionGroup[],
+): ModFeatureSummary[] {
+  const features: ModFeatureSummary[] = [];
+
+  for (const variable of variableSummaries) {
+    const triggerKeys = new Set<string>();
+
+    for (const fileGroup of keyBindSections) {
+      for (const section of fileGroup.sections) {
+        const editsVariable = section.fields.some(
+          (f) => f.label.toLowerCase() === variable.name.toLowerCase(),
+        );
+
+        if (editsVariable) {
+          const keyField = section.fields.find((f) => f.label === 'key');
+          if (keyField && keyField.value) {
+            triggerKeys.add(keyField.value.trim());
+          }
+        }
+      }
+    }
+
+    const uniqueValues = new Set(variable.occurrences.map((o) => o.value));
+
+    features.push({
+      featureName: variable.name,
+      triggerKeys: Array.from(triggerKeys),
+      statesCount: uniqueValues.size,
+    });
+  }
+
+  return features;
+}
+
+export function getConflictingKeys(
+  keyBindSections: KeyBindSectionGroup[],
+  draftByField: Record<string, string>,
+): Set<string> {
+  const keyUsage = new Map<string, string[]>();
+
+  for (const group of keyBindSections) {
+    for (const section of group.sections) {
+      const keyField = section.fields.find((f) => f.label === 'key');
+      if (keyField) {
+        const rawValue = draftByField[keyField.id] ?? keyField.value;
+        const normalized = rawValue.trim().toLowerCase();
+
+        if (normalized) {
+          const users = keyUsage.get(normalized) || [];
+          users.push(section.sectionName);
+          keyUsage.set(normalized, users);
+        }
+      }
+    }
+  }
+
+  const conflictingKeys = new Set<string>();
+  for (const [key, users] of keyUsage.entries()) {
+    // Only report true conflicts if it's used in 2 or more distinct sections
+    const distinctSections = new Set(users);
+    if (distinctSections.size > 1) {
+      conflictingKeys.add(key.toUpperCase());
+    }
+  }
+
+  return conflictingKeys;
 }

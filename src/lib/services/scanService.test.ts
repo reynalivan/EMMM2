@@ -41,6 +41,10 @@ describe('scanService', () => {
         modsDir: '/mods',
         password: 'pass123',
         overwrite: true,
+        customName: null,
+        disableAfter: false,
+        unpackNested: true,
+        onProgress: expect.anything(),
       });
     });
 
@@ -51,6 +55,10 @@ describe('scanService', () => {
         modsDir: '/mods',
         password: null,
         overwrite: false,
+        customName: null,
+        disableAfter: false,
+        unpackNested: true,
+        onProgress: expect.anything(),
       });
     });
   });

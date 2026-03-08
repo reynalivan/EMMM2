@@ -6,8 +6,6 @@
 
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import React from 'react';
 import {
   useDedupReport,
   useStartDedupScan,
@@ -16,6 +14,9 @@ import {
 } from './useDedup';
 import * as dedupService from '../../../lib/services/dedupService';
 import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../../types/dedup';
+import { createWrapper } from '../../../testing/test-utils';
+
+vi.unmock('@tanstack/react-query');
 
 // Mock the service
 vi.mock('../../../lib/services/dedupService', () => ({
@@ -36,18 +37,6 @@ vi.mock('../../../stores/useToastStore', () => ({
     warning: vi.fn(),
   },
 }));
-
-// Helper to create wrapper with QueryClient
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: 0 },
-      mutations: { retry: false },
-    },
-  });
-  return ({ children }: { children: React.ReactNode }) =>
-    React.createElement(QueryClientProvider, { client: queryClient }, children);
-};
 
 describe('useDedup hooks', () => {
   beforeEach(() => {
@@ -93,7 +82,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.getReport).mockResolvedValue(mockReport);
 
       const { result } = renderHook(() => useDedupReport(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -105,7 +94,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.getReport).mockResolvedValue(null);
 
       const { result } = renderHook(() => useDedupReport(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -117,7 +106,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.getReport).mockRejectedValue(error);
 
       const { result } = renderHook(() => useDedupReport(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       await waitFor(() => expect(result.current.isError).toBe(true));
@@ -130,7 +119,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.startDedupScan).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useStartDedupScan(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       const onEvent = vi.fn();
@@ -150,7 +139,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.startDedupScan).mockRejectedValue(error);
 
       const { result } = renderHook(() => useStartDedupScan(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       const onEvent = vi.fn();
@@ -181,7 +170,7 @@ describe('useDedup hooks', () => {
 
       const onEvent = vi.fn();
       const { result } = renderHook(() => useStartDedupScan(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate({ gameId: 'genshin', modsRoot: '/path', onEvent });
@@ -196,7 +185,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.cancelDedupScan).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate();
@@ -210,7 +199,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.cancelDedupScan).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate();
@@ -225,7 +214,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.cancelDedupScan).mockRejectedValue(error);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate();
@@ -247,7 +236,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       const requests = [
@@ -278,7 +267,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate({ requests: [], gameId: 'genshin' });
@@ -299,7 +288,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate({ requests: [], gameId: 'genshin' });
@@ -314,7 +303,7 @@ describe('useDedup hooks', () => {
       vi.mocked(dedupService.dedupService.resolveBatch).mockRejectedValue(error);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper,
       });
 
       result.current.mutate({ requests: [], gameId: 'genshin' });
