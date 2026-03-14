@@ -79,7 +79,7 @@ pub async fn gc_lost_objects(
 
     // Build normalized folder name set from disk
     let mut norm_set: HashMap<String, Vec<String>> = HashMap::new();
-    if let Ok(entries) = std::fs::read_dir(mods_dir) {
+    let read_dir_ok = if let Ok(entries) = std::fs::read_dir(mods_dir) {
         for entry in entries.flatten() {
             if entry.path().is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -89,12 +89,15 @@ pub async fn gc_lost_objects(
                 }
             }
         }
-    }
+        true
+    } else {
+        false
+    };
 
-    // SAFETY: If FS has 0 folders, do NOT GC — filesystem is likely unreadable
-    if norm_set.is_empty() {
+    // SAFETY: If read_dir failed, skip GC — filesystem is unreadable
+    if !read_dir_ok {
         log::warn!(
-            "GC skipped for game '{}': filesystem returned 0 non-hidden folders at '{}'.",
+            "GC skipped for game '{}': read_dir failed at '{}'. Keeping DB intact.",
             game_id,
             mod_path
         );
@@ -110,8 +113,11 @@ pub async fn gc_lost_objects(
         }
     }
 
-    // SAFETY: If GC would delete ALL objects, abort — this is a bug, not cleanup
-    if !candidates.is_empty() && candidates.len() == objects.len() {
+    // SAFETY: If GC would delete ALL objects AND there are at least 2 objects,
+    // abort — this most likely indicates a folder_path format mismatch, not
+    // legitimate cleanup. When objects.len() == 1 we allow the delete because
+    // "the only object was deleted" is a valid user action.
+    if !candidates.is_empty() && candidates.len() == objects.len() && objects.len() > 1 {
         log::error!(
             "GC ABORTED for game '{}': would delete ALL {} objects. \
              This indicates a folder_path format mismatch between DB and FS, \

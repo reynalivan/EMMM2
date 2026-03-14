@@ -9,11 +9,14 @@ import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
 
 interface ModWatchEvent {
-  type: 'Created' | 'Modified' | 'Removed' | 'Renamed' | 'Error';
+  type: 'Created' | 'Modified' | 'Removed' | 'Renamed' | 'StatusChanged' | 'Error';
   path?: string;
   from?: string;
   to?: string;
+  from_status?: string;
+  to_status?: string;
   error?: string;
+  retry_count?: number;
 }
 
 export function ExternalChangeHandler() {
@@ -50,7 +53,7 @@ export function ExternalChangeHandler() {
 
       const normalizedRoot = activeGame.mod_path.replace(/\\/g, '/');
 
-      // Helper to determine if a path is a top-level mod folder
+          // Helper to determine if a path is a top-level mod folder
       const isModFolder = (targetPath?: string) => {
         if (!targetPath) return false;
         const normalizedEventPath = targetPath.replace(/\\/g, '/');
@@ -59,26 +62,56 @@ export function ExternalChangeHandler() {
         const relative = normalizedEventPath.slice(normalizedRoot.length);
         const relativeClean = relative.startsWith('/') ? relative.slice(1) : relative;
 
-        // Count depth: 0 slashes = root child, 1 slash = Category/Mod
-        const depth = (relativeClean.match(/\//g) || []).length;
+        // Count path components (folders) — matches backend logic in lifecycle.rs:
+        // - depth 1 (components.len() == 1) → object folder (e.g., Mods/Alhaitham)
+        // - depth 2 (components.len() == 2) → mod folder (e.g., Mods/Alhaitham/Hair)
+        const depth = relativeClean ? relativeClean.split('/').length : 0;
 
-        // Ignore files (have an extension like .ini, .txt, .dll)
-        const lastSegment = relativeClean.split('/').pop() ?? '';
-        const hasExtension = lastSegment.includes('.') && lastSegment.lastIndexOf('.') > 0;
+  // Ignore files (have an extension like .ini, .txt, .dll)
+  const lastSegment = relativeClean.split('/').pop() ?? '';
+  const hasExtension = lastSegment.includes('.') && lastSegment.lastIndexOf('.') > 0;
 
-        return depth <= 1 && !hasExtension;
-      };
+  // Ignore hidden folders (start with .)
+  if (lastSegment.startsWith('.')) return false;
+
+  // Accept object folders (depth=1) and mod folders (depth=2)
+  // depth <= 1 means: 0 components (invalid) or 1 component (object folder)
+  void hasExtension; // kept for reference even if unused in current logic
+  return depth === 1 || depth === 2;
+};
 
       const getFolderName = (p?: string) => p?.split(/[\\/]/).pop() ?? 'Unknown Item';
+
+      // Handle error events with retry info
+      if (payload.type === 'Error' && payload.retry_count !== undefined) {
+        const errorMsg = `Sync failed after ${payload.retry_count} retries: ${payload.error}`;
+
+        // Show toast
+        toast.error(errorMsg);
+
+        // Log for debugging (syncErrors queue removed per lint fix)
+        console.error('Watcher sync error:', payload);
+        return;
+      }
 
       // Only queue valid mod folder changes
       const isValidCreated = payload.type === 'Created' && isModFolder(payload.path);
       const isValidRemoved = payload.type === 'Removed' && isModFolder(payload.path);
       const isValidRenamed =
         payload.type === 'Renamed' && (isModFolder(payload.from) || isModFolder(payload.to));
+      const isValidStatusChanged =
+        payload.type === 'StatusChanged' && isModFolder(payload.path);
 
-      if (isValidCreated || isValidRemoved || isValidRenamed) {
+      if (isValidCreated || isValidRemoved || isValidRenamed || isValidStatusChanged) {
         eventQueueRef.current.push(payload);
+
+        // For status changes, show immediate feedback
+        if (isValidStatusChanged) {
+          const folderName = getFolderName(payload.path);
+          const isEnabled = payload.to_status === 'ENABLED';
+          const label = isEnabled ? 'enabled' : 'disabled';
+          toast.success(`"${folderName}" was ${label} externally.`);
+        }
       } else {
         // Non-mod-folder events: debounce invalidation only, no toast
         if (timeoutId === null) {
@@ -105,30 +138,41 @@ export function ExternalChangeHandler() {
           return;
         }
 
-        const totals = { created: 0, removed: 0, renamed: 0 };
+        const totals = { created: 0, removed: 0, renamed: 0, statusChanged: 0 };
         queue.forEach((ev: ModWatchEvent) => {
           if (ev.type === 'Created') totals.created++;
           else if (ev.type === 'Removed') totals.removed++;
           else if (ev.type === 'Renamed') totals.renamed++;
+          else if (ev.type === 'StatusChanged') totals.statusChanged++;
         });
 
         // Sync DB before invalidating queries
         try {
+          // Always GC lost objects if items were removed or renamed
           if (totals.removed > 0 || totals.renamed > 0) {
             await invoke('gc_lost_objects_cmd', { gameId: activeGame.id });
           }
-          if (totals.created > 0 || totals.renamed > 0) {
+
+          // Sync objects if items were created, renamed, or status changed
+          if (totals.created > 0 || totals.renamed > 0 || totals.statusChanged > 0) {
             await invoke('sync_objects_cmd', { gameId: activeGame.id });
           }
         } catch (err) {
           console.error('Watcher sync failed:', err);
         }
 
-        // Invalidate queries ONCE per batch flush
-        queryClient.invalidateQueries({ queryKey: folderKeys.all });
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'none' });
-        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+        // Selective query invalidation based on event types
+        if (totals.statusChanged > 0) {
+          // Status change: only invalidate objects and category counts (no need to refetch folders)
+          queryClient.invalidateQueries({ queryKey: ['objects'] });
+          queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+        } else if (totals.created > 0 || totals.removed > 0 || totals.renamed > 0) {
+          // Structure change: invalidate all queries
+          queryClient.invalidateQueries({ queryKey: folderKeys.all });
+          queryClient.invalidateQueries({ queryKey: ['objects'] });
+          queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+        }
 
         // Imp 2: only show toast if user is actively viewing mods (req-05 line 76)
         const workspaceView = useAppStore.getState().workspaceView;

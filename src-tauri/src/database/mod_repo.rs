@@ -128,6 +128,22 @@ pub async fn update_child_paths(
     Ok(())
 }
 
+pub async fn update_status_for_object(
+    pool: &SqlitePool,
+    game_id: &str,
+    object_folder: &str,
+    new_status: &str,
+) -> Result<(), sqlx::Error> {
+    let object_prefix = format!("{}/", object_folder);
+    sqlx::query("UPDATE mods SET status = ? WHERE game_id = ? AND folder_path LIKE ? || '%'")
+        .bind(new_status)
+        .bind(game_id)
+        .bind(&object_prefix)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn set_favorite_by_path(
     pool: &SqlitePool,
     game_id: &str,

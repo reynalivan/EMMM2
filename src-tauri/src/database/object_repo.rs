@@ -212,6 +212,50 @@ pub async fn delete_object(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Erro
     Ok(())
 }
 
+/// Atomically delete an object folder and all its child mods from the DB.
+///
+/// Used when the watcher detects a depth=1 `Removed` event (an entire object
+/// folder was deleted from disk). The operation runs inside a single transaction:
+/// 1. Delete all `mods` rows whose `folder_path` starts with `{folder_path}/` or `{folder_path}\`
+/// 2. Delete the `objects` row with `folder_path = folder_path AND game_id = game_id`
+///
+/// Idempotent — safe to call even if the object does not exist.
+pub async fn delete_object_and_mods_by_folder(
+    pool: &SqlitePool,
+    game_id: &str,
+    folder_path: &str,
+) -> Result<u64, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Delete child mods (both slash styles to be OS-agnostic)
+    let prefix_fwd = format!("{}/", folder_path);
+    let prefix_back = format!("{}\\", folder_path);
+    let mods_deleted = sqlx::query(
+        "DELETE FROM mods WHERE game_id = ? AND (folder_path LIKE ? OR folder_path LIKE ?)",
+    )
+    .bind(game_id)
+    .bind(format!("{}%", prefix_fwd))
+    .bind(format!("{}%", prefix_back))
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    // Delete the object itself
+    sqlx::query("DELETE FROM objects WHERE game_id = ? AND folder_path = ?")
+        .bind(game_id)
+        .bind(folder_path)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    log::info!(
+        "delete_object_and_mods_by_folder: removed object folder='{}' game='{}', {} child mods deleted",
+        folder_path, game_id, mods_deleted
+    );
+    Ok(mods_deleted)
+}
+
 pub async fn get_mod_count_for_object(pool: &SqlitePool, id: &str) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE object_id = ?")
         .bind(id)

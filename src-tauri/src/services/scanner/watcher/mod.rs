@@ -22,6 +22,12 @@ pub enum ModWatchEvent {
     Removed(String),
     /// A file or folder was renamed.
     Renamed { from: String, to: String },
+    /// A folder's enable/disable status changed (DISABLED prefix added/removed).
+    StatusChanged {
+        path: String,
+        from_status: String,
+        to_status: String,
+    },
     /// An error occurred during watching.
     Error(String),
 }
@@ -147,7 +153,7 @@ fn is_relevant_path(path: &std::path::Path) -> bool {
 /// Translate a raw notify Event into our domain ModWatchEvents.
 ///
 /// Filters: only relevant paths (directories + ini/image files) are forwarded.
-/// `Modify` events are dropped entirely per req-28 line 98.
+/// `Modify` events are now forwarded for status tracking and metadata updates.
 fn translate_event(event: Event) -> Vec<ModWatchEvent> {
     let mut results = Vec::new();
 
@@ -159,7 +165,14 @@ fn translate_event(event: Event) -> Vec<ModWatchEvent> {
                 }
             }
         }
-        EventKind::Modify(_) => {} // req-28: only Create/Remove/Rename forwarded
+        EventKind::Modify(_) => {
+            // Forward Modified events for relevant paths
+            for p in &event.paths {
+                if is_relevant_path(p) {
+                    results.push(ModWatchEvent::Modified(p.to_string_lossy().to_string()));
+                }
+            }
+        }
         EventKind::Remove(_) => {
             for p in &event.paths {
                 if is_relevant_path(p) {
