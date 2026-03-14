@@ -117,15 +117,31 @@ pub async fn list_mod_folders_inner(
         target
     } else if let (Some(parent), Some(name)) = (target.parent(), target.file_name()) {
         let needle = name.to_string_lossy().to_lowercase();
-        std::fs::read_dir(parent)
+        // Fallback 1: Case-insensitive match on exact name
+        let case_insensitive_match = std::fs::read_dir(parent)
             .ok()
             .and_then(|entries| {
                 entries
                     .flatten()
                     .find(|e| e.file_name().to_string_lossy().to_lowercase() == needle)
             })
-            .map(|e| e.path())
-            .unwrap_or(target)
+            .map(|e| e.path());
+
+        if let Some(path) = case_insensitive_match {
+            path
+        } else {
+            // Fallback 2: Check for DISABLED prefix variant
+            let disabled_needle = format!("disabled {}", needle);
+            std::fs::read_dir(parent)
+                .ok()
+                .and_then(|entries| {
+                    entries
+                        .flatten()
+                        .find(|e| e.file_name().to_string_lossy().to_lowercase() == disabled_needle)
+                })
+                .map(|e| e.path())
+                .unwrap_or(target)
+        }
     } else {
         target
     };
@@ -157,6 +173,17 @@ pub async fn list_mod_folders_inner(
     for (base_key, indices) in &groups {
         if indices.len() < 2 {
             continue;
+        }
+
+        // Skip expected DISABLED/ENABLED pairs — these are created by the
+        // PrivacyManager mode toggle (adding/removing "DISABLED " prefix).
+        // They are NOT user-caused naming conflicts.
+        if indices.len() == 2 {
+            let has_enabled = indices.iter().any(|&i| folders[i].is_enabled);
+            let has_disabled = indices.iter().any(|&i| !folders[i].is_enabled);
+            if has_enabled && has_disabled {
+                continue;
+            }
         }
         // Compute stable group_id from parent path + base_key
         use std::hash::{Hash, Hasher};
@@ -221,49 +248,58 @@ pub async fn list_mod_folders_inner(
             let sibling_path = parent_dir.join(&sibling_name);
 
             if sibling_path.exists() && sibling_path.is_dir() {
-                // Found a sibling conflict! Build a ConflictGroup for it.
-                use std::hash::{Hash, Hasher};
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                parent_dir.to_string_lossy().hash(&mut hasher);
-                self_base.to_lowercase().hash(&mut hasher);
-                let group_id = format!("cg_{:016x}", hasher.finish());
+                // Skip expected DISABLED/ENABLED pairs — these are created by the
+                // PrivacyManager mode toggle (adding/removing "DISABLED " prefix).
+                // One is enabled, the other disabled — this is NOT a user-caused conflict.
+                let sibling_disabled = is_disabled_folder(&sibling_name);
+                if self_disabled != sibling_disabled {
+                    // Expected pair: one DISABLED, one not. Not a real conflict.
+                    // Fall through without adding to conflicts.
+                } else {
+                    // Found a REAL sibling conflict (same prefix state).
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    parent_dir.to_string_lossy().hash(&mut hasher);
+                    self_base.to_lowercase().hash(&mut hasher);
+                    let group_id = format!("cg_{:016x}", hasher.finish());
 
-                let self_meta = std::fs::metadata(&target);
-                let sibling_meta = std::fs::metadata(&sibling_path);
+                    let self_meta = std::fs::metadata(&target);
+                    let sibling_meta = std::fs::metadata(&sibling_path);
 
-                let self_member = ConflictMember {
-                    path: target.to_string_lossy().to_string(),
-                    folder_name: self_name.clone(),
-                    is_enabled: !self_disabled,
-                    modified_at: self_meta
-                        .as_ref()
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0),
-                    size_bytes: self_meta.as_ref().ok().map(|m| m.len()).unwrap_or(0),
-                };
+                    let self_member = ConflictMember {
+                        path: target.to_string_lossy().to_string(),
+                        folder_name: self_name.clone(),
+                        is_enabled: !self_disabled,
+                        modified_at: self_meta
+                            .as_ref()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                        size_bytes: self_meta.as_ref().ok().map(|m| m.len()).unwrap_or(0),
+                    };
 
-                let sibling_member = ConflictMember {
-                    path: sibling_path.to_string_lossy().to_string(),
-                    folder_name: sibling_name.clone(),
-                    is_enabled: self_disabled, // opposite of self
-                    modified_at: sibling_meta
-                        .as_ref()
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0),
-                    size_bytes: sibling_meta.as_ref().ok().map(|m| m.len()).unwrap_or(0),
-                };
+                    let sibling_member = ConflictMember {
+                        path: sibling_path.to_string_lossy().to_string(),
+                        folder_name: sibling_name.clone(),
+                        is_enabled: self_disabled, // opposite of self
+                        modified_at: sibling_meta
+                            .as_ref()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                        size_bytes: sibling_meta.as_ref().ok().map(|m| m.len()).unwrap_or(0),
+                    };
 
-                conflicts.push(ConflictGroup {
-                    group_id,
-                    base_name: self_base,
-                    members: vec![self_member, sibling_member],
-                });
+                    conflicts.push(ConflictGroup {
+                        group_id,
+                        base_name: self_base,
+                        members: vec![self_member, sibling_member],
+                    });
+                }
             }
         }
     }

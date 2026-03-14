@@ -52,7 +52,7 @@ pub fn load_master_db_json(resource_dir: &Path, game_type: &str) -> Result<Strin
 }
 
 /// Resolve all thumbnail fields in a slice of serde_json entries to absolute paths.
-pub fn resolve_entry_thumbnails(entries: &mut Vec<Value>, resource_dir: &Path) {
+pub fn resolve_entry_thumbnails(entries: &mut [Value], resource_dir: &Path) {
     for entry in entries.iter_mut() {
         if let Some(thumb_rel) = entry.get("thumbnail_path").and_then(|v| v.as_str()) {
             let abs_path = resource_dir.join(thumb_rel);

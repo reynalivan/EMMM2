@@ -1,8 +1,10 @@
+use super::nested_walker;
 use super::types::{
     Collection, CollectionDetails, CollectionPreviewMod, CreateCollectionInput,
     UpdateCollectionInput,
 };
 use crate::database::collection_repo;
+use crate::database::game_repo;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -22,6 +24,12 @@ pub async fn create_collection(
     input: CreateCollectionInput,
 ) -> Result<CollectionDetails, String> {
     let id = Uuid::new_v4().to_string();
+
+    // Resolve mods_path BEFORE starting transaction to avoid connection starvation
+    let mods_path = game_repo::get_mod_path(pool, &input.game_id)
+        .await
+        .map_err(|e| format!("Failed to get mods_path: {e}"))?;
+
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     let name_trimmed = input.name.trim();
@@ -82,6 +90,30 @@ pub async fn create_collection(
         }
     }
 
+    // ── Nested mods: walk filesystem for mods inside ContainerFolders ─────
+
+    let mut nested_count = 0;
+    if let Some(ref mp) = mods_path {
+        if let Ok(nested) = nested_walker::walk_nested_mods(mp) {
+            // Filter by safe context if needed
+            let filtered: Vec<_> = if input.is_safe_context {
+                nested
+                    .into_iter()
+                    .filter(|n| n.is_enabled && n.is_safe)
+                    .collect()
+            } else {
+                nested.into_iter().filter(|n| n.is_enabled).collect()
+            };
+
+            for nm in &filtered {
+                collection_repo::insert_nested_collection_item(&mut tx, &id, &nm.folder_path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            nested_count = filtered.len();
+        }
+    }
+
     tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(CollectionDetails {
@@ -90,7 +122,7 @@ pub async fn create_collection(
             name: input.name.trim().to_string(),
             game_id: input.game_id,
             is_safe_context: input.is_safe_context,
-            member_count: mod_ids.len(),
+            member_count: mod_ids.len() + nested_count,
             is_last_unsaved: false,
         },
         mod_ids,
@@ -224,9 +256,11 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str, game_id: &str) -> Re
         .await
         .unwrap_or_default();
 
-    collection_repo::delete_collection(pool, id, game_id)
+    collection_repo::delete_collection(&mut tx, id, game_id)
         .await
         .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     for (_, maybe_path) in items {
         if let Some(path) = maybe_path {
@@ -266,7 +300,120 @@ pub async fn get_collection_preview(
     id: &str,
     game_id: &str,
 ) -> Result<Vec<CollectionPreviewMod>, String> {
-    collection_repo::get_collection_preview_mods(pool, id, game_id)
+    let mut mods = collection_repo::get_collection_preview_mods(pool, id, game_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Also include nested collection items
+    let nested_paths = collection_repo::get_nested_collection_items(pool, id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for nested_path in nested_paths {
+        let path = std::path::Path::new(&nested_path);
+        let display_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| nested_path.clone());
+
+        let clean_name = display_name
+            .strip_prefix("DISABLED ")
+            .unwrap_or(&display_name)
+            .to_string();
+
+        let mut object_id = None;
+        let mut object_name_opt = None;
+        let mut object_type = None;
+
+        // Try to determine object name from the first segment of the path relative to mods folder
+        // For example, if path is "Character\Barbara\BarbaraGyaruALL", the object folder is "Character" or "Barbara" depending on depth
+        // A simple heuristic is to take the parent of the nested mod
+        if let Some(parent) = path.parent() {
+            if let Some(parent_name) = parent.file_name() {
+                let s = parent_name.to_string_lossy().to_string();
+                let parent_clean = s.strip_prefix("DISABLED ").unwrap_or(&s).to_string();
+
+                // Query database to see if we have an object with this folder_name
+                let row: Option<(String, String, Option<String>)> = sqlx::query_as(
+                    "SELECT id, name, object_type FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)"
+                )
+                .bind(game_id)
+                .bind(&parent_clean)
+                .bind(&parent_clean)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None);
+
+                if let Some((oid, oname, otype)) = row {
+                    object_id = Some(oid);
+                    object_name_opt = Some(oname);
+                    object_type = otype;
+                } else {
+                    object_name_opt = Some(parent_clean);
+                }
+            }
+        }
+
+        mods.push(CollectionPreviewMod {
+            id: nested_walker::nested_mod_id(&nested_path),
+            actual_name: clean_name,
+            folder_path: nested_path,
+            is_safe: true,
+            object_id,
+            object_name: object_name_opt,
+            object_type,
+        });
+    }
+
+    Ok(mods)
+}
+
+pub async fn get_active_mods_preview(
+    pool: &SqlitePool,
+    game_id: &str,
+    safe_mode: bool,
+) -> Result<Vec<CollectionPreviewMod>, String> {
+    let mut mods = collection_repo::get_active_mods_preview_mods(pool, game_id, safe_mode)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log::info!(
+        "[collections] get_active_mods_preview: game_id={}, safe_mode={}, db_mods_count={}",
+        game_id,
+        safe_mode,
+        mods.len()
+    );
+
+    // Append nested mods from filesystem walk
+    let mods_path = game_repo::get_mod_path(pool, game_id)
+        .await
+        .map_err(|e| format!("Failed to get mods_path: {e}"))?;
+
+    if let Some(ref mp) = mods_path {
+        if let Ok(nested) = nested_walker::walk_nested_mods(mp) {
+            let enabled_nested: Vec<_> = nested.into_iter()
+                .filter(|n| n.is_enabled && n.is_safe == safe_mode)
+                .collect();
+
+            log::info!(
+                "[collections] nested_mods_count={} from path={}",
+                enabled_nested.len(),
+                mp
+            );
+            for nm in enabled_nested {
+                mods.push(CollectionPreviewMod {
+                    id: nested_walker::nested_mod_id(&nm.folder_path),
+                    actual_name: nm.display_name,
+                    folder_path: nm.folder_path,
+                    is_safe: nm.is_safe,
+                    object_id: None,
+                    object_name: nm.object_name,
+                    object_type: None,
+                });
+            }
+        }
+    }
+
+    log::info!("[collections] total_preview_mods={}", mods.len());
+    Ok(mods)
 }

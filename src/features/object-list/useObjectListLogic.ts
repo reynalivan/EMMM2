@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo, useEffect } from 'react';
+
 import { useAppStore } from '../../stores/useAppStore';
 import { useObjects, useGameSchema } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -8,8 +8,7 @@ import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
 import { useSearchWorker } from './hooks/useSearchWorker';
-import { scanService } from '../../lib/services/scanService';
-import { toast } from '../../stores/useToastStore';
+
 import type { FilterDef } from '../../types/object';
 
 export function useObjectListLogic() {
@@ -17,8 +16,8 @@ export function useObjectListLogic() {
   const { activeGame } = useActiveGame();
 
   const {
-    selectedObject,
-    setSelectedObject,
+    selectedObjectFolderPath,
+    setSelectedObjectFolderPath,
     selectedObjectType,
     setSelectedObjectType,
     sidebarSearchQuery,
@@ -47,11 +46,6 @@ export function useObjectListLogic() {
     statusFilter,
     localSearch: true,
   });
-
-  // Auto-sync: when a game is selected but DB has 0 objects, quick-import all as "Other".
-  // Then offer an "Auto Organize" toast so the user can opt-in to full Deep Matcher matching.
-  const queryClient = useQueryClient();
-  const autoSyncTriggered = useRef<string | null>(null);
 
   // US-3.6: Trigger worker search when query or data changes (debounced)
   useEffect(() => {
@@ -103,7 +97,7 @@ export function useObjectListLogic() {
   } = useObjectListVirtualizer({
     objects,
     schema,
-    selectedObject,
+    selectedObjectFolderPath,
     isMobile,
   });
 
@@ -116,73 +110,6 @@ export function useObjectListLogic() {
     mismatchConfirm,
     setMismatchConfirm,
   });
-
-  // Auto-sync: when a game is selected but DB has 0 mods, quick-import all as "Other".
-  // Then offer an "Auto Organize" toast so the user can opt-in to full Deep Matcher matching.
-  // We check the DB directly (not React query) to avoid false triggers during loading transitions.
-  useEffect(() => {
-    if (
-      activeGame &&
-      !objectsLoading &&
-      !objectsError &&
-      autoSyncTriggered.current !== activeGame.id
-    ) {
-      autoSyncTriggered.current = activeGame.id;
-      (async () => {
-        try {
-          // GC: remove objects whose disk folders are missing (Opt-A: sync-point-only GC)
-          const { gcLostObjects } = await import('../../lib/services/objectService');
-          const lostNames = await gcLostObjects(activeGame.id);
-          if (lostNames.length > 0) {
-            const { useToastStore } = await import('../../stores/useToastStore');
-            const count = lostNames.length;
-            let message = `Lost ${count} object${count > 1 ? 's' : ''} (directory missing). DB synchronized.`;
-            if (count <= 3) {
-              message += `\n(${lostNames.join(', ')})`;
-            }
-            useToastStore.getState().addToast('warning', message, 5000);
-          }
-
-          // Check if we need to quick-import (0 mods in DB for this game)
-          const { getObjects } = await import('../../lib/services/objectService');
-          const allGameObjects = await getObjects({
-            game_id: activeGame.id,
-            safe_mode: false,
-          });
-          const existingModCount = allGameObjects.reduce((acc, obj) => acc + obj.mod_count, 0);
-          if (existingModCount > 0) {
-            // Mods already exist in DB — skip quickImport, just refresh queries
-            queryClient.invalidateQueries({ queryKey: ['objects'] });
-            queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-            return;
-          }
-
-          const result = await scanService.quickImport(
-            activeGame.id,
-            activeGame.name,
-            activeGame.game_type,
-            activeGame.mod_path,
-          );
-          queryClient.invalidateQueries({ queryKey: ['objects'] });
-          queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-          queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-          if (result.new_mods > 0) {
-            toast.withAction(
-              'info',
-              `Imported ${result.new_mods} mods as "Other". Want to auto-organize them?`,
-              {
-                label: 'Auto Organize',
-                onClick: () => handlers.handleSync(),
-              },
-              8000,
-            );
-          }
-        } catch (e) {
-          console.error('Quick import failed:', e);
-        }
-      })();
-    }
-  }, [activeGame, objectsLoading, objectsError, queryClient, handlers]);
 
   const handleFilterChange = (key: string, values: string[]) => {
     setActiveFilters((prev) => ({ ...prev, [key]: values }));
@@ -216,8 +143,8 @@ export function useObjectListLogic() {
     // State
     isMobile,
     activeGame,
-    selectedObject,
-    setSelectedObject,
+    selectedObjectFolderPath,
+    setSelectedObjectFolderPath,
     selectedObjectType,
     setSelectedObjectType,
     sidebarSearchQuery,

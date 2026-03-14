@@ -21,7 +21,7 @@ function toErrorMessage(error: unknown): string {
 
 export default function PreviewPanel() {
   const setMobilePane = useAppStore((state) => state.setMobilePane);
-  const setSelectedObject = useAppStore((state) => state.setSelectedObject);
+  const setSelectedObjectFolderPath = useAppStore((state) => state.setSelectedObjectFolderPath);
 
   const importInputRef = useRef<HTMLInputElement>(null);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
@@ -43,15 +43,10 @@ export default function PreviewPanel() {
     setVersionDraft,
     setDescriptionDraft,
     metadataDirty,
-    activeIniTab,
-    setActiveIniTab,
     keyBindSections,
     openSectionIds,
     draftByField,
     fieldErrors,
-    variableSummaries,
-    hashSummaries,
-    modFeatureSummaries,
     conflictingKeys,
     hasUnsavedEditorChanges,
     changedIniFields,
@@ -387,7 +382,7 @@ export default function PreviewPanel() {
               />
             )}
             <button
-              onClick={() => setSelectedObject(null)}
+              onClick={() => setSelectedObjectFolderPath(null)}
               aria-label="Unselect mod"
               className={`btn btn-circle btn-ghost hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
               title="Close Preview"
@@ -458,18 +453,13 @@ export default function PreviewPanel() {
         activePath={activePath}
         activeObjectName={selectedFolder?.name}
         selectedFolderName={selectedFolder?.folder_name}
-        activeTab={activeIniTab}
         sections={keyBindSections}
         openSectionIds={openSectionIds}
         draftByField={draftByField}
         fieldErrors={fieldErrors}
-        variableSummaries={variableSummaries}
-        hashSummaries={hashSummaries}
-        modFeatureSummaries={modFeatureSummaries}
         conflictingKeys={conflictingKeys}
         editorDirty={hasUnsavedEditorChanges}
         isSaving={writeModIni.isPending}
-        onTabChange={setActiveIniTab}
         onToggleSection={requestToggleSection}
         onFieldChange={updateEditorField}
         onSave={async () => {

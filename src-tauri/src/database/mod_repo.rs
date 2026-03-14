@@ -469,6 +469,19 @@ pub async fn get_mod_id_and_status_by_path(
         .await
 }
 
+/// Pool-based variant for use outside transactions.
+pub async fn get_mod_id_and_status_by_path_pool(
+    pool: &SqlitePool,
+    folder_path: &str,
+    game_id: &str,
+) -> Result<Option<(String, Option<String>, String)>, sqlx::Error> {
+    sqlx::query_as("SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?")
+        .bind(folder_path)
+        .bind(game_id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn update_mod_status_tx(
     conn: &mut sqlx::SqliteConnection,
     id: &str,
@@ -620,6 +633,14 @@ pub async fn get_all_mods_id_path_status(
     pool: &sqlx::SqlitePool,
 ) -> Result<Vec<(String, String, String)>, sqlx::Error> {
     sqlx::query_as("SELECT id, folder_path, status FROM mods")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn get_all_mods_id_path_status_with_game(
+    pool: &sqlx::SqlitePool,
+) -> Result<Vec<(String, String, String, String)>, sqlx::Error> {
+    sqlx::query_as("SELECT id, folder_path, status, game_id FROM mods")
         .fetch_all(pool)
         .await
 }

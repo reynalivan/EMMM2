@@ -27,6 +27,7 @@ describe('useObjectListVirtualizer', () => {
       object_type: 'Character',
       is_pinned: false,
       thumbnail_path: null,
+      folder_path: 'zeta',
     } as ObjectSummary,
     {
       id: '2',
@@ -64,7 +65,7 @@ describe('useObjectListVirtualizer', () => {
       useObjectListVirtualizer({
         objects: mockObjects,
         schema: mockSchema as unknown as import('../../types/object').GameSchema,
-        selectedObject: null,
+        selectedObjectFolderPath: null,
         isMobile: false,
       }),
     );
@@ -113,7 +114,7 @@ describe('useObjectListVirtualizer', () => {
       initialProps: {
         objects: mockObjects,
         schema: mockSchema as unknown as import('../../types/object').GameSchema,
-        selectedObject: '1', // Zeta
+        selectedObjectFolderPath: 'zeta', // Zeta
         isMobile: false,
       },
     });
@@ -123,7 +124,7 @@ describe('useObjectListVirtualizer', () => {
     rerender({
       objects: mockObjects,
       schema: mockSchema as unknown as import('../../types/object').GameSchema,
-      selectedObject: 'none',
+      selectedObjectFolderPath: 'none',
       isMobile: false,
     });
 

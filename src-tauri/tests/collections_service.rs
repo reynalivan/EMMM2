@@ -134,7 +134,7 @@ async fn collections_apply_then_undo_restores_state() {
         &watcher_state,
         &created.collection.id,
         &game_id,
-        false,
+        true, // Matches the is_safe_context: true above
     )
     .await
     .expect("apply collection");
@@ -162,7 +162,7 @@ async fn collections_apply_then_undo_restores_state() {
             .await
             .expect("snapshot collection");
 
-    let undo = apply_collection(&pool, &watcher_state, &snapshot_id, &game_id, false)
+    let undo = apply_collection(&pool, &watcher_state, &snapshot_id, &game_id, true) // Matches the safe mode context above
         .await
         .expect("undo apply via snapshot");
 

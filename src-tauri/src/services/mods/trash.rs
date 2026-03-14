@@ -37,7 +37,6 @@ pub struct TrashMetadata {
 /// - `metadata.json` with restore information
 ///
 /// Returns the `TrashMetadata` on success.
-
 pub async fn delete_mod_service(
     pool: &sqlx::SqlitePool,
     state: &WatcherState,

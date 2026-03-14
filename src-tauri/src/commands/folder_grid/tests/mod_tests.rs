@@ -196,3 +196,44 @@ async fn test_list_mod_folders_malformed_info_json() {
     // Depending on Serde parsing, either it parses nothing or defaults to `has_info_json = true` but bad metadata
     // In current implementation `analyze_mod_metadata` will return default metadata if it fails to parse.
 }
+
+#[tokio::test]
+async fn test_get_filtered_objects_unsafe() {
+    use crate::database::object_repo::{get_filtered_objects, ObjectFilter};
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    let pool = SqlitePoolOptions::new()
+        .connect("sqlite:///C:/Users/yusri/AppData/Roaming/com.emmm2.app/app.db")
+        .await
+        .unwrap();
+
+    // fetch a real game_id from DB
+    let game_id: (String,) = sqlx::query_as("SELECT game_id FROM objects LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let filter = ObjectFilter {
+        game_id: game_id.0,
+        search_query: None,
+        object_type: None,
+        safe_mode: false,
+        meta_filters: None,
+        sort_by: None,
+        status_filter: None,
+    };
+
+    let result = get_filtered_objects(&pool, &filter).await;
+    match result {
+        Ok(objects) => {
+            println!("UNSAFE_MODE: Success! Found {} objects.", objects.len());
+            for o in objects.iter().take(5) {
+                println!("  - {}", o.name);
+            }
+        }
+        Err(e) => {
+            println!("UNSAFE_MODE: ERROR! {:?}", e);
+            panic!("SQL Error");
+        }
+    }
+}

@@ -333,15 +333,6 @@ describe('usePreviewPanelState', () => {
     });
   });
 
-  // Covers: TC-6.3-01 (Variable summaries building)
-  it('should build variable summaries from INI documents', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.variableSummaries).toBeDefined();
-    });
-  });
-
   // Covers: TC-6.3-01 (KeyBind sections building)
   it('should build keybind sections from INI documents', async () => {
     const { result } = renderHook(() => usePreviewPanelState());

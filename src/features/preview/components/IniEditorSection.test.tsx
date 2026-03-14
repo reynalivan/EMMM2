@@ -64,8 +64,6 @@ describe('IniEditorSection', () => {
       field3: '100',
     },
     fieldErrors: {},
-    hashSummaries: [],
-    modFeatureSummaries: [],
     conflictingKeys: new Set<string>(),
     editorDirty: false,
     isSaving: false,
@@ -78,40 +76,6 @@ describe('IniEditorSection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  // Covers: TC-6.3-01 (INI tab render)
-  it('should render keybind tab when activeTab is keybind', async () => {
-    const props = { ...defaultProps, activeTab: 'keybind' as const };
-    render(<IniEditorSection {...props} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Key Bind')).toBeInTheDocument();
-    });
-  });
-
-  // Covers: TC-6.3-01 (INI tab render)
-  it('should render information tab when activeTab is information', async () => {
-    const props = { ...defaultProps, activeTab: 'information' as const };
-    render(<IniEditorSection {...props} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Information')).toBeInTheDocument();
-    });
-  });
-
-  // Covers: TC-6.3-01 (Tab switching)
-  it('should call onTabChange when switching tabs', async () => {
-    const onTabChangeMock = vi.fn();
-    const props = { ...defaultProps, onTabChange: onTabChangeMock };
-    render(<IniEditorSection {...props} />);
-
-    const informationTab = screen.getByText('Information');
-    informationTab.click();
-
-    await waitFor(() => {
-      expect(onTabChangeMock).toHaveBeenCalledWith('information');
-    });
   });
 
   // Covers: TC-6.3-02 (INI field edit/save)
@@ -271,47 +235,6 @@ describe('IniEditorSection', () => {
         expect(onToggleSectionMock).toHaveBeenCalled();
       });
     }
-  });
-
-  // Covers: TC-6.3-02 (Mod Feature summaries in information tab)
-  it('should display mod feature summaries in information tab', async () => {
-    const props = {
-      ...defaultProps,
-      activeTab: 'information' as const,
-      modFeatureSummaries: [
-        {
-          featureName: 'Sword Hide',
-          triggerKeys: ['VK_H'],
-          statesCount: 2,
-        },
-      ],
-    };
-    render(<IniEditorSection {...props} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Sword Hide')).toBeInTheDocument();
-      expect(screen.getByText('VK_H')).toBeInTheDocument();
-    });
-  });
-
-  // Covers: TC-6.3-02 (Hash summaries in information tab)
-  it('should display hash summaries in information tab', async () => {
-    const props = {
-      ...defaultProps,
-      activeTab: 'information' as const,
-      hashSummaries: [
-        {
-          fileName: 'mod.ini',
-          sectionName: 'TextureOverrideHero',
-          hash: '1a2b3c4d',
-        },
-      ],
-    };
-    render(<IniEditorSection {...props} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('1a2b3c4d')).toBeInTheDocument();
-    });
   });
 
   // Covers: TC-6.3-02 (Field error display)

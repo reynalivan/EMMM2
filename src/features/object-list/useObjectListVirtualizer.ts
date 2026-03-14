@@ -16,14 +16,14 @@ export type FlatItem =
 interface VirtualizerOptions {
   objects: ObjectSummary[];
   schema: GameSchema | undefined;
-  selectedObject: string | null;
+  selectedObjectFolderPath: string | null;
   isMobile: boolean;
 }
 
 export function useObjectListVirtualizer({
   objects,
   schema,
-  selectedObject,
+  selectedObjectFolderPath,
   isMobile,
 }: VirtualizerOptions) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -172,11 +172,11 @@ export function useObjectListVirtualizer({
 
   // Find selected item's index
   const selectedIndex = useMemo(() => {
-    if (!selectedObject) return -1;
+    if (!selectedObjectFolderPath) return -1;
     return flatObjectItems.findIndex(
-      (item) => item.type === 'row' && item.obj.id === selectedObject,
+      (item) => item.type === 'row' && item.obj.folder_path === selectedObjectFolderPath,
     );
-  }, [selectedObject, flatObjectItems]);
+  }, [selectedObjectFolderPath, flatObjectItems]);
 
   // Compute sticky position
   const stickyPosition = useMemo((): 'top' | 'bottom' | null => {

@@ -291,7 +291,7 @@ pub async fn open_child_webview(
             } => {
                 let filename = dl_url
                     .path_segments()
-                    .and_then(|segs| segs.last())
+                    .and_then(|mut segs| segs.next_back())
                     .unwrap_or("download")
                     .to_string();
 

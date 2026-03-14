@@ -26,6 +26,7 @@ description: Project Structure Rule - When creating new files, refactoring folde
 
 - **main.rs:** Setup/Plugin initialization ONLY. No business logic.
 - **FORBIDDEN:** Defining capabilities in `tauri.conf.json` directly (Use `capabilities/`).
+- **TAURI V2 CAPABILITIES (CRITICAL):** Every single `#[tauri::command]` MUST be whitelisted in `src-tauri/permissions/app-commands.toml` under `commands.allow`. If the frontend gets a `Command not found` error, it is almost certainly a missing capability, not a missing function.
 
 ## 3. Frontend (React: `src/`)
 

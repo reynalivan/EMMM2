@@ -109,6 +109,10 @@ export default function FolderGrid() {
     handleToggleSafeSubmit,
     handleToggleSafeCancel,
 
+    activeContextDialog,
+    handleActiveContextCancel,
+    handleActiveContextSubmit,
+
     isDragging,
     selectedObject,
     handleImportFiles,
@@ -206,6 +210,16 @@ export default function FolderGrid() {
           handleBreadcrumbClick={handleBreadcrumbClick}
           handleImportFiles={handleImportFiles}
         />
+      )}
+
+      {/* Empty state for Flat Mod Root (prevents completely blank layout) */}
+      {!isLoading && !isError && visibleFolders.length === 0 && isFlatModRoot && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-base-content/40">
+          <p className="text-sm font-medium">This mod contains no subfolder variants.</p>
+          <p className="text-xs text-center">
+            Use the Preview Panel on the right to edit its metadata or INI files.
+          </p>
+        </div>
       )}
 
       {/* Virtualized Grid/List Content */}
@@ -330,6 +344,9 @@ export default function FolderGrid() {
         pinSafeDialog={pinSafeDialog}
         handleToggleSafeCancel={handleToggleSafeCancel}
         handleToggleSafeSubmit={handleToggleSafeSubmit}
+        activeContextDialog={activeContextDialog}
+        handleActiveContextCancel={handleActiveContextCancel}
+        handleActiveContextSubmit={handleActiveContextSubmit}
       />
 
       <BulkProgressBar />

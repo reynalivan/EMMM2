@@ -24,7 +24,6 @@ import { syncExplorerAfterRename } from '../../object-list/objHandlersHelpers';
 export function useFolderGrid() {
   'use no memo';
   const {
-    selectedObject,
     currentPath,
     setCurrentPath,
     gridSelection,
@@ -37,7 +36,6 @@ export function useFolderGrid() {
     setSortOrder,
     viewMode,
     setViewMode,
-    safeMode,
     explorerSearchQuery,
     setExplorerSearch,
     explorerSubPath,
@@ -61,7 +59,7 @@ export function useFolderGrid() {
     isError,
     error,
     isPlaceholderData,
-  } = useModFolders(explorerSubPath, selectedObject ?? undefined);
+  } = useModFolders(explorerSubPath);
 
   const rawFolders = useMemo(
     () => rawResponse?.children || ([] as ModFolder[]),
@@ -75,35 +73,33 @@ export function useFolderGrid() {
 
   const { data: objects = [] } = useObjects();
 
-  // Sync object selection → filesystem sub-path
-  // Uses composite key so it also re-syncs when folder_path changes (e.g., toggle rename)
+  // Sync store's selectedObjectFolderPath → explorerSubPath (decoupled from ObjectList query)
+  const { selectedObjectFolderPath } = useAppStore();
   const prevSyncKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const obj = objects.find((o) => o.id === selectedObject);
-    if (!selectedObject || !obj) return;
+    if (!selectedObjectFolderPath) return;
 
-    const syncKey = `${selectedObject}::${obj.folder_path}`;
-    if (syncKey === prevSyncKeyRef.current) return;
+    if (selectedObjectFolderPath === prevSyncKeyRef.current) return;
 
-    // Detect if this is a new object vs. same object with changed folder_path
-    const prevObjId = prevSyncKeyRef.current?.split('::')[0];
-    prevSyncKeyRef.current = syncKey;
+    prevSyncKeyRef.current = selectedObjectFolderPath;
 
-    setExplorerSubPath(obj.folder_path);
-    setCurrentPath([obj.name]);
-    // Only clear selection on actual object switch, not folder_path rename
-    if (prevObjId !== selectedObject) {
-      clearGridSelection();
-    }
-  }, [selectedObject, objects, setExplorerSubPath, setCurrentPath, clearGridSelection]);
+    setExplorerSubPath(selectedObjectFolderPath);
+    // Derive breadcrumb name from folder path's last segment
+    const displayName = selectedObjectFolderPath.split(/[\\/]/).pop() || selectedObjectFolderPath;
+    setCurrentPath([displayName]);
+
+    // Clear selection on path switch
+    clearGridSelection();
+  }, [selectedObjectFolderPath, setExplorerSubPath, setCurrentPath, clearGridSelection]);
 
   // ── Filter & Sort ─────────────────────────────────────────────────────────
+  // Safe mode filtering is handled by backend `apply_safe_mode_filter` (SSoT).
+  // Frontend only applies local search filter.
   const filteredFolders = useMemo(() => {
-    const safeModeFiltered = safeMode ? rawFolders.filter((folder) => folder.is_safe) : rawFolders;
-    if (!explorerSearchQuery) return safeModeFiltered;
+    if (!explorerSearchQuery) return rawFolders;
     const q = explorerSearchQuery.toLowerCase();
-    return safeModeFiltered.filter((folder) => folder.name.toLowerCase().includes(q));
-  }, [rawFolders, safeMode, explorerSearchQuery]);
+    return rawFolders.filter((folder) => folder.name.toLowerCase().includes(q));
+  }, [rawFolders, explorerSearchQuery]);
 
   const sortedFolders = useMemo(
     () => sortFolders(filteredFolders, sortField, sortOrder),
@@ -126,7 +122,7 @@ export function useFolderGrid() {
   const nav = useFolderGridNav({
     currentPath,
     explorerSubPath,
-    selectedObject,
+    selectedObject: null, // Legacy, unused
     objects,
     setCurrentPath,
     setExplorerSubPath,
@@ -243,7 +239,7 @@ export function useFolderGrid() {
     conflicts,
     isGridView,
     isMobile,
-    selectedObject,
+    selectedObject: null, // Legacy, unused
     currentPath,
     explorerSearchQuery,
     sortField,

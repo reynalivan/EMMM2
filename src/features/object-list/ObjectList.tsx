@@ -30,8 +30,8 @@ export default function ObjectList() {
     parentRef,
     isMobile,
     activeGame,
-    selectedObject,
-    setSelectedObject,
+    selectedObjectFolderPath,
+    setSelectedObjectFolderPath,
     selectedObjectType,
     setSelectedObjectType,
     sidebarSearchQuery,
@@ -282,9 +282,10 @@ export default function ObjectList() {
             e.preventDefault();
             handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection);
             return;
-          } else if (selectedObject) {
+          } else if (selectedObjectFolderPath) {
             e.preventDefault();
-            handleDeleteObject(selectedObject);
+            const objToDel = objects.find((o) => o.folder_path === selectedObjectFolderPath);
+            if (objToDel) handleDeleteObject(objToDel.id);
             return;
           }
         }
@@ -391,8 +392,8 @@ export default function ObjectList() {
             parentRef={parentRef}
             rowVirtualizer={rowVirtualizer}
             flatObjectItems={flatObjectItems}
-            selectedObject={selectedObject}
-            setSelectedObject={setSelectedObject}
+            selectedObjectFolderPath={selectedObjectFolderPath}
+            setSelectedObjectFolderPath={setSelectedObjectFolderPath}
             selectedObjectType={selectedObjectType}
             setSelectedObjectType={setSelectedObjectType}
             isMobile={isMobile}

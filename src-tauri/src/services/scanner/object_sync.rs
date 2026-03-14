@@ -1,7 +1,31 @@
 use crate::types::errors::CommandResult;
 use std::collections::HashSet;
 
-pub async fn sync_objects_for_game(pool: &sqlx::SqlitePool, game_id: &str) -> CommandResult<()> {
+/// Reconcile filesystem folders with the `objects` DB table for a single game.
+///
+/// For each non-hidden directory inside the game's `mod_path`:
+/// - If a matching object already exists (by normalized name) → update its `folder_path`
+///   to match the current FS name (handles `DISABLED ↔ ENABLED` renames).
+/// - If no matching object exists → create a new `objects` row + `mods` row.
+///
+/// # Invariant
+/// After this function returns, every non-hidden FS directory under `mod_path`
+/// has a corresponding `objects` row. Existing objects that are still on disk
+/// are never deleted (that responsibility belongs to `gc_lost_objects`).
+///
+/// # `folder_path` Storage Format
+/// `objects.folder_path` is always stored as the **folder name only**
+/// (e.g. `"Alhaitham"`, `"DISABLED Arataki Itto"`), NOT the full absolute path.
+/// All consumers (GC, FolderGrid, ObjectList) depend on this contract.
+///
+/// # Call Sites
+/// - `startup_sync::reconcile_game` (app startup)
+/// - Not called directly by commands — the Deep Matcher scan uses `commit_scan_results` instead
+pub async fn sync_objects_for_game(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    safe_mode_keywords: &[String],
+) -> CommandResult<()> {
     // Phase 1: Filesystem as source of truth for instance existence
     // We scan the mod folder for this game and ensure a basic DB object exists for it
     if let Ok(Some(mod_path)) = crate::database::game_repo::get_mod_path(pool, game_id).await {
@@ -45,18 +69,44 @@ pub async fn sync_objects_for_game(pool: &sqlx::SqlitePool, game_id: &str) -> Co
                                 folder,
                             );
 
-                        let _ = crate::services::scanner::sync::helpers::ensure_object_exists(
-                            &mut tx,
-                            game_id,
-                            folder,    // folder_path
-                            &obj_name, // stripped alias name
-                            "Other",   // default obj_type
-                            None,
-                            "[]",
-                            "{}",
-                            &mut new_objects_count,
-                        )
-                        .await;
+                        let resolved_obj_id =
+                            crate::services::scanner::sync::helpers::ensure_object_exists(
+                                &mut tx,
+                                game_id,
+                                folder,    // folder_path
+                                &obj_name, // stripped alias name
+                                "Other",   // default obj_type
+                                None,
+                                "[]",
+                                "{}",
+                                &mut new_objects_count,
+                            )
+                            .await
+                            .unwrap_or_default();
+
+                        if !resolved_obj_id.is_empty() {
+                            let mut is_safe = true;
+                            for kw in safe_mode_keywords {
+                                if obj_name.to_lowercase().contains(&kw.to_lowercase())
+                                    || folder.to_lowercase().contains(&kw.to_lowercase())
+                                {
+                                    is_safe = false;
+                                    break;
+                                }
+                            }
+                            log::info!("sync_objects_for_game: Processed folder '{}' -> Object '{}' (is_safe: {})", folder, obj_name, is_safe);
+                            let _ = crate::database::object_repo::update_object_is_safe_tx(
+                                &mut tx,
+                                &resolved_obj_id,
+                                is_safe,
+                            )
+                            .await;
+                        } else {
+                            log::warn!(
+                                "sync_objects_for_game: Failed to ensure object for folder '{}'",
+                                folder
+                            );
+                        }
                     }
                 }
                 if changes {

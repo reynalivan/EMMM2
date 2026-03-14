@@ -5,6 +5,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import DuplicateWarningModal, { type DuplicateInfo } from './DuplicateWarningModal';
 import { BulkTagModal } from './BulkTagModal';
 import PinEntryModal from '../safe-mode/PinEntryModal';
+import ActiveModContextDialog from './ActiveModContextDialog';
 
 export interface FolderGridModalsProps {
   moveDialog: { open: boolean; folder: ModFolder | null };
@@ -31,6 +32,9 @@ export interface FolderGridModalsProps {
   pinSafeDialog: { open: boolean };
   handleToggleSafeCancel: () => void;
   handleToggleSafeSubmit: () => void;
+  activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
+  handleActiveContextCancel: () => void;
+  handleActiveContextSubmit: () => void;
 }
 
 export default function FolderGridModals({
@@ -54,6 +58,9 @@ export default function FolderGridModals({
   pinSafeDialog,
   handleToggleSafeCancel,
   handleToggleSafeSubmit,
+  activeContextDialog,
+  handleActiveContextCancel,
+  handleActiveContextSubmit,
 }: FolderGridModalsProps) {
   return (
     <>
@@ -116,6 +123,16 @@ export default function FolderGridModals({
         open={pinSafeDialog.open}
         onClose={handleToggleSafeCancel}
         onSuccess={handleToggleSafeSubmit}
+      />
+
+      <ActiveModContextDialog
+        key={activeContextDialog.folder?.path || 'dialog-hidden'}
+        open={activeContextDialog.open}
+        modName={activeContextDialog.folder?.name ?? ''}
+        targetSafeStatus={!(activeContextDialog.folder?.is_safe ?? false)}
+        isProcessing={activeContextDialog.isProcessing}
+        onCancel={handleActiveContextCancel}
+        onConfirm={handleActiveContextSubmit}
       />
     </>
   );

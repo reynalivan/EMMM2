@@ -168,6 +168,11 @@ impl ConfigService {
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
 
+        let sync_timestamps = kv
+            .get("sync_timestamps")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
         AppSettings {
             theme,
             language,
@@ -178,6 +183,7 @@ impl ConfigService {
             auto_close_launcher,
             hotkeys,
             keyviewer,
+            sync_timestamps,
         }
     }
 
@@ -226,6 +232,12 @@ impl ConfigService {
         let keyviewer_json =
             serde_json::to_string(&settings.keyviewer).map_err(|e| e.to_string())?;
         settings_repo::set_setting(pool, "keyviewer", &keyviewer_json)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let sync_timestamps_json =
+            serde_json::to_string(&settings.sync_timestamps).map_err(|e| e.to_string())?;
+        settings_repo::set_setting(pool, "sync_timestamps", &sync_timestamps_json)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -365,6 +377,16 @@ impl ConfigService {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         settings.auto_close_launcher = enabled;
+        self.save_settings(settings)
+    }
+
+    pub fn update_sync_timestamp(&self, game_id: &str, ts: u64) -> Result<(), String> {
+        let mut settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        settings.sync_timestamps.insert(game_id.to_string(), ts);
         self.save_settings(settings)
     }
 

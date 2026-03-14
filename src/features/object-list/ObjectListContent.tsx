@@ -17,9 +17,9 @@ interface ContentProps {
   parentRef: RefObject<HTMLDivElement | null>;
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
   flatObjectItems: FlatItem[];
-  selectedObject: string | null;
+  selectedObjectFolderPath: string | null;
   selectedObjectType: string | null;
-  setSelectedObject: (id: string | null) => void;
+  setSelectedObjectFolderPath: (folderPath: string | null) => void;
   setSelectedObjectType: (type: string | null) => void;
   isMobile: boolean;
   /* Sticky */
@@ -83,9 +83,9 @@ export default function ObjectListContent({
   parentRef,
   rowVirtualizer,
   flatObjectItems,
-  selectedObject,
+  selectedObjectFolderPath,
   selectedObjectType,
-  setSelectedObject,
+  setSelectedObjectFolderPath,
   setSelectedObjectType,
   isMobile,
   stickyPosition,
@@ -181,9 +181,12 @@ export default function ObjectListContent({
                 >
                   <ObjectRowItem
                     obj={item.obj}
-                    isSelected={selectedObject === item.obj.id}
+                    isSelected={
+                      selectedObjectFolderPath === item.obj.folder_path &&
+                      selectedObjectFolderPath !== null
+                    }
                     isMobile={isMobile}
-                    onClick={() => setSelectedObject(item.obj.id)}
+                    onClick={() => setSelectedObjectFolderPath(item.obj.folder_path)}
                     isDropTarget={isDragging && hoveredItemId === item.obj.id}
                     isBulkSelected={isBulkSelected?.(item.obj.id)}
                     onToggleBulkSelect={onToggleBulkSelect}

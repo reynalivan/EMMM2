@@ -81,6 +81,18 @@ async fn setup_pool() -> SqlitePool {
     .await
     .unwrap();
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS collection_nested_items (
+            collection_id TEXT NOT NULL,
+            mod_path TEXT NOT NULL,
+            FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+            PRIMARY KEY (collection_id, mod_path)
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
     pool
 }
 
@@ -88,6 +100,16 @@ async fn seed_game(pool: &SqlitePool, id: &str, name: &str) {
     sqlx::query("INSERT INTO games (id, name, game_type, path) VALUES (?, ?, 'GIMI', '/dummy')")
         .bind(id)
         .bind(name)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn seed_game_with_mods_path(pool: &SqlitePool, id: &str, name: &str, mods_path: &str) {
+    sqlx::query("INSERT INTO games (id, name, game_type, path, mod_path) VALUES (?, ?, 'GIMI', '/dummy', ?)")
+        .bind(id)
+        .bind(name)
+        .bind(mods_path)
         .execute(pool)
         .await
         .unwrap();
@@ -221,15 +243,114 @@ async fn test_apply_collection_atomic() {
         .await
         .unwrap();
 
-    // We expect m2 to be enabled, and m3 to be disabled (since it wasn't in collection but was enabled!)
-    // Wait, the currently apply_collection disables M3 by the conflict resolver ?
-    // The codebase: fetch_enabled_conflicts checks if objects conflict. My Mod has NO object_id, so it might not be fetched.
-    // Let's check apply_collection again: it fetches target_ids. It ONLY disables things that are in target_ids AND conflict.
-    // Actually, `states` only includes target_ids + conflicts. If m3 doesn't conflict, it is NOT disabled.
-    // Let's assert changed_count. Target m1 (already enabled) -> noop. Target m2 (disabled) -> enabled.
-    assert_eq!(res.changed_count, 1);
+    // m1 was already ENABLED -> noop
+    // m2 was DISABLED -> ENABLED (1 change)
+    // m3 was ENABLED but NOT in collection -> DISABLED (1 change)
+    assert_eq!(res.changed_count, 2);
 
+    // m2 should be re-enabled (prefix removed)
     assert!(tmp.path().join("Mod2").exists());
+    // m3 should be disabled (prefix added)
+    assert!(tmp.path().join("DISABLED Mod3").exists());
+}
+
+#[tokio::test]
+async fn test_apply_disables_all_non_collection_mods() {
+    let tmp = TempDir::new().unwrap();
+    let mod_a = tmp.path().join("ModA");
+    let mod_b = tmp.path().join("ModB");
+    let mod_c = tmp.path().join("ModC");
+    let mod_d = tmp.path().join("ModD");
+
+    fs::create_dir(&mod_a).unwrap();
+    fs::create_dir(&mod_b).unwrap();
+    fs::create_dir(&mod_c).unwrap();
+    fs::create_dir(&mod_d).unwrap();
+
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+
+    // ModA: object Raiden, ENABLED
+    seed_mod(
+        &pool,
+        "a",
+        "g1",
+        "ModA",
+        &mod_a.to_string_lossy(),
+        "ENABLED",
+        true,
+    )
+    .await;
+    // ModB: object Barbara, ENABLED — different object, no conflict in old logic
+    seed_mod(
+        &pool,
+        "b",
+        "g1",
+        "ModB",
+        &mod_b.to_string_lossy(),
+        "ENABLED",
+        true,
+    )
+    .await;
+    // ModC: NULL object, ENABLED — no object_id at all
+    seed_mod(
+        &pool,
+        "c",
+        "g1",
+        "ModC",
+        &mod_c.to_string_lossy(),
+        "ENABLED",
+        true,
+    )
+    .await;
+    // ModD: object Raiden, DISABLED
+    seed_mod(
+        &pool,
+        "d",
+        "g1",
+        "ModD",
+        &mod_d.to_string_lossy(),
+        "DISABLED",
+        true,
+    )
+    .await;
+
+    // Set object_ids
+    sqlx::query("UPDATE mods SET object_id = 'raiden' WHERE id IN ('a', 'd')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE mods SET object_id = 'barbara' WHERE id = 'b'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // ModC has NULL object_id
+
+    // Collection only contains ModA
+    sqlx::query("INSERT INTO collections (id, name, game_id, is_safe_context) VALUES ('c1', 'OnlyA', 'g1', 1)")
+        .execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO collection_items (collection_id, mod_id, mod_path) VALUES ('c1', 'a', ?)",
+    )
+    .bind(&mod_a.to_string_lossy().to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let watcher_state = WatcherState::new();
+    let res = apply_collection_service(&pool, &watcher_state, "c1", "g1", true)
+        .await
+        .unwrap();
+
+    // ModA: already ENABLED -> noop
+    // ModB: ENABLED but NOT in collection -> DISABLED (1 change)
+    // ModC: ENABLED but NOT in collection -> DISABLED (1 change)
+    // ModD: already DISABLED -> stays DISABLED (noop)
+    assert_eq!(res.changed_count, 2);
+
+    assert!(tmp.path().join("ModA").exists());
+    assert!(tmp.path().join("DISABLED ModB").exists());
+    assert!(tmp.path().join("DISABLED ModC").exists());
 }
 
 #[tokio::test]
@@ -290,4 +411,66 @@ async fn test_undo_action() {
     // It should have restored m1 to ENABLED
     assert_eq!(res.changed_count, 1);
     assert!(tmp.path().join("Mod1").exists());
+}
+
+#[tokio::test]
+async fn test_collection_captures_nested_mods() {
+    let tmp = TempDir::new().unwrap();
+    let mods_path = tmp.path();
+
+    // Setup nested mods folder structure
+    let container = mods_path.join("Character");
+    fs::create_dir(&container).unwrap();
+
+    // NestedModA: ENABLED
+    let mod_a_dir = container.join("NestedModA");
+    fs::create_dir(&mod_a_dir).unwrap();
+    fs::write(mod_a_dir.join("mod.ini"), "[TextureOverride]").unwrap();
+
+    // NestedModB: DISABLED
+    let mod_b_dir = container.join("DISABLED NestedModB");
+    fs::create_dir(&mod_b_dir).unwrap();
+    fs::write(mod_b_dir.join("mod.ini"), "[TextureOverride]").unwrap();
+
+    let pool = setup_pool().await;
+    seed_game_with_mods_path(&pool, "g1", "Genshin", &mods_path.to_string_lossy()).await;
+
+    // Save collection
+    let create_input = CreateCollectionInput {
+        name: "Nested Collection".to_string(),
+        game_id: "g1".to_string(),
+        is_safe_context: true,
+        auto_snapshot: Some(true),
+        mod_ids: vec![],
+    };
+
+    let details = create_collection_service(&pool, create_input)
+        .await
+        .unwrap();
+
+    // Member count should be 1 (NestedModA) since it's the only enabled mod
+    assert_eq!(details.collection.member_count, 1);
+
+    // Now manually change filesystem state
+    // Disable A, Enable B
+    let mod_a_disabled = container.join("DISABLED NestedModA");
+    fs::rename(&mod_a_dir, &mod_a_disabled).unwrap();
+
+    let mod_b_enabled = container.join("NestedModB");
+    fs::rename(&mod_b_dir, &mod_b_enabled).unwrap();
+
+    // Apply collection
+    let watcher_state = WatcherState::new();
+    let res = apply_collection_service(&pool, &watcher_state, &details.collection.id, "g1", true)
+        .await
+        .unwrap();
+
+    // It should have enabled ModA and disabled ModB (2 changes)
+    assert_eq!(res.changed_count, 2);
+
+    // Check filesystem state
+    assert!(container.join("NestedModA").exists());
+    assert!(!container.join("DISABLED NestedModA").exists());
+    assert!(container.join("DISABLED NestedModB").exists());
+    assert!(!container.join("NestedModB").exists());
 }

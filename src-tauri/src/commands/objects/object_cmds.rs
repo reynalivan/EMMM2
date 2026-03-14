@@ -16,10 +16,16 @@ pub async fn get_objects_cmd(
 
 #[tauri::command]
 pub async fn sync_objects_cmd(
+    app: tauri::AppHandle,
     game_id: String,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CommandResult<()> {
-    crate::services::scanner::object_sync::sync_objects_for_game(&pool, &game_id).await
+    let keywords = app
+        .state::<crate::services::config::ConfigService>()
+        .get_settings()
+        .safe_mode
+        .keywords;
+    crate::services::scanner::object_sync::sync_objects_for_game(&pool, &game_id, &keywords).await
 }
 
 pub async fn get_objects_cmd_inner(
@@ -29,7 +35,7 @@ pub async fn get_objects_cmd_inner(
     let objects =
         crate::services::objects::query::get_filtered_objects_with_conflict_check(pool, &filter)
             .await
-            .map_err(|e| crate::types::errors::CommandError::Database(e))?;
+            .map_err(crate::types::errors::CommandError::Database)?;
 
     Ok(objects)
 }
@@ -43,7 +49,7 @@ pub async fn get_category_counts_cmd(
     let counts =
         crate::services::objects::query::get_category_counts_service(&pool, &game_id, safe_mode)
             .await
-            .map_err(|e| crate::types::errors::CommandError::App(e))?;
+            .map_err(crate::types::errors::CommandError::App)?;
 
     Ok(counts)
 }
@@ -109,7 +115,7 @@ pub async fn gc_lost_objects_cmd(
 ) -> CommandResult<Vec<String>> {
     let lost = crate::services::objects::query::gc_lost_objects(&pool, &game_id)
         .await
-        .map_err(|e| crate::types::errors::CommandError::App(e))?;
+        .map_err(crate::types::errors::CommandError::App)?;
     Ok(lost)
 }
 

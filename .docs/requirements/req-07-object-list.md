@@ -115,10 +115,7 @@ Backend: get_objects_cmd(game_id, filter) →
 ### Security & Privacy
 
 - **Read-only objectlist** — the object list itself displays data but does not mutate any filesystem path or DB record; all mutations go through specific IPC commands (`move_mod`) with validated paths.
-- **DnD drop handler validates `srcPath` and `targetObjectPath`** on the backend via `canonicalize()` before any `fs::rename` is attempted — prevents path traversal from crafted drag payloads.
-- **Safe Mode filter**: if `safe_mode = true`, objects with only NSFW mods show counts of `0/0` — they are not removed from the list, just their counts are zeroed to avoid leaking presence information.
-
----
+- **Safe Mode filter**: ObjectList ALWAYS shows all objects regardless of safe mode (to prevent the navigation pane from disappearing). Instead of removing objects from the list, counts are purely based on Mutually Exclusive Corridors (Safe Mode ONLY counts safe objects, Unsafe Mode ONLY counts unsafe objects; out-of-corridor items show `0/0`).
 
 ## 4. Dependencies
 

@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import MainLayout from './MainLayout';
 
 let mockView = 'dashboard';
-let mockSelectedObject: unknown = null;
+let mockSelectedObjectFolderPath: unknown = null;
 
 vi.mock('../../stores/useAppStore', () => ({
   useAppStore: () => ({
     workspaceView: mockView,
-    selectedObject: mockSelectedObject,
+    selectedObjectFolderPath: mockSelectedObjectFolderPath,
   }),
 }));
 
@@ -82,7 +82,7 @@ describe('MainLayout (TC-05)', () => {
 
   it('renders ResizableWorkspace and EmptyState when view is string and NO selected object', () => {
     mockView = 'explorer';
-    mockSelectedObject = null;
+    mockSelectedObjectFolderPath = null;
     render(<MainLayout />);
 
     expect(screen.getByTestId('resizable')).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe('MainLayout (TC-05)', () => {
 
   it('renders ResizableWorkspace and folder-grid when view is string AND HAS selected object', () => {
     mockView = 'explorer';
-    mockSelectedObject = { id: 'obj1' }; // some truthy value
+    mockSelectedObjectFolderPath = 'some/path'; // some truthy value
     render(<MainLayout />);
 
     expect(screen.getByTestId('resizable')).toBeInTheDocument();

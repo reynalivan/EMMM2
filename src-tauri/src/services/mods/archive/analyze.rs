@@ -62,7 +62,7 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
                     has_ini = true;
                 }
 
-                let ext = name.split('.').last().unwrap_or("").to_lowercase();
+                let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
                 if ext == "zip" || ext == "rar" || ext == "7z" {
                     contains_nested_archives = true;
                 }
@@ -135,7 +135,7 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
                 has_ini = true;
             }
 
-            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+            let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
             if ext == "zip" || ext == "rar" || ext == "7z" {
                 contains_nested_archives = true;
             }
@@ -210,7 +210,7 @@ fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<Archive
     for line in stdout.lines() {
         if line.starts_with("Encrypted = +") {
             is_encrypted = true;
-        } else if line.starts_with("Path = ") {
+        } else if let Some(stripped) = line.strip_prefix("Path = ") {
             // Flush previous entry
             if let Some(prev_name) = pending_name.take() {
                 if entries.len() < MAX_ENTRIES {
@@ -224,14 +224,14 @@ fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<Archive
             pending_size = 0;
             pending_is_dir = false;
 
-            let name = &line[7..].trim();
+            let name = &stripped.trim();
             if !name.is_empty() && *name != archive_path.to_string_lossy().as_ref() {
                 file_count += 1;
                 pending_name = Some(name.to_string());
                 if name.to_lowercase().ends_with(".ini") {
                     has_ini = true;
                 }
-                let ext = name.split('.').last().unwrap_or("").to_lowercase();
+                let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
                 if ext == "zip" || ext == "rar" || ext == "7z" {
                     contains_nested_archives = true;
                 }
@@ -243,8 +243,8 @@ fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<Archive
                     }
                 }
             }
-        } else if line.starts_with("Size = ") {
-            if let Ok(size) = line[7..].trim().parse::<u64>() {
+        } else if let Some(stripped) = line.strip_prefix("Size = ") {
+            if let Ok(size) = stripped.trim().parse::<u64>() {
                 uncompressed_size += size;
                 pending_size = size;
             }
@@ -351,7 +351,7 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
             has_ini = true;
         }
 
-        let ext = name.split('.').last().unwrap_or("").to_lowercase();
+        let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
         if ext == "zip" || ext == "rar" || ext == "7z" {
             contains_nested_archives = true;
         }

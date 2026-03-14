@@ -62,9 +62,9 @@ describe('ObjectListContent', () => {
           >
         }
         flatObjectItems={flatItems}
-        selectedObject={null}
+        selectedObjectFolderPath={null}
         selectedObjectType={null}
-        setSelectedObject={vi.fn()}
+        setSelectedObjectFolderPath={vi.fn()}
         setSelectedObjectType={vi.fn()}
         isMobile={false}
         stickyPosition={null}

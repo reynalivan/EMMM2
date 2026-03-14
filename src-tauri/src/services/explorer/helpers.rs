@@ -74,18 +74,21 @@ pub fn contains_filtered_keyword(folder: &ModFolder, keywords: &[String]) -> boo
 
 pub fn apply_safe_mode_filter(folders: Vec<ModFolder>, config: &ConfigService) -> Vec<ModFolder> {
     let settings = config.get_settings();
-    if !settings.safe_mode.enabled {
-        return folders;
-    }
-
     let keywords = normalize_keywords(&settings.safe_mode.keywords);
     let force_exclusive_mode = settings.safe_mode.force_exclusive_mode;
 
     folders
         .into_iter()
         .filter(|folder| {
-            folder.is_safe
-                && (!force_exclusive_mode || !contains_filtered_keyword(folder, &keywords))
+            if settings.safe_mode.enabled {
+                // Safe Mode: ONLY show safe folders
+                folder.is_safe
+                    && (!force_exclusive_mode || !contains_filtered_keyword(folder, &keywords))
+            } else {
+                // Unsafe Mode: ONLY show unsafe folders (Mutually Exclusive Corridor)
+                !folder.is_safe
+                    || (force_exclusive_mode && contains_filtered_keyword(folder, &keywords))
+            }
         })
         .collect()
 }

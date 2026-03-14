@@ -514,11 +514,9 @@ fn resolve_collision(dest: PathBuf) -> PathBuf {
 
 fn emit_status(app: &AppHandle, job_id: &str, status: &str, extra: Option<serde_json::Value>) {
     let mut payload = serde_json::json!({ "job_id": job_id, "status": status });
-    if let Some(extra) = extra {
-        if let serde_json::Value::Object(map) = extra {
-            if let serde_json::Value::Object(ref mut p) = payload {
-                p.extend(map);
-            }
+    if let Some(serde_json::Value::Object(map)) = extra {
+        if let serde_json::Value::Object(ref mut p) = payload {
+            p.extend(map);
         }
     }
     let _ = app.emit("import:job-update", payload);

@@ -26,8 +26,8 @@ export type { ModFolder, FolderGridResponse, ModInfo };
 /** Query key factory for folder cache management */
 export const folderKeys = {
   all: ['mod-folders'] as const,
-  list: (modsPath: string, subPath?: string, objectId?: string) =>
-    [...folderKeys.all, modsPath, subPath ?? '', objectId ?? ''] as const,
+  list: (modsPath: string, subPath?: string) =>
+    [...folderKeys.all, modsPath, subPath ?? ''] as const,
 };
 
 /**
@@ -66,18 +66,16 @@ export function updateFolderCache(
  * Fetch mod folders from the active game's mods_path directory.
  * Supports sub_path for deep navigation and objectId for DB-level filtering by object.
  */
-export function useModFolders(subPath?: string, objectId?: string) {
+export function useModFolders(subPath?: string) {
   const { activeGame } = useActiveGame();
   const modsPath = activeGame?.mod_path;
 
   return useQuery<FolderGridResponse>({
-    queryKey: folderKeys.list(modsPath ?? '', subPath, objectId),
+    queryKey: folderKeys.list(modsPath ?? '', subPath),
     queryFn: () =>
       invoke<FolderGridResponse>('list_mod_folders', {
-        gameId: activeGame?.id ?? null,
         modsPath: modsPath!,
         subPath: subPath || null,
-        objectId: objectId || null,
       }),
     enabled: !!modsPath,
     staleTime: 30_000,
@@ -117,7 +115,7 @@ async function fallbackSync(queryClient: ReturnType<typeof useQueryClient>, game
   toast.info('Syncing changes from disk...', 3000);
   try {
     await invoke('gc_lost_objects_cmd', { gameId });
-    await invoke('sync_objects_for_game_cmd', { gameId });
+    await invoke('sync_objects_cmd', { gameId });
     toast.success('Sync complete', 2000);
   } catch (err) {
     console.error('Fallback sync failed:', err);
@@ -180,6 +178,8 @@ export function useToggleMod() {
 
     onSuccess: (newPath, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) }); // Invalidate old thumbnail URI
+      useAppStore.getState().setActiveCollectionId(null); // Unsaved preset state
+      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
 
       const action = variables.enable ? 'Enabled' : 'Disabled';
       let modName = variables.path.split(/[/\\]/).pop() || 'mod';
@@ -208,6 +208,9 @@ export function useToggleMod() {
         is_enabled: variables.enable,
       }));
 
+      // Opt-Z2: Update grid selection to reflect new path instantly
+      useAppStore.getState().replaceGridSelection(variables.path, newPath);
+
       if (!variables.suppressToast) {
         toast.withAction('success', `${action} ${modName}`, {
           label: 'Undo',
@@ -221,6 +224,7 @@ export function useToggleMod() {
               queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
               queryClient.invalidateQueries({ queryKey: folderKeys.all });
               queryClient.invalidateQueries({ queryKey: ['objects'] });
+              queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
             });
           },
         });
@@ -306,6 +310,9 @@ export function useRenameMod() {
         name: result.new_name,
         path: result.new_path,
       }));
+
+      // Update grid selection to reflect new path instantly
+      useAppStore.getState().replaceGridSelection(variables.folderPath, result.new_path);
 
       // Path changed — mark stale, refetch deferred until next user interaction
       // Suppress leaked watcher events for 500ms after rename settles

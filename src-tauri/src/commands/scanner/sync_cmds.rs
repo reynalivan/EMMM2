@@ -47,8 +47,7 @@ pub async fn sync_database_cmd(
     )
     .await?;
 
-    // 2. Convert preview items to confirmed items without any manual skips
-    let confirmed_items = preview_items
+    let confirmed_items: Vec<_> = preview_items
         .into_iter()
         .map(|item| sync::ConfirmedScanItem {
             folder_path: item.folder_path,

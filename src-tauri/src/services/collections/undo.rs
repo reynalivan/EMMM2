@@ -12,21 +12,18 @@ pub async fn undo_collection(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Find the snapshot collection
-    let (collection_id, is_safe_context) =
-        crate::database::collection_repo::get_last_unsaved_collection_id_and_safe_context(
-            &mut *tx, game_id,
-        )
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("No recent action to undo")?;
-
-    if safe_mode_enabled && !is_safe_context {
-        return Err("Snapshot contains non-safe context. Disable Safe Mode to undo.".to_string());
-    }
+    let collection_id = crate::database::collection_repo::get_last_unsaved_collection_id(
+        &mut tx,
+        game_id,
+        safe_mode_enabled,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or("No recent action to undo")?;
 
     // Get the target IDs from the snapshot
     let snapshot_mod_ids =
-        crate::database::collection_repo::get_collection_item_mod_ids(&mut *tx, &collection_id)
+        crate::database::collection_repo::get_collection_item_mod_ids(&mut tx, &collection_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -81,10 +78,10 @@ pub async fn undo_collection(
 
 async fn delete_snapshot(pool: &SqlitePool, collection_id: &str) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    crate::database::collection_repo::delete_collection_items(&mut *tx, collection_id)
+    crate::database::collection_repo::delete_collection_items(&mut tx, collection_id)
         .await
         .map_err(|e| e.to_string())?;
-    crate::database::collection_repo::delete_collection_by_id(&mut *tx, collection_id)
+    crate::database::collection_repo::delete_collection_by_id(&mut tx, collection_id)
         .await
         .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;

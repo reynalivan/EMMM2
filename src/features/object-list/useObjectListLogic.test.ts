@@ -8,8 +8,8 @@ import React from 'react';
 vi.mock('../../stores/useAppStore', () => ({
   useAppStore: Object.assign(
     vi.fn(() => ({
-      selectedObject: null,
-      setSelectedObject: vi.fn(),
+      selectedObjectFolderPath: null,
+      setSelectedObjectFolderPath: vi.fn(),
       selectedObjectType: null,
       setSelectedObjectType: vi.fn(),
       sidebarSearchQuery: '',

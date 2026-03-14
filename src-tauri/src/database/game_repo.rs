@@ -28,11 +28,26 @@ pub async fn get_all_games(pool: &SqlitePool) -> Result<Vec<GameRow>, sqlx::Erro
     Ok(rows)
 }
 
-/// Upsert a game row. Uses INSERT OR REPLACE.
+/// Upsert a game row.
+///
+/// # Safety invariant
+/// Uses `INSERT ... ON CONFLICT(id) DO UPDATE SET` (true UPSERT).
+/// **NEVER** use `INSERT OR REPLACE` here — SQLite implements that as
+/// DELETE + INSERT, which triggers `ON DELETE CASCADE` on `objects` and
+/// `mods` tables, permanently wiping all child rows.
 pub async fn upsert_game(pool: &SqlitePool, game: &GameRow) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT OR REPLACE INTO games (id, name, game_type, path, mod_path, game_exe, launcher_path, loader_exe, launch_args, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        "INSERT INTO games (id, name, game_type, path, mod_path, game_exe, launcher_path, loader_exe, launch_args, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           game_type = excluded.game_type,
+           path = excluded.path,
+           mod_path = excluded.mod_path,
+           game_exe = excluded.game_exe,
+           launcher_path = excluded.launcher_path,
+           loader_exe = excluded.loader_exe,
+           launch_args = excluded.launch_args",
     )
     .bind(&game.id)
     .bind(&game.name)
@@ -63,6 +78,22 @@ pub async fn count_games(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
         .fetch_one(pool)
         .await?;
     Ok(row.0)
+}
+
+/// Get all game mod paths as a map of game_id -> mod_path.
+pub async fn get_all_game_mod_paths(
+    pool: &SqlitePool,
+) -> Result<std::collections::HashMap<String, String>, sqlx::Error> {
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT id, mod_path FROM games")
+        .fetch_all(pool)
+        .await?;
+
+    let map = rows
+        .into_iter()
+        .filter_map(|(id, path)| path.map(|p| (id, p)))
+        .collect();
+
+    Ok(map)
 }
 
 /// Get the mod path for a specific game by ID.

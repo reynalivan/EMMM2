@@ -47,12 +47,12 @@ pub async fn migrate_to_stable_ids(pool: &SqlitePool) -> Result<usize, String> {
         }
 
         crate::database::collection_repo::update_collection_item_mod_id_global(
-            &mut *tx, old_id, &new_id,
+            &mut tx, old_id, &new_id,
         )
         .await
         .map_err(|e| e.to_string())?;
 
-        crate::database::mod_repo::update_mod_id(&mut *tx, old_id, &new_id)
+        crate::database::mod_repo::update_mod_id(&mut tx, old_id, &new_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -77,7 +77,7 @@ pub async fn ensure_game_exists(
     mods_path: &str,
 ) -> Result<(), String> {
     crate::database::game_repo::ensure_game_exists(
-        &mut **tx, game_id, game_name, game_type, mods_path,
+        tx, game_id, game_name, game_type, mods_path,
     )
     .await
     .map_err(|e| format!("Failed to ensure game exists: {e}"))?;

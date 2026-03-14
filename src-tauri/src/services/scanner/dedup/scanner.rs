@@ -202,7 +202,7 @@ async fn fetch_mod_id_map(
     game_id: &str,
 ) -> Result<HashMap<String, String>, String> {
     let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut *conn, game_id)
+    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
         .await
         .map_err(|error| format!("Failed to fetch mod mapping for duplicate scan: {error}"))?;
 
@@ -220,7 +220,7 @@ async fn fetch_candidates_from_db(
     mods_root: &Path,
 ) -> Result<Vec<ModCandidate>, String> {
     let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut *conn, game_id)
+    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
         .await
         .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
 

@@ -45,12 +45,7 @@ pub fn start_watcher(
 
     std::thread::spawn(move || {
         // Imp 10: drain-and-batch pattern for rapid event bursts
-        loop {
-            // Block until at least one event arrives
-            let first = match rx.recv() {
-                Ok(ev) => ev,
-                Err(_) => break,
-            };
+        while let Ok(first) = rx.recv() {
             let mut batch = vec![first];
 
             // Drain any additional events that arrived during processing

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildKeyBindSections,
-  buildVariableInfoSummaries,
   shouldLoadGalleryImage,
   toFieldValueMap,
   toIniWritePayload,
@@ -102,28 +101,5 @@ describe('previewPanelUtils', () => {
     expect(payloadInvalidKey.fieldErrors).toEqual({
       'config.ini:KeySwap:key:1': 'Invalid key token: "INVALID_KEY".',
     });
-  });
-
-  it('builds variable summaries with ranges and occurrences', () => {
-    const summaries = buildVariableInfoSummaries([
-      {
-        fileName: 'a.ini',
-        document: {
-          mode: 'Structured',
-          raw_lines: ['[KeySwap]', '$active = 1', '$swapvar = 0', '$swapvar = 3'],
-          variables: [
-            { name: '$active', value: '1', line_idx: 1 },
-            { name: '$swapvar', value: '0', line_idx: 2 },
-            { name: '$swapvar', value: '3', line_idx: 3 },
-          ],
-          key_bindings: [],
-        },
-      },
-    ]);
-
-    const swapvar = summaries.find((item) => item.name === '$swapvar');
-    expect(swapvar?.minValue).toBe(0);
-    expect(swapvar?.maxValue).toBe(3);
-    expect(swapvar?.count).toBe(2);
   });
 });

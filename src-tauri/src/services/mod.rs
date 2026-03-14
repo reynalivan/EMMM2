@@ -13,4 +13,5 @@ pub mod mods;
 pub mod objects;
 pub mod privacy;
 pub mod scanner;
+pub mod startup_sync;
 pub mod update;

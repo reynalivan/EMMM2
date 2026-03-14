@@ -24,7 +24,7 @@ export default function FolderGridToolbar({
   currentPath,
   handleBreadcrumbClick,
   handleGoHome,
-  selectedObject,
+  selectedObject: _selectedObject,
   setMobilePane,
   handleSortToggle,
   sortLabel,
@@ -52,7 +52,7 @@ export default function FolderGridToolbar({
             path={currentPath}
             onNavigate={handleBreadcrumbClick}
             onGoHome={handleGoHome}
-            isRootHidden={!!selectedObject}
+            isRootHidden
           />
         </div>
 

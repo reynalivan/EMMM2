@@ -76,7 +76,7 @@ pub async fn commit_scan_results(
         };
 
         let existing = crate::database::mod_repo::get_mod_id_and_status_by_path(
-            &mut *tx,
+            &mut tx,
             &actual_folder_path,
             game_id,
         )
@@ -85,7 +85,7 @@ pub async fn commit_scan_results(
 
         let mod_id = if let Some((id, _, db_status)) = existing {
             if db_status != current_status {
-                crate::database::mod_repo::update_mod_status_tx(&mut *tx, &id, current_status)
+                crate::database::mod_repo::update_mod_status_tx(&mut tx, &id, current_status)
                     .await
                     .map_err(|e| e.to_string())?;
                 updated_mods_count += 1;
@@ -95,7 +95,7 @@ pub async fn commit_scan_results(
             let id = generate_stable_id(game_id, &actual_folder_path);
             let object_type = item.object_type.as_deref().unwrap_or("Other");
             crate::database::mod_repo::insert_mod_tx(
-                &mut *tx,
+                &mut tx,
                 &id,
                 game_id,
                 &item.display_name,
@@ -173,7 +173,7 @@ pub async fn commit_scan_results(
         .await?;
 
         crate::database::mod_repo::update_mod_object_id_and_type_tx(
-            &mut *tx, &mod_id, &object_id, obj_type,
+            &mut tx, &mod_id, &object_id, obj_type,
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -189,7 +189,7 @@ pub async fn commit_scan_results(
         }
 
         if !is_safe {
-            crate::database::object_repo::update_object_is_safe_tx(&mut *tx, &object_id, false)
+            crate::database::object_repo::update_object_is_safe_tx(&mut tx, &object_id, false)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -210,7 +210,7 @@ pub async fn commit_scan_results(
     // Garbage Collector: Delete empty "Ghost" objects
     // Only delete objects that have NO associated mods.
     // The previous logic incorrectly required a mod with a matching folder name to exist elsewhere.
-    crate::database::object_repo::delete_ghost_objects_gc(&mut *tx, game_id)
+    crate::database::object_repo::delete_ghost_objects_gc(&mut tx, game_id)
         .await
         .map_err(|e| format!("Failed to clean ghost objects: {}", e))?;
 
@@ -236,14 +236,14 @@ async fn handle_deletions(
     game_id: &str,
     processed_paths: &HashSet<String>,
 ) -> Result<usize, String> {
-    let all_mods = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut **tx, game_id)
+    let all_mods = crate::database::mod_repo::get_all_mods_id_and_paths_tx(tx, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
     let mut deleted_mods_count = 0;
     for (id, fp) in all_mods {
         if !processed_paths.contains(&fp) && !Path::new(&fp).exists() {
-            crate::database::mod_repo::delete_mod_tx(&mut **tx, &id)
+            crate::database::mod_repo::delete_mod_tx(tx, &id)
                 .await
                 .map_err(|e| e.to_string())?;
             deleted_mods_count += 1;

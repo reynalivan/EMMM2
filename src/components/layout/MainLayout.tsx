@@ -14,7 +14,7 @@ import { ExternalChangeHandler } from '../../features/file-watcher/ExternalChang
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 
 export default function MainLayout() {
-  const { workspaceView, selectedObject } = useAppStore();
+  const { workspaceView, selectedObjectFolderPath } = useAppStore();
 
   return (
     <div
@@ -43,7 +43,7 @@ export default function MainLayout() {
             <ResizableWorkspace
               leftPanel={<ObjectList />}
               mainPanel={
-                selectedObject ? (
+                selectedObjectFolderPath ? (
                   <ErrorBoundary>
                     <FolderGrid />
                   </ErrorBoundary>

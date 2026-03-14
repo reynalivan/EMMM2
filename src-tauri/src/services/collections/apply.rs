@@ -1,5 +1,7 @@
+use super::nested_walker;
 use super::types::{ApplyCollectionResult, ModState};
 use crate::database::collection_repo;
+use crate::database::game_repo;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use regex::Regex;
 use sqlx::SqlitePool;
@@ -19,7 +21,7 @@ pub async fn apply_collection(
     game_id: &str,
     safe_mode_enabled: bool,
 ) -> Result<ApplyCollectionResult, String> {
-    let (collection_name, is_safe_context): (String, bool) = if let Some(details) =
+    let (_, is_safe_context): (String, bool) = if let Some(details) =
         collection_repo::get_collection_details(pool, collection_id, game_id)
             .await
             .map_err(|e| e.to_string())?
@@ -31,8 +33,12 @@ pub async fn apply_collection(
 
     if safe_mode_enabled && !is_safe_context {
         return Err(
-            "Collection contains non-safe context. Disable Safe Mode to apply.".to_string(),
+            "Collection contains non-safe mods. Disable Privacy Mode to apply.".to_string(),
         );
+    }
+
+    if !safe_mode_enabled && is_safe_context {
+        return Err("Collection is Safe. Enable Privacy Mode to apply.".to_string());
     }
 
     // Step 1: Get mod_ids that still exist in the mods table
@@ -46,6 +52,10 @@ pub async fn apply_collection(
         collection_repo::get_collection_items_with_missing_mods(pool, collection_id, game_id)
             .await
             .map_err(|e| e.to_string())?;
+
+    let nested_target_paths = collection_repo::get_nested_collection_items(pool, collection_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut reconciled_ids = target_ids;
     let mut reconcile_warnings = Vec::new();
@@ -81,34 +91,64 @@ pub async fn apply_collection(
 
     let target_ids = reconciled_ids;
 
-    if target_ids.is_empty() {
-        return Ok(ApplyCollectionResult {
-            changed_count: 0,
-            warnings: vec![format!("Collection '{collection_name}' has no items")],
-        });
+    // An empty collection is a valid state (Disable All Mods).
+    // We let it proceed with an empty target_ids set to clear the loadout.
+
+    // Gather ALL enabled mods + collection targets (same pattern as undo_collection)
+    // This ensures every non-collection mod gets disabled, not just object conflicts.
+    let currently_enabled = collection_repo::get_enabled_mod_id_and_paths(pool, game_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut currently_enabled_ids = std::collections::HashSet::new();
+    for (id, _) in &currently_enabled {
+        currently_enabled_ids.insert(id.clone());
     }
 
-    let mut states = collection_repo::get_mod_states_by_ids(pool, game_id, &target_ids)
-        .await
-        .map_err(|e| e.to_string())?;
-    let object_ids = collection_repo::get_object_ids_for_collection(pool, collection_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut target_ids_set = std::collections::HashSet::new();
+    for id in &target_ids {
+        target_ids_set.insert(id.clone());
+    }
 
-    let conflicts = collection_repo::get_enabled_conflicting_mod_states(
-        pool,
-        game_id,
-        &target_ids,
-        &object_ids,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    states.extend(conflicts);
+    let mut diff_ids: Vec<String> = Vec::new();
+
+    // mods_to_disable: currently enabled, NOT in targets
+    for id in &currently_enabled_ids {
+        if !target_ids_set.contains(id) {
+            diff_ids.push(id.clone());
+        }
+    }
+
+    // mods_to_enable: in targets, NOT currently enabled
+    for id in &target_ids_set {
+        if !currently_enabled_ids.contains(id) {
+            diff_ids.push(id.clone());
+        }
+    }
+
+    let states = if diff_ids.is_empty() {
+        Vec::new()
+    } else {
+        collection_repo::get_mod_states_by_ids(pool, game_id, &diff_ids)
+            .await
+            .map_err(|e| e.to_string())?
+    };
 
     snapshot_current_state(pool, game_id, safe_mode_enabled).await?;
 
     let mut result = apply_state_change(pool, watcher_state, states, &target_ids).await?;
     result.warnings.extend(reconcile_warnings);
+
+    // ── Nested mods: toggle via filesystem rename ────────────────────────────
+    let mods_path = game_repo::get_mod_path(pool, game_id)
+        .await
+        .map_err(|e| format!("Failed to get mods_path: {e}"))?;
+
+    if let Some(ref mp) = mods_path {
+        let nested_changes = apply_nested_mods(watcher_state, mp, &nested_target_paths)?;
+        result.changed_count += nested_changes;
+    }
+
     Ok(result)
 }
 
@@ -120,7 +160,7 @@ async fn snapshot_current_state(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Delete existing snapshot collection mapping and the collection itself for this game
-    collection_repo::delete_snapshot_collection(&mut tx, game_id)
+    collection_repo::delete_snapshot_collection(&mut tx, game_id, safe_mode_enabled)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -133,7 +173,7 @@ async fn snapshot_current_state(
         .unwrap_or_default();
 
     let snapshot_id = Uuid::new_v4().to_string();
-    let name = format!("Unsaved {}", Uuid::new_v4());
+    let name = format!("Unsaved {}", chrono::Local::now().format("%Y%m%d%H%M"));
 
     collection_repo::insert_snapshot_collection(
         &mut tx,
@@ -254,4 +294,62 @@ fn rename_for_status(path: &str, to_enabled: bool) -> Result<Option<String>, Str
         return Err(format!("Target path already exists: {}", next.display()));
     }
     Ok(Some(next.to_string_lossy().to_string()))
+}
+
+/// Apply nested mod state changes via filesystem rename.
+///
+/// Walks all nested mods under `mods_path`, enables those whose paths are in
+/// `target_paths`, and disables all other currently enabled nested mods.
+fn apply_nested_mods(
+    watcher_state: &WatcherState,
+    mods_path: &str,
+    target_paths: &[String],
+) -> Result<usize, String> {
+    let all_nested = nested_walker::walk_nested_mods(mods_path)?;
+
+    if all_nested.is_empty() && target_paths.is_empty() {
+        return Ok(0);
+    }
+
+    let _guard = SuppressionGuard::new(&watcher_state.suppressor);
+    let mut changed = 0;
+
+    // Helper to get disabled-prefix-free path for comparison
+    fn get_canonical_path(path: &str) -> String {
+        match rename_for_status(path, true) {
+            Ok(Some(p)) => p,
+            _ => path.to_string(),
+        }
+    }
+
+    // Build a set of canonical target paths for O(1) lookup.
+    let target_set: std::collections::HashSet<String> =
+        target_paths.iter().map(|p| get_canonical_path(p)).collect();
+
+    for nm in &all_nested {
+        let canonical_current = get_canonical_path(&nm.folder_path);
+        let should_enable = target_set.contains(&canonical_current);
+
+        if should_enable && !nm.is_enabled {
+            // Enable: rename DISABLED → enabled
+            if let Ok(Some(new_path)) = rename_for_status(&nm.folder_path, true) {
+                if Path::new(&nm.folder_path).exists() {
+                    fs::rename(&nm.folder_path, &new_path)
+                        .map_err(|e| format!("Failed to enable nested mod: {e}"))?;
+                    changed += 1;
+                }
+            }
+        } else if !should_enable && nm.is_enabled {
+            // Disable: rename enabled → DISABLED
+            if let Ok(Some(new_path)) = rename_for_status(&nm.folder_path, false) {
+                if Path::new(&nm.folder_path).exists() {
+                    fs::rename(&nm.folder_path, &new_path)
+                        .map_err(|e| format!("Failed to disable nested mod: {e}"))?;
+                    changed += 1;
+                }
+            }
+        }
+    }
+
+    Ok(changed)
 }

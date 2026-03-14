@@ -28,7 +28,7 @@ const objectKeys = {
   all: ['objects'] as const,
   lists: () => [...objectKeys.all, 'list'] as const,
   list: (filter: ObjectFilter) => [...objectKeys.lists(), filter] as const,
-  counts: (gameId: string, safe: boolean) => [...objectKeys.all, 'counts', gameId, safe] as const,
+  counts: (gameId: string) => [...objectKeys.all, 'counts', gameId] as const,
   schema: (gameType: string) => ['schema', gameType] as const,
 };
 
@@ -58,13 +58,18 @@ export function useObjects(options: UseObjectsOptions = {}) {
     status_filter: options.statusFilter,
   };
 
+  // Use the full filter (including safe_mode) as the query key to ensure
+  // TanStack Query ALWAYS fetches with the latest backend state.
+  // placeholderData: (prev) => prev ensures the UI does not flash a loading spinner.
+  const queryKeyFilter = filter;
+
   return useQuery<ObjectSummary[]>({
-    queryKey: objectKeys.list(filter),
+    queryKey: objectKeys.list(queryKeyFilter),
     queryFn: () => getObjects(filter),
     enabled: !!activeGame?.id,
     staleTime: 30_000,
     placeholderData: (prev) => prev,
-    refetchOnWindowFocus: true, // Reconcile on focus — DB query is cheap (~0.5ms)
+    refetchOnWindowFocus: false, // Watcher handles external changes (req-28)
   });
 }
 
@@ -74,15 +79,16 @@ export function useObjects(options: UseObjectsOptions = {}) {
  */
 export function useCategoryCounts() {
   const { activeGame } = useActiveGame();
-  const { safeMode } = useAppStore();
   const gameId = activeGame?.id ?? '';
 
   return useQuery<CategoryCount[]>({
-    queryKey: objectKeys.counts(gameId, safeMode),
-    queryFn: () => getCategoryCounts(gameId, safeMode),
+    queryKey: objectKeys.counts(gameId),
+    // Backend `get_category_counts` always counts ALL objects regardless of safe mode
+    // (the _safe_mode param is unused). No need to include safeMode in key or fn.
+    queryFn: () => getCategoryCounts(gameId),
     enabled: !!gameId,
     staleTime: 30_000,
-    refetchOnWindowFocus: true, // Reconcile on focus — DB query is cheap (~0.3ms)
+    refetchOnWindowFocus: false, // Watcher handles external changes (req-28)
   });
 }
 

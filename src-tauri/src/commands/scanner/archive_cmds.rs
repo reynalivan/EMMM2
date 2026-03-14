@@ -22,6 +22,12 @@ pub struct ExtractionState {
     pub is_cancelled: Arc<AtomicBool>,
 }
 
+impl Default for ExtractionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExtractionState {
     pub fn new() -> Self {
         Self {
@@ -152,7 +158,7 @@ pub async fn match_check_folder_cmd(
     let match_score_pct = match_result
         .best
         .as_ref()
-        .map(|c| score_to_percentage(c))
+        .map(score_to_percentage)
         .unwrap_or(0);
     let confidence =
         crate::services::scanner::core::types::staged_confidence_label(&match_result).to_string();

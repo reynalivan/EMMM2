@@ -57,7 +57,10 @@ export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]>
   return result.objects;
 }
 
-export function getCategoryCounts(gameId: string, safeMode: boolean): Promise<CategoryCount[]> {
+export function getCategoryCounts(
+  gameId: string,
+  safeMode: boolean = false,
+): Promise<CategoryCount[]> {
   return invoke<CategoryCount[]>('get_category_counts_cmd', { gameId, safeMode });
 }
 

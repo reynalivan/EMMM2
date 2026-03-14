@@ -12,6 +12,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('../../lib/services/scanService', () => ({
+  scanService: {
+    syncDatabase: vi.fn().mockResolvedValue({}),
+  },
+}));
+
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: () => ({
     activeGame: {
@@ -32,6 +38,7 @@ describe('CollectionsPage - TC-31', () => {
     useAppStore.setState({
       safeMode: true,
       gridSelection: new Set(['mod-a']),
+      activeGameId: 'g-1',
     });
 
     vi.mocked(invoke).mockImplementation(async (cmd) => {
@@ -62,6 +69,26 @@ describe('CollectionsPage - TC-31', () => {
       if (cmd === 'apply_collection') {
         return { changed_count: 5, warnings: [] };
       }
+      if (cmd === 'get_active_mods_preview') {
+        return [
+          {
+            id: 'm-1',
+            object_name: 'Hu Tao',
+            actual_name: 'My Mod',
+            folder_path: 'C:/Mods/Hu Tao/My Mod',
+            is_safe: true,
+          },
+        ];
+      }
+      if (cmd === 'apply_collection') {
+        return { applied_count: 5, warnings: [] };
+      }
+      if (cmd === 'create_collection') {
+        return {};
+      }
+      if (cmd === 'sync_database_cmd') {
+        return { total_scanned: 1, new_mods: 0, updated_mods: 0, deleted_mods: 0, new_objects: 0 };
+      }
       return [];
     });
   });
@@ -77,7 +104,10 @@ describe('CollectionsPage - TC-31', () => {
 
     // Type a name
     fireEvent.change(input, { target: { value: 'My New Loadout' } });
-    expect(saveBtn).not.toBeDisabled();
+
+    await waitFor(() => {
+      expect(saveBtn).not.toBeDisabled();
+    });
 
     // TC-31-001: Click save
     fireEvent.click(saveBtn);
@@ -109,6 +139,11 @@ describe('CollectionsPage - TC-31', () => {
 
     // Get the apply button in the modal by test id
     const modalApplyBtn = screen.getByTestId('modal-apply-btn');
+
+    // Wait for the modal button to NOT be disabled before clicking
+    await waitFor(() => {
+      expect(modalApplyBtn).not.toBeDisabled();
+    });
 
     await act(async () => {
       fireEvent.click(modalApplyBtn);

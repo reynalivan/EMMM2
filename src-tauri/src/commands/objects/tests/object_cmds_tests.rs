@@ -114,7 +114,7 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
     };
 
     // Sync filesystem -> DB first so the DISABLED-prefixed folder is indexed
-    crate::services::scanner::object_sync::sync_objects_for_game(&pool, &game_id)
+    crate::services::scanner::object_sync::sync_objects_for_game(&pool, &game_id, &[])
         .await
         .expect("sync_objects_for_game failed");
 
@@ -178,7 +178,7 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
         "Unsafe object should be returned when safe_mode=false"
     );
 
-    // 2. Fetch with safe_mode=true (should return 0)
+    // 2. Fetch with safe_mode=true — Phase 1: ALL objects returned, unsafe ones get zeroed counts
     let filter_safe = ObjectFilter {
         game_id: game_id.clone(),
         search_query: None,
@@ -191,8 +191,17 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
     let results_safe = get_objects_cmd_inner(filter_safe, &pool).await?.objects;
     assert_eq!(
         results_safe.len(),
-        0,
-        "Unsafe object MUST NOT be returned when safe_mode=true (TC-08-10)"
+        1,
+        "Phase 1: Unsafe object IS returned in safe mode (with zeroed counts)"
+    );
+    let unsafe_obj = &results_safe[0];
+    assert_eq!(
+        unsafe_obj.mod_count, 0,
+        "Phase 1: mod_count must be zeroed for unsafe objects in safe mode"
+    );
+    assert_eq!(
+        unsafe_obj.enabled_count, 0,
+        "Phase 1: enabled_count must be zeroed for unsafe objects in safe mode"
     );
 
     Ok(())

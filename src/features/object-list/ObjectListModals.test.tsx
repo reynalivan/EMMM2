@@ -52,6 +52,9 @@ describe('ObjectListModals', () => {
         deleteObjectDialog={{ open: false, id: '', name: '' }}
         onConfirmDeleteObject={vi.fn()}
         onCancelDeleteObject={vi.fn()}
+        mismatchConfirm={null}
+        onConfirmMismatchHandler={vi.fn()}
+        onCancelMismatchHandler={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('confirm-dialog')).toBeNull();
@@ -84,6 +87,9 @@ describe('ObjectListModals', () => {
         deleteObjectDialog={{ open: false, id: '', name: '' }}
         onConfirmDeleteObject={vi.fn()}
         onCancelDeleteObject={vi.fn()}
+        mismatchConfirm={null}
+        onConfirmMismatchHandler={vi.fn()}
+        onCancelMismatchHandler={vi.fn()}
       />,
     );
 

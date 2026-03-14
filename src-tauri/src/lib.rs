@@ -28,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
                 .targets([
                     Target::new(TargetKind::Stdout),
                     Target::new(TargetKind::LogDir {
@@ -117,7 +118,17 @@ pub fn run() {
                                     log::info!("Backed up corrupt db to {}", backup_path.display());
                                 }
 
-                                try_init().await.expect("Failed to initialize database after recovery attempt")
+                                let recovered_pool = try_init().await.expect("Failed to initialize database after recovery attempt");
+
+                                // Clear stale sync timestamps — DB is fresh, cached values are invalid.
+                                // Without this, startup_sync::reconcile_game would see matching timestamps
+                                // and skip the sync, leaving the objects table permanently empty.
+                                let _ = sqlx::query("DELETE FROM app_settings WHERE key = 'sync_timestamps'")
+                                    .execute(&recovered_pool)
+                                    .await;
+                                log::info!("Cleared stale sync_timestamps after DB recovery.");
+
+                                recovered_pool
                             }
                         };
 
@@ -157,6 +168,43 @@ pub fn run() {
                         app.manage(mgr);
                     }
                 }
+            }
+
+            // Startup sync: reconcile DB with disk for all configured games.
+            // Delegates to `startup_sync::reconcile_game()` which enforces:
+            // - Objects table is never left empty after sync
+            // - Timestamp skip only applies when DB already has data
+            // - GC never wipes the entire table
+            {
+                let config_svc: tauri::State<'_, services::config::ConfigService> = app.state();
+                let settings = config_svc.get_settings();
+                let pool_state: tauri::State<'_, sqlx::SqlitePool> = app.state();
+                let pool_clone = pool_state.inner().clone();
+                let keywords = settings.safe_mode.keywords.clone();
+
+                use tauri::async_runtime::block_on;
+                block_on(async {
+                    for game in &settings.games {
+                        let mod_path = game.mod_path.to_string_lossy().to_string();
+                        if mod_path.is_empty() {
+                            continue;
+                        }
+
+                        let cached = settings.sync_timestamps.get(&game.id).copied().unwrap_or(0);
+                        match services::startup_sync::reconcile_game(
+                            &pool_clone, &game.id, &mod_path, &keywords, cached,
+                        ).await {
+                            Ok(new_ts) => {
+                                if new_ts != cached {
+                                    if let Err(e) = config_svc.update_sync_timestamp(&game.id, new_ts) {
+                                        log::warn!("Failed to update sync timestamp for '{}': {e}", game.name);
+                                    }
+                                }
+                            }
+                            Err(e) => log::warn!("Startup sync failed for '{}': {e}", game.name),
+                        }
+                    }
+                });
             }
 
             Ok(())
@@ -253,6 +301,7 @@ pub fn run() {
             commands::collections::collection_cmds::list_collections,
             commands::collections::collection_cmds::create_collection,
             commands::objects::object_cmds::get_objects_cmd,
+            commands::objects::object_cmds::sync_objects_cmd,
             commands::objects::object_cmds::get_category_counts_cmd,
             commands::objects::object_cmds::create_object_cmd,
             commands::objects::object_cmds::update_object_cmd,
@@ -263,6 +312,7 @@ pub fn run() {
             commands::collections::collection_cmds::apply_collection,
             commands::collections::collection_cmds::undo_collection,
             commands::collections::collection_cmds::get_collection_preview,
+            commands::collections::collection_cmds::get_active_mods_preview,
             commands::scanner::sync_cmds::sync_database_cmd,
             commands::scanner::sync_cmds::scan_preview_cmd,
             commands::scanner::sync_cmds::commit_scan_cmd,

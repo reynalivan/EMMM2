@@ -46,7 +46,7 @@ pub async fn get_object(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
 ) -> Result<Option<crate::services::scanner::core::types::GameObject>, String> {
-    let row = crate::services::objects::query::get_object_by_id_service(&*pool, &id).await?;
+    let row = crate::services::objects::query::get_object_by_id_service(&pool, &id).await?;
     Ok(row)
 }
 

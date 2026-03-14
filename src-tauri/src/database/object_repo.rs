@@ -50,7 +50,23 @@ pub async fn get_filtered_objects(
     pool: &SqlitePool,
     filter: &ObjectFilter,
 ) -> Result<Vec<ObjectSummary>, sqlx::Error> {
-    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
+    // Phase 14: Mutually Exclusive Corridors (ObjectList Visibility)
+    // ObjectList ALWAYS shows all objects.
+    // Safe mode = Safe objects show counts, Unsafe objects zeroed.
+    // Unsafe mode = Unsafe objects show counts, Safe objects zeroed.
+    let count_expr = if filter.safe_mode {
+        r#"
+            CASE WHEN o.is_safe = 0 THEN 0 ELSE COUNT(m.id) END as mod_count,
+            CASE WHEN o.is_safe = 0 THEN 0 ELSE COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) END as enabled_count,
+        "#
+    } else {
+        r#"
+            CASE WHEN o.is_safe = 1 THEN 0 ELSE COUNT(m.id) END as mod_count,
+            CASE WHEN o.is_safe = 1 THEN 0 ELSE COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) END as enabled_count,
+        "#
+    };
+
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(format!(
         r#"
         SELECT
             o.id,
@@ -65,18 +81,14 @@ pub async fn get_filtered_objects(
             o.is_auto_sync,
             o.thumbnail_path,
             o.created_at,
-            COUNT(m.id) as mod_count,
-            COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) as enabled_count,
+            {}
             (o.folder_path LIKE 'DISABLED %' OR o.folder_path LIKE '%/DISABLED %' OR o.folder_path LIKE '%\\DISABLED %') as is_object_disabled
         FROM objects o
         LEFT JOIN mods m ON m.object_id = o.id
         WHERE o.game_id = "#,
-    );
+        count_expr
+    ));
     qb.push_bind(&filter.game_id);
-
-    if filter.safe_mode {
-        qb.push(" AND o.is_safe = 1");
-    }
 
     if let Some(obj_type) = &filter.object_type {
         qb.push(" AND o.object_type = ");
@@ -134,15 +146,14 @@ pub async fn get_filtered_objects(
 pub async fn get_category_counts(
     pool: &SqlitePool,
     game_id: &str,
-    safe_mode: bool,
+    _safe_mode: bool,
 ) -> Result<Vec<CategoryCount>, sqlx::Error> {
+    // Phase 1 fix: always count ALL objects regardless of safe mode.
+    // Category badges should show total counts; individual object counts
+    // are zeroed for unsafe objects at the object level.
     let mut qb: QueryBuilder<Sqlite> =
         QueryBuilder::new("SELECT object_type, COUNT(*) as count FROM objects WHERE game_id = ");
     qb.push_bind(game_id);
-
-    if safe_mode {
-        qb.push(" AND is_safe = 1");
-    }
 
     qb.push(" GROUP BY object_type ORDER BY object_type");
 

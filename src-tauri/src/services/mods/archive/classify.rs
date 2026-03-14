@@ -83,13 +83,11 @@ pub fn has_valid_mod_ini(folder: &Path) -> bool {
         // Read the file line-by-line and check for valid section headers
         if let Ok(file) = fs::File::open(&path) {
             let reader = BufReader::new(file);
-            for line_res in reader.lines() {
-                if let Ok(line) = line_res {
-                    let trimmed = line.trim();
-                    for section in VALID_INI_SECTIONS {
-                        if trimmed.starts_with(section) {
-                            return true;
-                        }
+            for line in reader.lines().map_while(Result::ok) {
+                let trimmed = line.trim();
+                for section in VALID_INI_SECTIONS {
+                    if trimmed.starts_with(section) {
+                        return true;
                     }
                 }
             }
@@ -142,7 +140,7 @@ pub fn collect_loose_files_recursive(root: &Path, mod_roots: &[PathBuf]) -> Vec<
             continue;
         }
         // Don't recurse into mod roots — those are the actual mods
-        if mod_roots.iter().any(|mr| *mr == path) {
+        if mod_roots.contains(&path) {
             continue;
         }
         result.extend(collect_loose_files_recursive(&path, mod_roots));

@@ -1,6 +1,7 @@
 use crate::services::collections::{
     apply_collection as apply_collection_service, create_collection as create_collection_service,
     delete_collection as delete_collection_service,
+    get_active_mods_preview as get_active_mods_preview_service,
     get_collection_preview as get_collection_preview_service,
     list_collections as list_collections_service, undo_collection as undo_collection_service,
     update_collection as update_collection_service, ApplyCollectionResult, Collection,
@@ -75,6 +76,15 @@ pub async fn get_collection_preview(
     game_id: String,
 ) -> Result<Vec<CollectionPreviewMod>, String> {
     get_collection_preview_service(pool.inner(), &collection_id, &game_id).await
+}
+
+#[tauri::command]
+pub async fn get_active_mods_preview(
+    pool: State<'_, SqlitePool>,
+    game_id: String,
+    safe_mode: bool,
+) -> Result<Vec<CollectionPreviewMod>, String> {
+    get_active_mods_preview_service(pool.inner(), &game_id, safe_mode).await
 }
 
 #[tauri::command]

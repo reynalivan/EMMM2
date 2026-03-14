@@ -19,12 +19,9 @@ pub use types::ModFolder;
 /// Covers: TC-4.1-01 (Deep Navigation), TC-4.1-02 (Sort by Date)
 #[tauri::command]
 pub async fn list_mod_folders(
-    _pool: tauri::State<'_, sqlx::SqlitePool>,
     config: tauri::State<'_, ConfigService>,
-    _game_id: Option<String>,
     mods_path: String,
     sub_path: Option<String>,
-    _object_id: Option<String>,
 ) -> Result<types::FolderGridResponse, String> {
     let mut response = listing::list_mod_folders_inner(mods_path, sub_path).await?;
     response.children = helpers::apply_safe_mode_filter(response.children, &config);

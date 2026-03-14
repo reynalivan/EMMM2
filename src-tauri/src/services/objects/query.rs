@@ -21,13 +21,21 @@ pub async fn get_filtered_objects_with_conflict_check(
 }
 
 /// Garbage-collect objects whose folders no longer exist on disk.
-/// Also detects naming conflicts (enabled + disabled variants of the same name).
 ///
-/// Called at specific sync points only:
-/// - Game switch
+/// Compares each object's `folder_path` (a folder name like `"Alhaitham"`)
+/// against the normalized set of filesystem directories under `mods_path`.
+/// Objects with no matching FS directory are deleted from the DB.
+///
+/// # Safety Invariants
+/// - If `mods_dir` doesn't exist → GC is skipped (config issue, not GC signal).
+/// - If filesystem returns 0 non-hidden folders → GC is skipped (FS unreadable).
+/// - If GC would delete ALL objects for a game → GC is **aborted** entirely
+///   (likely a `folder_path` format mismatch, not legitimate cleanup).
+///
+/// # Call Sites
+/// - `startup_sync::reconcile_game` (app startup)
 /// - Manual "Sync Database" action
 /// - Watcher `Removed` events (via lifecycle.rs)
-/// - App startup
 pub async fn gc_lost_objects(
     pool: &sqlx::SqlitePool,
     game_id: &str,
@@ -46,6 +54,10 @@ pub async fn gc_lost_objects(
         .await
         .map_err(|e| e.to_string())?;
 
+    if objects.is_empty() {
+        return Ok(vec![]);
+    }
+
     let mod_path_opt = crate::database::game_repo::get_mod_path(pool, game_id)
         .await
         .map_err(|e| e.to_string())?;
@@ -56,13 +68,13 @@ pub async fn gc_lost_objects(
 
     let mods_dir = std::path::Path::new(mod_path);
     if !mods_dir.is_dir() {
-        // mods_path gone — delete all objects for this game
-        let mut lost_names = Vec::new();
-        for obj in objects {
-            let _ = crate::database::object_repo::delete_object(pool, &obj.id).await;
-            lost_names.push(obj.name);
-        }
-        return Ok(lost_names);
+        // mods_path gone — do NOT delete objects; this is a config issue, not a GC signal.
+        log::warn!(
+            "GC skipped for game '{}': mods_dir '{}' does not exist. Keeping DB intact.",
+            game_id,
+            mod_path
+        );
+        return Ok(vec![]);
     }
 
     // Build normalized folder name set from disk
@@ -79,18 +91,47 @@ pub async fn gc_lost_objects(
         }
     }
 
-    let mut lost_names = Vec::new();
-    for obj in objects {
+    // SAFETY: If FS has 0 folders, do NOT GC — filesystem is likely unreadable
+    if norm_set.is_empty() {
+        log::warn!(
+            "GC skipped for game '{}': filesystem returned 0 non-hidden folders at '{}'.",
+            game_id,
+            mod_path
+        );
+        return Ok(vec![]);
+    }
+
+    // Phase 1: Collect candidates (do NOT delete yet)
+    let mut candidates: Vec<(String, String, String)> = Vec::new(); // (id, name, folder_path)
+    for obj in &objects {
         let key = normalize_display_name(&obj.folder_path).to_lowercase();
-        if norm_set.get(&key).is_none() {
-            log::info!(
-                "GC: lost object '{}' (folder_path='{}') — deleting from DB",
-                obj.name,
-                obj.folder_path
-            );
-            let _ = crate::database::object_repo::delete_object(pool, &obj.id).await;
-            lost_names.push(obj.name);
+        if !norm_set.contains_key(&key) {
+            candidates.push((obj.id.clone(), obj.name.clone(), obj.folder_path.clone()));
         }
+    }
+
+    // SAFETY: If GC would delete ALL objects, abort — this is a bug, not cleanup
+    if !candidates.is_empty() && candidates.len() == objects.len() {
+        log::error!(
+            "GC ABORTED for game '{}': would delete ALL {} objects. \
+             This indicates a folder_path format mismatch between DB and FS, \
+             not legitimate cleanup. DB objects kept intact.",
+            game_id,
+            objects.len()
+        );
+        return Ok(vec![]);
+    }
+
+    // Phase 2: Delete only the safe subset
+    let mut lost_names = Vec::new();
+    for (id, name, folder_path) in &candidates {
+        log::info!(
+            "GC: lost object '{}' (folder_path='{}') — deleting from DB",
+            name,
+            folder_path
+        );
+        let _ = crate::database::object_repo::delete_object(pool, id).await;
+        lost_names.push(name.clone());
     }
 
     Ok(lost_names)

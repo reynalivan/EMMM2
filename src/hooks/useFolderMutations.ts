@@ -96,12 +96,18 @@ export function useToggleModSafe() {
     mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
       invoke<void>('toggle_mod_safe', params),
     onSuccess: (_data, variables) => {
-      // Targeted: update safe flag in cache instead of full re-listing
-      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
-        ...f,
-        is_safe: variables.safe,
-      }));
+      // Phase 24 barrier: The mod just switched contexts.
+      // Remove it from the current grid view aggressively so it doesn't linger.
+      updateFolderCache(queryClient, [variables.folderPath], undefined, true);
+
+      // If it was selected, clear the selection pane as well
+      const appStore = useAppStore.getState();
+      if (appStore.gridSelection?.has(variables.folderPath)) {
+        appStore.clearGridSelection();
+      }
+
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
     },
   });
 }
@@ -184,6 +190,8 @@ function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: 
     : `${action} ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
 }
 
+import { useAppStore } from '../stores/useAppStore';
+
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {
   const queryClient = useQueryClient();
@@ -192,8 +200,17 @@ export function useBulkToggle() {
     mutationFn: (params: { paths: string[]; enable: boolean }) =>
       invoke<BulkResult>('bulk_toggle_mods', params),
     onSuccess: (result, variables) => {
-      result.success.forEach((path) => {
-        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
+      useAppStore.getState().setActiveCollectionId(null);
+      result.success.forEach((newPath) => {
+        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
+
+        // Derive old path to keep grid selection alive
+        const namePart = newPath.split(/[/\\]/).pop() || '';
+        const guessedOldName = variables.enable
+          ? `DISABLED ${namePart}`
+          : namePart.replace(/^DISABLED /, '');
+        const oldPath = newPath.slice(0, -namePart.length) + guessedOldName;
+        useAppStore.getState().replaceGridSelection(oldPath, newPath);
       });
       // Opt-AA: Revert to full active refetch. Bulk operations alter
       // physical directory paths. Trying to accurately map all new paths
@@ -374,8 +391,19 @@ export function useEnableOnlyThis() {
     mutationFn: (params: { targetPath: string; gameId: string }) =>
       invoke<BulkResult>('enable_only_this', params),
     onSuccess: (result) => {
-      result.success.forEach((path) => {
-        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
+      useAppStore.getState().setActiveCollectionId(null);
+      // The first item is the one enabled, the rest are disabled
+      result.success.forEach((newPath, idx) => {
+        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
+
+        // Derive old path to keep grid selection alive
+        const isEnabled = idx === 0;
+        const namePart = newPath.split(/[/\\]/).pop() || '';
+        const guessedOldName = isEnabled
+          ? `DISABLED ${namePart}`
+          : namePart.replace(/^DISABLED /, '');
+        const oldPath = newPath.slice(0, -namePart.length) + guessedOldName;
+        useAppStore.getState().replaceGridSelection(oldPath, newPath);
       });
       // Opt-Z3: Revert to full invalidation. This touches potentially hundreds of
       // folders physically, and guessing all their new paths in cache is a massive

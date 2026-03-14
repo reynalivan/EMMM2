@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from './lib/logger';
 import { useAppStore } from './stores/useAppStore';
+import { settingsKeys } from './hooks/useSettings';
 
 // Components
 import MainLayout from './components/layout/MainLayout';
@@ -10,6 +12,7 @@ import WelcomeScreen from './features/onboarding/WelcomeScreen';
 
 function AppRouter() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     initLogger().catch(console.error);
@@ -46,6 +49,8 @@ function AppRouter() {
               if (games && games.length > 0) {
                 await useAppStore.getState().setActiveGameId(games[0].id);
               }
+              // Force React Query to refetch settings so GameSelector sees new games
+              await queryClient.invalidateQueries({ queryKey: settingsKeys.all });
               await useAppStore.getState().initStore();
               navigate('/dashboard', { replace: true });
             }}

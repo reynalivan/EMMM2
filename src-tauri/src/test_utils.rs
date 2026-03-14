@@ -22,11 +22,10 @@ pub async fn init_test_db() -> TestContext {
         .await
         .expect("Failed to create in-memory database");
 
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
+    // Run migrations (force cache bust)
+    let m = sqlx::migrate!("./migrations");
+    println!("DEBUG: MIGRATIONS FOUND: {}", m.migrations.len());
+    m.run(&pool).await.expect("Failed to run migrations");
 
     TestContext { pool }
 }

@@ -11,20 +11,24 @@ pub async fn list_collections(
 ) -> Result<Vec<Collection>, sqlx::Error> {
     let sql = if safe_mode_enabled {
         r#"
-        SELECT c.id, c.name, c.game_id, c.is_safe_context, COUNT(ci.mod_id) as member_count, COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
+        SELECT c.id, c.name, c.game_id, c.is_safe_context,
+            (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = c.id)
+            + (SELECT COUNT(*) FROM collection_nested_items cni WHERE cni.collection_id = c.id)
+            as member_count,
+            COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
         FROM collections c
-        LEFT JOIN collection_items ci ON c.id = ci.collection_id
         WHERE c.game_id = ? AND c.is_safe_context = 1
-        GROUP BY c.id
         ORDER BY c.is_last_unsaved DESC, c.name
         "#
     } else {
         r#"
-        SELECT c.id, c.name, c.game_id, c.is_safe_context, COUNT(ci.mod_id) as member_count, COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
+        SELECT c.id, c.name, c.game_id, c.is_safe_context,
+            (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = c.id)
+            + (SELECT COUNT(*) FROM collection_nested_items cni WHERE cni.collection_id = c.id)
+            as member_count,
+            COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
         FROM collections c
-        LEFT JOIN collection_items ci ON c.id = ci.collection_id
-        WHERE c.game_id = ?
-        GROUP BY c.id
+        WHERE c.game_id = ? AND c.is_safe_context = 0
         ORDER BY c.is_last_unsaved DESC, c.name
         "#
     };
@@ -134,6 +138,21 @@ pub async fn insert_collection_item(
     Ok(())
 }
 
+pub async fn insert_nested_collection_item(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+    mod_path: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT OR IGNORE INTO collection_nested_items (collection_id, mod_path) VALUES (?, ?)",
+    )
+    .bind(collection_id)
+    .bind(mod_path)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 pub async fn get_collection_name(
     conn: &mut SqliteConnection,
     id: &str,
@@ -198,14 +217,14 @@ pub async fn delete_collection_items(
 }
 
 pub async fn delete_collection(
-    pool: &SqlitePool,
+    conn: &mut SqliteConnection,
     id: &str,
     game_id: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM collections WHERE id = ? AND game_id = ?")
         .bind(id)
         .bind(game_id)
-        .execute(pool)
+        .execute(conn)
         .await?;
     Ok(())
 }
@@ -224,8 +243,21 @@ pub async fn get_collection_details(
     .await?;
 
     if let Some((cid, name, gid, safe, is_last_unsaved)) = coll_row {
+        let member_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM collection_items WHERE collection_id = ?")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
+
+        let nested_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM collection_nested_items WHERE collection_id = ?",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+
         let mod_ids: Vec<String> = sqlx::query_scalar(
-            "SELECT mod_id FROM collection_items WHERE collection_id = ? ORDER BY mod_id",
+            "SELECT mod_id FROM collection_items WHERE collection_id = ? AND mod_id IS NOT NULL ORDER BY mod_id",
         )
         .bind(id)
         .fetch_all(pool)
@@ -237,7 +269,7 @@ pub async fn get_collection_details(
                 name,
                 game_id: gid,
                 is_safe_context: safe,
-                member_count: mod_ids.len(),
+                member_count: (member_count + nested_count) as usize,
                 is_last_unsaved,
             },
             mod_ids,
@@ -257,7 +289,7 @@ pub async fn get_collection_preview_mods(
             m.id,
             m.actual_name,
             m.folder_path,
-            COALESCE(m.is_safe, 0) as is_safe,
+            COALESCE(o.is_safe, m.is_safe, 1) as is_safe,
             m.object_id,
             o.name as object_name,
             o.object_type
@@ -319,6 +351,16 @@ pub async fn get_collection_items_with_missing_mods(
     .await
 }
 
+pub async fn get_nested_collection_items(
+    pool: &SqlitePool,
+    collection_id: &str,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT mod_path FROM collection_nested_items WHERE collection_id = ?")
+        .bind(collection_id)
+        .fetch_all(pool)
+        .await
+}
+
 pub async fn get_mod_ids_for_collection_in_game(
     pool: &SqlitePool,
     collection_id: &str,
@@ -360,29 +402,24 @@ pub async fn update_collection_item_mod_id(
     Ok(())
 }
 
-pub async fn get_object_ids_for_collection(
-    pool: &SqlitePool,
-    collection_id: &str,
-) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT DISTINCT object_id FROM mods WHERE id IN (SELECT mod_id FROM collection_items WHERE collection_id = ?) AND object_id IS NOT NULL")
-        .bind(collection_id)
-        .fetch_all(pool)
-        .await
-}
-
 pub async fn delete_snapshot_collection(
     conn: &mut SqliteConnection,
     game_id: &str,
+    is_safe_context: bool,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM collection_items WHERE collection_id IN (SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1)")
+    sqlx::query("DELETE FROM collection_items WHERE collection_id IN (SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1 AND is_safe_context = ?)")
         .bind(game_id)
+        .bind(is_safe_context)
         .execute(&mut *conn)
         .await?;
 
-    sqlx::query("DELETE FROM collections WHERE game_id = ? AND is_last_unsaved = 1")
-        .bind(game_id)
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(
+        "DELETE FROM collections WHERE game_id = ? AND is_last_unsaved = 1 AND is_safe_context = ?",
+    )
+    .bind(game_id)
+    .bind(is_safe_context)
+    .execute(&mut *conn)
+    .await?;
 
     Ok(())
 }
@@ -433,47 +470,6 @@ pub async fn get_mod_states_by_ids(
         .collect())
 }
 
-pub async fn get_enabled_conflicting_mod_states(
-    pool: &SqlitePool,
-    game_id: &str,
-    target_ids: &[String],
-    object_ids: &[String],
-) -> Result<Vec<ModState>, sqlx::Error> {
-    if object_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut qb: QueryBuilder<'_, Sqlite> =
-        QueryBuilder::new("SELECT id, folder_path, status FROM mods WHERE game_id = ");
-    qb.push_bind(game_id)
-        .push(" AND status = 'ENABLED' AND object_id IN (");
-
-    let mut object_separated = qb.separated(", ");
-    for object_id in object_ids {
-        object_separated.push_bind(object_id);
-    }
-    qb.push(")");
-
-    if !target_ids.is_empty() {
-        qb.push(" AND id NOT IN (");
-        let mut id_separated = qb.separated(", ");
-        for id in target_ids {
-            id_separated.push_bind(id);
-        }
-        qb.push(")");
-    }
-
-    let rows: Vec<(String, String, String)> = qb.build_query_as().fetch_all(pool).await?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, folder_path, status)| ModState {
-            id,
-            folder_path,
-            status,
-        })
-        .collect())
-}
-
 pub async fn batch_update_mods_status_and_path(
     pool: &SqlitePool,
     updates: &[(String, String, String)], // (id, status, folder_path)
@@ -495,14 +491,16 @@ pub async fn batch_update_mods_status_and_path(
     Ok(())
 }
 
-pub async fn get_last_unsaved_collection_id_and_safe_context(
+pub async fn get_last_unsaved_collection_id(
     conn: &mut SqliteConnection,
     game_id: &str,
-) -> Result<Option<(String, bool)>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT id, is_safe_context FROM collections WHERE game_id = ? AND is_last_unsaved = 1",
+    is_safe_context: bool,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1 AND is_safe_context = ?",
     )
     .bind(game_id)
+    .bind(is_safe_context)
     .fetch_optional(conn)
     .await
 }
@@ -549,4 +547,66 @@ pub async fn update_collection_item_mod_id_global(
         .execute(conn)
         .await?;
     Ok(())
+}
+
+pub async fn get_active_mods_preview_mods(
+    pool: &SqlitePool,
+    game_id: &str,
+    safe_mode: bool,
+) -> Result<Vec<CollectionPreviewMod>, sqlx::Error> {
+    let sql = r#"
+        SELECT
+            m.id,
+            m.actual_name,
+            m.folder_path,
+            COALESCE(o.is_safe, m.is_safe, 1) as is_safe,
+            m.object_id,
+            o.name as object_name,
+            o.object_type
+        FROM mods m
+        LEFT JOIN objects o ON m.object_id = o.id
+        WHERE m.game_id = ?
+          AND m.status = 'ENABLED'
+          AND COALESCE(o.is_safe, m.is_safe, 1) = ?
+          AND (o.id IS NULL OR NOT (
+              COALESCE(o.folder_path, '') LIKE 'DISABLED %' OR
+              COALESCE(o.folder_path, '') LIKE '%/DISABLED %' OR
+              COALESCE(o.folder_path, '') LIKE '%\\DISABLED %'
+          ))
+        ORDER BY o.name ASC, m.actual_name ASC
+    "#;
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            bool,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ),
+    >(sql)
+    .bind(game_id)
+    .bind(safe_mode)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, actual_name, folder_path, is_safe, object_id, object_name, object_type)| {
+                CollectionPreviewMod {
+                    id,
+                    actual_name,
+                    folder_path,
+                    is_safe,
+                    object_id,
+                    object_name,
+                    object_type,
+                }
+            },
+        )
+        .collect())
 }

@@ -18,9 +18,6 @@ import {
 } from './usePreviewData';
 import {
   buildKeyBindSections,
-  buildVariableInfoSummaries,
-  buildHashSummaries,
-  buildModFeatureSummaries,
   getConflictingKeys,
   toFieldValueMap,
   toIniWritePayload,
@@ -57,7 +54,6 @@ export function usePreviewPanelState() {
   const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [activeIniTab, setActiveIniTab] = useState<'keybind' | 'information'>('keybind');
 
   const [draftByField, setDraftByField] = useState<Record<string, string>>({});
   const [initialByField, setInitialByField] = useState<Record<string, string>>({});
@@ -100,13 +96,7 @@ export function usePreviewPanelState() {
     () => keyBindSections.flatMap((group) => group.sections.flatMap((section) => section.fields)),
     [keyBindSections],
   );
-  const variableSummaries = useMemo(() => buildVariableInfoSummaries(iniDocuments), [iniDocuments]);
 
-  const hashSummaries = useMemo(() => buildHashSummaries(iniDocuments), [iniDocuments]);
-  const modFeatureSummaries = useMemo(
-    () => buildModFeatureSummaries(variableSummaries, keyBindSections),
-    [variableSummaries, keyBindSections],
-  );
   const conflictingKeys = useMemo(
     () => getConflictingKeys(keyBindSections, draftByField),
     [keyBindSections, draftByField],
@@ -379,15 +369,10 @@ export function usePreviewPanelState() {
     setVersionDraft,
     setDescriptionDraft,
     metadataDirty,
-    activeIniTab,
-    setActiveIniTab,
     keyBindSections,
     openSectionIds,
     draftByField,
     fieldErrors,
-    variableSummaries,
-    hashSummaries,
-    modFeatureSummaries,
     conflictingKeys,
     hasUnsavedEditorChanges,
     changedIniFields,

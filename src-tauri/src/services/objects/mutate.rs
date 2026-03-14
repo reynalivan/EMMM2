@@ -37,7 +37,7 @@ pub async fn create_object_cmd_inner(
 
             // Determine if thumbnail_url is provided so we can derive the future dest path
             if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
-                if let Some(res_dir) = app.path().resource_dir().ok() {
+                if let Ok(res_dir) = app.path().resource_dir() {
                     let source_thumb: std::path::PathBuf = res_dir.join("databases").join(thumb);
                     if source_thumb.exists() {
                         let ext = source_thumb.extension().unwrap_or_default();

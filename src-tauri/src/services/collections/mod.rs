@@ -1,4 +1,5 @@
 mod apply;
+pub mod nested_walker;
 mod storage;
 pub mod types;
 
@@ -6,8 +7,8 @@ pub mod undo;
 
 pub use apply::apply_collection;
 pub use storage::{
-    create_collection, delete_collection, get_collection_preview, list_collections,
-    update_collection,
+    create_collection, delete_collection, get_active_mods_preview, get_collection_preview,
+    list_collections, update_collection,
 };
 pub use types::{
     ApplyCollectionResult, Collection, CollectionDetails, CollectionPreviewMod,

@@ -16,7 +16,7 @@ import React from 'react';
 // Mock lucide-react dynamically
 vi.mock('lucide-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('lucide-react')>();
-  const mockExports: Record<string, any> = { ...actual };
+  const mockExports: Record<string, unknown> = { ...actual };
   for (const key in actual) {
     if (key === 'default' || key === '__esModule') continue;
     // Mock every icon as an empty element to prevent text pollution in getByText
@@ -29,7 +29,7 @@ vi.mock('lucide-react', async (importOriginal) => {
 vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual('@tanstack/react-query');
   return {
-    ...(actual as any),
+    ...(actual as Record<string, unknown>),
     useQuery: vi.fn().mockReturnValue({ data: null, isLoading: false, error: null }),
     useMutation: vi
       .fn()

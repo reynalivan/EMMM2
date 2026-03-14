@@ -20,7 +20,7 @@ pub async fn set_mod_category(
         let obj_id_str = object_id.unwrap_or_default();
         let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
         crate::database::mod_repo::update_mod_object_id_and_type_tx(
-            &mut *conn,
+            &mut conn,
             &mod_id,
             &obj_id_str,
             category,
@@ -108,7 +108,7 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
         .map_err(|e| e.to_string())?;
 
         crate::database::mod_repo::update_mod_object_id_and_type_tx(
-            &mut *tx, mod_id, &object_id, "Other",
+            &mut tx, mod_id, &object_id, "Other",
         )
         .await
         .map_err(|e| e.to_string())?;

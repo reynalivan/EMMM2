@@ -1,8 +1,8 @@
 import { ShieldCheck, ShieldAlert, Save, Layers, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../../stores/useAppStore';
+import ApplyCollectionModal from '../../../features/collections/components/ApplyCollectionModal';
 import {
   useCollections,
-  useApplyCollection,
   useSaveCurrentAsCollection,
 } from '../../../features/collections/hooks/useCollections';
 import { useState } from 'react';
@@ -18,21 +18,24 @@ export default function ContextControls() {
     setWorkspaceView,
   } = useAppStore();
   const { data: collections = [], isLoading } = useCollections(activeGameId);
-  const applyMutation = useApplyCollection();
   const saveMutation = useSaveCurrentAsCollection();
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+  const [collectionToApply, setCollectionToApply] = useState<{ id: string; name: string } | null>(
+    null,
+  );
 
   const activeCollection = collections.find((c) => c.id === activeCollectionId);
-  const triggerText = activeCollection ? activeCollection.name : 'Collections';
+  const triggerText = activeCollection ? activeCollection.name : '(Unsaved presets)';
 
-  const handleApply = (id: string) => {
+  const handleApplyClick = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
     if (!activeGameId) return;
-    setActiveCollectionId(id);
-    applyMutation.mutate({ collectionId: id, gameId: activeGameId });
-    const elem = document.activeElement as HTMLElement;
-    if (elem) elem.blur();
+    setCollectionToApply({ id, name });
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   const handleSaveCurrent = (e: React.FormEvent) => {
@@ -72,7 +75,7 @@ export default function ContextControls() {
           <div
             tabIndex={0}
             role="button"
-            className="px-3 py-1 rounded-full text-xs font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer flex items-center gap-2 max-w-[150px]"
+            className={`px-3 py-1 rounded-full text-xs font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer flex items-center gap-2 max-w-37.5 ${!activeCollection && collections.length > 0 ? 'italic opacity-80' : ''}`}
             title={triggerText}
           >
             <span className="truncate">{triggerText}</span>{' '}
@@ -121,9 +124,9 @@ export default function ContextControls() {
                       <li key={c.id}>
                         <button
                           className={`text-sm justify-between ${activeCollectionId === c.id ? 'bg-white/10 text-white font-medium' : 'hover:bg-white/5'}`}
-                          onClick={() => handleApply(c.id)}
+                          onClick={(e) => handleApplyClick(e, c.id, c.name)}
                         >
-                          <span className="truncate max-w-[130px]">{c.name}</span>
+                          <span className="truncate max-w-32.5">{c.name}</span>
                           <span className="badge badge-xs badge-ghost opacity-50">
                             {c.member_count}
                           </span>
@@ -153,6 +156,15 @@ export default function ContextControls() {
           </ul>
         </div>
       </div>
+
+      {collectionToApply && (
+        <ApplyCollectionModal
+          collectionId={collectionToApply.id}
+          collectionName={collectionToApply.name}
+          memberCount={0} // Placeholder, as member_count is not directly available here
+          onClose={() => setCollectionToApply(null)}
+        />
+      )}
 
       {saveModalOpen &&
         createPortal(
@@ -191,7 +203,7 @@ export default function ContextControls() {
                   </button>
                   <button
                     type="submit"
-                    className="btn btn-primary min-w-[100px]"
+                    className="btn btn-primary min-w-25"
                     disabled={!newCollectionName.trim() || saveMutation.isPending}
                   >
                     {saveMutation.isPending ? (

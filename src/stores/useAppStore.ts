@@ -33,7 +33,7 @@ interface AppState {
 
   // Selection State
   activeCollectionId: string | null;
-  selectedObject: string | null;
+  selectedObjectFolderPath: string | null;
   gridSelection: Set<string>;
 
   // Epic 3: Sidebar State
@@ -75,10 +75,11 @@ interface AppState {
   setWorkspaceView: (view: WorkspaceView) => void;
   setCurrentPath: (path: string[]) => void;
   setActiveCollectionId: (id: string | null) => void;
-  setSelectedObject: (id: string | null) => void;
+  setSelectedObjectFolderPath: (folderPath: string | null) => void;
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
   setGridSelection: (selection: Set<string>) => void;
+  replaceGridSelection: (oldPath: string, newPath: string) => void;
   setPanelWidths: (left: number, right: number) => void;
 
   // Responsive Actions
@@ -131,7 +132,7 @@ export const useAppStore = create<AppState>()(
       workspaceView: 'dashboard',
       currentPath: [],
       activeCollectionId: null,
-      selectedObject: null,
+      selectedObjectFolderPath: null,
       gridSelection: new Set(),
       leftPanelWidth: 260,
       rightPanelWidth: 320,
@@ -195,7 +196,7 @@ export const useAppStore = create<AppState>()(
           explorerSubPath: undefined,
           currentPath: [],
           explorerSearchQuery: '',
-          selectedObject: null,
+          selectedObjectFolderPath: null,
           gridSelection: new Set(),
           // Reset sidebar state to prevent stale filters from previous game
           sidebarSearchQuery: '',
@@ -214,8 +215,19 @@ export const useAppStore = create<AppState>()(
         const { invoke } = await import('@tauri-apps/api/core');
         try {
           await invoke('set_safe_mode_enabled', { enabled });
-          // Only update state if backend succeeds
-          set({ safeMode: enabled });
+          // Clear grid selection: FolderGrid items may change with safe mode.
+          // ObjectList handles filtering via TanStack query keys (auto-refetch).
+          set({
+            safeMode: enabled,
+            gridSelection: new Set(),
+          });
+          // Invalidate caches: mod-folders don't include safe_mode in query keys.
+          // Objects auto-refetch via key change (safe_mode is in the ObjectFilter key).
+          const { queryClient } = await import('../lib/queryClient');
+          queryClient.invalidateQueries({ queryKey: ['objects'] });
+          queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+          queryClient.invalidateQueries({ queryKey: ['collections'] });
+          queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
         } catch (e) {
           console.error('Failed to sync safe mode to backend', e);
           throw e;
@@ -239,11 +251,11 @@ export const useAppStore = create<AppState>()(
       setCurrentPath: (path) => set({ currentPath: path }),
       setActiveCollectionId: (id) => set({ activeCollectionId: id }),
 
-      setSelectedObject: (id) =>
+      setSelectedObjectFolderPath: (folderPath) =>
         set({
-          selectedObject: id,
+          selectedObjectFolderPath: folderPath,
           // Auto-navigate to grid on mobile when object selected
-          mobileActivePane: id ? 'grid' : 'sidebar',
+          mobileActivePane: folderPath ? 'grid' : 'sidebar',
         }),
 
       toggleGridSelection: (id, multi = false) =>
@@ -271,6 +283,15 @@ export const useAppStore = create<AppState>()(
           // Auto-navigate to details on mobile when item selected (single select)
           const nextMobilePane = selection.size === 1 ? 'details' : state.mobileActivePane;
           return { gridSelection: selection, mobileActivePane: nextMobilePane };
+        }),
+
+      replaceGridSelection: (oldPath, newPath) =>
+        set((state) => {
+          if (!state.gridSelection.has(oldPath)) return state;
+          const newSet = new Set(state.gridSelection);
+          newSet.delete(oldPath);
+          newSet.add(newPath);
+          return { gridSelection: newSet };
         }),
 
       setPanelWidths: (left, right) => set({ leftPanelWidth: left, rightPanelWidth: right }),

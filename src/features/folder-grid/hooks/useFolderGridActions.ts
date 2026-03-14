@@ -18,6 +18,7 @@ import {
   useBulkFavorite,
   updateFolderCache,
   ModFolder,
+  folderKeys,
 } from '../../../hooks/useFolders';
 import type { DuplicateInfo } from '../../../types/mod';
 import { useAppStore } from '../../../stores/useAppStore';
@@ -51,6 +52,16 @@ export function useFolderGridActions({
   const [pinSafeDialog, setPinSafeDialog] = useState<{ open: boolean; folder: ModFolder | null }>({
     open: false,
     folder: null,
+  });
+
+  const [activeContextDialog, setActiveContextDialog] = useState<{
+    open: boolean;
+    folder: ModFolder | null;
+    isProcessing: boolean;
+  }>({
+    open: false,
+    folder: null,
+    isProcessing: false,
   });
 
   // Rename state
@@ -214,8 +225,14 @@ export function useFolderGridActions({
     (folder: ModFolder) => {
       if (!activeGame?.id) return;
 
+      // Phase 24/25 barrier: Active mods cannot switch privacy context
+      if (folder.is_enabled) {
+        setActiveContextDialog({ open: true, folder, isProcessing: false });
+        return;
+      }
+
       const safeMode = useAppStore.getState().safeMode;
-      // If Safe Mode is ON globally, configuring a mod as NSFW (is_safe -> false) requires PIN
+      // If Safe Mode is ON globally, configuring a mod as Unsafe (is_safe -> false) requires PIN
       if (safeMode && folder.is_safe) {
         setPinSafeDialog({ open: true, folder });
       } else {
@@ -244,6 +261,76 @@ export function useFolderGridActions({
     setPinSafeDialog({ open: false, folder: null });
   }, []);
 
+  const handleActiveContextCancel = useCallback(() => {
+    setActiveContextDialog({ open: false, folder: null, isProcessing: false });
+  }, []);
+
+  const handleActiveContextSubmit = useCallback(async () => {
+    if (!activeContextDialog.folder || !activeGame?.id) return;
+    const folder = activeContextDialog.folder;
+
+    try {
+      setActiveContextDialog((prev) => ({ ...prev, isProcessing: true }));
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      // 1. Disable the active mod
+      const newPath = await invoke<string>('toggle_mod', {
+        path: folder.path,
+        enable: false,
+        gameId: activeGame.id,
+      });
+
+      // Optimistically update the cache to show it's disabled temporarily
+      updateFolderCache(queryClient, [folder.path], (f) => ({
+        ...f,
+        path: newPath,
+        is_enabled: false,
+      }));
+
+      const safeMode = useAppStore.getState().safeMode;
+      const targetSafeStatus = !folder.is_safe;
+
+      // 2. Check if we are jumping to Unsafe while SafeMode is globally ON
+      if (safeMode && targetSafeStatus === false) {
+        // Requires PIN. Hand off to pinSafeDialog with the newly disabled mod.
+        setActiveContextDialog({ open: false, folder: null, isProcessing: false });
+        setPinSafeDialog({
+          open: true,
+          folder: { ...folder, path: newPath, is_enabled: false },
+        });
+        return;
+      }
+
+      // 3. Perform the privacy context switch directly (no PIN needed)
+      await invoke<void>('toggle_mod_safe', {
+        gameId: activeGame.id,
+        folderPath: newPath,
+        safe: targetSafeStatus,
+      });
+
+      // 4. Aggressive cache removal (it left the mutually exclusive corridor)
+      updateFolderCache(queryClient, [folder.path, newPath], undefined, true);
+      const appStore = useAppStore.getState();
+      if (appStore.gridSelection?.has(folder.path) || appStore.gridSelection?.has(newPath)) {
+        appStore.clearGridSelection();
+      }
+
+      import('../../../stores/useToastStore').then(({ toast }) => {
+        toast.success(`Mod disabled and moved to ${targetSafeStatus ? 'Safe' : 'Unsafe'} context.`);
+      });
+    } catch (err) {
+      import('../../../stores/useToastStore').then(({ toast }) => {
+        toast.error(`Failed to switch context: ${String(err)}`);
+      });
+    } finally {
+      setActiveContextDialog({ open: false, folder: null, isProcessing: false });
+
+      // Invalidate everything to be absolutely sure the UI maps the disk
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'active' });
+    }
+  }, [activeContextDialog.folder, activeGame?.id, queryClient]);
+
   return {
     handleToggleEnabled,
     handleToggleFavorite,
@@ -268,5 +355,8 @@ export function useFolderGridActions({
     handleToggleSafeRequest,
     handleToggleSafeSubmit,
     handleToggleSafeCancel,
+    activeContextDialog,
+    handleActiveContextCancel,
+    handleActiveContextSubmit,
   };
 }

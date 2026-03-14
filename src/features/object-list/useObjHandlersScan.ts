@@ -64,6 +64,8 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
     currentData: null,
   });
 
+  type CurrentDataType = typeof syncConfirm.currentData;
+
   // ── Full scan preview ────────────────────────────────────────────
   const handleSync = useCallback(async () => {
     if (!activeGame || isSyncing) return;
@@ -149,7 +151,7 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
       const isFolder = !!folderMatch;
       const itemType = isFolder ? 'folder' : 'object';
 
-      let currentData: typeof syncConfirm.currentData = null;
+      let currentData: CurrentDataType = null;
       if (isFolder && folderMatch) {
         currentData = {
           name: folderMatch.name,

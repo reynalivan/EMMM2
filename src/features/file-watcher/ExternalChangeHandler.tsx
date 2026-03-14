@@ -98,7 +98,7 @@ export function ExternalChangeHandler() {
       }
 
       // Imp 5: reduced from 800ms to 300ms per req-28 AC-28.1.1 (≤500ms latency)
-      timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(async () => {
         const queue = eventQueueRef.current;
         if (queue.length === 0) {
           timeoutId = null;
@@ -112,12 +112,23 @@ export function ExternalChangeHandler() {
           else if (ev.type === 'Renamed') totals.renamed++;
         });
 
+        // Sync DB before invalidating queries
+        try {
+          if (totals.removed > 0 || totals.renamed > 0) {
+            await invoke('gc_lost_objects_cmd', { gameId: activeGame.id });
+          }
+          if (totals.created > 0 || totals.renamed > 0) {
+            await invoke('sync_objects_cmd', { gameId: activeGame.id });
+          }
+        } catch (err) {
+          console.error('Watcher sync failed:', err);
+        }
+
         // Invalidate queries ONCE per batch flush
-        // Imp 4: primary queries refetch immediately; secondary use 'none'
         queryClient.invalidateQueries({ queryKey: folderKeys.all });
-        queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'none' });
-        queryClient.invalidateQueries({ queryKey: ['category-counts'], refetchType: 'none' });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
 
         // Imp 2: only show toast if user is actively viewing mods (req-05 line 76)
         const workspaceView = useAppStore.getState().workspaceView;

@@ -47,7 +47,7 @@ async fn test_collection_crud() {
     assert_eq!(name.as_deref(), Some("Updated Named"));
     
     // delete
-    delete_collection(&pool, "col1", "g1").await.unwrap();
+    delete_collection(&mut conn, "col1", "g1").await.unwrap();
     let cols = list_collections(&pool, "g1", false).await.unwrap();
     assert!(cols.is_empty());
 }

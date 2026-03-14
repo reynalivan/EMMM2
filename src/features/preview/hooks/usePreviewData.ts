@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import type { ModInfo, ModInfoUpdate } from '../../../types/mod';
-import type { ConflictInfo } from '../../../types/scanner';
 import { folderKeys } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
 
@@ -115,17 +114,6 @@ export function useModIniFiles(folderPath?: string | null) {
     queryFn: () => invoke<IniFileEntry[]>('list_mod_ini_files', { folderPath: normalizedPath }),
     enabled: !!normalizedPath,
     staleTime: 10_000,
-  });
-}
-
-export function useIniConflicts(folderPath?: string | null, enabled?: boolean) {
-  const normalizedPath = normalizeFolderPath(folderPath);
-
-  return useQuery({
-    queryKey: detailsKeys.conflicts(normalizedPath ?? ''),
-    queryFn: () => invoke<ConflictInfo[]>('check_shader_conflicts', { folderPath: normalizedPath }),
-    enabled: !!normalizedPath && enabled !== false,
-    staleTime: 5000,
   });
 }
 

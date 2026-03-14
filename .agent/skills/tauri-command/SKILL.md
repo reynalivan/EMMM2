@@ -20,6 +20,7 @@ Standard boilerplate for secure, async, and error-safe Tauri Commands.
 - **File**: Place in `src-tauri/src/commands/<domain>.rs`.
 - **Mod**: Register in `src-tauri/src/lib.rs`.
 - **Public**: Functions must be `#[tauri::command]`.
+- **Permissions (CRITICAL)**: **MUST** add your command name to `src-tauri/permissions/app-commands.toml` under `commands.allow`. Tauri v2 will block the command ("Command not found") otherwise.
 
 ### 2. Async by Default
 

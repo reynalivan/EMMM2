@@ -58,7 +58,7 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
     vi.useRealTimers();
   });
 
-  it('TC-28-001: File Create triggers auto-refresh and toast info', () => {
+  it('TC-28-001: File Create triggers auto-refresh and toast info', async () => {
     render(<ExternalChangeHandler />, { wrapper });
 
     // Simulate event
@@ -69,14 +69,14 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
       },
     });
 
-    vi.advanceTimersByTime(350);
+    await vi.advanceTimersByTimeAsync(350);
 
     expect(toast.info).toHaveBeenCalledWith(
       expect.stringContaining('"NewCharacter" was added externally. View refreshed.'),
     );
   });
 
-  it('TC-28-002: File Delete triggers auto-refresh and toast warning', () => {
+  it('TC-28-002: File Delete triggers auto-refresh and toast warning', async () => {
     render(<ExternalChangeHandler />, { wrapper });
 
     // Simulate event
@@ -87,14 +87,14 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
       },
     });
 
-    vi.advanceTimersByTime(350);
+    await vi.advanceTimersByTimeAsync(350);
 
     expect(toast.warning).toHaveBeenCalledWith(
       expect.stringContaining('"OldCharacter" was removed externally. View refreshed.'),
     );
   });
 
-  it('TC-28-003: File Rename triggers auto-refresh and toast info', () => {
+  it('TC-28-003: File Rename triggers auto-refresh and toast info', async () => {
     render(<ExternalChangeHandler />, { wrapper });
 
     // Simulate event
@@ -106,14 +106,14 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
       },
     });
 
-    vi.advanceTimersByTime(350);
+    await vi.advanceTimersByTimeAsync(350);
 
     expect(toast.info).toHaveBeenCalledWith(
       expect.stringContaining('"OldName" renamed to "NewName" externally. View refreshed.'),
     );
   });
 
-  it('TC-28-004: Nested file changes DO NOT trigger toasts', () => {
+  it('TC-28-004: Nested file changes DO NOT trigger toasts', async () => {
     render(<ExternalChangeHandler />, { wrapper });
 
     // Simulate event for nested INI file (should not trigger toast)
@@ -132,7 +132,7 @@ describe('ExternalChangeHandler (TC-28 File Watcher)', () => {
       },
     });
 
-    vi.advanceTimersByTime(350);
+    await vi.advanceTimersByTimeAsync(350);
 
     expect(toast.info).not.toHaveBeenCalled();
     expect(toast.warning).not.toHaveBeenCalled();

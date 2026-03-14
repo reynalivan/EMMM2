@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { useAppStore } from '../../../stores/useAppStore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '../../../stores/useToastStore';
 import type {
@@ -35,6 +36,15 @@ export function useCollectionPreview(collectionId: string | null, gameId: string
   });
 }
 
+export function useActiveModsPreview(gameId: string | null, safeMode: boolean = false) {
+  return useQuery<CollectionPreviewMod[]>({
+    queryKey: ['active-mods-preview', gameId ?? '', safeMode],
+    queryFn: () => invoke<CollectionPreviewMod[]>('get_active_mods_preview', { gameId, safeMode }),
+    enabled: !!gameId,
+    staleTime: 5000,
+  });
+}
+
 export function useCreateCollection() {
   const queryClient = useQueryClient();
 
@@ -61,6 +71,7 @@ export function useSaveCurrentAsCollection() {
       }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+      useAppStore.getState().setActiveCollectionId(result.collection.id);
       toast.success(`Saved current state as: ${result.collection.name}`);
     },
     onError: (err) => {

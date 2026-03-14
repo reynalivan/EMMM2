@@ -25,7 +25,6 @@ describe('useAppStore', () => {
         workspaceView: 'dashboard',
         currentPath: [],
         activeCollectionId: null,
-        selectedObject: null,
         gridSelection: new Set(),
         leftPanelWidth: 260,
         rightPanelWidth: 320,
@@ -102,6 +101,33 @@ describe('useAppStore', () => {
     expect(useAppStore.getState().gridSelection.has('item3')).toBe(true);
   });
 
+  it('clearGridSelection empties the selection', () => {
+    useAppStore.setState({ gridSelection: new Set(['item1', 'item2']) });
+    useAppStore.getState().clearGridSelection();
+    expect(useAppStore.getState().gridSelection.size).toBe(0);
+  });
+
+  it('replaceGridSelection replaces an existing item in the selection', () => {
+    useAppStore.setState({ gridSelection: new Set(['item1', 'item2']) });
+    useAppStore.getState().replaceGridSelection('item1', 'item1_new');
+
+    const currentSelection = useAppStore.getState().gridSelection;
+    expect(currentSelection.has('item1')).toBe(false);
+    expect(currentSelection.has('item1_new')).toBe(true);
+    expect(currentSelection.has('item2')).toBe(true);
+    expect(currentSelection.size).toBe(2);
+  });
+
+  it('replaceGridSelection does nothing if the old item is not selected', () => {
+    useAppStore.setState({ gridSelection: new Set(['item2']) });
+    useAppStore.getState().replaceGridSelection('item1', 'item1_new');
+
+    const currentSelection = useAppStore.getState().gridSelection;
+    expect(currentSelection.has('item1_new')).toBe(false);
+    expect(currentSelection.has('item2')).toBe(true);
+    expect(currentSelection.size).toBe(1);
+  });
+
   it('toggleCategoryCollapse toggles category state', () => {
     act(() => {
       useAppStore.getState().toggleCategoryCollapse('cat1');
@@ -123,7 +149,7 @@ describe('useAppStore', () => {
         explorerSubPath: '/sub',
         currentPath: ['a', 'b'],
         explorerSearchQuery: 'search',
-        selectedObject: 'obj',
+        selectedObjectFolderPath: 'obj',
         gridSelection: new Set(['1']),
         sidebarSearchQuery: 'side',
         selectedObjectType: 'type',
@@ -140,7 +166,7 @@ describe('useAppStore', () => {
     expect(state.explorerSubPath).toBeUndefined();
     expect(state.currentPath).toEqual([]);
     expect(state.explorerSearchQuery).toBe('');
-    expect(state.selectedObject).toBeNull();
+    expect(state.selectedObjectFolderPath).toBeNull();
     expect(state.gridSelection.size).toBe(0);
     expect(state.sidebarSearchQuery).toBe('');
     expect(state.selectedObjectType).toBeNull();

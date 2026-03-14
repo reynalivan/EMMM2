@@ -140,7 +140,7 @@ function FolderListRowInner({
               <>
                 <ContextMenuSeparator />
                 <ContextMenuItem icon={item.is_safe ? ToggleLeft : Star} onClick={onToggleSafe}>
-                  {item.is_safe ? 'Mark as NSFW (Remove Privacy)' : 'Mark as SFW (Add Privacy)'}
+                  {item.is_safe ? 'Mark as Unsafe (Remove Privacy)' : 'Mark as Safe (Add Privacy)'}
                 </ContextMenuItem>
               </>
             )}

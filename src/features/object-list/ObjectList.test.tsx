@@ -80,8 +80,8 @@ const mockActiveGame = {
 
 describe('ObjectList Component', () => {
   const defaultStoreState = {
-    selectedObject: null,
-    setSelectedObject: vi.fn(),
+    selectedObjectFolderPath: null,
+    setSelectedObjectFolderPath: vi.fn(),
     selectedObjectType: null,
     setSelectedObjectType: vi.fn(),
     sidebarSearchQuery: '',
@@ -215,6 +215,7 @@ describe('ObjectList Component', () => {
       {
         id: '1',
         name: 'Diluc',
+        folder_path: 'C:\\Games\\GIMI\\Mods\\Diluc',
         object_type: 'Character',
         mod_count: 1,
         enabled_count: 1,
@@ -229,7 +230,9 @@ describe('ObjectList Component', () => {
     const row = screen.getByText('Diluc');
     fireEvent.click(row);
 
-    expect(defaultStoreState.setSelectedObject).toHaveBeenCalledWith('1');
+    expect(defaultStoreState.setSelectedObjectFolderPath).toHaveBeenCalledWith(
+      'C:\\Games\\GIMI\\Mods\\Diluc',
+    );
   });
 
   // DI-3.03: activeGameId from store matches what's rendered in sidebar

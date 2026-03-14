@@ -62,6 +62,8 @@ async fn test_get_category_counts_service() {
     .await
     .unwrap();
 
+    // Phase 1 fix: safe_mode no longer filters categories — always returns ALL counts.
+    // The _safe_mode param is kept for API compatibility but ignored.
     let safe_counts = get_category_counts_service(&pool, "g2", true)
         .await
         .unwrap();
@@ -70,7 +72,8 @@ async fn test_get_category_counts_service() {
         .iter()
         .find(|c| c.object_type == "Character")
         .unwrap();
-    assert_eq!(char_count.count, 2);
+    // Now returns ALL characters (3), not just safe ones
+    assert_eq!(char_count.count, 3);
 
     let all_counts = get_category_counts_service(&pool, "g2", false)
         .await

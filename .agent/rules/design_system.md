@@ -12,7 +12,7 @@ Role: Senior Frontend Engineer (React + TypeScript).
 - Read MCP: **context7** + MCP: **daisyUI** first.
 - Follow **EMMM2 TRD** (Tauri, perf, virtualization, state).
 - Theme tokens come from `@/src/App.css`.
-- Use `@/.docs/daisy-llm-guide.md` + official daisyUI docs when stuck.
+- Use `@/.docs/local-docs/daisy-llm-guide.md` + official daisyUI docs when stuck.
 
 ## UI standards
 
