@@ -42,33 +42,45 @@ pub async fn set_safe_mode_enabled(
     pool: State<'_, sqlx::SqlitePool>,
     watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
     op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
-) -> Result<(), String> {
+) -> Result<crate::services::privacy::CorridorSwitchResult, String> {
     let _lock = op_lock.acquire().await?;
 
-    // Phase 22: Strict Privacy Boundaries (Mutually Exclusive Corridor)
-    // Cannot toggle privacy mode if there are active mods for the current game
     let settings = state.get_settings();
-    if let Some(game_id) = settings.active_game_id {
-        let active_count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM mods WHERE game_id = ? AND status = 'enabled'",
-        )
-        .bind(&game_id)
-        .fetch_one(pool.inner())
-        .await
-        .unwrap_or(0);
-
-        if active_count > 0 {
-            return Err("Failed to switch Privacy Mode: You have active mods. Please disable all mods before switching modes.".to_string());
-        }
-    }
+    let game_id = settings.active_game_id.ok_or("No active game selected")?;
 
     let mode = if enabled {
         crate::services::privacy::Mode::SFW
     } else {
         crate::services::privacy::Mode::NSFW
     };
-    crate::services::privacy::PrivacyManager::switch_mode(mode, &pool, &watcher_state).await?;
-    state.set_safe_mode_enabled(enabled)
+    let result = crate::services::privacy::PrivacyManager::switch_mode(
+        mode,
+        &pool,
+        &watcher_state,
+        &game_id,
+    )
+    .await?;
+    state.set_safe_mode_enabled(enabled)?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn preview_mode_switch_enabled(
+    enabled: bool,
+    state: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> Result<crate::services::privacy::ModeSwitchPreview, String> {
+    let settings = state.get_settings();
+    let game_id = settings.active_game_id.ok_or("No active game selected")?;
+
+    let target_mode = if enabled {
+        crate::services::privacy::Mode::SFW
+    } else {
+        crate::services::privacy::Mode::NSFW
+    };
+
+    crate::services::privacy::PrivacyManager::preview_mode_switch(target_mode, &pool, &game_id)
+        .await
 }
 
 #[tauri::command]

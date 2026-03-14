@@ -285,9 +285,9 @@ pub async fn get_disabled_mods_by_object_id(
     object_id: &str,
     is_safe: bool,
 ) -> Result<Vec<ModPathInfo>, sqlx::Error> {
-    let mut query = "SELECT id, actual_name, folder_path FROM mods WHERE object_id = ? AND status = 'DISABLED' AND folder_path NOT LIKE '%/.%' AND folder_path NOT LIKE '%\\.%'".to_string();
+    let mut query = "SELECT m.id, m.actual_name, m.folder_path FROM mods m LEFT JOIN objects o ON m.object_id = o.id WHERE m.object_id = ? AND m.status = 'DISABLED' AND m.folder_path NOT LIKE '%/.%' AND m.folder_path NOT LIKE '%\\.%'".to_string();
     if is_safe {
-        query.push_str(" AND is_safe = 1");
+        query.push_str(" AND COALESCE(o.is_safe, m.is_safe, 1) = 1");
     }
 
     let rows = sqlx::query(&query).bind(object_id).fetch_all(pool).await?;
@@ -566,83 +566,20 @@ pub async fn get_mod_id_and_object_id_by_path(
         .await
 }
 
-pub async fn snapshot_nsfw_mods_status_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET last_status_nsfw = (CASE WHEN status = 'ENABLED' THEN 1 ELSE 0 END) WHERE is_safe = 0")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn disable_all_nsfw_mods_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET status = 'DISABLED' WHERE is_safe = 0")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn restore_sfw_mods_status_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET status = 'ENABLED' WHERE is_safe = 1 AND last_status_sfw = 1")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn clear_sfw_last_status_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET last_status_sfw = 0 WHERE is_safe = 1 AND last_status_sfw = 1")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn snapshot_sfw_mods_status_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET last_status_sfw = (CASE WHEN status = 'ENABLED' THEN 1 ELSE 0 END) WHERE is_safe = 1")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn restore_nsfw_mods_status_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET status = 'ENABLED' WHERE is_safe = 0 AND last_status_nsfw = 1")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn clear_nsfw_last_status_tx(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET last_status_nsfw = 0 WHERE is_safe = 0 AND last_status_nsfw = 1")
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn get_all_mods_id_path_status(
+/// Returns (id, folder_path, status) of enabled mods for a specific corridor in a game.
+/// Used by PrivacyManager corridor handoff to batch-disable leaving corridor mods.
+pub async fn get_enabled_corridor_mods_for_game(
     pool: &sqlx::SqlitePool,
+    game_id: &str,
+    is_safe: bool,
 ) -> Result<Vec<(String, String, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, folder_path, status FROM mods")
-        .fetch_all(pool)
-        .await
-}
-
-pub async fn get_all_mods_id_path_status_with_game(
-    pool: &sqlx::SqlitePool,
-) -> Result<Vec<(String, String, String, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, folder_path, status, game_id FROM mods")
-        .fetch_all(pool)
-        .await
+    sqlx::query_as(
+        "SELECT m.id, m.folder_path, m.status FROM mods m LEFT JOIN objects o ON m.object_id = o.id WHERE m.game_id = ? AND COALESCE(o.is_safe, m.is_safe, 1) = ? AND m.status = 'ENABLED' ORDER BY m.folder_path DESC",
+    )
+    .bind(game_id)
+    .bind(is_safe)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn update_mod_path_by_id(

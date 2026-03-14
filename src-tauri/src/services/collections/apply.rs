@@ -96,9 +96,13 @@ pub async fn apply_collection(
 
     // Gather ALL enabled mods + collection targets (same pattern as undo_collection)
     // This ensures every non-collection mod gets disabled, not just object conflicts.
-    let currently_enabled = collection_repo::get_enabled_mod_id_and_paths(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let currently_enabled = collection_repo::get_enabled_mod_id_and_paths_for_corridor(
+        pool,
+        game_id,
+        safe_mode_enabled,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let mut currently_enabled_ids = std::collections::HashSet::new();
     for (id, _) in &currently_enabled {
@@ -152,7 +156,7 @@ pub async fn apply_collection(
     Ok(result)
 }
 
-async fn snapshot_current_state(
+pub async fn snapshot_current_state(
     pool: &SqlitePool,
     game_id: &str,
     safe_mode_enabled: bool,
@@ -164,9 +168,12 @@ async fn snapshot_current_state(
         .await
         .map_err(|e| e.to_string())?;
 
-    let currently_enabled = collection_repo::get_enabled_mod_ids(&mut tx, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Capture ALL currently enabled mods regardless of safety context
+    // The snapshot's is_safe_context flag determines which corridor it represents
+    let currently_enabled =
+        collection_repo::get_enabled_mod_ids(&mut tx, game_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let paths = collection_repo::get_mod_paths_for_ids(&mut tx, &currently_enabled)
         .await
@@ -253,8 +260,18 @@ async fn apply_with_desired_status(
                     warnings.push(format!("Skipping missing mod: {}", folder_name));
                     continue;
                 }
-                fs::rename(&state.folder_path, &path).map_err(|e| e.to_string())?;
-                updates.push((state.id.clone(), next_status, path));
+                match fs::rename(&state.folder_path, &path) {
+                    Ok(()) => {
+                        updates.push((state.id.clone(), next_status, path));
+                    }
+                    Err(e) => {
+                        let folder_name = Path::new(&state.folder_path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| state.id.clone());
+                        warnings.push(format!("Failed to rename {}: {}", folder_name, e));
+                    }
+                }
                 continue;
             }
 

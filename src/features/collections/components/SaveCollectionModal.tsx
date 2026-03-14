@@ -68,7 +68,6 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
         game_id: activeGame.id,
         is_safe_context: safeMode,
       });
-      toast.success(`Collection "${name.trim()}" saved.`);
       onClose();
     } catch (err) {
       setIsSyncing(false);
@@ -82,11 +81,14 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
     const toastId = toast.info('Disabling all mods...', 0);
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const paths = activeModsData.map((m) => m.folder_path);
+      const modIds = activeModsData
+        .filter((m) => !m.id.startsWith('nested_'))
+        .map((m) => m.id);
 
-      await invoke('bulk_toggle_mods', {
-        paths,
+      await invoke('bulk_toggle_mods_by_ids', {
+        modIds,
         enable: false,
+        gameId: activeGame.id,
       });
 
       queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });

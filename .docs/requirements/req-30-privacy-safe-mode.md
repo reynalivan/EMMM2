@@ -57,6 +57,34 @@ As a user, I want to lock the Safe Mode toggle with a PIN, so that others cannot
 
 ---
 
+#### US-30.4: Atomic Switch Corridor (PrivacyManager)
+
+As a user, I want the system to automatically disable opposing-mode mods and restore my previously active mods when I switch modes, so that I don't need to manually toggle mods each time.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                   |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-30.4.1 | ✅ Positive | Given I switch Safe→Unsafe, the system: (a) snapshots SFW mods' enabled status, (b) disables ALL SFW mods, (c) restores previously-snapshotted NSFW mods, (d) batch renames folders on disk               |
+| AC-30.4.2 | ✅ Positive | Given I switch Unsafe→Safe, the system: (a) snapshots NSFW mods' enabled status, (b) disables ALL NSFW mods, (c) restores previously-snapshotted SFW mods, (d) batch renames folders on disk              |
+| AC-30.4.3 | ✅ Positive | Given the switch completes, then ObjectList re-fetches (opposite-mode objects show zeroed counts) and FolderGrid re-fetches (backend filter applies)                                                       |
+| AC-30.4.4 | ⚠️ Edge     | Given a mod's physical folder is missing during batch rename, the system logs a warning and continues (soft fail) — one broken mod does not abort the entire switch                                         |
+| AC-30.4.5 | ⚠️ Edge     | Given PrivacyManager renames a top-level folder (Flat Mod), it also updates both the `objects.folder_path` and any child `mods.folder_path` records in the database to maintain DB↔FS sync                 |
+| AC-30.4.6 | ⚠️ Edge     | Given a mod is deeply nested inside an object folder, its `is_safe` status dynamically inherits its parent's privacy flag (`COALESCE(o.is_safe, m.is_safe, 1)`), guaranteeing 0 cross-corridor leakage      |
+
+---
+
+#### US-30.5: Mutually Exclusive Corridor Enforcement
+
+As a user, I want opposite-mode mods to be impossible to enable while the wrong mode is active, so that I can't accidentally leak content.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                   |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-30.5.1 | ✅ Positive | Given Safe Mode is active, the ObjectList shows ALL objects but zeroes `mod_count` and `enabled_count` for unsafe objects (is_safe=0). Unsafe objects appear "empty" in the navigation                      |
+| AC-30.5.2 | ✅ Positive | Given a user right-clicks an **enabled** mod and selects "Toggle Safe", a warning toast is shown: "Disable this mod before changing its privacy status"                                                    |
+| AC-30.5.3 | ✅ Positive | Given a collection with `is_safe_context` opposite to the current mode, the Apply button is disabled and a warning is shown                                                                                |
+| AC-30.5.4 | ✅ Positive | Given queries for Safe Mode stats or enabled mods, `WHERE COALESCE(o.is_safe, m.is_safe, 1)` strictly governs visibility to maintain mutually exclusive isolated corridors                               |
+
+---
+
 ### Non-Goals
 
 - Safe Mode focuses on UI visibility (Dual Guard masking). It does not encrypt, physically move, or forcefully disable `is_safe = false` mods in the game directory unless managed via Collections.

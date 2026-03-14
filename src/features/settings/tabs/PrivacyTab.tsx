@@ -3,7 +3,9 @@ import { Shield, ShieldAlert, KeyRound, X } from 'lucide-react';
 import { useSettings } from '../../../hooks/useSettings';
 import PinModal from '../modals/PinModal';
 import { useToastStore } from '../../../stores/useToastStore';
-import { useAppStore } from '../../../stores/useAppStore';
+import { useSafeModeToggle } from '../../../hooks/useSafeModeToggle';
+import ModeSwitchConfirmModal from '../../safe-mode/ModeSwitchConfirmModal';
+import PinEntryModal from '../../safe-mode/PinEntryModal';
 
 type SafeModePendingAction = (() => Promise<void>) | null;
 
@@ -32,7 +34,16 @@ function toErrorMessage(error: unknown): string {
 
 export default function PrivacyTab() {
   const { settings, saveSettingsAsync, setPinAsync, verifyPin } = useSettings();
-  const { setSafeMode } = useAppStore();
+  const {
+    toggleSafeMode,
+    handleConfirmSwitch,
+    setSafeModeWithToast,
+    confirmModalOpen,
+    confirmTargetEnabled,
+    closeConfirmModal,
+    pinModalOpen: corridorPinModalOpen,
+    closePinModal: closeCorridorPinModal,
+  } = useSafeModeToggle();
   const { addToast } = useToastStore();
 
   const [modalMode, setModalMode] = useState<'unlock' | 'set_new'>('unlock');
@@ -56,30 +67,11 @@ export default function PrivacyTab() {
       ...settings,
       safe_mode: nextSafeMode,
     });
-
-    if (typeof patch.enabled === 'boolean') {
-      await setSafeMode(patch.enabled);
-    }
   };
 
-  // Toggle Safe Mode
-  const handleToggleSafeMode = async () => {
-    const newState = !settings.safe_mode.enabled;
-
-    try {
-      if (!newState && hasPin) {
-        setModalMode('unlock');
-        setPendingAction(() => async () => {
-          await persistSafeModeSettings({ enabled: newState });
-        });
-        setIsModalOpen(true);
-      } else {
-        await persistSafeModeSettings({ enabled: newState });
-      }
-    } catch (error) {
-      console.error(error);
-      addToast('error', `Safe Mode update failed: ${toErrorMessage(error)}`);
-    }
+  // Toggle Safe Mode — uses the shared hook which shows confirmation modal
+  const handleToggleSafeMode = () => {
+    toggleSafeMode();
   };
 
   // Change PIN Flow
@@ -302,6 +294,24 @@ export default function PrivacyTab() {
             ? 'Create a secure PIN to protect Safe Mode settings.'
             : 'Enter your current PIN to proceed.'
         }
+      />
+
+      {/* Confirmation Modal for Corridor Switch */}
+      <ModeSwitchConfirmModal
+        open={confirmModalOpen}
+        targetEnabled={confirmTargetEnabled}
+        onClose={closeConfirmModal}
+        onConfirm={handleConfirmSwitch}
+      />
+
+      {/* PIN Entry Modal for Safe→Unsafe corridor transition */}
+      <PinEntryModal
+        open={corridorPinModalOpen}
+        onClose={closeCorridorPinModal}
+        onSuccess={async () => {
+          closeCorridorPinModal();
+          await setSafeModeWithToast(false);
+        }}
       />
     </div>
   );

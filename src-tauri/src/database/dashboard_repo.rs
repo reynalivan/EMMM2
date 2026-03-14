@@ -47,7 +47,7 @@ pub async fn fetch_global_stats(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<DashboardStats, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND m.is_safe = 1" } else { "" };
+    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
 
     let query = format!(
         r#"
@@ -59,6 +59,7 @@ pub async fn fetch_global_stats(
             (SELECT COUNT(*) FROM games)                                   AS total_games,
             (SELECT COUNT(*) FROM collections)                             AS total_collections
         FROM mods m
+        LEFT JOIN objects o ON m.object_id = o.id
         WHERE 1=1 {safe_clause}
         "#,
     );
@@ -94,7 +95,7 @@ pub async fn fetch_category_distribution(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<Vec<CategorySlice>, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND m.is_safe = 1" } else { "" };
+    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
 
     let query = format!(
         r#"
@@ -102,6 +103,7 @@ pub async fn fetch_category_distribution(
             COALESCE(m.object_type, 'Uncategorized') AS category,
             COUNT(*) AS count
         FROM mods m
+        LEFT JOIN objects o ON m.object_id = o.id
         WHERE 1=1 {safe_clause}
         GROUP BY COALESCE(m.object_type, 'Uncategorized')
         ORDER BY count DESC
@@ -118,7 +120,7 @@ pub async fn fetch_game_distribution(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<Vec<GameSlice>, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND m.is_safe = 1" } else { "" };
+    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
 
     let query = format!(
         r#"
@@ -127,7 +129,12 @@ pub async fn fetch_game_distribution(
             g.name AS game_name,
             COUNT(m.id) AS count
         FROM games g
-        LEFT JOIN mods m ON m.game_id = g.id {safe_clause}
+        LEFT JOIN (
+            SELECT m.id, m.game_id
+            FROM mods m
+            LEFT JOIN objects o ON m.object_id = o.id
+            WHERE 1=1 {safe_clause}
+        ) m ON m.game_id = g.id
         GROUP BY g.id, g.name
         ORDER BY count DESC
         "#,
@@ -142,7 +149,7 @@ pub async fn fetch_recent_mods(
     safe_mode: bool,
     limit: i64,
 ) -> Result<Vec<RecentMod>, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND m.is_safe = 1" } else { "" };
+    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
 
     let query = format!(
         r#"

@@ -1,13 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  AlertTriangle,
-  Loader2,
-  ChevronDown,
-  ChevronRight,
-  Package,
-  ShieldAlert,
-} from 'lucide-react';
+import { AlertTriangle, Loader2, Package } from 'lucide-react';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import {
@@ -15,8 +8,9 @@ import {
   useActiveModsPreview,
   useCollectionPreview,
 } from '../hooks/useCollections';
-import type { CollectionPreviewMod } from '../../../types/collection';
-import { ModListRow } from './CollectionWorkspace';
+
+import { groupMods } from '../utils/groupMods';
+import { ModGroupList } from './ModGroupList';
 
 interface ApplyCollectionModalProps {
   collectionId: string;
@@ -25,133 +19,15 @@ interface ApplyCollectionModalProps {
   onClose: () => void;
 }
 
-interface GroupedMod {
-  id: string;
-  name: string;
-  type: string;
-  mods: CollectionPreviewMod[];
-  unsafeCount: number;
-}
-
-function groupMods(mods: CollectionPreviewMod[]): GroupedMod[] {
-  const objectsMap = new Map<string, GroupedMod>();
-  let hasUncategorized = false;
-  const uncategorizedMods: CollectionPreviewMod[] = [];
-  let uncategorizedUnsafeCount = 0;
-
-  mods.forEach((mod) => {
-    if (mod.object_name) {
-      const groupKey = mod.object_id || mod.object_name;
-      if (!objectsMap.has(groupKey)) {
-        objectsMap.set(groupKey, {
-          id: groupKey,
-          name: mod.object_name,
-          type: mod.object_type || 'Other',
-          mods: [],
-          unsafeCount: 0,
-        });
-      }
-      const obj = objectsMap.get(groupKey)!;
-      obj.mods.push(mod);
-      if (!mod.is_safe) obj.unsafeCount += 1;
-    } else {
-      hasUncategorized = true;
-      uncategorizedMods.push(mod);
-      if (!mod.is_safe) uncategorizedUnsafeCount += 1;
-    }
-  });
-
-  const groupedObjects = Array.from(objectsMap.values());
-  if (hasUncategorized) {
-    groupedObjects.push({
-      id: 'uncategorized',
-      name: 'Uncategorized',
-      type: 'Other',
-      mods: uncategorizedMods,
-      unsafeCount: uncategorizedUnsafeCount,
-    });
-  }
-
-  const typeOrder = ['Character', 'Weapon', 'UI', 'Other'];
-  groupedObjects.sort((a, b) => {
-    const idxA = typeOrder.indexOf(a.type);
-    const idxB = typeOrder.indexOf(b.type);
-    if (idxA !== -1 && idxB !== -1 && idxA !== idxB) return idxA - idxB;
-    if (idxA !== -1 && idxB === -1) return -1;
-    if (idxA === -1 && idxB !== -1) return 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  return groupedObjects;
-}
-
-function ModGroupList({ groups, colorClass }: { groups: GroupedMod[]; colorClass: string }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(groups.map((g) => g.id)));
-
-  const toggle = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  return (
-    <div className="space-y-2">
-      {groups.map((obj) => {
-        const isExpanded = expanded.has(obj.id);
-        return (
-          <div
-            key={obj.id}
-            className="border border-white/5 rounded-lg overflow-hidden bg-base-100/30"
-          >
-            <button
-              onClick={() => toggle(obj.id)}
-              className="w-full flex items-center justify-between px-3 py-2 hover:bg-base-300/30 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <div className="text-base-content/50">
-                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </div>
-                <span className="font-semibold text-xs">{obj.name}</span>
-                <span className="text-[9px] text-base-content/40 uppercase tracking-widest">
-                  {obj.type}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] ${colorClass}`}>{obj.mods.length} mods</span>
-                {obj.unsafeCount > 0 && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-error/70">
-                    <ShieldAlert size={10} />
-                    {obj.unsafeCount}
-                  </span>
-                )}
-              </div>
-            </button>
-            {isExpanded && (
-              <div className="border-t border-white/5 py-1 px-1">
-                {obj.mods.map((mod) => (
-                  <ModListRow key={mod.id} mod={mod} />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function ApplyCollectionModal({
   collectionId,
   collectionName,
   onClose,
 }: ApplyCollectionModalProps) {
-  const { activeGameId } = useAppStore();
+  const { activeGameId, safeMode } = useAppStore();
   const applyMutation = useApplyCollection();
 
-  const activeModsQuery = useActiveModsPreview(activeGameId);
+  const activeModsQuery = useActiveModsPreview(activeGameId, safeMode);
   const targetModsQuery = useCollectionPreview(collectionId, activeGameId);
 
   const isLoading = activeModsQuery.isLoading || targetModsQuery.isLoading;

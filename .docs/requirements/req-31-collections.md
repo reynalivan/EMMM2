@@ -38,7 +38,8 @@ As a user, I want to activate a preset and have the app automatically disable an
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-31.2.1 | ✅ Positive | Given a collection is Apply-clicked, the system pre-computes targets. If the preset enables "Raiden Bikini" (`object_id: Raiden`), any currently active mod with the same `object_id` is automatically selected for disable (Conflict Resolution) |
 | AC-31.2.2 | ✅ Positive | Given the diff is calculated, the system engages an `OperationLock` and `WatcherSuppression`, completing the mass physical folder rename (adding/removing `DISABLED ` prefix) cleanly                                                             |
-| AC-31.2.3 | ❌ Negative | Given the apply fails halfway due to an OS lock, the system immediately halts, reads the pre-apply snapshot, reverses changes, and toasts "Apply failed — rolled back"                                                                            |
+| AC-31.2.3 | ✅ Positive | Given the collection has deep nested mods, the system uses a dynamic recursive crawler (`nested_walker`) to locate and rename (`DISABLED `) specific sub-level variants precisely to match the snapshot state                                     |
+| AC-31.2.4 | ❌ Negative | Given the apply fails halfway due to an OS lock, the system immediately halts, reads the pre-apply snapshot, reverses changes, and toasts "Apply failed — rolled back"                                                                            |
 
 ---
 

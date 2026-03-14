@@ -8,62 +8,40 @@ import {
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useSettings } from '../../../hooks/useSettings';
 import TrashManagerModal from '../../../features/file-management/TrashManagerModal';
 import LaunchBar from '../../../features/launch-bar/LaunchBar';
 import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
-import { toast, useToastStore } from '../../../stores/useToastStore';
+import ModeSwitchConfirmModal from '../../../features/safe-mode/ModeSwitchConfirmModal';
+import { useSafeModeToggle } from '../../../hooks/useSafeModeToggle';
 
 export default function GlobalActions() {
-  const { workspaceView, setWorkspaceView, isPreviewOpen, togglePreview, safeMode, setSafeMode } =
-    useAppStore();
-  const { settings } = useSettings();
+  const { workspaceView, setWorkspaceView, isPreviewOpen, togglePreview } = useAppStore();
+  const {
+    toggleSafeMode,
+    handleConfirmSwitch,
+    setSafeModeWithToast,
+    confirmModalOpen,
+    confirmTargetEnabled,
+    closeConfirmModal,
+    pinModalOpen,
+    closePinModal,
+    safeMode,
+  } = useSafeModeToggle();
   const [trashOpen, setTrashOpen] = useState(false);
-  const [pinModalOpen, setPinModalOpen] = useState(false);
-
-  const handleToggleSafeMode = useCallback(async () => {
-    // If currently Safe Mode ON and user wants to disable it (go to NSFW)
-    if (safeMode) {
-      if (settings?.safe_mode?.pin_hash) {
-        setPinModalOpen(true);
-      } else {
-        const toastId = toast.info('Disabling Privacy Mode...', 0);
-        try {
-          await setSafeMode(false);
-          useToastStore.getState().removeToast(toastId);
-          toast.success('Privacy Mode Disabled');
-        } catch (e) {
-          useToastStore.getState().removeToast(toastId);
-          toast.error(String(e));
-        }
-      }
-    } else {
-      // Unsafing back to Safe Mode is immediate, no PIN required
-      const toastId = toast.info('Enabling Privacy Mode...', 0);
-      try {
-        await setSafeMode(true);
-        useToastStore.getState().removeToast(toastId);
-        toast.success('Privacy Mode Enabled');
-      } catch (e) {
-        useToastStore.getState().removeToast(toastId);
-        toast.error(String(e));
-      }
-    }
-  }, [safeMode, settings, setSafeMode]);
 
   // Epic 7 UI Req: Global Keyboard Shortcut Ctrl+Shift+S for switching SFW mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        handleToggleSafeMode();
+        toggleSafeMode();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleToggleSafeMode]);
+  }, [toggleSafeMode]);
 
   return (
     <div className="flex items-center gap-2 md:gap-3">
@@ -99,7 +77,7 @@ export default function GlobalActions() {
           }`}
           title={safeMode ? 'Safe Mode (ON) - Ctrl+Shift+S' : 'Privacy Mode (OFF) - Ctrl+Shift+S'}
           aria-label="Toggle Master Privacy Mode"
-          onClick={handleToggleSafeMode}
+          onClick={toggleSafeMode}
         >
           {safeMode ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
         </button>
@@ -111,21 +89,21 @@ export default function GlobalActions() {
       {/* Trash Manager Modal */}
       <TrashManagerModal open={trashOpen} onClose={() => setTrashOpen(false)} />
 
+      {/* Confirmation Modal for Corridor Switch */}
+      <ModeSwitchConfirmModal
+        open={confirmModalOpen}
+        targetEnabled={confirmTargetEnabled}
+        onClose={closeConfirmModal}
+        onConfirm={handleConfirmSwitch}
+      />
+
       {/* Pin Entry Modal for Epic 7 Safe Mode */}
       <PinEntryModal
         open={pinModalOpen}
-        onClose={() => setPinModalOpen(false)}
+        onClose={closePinModal}
         onSuccess={async () => {
-          const toastId = toast.info('Disabling Privacy Mode...', 0);
-          try {
-            await setSafeMode(false);
-            setPinModalOpen(false);
-            useToastStore.getState().removeToast(toastId);
-            toast.success('Privacy Mode Disabled');
-          } catch (e) {
-            useToastStore.getState().removeToast(toastId);
-            toast.error(String(e));
-          }
+          closePinModal();
+          await setSafeModeWithToast(false);
         }}
       />
 
@@ -156,7 +134,7 @@ export default function GlobalActions() {
           <div className="divider my-1 before:bg-white/5 after:bg-white/5"></div>
           <li>
             <a
-              onClick={handleToggleSafeMode}
+              onClick={toggleSafeMode}
               className="gap-2 justify-between hover:bg-white/5"
               aria-label="Toggle Master Privacy Mode"
             >

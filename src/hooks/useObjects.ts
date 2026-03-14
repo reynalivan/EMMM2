@@ -79,13 +79,12 @@ export function useObjects(options: UseObjectsOptions = {}) {
  */
 export function useCategoryCounts() {
   const { activeGame } = useActiveGame();
+  const { safeMode } = useAppStore();
   const gameId = activeGame?.id ?? '';
 
   return useQuery<CategoryCount[]>({
-    queryKey: objectKeys.counts(gameId),
-    // Backend `get_category_counts` always counts ALL objects regardless of safe mode
-    // (the _safe_mode param is unused). No need to include safeMode in key or fn.
-    queryFn: () => getCategoryCounts(gameId),
+    queryKey: [...objectKeys.counts(gameId), safeMode],
+    queryFn: () => getCategoryCounts(gameId, safeMode),
     enabled: !!gameId,
     staleTime: 30_000,
     refetchOnWindowFocus: false, // Watcher handles external changes (req-28)
@@ -120,6 +119,9 @@ export function useGameSwitch() {
     await setActiveGameId(gameId);
     queryClient.invalidateQueries({ queryKey: objectKeys.all });
     queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+    queryClient.invalidateQueries({ queryKey: ['collections'] });
+    queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
   return { switchGame };

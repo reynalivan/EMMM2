@@ -14,6 +14,7 @@ import {
 } from '../../../hooks/useFolders';
 import type { DuplicateInfo } from '../../../types/mod';
 import { useAppStore } from '../../../stores/useAppStore';
+import { toast } from '../../../stores/useToastStore';
 
 export function usePreviewPanelActions() {
   const queryClient = useQueryClient();
@@ -196,6 +197,13 @@ export function usePreviewPanelActions() {
   const handleToggleSafeRequest = useCallback(
     (folder: ModFolder) => {
       if (!activeGame?.id) return;
+
+      // Block: active mods cannot change privacy context (Mutually Exclusive Corridor)
+      if (folder.is_enabled) {
+        toast.warning('Disable this mod before changing its privacy status.');
+        return;
+      }
+
       const safeMode = useAppStore.getState().safeMode;
       if (safeMode && folder.is_safe) {
         setPinSafeDialog({ open: true, folder });

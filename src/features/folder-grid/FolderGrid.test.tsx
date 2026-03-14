@@ -129,6 +129,10 @@ const defaultHookReturn = {
   handleToggleSafeSubmit: vi.fn(),
   handleToggleSafeCancel: vi.fn(),
 
+  activeContextDialog: { open: false, folder: null, isProcessing: false },
+  handleActiveContextCancel: vi.fn(),
+  handleActiveContextSubmit: vi.fn(),
+
   isDragging: false,
   selectedObject: null,
   handleImportFiles: vi.fn(),

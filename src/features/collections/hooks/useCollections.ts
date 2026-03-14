@@ -123,6 +123,8 @@ export function useUndoCollection() {
       queryClient.invalidateQueries({ queryKey: ['mods'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success(`Undid collection application (${result.changed_count} changes reverted)`);
     },
     onError: (err) => {
@@ -142,6 +144,8 @@ export function useApplyCollection() {
       queryClient.invalidateQueries({ queryKey: ['mods'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
 
       toast.withAction(
         'success',

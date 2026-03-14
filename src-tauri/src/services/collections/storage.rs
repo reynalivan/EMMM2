@@ -62,9 +62,13 @@ pub async fn create_collection(
 
     let mut mod_ids = input.mod_ids;
     if input.auto_snapshot.unwrap_or(false) {
-        mod_ids = collection_repo::get_enabled_mod_ids(&mut tx, &input.game_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        mod_ids = collection_repo::get_enabled_mod_ids_for_corridor(
+            &mut tx,
+            &input.game_id,
+            input.is_safe_context,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
 
     let mod_ids = unique_mod_ids(mod_ids);
@@ -145,12 +149,37 @@ pub async fn update_collection(
     if let Some(name) = input.name.as_ref() {
         let name_trimmed = name.trim();
         new_name = name_trimmed.to_string();
-        collection_repo::update_collection_name(&mut tx, &input.id, &input.game_id, name_trimmed)
+
+        // Guard: check for duplicate name within same corridor
+        if new_name != old_name {
+            // Get current is_safe_context for scoping the uniqueness check
+            let current_safe: bool = sqlx::query_scalar(
+                "SELECT is_safe_context FROM collections WHERE id = ? AND game_id = ?",
+            )
+            .bind(&input.id)
+            .bind(&input.game_id)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
-        // Rename preset_name in all current members' info.json if name changed
-        if new_name != old_name {
+            let effective_safe = input.is_safe_context.unwrap_or(current_safe);
+
+            let exists = collection_repo::check_collection_exists(
+                &mut tx,
+                &input.game_id,
+                name_trimmed,
+                effective_safe,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if exists {
+                return Err(format!(
+                    "A collection named '{}' already exists.",
+                    name_trimmed
+                ));
+            }
+
             let items = collection_repo::get_collection_items(&mut tx, &input.id)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -166,6 +195,10 @@ pub async fn update_collection(
                 let _ = update_info_json(std::path::Path::new(&path), &update);
             }
         }
+
+        collection_repo::update_collection_name(&mut tx, &input.id, &input.game_id, name_trimmed)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     if let Some(safe) = input.is_safe_context {
@@ -324,6 +357,7 @@ pub async fn get_collection_preview(
         let mut object_id = None;
         let mut object_name_opt = None;
         let mut object_type = None;
+        let mut nested_is_safe = true; // default safe if no object match
 
         // Try to determine object name from the first segment of the path relative to mods folder
         // For example, if path is "Character\Barbara\BarbaraGyaruALL", the object folder is "Character" or "Barbara" depending on depth
@@ -334,8 +368,8 @@ pub async fn get_collection_preview(
                 let parent_clean = s.strip_prefix("DISABLED ").unwrap_or(&s).to_string();
 
                 // Query database to see if we have an object with this folder_name
-                let row: Option<(String, String, Option<String>)> = sqlx::query_as(
-                    "SELECT id, name, object_type FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)"
+                let row: Option<(String, String, Option<String>, bool)> = sqlx::query_as(
+                    "SELECT id, name, object_type, COALESCE(is_safe, 1) FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)"
                 )
                 .bind(game_id)
                 .bind(&parent_clean)
@@ -344,10 +378,11 @@ pub async fn get_collection_preview(
                 .await
                 .unwrap_or(None);
 
-                if let Some((oid, oname, otype)) = row {
+                if let Some((oid, oname, otype, obj_is_safe)) = row {
                     object_id = Some(oid);
                     object_name_opt = Some(oname);
                     object_type = otype;
+                    nested_is_safe = obj_is_safe;
                 } else {
                     object_name_opt = Some(parent_clean);
                 }
@@ -358,7 +393,7 @@ pub async fn get_collection_preview(
             id: nested_walker::nested_mod_id(&nested_path),
             actual_name: clean_name,
             folder_path: nested_path,
-            is_safe: true,
+            is_safe: nested_is_safe,
             object_id,
             object_name: object_name_opt,
             object_type,
@@ -377,7 +412,7 @@ pub async fn get_active_mods_preview(
         .await
         .map_err(|e| e.to_string())?;
 
-    log::info!(
+    log::debug!(
         "[collections] get_active_mods_preview: game_id={}, safe_mode={}, db_mods_count={}",
         game_id,
         safe_mode,
@@ -391,11 +426,12 @@ pub async fn get_active_mods_preview(
 
     if let Some(ref mp) = mods_path {
         if let Ok(nested) = nested_walker::walk_nested_mods(mp) {
-            let enabled_nested: Vec<_> = nested.into_iter()
+            let enabled_nested: Vec<_> = nested
+                .into_iter()
                 .filter(|n| n.is_enabled && n.is_safe == safe_mode)
                 .collect();
 
-            log::info!(
+            log::debug!(
                 "[collections] nested_mods_count={} from path={}",
                 enabled_nested.len(),
                 mp
@@ -414,6 +450,6 @@ pub async fn get_active_mods_preview(
         }
     }
 
-    log::info!("[collections] total_preview_mods={}", mods.len());
+    log::debug!("[collections] total_preview_mods={}", mods.len());
     Ok(mods)
 }

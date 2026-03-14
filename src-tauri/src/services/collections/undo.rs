@@ -32,9 +32,13 @@ pub async fn undo_collection(
 
     // Get all currently enabled mods for this game
     let currently_enabled =
-        crate::database::collection_repo::get_enabled_mod_id_and_paths(pool, game_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        crate::database::collection_repo::get_enabled_mod_id_and_paths_for_corridor(
+            pool,
+            game_id,
+            safe_mode_enabled,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
     // We need to disable all currently enabled mods that are NOT in the snapshot
     // And enable all snapshot mods that are currently disabled.

@@ -7,16 +7,24 @@ import {
 } from '../../../features/collections/hooks/useCollections';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSafeModeToggle } from '../../../hooks/useSafeModeToggle';
+import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
+import ModeSwitchConfirmModal from '../../../features/safe-mode/ModeSwitchConfirmModal';
 
 export default function ContextControls() {
+  const { activeCollectionId, setActiveCollectionId, activeGameId, setWorkspaceView } =
+    useAppStore();
   const {
+    toggleSafeMode,
+    handleConfirmSwitch,
+    setSafeModeWithToast,
+    confirmModalOpen,
+    confirmTargetEnabled,
+    closeConfirmModal,
+    pinModalOpen,
+    closePinModal,
     safeMode,
-    setSafeMode,
-    activeCollectionId,
-    setActiveCollectionId,
-    activeGameId,
-    setWorkspaceView,
-  } = useAppStore();
+  } = useSafeModeToggle();
   const { data: collections = [], isLoading } = useCollections(activeGameId);
   const saveMutation = useSaveCurrentAsCollection();
 
@@ -63,7 +71,7 @@ export default function ContextControls() {
       <div className="hidden lg:flex items-center gap-3 bg-base-100/30 p-1.5 rounded-full border border-white/5 backdrop-blur-md">
         <label
           className={`btn btn-xs btn-circle border-0 ${safeMode ? 'bg-success/20 text-success hover:bg-success/30' : 'bg-error/20 text-error hover:bg-error/30'}`}
-          onClick={() => setSafeMode(!safeMode)}
+          onClick={toggleSafeMode}
           title="Safe Mode Toggle"
         >
           {safeMode ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
@@ -165,6 +173,24 @@ export default function ContextControls() {
           onClose={() => setCollectionToApply(null)}
         />
       )}
+
+      {/* Confirmation Modal for Corridor Switch */}
+      <ModeSwitchConfirmModal
+        open={confirmModalOpen}
+        targetEnabled={confirmTargetEnabled}
+        onClose={closeConfirmModal}
+        onConfirm={handleConfirmSwitch}
+      />
+
+      {/* Pin Entry Modal for Context Controls Safe Mode */}
+      <PinEntryModal
+        open={pinModalOpen}
+        onClose={closePinModal}
+        onSuccess={async () => {
+          closePinModal();
+          await setSafeModeWithToast(false);
+        }}
+      />
 
       {saveModalOpen &&
         createPortal(

@@ -259,9 +259,7 @@ pub fn discover_reload_key(d3dx_ini_path: &Path) -> ReloadKeyConfig {
         // Parse key=value
         if let Some((key_part, value_part)) = trimmed.split_once('=') {
             let key_name = key_part.trim().to_ascii_lowercase();
-            let value = value_part
-                .trim()
-                .trim_end_matches([';', '#']);
+            let value = value_part.trim().trim_end_matches([';', '#']);
             let value = value.trim();
 
             match key_name.as_str() {

@@ -11,6 +11,13 @@ export interface RenameConflictError {
   base_name: string;
 }
 
+/** Result returned by set_safe_mode_enabled after corridor handoff. */
+export interface CorridorSwitchResult {
+  disabled_count: number;
+  restored_count: number;
+  warnings: string[];
+}
+
 type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings' | 'browser' | 'downloads';
 type MobilePane = 'sidebar' | 'grid' | 'details';
 
@@ -69,7 +76,7 @@ interface AppState {
   // Actions
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
-  setSafeMode: (enabled: boolean) => Promise<void>;
+  setSafeMode: (enabled: boolean) => Promise<CorridorSwitchResult>;
   setAutoCloseLauncher: (enabled: boolean) => Promise<void>;
 
   setWorkspaceView: (view: WorkspaceView) => void;
@@ -214,12 +221,13 @@ export const useAppStore = create<AppState>()(
       setSafeMode: async (enabled) => {
         const { invoke } = await import('@tauri-apps/api/core');
         try {
-          await invoke('set_safe_mode_enabled', { enabled });
+          const result = await invoke<CorridorSwitchResult>('set_safe_mode_enabled', { enabled });
           // Clear grid selection: FolderGrid items may change with safe mode.
           // ObjectList handles filtering via TanStack query keys (auto-refetch).
           set({
             safeMode: enabled,
             gridSelection: new Set(),
+            selectedObjectFolderPath: null,
           });
           // Invalidate caches: mod-folders don't include safe_mode in query keys.
           // Objects auto-refetch via key change (safe_mode is in the ObjectFilter key).
@@ -228,6 +236,8 @@ export const useAppStore = create<AppState>()(
           queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
           queryClient.invalidateQueries({ queryKey: ['collections'] });
           queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+          return result;
         } catch (e) {
           console.error('Failed to sync safe mode to backend', e);
           throw e;

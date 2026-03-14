@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Loader2,
   PlayCircle,
@@ -15,6 +15,7 @@ import { useCollectionPreview, useActiveModsPreview } from '../hooks/useCollecti
 import { useAppStore } from '../../../stores/useAppStore';
 import type { Collection, CollectionPreviewMod } from '../../../types/collection';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { groupMods } from '../utils/groupMods';
 
 interface CollectionWorkspaceProps {
   collection: Collection;
@@ -26,13 +27,13 @@ interface CollectionWorkspaceProps {
 export function ModListRow({ mod }: { mod: CollectionPreviewMod }) {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 
-  useState(() => {
+  useEffect(() => {
     invoke<string | null>('get_mod_thumbnail', { folderPath: mod.folder_path })
       .then((path) => {
         if (path) setThumbnailUrl(convertFileSrc(path));
       })
       .catch(() => {});
-  });
+  }, [mod.folder_path]);
 
   return (
     <div
@@ -96,73 +97,7 @@ export default function CollectionWorkspace({
   const previewMods = isUnsaved ? activeModsQuery.data : regularPreviewQuery.data;
 
   // Group mods by object (memoized to avoid re-computing on every render)
-  const groupedObjects = useMemo(() => {
-    const mods = previewMods || [];
-    const objectsMap = new Map<
-      string,
-      { id: string; name: string; type: string; mods: CollectionPreviewMod[]; unsafeCount: number }
-    >();
-
-    let hasUncategorized = false;
-    const uncategorizedMods: CollectionPreviewMod[] = [];
-    let uncategorizedUnsafeCount = 0;
-
-    mods.forEach((mod) => {
-      if (mod.object_name) {
-        const groupKey = mod.object_name; // Use name as the ultimate grouping key
-
-        if (!objectsMap.has(groupKey)) {
-          objectsMap.set(groupKey, {
-            id: mod.object_id || groupKey, // Keep ID if available for keys
-            name: mod.object_name,
-            type: mod.object_type || 'Other',
-            mods: [],
-            unsafeCount: 0,
-          });
-        }
-
-        const obj = objectsMap.get(groupKey)!;
-        // If the group was created by a nested mod (no type), and this one has a type, upgrade it
-        if (obj.type === 'Other' && mod.object_type) {
-          obj.type = mod.object_type;
-        }
-        // If the group was created by a nested mod (no id), and this one has an id, upgrade it
-        if (obj.id === groupKey && mod.object_id) {
-          obj.id = mod.object_id;
-        }
-
-        obj.mods.push(mod);
-        if (!mod.is_safe) obj.unsafeCount += 1;
-      } else {
-        hasUncategorized = true;
-        uncategorizedMods.push(mod);
-        if (!mod.is_safe) uncategorizedUnsafeCount += 1;
-      }
-    });
-
-    const groups = Array.from(objectsMap.values());
-    if (hasUncategorized) {
-      groups.push({
-        id: 'uncategorized',
-        name: 'Uncategorized',
-        type: 'Other',
-        mods: uncategorizedMods,
-        unsafeCount: uncategorizedUnsafeCount,
-      });
-    }
-
-    const typeOrder = ['Character', 'Weapon', 'UI', 'Other'];
-    groups.sort((a, b) => {
-      const idxA = typeOrder.indexOf(a.type);
-      const idxB = typeOrder.indexOf(b.type);
-      if (idxA !== -1 && idxB !== -1 && idxA !== idxB) return idxA - idxB;
-      if (idxA !== -1 && idxB === -1) return -1;
-      if (idxA === -1 && idxB !== -1) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    return groups;
-  }, [previewMods]);
+  const groupedObjects = useMemo(() => groupMods(previewMods || []), [previewMods]);
 
   const mods = previewMods || [];
 

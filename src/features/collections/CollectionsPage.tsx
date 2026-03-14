@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Layers, Trash2, Edit2, Check, X, Save, Loader2 } from 'lucide-react';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useAppStore } from '../../stores/useAppStore';
 import {
   useApplyCollection,
   useCollections,
@@ -13,10 +12,23 @@ import type { Collection } from '../../types/collection';
 import CollectionWorkspace from './components/CollectionWorkspace';
 import ApplyCollectionModal from './components/ApplyCollectionModal';
 import SaveCollectionModal from './components/SaveCollectionModal';
+import { useSafeModeToggle } from '../../hooks/useSafeModeToggle';
+import ModeSwitchConfirmModal from '../safe-mode/ModeSwitchConfirmModal';
+import PinEntryModal from '../safe-mode/PinEntryModal';
 
 export default function CollectionsPage() {
   const { activeGame } = useActiveGame();
-  const { safeMode, setSafeMode } = useAppStore();
+  const {
+    toggleSafeMode,
+    handleConfirmSwitch,
+    setSafeModeWithToast,
+    confirmModalOpen,
+    confirmTargetEnabled,
+    closeConfirmModal,
+    pinModalOpen,
+    closePinModal,
+    safeMode,
+  } = useSafeModeToggle();
 
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -122,8 +134,10 @@ export default function CollectionsPage() {
           <button
             className={`tab tab-sm flex-1 transition-colors ${safeMode ? 'tab-active bg-success/20 text-success rounded-md! font-medium shadow-sm' : 'text-base-content/60 hover:text-base-content'}`}
             onClick={() => {
-              setSafeMode(true);
-              setSelectedCollectionId(null);
+              if (!safeMode) {
+                toggleSafeMode();
+                setSelectedCollectionId(null);
+              }
             }}
           >
             SAFE
@@ -131,8 +145,10 @@ export default function CollectionsPage() {
           <button
             className={`tab tab-sm flex-1 transition-colors ${!safeMode ? 'tab-active bg-error/20 text-error rounded-md! font-medium shadow-sm' : 'text-base-content/60 hover:text-base-content'}`}
             onClick={() => {
-              setSafeMode(false);
-              setSelectedCollectionId(null);
+              if (safeMode) {
+                toggleSafeMode();
+                setSelectedCollectionId(null);
+              }
             }}
           >
             UNSAFE
@@ -357,6 +373,24 @@ export default function CollectionsPage() {
           onClose={() => setConfirmApply(null)}
         />
       )}
+
+      {/* Confirmation Modal for Corridor Switch */}
+      <ModeSwitchConfirmModal
+        open={confirmModalOpen}
+        targetEnabled={confirmTargetEnabled}
+        onClose={closeConfirmModal}
+        onConfirm={handleConfirmSwitch}
+      />
+
+      {/* Pin Entry Modal for Safe→Unsafe transition */}
+      <PinEntryModal
+        open={pinModalOpen}
+        onClose={closePinModal}
+        onSuccess={async () => {
+          closePinModal();
+          await setSafeModeWithToast(false);
+        }}
+      />
     </div>
   );
 }

@@ -96,6 +96,24 @@ pub async fn get_enabled_mod_ids(
         .await
 }
 
+/// Corridor-aware: only returns enabled mods matching the given `is_safe` context.
+pub async fn get_enabled_mod_ids_for_corridor(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    is_safe: bool,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"SELECT m.id FROM mods m
+           LEFT JOIN objects o ON m.object_id = o.id
+           WHERE m.game_id = ? AND m.status = 'ENABLED'
+             AND COALESCE(o.is_safe, m.is_safe, 1) = ?"#,
+    )
+    .bind(game_id)
+    .bind(is_safe)
+    .fetch_all(conn)
+    .await
+}
+
 pub async fn get_mod_paths_for_ids(
     conn: &mut SqliteConnection,
     mod_ids: &[String],
@@ -113,6 +131,31 @@ pub async fn get_mod_paths_for_ids(
     qb.push(")");
 
     let rows: Vec<(String, String)> = qb.build_query_as().fetch_all(conn).await?;
+
+    let mut paths = HashMap::new();
+    for (id, path) in rows {
+        paths.insert(id, path);
+    }
+    Ok(paths)
+}
+
+pub async fn get_mod_paths_for_ids_pool(
+    pool: &SqlitePool,
+    mod_ids: &[String],
+) -> Result<HashMap<String, String>, sqlx::Error> {
+    if mod_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut qb: QueryBuilder<'_, Sqlite> =
+        QueryBuilder::new("SELECT id, folder_path FROM mods WHERE id IN (");
+    let mut sep = qb.separated(", ");
+    for id in mod_ids {
+        sep.push_bind(id);
+    }
+    qb.push(")");
+
+    let rows: Vec<(String, String)> = qb.build_query_as().fetch_all(pool).await?;
 
     let mut paths = HashMap::new();
     for (id, path) in rows {
@@ -505,6 +548,21 @@ pub async fn get_last_unsaved_collection_id(
     .await
 }
 
+/// Pool-based variant for use outside of transactions (e.g. PrivacyManager).
+pub async fn get_last_unsaved_collection_id_pool(
+    pool: &SqlitePool,
+    game_id: &str,
+    is_safe_context: bool,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id FROM collections WHERE game_id = ? AND is_last_unsaved = 1 AND is_safe_context = ?",
+    )
+    .bind(game_id)
+    .bind(is_safe_context)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn get_collection_item_mod_ids(
     conn: &mut SqliteConnection,
     collection_id: &str,
@@ -523,6 +581,24 @@ pub async fn get_enabled_mod_id_and_paths(
         .bind(game_id)
         .fetch_all(pool)
         .await
+}
+
+/// Corridor-aware: only returns enabled mods matching the given `is_safe` context.
+pub async fn get_enabled_mod_id_and_paths_for_corridor(
+    pool: &SqlitePool,
+    game_id: &str,
+    is_safe: bool,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
+    sqlx::query_as(
+        r#"SELECT m.id, m.folder_path FROM mods m
+           LEFT JOIN objects o ON m.object_id = o.id
+           WHERE m.game_id = ? AND m.status = 'ENABLED'
+             AND COALESCE(o.is_safe, m.is_safe, 1) = ?"#,
+    )
+    .bind(game_id)
+    .bind(is_safe)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn delete_collection_by_id(

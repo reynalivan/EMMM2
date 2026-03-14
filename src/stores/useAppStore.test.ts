@@ -177,6 +177,11 @@ describe('useAppStore', () => {
 
   it('setSafeMode calls invoke and updates state', async () => {
     const invoke = (await import('@tauri-apps/api/core')).invoke;
+    vi.mocked(invoke).mockResolvedValueOnce({
+      disabled_count: 0,
+      restored_count: 0,
+      warnings: [],
+    });
 
     await act(async () => {
       await useAppStore.getState().setSafeMode(false);

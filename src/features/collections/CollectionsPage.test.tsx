@@ -96,11 +96,20 @@ describe('CollectionsPage - TC-31', () => {
   it('TC-31-001 / TC-31-003: Save Current State blocks empty string and submits correctly', async () => {
     render(<CollectionsPage />);
 
-    const input = screen.getByPlaceholderText('e.g. Abyss Run 1');
-    const saveBtn = screen.getByRole('button', { name: /save collection/i });
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /save/i }).length).toBeGreaterThan(0);
+    });
+    const unsavedSaveBtn = screen.getAllByRole('button', { name: /save/i })[0];
+    fireEvent.click(unsavedSaveBtn);
 
-    // TC-31-003: Button should be disabled if empty
-    expect(saveBtn).toBeDisabled();
+    const input = await screen.findByPlaceholderText('e.g. Abyss Run 1');
+    const saveBtn = screen.getByRole('button', { name: /^save collection$/i });
+
+    // TC-31-003: Button should be disabled if empty (has default Unsaved name now, so clear it to test disabled state)
+    fireEvent.change(input, { target: { value: '' } });
+    await waitFor(() => {
+      expect(saveBtn).toBeDisabled();
+    });
 
     // Type a name
     fireEvent.change(input, { target: { value: 'My New Loadout' } });

@@ -123,7 +123,7 @@ get_distribution_by_game() → Vec<GameDistribution { game_name, count }>:
 get_recent_mods(limit=5) → Vec<RecentMod { id, name, thumbnail_path, date_added, game_name }>:
   SELECT f.id, f.name, f.thumbnail_path, f.date_added, g.name as game_name
   FROM folders f JOIN games g ON f.game_id = g.id
-  WHERE f.is_safe = 1 (if safe_mode)
+  WHERE COALESCE(o.is_safe, f.is_safe, 1) = 1 (if safe_mode) -- accurate nested mod inclusion via LEFT JOIN objects o
   ORDER BY date_added DESC LIMIT 5
 
 get_active_keybindings(game_id) → Vec<KeybindEntry>:
@@ -159,7 +159,7 @@ Charts: Recharts PieChart + BarChart
 
 - **`d3dx.ini` path resolved via `game.install_path + /d3dx.ini`** — validated not to escape game directory.
 - **Dashboard stats queries are read-only** — no DB mutations from this epic.
-- **Safe Mode respected**: `get_recent_mods` and stat counts append `AND is_safe = 1` when `safeMode = true` — consistent with ObjectList behavior.
+- **Safe Mode respected**: `get_recent_mods` and stat counts append `AND COALESCE(o.is_safe, m.is_safe, 1) = 1` via `LEFT JOIN objects o` when `safeMode = true` — consistent with ObjectList behavior and safely including nested children.
 - **SQL queries MUST use indexed columns** — verified via `EXPLAIN QUERY PLAN` before release; no full table scans.
 
 ---

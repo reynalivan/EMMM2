@@ -59,6 +59,7 @@ emmm2.db*
 .history/
 .agent/
 .docs/
+.codebuddy
 .vscode/
 .opencode/
 .github/

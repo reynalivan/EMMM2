@@ -76,11 +76,9 @@ pub async fn ensure_game_exists(
     game_type: &str,
     mods_path: &str,
 ) -> Result<(), String> {
-    crate::database::game_repo::ensure_game_exists(
-        tx, game_id, game_name, game_type, mods_path,
-    )
-    .await
-    .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
+    crate::database::game_repo::ensure_game_exists(tx, game_id, game_name, game_type, mods_path)
+        .await
+        .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
     Ok(())
 }
 
