@@ -34,7 +34,6 @@ async fn test_object_crud() {
         "Mods/Obj1",
         "Character",
         None,
-        false,
         "{}",
         None,
     )
@@ -54,7 +53,6 @@ async fn test_object_crud() {
         name: Some("New Obj Name".into()),
         object_type: None,
         sub_category: None,
-        is_safe: Some(true),
         metadata: None,
         thumbnail_path: None,
         is_auto_sync: None,

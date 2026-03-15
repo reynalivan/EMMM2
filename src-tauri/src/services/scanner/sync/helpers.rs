@@ -70,13 +70,13 @@ pub async fn migrate_to_stable_ids(pool: &SqlitePool) -> Result<usize, String> {
 
 /// Upsert the game record into the `games` table so FK constraints are satisfied.
 pub async fn ensure_game_exists(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     game_name: &str,
     game_type: &str,
     mods_path: &str,
 ) -> Result<(), String> {
-    crate::database::game_repo::ensure_game_exists(tx, game_id, game_name, game_type, mods_path)
+    crate::database::game_repo::ensure_game_exists(conn, game_id, game_name, game_type, mods_path)
         .await
         .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
     Ok(())
@@ -84,7 +84,7 @@ pub async fn ensure_game_exists(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn ensure_object_exists(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     folder_path: &str,
     obj_name: &str,
@@ -95,7 +95,7 @@ pub async fn ensure_object_exists(
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
     crate::database::object_repo::ensure_object_exists(
-        tx,
+        conn,
         game_id,
         folder_path,
         obj_name,

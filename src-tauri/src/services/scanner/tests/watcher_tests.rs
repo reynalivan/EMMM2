@@ -3,14 +3,14 @@ use std::fs;
 use tempfile::TempDir;
 
 // Covers: TC-2.4-02 — Watcher receives create event
-#[test]
-fn test_watcher_detects_file_creation() {
+#[tokio::test]
+async fn test_watcher_detects_file_creation() {
     let dir = TempDir::new().unwrap();
     let suppressed = Arc::new(AtomicBool::new(false));
-    let (watcher, rx) = watch_mod_directory(dir.path(), suppressed).unwrap();
+    let (watcher, mut rx) = watch_mod_directory(dir.path(), suppressed).unwrap();
 
     // Give watcher time to initialize
-    std::thread::sleep(Duration::from_millis(200));
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create a file
     fs::write(dir.path().join("new_mod.ini"), "content").unwrap();
@@ -19,7 +19,7 @@ fn test_watcher_detects_file_creation() {
     let mut received = false;
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     while std::time::Instant::now() < deadline {
-        if let Ok(event) = rx.recv_timeout(Duration::from_millis(100)) {
+        if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
             if matches!(event, ModWatchEvent::Created(_)) {
                 received = true;
                 break;
@@ -32,14 +32,14 @@ fn test_watcher_detects_file_creation() {
 }
 
 // Covers: EC-2.06 (Watcher Suppression)
-#[test]
-fn test_watcher_suppression() {
+#[tokio::test]
+async fn test_watcher_suppression() {
     let dir = TempDir::new().unwrap();
     // Start suppressed
     let suppressed = Arc::new(AtomicBool::new(true));
-    let (watcher, rx) = watch_mod_directory(dir.path(), suppressed.clone()).unwrap();
+    let (watcher, mut rx) = watch_mod_directory(dir.path(), suppressed.clone()).unwrap();
 
-    std::thread::sleep(Duration::from_millis(200));
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create file while suppressed
     fs::write(dir.path().join("ignored_mod.ini"), "content").unwrap();
@@ -50,7 +50,7 @@ fn test_watcher_suppression() {
     let mut unexpected_event = false;
 
     while std::time::Instant::now() < deadline {
-        if let Ok(event) = rx.recv_timeout(Duration::from_millis(100)) {
+        if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
             if matches!(event, ModWatchEvent::Created(_)) {
                 unexpected_event = true;
                 break;
@@ -74,7 +74,9 @@ fn test_watcher_suppression() {
     let mut received = false;
     let deadline2 = std::time::Instant::now() + Duration::from_secs(3);
     while std::time::Instant::now() < deadline2 {
-        if let Ok(ModWatchEvent::Created(path)) = rx.recv_timeout(Duration::from_millis(100)) {
+        if let Ok(Some(ModWatchEvent::Created(path))) =
+            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
+        {
             if path.contains("detected_mod.ini") {
                 received = true;
                 break;

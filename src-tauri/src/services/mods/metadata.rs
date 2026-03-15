@@ -172,13 +172,10 @@ pub async fn toggle_mod_safe(
         .to_string_lossy()
         .to_string();
 
-    let object_id = crate::database::mod_repo::get_object_id_by_path(pool, game_id, &rel_path)
+    // Update mod-level safety (is_safe lives on the mods table, not objects)
+    crate::database::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe)
         .await
         .map_err(|e| e.to_string())?;
-
-    if let Some(oid) = object_id {
-        let _ = crate::database::object_repo::set_is_safe(pool, &oid, safe).await;
-    }
 
     let full_path = std::path::Path::new(folder_path);
     if full_path.exists() {

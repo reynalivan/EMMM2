@@ -21,7 +21,7 @@ export default function CollectionsPage() {
   const {
     toggleSafeMode,
     handleConfirmSwitch,
-    setSafeModeWithToast,
+    handlePinSuccess,
     confirmModalOpen,
     confirmTargetEnabled,
     closeConfirmModal,
@@ -387,8 +387,7 @@ export default function CollectionsPage() {
         open={pinModalOpen}
         onClose={closePinModal}
         onSuccess={async () => {
-          closePinModal();
-          await setSafeModeWithToast(false);
+          handlePinSuccess();
         }}
       />
     </div>

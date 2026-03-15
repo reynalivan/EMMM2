@@ -7,6 +7,7 @@ describe('AutoDetectResult (TC-03)', () => {
   const mockOnContinue = vi.fn();
   const mockOnAddMore = vi.fn();
   const mockOnRemoveGame = vi.fn();
+  const mockOnGoBack = vi.fn();
 
   it('renders games correctly', () => {
     const games = [
@@ -20,6 +21,7 @@ describe('AutoDetectResult (TC-03)', () => {
         onContinue={mockOnContinue}
         onAddMore={mockOnAddMore}
         onRemoveGame={mockOnRemoveGame}
+        onGoBack={mockOnGoBack}
       />,
     );
 
@@ -37,6 +39,7 @@ describe('AutoDetectResult (TC-03)', () => {
         onContinue={mockOnContinue}
         onAddMore={mockOnAddMore}
         onRemoveGame={mockOnRemoveGame}
+        onGoBack={mockOnGoBack}
       />,
     );
 
@@ -53,6 +56,7 @@ describe('AutoDetectResult (TC-03)', () => {
         onContinue={mockOnContinue}
         onAddMore={mockOnAddMore}
         onRemoveGame={mockOnRemoveGame}
+        onGoBack={mockOnGoBack}
       />,
     );
 

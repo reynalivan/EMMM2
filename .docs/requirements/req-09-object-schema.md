@@ -98,4 +98,11 @@ Frontend
 ## 4. Dependencies
 
 - **Blocked by**: Epic 01 (App Bootstrap — schema loaded at startup), Epic 02 (Game Management — active `GameType` determines which schema to load).
-- **Blocks**: Epic 06/07 (ObjectList — category rendering), Epic 25 (Scan Engine — stopword tokenization), Epic 26 (Deep Matcher — alias resolution).
+- **Multilingual Support**: While canonical names are English, the `metadata` JSON field in the `objects` table (and `schema.json`) supports arbitrary properties for community-driven localization or extended game-specific tags.
+
+---
+
+## 4. Dependencies
+
+- **Blocked by**: Epic 01 (App Bootstrap — schema loaded at startup), Epic 02 (Game Management — active `GameType` determines which schema to load).
+- **Blocks**: Epic 06/07 (ObjectList — category rendering), Epic 25 (Scan Engine — stopword tokenization), Epic 26 (Deep Matcher — alias resolution), Epic 10 (Object CRUD — uses metadata for auto-sync).

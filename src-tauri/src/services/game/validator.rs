@@ -1,35 +1,93 @@
 use crate::database::models::GameInfo;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Smart result type: (resolved path, warnings)
+pub type ValidationResult = (GameInfo, Vec<String>);
 
 /// Validates a folder as a valid 3DMigoto game instance.
 ///
-/// Checks for:
-/// 1. `/Mods` subfolder (mandatory)
-/// 2. `d3dx.ini` config file (3DMigoto fingerprint)
-/// 3. `d3d11.dll` injection DLL
-/// 4. At least one `.exe` (prefers names containing "loader")
-pub fn validate_instance(path: &Path) -> Result<GameInfo, String> {
-    if !path.exists() {
-        return Err(format!("Path does not exist: {}", path.display()));
+/// Instead of failing hard on missing optional files, this function:
+/// 1. Auto-corrects if the user pointed at the `/Mods` subfolder — climbs up to the parent.
+/// 2. Treats `/Mods`, `d3dx.ini`, `d3d11.dll`, and `.exe` as soft warnings, not hard errors.
+///
+/// Returns `(GameInfo, Vec<String>)` where warnings are displayed in the UI.
+pub fn validate_instance(raw_path: &Path) -> Result<ValidationResult, String> {
+    if !raw_path.exists() {
+        return Err(format!("Path does not exist: {}", raw_path.display()));
     }
 
-    // RULE 1: /Mods folder is mandatory
+    let mut warnings: Vec<String> = Vec::new();
+
+    // SMART: If user selected the /Mods folder itself, silently climb up to the parent
+    let path: PathBuf = {
+        let folder_name = raw_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        if folder_name == "mods" {
+            let parent = raw_path
+                .parent()
+                .ok_or_else(|| "Cannot resolve parent of selected 'Mods' folder.".to_string())?;
+            log::debug!("Smart path correction: user selected /Mods, resolved to parent.");
+            parent.to_path_buf()
+        } else {
+            raw_path.to_path_buf()
+        }
+    };
+
+    // RULE 1: /Mods folder (soft — warn if missing)
     let mods_path = path.join("Mods");
-    if !mods_path.exists() || !mods_path.is_dir() {
-        return Err("Missing /Mods folder".to_string());
-    }
+    let resolved_mods_path = if mods_path.exists() && mods_path.is_dir() {
+        mods_path.to_string_lossy().to_string()
+    } else {
+        warnings.push(
+            "Missing /Mods folder. You may need to create it manually before installing mods."
+                .to_string(),
+        );
+        mods_path.to_string_lossy().to_string()
+    };
 
-    // RULE 2: Core 3DMigoto files
+    // RULE 2: Core 3DMigoto files (soft — warn if missing)
     if !path.join("d3dx.ini").exists() {
-        return Err("Missing core file: d3dx.ini".to_string());
+        warnings.push(
+            "Missing core file: d3dx.ini (3DMigoto may not be installed correctly here)."
+                .to_string(),
+        );
     }
     if !path.join("d3d11.dll").exists() {
-        return Err("Missing core file: d3d11.dll".to_string());
+        warnings.push(
+            "Missing core file: d3d11.dll (3DMigoto may not be installed correctly here)."
+                .to_string(),
+        );
     }
 
-    // RULE 3: Find launcher .exe (prefer names containing "loader")
-    let exe_files: Vec<_> = std::fs::read_dir(path)
-        .map_err(|e| format!("Cannot read directory: {e}"))?
+    // RULE 3: Find launcher .exe (soft — warn if missing)
+    let launcher_path = match find_launcher(&path) {
+        Some(launcher) => launcher.to_string_lossy().to_string(),
+        None => {
+            warnings.push(
+                "No .exe launcher found. Auto-launch will not work until a launcher is configured."
+                    .to_string(),
+            );
+            path.to_string_lossy().to_string() // fallback to the game folder itself
+        }
+    };
+
+    let info = GameInfo {
+        path: path.to_string_lossy().to_string(),
+        launcher_path,
+        mods_path: resolved_mods_path,
+    };
+
+    Ok((info, warnings))
+}
+
+/// Finds the most appropriate launcher .exe in the given directory.
+/// Prefers filenames containing "loader", falls back to any .exe.
+fn find_launcher(path: &Path) -> Option<PathBuf> {
+    let exe_files: Vec<PathBuf> = std::fs::read_dir(path)
+        .ok()?
         .flatten()
         .filter(|e| {
             e.path()
@@ -40,26 +98,18 @@ pub fn validate_instance(path: &Path) -> Result<GameInfo, String> {
         .collect();
 
     if exe_files.is_empty() {
-        return Err("No .exe launcher found".to_string());
+        return None;
     }
 
-    let launcher = exe_files
-        .iter()
-        .find(|p| {
-            p.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_lowercase()
-                .contains("loader")
-        })
-        .unwrap_or(&exe_files[0])
-        .clone();
+    let preferred = exe_files.iter().find(|p| {
+        p.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase()
+            .contains("loader")
+    });
 
-    Ok(GameInfo {
-        path: path.to_string_lossy().to_string(),
-        launcher_path: launcher.to_string_lossy().to_string(),
-        mods_path: mods_path.to_string_lossy().to_string(),
-    })
+    Some(preferred.unwrap_or(&exe_files[0]).clone())
 }
 
 /// Known XXMI subfolder names and their display names
@@ -72,14 +122,14 @@ pub const XXMI_TARGETS: &[(&str, &str)] = &[
 ];
 
 /// Scans an XXMI root folder for known game subfolders
-pub fn scan_xxmi_root(root: &Path) -> Vec<(GameInfo, &'static str, &'static str)> {
+pub fn scan_xxmi_root(root: &Path) -> Vec<(GameInfo, Vec<String>, &'static str, &'static str)> {
     XXMI_TARGETS
         .iter()
         .filter_map(|(folder, name)| {
             let full = root.join(folder);
             validate_instance(&full)
                 .ok()
-                .map(|info| (info, *folder, *name))
+                .map(|(info, warnings)| (info, warnings, *folder, *name))
         })
         .collect()
 }

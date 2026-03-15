@@ -340,6 +340,7 @@ export const scanService = {
       gameType,
       modsPath,
       dbJson,
+      preserveExistingMappings: false, // Explicit old sync flow: allow overrides
       onProgress: channel,
     });
   },
@@ -391,6 +392,7 @@ export const scanService = {
       gameType,
       modsPath,
       dbJson: '[]',
+      preserveExistingMappings: true, // Crucial for Index Only mode: preserve matched_objects
       onProgress: channel,
     });
   },

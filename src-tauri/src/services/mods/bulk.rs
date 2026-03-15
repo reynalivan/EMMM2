@@ -1,5 +1,5 @@
-use crate::commands::mods::mod_core_cmds::toggle_mod_inner;
 use crate::database::mod_repo;
+use crate::services::mods::core_ops::toggle_mod_inner;
 use crate::services::mods::info_json;
 use crate::services::mods::trash;
 use crate::services::scanner::watcher::WatcherState;

@@ -9,32 +9,20 @@ pub async fn list_collections(
     game_id: &str,
     safe_mode_enabled: bool,
 ) -> Result<Vec<Collection>, sqlx::Error> {
-    let sql = if safe_mode_enabled {
-        r#"
+    let sql = r#"
         SELECT c.id, c.name, c.game_id, c.is_safe_context,
             (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = c.id)
             + (SELECT COUNT(*) FROM collection_nested_items cni WHERE cni.collection_id = c.id)
             as member_count,
             COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
         FROM collections c
-        WHERE c.game_id = ? AND c.is_safe_context = 1
+        WHERE c.game_id = ? AND c.is_safe_context = ?
         ORDER BY c.is_last_unsaved DESC, c.name
-        "#
-    } else {
-        r#"
-        SELECT c.id, c.name, c.game_id, c.is_safe_context,
-            (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = c.id)
-            + (SELECT COUNT(*) FROM collection_nested_items cni WHERE cni.collection_id = c.id)
-            as member_count,
-            COALESCE(c.is_last_unsaved, 0) as is_last_unsaved
-        FROM collections c
-        WHERE c.game_id = ? AND c.is_safe_context = 0
-        ORDER BY c.is_last_unsaved DESC, c.name
-        "#
-    };
+    "#;
 
     let rows = sqlx::query_as::<_, (String, String, String, bool, i64, bool)>(sql)
         .bind(game_id)
+        .bind(safe_mode_enabled)
         .fetch_all(pool)
         .await?;
 
@@ -86,16 +74,6 @@ pub async fn insert_collection(
     Ok(())
 }
 
-pub async fn get_enabled_mod_ids(
-    conn: &mut SqliteConnection,
-    game_id: &str,
-) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT id FROM mods WHERE game_id = ? AND status = 'ENABLED'")
-        .bind(game_id)
-        .fetch_all(conn)
-        .await
-}
-
 /// Corridor-aware: only returns enabled mods matching the given `is_safe` context.
 pub async fn get_enabled_mod_ids_for_corridor(
     conn: &mut SqliteConnection,
@@ -106,7 +84,7 @@ pub async fn get_enabled_mod_ids_for_corridor(
         r#"SELECT m.id FROM mods m
            LEFT JOIN objects o ON m.object_id = o.id
            WHERE m.game_id = ? AND m.status = 'ENABLED'
-             AND COALESCE(o.is_safe, m.is_safe, 1) = ?"#,
+             AND COALESCE(m.is_safe, 1) = ?"#,
     )
     .bind(game_id)
     .bind(is_safe)
@@ -162,38 +140,6 @@ pub async fn get_mod_paths_for_ids_pool(
         paths.insert(id, path);
     }
     Ok(paths)
-}
-
-pub async fn insert_collection_item(
-    conn: &mut SqliteConnection,
-    collection_id: &str,
-    mod_id: &str,
-    mod_path: Option<&str>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO collection_items (collection_id, mod_id, mod_path) VALUES (?, ?, ?)",
-    )
-    .bind(collection_id)
-    .bind(mod_id)
-    .bind(mod_path)
-    .execute(conn)
-    .await?;
-    Ok(())
-}
-
-pub async fn insert_nested_collection_item(
-    conn: &mut SqliteConnection,
-    collection_id: &str,
-    mod_path: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO collection_nested_items (collection_id, mod_path) VALUES (?, ?)",
-    )
-    .bind(collection_id)
-    .bind(mod_path)
-    .execute(conn)
-    .await?;
-    Ok(())
 }
 
 pub async fn get_collection_name(
@@ -332,7 +278,7 @@ pub async fn get_collection_preview_mods(
             m.id,
             m.actual_name,
             m.folder_path,
-            COALESCE(o.is_safe, m.is_safe, 1) as is_safe,
+            COALESCE(m.is_safe, 1) as is_safe,
             m.object_id,
             o.name as object_name,
             o.object_type
@@ -418,33 +364,6 @@ pub async fn get_mod_ids_for_collection_in_game(
     .await
 }
 
-pub async fn get_mod_id_by_path(
-    pool: &SqlitePool,
-    folder_path: &str,
-    game_id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT id FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await
-}
-
-pub async fn update_collection_item_mod_id(
-    pool: &SqlitePool,
-    collection_id: &str,
-    old_mod_id: &str,
-    new_mod_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE collection_items SET mod_id = ? WHERE collection_id = ? AND mod_id = ?")
-        .bind(new_mod_id)
-        .bind(collection_id)
-        .bind(old_mod_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 pub async fn delete_snapshot_collection(
     conn: &mut SqliteConnection,
     game_id: &str,
@@ -515,20 +434,23 @@ pub async fn get_mod_states_by_ids(
 
 pub async fn batch_update_mods_status_and_path(
     pool: &SqlitePool,
-    updates: &[(String, String, String)], // (id, status, folder_path)
+    updates: &[(String, String, String, Option<String>)], // (id, status, folder_path, disabled_reason)
 ) -> Result<(), sqlx::Error> {
     if updates.is_empty() {
         return Ok(());
     }
 
     let mut tx = pool.begin().await?;
-    for (id, status, folder_path) in updates {
-        sqlx::query("UPDATE mods SET status = ?, folder_path = ? WHERE id = ?")
-            .bind(status)
-            .bind(folder_path)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+    for (id, status, folder_path, disabled_reason) in updates {
+        sqlx::query(
+            "UPDATE mods SET status = ?, folder_path = ?, disabled_reason = ? WHERE id = ?",
+        )
+        .bind(status)
+        .bind(folder_path)
+        .bind(disabled_reason)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(())
@@ -593,7 +515,7 @@ pub async fn get_enabled_mod_id_and_paths_for_corridor(
         r#"SELECT m.id, m.folder_path FROM mods m
            LEFT JOIN objects o ON m.object_id = o.id
            WHERE m.game_id = ? AND m.status = 'ENABLED'
-             AND COALESCE(o.is_safe, m.is_safe, 1) = ?"#,
+             AND COALESCE(m.is_safe, 1) = ?"#,
     )
     .bind(game_id)
     .bind(is_safe)
@@ -635,7 +557,7 @@ pub async fn get_active_mods_preview_mods(
             m.id,
             m.actual_name,
             m.folder_path,
-            COALESCE(o.is_safe, m.is_safe, 1) as is_safe,
+            COALESCE(m.is_safe, 1) as is_safe,
             m.object_id,
             o.name as object_name,
             o.object_type
@@ -643,7 +565,7 @@ pub async fn get_active_mods_preview_mods(
         LEFT JOIN objects o ON m.object_id = o.id
         WHERE m.game_id = ?
           AND m.status = 'ENABLED'
-          AND COALESCE(o.is_safe, m.is_safe, 1) = ?
+          AND COALESCE(m.is_safe, 1) = ?
           AND (o.id IS NULL OR NOT (
               COALESCE(o.folder_path, '') LIKE 'DISABLED %' OR
               COALESCE(o.folder_path, '') LIKE '%/DISABLED %' OR
@@ -685,4 +607,175 @@ pub async fn get_active_mods_preview_mods(
             },
         )
         .collect())
+}
+
+pub async fn get_system_disabled_preview_mods(
+    pool: &SqlitePool,
+    game_id: &str,
+    safe_mode: bool,
+) -> Result<Vec<CollectionPreviewMod>, sqlx::Error> {
+    let sql = r#"
+        SELECT
+            m.id,
+            m.actual_name,
+            m.folder_path,
+            COALESCE(m.is_safe, 1) as is_safe,
+            m.object_id,
+            o.name as object_name,
+            o.object_type
+        FROM mods m
+        LEFT JOIN objects o ON m.object_id = o.id
+        WHERE m.game_id = ?
+          AND m.status = 'DISABLED'
+          AND m.disabled_reason = 'SYSTEM'
+          AND COALESCE(m.is_safe, 1) = ?
+        ORDER BY o.name ASC, m.actual_name ASC
+    "#;
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            bool,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ),
+    >(sql)
+    .bind(game_id)
+    .bind(safe_mode)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, actual_name, folder_path, is_safe, object_id, object_name, object_type)| {
+                CollectionPreviewMod {
+                    id,
+                    actual_name,
+                    folder_path,
+                    is_safe,
+                    object_id,
+                    object_name,
+                    object_type,
+                }
+            },
+        )
+        .collect())
+}
+
+// ── Batched Operations (O(N) Optimizations) ─────────────────
+
+pub async fn batch_insert_collection_items(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+    items: &[(String, Option<String>)],
+) -> Result<(), sqlx::Error> {
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    let mut qb = QueryBuilder::new("INSERT OR IGNORE INTO collection_items (collection_id, mod_id, mod_path) ");
+    qb.push_values(items, |mut b, (mod_id, mod_path)| {
+        b.push_bind(collection_id)
+         .push_bind(mod_id)
+         .push_bind(mod_path);
+    });
+
+    qb.build().execute(conn).await?;
+    Ok(())
+}
+
+pub async fn batch_insert_nested_collection_items(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+    paths: &[String],
+) -> Result<(), sqlx::Error> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let mut qb = QueryBuilder::new("INSERT OR IGNORE INTO collection_nested_items (collection_id, mod_path) ");
+    qb.push_values(paths, |mut b, path| {
+        b.push_bind(collection_id)
+         .push_bind(path);
+    });
+
+    qb.build().execute(conn).await?;
+    Ok(())
+}
+
+pub async fn batch_update_collection_item_mod_id(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+    updates: &[(String, String)],
+) -> Result<(), sqlx::Error> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    for (old_id, new_id) in updates {
+        sqlx::query("UPDATE collection_items SET mod_id = ? WHERE collection_id = ? AND mod_id = ?")
+            .bind(new_id)
+            .bind(collection_id)
+            .bind(old_id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn batch_get_mod_id_by_paths(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    paths: &[String],
+) -> Result<HashMap<String, String>, sqlx::Error> {
+    if paths.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new("SELECT folder_path, id FROM mods WHERE game_id = ");
+    qb.push_bind(game_id).push(" AND folder_path IN (");
+
+    let mut sep = qb.separated(", ");
+    for path in paths {
+        sep.push_bind(path);
+    }
+    qb.push(")");
+
+    let rows: Vec<(String, String)> = qb.build_query_as().fetch_all(conn).await?;
+
+    let mut result = HashMap::new();
+    for (path, id) in rows {
+        result.insert(path, id);
+    }
+    Ok(result)
+}
+
+pub async fn insert_snapshot_collection_from_state(
+    conn: &mut SqliteConnection,
+    snapshot_id: &str,
+    game_id: &str,
+    is_safe: bool,
+) -> Result<(), sqlx::Error> {
+    let sql = r#"
+        INSERT INTO collection_items (collection_id, mod_id, mod_path)
+        SELECT ?, m.id, m.folder_path
+        FROM mods m
+        LEFT JOIN objects o ON m.object_id = o.id
+        WHERE m.game_id = ? AND m.status = 'ENABLED'
+          AND COALESCE(m.is_safe, 1) = ?
+    "#;
+
+    sqlx::query(sql)
+        .bind(snapshot_id)
+        .bind(game_id)
+        .bind(is_safe)
+        .execute(conn)
+        .await?;
+
+    Ok(())
 }

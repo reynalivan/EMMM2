@@ -51,6 +51,9 @@ function AppRouter() {
               }
               // Force React Query to refetch settings so GameSelector sees new games
               await queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+              // Also bust the dashboard-stats cache (30s stale) so the dashboard
+              // doesn't render the empty state using pre-onboarding cached data.
+              await queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
               await useAppStore.getState().initStore();
               navigate('/dashboard', { replace: true });
             }}

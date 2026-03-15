@@ -3,14 +3,13 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The center panel needs to present hundreds to thousands of mod folders as both thumbnail-rich cards and a dense list table — without freezing the UI — while supporting node-type-aware navigation (navigate into containers, open details for mod packs, open variant picker for variant sets), sorting, and clear empty states.
-- **Proposed Solution**: A virtualized grid/list hybrid powered by `@tanstack/react-virtual`, with node-type-driven double-click behavior (`ContainerFolder` → navigate; `ModPackRoot` → open Details; `VariantContainer` → open Variant Picker; `InternalAssets` → no-op), distinct visual badges per type, context menu actions scoped by type (including "Open content mods (Advanced)" for `ModPackRoot`), client-side sorting within node-type groups, a breadcrumb navigation bar for deep sub-paths, and a "ADVANCED" breadcrumb indicator when browsing mod internals.
+- **Proposed Solution**: A virtualized grid/list hybrid powered by `@tanstack/react-virtual`, with node-type-driven double-click behavior (`ContainerFolder` → navigate; `ModPackRoot` → no-op, user uses context menu or preview), distinct visual badges per type, context menu actions scoped by type (including "Open content mods (Advanced)" for `ModPackRoot`), client-side sorting within node-type groups, and a breadcrumb navigation bar for deep sub-paths.
 - **Success Criteria**:
-  - Grid renders 1,000 cards at ≥ 60fps, measured via Chrome DevTools Performance tab.
-  - View mode toggle (Grid ↔ List) completes in ≤ 100ms — no layout jitter.
-  - Client-side sort of 1,000 items completes in ≤ 50ms (localeCompare or timestamp diff), applied within groups (Folders group sorted separately from Mod Packs group).
-  - Breadcrumb click navigates to the target sub-path in ≤ 200ms (React Query cache hit).
-  - `VariantContainer` double-click opens Variant Picker modal in ≤ 150ms.
-  - Empty state renders within ≤ 100ms of receiving an empty array — no blank white screen flash.
+  - [x] Grid renders 1,000 cards at ≥ 60fps, measured via Chrome DevTools Performance tab.
+  - [x] View mode toggle (Grid ↔ List) completes in ≤ 100ms — no layout jitter.
+  - [x] Client-side sort of 1,000 items completes in ≤ 50ms (timestamp/name diff).
+  - [x] Breadcrumb click navigates to the target sub-path in ≤ 200ms (React Query cache hit).
+  - [x] Empty state renders within ≤ 100ms of receiving an empty array — no blank white screen flash.
 
 ---
 
@@ -38,9 +37,9 @@ As a user, I want double-clicking a folder to do the right thing depending on wh
 | ID        | Type        | Criteria                                                                                                                                                                                                     |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-12.2.1 | ✅ Positive | Given a `ContainerFolder`, when I double-click it, then `currentSubPath` updates to include that folder and the breadcrumb advances — grid refreshes with children                                           |
-| AC-12.2.2 | ✅ Positive | Given a `ModPackRoot`, when I double-click it, then the Preview Panel / Details view opens — **no folder navigation** occurs; breadcrumb does not change                                                     |
-| AC-12.2.3 | ✅ Positive | Given a `VariantContainer`, when I double-click it, then the Variant Picker modal opens in ≤ 150ms — **no folder navigation** occurs                                                                         |
-| AC-12.2.4 | ✅ Positive | Given an `InternalAssets` folder (only visible in Advanced mode), when I double-click it, then no action is taken — it is a static read-only entry                                                           |
+| AC-12.2.2 | ✅ Positive | Given a `ModPackRoot`, when I double-click it, then no navigation occurs (user manages via context menu or preview panel).                                                     |
+| AC-12.2.3 | ✅ Positive | Given a `VariantContainer`, when I double-click it, then no folder navigation occurs.                                                     |
+| AC-12.2.4 | ✅ Positive | Given an `InternalAssets` folder (only visible in Advanced mode), when I double-click it, then no action is taken.                                                           |
 | AC-12.2.5 | ⚠️ Edge     | Given a `ContainerFolder` that has no navigable children (all children are `InternalAssets`), then the grid shows an empty state "This folder contains only internal mod assets" — not a generic empty state |
 
 ---
@@ -131,11 +130,11 @@ As a user, I want clear visual feedback when a folder has no mods or no search r
 
 ### Non-Goals
 
-- Sorting is entirely client-side — no backend sort parameter in `list_folders`.
-- No infinite scroll pagination; all items for a given `sub_path` are loaded at once (virtualization handles rendering performance).
-- No columns customization (add/remove columns) in the List view in this phase.
-- "Open content mods (Advanced)" is a read-only browsing mode — no bulk enable/disable for InternalAssets from within it.
-- Grid card thumbnail display relies on Epic 41 (Thumbnail Cache); this epic handles only the layout.
+- Sorting is entirely client-side.
+- No infinite scroll pagination; virtualization handles rendering performance.
+- No columns customization in the List view.
+- "Open content mods (Advanced)" is a focused browsing mode.
+- Lasso selection and intra-app DnD are NOT implemented; use Shift-click and "Move to Object" dialog instead.
 
 ---
 

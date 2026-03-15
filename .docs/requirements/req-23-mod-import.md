@@ -57,24 +57,35 @@ As a system, I want to analyze the archive name and contents, so that I can plac
 
 ### Architecture Overview
 
-```
-Frontend:
-  useFileDrop.ts → listen('tauri://file-drop', paths) → setDroppedFiles(paths)
-    → show full-screen overlay
-    → invoke('import_mods_from_paths', { game_id, paths })
-    → listen('import:progress', { current, total, name, status })
-    → on complete: invalidateQueries(['folders', gameId]) + ['objects', gameId]
+```rust
+// Backend Service: Mod Discovery/Import (info_json.rs, metadata.rs)
 
-Backend:
-  import_mods_from_paths(game_id, paths: Vec<PathBuf>) → ImportBatchResult:
-    for path in paths:
-      1. Detect format (zip/rar/7z by extension + magic bytes)
+on_mod_discovery(folder_path):
+  1. Check for existing `info.json`.
+  2. If missing, call `create_default_info_json`.
+  3. Strip "DISABLED " prefix for the `actual_name` field.
+  4. Write pretty-printed JSON with default version (1.0) and author (Unknown).
+
+update_mod_metadata(path, update_struct):
+  1. Call `update_info_json`.
+  2. Load existing JSON -> Apply partial merge (Tags, Presets, Metadata KV).
+  3. Write back to disk + Invalidate frontend caches.
+```
+
+### Integration Points
+
+| Component           | Detail                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `info_json.rs`      | Single point of truth for mod-local metadata; handles serialization and default templates.      |
+| `metadata.rs`       | Orchestrates DB category updates (`set_mod_category`) and repair of orphan mods.                |
+| `preview_image.rs`  | Handles `preview_*.webp` generation and management within the mod folder.                        |
+| `Scanner Sync`      | Scanner calls `ensure_object_exists` and `repair_orphan_mods` during the ingestion phase.        |
+| `Rayon Parallel`    | `bulk_toggle_favorite` uses Rayon for high-speed parallel IO updates to multiple `info.json` files. |Detect format (zip/rar/7z by extension + magic bytes)
       2. Extract to {temp_dir}/{uuid}/ (zip crate or sevenz_rust)
       3. Normalize: if extracted has single top-level folder wrapping mod, unwrap it
       4. Classify inner structure (Epic 11 classifier) → confirm ModPackRoot
       5. Run DeepMatcher.analyze(folder_name, ini_tokens) → Option<ObjectId>
       6. target_dir = if object_found: mods_path/category/object/ else mods_path/Uncategorized/
-      7. Check collision → ConflictError if target exists
       8. fs::rename(temp/uuid/, target_dir/extracted_name/)
       9. emit('import:progress', {current, total, name, status: Ok | Err})
     return ImportBatchResult { success_count, failed: Vec<ImportError> }

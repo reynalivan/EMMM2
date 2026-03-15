@@ -151,15 +151,16 @@ Weekly Scheduled Maintenance (Tokio interval, 7 days):
 
 ### Integration Points
 
-| Component           | Detail                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------- |
-| Preferences DB      | `preferences(key TEXT PRIMARY KEY, value TEXT)` — simple KV store                     |
-| All Forms           | `React Hook Form + Zod` — inline validation; Save disabled until valid                |
-| Theme               | `data-theme` attribute on `<html>` — driven by Zustand `theme` state hydrated from DB |
-| Argon2              | PIN hashed via `argon2` crate; verification ≤ 100ms; 5 failures → 60s lockout         |
-| Game CRUD           | Reuses Epic 02 commands (`add_game`, `remove_game`, `trigger_scan`)                   |
-| Atomic Config Write | `*.tmp` → rename; `file.sync_all()` before rename — ≤ 30ms                            |
-| Log Viewer          | `tauri-plugin-log` log file path → tail last 500 lines → filter by level              |
+| Component    | Detail                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| Persistence  | SQLite `app_settings` (K-V) and `games` tables; `ConfigService` uses `Mutex<AppSettings>` and synchronous DB writes |
+| PIN Hashing  | `Argon2` via `argon2` crate; stored in `safe_mode.pin_hash`                                                   |
+| Mode Switch  | `PrivacyManager::switch_mode` → atomic database updates + corridor directory moves + watcher suppression       |
+| Maintenance  | `maintenance_service.rs` → `VACUUM`, `ThumbnailCache::prune_orphans`, `remove_orphaned_collection_items`, `cleanup_old_empty_trash_entries` |
+| Trash Purge  | `cleanup_old_empty_trash_entries` logic in `maintenance_service.rs` handles folders > 30 days old             |
+| Log Viewer   | `tauri-plugin-log` integration via `SettingsPage` log tab                                                     |
+| Validation   | Frontend: `react-hook-form` + `zod`; Backend: `normalize_keywords` trim/lowercase                             |
+| Game Setup   | `invoke('add_game')` and `invoke('auto_detect_games')` (Epic 03)                                              |
 | Weekly Scheduler    | `tokio::time::interval(Duration::from_secs(7 * 86400))` — runs in background task     |
 
 ### Security & Privacy

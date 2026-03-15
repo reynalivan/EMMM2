@@ -3,11 +3,11 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The objectlist is the primary navigation hub for the entire 3-panel workspace — without min/max constraints and persistent sizing, users resize it past usable bounds or lose their layout on restart.
-- **Proposed Solution**: A resizable objectlist panel (180px–600px) powered by `react-resizable-panels`, with category-grouped object list sections (collapsible), persistent width via `localStorage`, and a responsive overlay drawer for viewports < 768px.
+- **Proposed Solution**: A resizable objectlist panel (180px–600px) powered by `react-resizable-panels`, with a flat virtualized list of objects grouped by categories (non-collapsible for scroll stability), persistent width via `localStorage`, and a responsive overlay drawer for viewports < 768px.
 - **Success Criteria**:
   - ObjectList drag resize renders at ≥ 60fps (≤ 16ms/frame) measured via Chrome DevTools Performance tab.
   - ObjectList width persisted within ≤ 200ms of drag-end and restored on next launch in ≤ 50ms.
-  - Category collapse/expand with 500 items re-renders in ≤ 100ms (no main-thread freeze).
+  - Sidebar re-renders in ≤ 100ms when filtering or switching games.
   - ObjectList width never falls below 180px or exceeds 600px regardless of window size.
   - On viewport < 768px, objectlist renders as an overlay drawer in ≤ 100ms of viewport detection.
 
@@ -30,16 +30,16 @@ As a user, I want to adjust the width of the objectlist, so that I can allocate 
 
 ---
 
-#### US-06.2: Category Sections
+#### US-06.2: Category Visualization
 
 As a user, I want the objects in the objectlist grouped by logical categories (Characters, Weapons, UI), so that I can scan a large object list without scrolling through an unsorted flat list.
 
 | ID        | Type        | Criteria                                                                                                                                                                                      |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-06.2.1 | ✅ Positive | Given a parsed `GameSchema` with defined categories, when the objectlist renders, then objects are grouped under collapsible category headers matching the schema                                |
-| AC-06.2.2 | ✅ Positive | Given a category header, when clicked, then it toggles expanded/collapsed with a CSS animation ≤ 200ms — and the toggle state persists in `localStorage`                                      |
+| AC-06.2.1 | ✅ Positive | Given a parsed `GameSchema` with defined categories, when the objectlist renders, then objects are grouped under sticky category headers matching the schema                                   |
+| AC-06.2.2 | ✅ Positive | Given a successful render, then empty categories (no matching objects) are skipped entirely to save vertical space                                                                            |
 | AC-06.2.3 | ❌ Negative | Given an object with no schema category match, then it is placed in an "Uncategorized" section — the render cycle does not throw or produce a blank objectlist                                   |
-| AC-06.2.4 | ⚠️ Edge     | Given a category with ≥ 500 items being expanded, the list renders using virtualization (react-virtual or equivalent) — the expand action completes in ≤ 100ms without blocking the UI thread |
+| AC-06.2.4 | ⚠️ Edge     | Given a large dataset, the list renders using a single flat virtualization instance (tanstack/react-virtual) — providing smooth continuous scroll across category boundaries                    |
 
 ---
 
@@ -58,10 +58,9 @@ As a small-viewport user, I want the objectlist to become a slide-out drawer, so
 
 ### Non-Goals
 
-- No sub-category nesting (e.g., "Characters → 5 Star") in this phase — categories are single-level.
-- No persistent per-category collapse state synced to DB; `localStorage` only.
-- No virtual scrolling for the objectlist panel itself (only for individual category item lists with ≥ 100 items).
-- Category order is dictated by the `GameSchema` definition — no user-draggable reordering in this phase.
+- No sub-category nesting (e.g., "Characters → 5 Star") in the sidebar — categories are single-level.
+- No per-category collapse state; headers are always visible to ensure predictable virtualization indices.
+- Category order is dictated by the `GameSchema` definition — no user-draggable reordering.
 
 ---
 
@@ -73,10 +72,10 @@ As a small-viewport user, I want the objectlist to become a slide-out drawer, so
 ObjectList (react-resizable-panels Panel)
   ├── width: [180px, 600px] — persisted as fraction in localStorage['panelLayout']
   └── ObjectList (Epic 07)
-      ├── CategorySection (collapsible, per schema category)
-      │   ├── CategoryHeader (count badge, expand toggle)
-      │   └── VirtualizedObjectList (react-virtual, ≥ 100 items threshold)
-      └── CategorySection: "Uncategorized" (fallback)
+      ├── ObjectListContent (flat virtualized list)
+      │   ├── Header (Sticky, per-category)
+      │   └── ObjectRowItem (Virtualized)
+      └── "Uncategorized" Section (fallback)
 
 Mobile (viewport < 768px):
   └── DrawerOverlay (position: fixed, z-index: 50)
@@ -90,8 +89,7 @@ Mobile (viewport < 768px):
 | Panel Width    | `react-resizable-panels` `Panel` with `minSize`, `maxSize` props; `onLayout` → debounced `localStorage.setItem` |
 | Game Schema    | `useGameSchema()` hook — reads from React Query cache seeded by Epic 09                                         |
 | Object List    | `useObjects()` hook — reads from Epic 07's React Query cache                                                    |
-| Collapse State | `localStorage['sidebarCategoryStates']` — `Map<categoryId, boolean>`                                            |
-| Virtualization | `@tanstack/react-virtual` — activated for category lists with ≥ 100 items                                       |
+| Virtualization | `@tanstack/react-virtual` — single instance for the entire sidebar scroll container                             |
 
 ### Security & Privacy
 

@@ -48,9 +48,9 @@ As a user, I want the app to scan all active mods for colliding texture override
 
 | ID        | Type        | Criteria                                                                                                                                                                                         |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-29.3.1 | ✅ Positive | Given the user triggers a global conflict scan, then the scanner parses all enabled `.ini` files and builds a `hash → [{mod_path, section, line}]` map; any hash with ≥ 2 entries is a collision |
-| AC-29.3.2 | ✅ Positive | Given a detected collision, the UI shows: conflicting hash, both mod names, both INI file paths, and exact line numbers — enough information to manually resolve                                 |
-| AC-29.3.3 | ❌ Negative | Given 0 hash collisions are found, then the conflict report shows "No conflicts detected — all enabled mods are compatible"                                                                      |
+| AC-29.3.1 | ✅ Positive | Given the user triggers a global conflict scan, then the scanner parses all enabled `.ini` files for `[TextureOverride...]` sections and builds a `hash → [{mod_path, section}]` map; any hash with ≥ 2 entries is a collision |
+| AC-29.3.2 | ✅ Positive | Given a detected collision, the UI shows a `ConflictModal` with: conflicting hash, section name, and paths of the conflicting mod folders |
+| AC-29.3.3 | ❌ Negative | Given 0 hash collisions are found, then the conflict modal (or trigger) indicates no shader conflicts were detected |
 | AC-29.3.4 | ⚠️ Edge     | Given a malformed `.ini` (missing `=`, binary content), then the scanner skips that file with a `warn` log — it does not abort the entire scan                                                   |
 
 ---
@@ -81,10 +81,11 @@ enable_only_this(game_id, target_folder_path) → ():
   5. UPDATE is_enabled flags in DB atomically
   6. Return Ok(())
 
-detect_conflicts_in_folder_cmd(game_id) → Vec<ConflictReport>:
-  1. Collect all enabled mod paths → parse each .ini with ini_parser
-  2. Build: HashMap<hash_string, Vec<ConflictEntry { path, section_name, line }>>
-  3. Return entries where vec.len() >= 2
+detect_conflicts_in_folder_cmd(mods_path) → Vec<ConflictInfo { hash, section_name, mod_paths }>:
+  1. Walk all ENABLED mod folders → extract .ini paths
+  2. Parse each .ini for `hash = <hex>` in `[TextureOverride...]`
+  3. HashMap collision detection by hash value
+  4. Return entries where multiple mod roots share the same hash
 
 Frontend:
   ConflictResolveDialog.tsx (shown for DuplicateInfo errors)

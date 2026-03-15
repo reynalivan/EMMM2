@@ -14,6 +14,7 @@
     "core:window:allow-set-title",
     "fs:read-all",
     "fs:write-all",
+    "updater:default",
     "allow-browser-commands",
     "allow-app-commands"
   ]

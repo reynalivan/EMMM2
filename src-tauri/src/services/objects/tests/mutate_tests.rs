@@ -25,7 +25,6 @@ async fn test_create_object_cmd_inner_success() {
         folder_path: Some("my_folder".to_string()),
         object_type: "Character".to_string(),
         sub_category: None,
-        is_safe: Some(true),
         metadata: None,
         thumbnail_url: None,
     };
@@ -60,7 +59,6 @@ async fn test_create_object_cmd_inner_conflict() {
         folder_path: None,
         object_type: "Weapon".to_string(),
         sub_category: None,
-        is_safe: Some(true),
         metadata: None,
         thumbnail_url: None,
     };
@@ -126,7 +124,6 @@ async fn test_update_object() {
         sub_category: None,
         metadata: None,
         thumbnail_path: None,
-        is_safe: None,
         is_auto_sync: None,
         tags: None,
     };

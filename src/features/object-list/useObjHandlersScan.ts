@@ -93,6 +93,27 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
     }
   }, [activeGame, isSyncing]);
 
+  // ── Background Indexing ──────────────────────────────────────────
+  const handleBackgroundSync = useCallback(async () => {
+    if (!activeGame || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await scanService.quickImport(
+        activeGame.id,
+        activeGame.name,
+        activeGame.game_type,
+        activeGame.mod_path,
+      );
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+    } catch (e) {
+      console.error('Background sync failed:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [activeGame, isSyncing, queryClient]);
+
   // ── Commit scan results ──────────────────────────────────────────
   const handleCommitScan = useCallback(
     async (items: ConfirmedScanItem[]) => {
@@ -270,6 +291,7 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
     syncConfirm,
     setSyncConfirm,
     handleSync,
+    handleBackgroundSync,
     handleCommitScan,
     handleCloseScanReview,
     handleSyncWithDb,

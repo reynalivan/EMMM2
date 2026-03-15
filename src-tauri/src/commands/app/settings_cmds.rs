@@ -19,6 +19,25 @@ pub async fn set_safe_mode_pin(pin: String, state: State<'_, ConfigService>) -> 
     state.set_pin(&pin)
 }
 
+/// Sets a new PIN and returns a one-time recovery code (e.g. `EMMM-4F2A-9B87-CC1E`).
+/// The recovery code is shown once; a SHA-256 hash is stored in settings.
+#[tauri::command]
+pub async fn set_safe_mode_pin_with_recovery(
+    pin: String,
+    state: State<'_, ConfigService>,
+) -> Result<String, String> {
+    state.set_pin_with_recovery(&pin)
+}
+
+/// Resets the PIN using a recovery code. Returns `true` if the code was valid.
+#[tauri::command]
+pub async fn reset_pin_with_recovery_code(
+    code: String,
+    state: State<'_, ConfigService>,
+) -> Result<bool, String> {
+    state.reset_pin_with_recovery_code(&code)
+}
+
 #[tauri::command]
 pub async fn verify_pin(
     pin: String,
@@ -53,33 +72,23 @@ pub async fn set_safe_mode_enabled(
     } else {
         crate::services::privacy::Mode::NSFW
     };
-    let result = crate::services::privacy::PrivacyManager::switch_mode(
-        mode,
-        &pool,
-        &watcher_state,
-        &game_id,
-    )
-    .await?;
+    let result =
+        crate::services::privacy::switch_mode(mode, &pool, &watcher_state, &game_id).await?;
     state.set_safe_mode_enabled(enabled)?;
     Ok(result)
 }
 
 #[tauri::command]
-pub async fn preview_mode_switch_enabled(
-    enabled: bool,
+pub async fn preview_corridor_switch(
+    target_enabled: bool,
     state: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<crate::services::privacy::ModeSwitchPreview, String> {
+) -> Result<crate::services::privacy::CorridorPreview, String> {
     let settings = state.get_settings();
     let game_id = settings.active_game_id.ok_or("No active game selected")?;
+    let current_safe = settings.safe_mode.enabled;
 
-    let target_mode = if enabled {
-        crate::services::privacy::Mode::SFW
-    } else {
-        crate::services::privacy::Mode::NSFW
-    };
-
-    crate::services::privacy::PrivacyManager::preview_mode_switch(target_mode, &pool, &game_id)
+    crate::services::privacy::preview_corridor_switch(&pool, &game_id, current_safe, target_enabled)
         .await
 }
 

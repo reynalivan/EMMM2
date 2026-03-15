@@ -10,7 +10,6 @@ pub async fn create_object_cmd_inner(
     input: CreateObjectInput,
 ) -> Result<String, CommandError> {
     let id = Uuid::new_v4().to_string();
-    let is_safe = input.is_safe.unwrap_or(true);
     let metadata_str = input
         .metadata
         .as_ref()
@@ -63,7 +62,6 @@ pub async fn create_object_cmd_inner(
         &folder_path,
         &input.object_type,
         input.sub_category.as_ref(),
-        is_safe,
         &metadata_str,
         thumbnail_abs_path.as_ref(),
     )

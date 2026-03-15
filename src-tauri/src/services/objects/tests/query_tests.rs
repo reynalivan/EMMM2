@@ -13,15 +13,15 @@ async fn test_get_object_by_id_service() {
     let pool = setup_test_db().await;
 
     sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+        "INSERT INTO games (id, name, game_type, path) VALUES ('g_get_obj', 'Genshin', 'type', '/game_get_obj')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
-         VALUES ('o1', 'g1', 'MyObj', 'my_folder', 'Character', 1)",
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type)
+         VALUES ('o1', 'g_get_obj', 'MyObj', 'my_folder', 'Character')",
     )
     .execute(&pool)
     .await
@@ -44,7 +44,7 @@ async fn test_get_category_counts_service() {
     let pool = setup_test_db().await;
 
     sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g2', 'StarRail', 'type', '/')",
+        "INSERT INTO games (id, name, game_type, path) VALUES ('g_cat_counts', 'StarRail', 'type', '/game_cat_counts')",
     )
     .execute(&pool)
     .await
@@ -52,11 +52,11 @@ async fn test_get_category_counts_service() {
 
     // 2 Characters safe, 1 Character unsafe, 1 Weapon safe
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe) VALUES
-         ('o1', 'g2', 'C1', 'c1', 'Character', 1),
-         ('o2', 'g2', 'C2', 'c2', 'Character', 1),
-         ('o3', 'g2', 'C3', 'c3', 'Character', 0),
-         ('o4', 'g2', 'W1', 'w1', 'Weapon', 1)",
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES
+         ('o1', 'g_cat_counts', 'C1', 'c1', 'Character'),
+         ('o2', 'g_cat_counts', 'C2', 'c2', 'Character'),
+         ('o3', 'g_cat_counts', 'C3', 'c3', 'Character'),
+         ('o4', 'g_cat_counts', 'W1', 'w1', 'Weapon')",
     )
     .execute(&pool)
     .await
@@ -64,7 +64,7 @@ async fn test_get_category_counts_service() {
 
     // Phase 1 fix: safe_mode no longer filters categories — always returns ALL counts.
     // The _safe_mode param is kept for API compatibility but ignored.
-    let safe_counts = get_category_counts_service(&pool, "g2", true)
+    let safe_counts = get_category_counts_service(&pool, "g_cat_counts", true)
         .await
         .unwrap();
     assert_eq!(safe_counts.len(), 2);
@@ -75,7 +75,7 @@ async fn test_get_category_counts_service() {
     // Now returns ALL characters (3), not just safe ones
     assert_eq!(char_count.count, 3);
 
-    let all_counts = get_category_counts_service(&pool, "g2", false)
+    let all_counts = get_category_counts_service(&pool, "g_cat_counts", false)
         .await
         .unwrap();
     let char_count_all = all_counts
@@ -95,7 +95,7 @@ async fn test_gc_lost_objects_removes_missing() {
     // Create a physical folder
     fs::create_dir(mod_path.join("clean_folder")).unwrap();
 
-    sqlx::query("INSERT INTO games (id, name, game_type, path, mod_path) VALUES ('g3', 'ZZZ', 'type', '/', ?)")
+    sqlx::query("INSERT INTO games (id, name, game_type, path, mod_path) VALUES ('g_gc_lost', 'ZZZ', 'type', '/game_gc_lost', ?)")
         .bind(mod_path.to_str().unwrap())
         .execute(&pool)
         .await
@@ -103,8 +103,8 @@ async fn test_gc_lost_objects_removes_missing() {
 
     // Insert object with physical folder
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
-         VALUES ('o2', 'g3', 'Obj2', 'clean_folder', 'Character', 1)",
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type)
+         VALUES ('o2', 'g_gc_lost', 'Obj2', 'clean_folder', 'Character')",
     )
     .execute(&pool)
     .await
@@ -112,22 +112,23 @@ async fn test_gc_lost_objects_removes_missing() {
 
     // A lost object (no physical folder)
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe)
-         VALUES ('o3', 'g3', 'MissingObj', 'deleted_folder', 'Character', 1)",
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type)
+         VALUES ('o3', 'g_gc_lost', 'MissingObj', 'deleted_folder', 'Character')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
-    let lost = gc_lost_objects(&pool, "g3").await.unwrap();
+    let lost = gc_lost_objects(&pool, "g_gc_lost").await.unwrap();
 
     assert_eq!(lost.len(), 1);
     assert_eq!(lost[0], "MissingObj");
 
-    let remaining: Vec<String> = sqlx::query_scalar("SELECT id FROM objects WHERE game_id = 'g3'")
-        .fetch_all(&pool)
-        .await
-        .unwrap();
+    let remaining: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM objects WHERE game_id = 'g_gc_lost'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
 
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0], "o2");

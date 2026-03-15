@@ -10,6 +10,7 @@ export type { GameConfig };
 export interface SafeModeConfig {
   enabled: boolean;
   pin_hash: string | null;
+  recovery_code_hash: string | null;
   keywords: string[];
   force_exclusive_mode: boolean;
 }
@@ -94,6 +95,27 @@ export function useSettings() {
     },
   });
 
+  const setPinWithRecoveryMutation = useMutation({
+    mutationFn: (pin: string) => invoke<string>('set_safe_mode_pin_with_recovery', { pin }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    },
+    onError: (err) => {
+      console.error(err);
+      addToast('error', `PIN Update Failed: ${String(err)}`);
+    },
+  });
+
+  const resetPinWithRecoveryMutation = useMutation({
+    mutationFn: (code: string) => invoke<boolean>('reset_pin_with_recovery_code', { code }),
+    onSuccess: (valid) => {
+      if (valid) queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    },
+    onError: (err) => {
+      console.error(err);
+    },
+  });
+
   const verifyPinMutation = useMutation({
     mutationFn: (pin: string) => invoke<PinVerifyStatus>('verify_pin', { pin }),
   });
@@ -134,6 +156,10 @@ export function useSettings() {
     saveSettingsAsync: saveSettingsMutation.mutateAsync,
     setPin: setPinMutation.mutate,
     setPinAsync: setPinMutation.mutateAsync,
+    /** Sets PIN and returns plaintext recovery code (e.g. `EMMM-4F2A-9B87-CC1E`). Show once, never stored in plaintext. */
+    setPinWithRecoveryAsync: setPinWithRecoveryMutation.mutateAsync,
+    /** Validate recovery code and clear PIN. Returns true if code was valid. */
+    resetPinWithRecoveryCodeAsync: resetPinWithRecoveryMutation.mutateAsync,
     verifyPin: verifyPinMutation.mutateAsync,
     runMaintenance: maintenanceMutation.mutate,
     updateAiConfig: aiConfigMutation,

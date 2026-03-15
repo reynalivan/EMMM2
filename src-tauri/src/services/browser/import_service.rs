@@ -665,7 +665,9 @@ pub async fn bulk_queue_imports(
         .map_err(|e| format!("DB error: {e}"))?;
 
         let Some(r) = row else { continue };
-        let Some(file_path) = r.file_path else { continue };
+        let Some(file_path) = r.file_path else {
+            continue;
+        };
 
         // Override game_id
         let job_id = Uuid::new_v4().to_string();

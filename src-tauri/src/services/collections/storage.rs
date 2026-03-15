@@ -77,22 +77,22 @@ pub async fn create_collection(
         .await
         .map_err(|e| e.to_string())?;
 
+    let mut info_json_paths = Vec::new();
+    let mut batch_items = Vec::new();
+
     for mod_id in &mod_ids {
         let mod_path = paths.get(mod_id).map(|p| p.as_str());
-        collection_repo::insert_collection_item(&mut tx, &id, mod_id, mod_path)
-            .await
-            .map_err(|e| e.to_string())?;
+        batch_items.push((mod_id.clone(), mod_path.map(|s| s.to_string())));
 
-        // Metadata Portability (US-8.3)
+        // Buffer paths for metadata update (US-8.3)
         if let Some(path) = mod_path {
-            use crate::services::mods::info_json::{update_info_json, ModInfoUpdate};
-            let update = ModInfoUpdate {
-                preset_name_add: Some(vec![name_trimmed.to_string()]),
-                ..Default::default()
-            };
-            let _ = update_info_json(std::path::Path::new(path), &update);
+            info_json_paths.push(path.to_string());
         }
     }
+
+    collection_repo::batch_insert_collection_items(&mut tx, &id, &batch_items)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // ── Nested mods: walk filesystem for mods inside ContainerFolders ─────
 
@@ -100,25 +100,38 @@ pub async fn create_collection(
     if let Some(ref mp) = mods_path {
         if let Ok(nested) = nested_walker::walk_nested_mods(mp) {
             // Filter by safe context if needed
-            let filtered: Vec<_> = if input.is_safe_context {
+            let filtered_paths: Vec<String> = if input.is_safe_context {
                 nested
                     .into_iter()
                     .filter(|n| n.is_enabled && n.is_safe)
+                    .map(|n| n.folder_path)
                     .collect()
             } else {
-                nested.into_iter().filter(|n| n.is_enabled).collect()
+                nested
+                    .into_iter()
+                    .filter(|n| n.is_enabled)
+                    .map(|n| n.folder_path)
+                    .collect()
             };
 
-            for nm in &filtered {
-                collection_repo::insert_nested_collection_item(&mut tx, &id, &nm.folder_path)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-            nested_count = filtered.len();
+            nested_count = filtered_paths.len();
+            collection_repo::batch_insert_nested_collection_items(&mut tx, &id, &filtered_paths)
+                .await
+                .map_err(|e| e.to_string())?;
         }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Execute metadata updates asynchronously in parallel outside transaction
+    if !info_json_paths.is_empty() {
+        use crate::services::mods::info_json::{batch_update_info_jsons, ModInfoUpdate};
+        let update = ModInfoUpdate {
+            preset_name_add: Some(vec![name_trimmed.to_string()]),
+            ..Default::default()
+        };
+        let _ = batch_update_info_jsons(info_json_paths, update).await;
+    }
 
     Ok(CollectionDetails {
         collection: Collection {
@@ -145,6 +158,11 @@ pub async fn update_collection(
         .ok_or("Collection not found")?;
 
     let mut new_name = old_name.clone();
+
+    // Buffers for deferred JSON batching outside the SQL transaction
+    let mut info_json_renames = Vec::new();
+    let mut info_json_removes = Vec::new();
+    let mut info_json_adds = Vec::new();
 
     if let Some(name) = input.name.as_ref() {
         let name_trimmed = name.trim();
@@ -184,16 +202,7 @@ pub async fn update_collection(
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let paths: Vec<String> = items.into_iter().filter_map(|(_, p)| p).collect();
-            for path in paths {
-                use crate::services::mods::info_json::{update_info_json, ModInfoUpdate};
-                let update = ModInfoUpdate {
-                    preset_name_remove: Some(vec![old_name.clone()]),
-                    preset_name_add: Some(vec![new_name.clone()]),
-                    ..Default::default()
-                };
-                let _ = update_info_json(std::path::Path::new(&path), &update);
-            }
+            info_json_renames = items.into_iter().filter_map(|(_, p)| p).collect();
         }
 
         collection_repo::update_collection_name(&mut tx, &input.id, &input.game_id, name_trimmed)
@@ -221,16 +230,11 @@ pub async fn update_collection(
         let removed_ids: HashSet<_> = old_ids.difference(&new_ids).collect();
         let added_ids: HashSet<_> = new_ids.difference(&old_ids).collect();
 
-        // 2. Remove preset_name from removed members
+        // 2. Buffer removed members for JSON preset_name stripping
         for (id, path) in &old_items {
             if removed_ids.contains(id) {
                 if let Some(p) = path {
-                    use crate::services::mods::info_json::{update_info_json, ModInfoUpdate};
-                    let update = ModInfoUpdate {
-                        preset_name_remove: Some(vec![new_name.clone()]),
-                        ..Default::default()
-                    };
-                    let _ = update_info_json(std::path::Path::new(p), &update);
+                    info_json_removes.push(p.clone());
                 }
             }
         }
@@ -247,6 +251,7 @@ pub async fn update_collection(
             .unwrap_or_default();
 
         // 5. Insert new members and add to info.json
+        let mut batch_items = Vec::new();
         for mod_id in &unique {
             let mod_path = add_paths.get(mod_id).map(|s| s.as_str()).or_else(|| {
                 // fallback to old path if not newly added
@@ -256,24 +261,50 @@ pub async fn update_collection(
                     .and_then(|(_, p)| p.as_deref())
             });
 
-            collection_repo::insert_collection_item(&mut tx, &input.id, mod_id, mod_path)
-                .await
-                .map_err(|e| e.to_string())?;
+            batch_items.push((mod_id.clone(), mod_path.map(|s| s.to_string())));
 
             if added_ids.contains(mod_id) {
                 if let Some(p) = mod_path {
-                    use crate::services::mods::info_json::{update_info_json, ModInfoUpdate};
-                    let update = ModInfoUpdate {
-                        preset_name_add: Some(vec![new_name.clone()]),
-                        ..Default::default()
-                    };
-                    let _ = update_info_json(std::path::Path::new(p), &update);
+                    info_json_adds.push(p.to_string());
                 }
             }
         }
+
+        collection_repo::batch_insert_collection_items(&mut tx, &input.id, &batch_items)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Execute metadata updates asynchronously in parallel after DB commit
+    use crate::services::mods::info_json::{batch_update_info_jsons, ModInfoUpdate};
+
+    if !info_json_renames.is_empty() {
+        let update = ModInfoUpdate {
+            preset_name_remove: Some(vec![old_name.clone()]),
+            preset_name_add: Some(vec![new_name.clone()]),
+            ..Default::default()
+        };
+        let _ = batch_update_info_jsons(info_json_renames, update).await;
+    }
+
+    if !info_json_removes.is_empty() {
+        let update_rem = ModInfoUpdate {
+            preset_name_remove: Some(vec![new_name.clone()]),
+            ..Default::default()
+        };
+        let _ = batch_update_info_jsons(info_json_removes, update_rem).await;
+    }
+
+    if !info_json_adds.is_empty() {
+        let update_add = ModInfoUpdate {
+            preset_name_add: Some(vec![new_name.clone()]),
+            ..Default::default()
+        };
+        let _ = batch_update_info_jsons(info_json_adds, update_add).await;
+    }
+
     get_collection(pool, &input.id, &input.game_id).await
 }
 
@@ -295,15 +326,14 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str, game_id: &str) -> Re
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    for (_, maybe_path) in items {
-        if let Some(path) = maybe_path {
-            use crate::services::mods::info_json::{update_info_json, ModInfoUpdate};
-            let update = ModInfoUpdate {
-                preset_name_remove: Some(vec![name.clone()]),
-                ..Default::default()
-            };
-            let _ = update_info_json(std::path::Path::new(&path), &update);
-        }
+    let paths_to_remove: Vec<String> = items.into_iter().filter_map(|(_, p)| p).collect();
+    if !paths_to_remove.is_empty() {
+        use crate::services::mods::info_json::{batch_update_info_jsons, ModInfoUpdate};
+        let update = ModInfoUpdate {
+            preset_name_remove: Some(vec![name.clone()]),
+            ..Default::default()
+        };
+        let _ = batch_update_info_jsons(paths_to_remove, update).await;
     }
 
     Ok(())
@@ -452,4 +482,16 @@ pub async fn get_active_mods_preview(
 
     log::debug!("[collections] total_preview_mods={}", mods.len());
     Ok(mods)
+}
+
+/// Returns system-disabled mods for a target corridor.
+/// Used by `privacy::preview_corridor_switch` to populate the "Destination State" column.
+pub async fn get_system_disabled_preview(
+    pool: &SqlitePool,
+    game_id: &str,
+    target_safe: bool,
+) -> Result<Vec<CollectionPreviewMod>, String> {
+    collection_repo::get_system_disabled_preview_mods(pool, game_id, target_safe)
+        .await
+        .map_err(|e| e.to_string())
 }

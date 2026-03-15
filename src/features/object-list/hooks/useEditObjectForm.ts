@@ -129,7 +129,7 @@ export function useEditObjectForm(
 
     const defaultName = isFolder ? (object as ModFolder).name : (object as ObjectSummary).name;
     let defaultType = '';
-    let defaultSafe: boolean;
+    let defaultSafe = true;
     let defaultAutoSync: boolean;
     let defaultMeta: Record<string, unknown> = {};
     let defaultTags: string[] = [];
@@ -159,7 +159,6 @@ export function useEditObjectForm(
     } else if (fullDetails?.type === 'object' && fullDetails.data) {
       const obj = fullDetails.data as GameObject;
       defaultType = obj.object_type;
-      defaultSafe = obj.is_safe;
       defaultAutoSync = obj.is_auto_sync;
       try {
         if (typeof obj.metadata === 'string') {
@@ -188,7 +187,6 @@ export function useEditObjectForm(
       }
     } else {
       defaultType = isObject ? (object as ObjectSummary).object_type : '';
-      defaultSafe = isObject ? (object as ObjectSummary).is_safe : true;
       defaultAutoSync = isObject ? (object as ObjectSummary).is_auto_sync : false;
       if (isObject && (object as ObjectSummary).tags) {
         try {
@@ -243,7 +241,6 @@ export function useEditObjectForm(
             name: data.name,
             object_type: data.object_type,
             sub_category: data.sub_category || undefined,
-            is_safe: data.is_safe,
             is_auto_sync: data.is_auto_sync,
             metadata: finalMeta,
             tags: data.tags || [],

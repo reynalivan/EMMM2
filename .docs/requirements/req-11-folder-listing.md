@@ -3,11 +3,14 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The mod explorer needs to display raw filesystem folders as structured, navigable mod cards — but raw directories contain mixed content (plain containers, complete mods, variant sets, internal assets) that must be reliably classified before the UI can render them correctly.
-- **Proposed Solution**: A backend `list_folders` command that reads a normalized `sub_path` under the game's `mods_path`, runs a recursive classifier (up to depth 5) on each entry to determine type (`ModPackRoot`, `ContainerFolder`, `VariantContainer`, `InternalAssets`), enriches each with `info.json` metadata and thumbnail path, and caches classification results keyed by `mtime + size` for incremental re-classification on subsequent calls.
+- **Proposed Solution**: A backend listing command (`list_mod_folders`) that performs recursive classification per folder to distinguish between containers, mod packs, and internal assets. It employs a single-pass `fs::read_dir` strategy to identify 3DMigoto project structures (ini files, .buf/.ib/.dds assets), calculates folder sizes and modified timestamps, and normalizes display names by stripping "DISABLED " prefixes. It also detects "naming conflicts" where folders would have identical normalized display names.
 - **Success Criteria**:
-  - `list_folders` completes in ≤ 200ms for a directory with ≤ 500 immediate children (NTFS SSD).
-  - Classifier correctly resolves folder type for ≥ 95% of entries in a 200-entry benchmark test set.
-  - `DISABLED ` prefix is stripped and `is_enabled = false` in 100% of test cases (including double-prefix edge cases).
+  - [x] Command returns in ≤ 200ms for 500 top-level folders on an SSD.
+  - [x] Correctly identifies `ModPackRoot` (has ini + mod sections).
+  - [x] Strips `DISABLED ` prefix variants (`dis-`, `disable_`, `dis_`) from display names.
+  - [x] Identifies "InternalAssets" (folders referenced by `filename=` in a parent mod's INI).
+  - [x] Returns `classification_reasons` for every node to facilitate frontend debugging/tooltips.
+  - [x] Detects `EnabledDisabledBothPresent` conflicts for siblings with same base name.
   - Incremental classification skips cache-valid entries — re-scan time ≤ 20ms when ≤ 5% of entries have changed mtime/size.
   - `.ini` files without any `TextureOverride*`, `ShaderOverride*`, or `Resource*` sections are never falsely classified as `ModPackRoot`.
   - Malformed `info.json` isolates parse failure without breaking the rest of the directory listing.
@@ -82,6 +85,11 @@ As a system, I want each listed folder to carry its `info.json` fields and thumb
 
 | ID        | Type        | Criteria                                                                                                                                                                                  |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-11.1.1 | ✅ Positive | A folder is `ModPackRoot` if it contains a `.ini` file with valid 3DMigoto sections (`[TextureOverride...]`, etc.) AND has meaningful subfolders or assets.                               |
+| AC-11.1.2 | ✅ Positive | A folder is `FlatModRoot` if it is a `ModPackRoot` but its children are ONLY internal assets (referenced by INI).                                                                          |
+| AC-11.1.3 | ✅ Positive | A folder is `VariantContainer` if it contains 3+ subfolders each containing a mod INI, or 2+ subfolders if a parent INI references them.                                                   |
+| AC-11.1.4 | ✅ Positive | A folder is `InternalAssets` if it is referenced by a `filename=` directive in a parent INI.                                                                                              |
+| AC-11.1.5 | ✅ Positive | A folder is `ContainerFolder` if it does not meet mod criteria (general categorization folder).                                                                                           |
 | AC-11.5.1 | ✅ Positive | Given a folder containing `info.json`, when listed, then `author`, `description`, `version`, and `link` from the JSON are attached to the `FolderEntry` response                          |
 | AC-11.5.2 | ✅ Positive | Given a folder containing `preview.png` or `preview.jpg`, when listed, then `thumbnail_path` is set to the absolute path — the frontend converts via `convertFileSrc()`                   |
 | AC-11.5.3 | ❌ Negative | Given a folder with no `info.json`, then `metadata` fields are `null` in the response — the grid renders without author/description but does not crash                                    |

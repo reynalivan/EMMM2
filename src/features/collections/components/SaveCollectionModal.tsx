@@ -81,9 +81,7 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
     const toastId = toast.info('Disabling all mods...', 0);
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const modIds = activeModsData
-        .filter((m) => !m.id.startsWith('nested_'))
-        .map((m) => m.id);
+      const modIds = activeModsData.filter((m) => !m.id.startsWith('nested_')).map((m) => m.id);
 
       await invoke('bulk_toggle_mods_by_ids', {
         modIds,

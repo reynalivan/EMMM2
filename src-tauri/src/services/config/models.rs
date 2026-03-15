@@ -12,12 +12,16 @@ pub struct GameConfig {
     pub game_exe: PathBuf,
     pub loader_exe: Option<PathBuf>,
     pub launch_args: Option<String>,
+    /// Transient warnings from path validation. NOT persisted to DB.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SafeModeConfig {
     pub enabled: bool,
     pub pin_hash: Option<String>,
+    pub recovery_code_hash: Option<String>,
     pub keywords: Vec<String>,
     pub force_exclusive_mode: bool,
     pub failed_attempts: Option<u8>,
@@ -29,6 +33,7 @@ impl Default for SafeModeConfig {
         Self {
             enabled: true, // Default to Safe Mode ON for privacy
             pin_hash: None,
+            recovery_code_hash: None,
             keywords: vec!["nsfw".into(), "nude".into(), "18+".into()],
             force_exclusive_mode: true,
             failed_attempts: None,
@@ -87,6 +92,7 @@ pub fn game_row_to_config(row: game_repo::GameRow) -> GameConfig {
         game_exe: PathBuf::from(row.game_exe.unwrap_or(row.path)),
         loader_exe: row.loader_exe.or(row.launcher_path).map(PathBuf::from),
         launch_args: row.launch_args,
+        warnings: Vec::new(), // transient, never from DB
     }
 }
 

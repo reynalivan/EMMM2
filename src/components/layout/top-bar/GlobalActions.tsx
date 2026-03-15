@@ -8,7 +8,7 @@ import {
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
 import TrashManagerModal from '../../../features/file-management/TrashManagerModal';
 import LaunchBar from '../../../features/launch-bar/LaunchBar';
@@ -21,7 +21,7 @@ export default function GlobalActions() {
   const {
     toggleSafeMode,
     handleConfirmSwitch,
-    setSafeModeWithToast,
+    handlePinSuccess,
     confirmModalOpen,
     confirmTargetEnabled,
     closeConfirmModal,
@@ -30,18 +30,6 @@ export default function GlobalActions() {
     safeMode,
   } = useSafeModeToggle();
   const [trashOpen, setTrashOpen] = useState(false);
-
-  // Epic 7 UI Req: Global Keyboard Shortcut Ctrl+Shift+S for switching SFW mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        toggleSafeMode();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSafeMode]);
 
   return (
     <div className="flex items-center gap-2 md:gap-3">
@@ -68,20 +56,6 @@ export default function GlobalActions() {
           <Settings size={18} />
         </button>
 
-        {/* Epic 7 Master Mode Switcher - Desktop */}
-        <button
-          className={`btn btn-sm btn-square transition-all duration-300 ${
-            safeMode
-              ? 'btn-ghost text-success bg-success/10 hover:bg-success/20'
-              : 'btn-ghost text-error bg-error/10 hover:bg-error/20'
-          }`}
-          title={safeMode ? 'Safe Mode (ON) - Ctrl+Shift+S' : 'Privacy Mode (OFF) - Ctrl+Shift+S'}
-          aria-label="Toggle Master Privacy Mode"
-          onClick={toggleSafeMode}
-        >
-          {safeMode ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
-        </button>
-
         {/* Launch Bar (Epic 10) */}
         <LaunchBar />
       </div>
@@ -102,8 +76,7 @@ export default function GlobalActions() {
         open={pinModalOpen}
         onClose={closePinModal}
         onSuccess={async () => {
-          closePinModal();
-          await setSafeModeWithToast(false);
+          handlePinSuccess();
         }}
       />
 

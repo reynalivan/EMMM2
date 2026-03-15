@@ -20,6 +20,7 @@ pub async fn sync_database_cmd(
     game_type: String,
     mods_path: String,
     db_json: String,
+    preserve_existing_mappings: bool,
     pool: State<'_, sqlx::SqlitePool>,
     on_progress: Channel<types::ScanEvent>,
 ) -> Result<crate::services::scanner::sync::SyncResult, String> {
@@ -79,6 +80,7 @@ pub async fn sync_database_cmd(
         confirmed_items,
         resource_dir.as_deref(),
         &keywords,
+        preserve_existing_mappings,
     )
     .await
 }
@@ -162,6 +164,7 @@ pub async fn commit_scan_cmd(
         items,
         resource_dir.as_deref(),
         &keywords,
+        false, // Interactive review uses explicit matches/unmatches, do not preserve blindly
     )
     .await
 }

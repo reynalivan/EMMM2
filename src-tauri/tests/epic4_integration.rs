@@ -85,8 +85,9 @@ async fn test_epic4_full_maintenance_flow() {
     // -------------------------------------------------------------------------
     // Step 4: Restore from Trash
     // -------------------------------------------------------------------------
-    let restored_path_str = trash::restore_from_trash(&trash_meta.id, &trash_dir, trash_meta.game_id.as_ref())
-        .expect("Restore should succeed");
+    let restored_path_str =
+        trash::restore_from_trash(&trash_meta.id, &trash_dir, trash_meta.game_id.as_ref())
+            .expect("Restore should succeed");
 
     let restored_path = std::path::PathBuf::from(restored_path_str);
     assert_eq!(

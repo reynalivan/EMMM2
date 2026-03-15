@@ -108,9 +108,10 @@ get_scan_result() → Vec<ScanResult>
 | Walker            | `walkdir` crate — `WalkDir::new(mods_path).max_depth(8).follow_links(false)`                                     |
 | Cancellation      | `tokio_util::CancellationToken` — stored in `Arc` alongside `ScanState`                                          |
 | Signal Extraction | `services/scanner/signals.rs::extract_folder_signals` — uses GameSchema stopwords (Epic 09)                      |
-| Progress Events   | `window.emit('scan_progress', payload)` every 50 entries                                                         |
-| Frontend          | `scannerStore.ts` listens to `scan_progress` → progress bar; `invoke('get_scan_result')` after `Completed` event |
+| Progress Events   | `window.emit('scan_progress', payload)` every 50 entries; includes `elapsedMs` and `etaMs`                       |
+| Frontend          | `useScannerStore.ts` listens to `scan_progress` → progress bar; `invoke('get_scan_result')` after `Finished`      |
 | Deep Matcher      | Consumes `Vec<ScanResult>` (Epic 26)                                                                             |
+| Archive Detection | `detect_archives` scans for `.zip`, `.7z`, `.rar` in root mods directory before full scan                        |
 
 ### Security & Privacy
 

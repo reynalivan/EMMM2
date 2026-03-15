@@ -29,9 +29,9 @@ pub async fn auto_detect_games_inner(
     }
 
     let mut new_games: Vec<GameConfig> = Vec::new();
-    let mut settings = service.get_settings();
+    let settings = service.get_settings();
 
-    for (info, game_type_str, display_name) in &found {
+    for (info, warnings, game_type_str, display_name) in &found {
         let id = Uuid::new_v4().to_string();
         let game = GameConfig {
             id,
@@ -41,6 +41,7 @@ pub async fn auto_detect_games_inner(
             game_exe: PathBuf::from(&info.path),
             loader_exe: Some(PathBuf::from(&info.launcher_path)),
             launch_args: None,
+            warnings: warnings.clone(),
         };
 
         // Check for duplicates
@@ -58,16 +59,12 @@ pub async fn auto_detect_games_inner(
         });
 
         if !is_duplicate {
-            settings.games.push(game.clone());
             new_games.push(game);
         }
     }
 
-    // Save updated settings (DB + memory)
-    service.save_settings(settings)?;
-
     log::info!(
-        "Auto-detect complete: added {} new game(s)",
+        "Auto-detect complete: detected {} new game(s)",
         new_games.len()
     );
 
@@ -94,10 +91,10 @@ pub async fn add_game_manual_inner(
     let gt: GameType = game_type.parse().map_err(|e: String| e)?;
     let folder = Path::new(path);
 
-    // Validate folder structure
-    let info = validator::validate_instance(folder)?;
+    // Validate folder structure (returns warnings, not hard errors, for missing files)
+    let (info, warnings) = validator::validate_instance(folder)?;
 
-    let mut settings = service.get_settings();
+    let settings = service.get_settings();
 
     // Duplicate path check (TC-1.5-01, NC-1.3-02)
     let normalized_path = info.path.replace('\\', "/").to_lowercase();
@@ -124,16 +121,65 @@ pub async fn add_game_manual_inner(
         game_exe: PathBuf::from(&info.path),
         loader_exe: Some(PathBuf::from(&info.launcher_path)),
         launch_args: None,
+        warnings,
     };
 
-    settings.games.push(game.clone());
-
-    // Save updated settings (DB + memory)
-    service.save_settings(settings)?;
-
-    log::info!("Game added manually: {} ({})", game.name, game.game_type);
+    if game.warnings.is_empty() {
+        log::info!("Game added manually: {} ({})", game.name, game.game_type);
+    } else {
+        log::warn!(
+            "Game added manually with {} warning(s): {} ({})",
+            game.warnings.len(),
+            game.name,
+            game.game_type
+        );
+    }
 
     Ok(game)
+}
+
+/// Save confirmed games from onboarding into the database/settings
+#[tauri::command]
+pub async fn save_onboarding_games(
+    state: tauri::State<'_, ConfigService>,
+    games: Vec<GameConfig>,
+) -> Result<(), String> {
+    save_onboarding_games_inner(&state, games).await
+}
+
+pub async fn save_onboarding_games_inner(
+    service: &ConfigService,
+    games: Vec<GameConfig>,
+) -> Result<(), String> {
+    let mut settings = service.get_settings();
+
+    let mut added_count = 0;
+    for game in games {
+        // Double check for duplicates
+        let normalized_path = game
+            .game_exe
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_lowercase();
+
+        let is_duplicate = settings.games.iter().any(|g| {
+            g.game_exe
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_lowercase()
+                == normalized_path
+        });
+
+        if !is_duplicate {
+            settings.games.push(game);
+            added_count += 1;
+        }
+    }
+
+    service.save_settings(settings)?;
+    log::info!("Onboarding complete: saved {} game(s)", added_count);
+
+    Ok(())
 }
 
 /// Remove a game from the database.

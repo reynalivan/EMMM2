@@ -116,7 +116,6 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
             name: entry.name,
             object_type: entry.object_type,
             sub_category: null,
-            is_safe: true,
             metadata: entry.metadata,
             thumbnail_url: entry.thumbnail_path,
           });

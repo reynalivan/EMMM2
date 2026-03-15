@@ -3,13 +3,13 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The auto-scanner may fail to map some mod folders to any known game entity — users need to manually create, edit, rename, delete, and pin objects to keep their objectlist organized without touching the filesystem.
-- **Proposed Solution**: A full CRUD interface for Object records in the local SQLite DB, with: creation (with name uniqueness enforcement), category edit (with schema validation), deletion (blocked if mods exist), and a pin-to-top flag — all surfaced via objectlist context menus and modals.
+- **Proposed Solution**: A full CRUD interface for Object records in the local SQLite DB, with: creation (with validation), category edit (with schema validation), deletion (blocked via server-side FK constraints), and persistent properties (pin, favorite, auto-sync) — all surfaced via `ObjectList` context menus and modals.
 - **Success Criteria**:
-  - Object creation (DB insert + objectlist refresh) completes in ≤ 300ms from submit.
-  - Object rename/category edit reflects in the objectlist in ≤ 200ms (optimistic update before DB confirm).
-  - Delete is blocked 100% of the time when `folder_count > 0` — no orphaned mod folders on disk.
-  - Pin/unpin state change reflects in objectlist sort order in ≤ 100ms.
-  - Rapid "Submit" spam creates exactly 1 DB record due to UNIQUE constraint + frontend debounce.
+  - Object creation (DB insert + list refresh) completes in ≤ 300ms from submit.
+  - Object rename/category edit reflects in the list in ≤ 200ms via optimistic UI updates.
+  - Delete is blocked by the backend when mods exist — ensuring 100% data integrity.
+  - Pin visibility updates the sort order immediately (items pinned to top of their sections).
+  - Reveal in Explorer accurately highlights the object's root folder on disk.
 
 ---
 
@@ -56,16 +56,16 @@ As a user, I want to delete empty Objects from the objectlist, so that the list 
 
 ---
 
-#### US-10.4: Pin Object
+#### US-10.4: Pin & Reveal
 
-As a user, I want to pin frequently used objects to the top of their category, so that my most-used characters are instantly accessible without scrolling.
+As a user, I want to pin frequently used objects and quickly open their folders on disk, so that I can access my most-used content and its files instantly.
 
 | ID        | Type        | Criteria                                                                                                                                                                                          |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin" from the context menu, then `is_pinned = true` is written to DB and the object sorts to the top of its category section in ≤ 100ms                   |
-| AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical order within its category                                                                                       |
-| AC-10.4.3 | ❌ Negative | Given a non-existent or stale `object_id` in the pin request (e.g., deleted by another session), then the backend returns `NotFound` and the objectlist refreshes its cache — no unhandled exception |
-| AC-10.4.4 | ⚠️ Edge     | Given ≥ 50 pinned objects in a single category, they sort alphabetically amongst themselves at the top tier — stable sort, no random order                                                        |
+| AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin", then `is_pinned = true` is written to DB and the object sorts to the top of its section in ≤ 100ms                                                  |
+| AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical or chronological order within its category                                                                     |
+| AC-10.4.3 | ✅ Positive | Given the "Reveal in Explorer" action, the OS file explorer opens with the object's root folder selected (folder_path resolution)                                                                |
+| AC-10.4.4 | ❌ Negative | Given a folder that was manually deleted from disk, "Reveal" caught by the backend returns `NotFound` and triggers a cache invalidation to clean the UI                                            |
 
 ---
 
@@ -95,40 +95,42 @@ As a user, I want to sync a single object's metadata with the MasterDB via the c
 
 ### Architecture Overview
 
-```
-Backend (commands/objects/)
-  ├── create_object(game_id, name, category_id) → ObjectRecord
-  │   └── INSERT INTO objects ... (UNIQUE constraint on game_id + lower(name))
-  ├── update_object(object_id, name?, category_id?) → ObjectRecord
-  │   └── Validates category_id against loaded GameSchema in memory
-  ├── delete_object(object_id) → ()
-  │   └── Fails if COUNT(folders WHERE object_id = ?) > 0
-  └── pin_object(object_id, is_pinned: bool) → ()
+```rust
+// Backend Service: Objects (mutate.rs, query.rs)
 
-Frontend
-  └── useObjectMutations() hook
-      ├── createObject → useMutation → invalidate(['objects', gameId])
-      ├── updateObject → useMutation + optimistic update
-      ├── deleteObject → useMutation → confirm dialog first
-      └── pinObject → useMutation + optimistic sort update
+create_object(game_id, name, object_type, folder_path?, thumbnail_url?):
+  1. Generate UUID.
+  2. Resolve mods root path from DB.
+  3. Pre-computation: Determine target folder and future thumbnail path (`preview.*`).
+  4. DB FIRST: Insert record into `objects` table.
+     - Prevents race conditions with Watcher (Watcher finds record, skips "Other" default).
+  5. Disk Second: Create physical folder via `std::fs::create_dir_all`.
+  6. Copy thumbnail from cache to object folder if provided.
+
+delete_object(id):
+  1. Acquire OperationLock + Suppress Watcher.
+  2. Fetch object details from DB.
+  3. Move physical folder to TRASH (via trash service).
+  4. Cascade-delete child mod records from DB.
+  5. Delete object record from DB.
 ```
 
 ### Integration Points
 
 | Component         | Detail                                                                                                       |
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| DB Table          | `objects(id UUID PK, game_id FK, name TEXT, category_id TEXT, is_pinned BOOL, is_safe BOOL, created_at)`     |
-| Schema Validation | Category IDs validated against `GameSchema` loaded in `Arc<RwLock<...>>` — no DB query needed                |
-| ObjectList Refresh   | All mutations call `queryClient.invalidateQueries(['objects', gameId])` on success                           |
-| Delete Guard      | `DELETE FROM objects WHERE id = ? AND NOT EXISTS (SELECT 1 FROM folders WHERE object_id = ?)` — atomic check |
-| Optimistic Pin    | `queryClient.setQueryData(['objects', gameId], draft => sortByPin(draft))` on pin toggle                     |
+| DB Table          | `objects(id UUID PK, game_id FK, name TEXT, folder_path TEXT, category_id TEXT, is_pinned BOOL, metadata JSON, thumbnail_path TEXT)` |
+| Schema Validation | Category IDs validated against `GameSchema` loaded in memory; Unique name check on game_id + lower(name).   |
+| ObjectList Refresh   | All mutations call `queryClient.invalidateQueries(['objects', gameId])` on success.                          |
+| Delete Guard      | Handled via server-side logic: acquires `OperationLock` and moves folder to Trash (Epic 22) + Cascade.        |
+| Watcher Flow      | "DB First" creation ensures the event loop recognizes the new folder as a tracked object immediately.        |
 
 ### Security & Privacy
 
-- **`category_id` is validated against the in-memory schema** before any DB write — no arbitrary string can be inserted as a category; must be in the schema's `category_ids` set.
-- **Object names are sanitized** (trimmed, max 128 chars) before DB insert — no unbounded input.
-- **Delete is blocked by a transactional check** (`EXISTS` subquery) — the block happens inside the same DB transaction, not as a separate check before delete, preventing TOCTOU race.
-- **No filesystem operations** in Object CRUD — creating, editing, or deleting an Object never touches disk; all operations are DB-only.
+- **Sanitization**: Folder names are normalized and sanitized to prevent path traversal; unique constraints enforced at the DB level.
+- **Atomic Deletion**: The whole operation—from trashing the disk folder to DB cleanup—is guarded by an `OperationLock`.
+- **Race Condition Prevention**: "DB First" pattern ensures filesystem watcher and UI stay in sync during object birth.
+- **Trash Safety**: Deletion is non-destructive initially; folders can be recovered from the `.trash` directory via maintenance tools.
 
 ---
 

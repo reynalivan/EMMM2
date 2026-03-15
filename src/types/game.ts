@@ -9,6 +9,7 @@ export interface GameConfig {
   game_exe: string;
   loader_exe: string | null;
   launch_args: string | null;
+  warnings?: string[];
 }
 
 /**

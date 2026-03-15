@@ -231,6 +231,55 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
     Ok(info)
 }
 
+/// Concurrently updates `info.json` files for multiple mods using `tokio::task::JoinSet`.
+/// Errors for individual files are logged as warnings to prevent failing the entire batch operation.
+pub async fn batch_update_info_jsons(
+    paths: Vec<String>,
+    update: ModInfoUpdate,
+) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let mut set = tokio::task::JoinSet::new();
+
+    for path_str in paths {
+        let update_clone = update.clone();
+        set.spawn_blocking(move || {
+            let path = Path::new(&path_str);
+            match update_info_json(path, &update_clone) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!(
+                    "Failed to update info.json for {}: {}",
+                    path_str, e
+                )),
+            }
+        });
+    }
+
+    let mut warnings = Vec::new();
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok(inner_res) => {
+                if let Err(e) = inner_res {
+                    warnings.push(e);
+                }
+            }
+            Err(e) => {
+                warnings.push(format!("Join error during batch info.json update: {}", e));
+            }
+        }
+    }
+
+    if !warnings.is_empty() {
+        for w in &warnings {
+            log::warn!("Batch info.json update warning: {}", w);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/info_json_tests.rs"]
 mod tests;

@@ -5,12 +5,27 @@
 - **Problem Statement**: Users currently need to leave the app to search for and download mods (e.g., from GameBanana) via external browsers. Afterward, they must manually coordinate imports or rely on global Downloads folder watchers, which can be unreliable or intrusive.
 - **Proposed Solution**: Introduce a "Discover Hub" and a fully integrated, multi-tab "In-App Browser". Downloads are intercepted to a controlled `BrowserDownloadsRoot`. Completed files appear in a **Download Manager** where users can single-select or bulk-select files for **Auto-Organize Import** (choosing the target game before the pipeline runs). The browser opens on a configurable homepage (default: Google Search).
 - **Success Criteria**:
-  - Clicking "Download" on a Discover Hub mod opens the profile URL in a new in-app browser tab.
-  - All downloads route to `AppData/EMM2/BrowserDownloads/` automatically (no Windows Downloads folder).
+  - `discover_intercept` captures zip/rar/7z links from browser in ≤ 100ms.
+  - `download_manager` tracks parallel downloads with pause/cancel capability.
+  - `smart_import` correctly identifies target Object by folder structural analysis with ≥ 90% accuracy.
+  - `needs_review` overlay allows manual path override for complex nested archives.
+  - `DownloadsPage` provides a centralized view for clearing imported files and managing failures.
+  - All downloads route to `AppData/EMM2/BrowserDownloads/` automatically (intercepted via background task).
   - Completed downloads appear in the Download Manager with `Finished` status and checkboxes for selection.
   - User can single-select or bulk-select finished files and trigger "Import Selected" with a game picker dialog.
-  - The browser is configurable — homepage URL defaults to `https://www.google.com` and can be changed.
-  - The browser blocks non-HTTP(S) schemes and isolates remote pages from EMMM2 IPC.
+  - UI includes Reload and "Clear Data" (cookies/cache) buttons for session management.
+  - The browser isolates remote pages from EMMM2 IPC (no `window.__TAURI__` access).
+
+---
+
+#### US-44.6: Downloads Central
+As a user, I want a dedicated area to manage all my mod downloads, so I can import them later or clean up old files.
+
+| ID | Type | Criteria |
+|---|---|---|
+| AC-44.6.1 | ✅ Positive | Given the Downloads Manager page, it lists all intercepted files with status badges (Downloading, Ready, Failed, Canceled, Imported). |
+| AC-44.6.2 | ✅ Positive | Given a "Ready" download, clicking "Import" opens the Game Picker to begin the smart extraction pipeline. |
+| AC-44.6.3 | ✅ Positive | Given the "Clear Imported" action, it removes all items marked as 'imported' from the tracker list. |
 
 ---
 
@@ -97,10 +112,15 @@
 **Per-Tab UI Controls (Mandatory):**
 
 - Address bar (URL input/display).
-- **Back** / **Forward** / **Reload** and **Stop** (during load) buttons.
-- **Open in external browser** button (opens current tab URL in OS default browser).
-- Loading indicator (strip or spinner).
-- **Download badge**: shows count of in-progress downloads in this session.
+- **Reload** button (refreshes current page).
+- **Go** button (navigates to input URL).
+- **Clear Data** button (wipes cookies and cache for the tab).
+- **Discover** button (quick link to GameBanana).
+- **Download badge**: shows count of finished downloads in this session.
+
+**Planned / Under Revision:**
+- Back / Forward / Stop buttons.
+- "Open in external browser" button.
 
 **Keyboard Shortcuts:**
 
@@ -147,15 +167,15 @@ The Download Manager is a **persistent slide-in panel** accessible from the brow
 
 Each item in the Download Manager displays:
 
-| Field         | Description                                                                     |
-| ------------- | ------------------------------------------------------------------------------- |
-| **Filename**  | Safe, sanitized filename.                                                       |
-| **Source**    | `gamebanana` (with mod title if linked to session) or `adhoc` (URL domain).     |
-| **Status**    | One of: `Downloading`, `Finished`, `Failed`, `Canceled`, `Imported`.            |
-| **Progress**  | Progress bar (if engine provides bytes received / total). Hidden on `Finished`. |
-| **Size**      | Final file size on finish.                                                      |
-| **Timestamp** | Start time.                                                                     |
-| **Actions**   | Context-sensitive buttons (see below).                                          |
+| Field        | Description                                                                     |
+| ------------ | ------------------------------------------------------------------------------- |
+| **Filename** | Safe, sanitized filename.                                                       |
+| **Status**   | One of: `Queued`, `Downloading`, `Ready` (Finished), `Failed`, `Canceled`.       |
+| **Progress** | Progress bar (during `Downloading`). Shows bytes received / total.              |
+| **Actions**  | Context-sensitive buttons (Import, Cancel, Delete).                             |
+
+**Planned / Under Revision:**
+- Source (automatic linking to sessions), Size (standalone label), Timestamp.
 
 ### 6.2 Actions per Item
 
@@ -208,14 +228,16 @@ The Game Picker Dialog appears before any import job is submitted when the targe
 
 ### 7.1 Dialog Content
 
-- **Title**: "Organize to which game?"
+- **Title**: "Select Target Game"
 - **Game list**: All configured games from the `games` table, displaying:
-  - Game icon / thumbnail.
   - Game name.
-  - Mod count (e.g., "124 mods").
-- **Selection**: Radio-like selection (one game per import batch).
-- **Remember choice**: Checkbox "Remember for this session" — skips the dialog for subsequent imports during the same app session.
-- **Buttons**: "Import" (primary, confirms selection), "Cancel".
+  - Game mod path (for identification).
+- **Selection**: Radio-button selection (one game per import batch).
+- **Buttons**: "Import Now" (primary, confirms selection), "Cancel".
+
+**Planned / Under Revision:**
+- "Remember choice" checkbox for session-level persistence.
+- Game icons/thumbnails and mod counts in the picker list.
 
 ### 7.2 Auto-skip Logic
 
@@ -346,11 +368,15 @@ If `archive_hash` matches an existing import:
 
 ### 10.6 Needs Review UI
 
-If `NeedsReview` (confidence < 0.70):
+If `NeedsReview` (confidence < 0.70 or duplicate hash):
 
 - Suspend the Import Job.
-- Show modal with: candidate list (category + confidence + reason), manual category picker, "Skip" option.
-- On confirm → continue with Place step.
+- Show modal with:
+  - Reason for review (e.g., "duplicate", "low confidence").
+  - Archive filename.
+  - **Manual Game Picker** (allows changing target).
+  - **Manual Category Picker** (Character/Weapon/UI/Other).
+- On confirm → resume pipeline with `Place` step.
 
 ---
 

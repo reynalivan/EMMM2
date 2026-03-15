@@ -47,7 +47,7 @@ As a system, I want to detect if a toggle would rename into an already-existing 
 
 - Toggle does not create a new folder — it only renames the existing one.
 - Toggle is not reversible via an undo stack; Trash handles the Overwrite path.
-- `DISABLED ` prefix is the only enable/disable mechanism — no DB-only state flag.
+- `DISABLED ` prefix is the physical mechanism. The DB tracks the explicit intent via `disabled_reason = 'USER'`.
 - No batch toggle via this command; bulk toggling is Epic 14.
 
 ---
@@ -56,35 +56,29 @@ As a system, I want to detect if a toggle would rename into an already-existing 
 
 ### Architecture Overview
 
-```
-Frontend:
-  FolderCard toggle switch → onClick → useFolderGridActions.toggleMod(folderPath, targetState)
-    ├── onMutate: queryClient.setQueryData(['folders', gameId, subPath], optimisticUpdater)
-    │             + queryClient.setQueryData(['objects', gameId], countUpdater)
-    ├── invoke('toggle_mod', { game_id, folder_path, enable: targetState })
-    ├── onSuccess: queryClient.invalidateQueries(['folders', ...]) + ['objects', ...]
-    └── onError:  queryClient.setQueryData(['folders', ...], previousSnapshot)  [rollback]
+```rust
+// Backend Service: Mod Toggle (core_ops.rs)
 
-Backend toggle_mod(game_id, folder_path, enable) → Result<(), CommandError>:
-  1. Resolve and validate folder_path (canonicalize + starts_with mods_path)
-  2. Acquire OperationLock(game_id).await (timeout: 3s)
-  3. Activate WatcherSuppression(folder_path)
-  4. Compute new_path = if enable: strip "DISABLED " prefix else prepend "DISABLED "
-  5. Check new_path.exists() → if true: return Err(CommandError::Conflict { existing_path: new_path })
-  6. fs::rename(folder_path, new_path) → map OS error to CommandError::IoError
-  7. Drop SuppressionGuard + OperationLock (RAII)
-  8. Return Ok(())
+toggle_mod(id, enable):
+  1. Acquire OperationLock(game_id).
+  2. Map folder_path from DB.
+  3. Activate SuppressionGuard to block watcher storm.
+  4. Perform atomic fs::rename (strip or prepend "DISABLED ").
+  5. Update DB record for parent mod and all child asset paths.
+     - Also sets `disabled_reason = 'USER'` if disabled, or clears to `NULL` if enabled.
+  6. If top-level folder, update the Object's folder_path record.
+  7. RAII drop lock and guard.
 ```
 
 ### Integration Points
 
 | Component           | Detail                                                                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------ |
-| Command             | `mod_core_cmds.rs::toggle_mod`                                                                   |
-| OperationLock       | `Arc<Mutex<()>>` per `game_id` — shared with rename, delete, bulk ops                            |
-| WatcherSuppression  | `watcher.rs::SuppressionGuard` — suppresses events for `folder_path` and `new_path`              |
-| Optimistic Update   | `useFolderGridActions.ts::toggleMod` — `onMutate` patches `['folders']` and `['objects']` caches |
-| Conflict Resolution | `ConflictResolveDialog.tsx` — shown when `CommandError::Conflict` is returned                    |
+| Command             | `mod_core_cmds.rs::toggle_mod` delegating to `core_ops.rs::toggle_mod_inner`                     |
+| Path Logic          | `path_utils::is_path_safe` ensures operations stay within the mod directory.                   |
+| DB Sync             | `update_mod_path_and_status` handles cross-platform path separators (win vs nix).                |
+| Recursive Update    | `update_child_paths` ensures nested mods remain linked after a parent rename.                   |
+| Optimistic Update   | `useFolderGridActions.ts` patches the cache before DB confirmation.                             |
 
 ### Security & Privacy
 

@@ -115,7 +115,7 @@ Frontend Flow:
 | Dot-prefix filter | `!folder_name.starts_with('.')` — applied in Rust query layer, not frontend                |
 | OperationLock     | Checked before `apply_collection_from_paths` — returns `AppError::Busy` if held            |
 | Apply             | Reuses `apply_collection` machinery (Epic 31) — snapshot + bulk toggle + undo toast        |
-| Frontend          | `RandomizerModal.tsx` + `LaunchButton.tsx` — `useSuggestRandomMods`, `useLaunchGame` hooks |
+| Frontend          | `RandomizerModal.tsx` + `LaunchBar.tsx` — integrated via `useLaunchGame` and Shuffle button |
 
 ### Security & Privacy
 

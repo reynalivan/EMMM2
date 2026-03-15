@@ -1,17 +1,12 @@
 // use super::*;
 use crate::services::config::ConfigService;
-use sqlx::sqlite::SqlitePoolOptions;
+
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
 async fn setup_pool() -> sqlx::SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    pool
+    crate::test_utils::init_test_db().await.pool
 }
 
 // Minimal valid 3DMigoto folder requirement
@@ -41,6 +36,11 @@ async fn test_auto_detect_games() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].game_type, "GIMI");
 
+    // Persist to DB/Settings
+    crate::commands::app::game_cmds::save_onboarding_games_inner(&service, results)
+        .await
+        .unwrap();
+
     // DB verification
     let settings = service.get_settings();
     assert_eq!(settings.games.len(), 1);
@@ -63,6 +63,12 @@ async fn test_add_game_manual_and_duplicate() {
     )
     .await;
     assert!(result.is_ok());
+    let game = result.unwrap();
+
+    // Persist
+    crate::commands::app::game_cmds::save_onboarding_games_inner(&service, vec![game])
+        .await
+        .unwrap();
 
     // Duplicate add should fail
     let dup_result = crate::commands::app::game_cmds::add_game_manual_inner(
@@ -94,6 +100,11 @@ async fn test_remove_game_cascading() {
     )
     .await
     .unwrap();
+
+    // Persist
+    crate::commands::app::game_cmds::save_onboarding_games_inner(&service, vec![game.clone()])
+        .await
+        .unwrap();
 
     // Check it's in DB
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games WHERE id = ?")

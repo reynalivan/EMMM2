@@ -24,7 +24,7 @@ use std::collections::HashSet;
 pub async fn sync_objects_for_game(
     pool: &sqlx::SqlitePool,
     game_id: &str,
-    safe_mode_keywords: &[String],
+    _safe_mode_keywords: &[String],
 ) -> CommandResult<()> {
     // Phase 1: Filesystem as source of truth for instance existence
     // We scan the mod folder for this game and ensure a basic DB object exists for it
@@ -85,22 +85,11 @@ pub async fn sync_objects_for_game(
                             .unwrap_or_default();
 
                         if !resolved_obj_id.is_empty() {
-                            let mut is_safe = true;
-                            for kw in safe_mode_keywords {
-                                if obj_name.to_lowercase().contains(&kw.to_lowercase())
-                                    || folder.to_lowercase().contains(&kw.to_lowercase())
-                                {
-                                    is_safe = false;
-                                    break;
-                                }
-                            }
-                            log::info!("sync_objects_for_game: Processed folder '{}' -> Object '{}' (is_safe: {})", folder, obj_name, is_safe);
-                            let _ = crate::database::object_repo::update_object_is_safe_tx(
-                                &mut tx,
-                                &resolved_obj_id,
-                                is_safe,
-                            )
-                            .await;
+                            log::info!(
+                                "sync_objects_for_game: Processed folder '{}' -> Object '{}'",
+                                folder,
+                                obj_name
+                            );
                         } else {
                             log::warn!(
                                 "sync_objects_for_game: Failed to ensure object for folder '{}'",

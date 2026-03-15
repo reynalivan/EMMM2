@@ -25,7 +25,7 @@ As a user, I want to see a cross-game summary of my mod library, so that I know 
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                  |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-33.1.1 | ✅ Positive | Given the Dashboard is open, when it loads, then `StatCard` components display: total mods (all games), enabled count, disabled count, and total disk size (GB/MB) — all from a single `get_dashboard_stats` call summed across all configured `game_id`s |
+| AC-33.1.1 | ✅ Positive | Given the Dashboard is open, when it loads, then `StatCard` components display: total mods (all games), enabled/disabled distribution, total game count, total collections, and total disk size (GB/MB) — all respecting the active Safe Mode corridor. |
 | AC-33.1.2 | ✅ Positive | Given `duplicate_waste_bytes > 0` (Epic 32 dedup scan ran), then an interactive banner "⚠ {size} wasted on duplicates — click to scan" appears on the Dashboard; clicking navigates to the Dedup Scanner                                                  |
 | AC-33.1.3 | ✅ Positive | Given a dark mode theme, then all `StatCard` components use the design system's card tokens — consistent visual weight with the rest of the app                                                                                                           |
 | AC-33.1.4 | ❌ Negative | Given the `mods_path` directory is inaccessible, then the disk-size `StatCard` shows "Size unavailable" — other stats (DB `COUNT/SUM`) still display correctly                                                                                            |
@@ -52,10 +52,10 @@ As a busy user, I want quick access to recently added mods and the last game I p
 
 | ID        | Type        | Criteria                                                                                                                                                                       |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-33.3.1 | ✅ Positive | Given the Dashboard loads, then a "Recently Added" feed shows the 5 most recently indexed mods (by `date_added DESC`) with thumbnail, name, and game badge                     |
-| AC-33.3.2 | ✅ Positive | Given a game was previously launched, then a "Quick Play" button shows "▶ Play {last_game_name}" — clicking fires the same launch logic as the One-Click Play button (Epic 01) |
-| AC-33.3.3 | ❌ Negative | Given only 2 mods exist in the library, then the "Recently Added" feed shows only 2 cards — no empty/null placeholders                                                         |
-| AC-33.3.4 | ⚠️ Edge     | Given Safe Mode is ON, then the "Recently Added" feed filters out `is_safe = false` mods — NSFW entries do not appear in the feed                                              |
+| AC-33.3.1 | ✅ Positive | Given the Dashboard loads, then a "Recently Added" feed shows the 5 most recently indexed mods (by `indexed_at DESC`) with name, game name, object name (if any), and relative timestamp. |
+| AC-33.3.2 | ✅ Positive | Given an active game, then a "Quick Play" button appears — clicking fires the same launch logic as the game switcher launch. |
+| AC-33.3.3 | ❌ Negative | Given only 2 mods exist in the library, then the "Recently Added" feed shows only 2 cards — no empty/null placeholders. |
+| AC-33.3.4 | ⚠️ Edge     | Given Safe Mode is ON, then the "Recently Added" feed filters out `is_safe = false` mods — NSFW entries do not appear in the feed. |
 
 ---
 
@@ -78,8 +78,9 @@ As a system, I want dashboard data to be cached and refreshable, so that the UI 
 
 | ID        | Type        | Criteria                                                                                                                                                                     |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-33.5.1 | ✅ Positive | Given dashboard data is cached with `staleTime: 30_000ms` (30s), then navigating away and back within 30s shows cached data instantly — no IPC refetch                       |
-| AC-33.5.2 | ✅ Positive | Given a manual "Refresh" button, when clicked, then `invalidateQueries(['dashboardStats'])` fires and fresh data loads within ≤ 200ms (skeleton shimmer visible during load) |
+| AC-33.5.1 | ✅ Positive | Given Dashboard stats/distributions, they are cached with `staleTime: 30s` for rapid navigation access. |
+| AC-33.5.2 | ✅ Positive | Given active keybindings, they are cached with `staleTime: 60s` due to the intensive filesystem scan required for .ini parsing. |
+| AC-33.5.3 | ✅ Positive | Given a manual "Refresh" button, when clicked, then `invalidateQueries` fires and fresh data loads (skeleton shimmer visible during load). |
 | AC-33.5.3 | ❌ Negative | Given a DB aggregation query fails (DB locked), then the dashboard shows a skeleton loader + "Refresh" button — no white screen or unhandled error boundary                  |
 
 ---
@@ -120,23 +121,21 @@ get_distribution_by_game() → Vec<GameDistribution { game_name, count }>:
   GROUP BY f.game_id
   ORDER BY count DESC
 
-get_recent_mods(limit=5) → Vec<RecentMod { id, name, thumbnail_path, date_added, game_name }>:
-  SELECT f.id, f.name, f.thumbnail_path, f.date_added, g.name as game_name
+get_recent_mods(limit=5) → Vec<RecentMod { id, name, indexed_at, game_name, object_name }>:
+  SELECT f.id, f.name, f.indexed_at, g.name as game_name, f.object_name
   FROM folders f JOIN games g ON f.game_id = g.id
-  WHERE COALESCE(o.is_safe, f.is_safe, 1) = 1 (if safe_mode) -- accurate nested mod inclusion via LEFT JOIN objects o
-  ORDER BY date_added DESC LIMIT 5
+  WHERE f.is_safe = ? 
+  ORDER BY indexed_at DESC LIMIT 5
 
 get_active_keybindings(game_id) → Vec<KeybindEntry>:
-  ini_path = game_install_path / "d3dx.ini"
-  parse [Key*] sections → {section_name, key_name, back_key}
-  max 20 entries
+  1. Fetch enabled mods for game
+  2. Walk each mod folder for .ini files
+  3. Parse [Key*] sections → {mod_name, section_name, key, back}
 
 Frontend:
-  useDashboardStats() → staleTime: 30_000ms
-  useDistributions() → staleTime: 30_000ms
-  useRecentMods() → staleTime: 30_000ms
-  useActiveKeybindings(gameId) → staleTime: 10min
-  Manual refresh: invalidateQueries(['dashboard*'])
+  useDashboardStats() → staleTime: 30s
+  useActiveKeybindings(gameId) → staleTime: 60s
+  Quick Actions: Mods, Dedup, Collections, Settings, Discover, Downloads
 
 Charts: Recharts PieChart + BarChart
   PieChart: data=distributionByType, colorPalette=designSystem
@@ -150,16 +149,17 @@ Charts: Recharts PieChart + BarChart
 | Charts           | `recharts` — `PieChart` for category distribution, `BarChart` for game distribution; all have ARIA labels |
 | Stats Query      | Cross-game: no `game_id` filter — pure SQLite `COUNT`/`SUM` on all `folders`                              |
 | Disk Size        | Pre-computed `size_bytes` in `folders` table (set during scan); fallback `du()` bounded 5s                |
-| Keybindings      | Shared INI parser from Epic 18 (`services/ini/document.rs`)                                               |
+| Keybindings      | Shared INI parser from Epic 18; supported by `DemoKeybindSpotlight` scene for visual emphasis             |
 | Duplicate Banner | `duplicate_waste_bytes` from dedup cache (Epic 32) — if > 0 shows banner                                  |
 | Quick Play       | `invoke('launch_game', { game_id: last_played_game_id })` — reuses Epic 01 launch logic                   |
+| Demo Scenes      | Integrated `SmartDemoStrip`, `DemoKeybindSpotlight`, and `DemoTogglePreset` for landing/onboarding visuals|
 | Cache            | React Query `staleTime: 30_000ms`; `invalidateQueries(['dashboardStats'])` after bulk ops                 |
 
 ### Security & Privacy
 
 - **`d3dx.ini` path resolved via `game.install_path + /d3dx.ini`** — validated not to escape game directory.
 - **Dashboard stats queries are read-only** — no DB mutations from this epic.
-- **Safe Mode respected**: `get_recent_mods` and stat counts append `AND COALESCE(o.is_safe, m.is_safe, 1) = 1` via `LEFT JOIN objects o` when `safeMode = true` — consistent with ObjectList behavior and safely including nested children.
+- **Safe Mode respected**: `get_recent_mods` and stat counts append `AND f.is_safe = ?` (0 or 1 depending on active corridor) — ensuring NSFW counts do not leak into the UI when Safe Mode is active.
 - **SQL queries MUST use indexed columns** — verified via `EXPLAIN QUERY PLAN` before release; no full table scans.
 
 ---

@@ -252,6 +252,19 @@ impl ConfigService {
         Ok(())
     }
 
+    /// Resets the in-memory state to defaults. Should be called after a database reset.
+    pub fn reset_to_default(&self) {
+        *self
+            .settings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = AppSettings::default();
+
+        *self
+            .pin_guard
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = PinGuardState::default();
+    }
+
     pub fn get_settings(&self) -> AppSettings {
         self.settings
             .lock()
@@ -348,6 +361,120 @@ impl ConfigService {
             .reset();
 
         Ok(())
+    }
+
+    /// Sets the PIN and simultaneously generates a one-time recovery code.
+    /// Returns the plaintext recovery code (e.g. `EMMM-4F2A-9B87-CC1E`).
+    /// The code is stored as SHA-256 hex in settings — never in plaintext.
+    pub fn set_pin_with_recovery(&self, pin: &str) -> Result<String, String> {
+        validate_pin_format(pin)?;
+
+        use argon2::{
+            password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+            Argon2,
+        };
+        use std::fmt::Write;
+
+        // --- Hash PIN with Argon2 ---
+        let salt = SaltString::generate(&mut OsRng);
+        let password_hash = Argon2::default()
+            .hash_password(pin.as_bytes(), &salt)
+            .map_err(|e| e.to_string())?
+            .to_string();
+
+        // --- Generate recovery code: EMMM-XXXX-XXXX-XXXX ---
+        let raw_bytes = {
+            use argon2::password_hash::rand_core::RngCore;
+            let mut rng = OsRng;
+            let mut buf = [0u8; 9]; // 9 random bytes → 18 uppercase hex chars → 4-4-4-4 format
+            rng.fill_bytes(&mut buf);
+            buf
+        };
+        let hex_str: String = raw_bytes.iter().fold(String::new(), |mut acc, b| {
+            let _ = write!(acc, "{:02X}", b);
+            acc
+        });
+        // Format as EMMM-XXXX-XXXX-XXXX-XX (we take first 16 hex chars = 8 bytes)
+        let recovery_code = format!(
+            "EMMM-{}-{}-{}",
+            &hex_str[0..4],
+            &hex_str[4..8],
+            &hex_str[8..12],
+        );
+
+        // --- SHA-256 hash the recovery code for storage ---
+        // Use sha2 crate via the already-available ring/md5/sha1 or native digest
+        // sha2 is available as a dependency of argon2's password-hash crate.
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(recovery_code.as_bytes());
+        let recovery_hash = format!("{:x}", hasher.finalize());
+
+        // --- Persist ---
+        let mut settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        settings.safe_mode.pin_hash = Some(password_hash);
+        settings.safe_mode.recovery_code_hash = Some(recovery_hash);
+
+        self.save_settings(settings)?;
+        self.pin_guard
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .reset();
+
+        Ok(recovery_code)
+    }
+
+    /// Validates the recovery code. If valid, clears the PIN and recovery code,
+    /// allowing the user to set a new PIN without knowing the old one.
+    /// Returns `true` if reset succeeded, `Err` on internal errors.
+    pub fn reset_pin_with_recovery_code(&self, code: &str) -> Result<bool, String> {
+        use sha2::{Digest, Sha256};
+
+        let stored_hash = {
+            let settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            settings.safe_mode.recovery_code_hash.clone()
+        };
+
+        let Some(stored_hash) = stored_hash else {
+            // No recovery code configured for this installation
+            return Ok(false);
+        };
+
+        // Normalise input (uppercase, trim whitespace)
+        let code_normalised = code.trim().to_uppercase();
+
+        let mut hasher = Sha256::new();
+        hasher.update(code_normalised.as_bytes());
+        let input_hash = format!("{:x}", hasher.finalize());
+
+        if input_hash != stored_hash {
+            return Ok(false);
+        }
+
+        // Valid — clear PIN and recovery code
+        let mut settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        settings.safe_mode.pin_hash = None;
+        settings.safe_mode.recovery_code_hash = None;
+        settings.safe_mode.failed_attempts = None;
+        settings.safe_mode.lockout_until_ts = None;
+        self.save_settings(settings)?;
+        self.pin_guard
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .reset();
+
+        Ok(true)
     }
 
     pub fn set_active_game(&self, game_id: Option<String>) -> Result<(), String> {

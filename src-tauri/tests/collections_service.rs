@@ -30,13 +30,12 @@ async fn seed_game_and_mods(
         .expect("insert game");
 
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type, is_safe, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+        "INSERT INTO objects (id, game_id, name, object_type, sort_order, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
     )
     .bind(&object_id)
     .bind(&game_id)
     .bind("Raiden Shogun")
     .bind("Character")
-    .bind(1) // is_safe true
     .bind(0)
     .execute(pool)
     .await

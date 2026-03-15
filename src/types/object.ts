@@ -14,7 +14,6 @@ export interface GameObject {
   tags: string; // JSON string of string array
   metadata: string; // JSON string of metadata object
   thumbnail_path: string | null;
-  is_safe: boolean;
   is_pinned: boolean;
   is_auto_sync: boolean;
   created_at: string;
@@ -30,7 +29,6 @@ export interface ObjectSummary {
   mod_count: number;
   enabled_count: number;
   thumbnail_path: string | null;
-  is_safe: boolean;
   is_pinned: boolean;
   is_auto_sync: boolean;
   is_object_disabled: boolean;
@@ -92,7 +90,6 @@ export interface UpdateObjectInput {
   sub_category?: string;
   metadata?: Record<string, unknown>;
   thumbnail_path?: string | null;
-  is_safe?: boolean;
   is_auto_sync?: boolean;
   tags?: string[];
 }
@@ -104,7 +101,6 @@ export interface CreateObjectInput {
   folder_path?: string | null;
   object_type: string;
   sub_category?: string | null;
-  is_safe?: boolean;
   metadata?: Record<string, unknown>;
   thumbnail_url?: string | null;
 }

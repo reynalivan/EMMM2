@@ -35,7 +35,6 @@ async fn test_mod_repo_crud() {
         "Test Object",
         "Character",
         None,
-        true,
         "{}",
         None,
     )
@@ -70,9 +69,16 @@ async fn test_mod_repo_crud() {
         .unwrap();
 
     // Update path and status
-    update_mod_path_and_status(&pool, "g1", "Mods/Obj1/Mod1", "Mods/Obj1/Mod2", "DISABLED")
-        .await
-        .unwrap();
+    update_mod_path_status_and_reason(
+        &pool,
+        "g1",
+        "Mods/Obj1/Mod1",
+        "Mods/Obj1/Mod2",
+        "DISABLED",
+        None,
+    )
+    .await
+    .unwrap();
 
     // Test delete by id
     delete_mod_by_id(&pool, "mod1").await.unwrap();

@@ -6,6 +6,7 @@ import { useToastStore } from '../../../stores/useToastStore';
 import { useSafeModeToggle } from '../../../hooks/useSafeModeToggle';
 import ModeSwitchConfirmModal from '../../safe-mode/ModeSwitchConfirmModal';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
+import RecoveryCodeModal from '../../safe-mode/RecoveryCodeModal';
 
 type SafeModePendingAction = (() => Promise<void>) | null;
 
@@ -33,11 +34,11 @@ function toErrorMessage(error: unknown): string {
 }
 
 export default function PrivacyTab() {
-  const { settings, saveSettingsAsync, setPinAsync, verifyPin } = useSettings();
+  const { settings, saveSettingsAsync, setPinWithRecoveryAsync, verifyPin } = useSettings();
   const {
     toggleSafeMode,
     handleConfirmSwitch,
-    setSafeModeWithToast,
+    handlePinSuccess,
     confirmModalOpen,
     confirmTargetEnabled,
     closeConfirmModal,
@@ -50,6 +51,7 @@ export default function PrivacyTab() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<SafeModePendingAction>(null);
   const [keywordInput, setKeywordInput] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
 
   if (!settings) return <div>Loading...</div>;
 
@@ -117,8 +119,10 @@ export default function PrivacyTab() {
       }
     } else {
       try {
-        await setPinAsync(pin);
+        // Use recovery-enabled variant: shows code after successful set
+        const code = await setPinWithRecoveryAsync(pin);
         setIsModalOpen(false);
+        setRecoveryCode(code);
       } catch (e) {
         console.error(e);
       }
@@ -274,11 +278,38 @@ export default function PrivacyTab() {
                     ? 'A PIN is currently set. It is required to disable Safe Mode.'
                     : 'No PIN set. Anyone can toggle Safe Mode freely.'}
                 </p>
+                {hasPin && !!settings.safe_mode.recovery_code_hash && (
+                  <p className="text-xs text-success/70 mt-0.5">✓ Recovery code is configured</p>
+                )}
               </div>
             </div>
-            <button className="btn btn-neutral" onClick={handleChangePin}>
-              {hasPin ? 'Change PIN' : 'Set PIN'}
-            </button>
+            <div className="flex gap-2">
+              {hasPin && (
+                <button
+                  className="btn btn-ghost btn-sm text-error/70 hover:text-error hover:bg-error/10"
+                  onClick={async () => {
+                    try {
+                      await saveSettingsAsync({
+                        ...settings,
+                        safe_mode: {
+                          ...settings.safe_mode,
+                          pin_hash: null,
+                          recovery_code_hash: null,
+                        },
+                      });
+                      addToast('success', 'PIN Removed: Safe Mode is now unprotected.');
+                    } catch (e) {
+                      addToast('error', `Failed to remove PIN: ${String(e)}`);
+                    }
+                  }}
+                >
+                  Remove PIN
+                </button>
+              )}
+              <button className="btn btn-neutral" onClick={handleChangePin}>
+                {hasPin ? 'Change PIN' : 'Set PIN'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -296,6 +327,13 @@ export default function PrivacyTab() {
         }
       />
 
+      {/* Recovery Code Modal — shown once after setting a new PIN */}
+      <RecoveryCodeModal
+        open={!!recoveryCode}
+        recoveryCode={recoveryCode ?? ''}
+        onClose={() => setRecoveryCode(null)}
+      />
+
       {/* Confirmation Modal for Corridor Switch */}
       <ModeSwitchConfirmModal
         open={confirmModalOpen}
@@ -309,8 +347,7 @@ export default function PrivacyTab() {
         open={corridorPinModalOpen}
         onClose={closeCorridorPinModal}
         onSuccess={async () => {
-          closeCorridorPinModal();
-          await setSafeModeWithToast(false);
+          handlePinSuccess();
         }}
       />
     </div>

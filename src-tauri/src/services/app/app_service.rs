@@ -48,6 +48,14 @@ pub async fn reset_database_service(
         log::info!("Database backed up to: {}", backup_path.display());
     }
 
+    // Clean up cached image thumbnails
+    let thumbnails_dir = app_data_dir.join("thumbnails");
+    if thumbnails_dir.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&thumbnails_dir) {
+            log::warn!("Failed to delete thumbnails directory: {e}");
+        }
+    }
+
     // Clear all data from the database (tables only, no file deletion)
     crate::database::settings_repo::reset_all_data(pool)
         .await

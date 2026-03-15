@@ -5,7 +5,7 @@ use std::path::Path;
 use super::helpers::{ensure_game_exists, ensure_object_exists, generate_stable_id};
 use super::types::{ConfirmedScanItem, SyncResult};
 
-/// Phase 2: Commit user-confirmed scan results to DB.
+/// Phase 2: Commit user-confirmed scan results to DB (Two-Phase Diffing).
 #[allow(clippy::too_many_arguments)]
 pub async fn commit_scan_results(
     pool: &SqlitePool,
@@ -16,26 +16,21 @@ pub async fn commit_scan_results(
     items: Vec<ConfirmedScanItem>,
     resource_dir: Option<&Path>,
     safe_mode_keywords: &[String],
+    preserve_existing_mappings: bool,
 ) -> Result<SyncResult, String> {
     let _ = resource_dir; // reserved for future thumbnail resolution
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     ensure_game_exists(&mut tx, game_id, game_name, game_type, mods_path).await?;
 
-    let total = items.len();
-    let mut new_mods_count = 0;
-    let mut updated_mods_count = 0;
-    let mut new_objects_count = 0;
-    let mut processed_paths = HashSet::new();
-
-    for item in &items {
+    // Phase 0: Pre-process disk items to resolve `move_from_temp` paths
+    let mut disk_entries = Vec::new();
+    for item in items {
         if item.skip {
-            processed_paths.insert(item.folder_path.clone());
             continue;
         }
 
         let mut actual_folder_path = item.folder_path.clone();
-
         if item.move_from_temp {
             let obj_name = item.matched_object.as_deref().unwrap_or("Uncategorized");
             let source_path = Path::new(&item.folder_path);
@@ -47,12 +42,9 @@ pub async fn commit_scan_results(
                     if !target_dir.exists() {
                         let _ = std::fs::create_dir_all(&target_dir);
                     }
-
-                    // Check collision
                     if target_path.exists() {
                         return Err(format!("DUPLICATE|{}", target_path.to_string_lossy()));
                     }
-
                     if let Err(e) = std::fs::rename(source_path, &target_path) {
                         return Err(format!("Failed to move temp folder: {}", e));
                     } else {
@@ -68,33 +60,161 @@ pub async fn commit_scan_results(
                 return Err("Invalid folder path for move_from_temp".to_string());
             }
         }
+        disk_entries.push((item, actual_folder_path));
+    }
 
+    let total = disk_entries.len();
+
+    // Fetch snapshot of DB state
+    let db_mods = crate::database::mod_repo::get_all_mods_sync_info_tx(&mut tx, game_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut disk_to_db: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut db_matched: HashSet<usize> = HashSet::new();
+
+    fn clean_folder(name: &str) -> String {
+        crate::services::scanner::core::normalizer::normalize_display_name(name)
+    }
+
+    fn get_parent_and_name(path_str: &str) -> (String, String) {
+        let p = Path::new(path_str);
+        let parent = p
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        (parent, name)
+    }
+
+    // Phase 1: Heuristic Linking
+    // Pass A: Exact Match (folder_path == folder_path)
+    for disk_idx in 0..disk_entries.len() {
+        if disk_to_db.contains_key(&disk_idx) {
+            continue;
+        }
+        for db_idx in 0..db_mods.len() {
+            if db_matched.contains(&db_idx) {
+                continue;
+            }
+            if db_mods[db_idx].1 == disk_entries[disk_idx].1 {
+                disk_to_db.insert(disk_idx, db_idx);
+                db_matched.insert(db_idx);
+                break;
+            }
+        }
+    }
+
+    // Pass B: Toggle Match (ignore "DISABLED " prefix)
+    for disk_idx in 0..disk_entries.len() {
+        if disk_to_db.contains_key(&disk_idx) {
+            continue;
+        }
+        let (disk_parent, disk_name) = get_parent_and_name(&disk_entries[disk_idx].1);
+        let disk_clean = clean_folder(&disk_name);
+
+        for db_idx in 0..db_mods.len() {
+            if db_matched.contains(&db_idx) {
+                continue;
+            }
+            let (db_parent, db_name) = get_parent_and_name(&db_mods[db_idx].1);
+            let db_clean = clean_folder(&db_name);
+
+            if disk_parent == db_parent && disk_clean == db_clean {
+                disk_to_db.insert(disk_idx, db_idx);
+                db_matched.insert(db_idx);
+                break;
+            }
+        }
+    }
+
+    // Pass C: 1:1 Rename Match (isolated unmatched item in same parent directory)
+    let mut unmatched_disk_by_parent: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    for disk_idx in 0..disk_entries.len() {
+        if disk_to_db.contains_key(&disk_idx) {
+            continue;
+        }
+        let (parent, _) = get_parent_and_name(&disk_entries[disk_idx].1);
+        unmatched_disk_by_parent
+            .entry(parent)
+            .or_default()
+            .push(disk_idx);
+    }
+
+    let mut unmatched_db_by_parent: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    for db_idx in 0..db_mods.len() {
+        if db_matched.contains(&db_idx) {
+            continue;
+        }
+        let (parent, _) = get_parent_and_name(&db_mods[db_idx].1);
+        // Ensure this DB mod isn't physically on disk anymore before considering it renamed
+        if !Path::new(&db_mods[db_idx].1).exists() {
+            unmatched_db_by_parent
+                .entry(parent)
+                .or_default()
+                .push(db_idx);
+        }
+    }
+
+    for (parent, disk_indices) in unmatched_disk_by_parent.iter() {
+        if disk_indices.len() == 1 {
+            if let Some(db_indices) = unmatched_db_by_parent.get(parent) {
+                if db_indices.len() == 1 {
+                    let disk_idx = disk_indices[0];
+                    let db_idx = db_indices[0];
+                    disk_to_db.insert(disk_idx, db_idx);
+                    db_matched.insert(db_idx);
+                }
+            }
+        }
+    }
+
+    // Phase 2: Execution
+    let mut new_mods_count = 0;
+    let mut updated_mods_count = 0;
+    let mut new_objects_count = 0;
+
+    for (disk_idx, (item, actual_folder_path)) in disk_entries.into_iter().enumerate() {
         let current_status = if item.is_disabled {
             "DISABLED"
         } else {
             "ENABLED"
         };
 
-        let existing = crate::database::mod_repo::get_mod_id_and_status_by_path(
-            &mut tx,
-            &actual_folder_path,
-            game_id,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let (mod_id, existing_object_id) = if let Some(&db_idx) = disk_to_db.get(&disk_idx) {
+            let db_mod = &db_mods[db_idx];
+            let id = db_mod.0.clone();
 
-        let mod_id = if let Some((id, _, db_status)) = existing {
-            if db_status != current_status {
-                crate::database::mod_repo::update_mod_status_tx(&mut tx, &id, current_status)
-                    .await
-                    .map_err(|e| e.to_string())?;
+            let path_changed = db_mod.1 != actual_folder_path;
+            let status_changed = db_mod.2 != current_status;
+
+            if path_changed || status_changed {
+                let _reason = if item.is_disabled { Some("USER") } else { None };
+                crate::database::mod_repo::update_mod_identity_tx(
+                    &mut tx,
+                    &id,
+                    &actual_folder_path,
+                    &item.display_name,
+                    current_status,
+                    &db_mod.1, // old path
+                    game_id,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
                 updated_mods_count += 1;
             }
-            id
+            (id, db_mod.3.clone())
         } else {
             let id = generate_stable_id(game_id, &actual_folder_path);
             let object_type = item.object_type.as_deref().unwrap_or("Other");
-            crate::database::mod_repo::insert_mod_tx(
+            let reason = if item.is_disabled { Some("USER") } else { None };
+            crate::database::mod_repo::insert_mod_with_reason_tx(
                 &mut tx,
                 &id,
                 game_id,
@@ -103,80 +223,78 @@ pub async fn commit_scan_results(
                 current_status,
                 object_type,
                 false,
+                reason,
             )
             .await
             .map_err(|e| e.to_string())?;
             new_mods_count += 1;
-            id
+            (id, None)
         };
 
-        processed_paths.insert(item.folder_path.clone());
+        // Skip object mutation if preserve_existing_mappings is true and the mod already has an object
+        if !(preserve_existing_mappings && existing_object_id.is_some()) {
+            let obj_type = item.object_type.as_deref().unwrap_or("Other");
+            let (obj_name, db_thumb, tags, meta) = if let Some(ref matched_name) =
+                item.matched_object
+            {
+                (
+                    matched_name.to_string(),
+                    item.thumbnail_path.as_deref(),
+                    item.tags_json.as_deref().unwrap_or("[]"),
+                    item.metadata_json.as_deref().unwrap_or("{}"),
+                )
+            } else {
+                let folder_name = Path::new(&actual_folder_path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                let clean_name = crate::services::scanner::core::normalizer::normalize_display_name(
+                    &folder_name,
+                );
+                (clean_name, None, "[]", "{}")
+            };
 
-        let obj_type = item.object_type.as_deref().unwrap_or("Other");
-        let (obj_name, db_thumb, tags, meta) = if let Some(ref matched_name) = item.matched_object {
-            (
-                matched_name.to_string(),
-                item.thumbnail_path.as_deref(),
-                item.tags_json.as_deref().unwrap_or("[]"),
-                item.metadata_json.as_deref().unwrap_or("{}"),
-            )
-        } else {
-            let folder_name = Path::new(&item.folder_path)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            // Strip DISABLED prefix so we never create "DISABLED xyz" objects
-            let clean_name =
-                crate::services::scanner::core::normalizer::normalize_display_name(&folder_name);
-            (clean_name, None, "[]", "{}")
-        };
-
-        // Calculate the physical object folder path relative to mods_path.
-        // IMPORTANT: folder_path must always point to an actual filesystem directory,
-        // NOT the matched display name (obj_name). When a mod is directly under
-        // mods_path/ (parent is empty), use the mod's own folder name so the
-        // FolderGrid can resolve the path correctly.
-        let object_folder_path = if item.move_from_temp {
-            obj_name.clone() // Auto-Organize drops them directly into mods_path/obj_name
-        } else {
-            let actual_path = Path::new(&actual_folder_path);
-            let mods_dir = Path::new(mods_path);
-            if let Ok(rel_path) = actual_path.strip_prefix(mods_dir) {
-                if let Some(parent) = rel_path.parent() {
-                    let parent_str = parent.to_string_lossy().to_string();
-                    if parent_str.is_empty() {
-                        // Mod is directly in mods_path — use its own folder name
-                        rel_path.to_string_lossy().to_string()
+            let object_folder_path = if item.move_from_temp {
+                obj_name.clone()
+            } else {
+                let actual_path = Path::new(&actual_folder_path);
+                let mods_dir = Path::new(mods_path);
+                if let Ok(rel_path) = actual_path.strip_prefix(mods_dir) {
+                    if let Some(parent) = rel_path.parent() {
+                        let parent_str = parent.to_string_lossy().to_string();
+                        if parent_str.is_empty() {
+                            rel_path.to_string_lossy().to_string()
+                        } else {
+                            parent_str
+                        }
                     } else {
-                        parent_str
+                        rel_path.to_string_lossy().to_string()
                     }
                 } else {
-                    rel_path.to_string_lossy().to_string()
+                    obj_name.clone()
                 }
-            } else {
-                obj_name.clone()
-            }
-        };
+            };
 
-        let object_id = ensure_object_exists(
-            &mut tx,
-            game_id,
-            &object_folder_path,
-            &obj_name,
-            obj_type,
-            db_thumb,
-            tags,
-            meta,
-            &mut new_objects_count,
-        )
-        .await?;
+            let object_id = ensure_object_exists(
+                &mut tx,
+                game_id,
+                &object_folder_path,
+                &obj_name,
+                obj_type,
+                db_thumb,
+                tags,
+                meta,
+                &mut new_objects_count,
+            )
+            .await?;
 
-        crate::database::mod_repo::update_mod_object_id_and_type_tx(
-            &mut tx, &mod_id, &object_id, obj_type,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+            crate::database::mod_repo::update_mod_object_id_and_type_tx(
+                &mut tx, &mod_id, &object_id, obj_type,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        }
 
         // Handle auto-classification
         let folder_name_lower = item.display_name.to_lowercase();
@@ -189,10 +307,6 @@ pub async fn commit_scan_results(
         }
 
         if !is_safe {
-            crate::database::object_repo::update_object_is_safe_tx(&mut tx, &object_id, false)
-                .await
-                .map_err(|e| e.to_string())?;
-
             let update = crate::services::mods::info_json::ModInfoUpdate {
                 is_safe: Some(false),
                 ..Default::default()
@@ -202,21 +316,26 @@ pub async fn commit_scan_results(
         }
     }
 
-    let deleted_mods_count = handle_deletions(&mut tx, game_id, &processed_paths).await?;
+    // Phase 3: Purge Deletions
+    let mut deleted_mods_count = 0;
+    for (db_idx, db_mod) in db_mods.iter().enumerate() {
+        if !db_matched.contains(&db_idx) {
+            // Only delete if the physical path is truly gone
+            if !Path::new(&db_mod.1).exists() {
+                crate::database::mod_repo::delete_mod_tx(&mut tx, &db_mod.0)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                deleted_mods_count += 1;
+            }
+        }
+    }
 
-    // Garbage Collector: Delete empty "Ghost" objects left behind after their mod is re-assigned
-    // folder_path is an absolute path, so we use LIKE to match the folder basename
-    // Also matches DISABLED-prefixed folders (e.g. object "hanya" matches folder "DISABLED hanya")
-    // Garbage Collector: Delete empty "Ghost" objects
-    // Only delete objects that have NO associated mods.
-    // The previous logic incorrectly required a mod with a matching folder name to exist elsewhere.
     crate::database::object_repo::delete_ghost_objects_gc(&mut tx, game_id)
         .await
         .map_err(|e| format!("Failed to clean ghost objects: {}", e))?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    // Attempt to clean up the temp folder if it is empty after moves
     let temp_dir_path = std::path::Path::new(mods_path).join(".emmm2_temp");
     if temp_dir_path.exists() {
         let _ = std::fs::remove_dir(&temp_dir_path);
@@ -229,25 +348,4 @@ pub async fn commit_scan_results(
         deleted_mods: deleted_mods_count,
         new_objects: new_objects_count,
     })
-}
-
-async fn handle_deletions(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    game_id: &str,
-    processed_paths: &HashSet<String>,
-) -> Result<usize, String> {
-    let all_mods = crate::database::mod_repo::get_all_mods_id_and_paths_tx(tx, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut deleted_mods_count = 0;
-    for (id, fp) in all_mods {
-        if !processed_paths.contains(&fp) && !Path::new(&fp).exists() {
-            crate::database::mod_repo::delete_mod_tx(tx, &id)
-                .await
-                .map_err(|e| e.to_string())?;
-            deleted_mods_count += 1;
-        }
-    }
-    Ok(deleted_mods_count)
 }

@@ -205,8 +205,8 @@ pub async fn enable_only_this_service(
     target_path: String,
     game_id: &str,
 ) -> Result<crate::services::mods::bulk::BulkResult, String> {
-    use crate::commands::mods::mod_core_cmds::toggle_mod_inner;
     use crate::services::mods::bulk::{BulkActionError, BulkResult};
+    use crate::services::mods::core_ops::toggle_mod_inner;
 
     let mut success = Vec::new();
     let mut failures = Vec::new();

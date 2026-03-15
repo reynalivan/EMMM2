@@ -155,7 +155,6 @@ pub struct GameObject {
     pub tags: String,
     pub metadata: String,
     pub thumbnail_path: Option<String>,
-    pub is_safe: bool,
     pub is_pinned: bool,
     #[sqlx(default)]
     pub is_auto_sync: bool,

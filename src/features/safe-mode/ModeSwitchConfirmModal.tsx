@@ -1,16 +1,18 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { ShieldCheck, ShieldAlert, Loader2, ArrowRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '../../stores/useAppStore';
-import { useActiveModsPreview, useCollectionPreview } from '../collections/hooks/useCollections';
 import { ModGroupList } from '../collections/components/ModGroupList';
 import { groupMods } from '../collections/utils/groupMods';
+import type { CollectionPreviewMod } from '../../types/collection';
 
-// Inline type for the backend result
-interface ModeSwitchPreviewResult {
-  target_coll_id: string | null;
-  target_name: string;
+/** Backend response from preview_corridor_switch */
+interface CorridorPreview {
+  leaving_mods: CollectionPreviewMod[];
+  target_mods: CollectionPreviewMod[];
+  target_description: string;
 }
 
 interface ModeSwitchConfirmModalProps {
@@ -26,60 +28,30 @@ export default function ModeSwitchConfirmModal({
   onClose,
   onConfirm,
 }: ModeSwitchConfirmModalProps) {
-  const { activeGameId, safeMode } = useAppStore();
-  const [preview, setPreview] = useState<ModeSwitchPreviewResult | null>(null);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const { activeGameId } = useAppStore();
 
-  // Fetch the backend text preview
-  useEffect(() => {
-    if (!open) {
-      setPreview(null);
-      return;
-    }
-    let isMounted = true;
-    const fetchPreview = async () => {
-      setIsLoadingPreview(true);
-      try {
-        const res = await invoke<ModeSwitchPreviewResult>('preview_mode_switch_enabled', {
-          enabled: targetEnabled,
-        });
-        if (isMounted) setPreview(res);
-      } catch (err) {
-        console.error('Failed to preview mode switch:', err);
-      } finally {
-        if (isMounted) setIsLoadingPreview(false);
-      }
-    };
-    fetchPreview();
-    return () => {
-      isMounted = false;
-    };
-  }, [open, targetEnabled]);
-
-  // Queries for object lists
-  const activeModsQuery = useActiveModsPreview(activeGameId, safeMode);
-  const targetModsQuery = useCollectionPreview(preview?.target_coll_id ?? null, activeGameId);
+  // Single consolidated query — replaces the old 3-query pattern
+  const { data: preview, isLoading } = useQuery<CorridorPreview>({
+    queryKey: ['corridor-preview', activeGameId, targetEnabled],
+    queryFn: () => invoke<CorridorPreview>('preview_corridor_switch', { targetEnabled }),
+    enabled: open && !!activeGameId,
+    staleTime: 0, // Always refetch when modal opens
+  });
 
   const leavingGroups = useMemo(() => {
-    if (!activeModsQuery.data) return [];
-    return groupMods(activeModsQuery.data);
-  }, [activeModsQuery.data]);
+    if (!preview?.leaving_mods) return [];
+    return groupMods(preview.leaving_mods);
+  }, [preview]);
 
   const targetGroups = useMemo(() => {
-    if (!preview) return [];
-    if (!preview.target_coll_id || !targetModsQuery.data) return []; // Empty state or still loading
-    return groupMods(targetModsQuery.data);
-  }, [preview, targetModsQuery.data]);
-
-  const isDataLoading =
-    isLoadingPreview ||
-    (open && activeModsQuery.isLoading) ||
-    (open && !!preview?.target_coll_id && targetModsQuery.isLoading);
+    if (!preview?.target_mods?.length) return [];
+    return groupMods(preview.target_mods);
+  }, [preview]);
 
   if (!open) return null;
 
   return createPortal(
-    <dialog className="modal modal-open z-100">
+    <dialog className="modal modal-open z-1000">
       <div className="modal-box bg-base-200 border border-white/10 shadow-2xl max-w-5xl flex flex-col max-h-[85vh] p-0 overflow-hidden">
         {/* Header */}
         <div className="p-6 pb-4 border-b border-white/5 shrink-0 bg-base-300/30">
@@ -93,27 +65,38 @@ export default function ModeSwitchConfirmModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden flex flex-col bg-base-100/50">
-          {isDataLoading ? (
-            <div className="flex flex-col h-full items-center justify-center p-8 text-base-content/50 min-h-75">
+        <div className="flex-1 overflow-hidden flex flex-col bg-base-100/50 min-h-0">
+          {isLoading ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-base-content/50 min-h-75">
               <Loader2 size={32} className="animate-spin mb-4 opacity-50 text-warning" />
               <p>Loading preview...</p>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row h-full">
+            <div className="flex-1 flex flex-col sm:flex-row min-h-0">
               {/* Left Column: Leaving */}
               <div className="flex-1 border-r border-white/5 flex flex-col min-h-0 sm:max-w-[50%]">
-                <div className="p-4 border-b border-white/5 bg-error/5 shrink-0">
-                  <h4 className="font-semibold text-sm flex justify-between items-center text-error/90 mb-1">
-                    Leaving State
-                    <span className="badge badge-sm badge-error badge-outline">Snapshot</span>
+                <div
+                  className={`p-4 border-b border-white/5 ${targetEnabled ? 'bg-error/5' : 'bg-success/5'} shrink-0`}
+                >
+                  <h4
+                    className={`font-semibold text-sm flex justify-between items-center ${targetEnabled ? 'text-error/90' : 'text-success/90'} mb-1`}
+                  >
+                    Leaving State ({targetEnabled ? 'Unsafe Mode' : 'Safe Mode'})
+                    <span
+                      className={`badge badge-sm ${targetEnabled ? 'badge-error' : 'badge-success'} badge-outline`}
+                    >
+                      Snapshot
+                    </span>
                   </h4>
                   <p className="text-xs text-base-content/50 break-all leading-tight">
                     Current Active Mods
                   </p>
                 </div>
                 <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
-                  <ModGroupList groups={leavingGroups} colorClass="text-error" />
+                  <ModGroupList
+                    groups={leavingGroups}
+                    colorClass={targetEnabled ? 'text-error' : 'text-success'}
+                  />
                 </div>
               </div>
 
@@ -126,20 +109,33 @@ export default function ModeSwitchConfirmModal({
 
               {/* Right Column: Target */}
               <div className="flex-1 flex flex-col min-h-0 sm:max-w-[50%]">
-                <div className="p-4 border-b border-white/5 bg-success/5 shrink-0">
-                  <h4 className="font-semibold text-sm flex justify-between items-center text-success/90 mb-1">
-                    Destination State
-                    <span className="badge badge-sm badge-success badge-outline">Restore</span>
+                <div
+                  className={`p-4 border-b border-white/5 ${targetEnabled ? 'bg-success/5' : 'bg-error/5'} shrink-0`}
+                >
+                  <h4
+                    className={`font-semibold text-sm flex justify-between items-center ${targetEnabled ? 'text-success/90' : 'text-error/90'} mb-1`}
+                  >
+                    Destination State ({targetEnabled ? 'Safe Mode' : 'Unsafe Mode'})
+                    <span
+                      className={`badge badge-sm ${targetEnabled ? 'badge-success' : 'badge-error'} badge-outline`}
+                    >
+                      Restore
+                    </span>
                   </h4>
                   <p className="text-xs text-base-content/50 break-all leading-tight">
-                    {preview?.target_name || 'Empty State'}
+                    {preview?.target_description || 'Empty State'}
                   </p>
                 </div>
                 <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
-                  {preview?.target_coll_id ? (
-                    <ModGroupList groups={targetGroups} colorClass="text-success" />
+                  {targetGroups.length > 0 ? (
+                    <ModGroupList
+                      groups={targetGroups}
+                      colorClass={targetEnabled ? 'text-success' : 'text-error'}
+                    />
                   ) : (
-                    <div className="text-center p-8 text-sm text-base-content/40 border border-white/5 border-dashed rounded-lg bg-base-100/10 m-2 mt-4">
+                    <div
+                      className={`text-center p-8 text-sm text-base-content/40 border ${targetEnabled ? 'border-success/20' : 'border-error/20'} border-dashed rounded-lg bg-base-100/10 m-2 mt-4`}
+                    >
                       Target state is empty (All Disabled)
                     </div>
                   )}
@@ -155,14 +151,14 @@ export default function ModeSwitchConfirmModal({
             <button
               onClick={onClose}
               className="btn btn-ghost hover:bg-white/5"
-              disabled={isDataLoading}
+              disabled={isLoading}
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
               className="btn btn-warning shadow-lg shadow-warning/10 font-bold tracking-wide"
-              disabled={isDataLoading}
+              disabled={isLoading}
             >
               Continue {'->'}
             </button>

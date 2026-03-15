@@ -34,10 +34,24 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
 pub async fn reset_database(
     app: tauri::AppHandle,
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    config: tauri::State<'_, crate::services::config::ConfigService>,
 ) -> Result<(), String> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    crate::services::app::app_service::reset_database_service(pool.inner(), &app_data_dir).await
+
+    crate::services::app::app_service::reset_database_service(pool.inner(), &app_data_dir).await?;
+
+    // Clear out the in-memory singleton state
+    config.reset_to_default();
+
+    Ok(())
+}
+
+/// Check if a given absolute path exists on the disk.
+/// Bypasses restrictive Tauri v2 plugin-fs scopes.
+#[tauri::command]
+pub fn check_path_exists_cmd(path: String) -> bool {
+    std::path::Path::new(&path).exists()
 }
 
 #[cfg(test)]

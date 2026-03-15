@@ -3,13 +3,13 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users who organize mods in Windows Explorer while EMMM2 is open expect the app to reflect external changes instantly — without this, the UI shows stale data until a manual refresh, and bulk operations that fire filesystem events trigger unnecessary grid re-renders.
-- **Proposed Solution**: A `notify`-crate watcher running as a background Tauri-managed service, watching the active game's `mods_path` with event debouncing (≤ 200ms), filtered through a `SuppressionGuard` that silences internally-generated events, and forwarding only external changes as `fs-changed` events to the frontend via `app_handle.emit`.
+- **Proposed Solution**: A `notify`-crate watcher running as a background Tauri-managed service, watching the active game's `mods_path` with a poll-based event loop (500ms). It features a global `SuppressionGuard` (AtomicBool) to silence internally-generated events and an event loop that performs atomic DB synchronization before forwarding events to the frontend.
 - **Success Criteria**:
-  - External folder creation appears in the grid within ≤ 500ms of the OS delivering the `Create` event.
-  - External folder deletion disappears from the grid within ≤ 500ms.
-  - Internal operations (toggle, rename, bulk move) trigger 0 watcher-sourced grid re-fetches while `SuppressionGuard` is active.
-  - A panicking suppressed operation drops `SuppressionGuard` via RAII — the watcher resumes normal operation in ≤ 100ms.
-  - Watcher switches to the new `mods_path` within ≤ 1s of a game switch (old watcher stopped, new one started).
+  - [x] External folder creation appears in the grid within ≤ 500ms of the OS delivering the `Create` event.
+  - [x] External folder deletion disappears from the grid within ≤ 500ms.
+  - [x] Internal operations (toggle, rename, bulk move) trigger 0 watcher-sourced grid re-fetches via `suppressor` flag.
+  - [x] Automatic GC (Garbage Collection) of lost objects runs whenever a watcher is initialized.
+  - [x] Watcher switches to the new `mods_path` within ≤ 1s of a game switch (old watcher stopped, new one started).
 
 ---
 
@@ -36,16 +36,17 @@ As a system, I want the watcher to ignore changes caused by the app's own intern
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                                       |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-28.2.1 | ✅ Positive | Given an internal operation (bulk toggle of 100 mods) holds a `SuppressionGuard`, when `notify` delivers rename events for those paths, then the watcher's event handler checks `is_suppressed(path)` and discards those events — 0 `fs-changed` events emitted                |
-| AC-28.2.2 | ❌ Negative | Given an internal operation panics while `SuppressionGuard` is held, then the guard's `Drop` implementation removes all suppressed paths from the set — the watcher resumes normal operation within ≤ 100ms                                                                    |
+| AC-28.2.1 | ✅ Positive | Given an internal operation (bulk toggle) holds a `SuppressionGuard`, when a filesystem event occurs, the watcher checks `suppressor` flag and discards the event — 0 `mod_watch:event` emitted. |
+| AC-28.2.2 | ✅ Positive | Given an internal operation panics or completes, the RAII `SuppressionGuard` drops and resets the flag to `false` automatically. |
 | AC-28.2.3 | ⚠️ Edge     | Given a path is legitimately changed externally at the exact same time as an internal operation suppresses it, then the external event is also suppressed for that path — the frontend will re-fetch on the next React Query `staleTime` expiry (default: 30s) as a safety net |
 
 ---
 
 ### Non-Goals
 
-- File watcher does not auto-categorize newly discovered folders — only signals "something changed" by invalidating the `['folders']` cache.
-- Watcher does not watch for changes inside `.ini` files (content changes) — only directory-level `Create`, `Remove`, `Rename` events.
+- File watcher only tracks relevant extensions: `ini`, `png`, `jpg`, `jpeg`, `webp` and directories (no extension). Other files are ignored.
+- Watcher ignores hidden folders starting with `.`.
+- Watcher depth check: Frontend filters events only for depth 1 (Object) or depth 2 (Mod) relative to `mods_path`.
 - No watcher for the OS Recycle Bin - only the active `mods_path`.
 
 ---
@@ -56,29 +57,37 @@ As a system, I want the watcher to ignore changes caused by the app's own intern
 
 ```
 WatcherState (Tauri managed state):
-  watcher: Arc<Mutex<Option<RecommendedWatcher>>>
-  suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>
+  suppressor: Arc<AtomicBool>
+  watcher: Mutex<Option<RecommendedWatcher>>
 
 init_watcher(game_id) → ():
-  1. Stop existing watcher if running
-  2. Resolve mods_path for game_id
-  3. Create notify::RecommendedWatcher with debounce 200ms:
+  1. Stop existing watcher (Mutex lock + drop)
+  2. Spawn Auto-GC task (clean orphaned objects)
+  3. Resolve mods_path for game_id
+  4. Create notify::RecommendedWatcher:
      event_handler = |event| {
-       for path in event.paths:
-         if suppressed_paths.contains(&path): continue  // suppress internal ops
-         app_handle.emit('fs-changed', FsEvent { kind, path })
+       if suppressor.is_active(): return
+       translate_event(event) → Vec<ModWatchEvent>
+       tx.send(events)
      }
-  4. watcher.watch(mods_path, RecursiveMode::Recursive)
-  5. Store in WatcherState
+  5. Spawn background event loop:
+     while let Ok(batch) = rx.recv_batch():
+       sync_watcher_event_batch(db, batch)  [atomic DB mirror sync]
+       app_handle.emit('mod_watch:event', batch)
 
 WatcherSuppression (RAII):
-  struct SuppressionGuard { paths: Arc<Mutex<HashSet<PathBuf>>> }
-  impl Drop: paths.lock().remove_all(self.guard_paths)
+  struct SuppressionGuard { suppressor: Arc<AtomicBool> }
+  impl Drop: suppressor.store(false)
 
 Frontend:
-  ExternalChangeHandler.tsx (silent listener, mounted in MainLayout)
-    → listen('fs-changed', (event) => {
-        queryClient.invalidateQueries(['folders', gameId, subPathForEvent(event.path)])
+  ExternalChangeHandler.tsx (silent listener)
+    → listen('mod_watch:event', (payload) => {
+        if (cooldownActive) return;
+        1. Debounce batch (300ms)
+        2. Filter isValidModFolder (depth 1 or 2)
+        3. Trigger sync_objects_cmd / gc_lost_objects_cmd (if needed)
+        4. Invalidate specific queries (objects, folders, category-counts)
+        5. Show user-friendly toast if in 'mods' view
       })
 ```
 

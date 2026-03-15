@@ -1,30 +1,14 @@
 use crate::services::fs_utils::operation_lock::OperationLock;
-
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
-use regex::Regex;
+use crate::services::scanner::watcher::WatcherState;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use std::sync::LazyLock;
 use tauri::State;
 
-static DISABLED_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(disabled|disable|dis)[_\-\s]*").unwrap());
-
-pub fn standardize_prefix(folder_name: &str, target_enabled: bool) -> String {
-    let clean_name = DISABLED_RE.replace(folder_name, "").trim().to_string();
-    let valid_name = if clean_name.is_empty() {
-        folder_name
-    } else {
-        &clean_name
-    };
-
-    if target_enabled {
-        return valid_name.to_string();
-    }
-
-    format!("DISABLED {valid_name}")
-}
+// Re-export from services layer for backward compat (tests use `super::*`)
+pub use crate::services::mods::core_ops::{
+    rename_mod_folder_inner, standardize_prefix, toggle_mod_inner, RenameResult,
+};
 
 #[tauri::command]
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
@@ -111,62 +95,6 @@ pub async fn toggle_mod(
     .await
 }
 
-pub async fn toggle_mod_inner(
-    state: &WatcherState,
-    path: String,
-    enable: bool,
-) -> Result<String, String> {
-    // Hold suppression for the entire function so watcher events don't
-    // leak through between the fs::rename and function return.
-    let _guard = SuppressionGuard::new(&state.suppressor);
-
-    let src = Path::new(&path);
-    if !src.exists() || !src.is_dir() {
-        return Err(format!("Mod folder does not exist: {path}"));
-    }
-
-    let parent = src.parent().unwrap_or_else(|| Path::new(""));
-    let old_name = src.file_name().unwrap_or_default().to_string_lossy();
-
-    let new_name = standardize_prefix(&old_name, enable);
-    if new_name == old_name {
-        return Ok(path);
-    }
-
-    let new_path = parent.join(&new_name);
-
-    // Guard: target already exists → rename collision (both X and DISABLED X on disk)
-    if new_path.exists() {
-        let base = crate::services::scanner::core::normalizer::normalize_display_name(&old_name);
-        return Err(format!(
-            r#"{{"type":"RenameConflict","attempted_target":"{}","existing_path":"{}","base_name":"{}"}}"#,
-            new_path
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-            new_path
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-            base.replace('"', "\\\""),
-        ));
-    }
-
-    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path)
-        .map_err(|e| format!("Failed to rename mod folder: {e}"))?;
-
-    log::info!("Toggled mod: '{}' -> '{}'", old_name, new_path.display());
-
-    Ok(new_path.to_string_lossy().to_string())
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RenameResult {
-    pub old_path: String,
-    pub new_path: String,
-    pub new_name: String,
-}
-
 #[tauri::command]
 pub async fn rename_mod_folder(
     pool: tauri::State<'_, sqlx::SqlitePool>,
@@ -185,71 +113,6 @@ pub async fn rename_mod_folder(
         &game_id,
     )
     .await
-}
-
-pub async fn rename_mod_folder_inner(
-    state: &WatcherState,
-    folder_path: String,
-    new_name: String,
-) -> Result<RenameResult, String> {
-    // Hold suppression for the entire function so watcher events don't
-    // leak through between the fs::rename and function return.
-    let _guard = SuppressionGuard::new(&state.suppressor);
-
-    let path = Path::new(&folder_path);
-    if !path.exists() || !path.is_dir() {
-        return Err(format!("Folder does not exist: {folder_path}"));
-    }
-
-    if new_name.is_empty() || new_name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
-        return Err("Invalid folder name — contains reserved characters".to_string());
-    }
-
-    let parent = path.parent().ok_or("Cannot determine parent directory")?;
-    let old_folder_name = path
-        .file_name()
-        .ok_or("Invalid folder name")?
-        .to_string_lossy()
-        .to_string();
-
-    let new_folder_name =
-        if crate::services::scanner::core::normalizer::is_disabled_folder(&old_folder_name) {
-            format!("{}{}", crate::DISABLED_PREFIX, new_name)
-        } else {
-            new_name.clone()
-        };
-
-    let new_path = parent.join(&new_folder_name);
-    if new_path.exists() {
-        return Err(format!(
-            "A folder named '{}' already exists",
-            new_folder_name
-        ));
-    }
-
-    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path)
-        .map_err(|e| format!("Failed to rename folder: {e}"))?;
-
-    update_info_json_name(&new_path, &new_name);
-
-    log::info!("Renamed '{}' -> '{}'", old_folder_name, new_folder_name);
-
-    Ok(RenameResult {
-        old_path: folder_path,
-        new_path: new_path.to_string_lossy().to_string(),
-        new_name,
-    })
-}
-
-fn update_info_json_name(folder_path: &Path, new_name: &str) {
-    use crate::services::mods::info_json;
-    if folder_path.join("info.json").exists() {
-        let update = info_json::ModInfoUpdate {
-            actual_name: Some(new_name.to_string()),
-            ..Default::default()
-        };
-        let _ = info_json::update_info_json(folder_path, &update);
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

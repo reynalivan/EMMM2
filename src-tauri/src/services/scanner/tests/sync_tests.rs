@@ -1,64 +1,14 @@
 use super::*;
 use crate::services::scanner::deep_matcher;
 use serde_json::json;
-use sqlx::sqlite::SqlitePoolOptions;
+
 use sqlx::Row;
 use sqlx::SqlitePool;
 use std::fs;
 use tempfile::TempDir;
 
 async fn test_pool() -> SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE games (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            game_type TEXT NOT NULL,
-            path TEXT NOT NULL
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE objects (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            folder_path TEXT,
-            object_type TEXT NOT NULL,
-            thumbnail_path TEXT,
-            tags TEXT NOT NULL DEFAULT '[]',
-            metadata TEXT NOT NULL DEFAULT '{}'
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE mods (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            actual_name TEXT NOT NULL,
-            folder_path TEXT NOT NULL,
-            status TEXT NOT NULL,
-            object_type TEXT NOT NULL,
-            object_id TEXT,
-            is_favorite INTEGER NOT NULL DEFAULT 0
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    pool
+    crate::test_utils::init_test_db().await.pool
 }
 
 fn needs_review_db() -> deep_matcher::MasterDb {
@@ -149,6 +99,7 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         items,
         None,
         &[],
+        false,
     )
     .await
     .unwrap();
@@ -203,6 +154,7 @@ async fn test_ensure_object_case_insensitive_merge() {
         items_unmatched,
         None,
         &[],
+        false,
     )
     .await
     .unwrap();
@@ -239,6 +191,7 @@ async fn test_ensure_object_case_insensitive_merge() {
         items_matched,
         None,
         &[],
+        false,
     )
     .await
     .unwrap();
@@ -302,6 +255,7 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
         items,
         None,
         &[],
+        false,
     )
     .await
     .unwrap();
@@ -367,6 +321,7 @@ async fn test_commit_rolls_back_on_failure() {
         items,
         None,
         &[],
+        false,
     )
     .await;
 
@@ -387,6 +342,12 @@ async fn test_commit_rolls_back_on_failure() {
 async fn test_commit_garbage_collects_ghost_objects() {
     let pool = test_pool().await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Insert game first to satisfy FK
+    sqlx::query("INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Game', 'gimi', '/')")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Insert an object manually that has NO associated mods
     sqlx::query(
@@ -414,6 +375,7 @@ async fn test_commit_garbage_collects_ghost_objects() {
         vec![],
         None,
         &[],
+        false,
     )
     .await
     .unwrap();

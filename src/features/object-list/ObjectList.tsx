@@ -8,10 +8,10 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { FolderPlus, FolderInput, AlertTriangle } from 'lucide-react';
 import { useObjectListLogic } from './useObjectListLogic';
+import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
 import ObjectListToolbar from './ObjectListToolbar';
@@ -68,6 +68,7 @@ export default function ObjectList() {
     setEditObject,
     handleEdit,
     handleSync,
+    handleBackgroundSync,
     isSyncing,
     handleSyncWithDb,
     handleApplySyncMatch,
@@ -103,6 +104,41 @@ export default function ObjectList() {
     handleBulkRemoveTags,
     handleBulkAutoOrganize,
   } = useObjectListLogic();
+
+  // Trigger background sync when entering the Mods Manager
+  useEffect(() => {
+    if (activeGame) {
+      handleBackgroundSync();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGame?.id]);
+
+  // Validate selected object exists on disk
+  useEffect(() => {
+    if (!activeGame || !selectedObjectFolderPath) return;
+
+    let isMounted = true;
+    const validateSelection = async () => {
+      try {
+        const fullPath = await join(activeGame.mod_path, selectedObjectFolderPath);
+        const folderExists = await invoke<boolean>('check_path_exists_cmd', { path: fullPath });
+
+        if (!folderExists && isMounted) {
+          console.warn(`Selected object missing on disk: ${fullPath}. Triggering sync...`);
+          // Calling background sync to repair DB
+          setSelectedObjectFolderPath(null); // Clear selection to prevent infinite validation loop
+          handleBackgroundSync();
+        }
+      } catch (e) {
+        console.error('Failed to validate selected object path:', e);
+      }
+    };
+
+    validateSelection();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeGame, selectedObjectFolderPath, handleBackgroundSync, setSelectedObjectFolderPath]);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [autoSetupOpen, setAutoSetupOpen] = useState(false);
@@ -176,23 +212,15 @@ export default function ObjectList() {
     handleDropOnItem(targetId, paths);
   }, [dropValidation, handleDropOnItem, setDropValidation]);
 
-  const qc = useQueryClient();
   const handleRefresh = useCallback(async () => {
     if (activeGame) {
-      try {
-        await invoke('repair_orphan_mods', { gameId: activeGame.id });
-      } catch (e) {
-        console.error('Repair orphan mods failed:', e);
-      }
+      await handleBackgroundSync();
     }
-    qc.invalidateQueries({ queryKey: ['objects'] });
-    qc.invalidateQueries({ queryKey: ['mod-folders'] });
-    qc.invalidateQueries({ queryKey: ['category-counts'] });
-  }, [activeGame, qc]);
+  }, [activeGame, handleBackgroundSync]);
 
   // Listen to remote auto-organize requests (e.g., from PreviewPanel empty state)
   useEffect(() => {
-    const onAutoOrganizeRequest = () => handleSync();
+    const onAutoOrganizeRequest = () => handleBackgroundSync();
     window.addEventListener('request-auto-organize', onAutoOrganizeRequest);
 
     const onAutoOrganizePathsRequest = (e: Event) => {
@@ -220,7 +248,7 @@ export default function ObjectList() {
       window.removeEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
       window.removeEventListener('request-archive-import', onArchiveImportRequest);
     };
-  }, [handleSync, handleDropAutoOrganize, handleArchivesInteractively]);
+  }, [handleBackgroundSync, handleDropAutoOrganize, handleArchivesInteractively]);
 
   const isEmpty = !isLoading && !isError && objects.length === 0;
   const hasNoGame = !activeGame;

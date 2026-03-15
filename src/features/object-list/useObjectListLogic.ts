@@ -197,6 +197,7 @@ export function useObjectListLogic() {
 
     // Sync
     handleSync: handlers.handleSync,
+    handleBackgroundSync: handlers.handleBackgroundSync,
     isSyncing: handlers.isSyncing,
     handleSyncWithDb: handlers.handleSyncWithDb,
     handleApplySyncMatch: handlers.handleApplySyncMatch,

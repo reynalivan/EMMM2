@@ -5,11 +5,11 @@
 - **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (optimistic UI), be safe (suppress file watcher, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.
 - **Proposed Solution**: Three backend commands (`toggle_mod`, `rename_mod`, `delete_mod`) that each acquire an `OperationLock`, activate a `WatcherSuppression`, perform the atomic filesystem operation, and return structured errors on failure — with optimistic React Query cache updates that roll back on error.
 - **Success Criteria**:
-  - Toggle UI optimistic update applies in ≤ 16ms (one frame); backend confirms within ≤ 300ms on SSD.
-  - Rename completes (disk + metadata sync) in ≤ 500ms for a flat mod folder.
-  - Delete (move to OS Trash) completes in ≤ 500ms; decrements objectlist object counts immediately via optimistic update.
-  - 0 watcher-triggered re-fetches caused by app's own toggle/rename/delete operations (WatcherSuppression enforced).
-  - Rapid toggle spam (5 clicks in 1s) results in the mod ending in the correct final state — no folder name corruption.
+  - [x] Toggle UI optimistic update applies in ≤ 16ms (one frame); backend confirms within ≤ 300ms on SSD.
+  - [x] Rename completes (disk + metadata sync) in ≤ 500ms for a flat mod folder.
+  - [x] Delete (move to Internal Trash) completes in ≤ 500ms; decrements objectlist object counts immediately via optimistic update.
+  - [x] 0 watcher-triggered re-fetches caused by app's own toggle/rename/delete operations (WatcherSuppression enforced).
+  - [x] Rapid toggle spam is serialized via `OperationLock`.
 
 ---
 
@@ -51,13 +51,12 @@ As a user, I want to rename a mod folder and have the display name update, so th
 
 As a user, I want to delete a mod by moving it to the OS Trash, so that I can recover it if I change my mind — without permanent data loss.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                        |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-13.3.1 | ✅ Positive | Given I select "Delete" from the context menu and confirm in the dialog, then the mod folder is moved to the OS Recycle Bin (not `fs::remove_dir_all`) within ≤ 500ms                                                           |
-| AC-13.3.2 | ✅ Positive | Given a successful delete of an enabled mod, then the parent object's `enabled_count` decrements optimistically in the objectlist and the card disappears from the grid in ≤ 100ms                                                 |
-| AC-13.3.3 | ❌ Negative | Given the OS Trash is unavailable (full or restricted), when delete is attempted, then the user is prompted with "Trash unavailable — permanently delete?" — a hard delete only executes after explicit secondary confirmation  |
-| AC-13.3.4 | ⚠️ Edge     | Given a folder where some nested files are locked by permissions, when delete is attempted, then the backend returns a `PartialDeleteError` listing affected paths — the original folder is NOT moved to Trash (all-or-nothing) |
-| AC-13.3.5 | ✅ Positive | Given I initiate a delete, the system runs `pre_delete_check` to report folder item count; if >0, a confirmation dialog warns "Folder contains N items. Delete to trash?" before proceeding                                     |
+| ID | Type | Criteria |
+|---|---|---|
+| AC-13.3.1 | ✅ Positive | Given I select "Delete" from the context menu and confirm in the dialog, then the mod folder is moved to the Internal App Trash (`app_data/trash/{uuid}/`) within ≤ 500ms. |
+| AC-13.3.2 | ✅ Positive | Given a successful delete of an enabled mod, then the parent object's `enabled_count` decrements optimistically in the objectlist and the card disappears from the grid in ≤ 100ms. |
+| AC-13.3.3 | ❌ Negative | Given a folder where some nested files are locked by permissions, when delete is attempted, then the backend returns a `PartialDeleteError` listing affected paths — the original folder is NOT moved to Trash. |
+| AC-13.3.4 | ✅ Positive | Given I initiate a delete, the system runs `pre_delete_check` to report folder item count; if >0, a confirmation dialog warns "Folder contains N items. Delete to trash?" before proceeding. |
 
 ---
 
@@ -74,45 +73,47 @@ As a user, I want to delete a mod by moving it to the OS Trash, so that I can re
 
 ### Architecture Overview
 
-```
-Backend commands:
-  toggle_mod(game_id, folder_path, target_state: bool) → ()
-    └── acquire OperationLock → activate WatcherSuppression
-        → fs::rename(path, new_path_with_or_without_prefix)
-        → release (guard drops on scope exit)
+```rust
+// Backend Service: Mods (core_ops.rs, trash.rs, bulk.rs)
 
-  rename_mod(game_id, folder_path, new_name) → ()
-    └── validate new_name (forbidden chars, max length, resulting path length)
-        → acquire OperationLock → activate WatcherSuppression
-        → fs::rename(old, new) → update info.json name field
-        → release
+toggle_mod(path, enable):
+  1. Acquire OperationLock(game_id).
+  2. Compute `new_path` (toggle "DISABLED " prefix).
+  3. Execute `fs::rename`.
+  4. DB Maintenance: 
+     - Update path and status in `mods` table (absolute or relative fallback).
+     - If top-level, update `objects` folder_path and all child `mods` paths.
 
-  delete_mod(game_id, folder_path) → ()
-    └── acquire OperationLock → activate WatcherSuppression
-        → trash::trash(folder_path)  [trash crate]
-        → release
+rename_mod(old_path, new_name):
+  1. Acquire OperationLock.
+  2. Computed `new_path` (preserving "DISABLED " status).
+  3. fs::rename + update `info.json` `actual_name`.
+  4. DB Maintenance: Recursive update of child paths and parent object path.
 
-Frontend:
-  useMutation + onMutate (optimistic) + onError (rollback) + onSettled (invalidate)
+delete_mod(path):
+  1. Acquire OperationLock + Suppress Watcher.
+  2. Generate UUID for trash entry.
+  3. Move folder to `./app_data/trash/{uuid}/` (cross-drive fallback: copy+delete).
+  4. Write `metadata.json` to trash folder for future restore.
+  5. Delete record from `mods` table.
 ```
 
 ### Integration Points
 
-| Component            | Detail                                                                                                   |
-| -------------------- | -------------------------------------------------------------------------------------------------------- |
-| `OperationLock`      | `Arc<Mutex<()>>` per `game_id` — prevents concurrent conflicting file ops                                |
-| `WatcherSuppression` | Set of suppressed paths stored during op; file watcher skips events matching these paths (Epic 28)       |
-| React Query          | Optimistic: `queryClient.setQueryData(['folders', gameId, subPath], updater)` — rolled back in `onError` |
-| Trash                | `trash` Rust crate — `trash::delete(path)` (Windows Recycle Bin via SHFileOperation)                     |
-| Collision Detection  | `std::path::Path::exists()` check _inside_ the same `OperationLock` scope before rename                  |
-| Path Validation      | Max resulting path length checked against Windows 260 char limit before rename                           |
+| Component         | Detail                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `OperationLock`   | Shared mutex per game workspace; serializes all filesystem mutations.                                        |
+| `Trash Service`   | App-level soft delete; supports `restore_from_trash` with context parity checks.                             |
+| `Watcher Guard`   | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                       |
+| `Info.json`       | Lifecycle managed via `info_json.rs`; fields merge-updated (not overwritten) on rename or toggle.            |
+| `Bulk Progress`   | Batch operations in `bulk.rs` emit `bulk-progress` events with throttled IPC updates.                        |
 
 ### Security & Privacy
 
-- **`folder_path` is validated with `canonicalize()` + `starts_with(mods_path)`** before any filesystem operation — no path traversal possible.
-- **New names are validated against a regex** `[^\\/:*?"<>|]` on both frontend and backend — double validation.
-- **Hard delete requires secondary explicit confirmation** — never executes as a side effect of a soft error.
-- **`WatcherSuppression` prevents feedback loops** — the app's own file system changes do not trigger re-fetches that could overwrite optimistic UI state.
+- **Path Isolation**: `is_path_safe` prevents traversal outside the game's designated mod directory.
+- **Context Parity**: Trash restore is blocked if the target game context has changed since deletion.
+- **Atomic Renames**: DB updates for children are part of the same service transaction as the folder rename.
+- **Cross-Drive Handling**: `rename_cross_drive_fallback` ensures reliability across different physical disks/partitions.
 
 ---
 

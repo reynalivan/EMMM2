@@ -6,7 +6,6 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use regex::Regex;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 use uuid::Uuid;
@@ -60,33 +59,41 @@ pub async fn apply_collection(
     let mut reconciled_ids = target_ids;
     let mut reconcile_warnings = Vec::new();
 
-    for (old_id, maybe_path) in &orphaned {
-        if let Some(path) = maybe_path {
-            let found = collection_repo::get_mod_id_by_path(pool, path, game_id)
-                .await
-                .map_err(|e| e.to_string())?;
+    if !orphaned.is_empty() {
+        let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-            if let Some(new_id) = found {
-                // Re-link: update collection_items to point to the new mod ID
-                collection_repo::update_collection_item_mod_id(
-                    pool,
-                    collection_id,
-                    old_id,
-                    &new_id,
-                )
+        let paths_to_lookup: Vec<String> = orphaned.iter().filter_map(|(_, p)| p.clone()).collect();
+
+        let found_map = collection_repo::batch_get_mod_id_by_paths(&mut tx, game_id, &paths_to_lookup)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut batch_updates = Vec::new();
+
+        for (old_id, maybe_path) in &orphaned {
+            if let Some(path) = maybe_path {
+                if let Some(new_id) = found_map.get(path) {
+                    batch_updates.push((old_id.clone(), new_id.clone()));
+                    reconciled_ids.push(new_id.clone());
+                } else {
+                    let name = Path::new(path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| old_id.clone());
+                    reconcile_warnings.push(format!("Skipping missing mod: {}", name));
+                }
+            } else {
+                reconcile_warnings.push(format!("Skipping orphaned mod (no path): {}", old_id));
+            }
+        }
+
+        if !batch_updates.is_empty() {
+            collection_repo::batch_update_collection_item_mod_id(&mut tx, collection_id, &batch_updates)
                 .await
                 .map_err(|e| e.to_string())?;
-                reconciled_ids.push(new_id);
-            } else {
-                let name = Path::new(path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| old_id.clone());
-                reconcile_warnings.push(format!("Skipping missing mod: {}", name));
-            }
-        } else {
-            reconcile_warnings.push(format!("Skipping orphaned mod (no path): {}", old_id));
         }
+
+        tx.commit().await.map_err(|e| e.to_string())?;
     }
 
     let target_ids = reconciled_ids;
@@ -149,7 +156,7 @@ pub async fn apply_collection(
         .map_err(|e| format!("Failed to get mods_path: {e}"))?;
 
     if let Some(ref mp) = mods_path {
-        let nested_changes = apply_nested_mods(watcher_state, mp, &nested_target_paths)?;
+        let nested_changes = apply_nested_mods(watcher_state, mp, &nested_target_paths).await?;
         result.changed_count += nested_changes;
     }
 
@@ -161,23 +168,27 @@ pub async fn snapshot_current_state(
     game_id: &str,
     safe_mode_enabled: bool,
 ) -> Result<(), String> {
+    // Walk nested mods OUTSIDE the SQL transaction to prevent connection starvation
+    let mods_path = crate::database::game_repo::get_mod_path(pool, game_id)
+        .await
+        .unwrap_or_default();
+
+    let mut nested_mods = Vec::new();
+    if let Some(ref mp) = mods_path {
+        let mp_clone = mp.clone();
+        nested_mods = tokio::task::spawn_blocking(move || {
+            super::nested_walker::walk_nested_mods(&mp_clone).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+    }
+
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Delete existing snapshot collection mapping and the collection itself for this game
     collection_repo::delete_snapshot_collection(&mut tx, game_id, safe_mode_enabled)
         .await
         .map_err(|e| e.to_string())?;
-
-    // Capture ALL currently enabled mods regardless of safety context
-    // The snapshot's is_safe_context flag determines which corridor it represents
-    let currently_enabled =
-        collection_repo::get_enabled_mod_ids(&mut tx, game_id)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let paths = collection_repo::get_mod_paths_for_ids(&mut tx, &currently_enabled)
-        .await
-        .unwrap_or_default();
 
     let snapshot_id = Uuid::new_v4().to_string();
     let name = format!("Unsaved {}", chrono::Local::now().format("%Y%m%d%H%M"));
@@ -192,12 +203,26 @@ pub async fn snapshot_current_state(
     .await
     .map_err(|e| e.to_string())?;
 
-    for mod_id in currently_enabled {
-        let mod_path = paths.get(&mod_id).map(|s| s.as_str());
-        collection_repo::insert_collection_item(&mut tx, &snapshot_id, &mod_id, mod_path)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
+    // O(1) query to bulk-insert all enabled corridor mods straight from the DB
+    collection_repo::insert_snapshot_collection_from_state(
+        &mut tx,
+        &snapshot_id,
+        game_id,
+        safe_mode_enabled,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Bulk insert filtered nested mods
+    let nested_paths: Vec<String> = nested_mods
+        .into_iter()
+        .filter(|n| n.is_enabled && n.is_safe == safe_mode_enabled)
+        .map(|n| n.folder_path)
+        .collect();
+
+    collection_repo::batch_insert_nested_collection_items(&mut tx, &snapshot_id, &nested_paths)
+        .await
+        .map_err(|e| e.to_string())?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
@@ -236,46 +261,73 @@ async fn apply_with_desired_status(
     states: Vec<ModState>,
     desired: HashMap<String, String>,
 ) -> Result<(usize, Vec<String>), String> {
-    let mut updates = Vec::new();
+    let mut updates: Vec<(String, String, String, Option<String>)> = Vec::new();
     let mut warnings = Vec::new();
+
+    let mut tasks = Vec::new();
+    for state in states {
+        let next_status = desired
+            .get(&state.id)
+            .cloned()
+            .unwrap_or_else(|| state.status.clone());
+        if state.status == next_status {
+            continue;
+        }
+
+        let new_path_res = rename_for_status(&state.folder_path, next_status == "ENABLED");
+        let reason = if next_status == "ENABLED" {
+            None
+        } else {
+            Some("COLLECTION".to_string())
+        };
+
+        tasks.push((state, next_status, reason, new_path_res));
+    }
+
+    let mut set = tokio::task::JoinSet::new();
 
     {
         let _guard = SuppressionGuard::new(&watcher_state.suppressor);
-        for state in &states {
-            let next_status = desired
-                .get(&state.id)
-                .cloned()
-                .unwrap_or_else(|| state.status.clone());
-            if state.status == next_status {
-                continue;
-            }
 
-            let new_path = rename_for_status(&state.folder_path, next_status == "ENABLED")?;
-            if let Some(path) = new_path {
-                if !Path::new(&state.folder_path).exists() {
-                    let folder_name = Path::new(&state.folder_path)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| state.id.clone());
-                    warnings.push(format!("Skipping missing mod: {}", folder_name));
-                    continue;
-                }
-                match fs::rename(&state.folder_path, &path) {
-                    Ok(()) => {
-                        updates.push((state.id.clone(), next_status, path));
-                    }
-                    Err(e) => {
+        for (state, next_status, reason, new_path_res) in tasks {
+            set.spawn_blocking(move || match new_path_res {
+                Ok(Some(path)) => {
+                    if !Path::new(&state.folder_path).exists() {
                         let folder_name = Path::new(&state.folder_path)
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| state.id.clone());
-                        warnings.push(format!("Failed to rename {}: {}", folder_name, e));
+                        return Err(format!("Skipping missing mod: {}", folder_name));
+                    }
+
+                    match crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
+                        Path::new(&state.folder_path),
+                        Path::new(&path),
+                    ) {
+                        Ok(()) => Ok(Some((state.id, next_status, path, reason))),
+                        Err(e) => {
+                            let folder_name = Path::new(&state.folder_path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| state.id.clone());
+                            Err(format!("Failed to rename {}: {}", folder_name, e))
+                        }
                     }
                 }
-                continue;
-            }
+                Ok(None) => Ok(Some((state.id, next_status, state.folder_path, reason))),
+                Err(e) => Err(e),
+            });
+        }
 
-            updates.push((state.id.clone(), next_status, state.folder_path.clone()));
+        while let Some(res) = set.join_next().await {
+            match res {
+                Ok(inner_res) => match inner_res {
+                    Ok(Some(update)) => updates.push(update),
+                    Ok(None) => {}
+                    Err(w) => warnings.push(w),
+                },
+                Err(e) => warnings.push(format!("Join error during collection apply: {}", e)),
+            }
         }
     }
 
@@ -313,25 +365,22 @@ fn rename_for_status(path: &str, to_enabled: bool) -> Result<Option<String>, Str
     Ok(Some(next.to_string_lossy().to_string()))
 }
 
-/// Apply nested mod state changes via filesystem rename.
-///
-/// Walks all nested mods under `mods_path`, enables those whose paths are in
-/// `target_paths`, and disables all other currently enabled nested mods.
-fn apply_nested_mods(
+/// Apply nested mod state changes via filesystem rename asynchronously.
+pub async fn apply_nested_mods(
     watcher_state: &WatcherState,
     mods_path: &str,
     target_paths: &[String],
 ) -> Result<usize, String> {
-    let all_nested = nested_walker::walk_nested_mods(mods_path)?;
+    let mp_clone = mods_path.to_string();
+    let all_nested =
+        tokio::task::spawn_blocking(move || nested_walker::walk_nested_mods(&mp_clone))
+            .await
+            .map_err(|e| format!("Join error walking nested: {}", e))??;
 
     if all_nested.is_empty() && target_paths.is_empty() {
         return Ok(0);
     }
 
-    let _guard = SuppressionGuard::new(&watcher_state.suppressor);
-    let mut changed = 0;
-
-    // Helper to get disabled-prefix-free path for comparison
     fn get_canonical_path(path: &str) -> String {
         match rename_for_status(path, true) {
             Ok(Some(p)) => p,
@@ -339,31 +388,55 @@ fn apply_nested_mods(
         }
     }
 
-    // Build a set of canonical target paths for O(1) lookup.
     let target_set: std::collections::HashSet<String> =
         target_paths.iter().map(|p| get_canonical_path(p)).collect();
 
-    for nm in &all_nested {
-        let canonical_current = get_canonical_path(&nm.folder_path);
-        let should_enable = target_set.contains(&canonical_current);
+    let mut set: tokio::task::JoinSet<Result<usize, String>> = tokio::task::JoinSet::new();
+    let mut changed = 0;
 
-        if should_enable && !nm.is_enabled {
-            // Enable: rename DISABLED → enabled
-            if let Ok(Some(new_path)) = rename_for_status(&nm.folder_path, true) {
-                if Path::new(&nm.folder_path).exists() {
-                    fs::rename(&nm.folder_path, &new_path)
-                        .map_err(|e| format!("Failed to enable nested mod: {e}"))?;
-                    changed += 1;
-                }
+    {
+        let _guard = SuppressionGuard::new(&watcher_state.suppressor);
+
+        for nm in all_nested {
+            let canonical_current = get_canonical_path(&nm.folder_path);
+            let should_enable = target_set.contains(&canonical_current);
+
+            if should_enable && !nm.is_enabled {
+                set.spawn_blocking(move || {
+                    if let Ok(Some(new_path)) = rename_for_status(&nm.folder_path, true) {
+                        if Path::new(&nm.folder_path).exists() {
+                            crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
+                                Path::new(&nm.folder_path),
+                                Path::new(&new_path),
+                            )
+                            .map_err(|e| format!("Failed to enable nested mod: {}", e))?;
+                            return Ok(1);
+                        }
+                    }
+                    Ok(0)
+                });
+            } else if !should_enable && nm.is_enabled {
+                set.spawn_blocking(move || {
+                    if let Ok(Some(new_path)) = rename_for_status(&nm.folder_path, false) {
+                        if Path::new(&nm.folder_path).exists() {
+                            crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
+                                Path::new(&nm.folder_path),
+                                Path::new(&new_path),
+                            )
+                            .map_err(|e| format!("Failed to disable nested mod: {}", e))?;
+                            return Ok(1);
+                        }
+                    }
+                    Ok(0)
+                });
             }
-        } else if !should_enable && nm.is_enabled {
-            // Disable: rename enabled → DISABLED
-            if let Ok(Some(new_path)) = rename_for_status(&nm.folder_path, false) {
-                if Path::new(&nm.folder_path).exists() {
-                    fs::rename(&nm.folder_path, &new_path)
-                        .map_err(|e| format!("Failed to disable nested mod: {e}"))?;
-                    changed += 1;
-                }
+        }
+
+        while let Some(res) = set.join_next().await {
+            match res {
+                Ok(Ok(c)) => changed += c,
+                Ok(Err(e)) => log::warn!("{}", e),
+                Err(e) => log::warn!("Join error applying nested mod: {}", e),
             }
         }
     }

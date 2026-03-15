@@ -1,4 +1,4 @@
-import { CheckCircle2, Plus, ArrowRight, Trash2 } from 'lucide-react';
+import { CheckCircle2, Plus, ArrowRight, Trash2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { GameConfig } from '../../types/game';
 import { GAME_TYPE_COLORS } from '../../types/game';
@@ -8,11 +8,27 @@ interface Props {
   onContinue: () => void;
   onAddMore: () => void;
   onRemoveGame: (gameId: string) => void;
+  onGoBack: () => void;
 }
 
-export default function AutoDetectResult({ games, onContinue, onAddMore, onRemoveGame }: Props) {
+export default function AutoDetectResult({
+  games,
+  onContinue,
+  onAddMore,
+  onRemoveGame,
+  onGoBack,
+}: Props) {
   return (
-    <div className="min-h-screen bg-base-100 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-base-100 flex items-center justify-center p-6 relative">
+      {/* Back to welcome */}
+      <button
+        className="btn btn-ghost btn-sm gap-1 absolute top-6 left-6 text-base-content/50 hover:text-base-content"
+        onClick={onGoBack}
+        title="Back to Welcome"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back
+      </button>
       <div className="max-w-lg w-full space-y-8 text-center">
         {/* Success Icon */}
         <div className="space-y-3">
@@ -63,13 +79,22 @@ export default function AutoDetectResult({ games, onContinue, onAddMore, onRemov
                   <div className="flex-1 text-left">
                     <h3 className="font-semibold text-lg">{game.name}</h3>
                     <p
-                      className="text-base-content/50 text-xs truncate max-w-[200px] sm:max-w-xs"
+                      className="text-base-content/50 text-xs truncate max-w-50 sm:max-w-xs"
                       title={game.game_exe}
                     >
                       {game.game_exe}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {game.warnings && game.warnings.length > 0 && (
+                      <span
+                        className="badge badge-warning badge-sm gap-1"
+                        title={game.warnings.join('\n')}
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        {game.warnings.length}
+                      </span>
+                    )}
                     <span
                       className={`badge ${GAME_TYPE_COLORS[game.game_type] || 'badge-neutral'}`}
                     >
@@ -84,6 +109,25 @@ export default function AutoDetectResult({ games, onContinue, onAddMore, onRemov
                     </button>
                   </div>
                 </div>
+
+                {/* Inline warnings block */}
+                {game.warnings && game.warnings.length > 0 && (
+                  <div className="px-4 pb-3 pt-0">
+                    <div className="rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 text-left">
+                      <p className="text-warning text-xs font-semibold flex items-center gap-1 mb-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Setup Warnings — you can still proceed
+                      </p>
+                      <ul className="space-y-0.5">
+                        {game.warnings.map((w, wi) => (
+                          <li key={wi} className="text-xs text-base-content/70 list-disc ml-4">
+                            {w}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             ))}
           </AnimatePresence>

@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
+import { scanService } from '../../lib/services/scanService';
 import ManualSetupForm from './ManualSetupForm';
 import AutoDetectResult from './AutoDetectResult';
 import AuroraBackground from '../welcome/AuroraBackground';
@@ -19,6 +20,7 @@ export default function WelcomeScreen({
 }) {
   const [screen, setScreen] = useState<Screen>('welcome');
   const [isScanning, setIsScanning] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
@@ -52,26 +54,58 @@ export default function WelcomeScreen({
   };
 
   const handleManualComplete = (game: GameConfig) => {
-    // Append instead of overwrite, avoid exact duplicates if they somehow happen
-    setDetectedGames((prev) => {
-      const exists = prev.some((g) => g.id === game.id);
-      return exists ? prev : [...prev, game];
-    });
+    // Normalize paths for comparison (forward slashes, lowercase)
+    const normalize = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+    const newPath = normalize(game.game_exe);
+    const duplicate = detectedGames.find((g) => normalize(g.game_exe) === newPath);
+
+    if (duplicate) {
+      setError(`This game folder is already added as "${duplicate.name}".`);
+      return; // Do NOT navigate away — stay on the manual form
+    }
+
+    setError(null);
+    setDetectedGames((prev) => [...prev, game]);
     setScreen('result');
   };
 
-  const handleRemoveGame = async (gameId: string) => {
+  const handleRemoveGame = (gameId: string) => {
+    setDetectedGames((prev) => {
+      const remaining = prev.filter((g) => g.id !== gameId);
+      if (remaining.length === 0) {
+        setScreen('welcome');
+      }
+      return remaining;
+    });
+  };
+
+  const handleFinalize = async (games: GameConfig[]) => {
     try {
-      await invoke('remove_game', { gameId });
-      setDetectedGames((prev) => {
-        const remaining = prev.filter((g) => g.id !== gameId);
-        if (remaining.length === 0) {
-          setScreen('welcome');
+      setError(null);
+      setIsIndexing(true);
+
+      // Save the games to DB — this is mandatory
+      await invoke('save_onboarding_games', { games });
+
+      // Best-effort sync: try to import mods from each game folder.
+      // If this fails (e.g. network unavailable for master DB, or empty /Mods),
+      // we still navigate to dashboard. The file watcher will handle initial indexing.
+      for (const game of games) {
+        try {
+          await scanService.syncDatabase(game.id, game.name, game.game_type, game.mod_path);
+        } catch (scanErr) {
+          console.warn(
+            `[onboarding] syncDatabase failed for "${game.name}", will retry via watcher:`,
+            scanErr,
+          );
         }
-        return remaining;
-      });
+      }
+
+      onComplete(games);
     } catch (err) {
+      // Only the save_onboarding_games failure is a hard blocker
       setError(String(err));
+      setIsIndexing(false);
     }
   };
 
@@ -212,6 +246,23 @@ export default function WelcomeScreen({
     );
   }
 
+  // == Indexing State ==
+  if (isIndexing) {
+    return (
+      <div className="min-h-screen bg-base-100 flex items-center justify-center">
+        <div className="text-center space-y-6">
+          <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
+          <div>
+            <h2 className="text-2xl font-semibold">Indexing your mods...</h2>
+            <p className="text-base-content/60 mt-2">
+              Please wait while EMMM2 scans the game folders.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // == Manual Setup Screen ==
   if (screen === 'manual') {
     return (
@@ -233,9 +284,14 @@ export default function WelcomeScreen({
     return (
       <AutoDetectResult
         games={detectedGames}
-        onContinue={() => onComplete(detectedGames)}
+        onContinue={() => handleFinalize(detectedGames)}
         onAddMore={() => setScreen('manual')}
         onRemoveGame={handleRemoveGame}
+        onGoBack={() => {
+          setDetectedGames([]);
+          setError(null);
+          setScreen('welcome');
+        }}
       />
     );
   }

@@ -3,13 +3,12 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Beyond single-click toggle, users need rich contextual actions on mod cards (rename, delete, open in Explorer, paste thumbnail) from a right-click menu — and a drag-selection marquee and drag-to-objectlist for rapid re-categorization.
-- **Proposed Solution**: A right-click context menu (custom, not browser default) on cards and grid background, a lasso-select marquee drawn via CSS overlay with auto-scroll at edges, a DnD system (`dnd-kit`) connecting grid cards as drag sources to objectlist Object rows as drop targets, and a clipboard image paste-to-thumbnail action.
+- **Proposed Solution**: A right-click context menu (custom, not browser default) on cards and grid background, standardized Shift-click and Ctrl-click selection, and a "Move to Object" dialog for re-categorization.
 - **Success Criteria**:
-  - Context menu appears within ≤ 50ms of right-click (positioned correctly within viewport bounds).
-  - Thumbnail paste (clipboard → `preview.png`) completes in ≤ 500ms.
-  - Lasso selection of 50 cards in a 200-card grid updates `selectedItems` in ≤ 100ms.
-  - DnD overlay renders following the cursor within ≤ 16ms (one frame at 60fps).
-  - Drop-on-invalid-zone animates back to source position in ≤ 200ms (no items moved on bad drop).
+  - [x] Context menu appears within ≤ 50ms of right-click (positioned correctly within viewport bounds).
+  - [x] Thumbnail paste (clipboard → `preview.png`) completes in ≤ 500ms.
+  - [x] Multi-selection (Shift/Ctrl) of 50 cards in a 200-card grid updates `gridSelection` in ≤ 50ms.
+  - [x] Delete and Rename flow triggers for all selected items (Bulk Delete / Rename Focused).
 
 ---
 
@@ -23,7 +22,7 @@ As a user, I want to right-click a mod card to access advanced actions, so that 
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                                             |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-15.1.1 | ✅ Positive | Given a right-click on a mod card, then a context menu appears in ≤ 50ms, positioned within the viewport, with options: "Open in Explorer", "Edit Metadata", "Sync with DB", "Rename", "Toggle", "Favorite", "Paste Thumbnail", "Import Thumbnail...", "Move to Object...", "Delete" |
+| AC-15.1.1 | ✅ Positive | Given a right-click on a mod card, then a context menu appears in ≤ 50ms, with options: "Open in Explorer", "Rename", "Enable/Disable", "Favorite", "Paste Thumbnail", "Import Thumbnail...", "Move to Object...", "Delete" |
 | AC-15.1.2 | ✅ Positive | Given I click "Paste Thumbnail" and the OS clipboard contains an image, then the raw image bytes are read via `tauri-plugin-clipboard-manager`, saved as `preview.png` in the mod folder, and the card thumbnail updates in ≤ 500ms                                                  |
 | AC-15.1.3 | ❌ Negative | Given the clipboard contains text or a non-image file, then "Paste Thumbnail" is grayed out/disabled — clicking it does nothing and shows no error                                                                                                                                   |
 | AC-15.1.4 | ⚠️ Edge     | Given I click "Open in Explorer" on a folder deleted externally 1s before the click, then the OS shell command fails; a toast shows "Folder no longer exists" — no crash                                                                                                             |
@@ -54,29 +53,29 @@ As a user, I want to click-drag on empty grid space to draw a selection rectangl
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-15.3.1 | ✅ Positive | Given I mousedown on empty grid space and drag, then a semi-transparent CSS rectangle overlay is drawn following the cursor                                                                                                                      |
 | AC-15.3.2 | ✅ Positive | Given the rectangle intersects any mod card's bounding box, that card is added to `selectedItems[]` in real-time as the user drags                                                                                                               |
-| AC-15.3.3 | ⚠️ Edge     | Given the drag extends beyond the visible grid container (cursor at bottom of grid), then the container auto-scrolls downward at a rate proportional to the cursor's distance below the boundary — selection continues through virtualized items |
+#### US-15.3: Selection Logic
+| ID | Type | Criteria |
+|---|---|---|
+| AC-15.3.1 | ✅ Positive | Given a mod card, Ctrl+Click toggles its selection state without clearing others. |
+| AC-15.3.2 | ✅ Positive | Given a mod card, Shift+Click selects a range from the last selected item to the current one. |
+| AC-15.3.3 | ✅ Positive | Click on empty grid background clears all selection. |
 
 ---
 
-#### US-15.4: Drag-and-Drop to ObjectList Object
-
-As a user, I want to drag one or more selected mod cards onto an Object in the objectlist, so that I can re-categorize mods rapidly without using the bulk move dialog.
-
-| ID        | Type        | Criteria                                                                                                                                                                                                            |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-15.4.1 | ✅ Positive | Given I start dragging a mod card (or multiple selected cards), then a `DragOverlay` floats under the cursor showing "{N} folder(s)" label — the source cards show a dimmed "dragging" state                        |
-| AC-15.4.2 | ✅ Positive | Given I drop the overlay on a valid Object row in the objectlist, then `bulk_move(selectedPaths, targetObjectPath)` is invoked (Epic 14); `selectedItems` clears on success                                            |
-| AC-15.4.3 | ❌ Negative | Given I drop the overlay on an invalid zone (TopBar, BulkActionBar, PreviewPanel), then the overlay animates back to the source position (`dropAnimation` in dnd-kit) in ≤ 200ms — no file operations are triggered |
-| AC-15.4.4 | ⚠️ Edge     | Given I drop the overlay on the same Object the mods are already in (self-drop), then the move is a no-op — `bulk_move` short-circuits, no disk rename, no toast                                                    |
+#### US-15.4: Keyboard Navigation
+| ID | Type | Criteria |
+|---|---|---|
+| AC-15.4.1 | ✅ Positive | Arrow keys move focus between cards in grid mode (handling columns correctly). |
+| AC-15.4.2 | ✅ Positive | Enter key navigates into a folder or triggers default action. |
+| AC-15.4.3 | ✅ Positive | Backspace key navigates up to the parent folder. |
+| AC-15.4.4 | ✅ Positive | Delete key opens delete confirmation for focused/selected items. |
+| AC-15.4.5 | ✅ Positive | F2 key starts renaming for the focused item. |
 
 ---
 
 ### Non-Goals
 
-- No native OS drag (file manager drag-in from File Explorer) — only intra-app DnD via `dnd-kit`.
-- No animated card thumbnail zoom on hover (performance risk with 1000+ cards).
-- No right-click context menu on the ObjectList's ObjectList rows — that is Epic 10 (Object CRUD).
-- Clipboard paste supports only raster images (PNG/JPEG); SVG and WebP are not supported in this phase.
+- Clipboard paste supports common raster formats via browser navigator.clipboard.
 
 ---
 
@@ -87,27 +86,19 @@ As a user, I want to drag one or more selected mod cards onto an Object in the o
 ```
 Context Menu (custom, portal-mounted)
   ├── CardContextMenu (appears on card right-click)
-  │   ├── invokeShellOpen(folderPath)     → invoke('open_in_explorer', { path })
-  │   ├── → trigger rename modal          (Epic 13)
-  │   ├── → trigger delete confirm        (Epic 13)
-  │   └── pasteClipboardImage(folderPath) → invoke('paste_thumbnail', { path })
-  └── GridContextMenu (appears on grid BG right-click)
-      ├── invalidateQueries(['folders', ...])
-      ├── selectAll() → setSelectedItems(allFolderPaths)
-      └── invokeShellOpen(currentSubPath)
+  │   ├── invokeShellOpen(folderPath)
+  │   ├── handleToggleEnabled(folder)
+  │   ├── handleRenameRequest(folder)
+  │   ├── handleDeleteRequest(folder)
+  │   └── handlePasteThumbnail(folder)
+  └── Toolbar Refresh
+      ├── invalidate('folders')
 
-Lasso Selection
-  └── onMouseDown(emptySpace) → track {startX, startY}
-      → onMouseMove → draw <div> overlay (position: absolute)
-      → intersect overlay rect with each virtualizer item rect → add to selectedItems
-      → onMouseUp → cleanup overlay
-
-DnD (dnd-kit)
-  ├── DndContext > DragOverlay
-  ├── useDraggable on ModCard (draggable id = folder_path)
-  └── useDroppable on ObjectRow (droppable id = object_folder_path)
-      → onDragEnd: if over valid target → bulk_move(selectedItems || [activeId], over.id)
-                   else → no-op (dropAnimation plays)
+Keyboard Navigation:
+  - Arrow keys: setFocusedId
+  - Backspace: handleGoUp
+  - F2: handleRenameRequest
+  - Delete: handleDeleteRequest
 ```
 
 ### Integration Points

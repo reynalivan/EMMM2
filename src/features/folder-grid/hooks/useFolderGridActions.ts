@@ -22,6 +22,7 @@ import {
 } from '../../../hooks/useFolders';
 import type { DuplicateInfo } from '../../../types/mod';
 import { useAppStore } from '../../../stores/useAppStore';
+import { useSettings } from '../../../hooks/useSettings';
 
 interface FolderGridActionsOptions {
   sortedFolders: ModFolder[];
@@ -34,6 +35,7 @@ export function useFolderGridActions({
 }: FolderGridActionsOptions) {
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
+  const { settings } = useSettings();
   const toggleMod = useToggleMod();
   const renameMod = useRenameMod();
   const deleteMod = useDeleteMod();
@@ -220,7 +222,6 @@ export function useFolderGridActions({
     [queryClient, activeGame],
   );
 
-  // Toggle Safe Mode per-mod
   const handleToggleSafeRequest = useCallback(
     (folder: ModFolder) => {
       if (!activeGame?.id) return;
@@ -232,11 +233,12 @@ export function useFolderGridActions({
       }
 
       const safeMode = useAppStore.getState().safeMode;
-      // If Safe Mode is ON globally, configuring a mod as Unsafe (is_safe -> false) requires PIN
-      if (safeMode && folder.is_safe) {
+      const hasPin = !!settings?.safe_mode?.pin_hash;
+      // Only prompt for PIN when: (1) Safe Mode is ON globally, (2) marking as Unsafe, (3) PIN is configured
+      if (safeMode && folder.is_safe && hasPin) {
         setPinSafeDialog({ open: true, folder });
       } else {
-        // Otherwise, allow direct toggle without pin
+        // No PIN configured, or marking as Safe — allow direct toggle
         toggleModSafe.mutate({
           gameId: activeGame.id,
           folderPath: folder.path,
@@ -244,7 +246,7 @@ export function useFolderGridActions({
         });
       }
     },
-    [toggleModSafe, activeGame?.id],
+    [toggleModSafe, activeGame?.id, settings],
   );
 
   const handleToggleSafeSubmit = useCallback(() => {
@@ -288,10 +290,11 @@ export function useFolderGridActions({
       }));
 
       const safeMode = useAppStore.getState().safeMode;
+      const hasPin = !!settings?.safe_mode?.pin_hash;
       const targetSafeStatus = !folder.is_safe;
 
-      // 2. Check if we are jumping to Unsafe while SafeMode is globally ON
-      if (safeMode && targetSafeStatus === false) {
+      // 2. Check if we are jumping to Unsafe while SafeMode is globally ON, and a PIN is configured
+      if (safeMode && targetSafeStatus === false && hasPin) {
         // Requires PIN. Hand off to pinSafeDialog with the newly disabled mod.
         setActiveContextDialog({ open: false, folder: null, isProcessing: false });
         setPinSafeDialog({
@@ -329,7 +332,7 @@ export function useFolderGridActions({
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'active' });
     }
-  }, [activeContextDialog.folder, activeGame?.id, queryClient]);
+  }, [activeContextDialog.folder, activeGame?.id, queryClient, settings]);
 
   return {
     handleToggleEnabled,
@@ -358,5 +361,7 @@ export function useFolderGridActions({
     activeContextDialog,
     handleActiveContextCancel,
     handleActiveContextSubmit,
+    /** true when a PIN has been configured in settings */
+    hasPin: !!settings?.safe_mode?.pin_hash,
   };
 }

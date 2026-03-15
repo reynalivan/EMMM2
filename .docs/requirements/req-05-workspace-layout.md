@@ -90,8 +90,9 @@ ResizableWorkspace (react-resizable-panels)
 
 LaunchBar
   ├── PlayButton → invoke('launch_game', activeGameId)
-  ├── ConflictsBadge → navigate('/conflicts')
-  └── RandomizerButton → (Epic 35)
+  ├── ConflictsBadge → Pulsing amber alert if conflicts > 0 → navigate('/conflicts')
+  └── RandomizerButton → Shuffle icon → opens RandomizerModal (Epic 35)
+  └── ConflictToast → Inline alert for quick conflict dismissal
 ```
 
 ### Integration Points
@@ -102,7 +103,8 @@ LaunchBar
 | Panel Restore     | `defaultLayout` prop reads `localStorage.getItem('panelLayout')` on mount                                             |
 | Game Switch       | `invoke('set_active_game', { gameId })` (Epic 02) + `queryClient.invalidateQueries()`                                 |
 | Launch            | `invoke('launch_game', { gameId })` (Epic 02)                                                                         |
-| Conflicts         | Conflict count read from React Query cache seeded by Epic 29 scan results                                             |
+| Conflicts         | Conflict count read from `useActiveConflicts` hook; modal displays `ConflictModal`                                    |
+| Randomizer        | Opens `RandomizerModal` (Epic 35) directly from button                                                                |
 | Routing           | React Router v6 — `useNavigate()` — no full page reloads                                                              |
 
 ### Security & Privacy

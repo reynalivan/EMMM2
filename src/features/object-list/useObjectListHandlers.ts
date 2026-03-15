@@ -86,6 +86,7 @@ export function useObjectListHandlers({
     confirmDeleteObject: crud.confirmDeleteObject,
     handleEdit: crud.handleEdit,
     handleSync: scan.handleSync,
+    handleBackgroundSync: scan.handleBackgroundSync,
     handleSyncWithDb: scan.handleSyncWithDb,
     handleApplySyncMatch: scan.handleApplySyncMatch,
     handlePin: crud.handlePin,

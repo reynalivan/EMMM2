@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Trash2, Wrench, Eraser, RotateCcw } from 'lucide-react';
 import { useSettings } from '../../../hooks/useSettings';
 import { invoke } from '@tauri-apps/api/core';
@@ -9,7 +8,6 @@ import DedupFeature from '../../scanner/DedupFeature';
 export default function MaintenanceTab() {
   const { runMaintenance } = useSettings();
   const { addToast } = useToastStore();
-  const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const resetModalRef = useRef<HTMLDialogElement>(null);
 
@@ -57,7 +55,7 @@ export default function MaintenanceTab() {
       // Clear Zustand persisted state from localStorage
       localStorage.removeItem('vibecode-storage');
       addToast('success', 'Database reset. Redirecting to setup...');
-      navigate('/welcome', { replace: true });
+      window.location.reload();
     } catch (e) {
       console.error(e);
       addToast('error', `Reset Failed: ${String(e)}`);

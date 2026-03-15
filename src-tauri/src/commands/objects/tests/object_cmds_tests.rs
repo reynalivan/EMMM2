@@ -6,63 +6,7 @@ use tempfile::TempDir;
 
 async fn setup_test_db() -> (TempDir, SqlitePool, String) {
     let tmp = TempDir::new().unwrap();
-    let db_path = tmp.path().join("test.db");
-    let pool = SqlitePool::connect(&format!("sqlite:{}?mode=rwc", db_path.display()))
-        .await
-        .unwrap();
-
-    // Run migrations (assuming we can just create the needed tables for this test)
-    sqlx::query(
-        "CREATE TABLE games (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            game_type TEXT NOT NULL,
-            mod_path TEXT NOT NULL,
-            path TEXT NOT NULL
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE objects (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            folder_path TEXT,
-            object_type TEXT NOT NULL DEFAULT 'Other',
-            sub_category TEXT,
-            sort_order INTEGER DEFAULT 0,
-            tags JSON DEFAULT '[]',
-            metadata JSON DEFAULT '{}',
-            thumbnail_path TEXT,
-            is_safe BOOLEAN DEFAULT 1,
-            is_pinned BOOLEAN DEFAULT 0,
-            is_auto_sync BOOLEAN DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE mods (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            object_id TEXT,
-            actual_name TEXT NOT NULL,
-            folder_path TEXT NOT NULL,
-            status TEXT NOT NULL,
-            object_type TEXT NOT NULL DEFAULT 'Other',
-            is_favorite BOOLEAN DEFAULT 0
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    let pool = crate::test_utils::init_test_db().await.pool;
 
     let game_id = "test_game_1".to_string();
     let mods_path = tmp.path().join("Mods");
@@ -93,7 +37,7 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
     // The physical folder exists; now also insert an object row in the DB
     // so that `get_objects_cmd_inner` (which queries the DB) can find it.
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe) VALUES (?, ?, ?, ?, 'Other', 1)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES (?, ?, ?, ?, 'Other')"
     )
     .bind("obj_disabled")
     .bind(&game_id)
@@ -151,7 +95,7 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
     std::fs::create_dir_all(mods_path.join("NSFW_Mod_Folder")).unwrap();
 
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe) VALUES (?, ?, 'NSFW_Mod', 'NSFW_Mod_Folder', 'Character', 0)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES (?, ?, 'NSFW_Mod', 'NSFW_Mod_Folder', 'Character')"
     )
     .bind(obj_id)
     .bind(&game_id)
@@ -217,7 +161,6 @@ async fn test_create_object_cmd() -> CommandResult<()> {
         folder_path: Some("New Hero Folder".to_string()),
         object_type: "Weapon".to_string(),
         sub_category: None,
-        is_safe: Some(true),
         metadata: Some(serde_json::json!({})),
         thumbnail_url: None,
     };
@@ -263,7 +206,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
     std::fs::create_dir_all(mods_path.join("test_obj_folder")).unwrap();
 
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_safe) VALUES (?, ?, 'OldName', 'test_obj_folder', 'Other', 1)"
+        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES (?, ?, 'OldName', 'test_obj_folder', 'Other')"
     )
     .bind(obj_id)
     .bind(&game_id)
@@ -277,7 +220,6 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         sub_category: None,
         metadata: Some(serde_json::json!({"test":true})),
         thumbnail_path: None,
-        is_safe: Some(false),
         is_auto_sync: None,
         tags: Some(vec!["Pyro".to_string()]),
     };
@@ -301,7 +243,6 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         updated.object_type, "Character",
         "TC-10-04: Type must be updated"
     );
-    assert_eq!(updated.is_safe, false, "TC-10-04: is_safe must be updated");
 
     Ok(())
 }

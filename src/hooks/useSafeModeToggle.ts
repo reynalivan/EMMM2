@@ -15,6 +15,8 @@ interface UseSafeModeToggleReturn {
   toggleSafeMode: () => Promise<void>;
   /** Handle the actual switch after confirmation (checks PIN if needed). */
   handleConfirmSwitch: () => Promise<void>;
+  /** Called when PIN succeeds during global toggle flow. */
+  handlePinSuccess: () => void;
   /** Direct set after PIN verified (e.g. called from PinEntryModal onSuccess). */
   setSafeModeWithToast: (enabled: boolean) => Promise<void>;
 
@@ -35,7 +37,7 @@ interface UseSafeModeToggleReturn {
 
 export function useSafeModeToggle(): UseSafeModeToggleReturn {
   const { safeMode, setSafeMode } = useAppStore();
-  const { settings } = useSettings();
+  const { settings, isLoading } = useSettings();
   const [pinModalOpen, setPinModalOpen] = useState(false);
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -74,26 +76,35 @@ export function useSafeModeToggle(): UseSafeModeToggleReturn {
   );
 
   const toggleSafeMode = useCallback(async () => {
-    // Open the confirmation modal first, setting the target state
-    setConfirmTargetEnabled(!safeMode);
-    setConfirmModalOpen(true);
-  }, [safeMode]);
-
-  const handleConfirmSwitch = useCallback(async () => {
-    setConfirmModalOpen(false);
-
+    // If moving Safe → Unsafe, check PIN first
     if (safeMode) {
-      // Safe → Unsafe: check PIN
+      if (isLoading) {
+        toast.warning('Still loading security settings. Please try again in a moment.', 3000);
+        return;
+      }
       if (settings?.safe_mode?.pin_hash) {
         setPinModalOpen(true);
         return;
       }
-      await setSafeModeWithToast(false);
-    } else {
-      // Unsafe → Safe: always allowed immediately
-      await setSafeModeWithToast(true);
     }
-  }, [safeMode, settings, setSafeModeWithToast]);
+
+    // No PIN or moving Unsafe → Safe: go straight to confirmation/preview
+    setConfirmTargetEnabled(!safeMode);
+    setConfirmModalOpen(true);
+  }, [safeMode, settings, isLoading]);
+
+  /** Called when PIN is successfully verified. Transitions to the confirmation modal. */
+  const handlePinSuccess = useCallback(() => {
+    setPinModalOpen(false);
+    setConfirmTargetEnabled(false); // We were Safe, going Unsafe
+    setConfirmModalOpen(true);
+  }, []);
+
+  const handleConfirmSwitch = useCallback(async () => {
+    setConfirmModalOpen(false);
+    // PIN was already checked by toggleSafeMode -> handlePinSuccess path
+    await setSafeModeWithToast(confirmTargetEnabled);
+  }, [confirmTargetEnabled, setSafeModeWithToast]);
 
   const closePinModal = useCallback(() => {
     setPinModalOpen(false);
@@ -106,6 +117,7 @@ export function useSafeModeToggle(): UseSafeModeToggleReturn {
   return {
     toggleSafeMode,
     handleConfirmSwitch,
+    handlePinSuccess,
     setSafeModeWithToast,
     confirmModalOpen,
     confirmTargetEnabled,

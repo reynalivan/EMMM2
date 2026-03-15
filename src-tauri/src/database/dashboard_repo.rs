@@ -47,7 +47,11 @@ pub async fn fetch_global_stats(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<DashboardStats, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
+    let safe_clause = if safe_mode {
+        "AND COALESCE(m.is_safe, 1) = 1"
+    } else {
+        ""
+    };
 
     let query = format!(
         r#"
@@ -95,7 +99,11 @@ pub async fn fetch_category_distribution(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<Vec<CategorySlice>, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
+    let safe_clause = if safe_mode {
+        "AND COALESCE(m.is_safe, 1) = 1"
+    } else {
+        ""
+    };
 
     let query = format!(
         r#"
@@ -120,7 +128,11 @@ pub async fn fetch_game_distribution(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<Vec<GameSlice>, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
+    let safe_clause = if safe_mode {
+        "AND COALESCE(m.is_safe, 1) = 1"
+    } else {
+        ""
+    };
 
     let query = format!(
         r#"
@@ -149,7 +161,11 @@ pub async fn fetch_recent_mods(
     safe_mode: bool,
     limit: i64,
 ) -> Result<Vec<RecentMod>, sqlx::Error> {
-    let safe_clause = if safe_mode { "AND COALESCE(o.is_safe, m.is_safe, 1) = 1" } else { "" };
+    let safe_clause = if safe_mode {
+        "AND COALESCE(m.is_safe, 1) = 1"
+    } else {
+        ""
+    };
 
     let query = format!(
         r#"
@@ -157,7 +173,7 @@ pub async fn fetch_recent_mods(
             m.id,
             m.actual_name AS name,
             g.name        AS game_name,
-            o.name        AS object_name,
+            o.name AS object_name,
             m.indexed_at
         FROM mods m
         JOIN games g ON g.id = m.game_id

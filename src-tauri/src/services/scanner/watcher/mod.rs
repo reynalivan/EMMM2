@@ -3,46 +3,111 @@
 //! Uses the `notify` crate (v7, recommended watcher) to watch for
 //! changes in mod directories, with debouncing to avoid event storms.
 //!
+//! # Architecture (post-refactor)
+//!
+//! - **Typed events**: `ModWatchEvent` (internal) → `WatchEventPayload` (Serde IPC)
+//! - **Async-first**: `tokio::sync::mpsc` channel, consumed by `tokio::spawn` in lifecycle
+//! - **Rename pairing**: Stateful buffer in watcher closure pairs Windows From/To events
+//! - **Status detection**: Enable/disable detection happens at event creation, not downstream
+//!
 //! # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 
+use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-/// Events emitted by the mod folder watcher.
+// ── Domain Events (internal) ──────────────────────────────────────────
+
+/// Internal events produced by the watcher closure.
+/// Consumed by the lifecycle event loop for DB sync.
 #[derive(Debug, Clone)]
 pub enum ModWatchEvent {
-    /// A file or folder was created.
+    /// A directory was created at depth 1 or 2.
     Created(String),
-    /// A file or folder was modified.
+    /// A file was modified (content change, metadata).
     Modified(String),
-    /// A file or folder was removed.
+    /// A directory was removed at depth 1 or 2.
     Removed(String),
-    /// A file or folder was renamed.
+    /// A directory was renamed (paired From→To).
     Renamed { from: String, to: String },
-    /// A folder's enable/disable status changed (DISABLED prefix added/removed).
+    /// A rename that changed enable/disable status (DISABLED prefix).
+    StatusChanged {
+        path: String,
+        from_status: &'static str,
+        to_status: &'static str,
+    },
+    /// A watcher error.
+    Error(String),
+}
+
+// ── IPC Payload (Serde-typed, emitted to frontend) ────────────────────
+
+/// Strongly-typed payload emitted to the frontend via `app.emit("mod_watch:event", payload)`.
+/// Uses `#[serde(tag = "type")]` for discriminated union matching on the TS side.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
+pub enum WatchEventPayload {
+    Created {
+        path: String,
+    },
+    Modified {
+        path: String,
+    },
+    Removed {
+        path: String,
+    },
+    Renamed {
+        from: String,
+        to: String,
+    },
     StatusChanged {
         path: String,
         from_status: String,
         to_status: String,
     },
-    /// An error occurred during watching.
-    Error(String),
+    Error {
+        error: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retry_count: Option<u32>,
+    },
 }
 
-/// Configuration for the mod folder watcher.
-pub struct WatcherConfig {
-    /// Debounce duration to combine rapid events.
-    pub debounce_ms: u64,
-}
-
-impl Default for WatcherConfig {
-    fn default() -> Self {
-        Self { debounce_ms: 500 }
+impl WatchEventPayload {
+    /// Convert an internal `ModWatchEvent` into the IPC payload.
+    pub fn from_event(event: &ModWatchEvent) -> Self {
+        match event {
+            ModWatchEvent::Created(p) => Self::Created { path: p.clone() },
+            ModWatchEvent::Modified(p) => Self::Modified { path: p.clone() },
+            ModWatchEvent::Removed(p) => Self::Removed { path: p.clone() },
+            ModWatchEvent::Renamed { from, to } => Self::Renamed {
+                from: from.clone(),
+                to: to.clone(),
+            },
+            ModWatchEvent::StatusChanged {
+                path,
+                from_status,
+                to_status,
+            } => Self::StatusChanged {
+                path: path.clone(),
+                from_status: from_status.to_string(),
+                to_status: to_status.to_string(),
+            },
+            ModWatchEvent::Error(e) => Self::Error {
+                error: e.clone(),
+                path: None,
+                retry_count: None,
+            },
+        }
     }
 }
+
+// ── Managed State ─────────────────────────────────────────────────────
 
 /// Managed state for the watcher, accessible via Tauri commands.
 pub struct WatcherState {
@@ -86,37 +151,265 @@ impl Drop for SuppressionGuard {
     }
 }
 
+// ── Relevance Filter ──────────────────────────────────────────────────
+
+/// Extensions relevant to the mod manager.
+/// Everything else (`.dds`, `.buf`, `.hlsl`, `.blend`, `.dll`) is noise.
+const RELEVANT_EXTENSIONS: &[&str] = &["ini", "png", "jpg", "jpeg", "webp"];
+
+/// Check if a path is relevant to the mod manager.
+/// Directories (no extension) always pass; files must match the allowlist.
+fn is_relevant_path(path: &Path) -> bool {
+    match path.extension().and_then(|e| e.to_str()) {
+        None => true, // No extension = likely a directory
+        Some(ext) => {
+            let lower = ext.to_ascii_lowercase();
+            RELEVANT_EXTENSIONS.contains(&lower.as_str())
+        }
+    }
+}
+
+// ── Status Change Detection ───────────────────────────────────────────
+
+/// Detect if a rename represents an enable/disable status change.
+/// Returns `Some((old_status, new_status))` if the DISABLED prefix was added/removed.
+fn detect_status_change(from_path: &Path, to_path: &Path) -> Option<(&'static str, &'static str)> {
+    use crate::services::scanner::core::normalizer;
+
+    let old_name = from_path.file_name()?.to_str()?;
+    let new_name = to_path.file_name()?.to_str()?;
+
+    let old_disabled = normalizer::is_disabled_folder(old_name);
+    let new_disabled = normalizer::is_disabled_folder(new_name);
+
+    if old_disabled != new_disabled {
+        let old_status = if old_disabled { "DISABLED" } else { "ENABLED" };
+        let new_status = if new_disabled { "DISABLED" } else { "ENABLED" };
+        Some((old_status, new_status))
+    } else {
+        None
+    }
+}
+
+// ── Watcher Factory ───────────────────────────────────────────────────
+
 /// Create a file watcher on a mod directory with suppression support.
 ///
-/// Returns a tuple of (Watcher handle, Receiver for events).
-/// The watcher runs on a background thread. Drop the handle to stop watching.
+/// Returns `(Watcher handle, tokio Receiver)`.
+/// The closure handles:
+/// - Suppression checks
+/// - Rename pair buffering (Windows From/To pairing, 100ms timeout)
+/// - Status-change detection (DISABLED prefix)
+/// - Relevance filtering (directories + allowlisted extensions)
 ///
 /// # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 pub fn watch_mod_directory(
     path: &Path,
     is_suppressed: Arc<AtomicBool>,
-) -> Result<(RecommendedWatcher, mpsc::Receiver<ModWatchEvent>), String> {
+) -> Result<
+    (
+        RecommendedWatcher,
+        tokio::sync::mpsc::UnboundedReceiver<ModWatchEvent>,
+    ),
+    String,
+> {
     if !path.exists() || !path.is_dir() {
         return Err(format!("Watch target does not exist: {}", path.display()));
     }
 
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-    // We clone the Arc to move into the closure
-    // Ideally we check this inside the event handler
-    let _suppressed_clone = is_suppressed.clone();
+    let suppressed_clone = is_suppressed.clone();
+
+    // Stateful rename pair buffer.
+    // On Windows, `notify` emits renames as two separate events:
+    //   Modify(Name(From)) then Modify(Name(To)).
+    // We buffer the `From` path and pair it with the next `To` event.
+    // If no `To` arrives within 100ms, the `From` is treated as a Removed event.
+    let pending_from: Arc<std::sync::Mutex<Option<(String, Instant)>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let pending_clone = pending_from.clone();
+
+    // Helper: send event, ignoring closed-channel errors (watcher shutting down).
+    let send = {
+        let tx = tx.clone();
+        move |ev: ModWatchEvent| {
+            let _ = tx.send(ev);
+        }
+    };
+
+    let watcher_path = path.to_path_buf();
 
     let mut watcher = RecommendedWatcher::new(
         move |result: Result<Event, notify::Error>| match result {
-            Ok(event) => {
+            Ok(mut event) => {
                 // Check suppression flag
-                if _suppressed_clone.load(Ordering::Relaxed) {
+                if suppressed_clone.load(Ordering::Relaxed) {
                     return;
                 }
 
-                let events = translate_event(event);
-                for ev in events {
-                    let _ = tx.send(ev);
+                // Pre-filter events based on depth (Opt-3)
+                // We drop events deeper than Mod folder (depth 2) unless they are .ini or images
+                event.paths.retain(|p| {
+                    if let Ok(rel) = p.strip_prefix(&watcher_path) {
+                        let components: Vec<_> = rel.components().collect();
+                        let depth = components.len();
+
+                        // Ignore hidden folders/files
+                        if components
+                            .iter()
+                            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+                        {
+                            return false;
+                        }
+
+                        if depth > 2 {
+                            if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                                let ext_lower = ext.to_lowercase();
+                                if ext_lower != "ini"
+                                    && ext_lower != "png"
+                                    && ext_lower != "jpg"
+                                    && ext_lower != "jpeg"
+                                    && ext_lower != "webp"
+                                {
+                                    return false; // Drop deep structural items
+                                }
+                            } else {
+                                return false; // Drop deep folders or extensionless files
+                            }
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                if event.paths.is_empty() {
+                    return; // All paths filtered out
+                }
+
+                // Flush any expired pending rename (>100ms old)
+                {
+                    let mut pending = pending_clone.lock().unwrap();
+                    if let Some((ref from_path, ts)) = *pending {
+                        if ts.elapsed() > Duration::from_millis(100) {
+                            if is_relevant_path(Path::new(from_path)) {
+                                send(ModWatchEvent::Removed(from_path.clone()));
+                            }
+                            *pending = None;
+                        }
+                    }
+                }
+
+                match event.kind {
+                    // ── Rename: From (buffer it) ──
+                    EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+                        if let Some(p) = event.paths.first() {
+                            let path_str = p.to_string_lossy().to_string();
+                            let mut pending = pending_clone.lock().unwrap();
+                            // Flush any existing pending From as Removed
+                            if let Some((ref old_from, _)) = *pending {
+                                if is_relevant_path(Path::new(old_from)) {
+                                    send(ModWatchEvent::Removed(old_from.clone()));
+                                }
+                            }
+                            *pending = Some((path_str, Instant::now()));
+                        }
+                    }
+
+                    // ── Rename: To (pair with buffered From) ──
+                    EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
+                        if let Some(p) = event.paths.first() {
+                            let to_path = p.to_string_lossy().to_string();
+                            let mut pending = pending_clone.lock().unwrap();
+                            if let Some((from_path, _)) = pending.take() {
+                                // Paired: check if it's a status change
+                                if is_relevant_path(Path::new(&from_path))
+                                    || is_relevant_path(Path::new(&to_path))
+                                {
+                                    let from_p = Path::new(&from_path);
+                                    let to_p = Path::new(&to_path);
+                                    if let Some((from_status, to_status)) =
+                                        detect_status_change(from_p, to_p)
+                                    {
+                                        send(ModWatchEvent::StatusChanged {
+                                            path: to_path,
+                                            from_status,
+                                            to_status,
+                                        });
+                                    } else {
+                                        send(ModWatchEvent::Renamed {
+                                            from: from_path,
+                                            to: to_path,
+                                        });
+                                    }
+                                }
+                            } else {
+                                // Orphan To → treat as Created
+                                if is_relevant_path(p) {
+                                    send(ModWatchEvent::Created(to_path));
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Rename: Both (some OS/backends emit both paths) ──
+                    EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                        if event.paths.len() >= 2 {
+                            let from = event.paths[0].to_string_lossy().to_string();
+                            let to = event.paths[1].to_string_lossy().to_string();
+                            if is_relevant_path(&event.paths[0])
+                                || is_relevant_path(&event.paths[1])
+                            {
+                                let from_p = Path::new(&from);
+                                let to_p = Path::new(&to);
+                                if let Some((from_status, to_status)) =
+                                    detect_status_change(from_p, to_p)
+                                {
+                                    send(ModWatchEvent::StatusChanged {
+                                        path: to,
+                                        from_status,
+                                        to_status,
+                                    });
+                                } else {
+                                    send(ModWatchEvent::Renamed { from, to });
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Rename: Any (safety net — should not be reached) ──
+                    EventKind::Modify(ModifyKind::Name(_)) => {}
+
+                    // ── Create ──
+                    EventKind::Create(_) => {
+                        for p in &event.paths {
+                            if is_relevant_path(p) {
+                                send(ModWatchEvent::Created(p.to_string_lossy().to_string()));
+                            }
+                        }
+                    }
+
+                    // ── Modify (content/metadata, not rename) ──
+                    EventKind::Modify(_) => {
+                        for p in &event.paths {
+                            if is_relevant_path(p) {
+                                send(ModWatchEvent::Modified(p.to_string_lossy().to_string()));
+                            }
+                        }
+                    }
+
+                    // ── Remove ──
+                    EventKind::Remove(_) => {
+                        for p in &event.paths {
+                            if is_relevant_path(p) {
+                                send(ModWatchEvent::Removed(p.to_string_lossy().to_string()));
+                            }
+                        }
+                    }
+
+                    // ── Ignored event kinds (Access, Other, etc.) ──
+                    _ => {}
                 }
             }
             Err(e) => {
@@ -132,58 +425,6 @@ pub fn watch_mod_directory(
         .map_err(|e| format!("Failed to watch path: {e}"))?;
 
     Ok((watcher, rx))
-}
-
-/// Extensions relevant to the mod manager.
-/// Everything else (`.dds`, `.buf`, `.hlsl`, `.blend`, `.dll`) is noise.
-const RELEVANT_EXTENSIONS: &[&str] = &["ini", "png", "jpg", "jpeg", "webp"];
-
-/// Check if a path is relevant to the mod manager.
-/// Directories (no extension) always pass; files must match the allowlist.
-fn is_relevant_path(path: &std::path::Path) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        None => true, // No extension = likely a directory
-        Some(ext) => {
-            let lower = ext.to_ascii_lowercase();
-            RELEVANT_EXTENSIONS.contains(&lower.as_str())
-        }
-    }
-}
-
-/// Translate a raw notify Event into our domain ModWatchEvents.
-///
-/// Filters: only relevant paths (directories + ini/image files) are forwarded.
-/// `Modify` events are now forwarded for status tracking and metadata updates.
-fn translate_event(event: Event) -> Vec<ModWatchEvent> {
-    let mut results = Vec::new();
-
-    match event.kind {
-        EventKind::Create(_) => {
-            for p in &event.paths {
-                if is_relevant_path(p) {
-                    results.push(ModWatchEvent::Created(p.to_string_lossy().to_string()));
-                }
-            }
-        }
-        EventKind::Modify(_) => {
-            // Forward Modified events for relevant paths
-            for p in &event.paths {
-                if is_relevant_path(p) {
-                    results.push(ModWatchEvent::Modified(p.to_string_lossy().to_string()));
-                }
-            }
-        }
-        EventKind::Remove(_) => {
-            for p in &event.paths {
-                if is_relevant_path(p) {
-                    results.push(ModWatchEvent::Removed(p.to_string_lossy().to_string()));
-                }
-            }
-        }
-        _ => {} // Ignore Access, Other, etc.
-    }
-
-    results
 }
 
 pub mod lifecycle;

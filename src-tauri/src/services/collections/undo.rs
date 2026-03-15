@@ -72,7 +72,22 @@ pub async fn undo_collection(
     .await
     .map_err(|e| e.to_string())?;
 
-    let result = apply_state_change(pool, watcher_state, states, &snapshot_mod_ids).await?;
+    // Also fetch the nested paths that were saved in the snapshot
+    let nested_target_paths = crate::database::collection_repo::get_nested_collection_items(pool, &collection_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut result = apply_state_change(pool, watcher_state, states, &snapshot_mod_ids).await?;
+
+    // ── Nested mods: toggle via filesystem rename ────────────────────────────
+    let mods_path = crate::database::game_repo::get_mod_path(pool, game_id)
+        .await
+        .map_err(|e| format!("Failed to get mods_path: {e}"))?;
+
+    if let Some(ref mp) = mods_path {
+        let nested_changes = super::apply::apply_nested_mods(watcher_state, mp, &nested_target_paths).await?;
+        result.changed_count += nested_changes;
+    }
 
     // Cleanup snapshot after successful undo
     delete_snapshot(pool, &collection_id).await?;

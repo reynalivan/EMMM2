@@ -1,99 +1,13 @@
 use super::*;
 use crate::services::collections::CreateCollectionInput;
 use crate::services::scanner::watcher::WatcherState;
-use sqlx::sqlite::SqlitePoolOptions;
+
 use sqlx::SqlitePool;
 use std::fs;
 use tempfile::TempDir;
 
 async fn setup_pool() -> SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS games (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            game_type TEXT NOT NULL,
-            path TEXT NOT NULL,
-            mod_path TEXT,
-            game_exe TEXT,
-            launcher_path TEXT,
-            loader_exe TEXT,
-            launch_args TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS mods (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            actual_name TEXT NOT NULL,
-            folder_path TEXT NOT NULL,
-            status TEXT DEFAULT 'DISABLED',
-            is_pinned BOOLEAN DEFAULT 0,
-            is_safe BOOLEAN DEFAULT 0,
-            last_status_active BOOLEAN,
-            size_bytes INTEGER,
-            object_type TEXT,
-            metadata_blob JSON,
-            object_id TEXT,
-            is_favorite BOOLEAN DEFAULT 0,
-            indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS collections (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            game_id TEXT NOT NULL,
-            is_safe_context BOOLEAN DEFAULT 1,
-            is_last_unsaved BOOLEAN DEFAULT 0
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS collection_items (
-            collection_id TEXT NOT NULL,
-            mod_id TEXT NOT NULL,
-            mod_path TEXT,
-            FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-            FOREIGN KEY(mod_id) REFERENCES mods(id) ON DELETE CASCADE,
-            PRIMARY KEY (collection_id, mod_id)
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS collection_nested_items (
-            collection_id TEXT NOT NULL,
-            mod_path TEXT NOT NULL,
-            FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-            PRIMARY KEY (collection_id, mod_path)
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    pool
+    crate::test_utils::init_test_db().await.pool
 }
 
 async fn seed_game(pool: &SqlitePool, id: &str, name: &str) {
@@ -315,11 +229,18 @@ async fn test_apply_disables_all_non_collection_mods() {
     )
     .await;
 
+    // Insert objects to satisfy FK constraints for mods.object_id
+    sqlx::query("INSERT INTO objects (id, game_id, name, object_type) VALUES ('raiden', 'g1', 'Raiden', 'Character'), ('barbara', 'g1', 'Barbara', 'Character')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     // Set object_ids
     sqlx::query("UPDATE mods SET object_id = 'raiden' WHERE id IN ('a', 'd')")
         .execute(&pool)
         .await
         .unwrap();
+
     sqlx::query("UPDATE mods SET object_id = 'barbara' WHERE id = 'b'")
         .execute(&pool)
         .await

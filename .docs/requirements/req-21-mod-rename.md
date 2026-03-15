@@ -56,32 +56,31 @@ As a system, I want to audit a mod folder's file contents before any rename/dele
 
 ### Architecture Overview
 
-```
-rename_mod_folder(game_id, folder_path, new_base_name) → Result<(), CommandError>:
-  1. Validate new_base_name: no forbidden chars, not empty, trimmed, max 128 chars
-  2. Acquire OperationLock(game_id).await
-  3. Activate WatcherSuppression([folder_path, target_path])
-  4. Normalize target name:
-      new_name = if is_disabled(folder_path): "DISABLED " + new_base_name else new_base_name
-      target_path = parent(folder_path) / new_name
-  5. Check target_path.len() <= 260 (Windows MAX_PATH)
-  6. Check !target_path.exists() → if exists: return Err(Conflict)
-  7. fs::rename(folder_path, target_path)
-  8. Update info.json: if (target_path/info.json).exists(): set name = new_base_name
-  9. Return Ok(())
+```rust
+// Backend Service: Mod Rename (core_ops.rs)
 
-pre_delete_check(game_id, folder_path) → FolderContentInfo:
-  → bounded walkdir (max 2s) counting .ini files, images, nested dirs, total size
+rename_mod_folder_inner(old_path, new_name):
+  1. Acquire OperationLock(game_id).
+  2. Map `old_rel` path from DB.
+  3. Activate SuppressionGuard for source and target paths.
+  4. Perform fs::rename.
+  5. Update `info.json` with new `actual_name`.
+  6. DB MAINTENANCE:
+     - Update parent mod record with `new_rel`.
+     - Recursively update child mod paths (`update_child_paths`).
+     - If top-level, update parent Object's `folder_path`.
+  7. Release lock and guard.
 ```
 
 ### Integration Points
 
-| Component          | Detail                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| Command            | `mod_core_cmds.rs::rename_mod_folder`                                                       |
-| OperationLock      | Shared `Arc<Mutex<()>>` per `game_id`                                                       |
-| WatcherSuppression | Both `folder_path` (old name) and `target_path` (new name) suppressed                       |
-| Frontend           | `useFolderGridActions.ts::renameFolder` — optimistic rename in cache, rollback on `onError` |
+| Component           | Detail                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| Metadata Sync       | `info_json.rs::update_info_json` patches `actual_name` field while preserving other metadata.    |
+| Recursive DB Update | `mod_repo::update_child_paths` handles bulk string replacement for nested mod paths.             |
+| Object Linking      | `object_repo::update_object_folder_path` ensures the game object stays pinned to the new folder. |
+| Path Traversal Guard| `path_utils::is_path_safe` prevents renaming outside the designated mods directory.             |
+| Optimistic Rename   | Frontend updates the card label and path instantly before backend confirmation.                   |
 | Conflict Dialog    | `ConflictResolveDialog.tsx` — shown when `CommandError::Conflict` returned                  |
 
 ### Security & Privacy

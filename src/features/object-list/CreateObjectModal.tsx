@@ -17,7 +17,6 @@ const createSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(255, 'Name is too long'),
   object_type: z.string().min(1, 'Category is required'),
   sub_category: z.string().optional(),
-  is_safe: z.boolean(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -53,7 +52,6 @@ export default function CreateObjectModal({
       name: '',
       object_type: '',
       sub_category: '',
-      is_safe: true,
       metadata: {},
     },
   });
@@ -87,7 +85,6 @@ export default function CreateObjectModal({
         name: data.name,
         object_type: data.object_type,
         sub_category: data.sub_category || null,
-        is_safe: data.is_safe,
         metadata: data.metadata,
       });
 
@@ -204,18 +201,6 @@ export default function CreateObjectModal({
               )}
             </div>
           ))}
-
-          {/* Safe Mode */}
-          <div className="form-control w-full">
-            <label className="label cursor-pointer justify-start gap-4 border rounded-lg p-3 hover:bg-base-200 transition-colors">
-              <input type="checkbox" className="toggle toggle-success" {...register('is_safe')} />
-              <div className="flex flex-col">
-                <span className="label-text font-bold">Safe Mode (SFW)</span>
-                <span className="label-text-alt opacity-70">Disable to mark as NSFW</span>
-              </div>
-            </label>
-          </div>
-
           {/* Error feedback */}
           {createObject.isError && (
             <div className="alert alert-error text-sm">
@@ -236,7 +221,7 @@ export default function CreateObjectModal({
             </button>
             <button
               type="submit"
-              className="btn btn-primary min-w-[120px]"
+              className="btn btn-primary min-w-30"
               disabled={createObject.isPending}
             >
               {createObject.isPending ? (

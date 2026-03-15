@@ -118,6 +118,7 @@ async fn test_games_persist_in_db() {
         game_exe: PathBuf::from("C:\\Game\\game.exe"),
         loader_exe: Some(PathBuf::from("C:\\Loader\\loader.exe")),
         launch_args: None,
+        warnings: vec![],
     });
     service
         .save_settings(settings)

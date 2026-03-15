@@ -28,7 +28,6 @@ pub struct ObjectSummary {
     pub sub_category: Option<String>,
     pub metadata: String,
     pub tags: String,
-    pub is_safe: bool,
     pub is_pinned: bool,
     pub is_auto_sync: bool,
     pub thumbnail_path: Option<String>,
@@ -52,17 +51,17 @@ pub async fn get_filtered_objects(
 ) -> Result<Vec<ObjectSummary>, sqlx::Error> {
     // Phase 14: Mutually Exclusive Corridors (ObjectList Visibility)
     // ObjectList ALWAYS shows all objects.
-    // Safe mode = Safe objects show counts, Unsafe objects zeroed.
-    // Unsafe mode = Unsafe objects show counts, Safe objects zeroed.
+    // Safe mode = count only Safe mods (is_safe = 1)
+    // Unsafe mode = count only Unsafe mods (is_safe = 0)
     let count_expr = if filter.safe_mode {
         r#"
-            CASE WHEN o.is_safe = 0 THEN 0 ELSE COUNT(m.id) END as mod_count,
-            CASE WHEN o.is_safe = 0 THEN 0 ELSE COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) END as enabled_count,
+            COUNT(CASE WHEN m.is_safe = 1 THEN m.id END) as mod_count,
+            COUNT(CASE WHEN m.is_safe = 1 AND m.status = 'ENABLED' THEN 1 END) as enabled_count,
         "#
     } else {
         r#"
-            CASE WHEN o.is_safe = 1 THEN 0 ELSE COUNT(m.id) END as mod_count,
-            CASE WHEN o.is_safe = 1 THEN 0 ELSE COUNT(CASE WHEN m.status = 'ENABLED' THEN 1 END) END as enabled_count,
+            COUNT(CASE WHEN m.is_safe = 0 THEN m.id END) as mod_count,
+            COUNT(CASE WHEN m.is_safe = 0 AND m.status = 'ENABLED' THEN 1 END) as enabled_count,
         "#
     };
 
@@ -76,7 +75,6 @@ pub async fn get_filtered_objects(
             o.sub_category,
             o.metadata,
             o.tags,
-            o.is_safe,
             o.is_pinned,
             o.is_auto_sync,
             o.thumbnail_path,
@@ -167,7 +165,6 @@ pub struct CreateObjectInput {
     pub folder_path: Option<String>,
     pub object_type: String,
     pub sub_category: Option<String>,
-    pub is_safe: Option<bool>,
     pub metadata: Option<serde_json::Value>,
     pub thumbnail_url: Option<String>,
 }
@@ -181,14 +178,13 @@ pub async fn create_object(
     folder_path: &str,
     object_type: &str,
     sub_category: Option<&String>,
-    is_safe: bool,
     metadata_str: &str,
     thumbnail_path: Option<&String>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_safe, is_auto_sync, tags, metadata, thumbnail_path, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, datetime('now'))
+        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_auto_sync, tags, metadata, thumbnail_path, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, datetime('now'))
         "#,
         id,
         game_id,
@@ -196,7 +192,6 @@ pub async fn create_object(
         folder_path,
         object_type,
         sub_category,
-        is_safe,
         metadata_str,
         thumbnail_path
     )
@@ -221,12 +216,10 @@ pub async fn delete_object(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Erro
 ///
 /// Idempotent — safe to call even if the object does not exist.
 pub async fn delete_object_and_mods_by_folder(
-    pool: &SqlitePool,
+    conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     folder_path: &str,
 ) -> Result<u64, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
     // Delete child mods (both slash styles to be OS-agnostic)
     let prefix_fwd = format!("{}/", folder_path);
     let prefix_back = format!("{}\\", folder_path);
@@ -236,7 +229,7 @@ pub async fn delete_object_and_mods_by_folder(
     .bind(game_id)
     .bind(format!("{}%", prefix_fwd))
     .bind(format!("{}%", prefix_back))
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?
     .rows_affected();
 
@@ -244,10 +237,8 @@ pub async fn delete_object_and_mods_by_folder(
     sqlx::query("DELETE FROM objects WHERE game_id = ? AND folder_path = ?")
         .bind(game_id)
         .bind(folder_path)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-
-    tx.commit().await?;
 
     log::info!(
         "delete_object_and_mods_by_folder: removed object folder='{}' game='{}', {} child mods deleted",
@@ -295,18 +286,31 @@ pub async fn get_objects_folder_paths(
     Ok(paths)
 }
 
-pub async fn update_object_folder_path(
-    pool: &SqlitePool,
+pub async fn update_object_folder_path<'c, E>(
+    executor: E,
     game_id: &str,
     old_path: &str,
     new_path: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE objects SET folder_path = ? WHERE game_id = ? AND folder_path = ?")
-        .bind(new_path)
-        .bind(game_id)
-        .bind(old_path)
-        .execute(pool)
-        .await?;
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    // If the object's name is identical to its old folder path, rename the object as well
+    // so that local disk renames are reflected in the UI for objects that haven't been custom-named.
+    sqlx::query(
+        "UPDATE objects
+         SET folder_path = ?,
+             name = CASE WHEN name = ? OR name = ? THEN ? ELSE name END
+         WHERE game_id = ? AND folder_path = ?",
+    )
+    .bind(new_path)
+    .bind(old_path)
+    .bind(old_path.to_ascii_lowercase()) // Simple case fallback, though exact match covers most
+    .bind(new_path)
+    .bind(game_id)
+    .bind(old_path)
+    .execute(executor)
+    .await?;
     Ok(())
 }
 
@@ -317,7 +321,6 @@ pub struct UpdateObjectInput {
     pub sub_category: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub thumbnail_path: Option<String>,
-    pub is_safe: Option<bool>,
     pub is_auto_sync: Option<bool>,
     pub tags: Option<Vec<String>>,
 }
@@ -370,14 +373,6 @@ pub async fn update_object(
         qb.push_bind(thumb);
         is_first = false;
     }
-    if let Some(safe) = updates.is_safe {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("is_safe = ");
-        qb.push_bind(safe);
-        is_first = false;
-    }
     if let Some(auto) = updates.is_auto_sync {
         if !is_first {
             qb.push(", ");
@@ -403,15 +398,6 @@ pub async fn update_object(
     qb.push_bind(id);
 
     qb.build().execute(pool).await?;
-    Ok(())
-}
-
-pub async fn set_is_safe(pool: &SqlitePool, id: &str, safe: bool) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE objects SET is_safe = ? WHERE id = ?")
-        .bind(safe)
-        .bind(id)
-        .execute(pool)
-        .await?;
     Ok(())
 }
 
@@ -474,7 +460,7 @@ pub async fn set_is_pinned(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn ensure_object_exists(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     folder_path: &str,
     obj_name: &str,
@@ -485,69 +471,172 @@ pub async fn ensure_object_exists(
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
     use sqlx::Row;
-    let existing = sqlx::query(
+    let existing_rows = sqlx::query(
         "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)",
     )
     .bind(game_id)
     .bind(folder_path)
     .bind(obj_name)
-    .fetch_optional(&mut **tx)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|e| e.to_string())?;
 
-    if let Some(row) = existing {
-        let id: String = row.try_get("id").map_err(|e| e.to_string())?;
-        let existing_name: String = row.try_get("name").map_err(|e| e.to_string())?;
-        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
-        let existing_type: String = row
+    let mut match_name = None;
+    let mut match_folder = None;
+
+    for row in existing_rows {
+        let id: String = row.try_get("id").unwrap_or_default();
+        let name: String = row.try_get("name").unwrap_or_default();
+        let fp: String = row.try_get("folder_path").unwrap_or_default();
+        let o_type: String = row
             .try_get("object_type")
             .unwrap_or_else(|_| "Other".to_string());
+        let thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
+        let tags: String = row.try_get("tags").unwrap_or_else(|_| "[]".to_string());
+        let meta: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
 
-        if existing_fp != folder_path {
+        if name.eq_ignore_ascii_case(obj_name) {
+            match_name = Some((
+                id.clone(),
+                name.clone(),
+                fp.clone(),
+                o_type.clone(),
+                thumb.clone(),
+                tags.clone(),
+                meta.clone(),
+            ));
+        }
+        if fp.eq_ignore_ascii_case(folder_path) {
+            match_folder = Some((id, name, fp, o_type, thumb, tags, meta));
+        }
+    }
+
+    if let Some((
+        id,
+        _existing_name,
+        existing_fp,
+        existing_type,
+        existing_thumb,
+        existing_tags,
+        existing_meta,
+    )) = match_name
+    {
+        let has_folder_conflict = match_folder.as_ref().is_some_and(|f| f.0 != id);
+
+        if existing_fp != folder_path && !has_folder_conflict {
             sqlx::query("UPDATE objects SET folder_path = ? WHERE id = ?")
                 .bind(folder_path)
                 .bind(&id)
-                .execute(&mut **tx)
+                .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
-        if (existing_name != obj_name || existing_type != obj_type) && db_thumbnail.is_some() {
-            sqlx::query("UPDATE objects SET name = ?, object_type = ? WHERE id = ?")
+        if _existing_name != obj_name {
+            sqlx::query("UPDATE objects SET name = ? WHERE id = ?")
                 .bind(obj_name)
+                .bind(&id)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        if existing_type != obj_type && db_thumbnail.is_some() {
+            sqlx::query("UPDATE objects SET object_type = ? WHERE id = ?")
                 .bind(obj_type)
                 .bind(&id)
-                .execute(&mut **tx)
+                .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
-        let existing_thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
         if existing_thumb.is_none() && db_thumbnail.is_some() {
             sqlx::query("UPDATE objects SET thumbnail_path = ? WHERE id = ?")
                 .bind(db_thumbnail)
                 .bind(&id)
-                .execute(&mut **tx)
+                .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
-        let existing_tags: String = row.try_get("tags").unwrap_or_else(|_| "[]".to_string());
         if existing_tags == "[]" && db_tags_json != "[]" {
             sqlx::query("UPDATE objects SET tags = ? WHERE id = ?")
                 .bind(db_tags_json)
                 .bind(&id)
-                .execute(&mut **tx)
+                .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
-        let existing_meta: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
         if existing_meta == "{}" && db_metadata_json != "{}" {
             sqlx::query("UPDATE objects SET metadata = ? WHERE id = ?")
                 .bind(db_metadata_json)
                 .bind(&id)
-                .execute(&mut **tx)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        return Ok(id);
+    } else if let Some((
+        id,
+        _existing_name,
+        existing_fp,
+        _existing_type,
+        existing_thumb,
+        existing_tags,
+        existing_meta,
+    )) = match_folder
+    {
+        if existing_fp != folder_path {
+            sqlx::query("UPDATE objects SET folder_path = ? WHERE id = ?")
+                .bind(folder_path)
+                .bind(&id)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        if db_thumbnail.is_some() {
+            sqlx::query("UPDATE objects SET name = ?, object_type = ? WHERE id = ?")
+                .bind(obj_name)
+                .bind(obj_type)
+                .bind(&id)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query("UPDATE objects SET name = ? WHERE id = ?")
+                .bind(obj_name)
+                .bind(&id)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        if existing_thumb.is_none() && db_thumbnail.is_some() {
+            sqlx::query("UPDATE objects SET thumbnail_path = ? WHERE id = ?")
+                .bind(db_thumbnail)
+                .bind(&id)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        if existing_tags == "[]" && db_tags_json != "[]" {
+            sqlx::query("UPDATE objects SET tags = ? WHERE id = ?")
+                .bind(db_tags_json)
+                .bind(&id)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        if existing_meta == "{}" && db_metadata_json != "{}" {
+            sqlx::query("UPDATE objects SET metadata = ? WHERE id = ?")
+                .bind(db_metadata_json)
+                .bind(&id)
+                .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         }
@@ -559,33 +648,20 @@ pub async fn ensure_object_exists(
     sqlx::query(
         "INSERT INTO objects (id, game_id, name, folder_path, object_type, thumbnail_path, tags, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
-        .bind(&new_id)
-        .bind(game_id)
-        .bind(obj_name)
-        .bind(folder_path)
-        .bind(obj_type)
-        .bind(db_thumbnail)
-        .bind(db_tags_json)
-        .bind(db_metadata_json)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    .bind(&new_id)
+    .bind(game_id)
+    .bind(obj_name)
+    .bind(folder_path)
+    .bind(obj_type)
+    .bind(db_thumbnail)
+    .bind(db_tags_json)
+    .bind(db_metadata_json)
+    .execute(&mut *conn)
+    .await
+    .map_err(|e| e.to_string())?;
 
     *new_objects_count += 1;
     Ok(new_id)
-}
-
-pub async fn update_object_is_safe_tx(
-    conn: &mut sqlx::SqliteConnection,
-    id: &str,
-    is_safe: bool,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE objects SET is_safe = ? WHERE id = ?")
-        .bind(is_safe)
-        .bind(id)
-        .execute(conn)
-        .await?;
-    Ok(())
 }
 
 pub async fn delete_ghost_objects_gc(

@@ -233,13 +233,7 @@ export function useToggleMod() {
       // After enabling: check for shader conflicts (non-blocking)
       if (variables.enable) {
         invoke<ConflictInfo[]>('check_shader_conflicts', { folderPath: newPath })
-          .then((conflicts) => {
-            if (conflicts.length > 0) {
-              const names = conflicts.map((c) => c.mod_paths.join(', ')).join('; ');
-              toast.info(`Shader collision detected: ${names}`);
-              queryClient.invalidateQueries({ queryKey: ['conflicts'] });
-            }
-          })
+          .then(() => queryClient.invalidateQueries({ queryKey: ['conflicts'] }))
           .catch(() => {
             /* non-critical — silently ignore */
           });

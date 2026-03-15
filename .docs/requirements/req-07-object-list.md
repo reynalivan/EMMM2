@@ -3,13 +3,13 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The objectlist object list needs to handle thousands of game objects (characters, weapons, UI elements) without freezing the UI — and must keep mod counts (total/enabled) accurate in real-time as users toggle mods in the grid.
-- **Proposed Solution**: A virtualized object list powered by `@tanstack/react-virtual`, with optimistic count updates on mod toggle, drag-and-drop support for re-categorizing mods across objects, and a forced selection reset on game switch.
+- **Proposed Solution**: A virtualized object list powered by `@tanstack/react-virtual`, with accurate mod counts (restricted by active safety corridor), zone-aware drag-and-drop support (Toolbar: Auto, Row: Move, Status: Append), and a forced selection reset on game switch.
 - **Success Criteria**:
   - ObjectList renders ≥ 1,000 items without dropping below 60fps, verified via React DevTools Profiler Flamegraph.
-  - Scroll through 1,000+ items: no blank flicker lasting > 1 frame (16ms).
-  - Enabled/total count badge updates within ≤ 50ms of a mod toggle (optimistic update, no refetch required).
+  - Scroll through 1,000+ items: no DOM-overflow or layout breakage across category boundaries.
+  - Enabled/total count badge correctly reflects the active safety corridor (Safe/Unsafe) without needing a manual refresh.
   - Bulk enable/disable of 100 mods batches all objectlist count updates into a single render tick.
-  - Drag-and-drop folder move completes (disk write + cache invalidate) in ≤ 500ms for a single mod folder.
+  - Drag-and-drop folder move completes in ≤ 500ms (disk write + cache invalidate) — including archive extraction if needed.
 
 ---
 
@@ -56,17 +56,17 @@ As a user, I want to see real-time enabled/total mod counts on each object row, 
 
 ---
 
-#### US-07.4: Drag-and-Drop Mod Re-Categorization
+#### US-07.4: Zone-Aware Drag-and-Drop
 
-As a user, I want to drag a mod folder from the center grid onto a different objectlist object, so that I can re-categorize it without using the context menu.
+As a user, I want to drag mod folders or archives onto the sidebar to organize them, with specific behavior based on where I drop (Auto Organize, Move to Object, or Create New).
 
 | ID        | Type        | Criteria                                                                                                                                                                                                  |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-07.4.1 | ✅ Positive | Given the user drags a mod card over a objectlist object row, then that row shows a drop-target border highlight within ≤ 50ms of hover                                                                      |
-| AC-07.4.2 | ✅ Positive | Given a drop on a target object, then `move_mod(src_path, target_object_path)` is invoked; the folder is physically moved on disk within ≤ 500ms                                                          |
-| AC-07.4.3 | ✅ Positive | Given a successful disk move, then `['folders', gameId, srcObjectId]` and `['folders', gameId, targetObjectId]` React Query caches both invalidate and the grid refreshes within ≤ 200ms                  |
-| AC-07.4.4 | ❌ Negative | Given the target object's folder already contains a mod with the same name, then the `move_mod` command returns a `CollisionError`, no file is moved, and a conflict resolution dialog is shown (Epic 39) |
-| AC-07.4.5 | ⚠️ Edge     | Given the user drags to a non-visible virtualized row (forcing auto-scroll at the list edge), then the drop coordinates correctly map to the virtualized item index — not the visible DOM position        |
+| AC-07.4.1 | ✅ Positive | Given a drag over the **Toolbar**, then the "Auto Organize" overlay appears; dropping here triggers a full scan and review modal                                                                           |
+| AC-07.4.2 | ✅ Positive | Given a drag over a **Row**, then that row highlights; dropping here moves items into that specific object's folder on disk in ≤ 500ms                                                                    |
+| AC-07.4.3 | ✅ Positive | Given a drag over the **Status Bar**, then the "Append as New Object" overlay appears; dropping here opens the `CreateObjectModal` with paths pre-populated                                              |
+| AC-07.4.4 | ✅ Positive | Given an archive (.zip, .7z, .rar) is dropped, then an interactive extraction modal allows the user to extract or skip before the organize action continues                                               |
+| AC-07.4.5 | ❌ Negative | Given the target object already contains a mod with the same name, then a conflict resolution dialog is shown (Epic 39) instead of overwriting files                                                      |
 
 ---
 
@@ -84,21 +84,18 @@ As a user, I want to drag a mod folder from the center grid onto a different obj
 
 ### Architecture Overview
 
-```
-ObjectList (objectlist component)
-  ├── useObjects(gameId, filters) → React Query → invoke('get_objects_cmd')
-  └── VirtualizedList (@tanstack/react-virtual)
-      └── ObjectRow (per item)
-          ├── name, thumbnailUri
-          ├── Badge: {enabled}/{total}  ← from aggregated query field
-          ├── onClick → setSelectedObjectId(objectId)
-          └── DroppableArea (dnd-kit droppable)
+```rust
+// Backend Service: Objects (query.rs)
 
-Backend: get_objects_cmd(game_id, filter) →
-  SELECT o.*, COUNT(f.*), SUM(CASE WHEN f.is_enabled THEN 1 ELSE 0 END)
-  FROM objects o LEFT JOIN folders f ON f.object_id = o.id
-  WHERE o.game_id = ?
-  GROUP BY o.id
+get_filtered_objects(filter):
+  1. Pure DB query; returns objects with naming conflict flags (handled by GC).
+  2. Scopes results by active safety corridor (Safe vs Unsafe).
+
+gc_lost_objects(game_id):
+  1. Build normalized folder set from physical `mods_path`.
+  2. Compare indexed objects against folder set.
+  3. Safety Abort: If mods root is missing OR would delete ALL objects, stop immediately.
+  4. Cleanup: Delete DB records for objects whose folders are gone.
 ```
 
 ### Integration Points
@@ -106,6 +103,8 @@ Backend: get_objects_cmd(game_id, filter) →
 | Component         | Detail                                                                             |
 | ----------------- | ---------------------------------------------------------------------------------- |
 | Data Source       | `invoke('get_objects_cmd', { gameId, filter })` → `Vec<ObjectWithCounts>`          |
+| Garbage Collection | Triggered on startup, manual sync, and watcher `Removed` events via `gc_lost_objects`. |
+| Safety Guards     | GC aborts if mods dir is unreachable or mass wipe (all objects) detected.           |
 | Virtualization    | `@tanstack/react-virtual` — `useVirtualizer({ count, estimateSize: () => 48 })`    |
 | DnD               | `dnd-kit` — `useDraggable` (FolderCard) + `useDroppable` (ObjectRow)               |
 | Optimistic Update | `queryClient.setQueryData(['objects', gameId], updater)` on mod toggle             |
@@ -115,7 +114,7 @@ Backend: get_objects_cmd(game_id, filter) →
 ### Security & Privacy
 
 - **Read-only objectlist** — the object list itself displays data but does not mutate any filesystem path or DB record; all mutations go through specific IPC commands (`move_mod`) with validated paths.
-- **Safe Mode filter**: ObjectList ALWAYS shows all objects regardless of safe mode (to prevent the navigation pane from disappearing). Instead of removing objects from the list, counts are purely based on Mutually Exclusive Corridors (Safe Mode ONLY counts safe objects, Unsafe Mode ONLY counts unsafe objects; out-of-corridor items show `0/0`).
+- **Safe Mode filter**: ObjectList ALWAYS shows all objects regardless of safe mode (to prevent the navigation pane from disappearing). Instead of removing objects from the list, counts are purely based on Corridors (Safe Mode ONLY counts mods in the safe corridor, Unsafe Mode ONLY counts mods in the unsafe corridor). Items with no mods in the current corridor show `0/0`.
 
 ## 4. Dependencies
 

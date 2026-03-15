@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Power users managing large mod libraries need to toggle, move, or delete dozens of mods at once — doing so one at a time is impractical and error-prone; a single collision or lock mid-batch should not silently abort all remaining operations.
-- **Proposed Solution**: A multi-select system (checkbox hover, shift-click range, drag-marquee) with a `BulkActionBar` overlay, plus backend batch commands (`bulk_toggle`, `bulk_move`, `bulk_delete`) that stream per-item progress events, hold a global `OperationLock`, and report partial failures without aborting the entire batch.
+- **Proposed Solution**: A multi-select system (checkbox hover, shift-click range, ctrl-click) with a `BulkActionBar` overlay, plus backend batch commands (`bulk_toggle_mods`, `bulk_delete_mods`, etc.) that stream per-item progress events, hold a global `OperationLock`, and report partial failures without aborting the entire batch.
 - **Success Criteria**:
   - Shift-click range selection of 100 items applies in ≤ 50ms (pure client-side index intersection).
   - `BulkActionBar` renders in ≤ 100ms after first item is selected.
@@ -58,8 +58,8 @@ As a user, I want to move multiple selected mods to a specific Object in one act
 
 ### Non-Goals
 
-- No undo stack for bulk operations; Trash handles delete recovery.
-- No regex-based "select by pattern" in this phase — selection is manual (checkbox + shift-click + marquee).
+- No undo stack for bulk operations (unlike single toggle).
+- No regex-based "select by pattern" in this phase — selection is manual (checkbox + shift-click + ctrl-click).
 - Batch operations are sequential (not concurrent per-item) to avoid filesystem race conditions.
 - No progress bar for batches < 5 items — single toast on completion suffices.
 
@@ -80,26 +80,26 @@ Frontend:
     └── "Delete Selected" → ConfirmDialog → invoke('bulk_delete', { paths: [...selectedItems] })
 
 Backend:
-  bulk_toggle(game_id, paths: Vec<String>, enable: bool) → BulkResult
+  bulk_toggle_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
     └── acquire OperationLock → activate WatcherSuppression(paths)
-        → for path in paths: toggle_mod_internal(path, enable) → emit_event('bulk:progress', {i, total})
+        → for path in paths: toggle_mod_internal(path, enable) → emit_event('bulk-progress', {i, total})
         → return BulkResult { success, failed: Vec<{path, error}> }
 
   bulk_move(game_id, paths, target_object_path) → BulkResult
-    └── same pattern: check collision per item → move or pause for ResolverDialog
+    └── same pattern: handled via "Move to Object" dialog and sequential moves
 
-  bulk_delete(game_id, paths) → BulkResult
-    └── same pattern: trash::delete per item → stream progress
+  bulk_delete_mods(game_id, paths) → BulkResult
+    └── same pattern: trash per item (app trash) → stream progress ('bulk-progress')
 ```
 
 ### Integration Points
 
-| Component            | Detail                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Selection State      | `useAppStore.selectedItems: Set<string>` (folder_paths)                                                      |
-| `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock                                 |
-| Progress Events      | Tauri `Window::emit("bulk:progress", {current, total})` → `listen` in React                                  |
-| Cache Invalidate     | `queryClient.invalidateQueries(['folders', gameId])` after `BulkResult` resolves (both src and target paths) |
+| Component | Detail |
+|---|---|
+| Selection State | `useAppStore.gridSelection: Set<string>` (folder_paths). |
+| `OperationLock` | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock. |
+| Progress Events | Tauri `Window::emit("bulk-progress", {current, total, label, active})`. |
+| Cache Invalidate| `queryClient.invalidateQueries(['mod-folders'])` after bulk rename ops. |
 | `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes                  |
 
 ### Security & Privacy

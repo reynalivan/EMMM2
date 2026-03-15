@@ -17,7 +17,7 @@ export default function ContextControls() {
   const {
     toggleSafeMode,
     handleConfirmSwitch,
-    setSafeModeWithToast,
+    handlePinSuccess,
     confirmModalOpen,
     confirmTargetEnabled,
     closeConfirmModal,
@@ -187,8 +187,7 @@ export default function ContextControls() {
         open={pinModalOpen}
         onClose={closePinModal}
         onSuccess={async () => {
-          closePinModal();
-          await setSafeModeWithToast(false);
+          handlePinSuccess();
         }}
       />
 
