@@ -121,4 +121,20 @@ describe('useSettings', () => {
       expect.stringContaining('Configuration updated successfully'),
     );
   });
+
+  it('updateTheme merges with current settings and invokes save_settings', async () => {
+    const { result } = renderHook(() => useSettings());
+
+    expect(result.current.updateTheme).toBeDefined();
+    expect(result.current.updateTheme.mutateAsync).toBeDefined();
+
+    await result.current.updateTheme.mutateAsync('onyx');
+
+    expect(invoke).toHaveBeenCalledWith('save_settings', {
+      settings: expect.objectContaining({
+        theme: 'onyx',
+        language: 'en',
+      }),
+    });
+  });
 });
