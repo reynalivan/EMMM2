@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from './lib/logger';
 import { useAppStore } from './stores/useAppStore';
 import { settingsKeys } from './hooks/useSettings';
+import { useThemeRuntime } from './features/settings/theme/useThemeRuntime';
 
 // Components
 import MainLayout from './components/layout/MainLayout';
@@ -70,6 +71,8 @@ import { ToastContainer } from './components/ui/Toast';
 import ConflictResolveDialog from './features/folder-grid/ConflictResolveDialog';
 
 export default function App() {
+  useThemeRuntime();
+
   return (
     <div className="flex flex-col h-screen bg-base-100 text-base-content overflow-hidden font-sans antialiased selection:bg-primary selection:text-primary-content">
       <AppRouter />
