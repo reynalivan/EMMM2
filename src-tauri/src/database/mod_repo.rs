@@ -1,3 +1,10 @@
+use crate::services::corridor_constants::{
+    CORRIDOR_SOURCE_AUTO_TAGGED, CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN,
+    DISABLED_REASON_SYSTEM, DISABLED_REASON_USER,
+};
+use crate::services::path_key::{
+    folder_path_key, path_starts_with_key, strip_path_prefix_preserve_display,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 
@@ -14,6 +21,42 @@ pub struct ModPathInfo {
     pub id: String,
     pub actual_name: String,
     pub folder_path: String,
+}
+
+async fn get_game_mod_path<'c, E>(executor: E, game_id: &str) -> Result<Option<String>, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query("SELECT mod_path FROM games WHERE id = ?")
+        .bind(game_id)
+        .fetch_optional(executor)
+        .await
+        .map(|row| {
+            row.and_then(|value| value.try_get("mod_path").ok())
+                .flatten()
+        })
+}
+
+async fn get_game_mod_path_for_mod_id<'c, E>(
+    executor: E,
+    mod_id: &str,
+) -> Result<Option<String>, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "SELECT g.mod_path
+         FROM mods m
+         JOIN games g ON g.id = m.game_id
+         WHERE m.id = ?",
+    )
+    .bind(mod_id)
+    .fetch_optional(executor)
+    .await
+    .map(|row| {
+        row.and_then(|value| value.try_get("mod_path").ok())
+            .flatten()
+    })
 }
 
 // ── Single Operations ────────────────────────────────────────────────────────
@@ -39,8 +82,9 @@ pub async fn get_object_id_by_path(
     game_id: &str,
     folder_path: &str,
 ) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT object_id FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query_scalar("SELECT object_id FROM mods WHERE folder_path_key = ? AND game_id = ?")
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .fetch_optional(pool)
         .await
@@ -55,8 +99,8 @@ pub async fn delete_mod_by_id(pool: &SqlitePool, mod_id: &str) -> Result<(), sql
 }
 
 pub async fn delete_mod_by_path(pool: &SqlitePool, folder_path: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM mods WHERE folder_path = ?")
-        .bind(folder_path)
+    sqlx::query("DELETE FROM mods WHERE folder_path_key = ?")
+        .bind(folder_path_key(folder_path, None))
         .execute(pool)
         .await?;
     Ok(())
@@ -70,13 +114,17 @@ pub async fn update_mod_path_status_and_reason(
     new_status: &str,
     reason: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    let mods_path = get_game_mod_path(pool, game_id).await?;
     sqlx::query(
-        "UPDATE mods SET folder_path = ?, status = ?, disabled_reason = ? WHERE folder_path = ? AND game_id = ?",
+        "UPDATE mods
+         SET folder_path = ?, folder_path_key = ?, status = ?, disabled_reason = ?
+         WHERE folder_path_key = ? AND game_id = ?",
     )
     .bind(new_rel_path)
+    .bind(folder_path_key(new_rel_path, mods_path.as_deref()))
     .bind(new_status)
     .bind(reason)
-    .bind(old_rel_path)
+    .bind(folder_path_key(old_rel_path, mods_path.as_deref()))
     .bind(game_id)
     .execute(pool)
     .await?;
@@ -89,9 +137,11 @@ pub async fn update_mod_path_only(
     old_rel_path: &str,
     new_rel_path: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET folder_path = ? WHERE folder_path = ? AND game_id = ?")
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE folder_path_key = ? AND game_id = ?")
         .bind(new_rel_path)
-        .bind(old_rel_path)
+        .bind(folder_path_key(new_rel_path, mods_path.as_deref()))
+        .bind(folder_path_key(old_rel_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(pool)
         .await?;
@@ -103,52 +153,157 @@ pub async fn update_mod_path_by_old_path(
     old_path: &str,
     new_path: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET folder_path = ? WHERE folder_path = ?")
+    sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE folder_path_key = ?")
         .bind(new_path)
-        .bind(old_path)
+        .bind(folder_path_key(new_path, None))
+        .bind(folder_path_key(old_path, None))
         .execute(pool)
         .await?;
     Ok(())
 }
 
-pub async fn update_child_paths<'c, E>(
-    executor: E,
+pub async fn update_mod_path_by_old_path_in_game(
+    pool: &SqlitePool,
     game_id: &str,
-    old_prefix: &str,
-    new_prefix: &str,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    let old_match = format!("{}%", old_prefix);
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), sqlx::Error> {
+    let mods_path = get_game_mod_path(pool, game_id).await?;
     sqlx::query(
-        "UPDATE mods SET folder_path = ? || SUBSTR(folder_path, LENGTH(?) + 1) WHERE folder_path LIKE ? AND game_id = ?",
+        "UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE folder_path_key = ? AND game_id = ?",
     )
-    .bind(new_prefix)
-    .bind(old_prefix)
-    .bind(&old_match)
-    .bind(game_id)
-    .execute(executor)
-    .await?;
+        .bind(new_path)
+        .bind(folder_path_key(new_path, mods_path.as_deref()))
+        .bind(folder_path_key(old_path, mods_path.as_deref()))
+        .bind(game_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
-pub async fn update_status_for_object<'c, E>(
-    executor: E,
+pub async fn update_child_paths(
+    pool: &SqlitePool,
+    game_id: &str,
+    old_prefix: &str,
+    new_prefix: &str,
+    mods_path: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let old_root = old_prefix.trim_end_matches(['\\', '/']);
+    let new_root = new_prefix.trim_end_matches(['\\', '/']);
+    let old_path_key = folder_path_key(old_root, mods_path);
+    let rows = sqlx::query(
+        "SELECT id, folder_path FROM mods WHERE game_id = ? AND folder_path_key LIKE ?",
+    )
+    .bind(game_id)
+    .bind(format!("{old_path_key}/%"))
+    .fetch_all(pool)
+    .await?;
+
+    for row in rows {
+        let id: String = row.try_get("id")?;
+        let folder_path: String = row.try_get("folder_path")?;
+        if !path_starts_with_key(&folder_path, old_root, mods_path) {
+            continue;
+        }
+
+        let Some(suffix) = strip_path_prefix_preserve_display(&folder_path, old_root, mods_path)
+        else {
+            continue;
+        };
+        if suffix.is_empty() {
+            continue;
+        }
+
+        let new_path = format!("{new_root}/{suffix}");
+        sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE id = ?")
+            .bind(&new_path)
+            .bind(folder_path_key(&new_path, mods_path))
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn update_child_paths_tx(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    old_prefix: &str,
+    new_prefix: &str,
+    mods_path: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let old_root = old_prefix.trim_end_matches(['\\', '/']);
+    let new_root = new_prefix.trim_end_matches(['\\', '/']);
+    let old_path_key = folder_path_key(old_root, mods_path);
+    let rows = sqlx::query(
+        "SELECT id, folder_path FROM mods WHERE game_id = ? AND folder_path_key LIKE ?",
+    )
+    .bind(game_id)
+    .bind(format!("{old_path_key}/%"))
+    .fetch_all(&mut *conn)
+    .await?;
+
+    for row in rows {
+        let id: String = row.try_get("id")?;
+        let folder_path: String = row.try_get("folder_path")?;
+        if !path_starts_with_key(&folder_path, old_root, mods_path) {
+            continue;
+        }
+
+        let Some(suffix) = strip_path_prefix_preserve_display(&folder_path, old_root, mods_path)
+        else {
+            continue;
+        };
+        if suffix.is_empty() {
+            continue;
+        }
+
+        let new_path = format!("{new_root}/{suffix}");
+        sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE id = ?")
+            .bind(&new_path)
+            .bind(folder_path_key(&new_path, mods_path))
+            .bind(id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn update_status_for_object(
+    conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     object_folder: &str,
     new_status: &str,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    let object_prefix = format!("{}/", object_folder);
-    sqlx::query("UPDATE mods SET status = ? WHERE game_id = ? AND folder_path LIKE ? || '%'")
+) -> Result<(), sqlx::Error> {
+    let mods_path = get_game_mod_path(&mut *conn, game_id).await?;
+    let object_prefix_key = format!("{}/%", folder_path_key(object_folder, mods_path.as_deref()));
+    sqlx::query("UPDATE mods SET status = ? WHERE game_id = ? AND folder_path_key LIKE ?")
         .bind(new_status)
         .bind(game_id)
-        .bind(&object_prefix)
-        .execute(executor)
+        .bind(object_prefix_key)
+        .execute(conn)
         .await?;
+    Ok(())
+}
+
+pub async fn update_status_and_reason_for_object(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    object_folder: &str,
+    new_status: &str,
+    disabled_reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let mods_path = get_game_mod_path(&mut *conn, game_id).await?;
+    let object_prefix_key = format!("{}/%", folder_path_key(object_folder, mods_path.as_deref()));
+    sqlx::query(
+        "UPDATE mods SET status = ?, disabled_reason = ? WHERE game_id = ? AND folder_path_key LIKE ?",
+    )
+    .bind(new_status)
+    .bind(disabled_reason)
+    .bind(game_id)
+    .bind(object_prefix_key)
+    .execute(conn)
+    .await?;
     Ok(())
 }
 
@@ -158,9 +313,10 @@ pub async fn set_favorite_by_path(
     folder_path: &str,
     favorite: bool,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET is_favorite = ? WHERE folder_path = ? AND game_id = ?")
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query("UPDATE mods SET is_favorite = ? WHERE folder_path_key = ? AND game_id = ?")
         .bind(favorite)
-        .bind(folder_path)
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(pool)
         .await?;
@@ -173,9 +329,10 @@ pub async fn set_pinned_by_path(
     folder_path: &str,
     pin: bool,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path = ? AND game_id = ?")
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path_key = ? AND game_id = ?")
         .bind(pin)
-        .bind(folder_path)
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(pool)
         .await?;
@@ -190,9 +347,13 @@ pub async fn set_mod_safe_by_path(
     folder_path: &str,
     safe: bool,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET is_safe = ? WHERE folder_path = ? AND game_id = ?")
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query(
+        "UPDATE mods SET is_safe = ?, corridor_source = ? WHERE folder_path_key = ? AND game_id = ?",
+    )
         .bind(safe)
-        .bind(folder_path)
+        .bind(CORRIDOR_SOURCE_MANUAL)
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(pool)
         .await?;
@@ -211,10 +372,11 @@ pub async fn batch_update_path_and_status(
 
     let mut tx = pool.begin().await?;
     for (old_path, new_path, new_status) in updates {
-        sqlx::query("UPDATE mods SET folder_path = ?, status = ? WHERE folder_path = ?")
+        sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ?, status = ? WHERE folder_path_key = ?")
             .bind(new_path)
+            .bind(folder_path_key(new_path, None))
             .bind(new_status)
-            .bind(old_path)
+            .bind(folder_path_key(old_path, None))
             .execute(&mut *tx)
             .await?;
     }
@@ -229,8 +391,8 @@ pub async fn batch_delete_by_path(pool: &SqlitePool, paths: &[String]) -> Result
 
     let mut tx = pool.begin().await?;
     for path in paths {
-        sqlx::query("DELETE FROM mods WHERE folder_path = ?")
-            .bind(path)
+        sqlx::query("DELETE FROM mods WHERE folder_path_key = ?")
+            .bind(folder_path_key(path, None))
             .execute(&mut *tx)
             .await?;
     }
@@ -248,11 +410,12 @@ pub async fn batch_set_favorite(
         return Ok(());
     }
 
+    let mods_path = get_game_mod_path(pool, game_id).await?;
     let mut tx = pool.begin().await?;
     for path in paths {
-        sqlx::query("UPDATE mods SET is_favorite = ? WHERE folder_path = ? AND game_id = ?")
+        sqlx::query("UPDATE mods SET is_favorite = ? WHERE folder_path_key = ? AND game_id = ?")
             .bind(favorite)
-            .bind(path)
+            .bind(folder_path_key(path, mods_path.as_deref()))
             .bind(game_id)
             .execute(&mut *tx)
             .await?;
@@ -271,11 +434,12 @@ pub async fn batch_set_pinned(
         return Ok(());
     }
 
+    let mods_path = get_game_mod_path(pool, game_id).await?;
     let mut tx = pool.begin().await?;
     for path in paths {
-        sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path = ? AND game_id = ?")
+        sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path_key = ? AND game_id = ?")
             .bind(pin)
-            .bind(path)
+            .bind(folder_path_key(path, mods_path.as_deref()))
             .bind(game_id)
             .execute(&mut *tx)
             .await?;
@@ -292,9 +456,9 @@ pub async fn batch_mark_system_disabled(
         return Ok(());
     }
 
-    let mut qb: sqlx::QueryBuilder<'_, sqlx::Sqlite> = sqlx::QueryBuilder::new(
-        "UPDATE mods SET status = 'DISABLED', disabled_reason = 'SYSTEM' WHERE id IN (",
-    );
+    let mut qb: sqlx::QueryBuilder<'_, sqlx::Sqlite> =
+        sqlx::QueryBuilder::new("UPDATE mods SET status = 'DISABLED', disabled_reason = ");
+    qb.push_bind(DISABLED_REASON_SYSTEM).push(" WHERE id IN (");
     let mut sep = qb.separated(", ");
     for id in ids {
         sep.push_bind(id);
@@ -396,8 +560,9 @@ pub async fn get_object_id_by_folder_and_game(
     folder_path: &str,
     game_id: &str,
 ) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT object_id FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query_scalar("SELECT object_id FROM mods WHERE folder_path_key = ? AND game_id = ?")
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .fetch_optional(pool)
         .await
@@ -445,18 +610,20 @@ pub async fn insert_new_mod<'c, E>(
     game_id: &str,
     actual_name: &str,
     folder_path: &str,
+    mods_path: Option<&str>,
     status: &str,
 ) -> Result<(), sqlx::Error>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
     sqlx::query(
-        "INSERT OR IGNORE INTO mods (id, game_id, actual_name, folder_path, status, object_type, is_favorite, is_safe) VALUES (?, ?, ?, ?, ?, 'Other', 0, 1)"
+        "INSERT OR IGNORE INTO mods (id, game_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe) VALUES (?, ?, ?, ?, ?, ?, 'Other', 0, 1)"
     )
     .bind(id)
     .bind(game_id)
     .bind(actual_name)
     .bind(folder_path)
+    .bind(folder_path_key(folder_path, mods_path.as_deref()))
     .bind(status)
     .execute(executor)
     .await?;
@@ -471,6 +638,7 @@ pub async fn update_mod_identity<'c, E>(
     new_status: &str,
     old_folder_path: &str,
     game_id: &str,
+    mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
@@ -478,15 +646,20 @@ where
     let disabled_reason = if new_status == "ENABLED" {
         None
     } else {
-        Some("USER")
+        Some(DISABLED_REASON_USER)
     };
-    sqlx::query("UPDATE mods SET id = ?, folder_path = ?, actual_name = ?, status = ?, disabled_reason = ? WHERE folder_path = ? AND game_id = ?")
+    sqlx::query(
+        "UPDATE mods
+         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, disabled_reason = ?
+         WHERE folder_path_key = ? AND game_id = ?",
+    )
         .bind(new_id)
         .bind(new_folder_path)
+        .bind(folder_path_key(new_folder_path, mods_path.as_deref()))
         .bind(new_actual_name)
         .bind(new_status)
         .bind(disabled_reason)
-        .bind(old_folder_path)
+        .bind(folder_path_key(old_folder_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(executor)
         .await?;
@@ -499,21 +672,31 @@ pub async fn update_mod_identity_tx(
     new_folder_path: &str,
     new_actual_name: &str,
     new_status: &str,
+    new_is_safe: bool,
+    corridor_source: &str,
     old_folder_path: &str,
     game_id: &str,
+    mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let disabled_reason = if new_status == "ENABLED" {
         None
     } else {
-        Some("USER")
+        Some(DISABLED_REASON_USER)
     };
-    sqlx::query("UPDATE mods SET id = ?, folder_path = ?, actual_name = ?, status = ?, disabled_reason = ? WHERE folder_path = ? AND game_id = ?")
+    sqlx::query(
+        "UPDATE mods
+         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, corridor_source = ?, disabled_reason = ?
+         WHERE folder_path_key = ? AND game_id = ?",
+    )
         .bind(new_id)
         .bind(new_folder_path)
+        .bind(folder_path_key(new_folder_path, mods_path.as_deref()))
         .bind(new_actual_name)
         .bind(new_status)
+        .bind(new_is_safe)
+        .bind(corridor_source)
         .bind(disabled_reason)
-        .bind(old_folder_path)
+        .bind(folder_path_key(old_folder_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(conn)
         .await?;
@@ -524,12 +707,13 @@ pub async fn delete_mod_by_path_and_game<'c, E>(
     executor: E,
     folder_path: &str,
     game_id: &str,
+    mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
-    sqlx::query("DELETE FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
+    sqlx::query("DELETE FROM mods WHERE folder_path_key = ? AND game_id = ?")
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .execute(executor)
         .await?;
@@ -576,11 +760,14 @@ pub async fn get_mod_id_and_status_by_path(
     folder_path: &str,
     game_id: &str,
 ) -> Result<Option<(String, Option<String>, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
-        .bind(game_id)
-        .fetch_optional(conn)
-        .await
+    let mods_path = get_game_mod_path(&mut *conn, game_id).await?;
+    sqlx::query_as(
+        "SELECT id, object_id, status FROM mods WHERE folder_path_key = ? AND game_id = ?",
+    )
+    .bind(folder_path_key(folder_path, mods_path.as_deref()))
+    .bind(game_id)
+    .fetch_optional(conn)
+    .await
 }
 
 /// Pool-based variant for use outside transactions.
@@ -589,11 +776,14 @@ pub async fn get_mod_id_and_status_by_path_pool(
     folder_path: &str,
     game_id: &str,
 ) -> Result<Option<(String, Option<String>, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, object_id, status FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query_as(
+        "SELECT id, object_id, status FROM mods WHERE folder_path_key = ? AND game_id = ?",
+    )
+    .bind(folder_path_key(folder_path, mods_path.as_deref()))
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn update_mod_status_and_reason_tx(
@@ -618,25 +808,52 @@ pub async fn insert_mod_with_reason_tx(
     game_id: &str,
     actual_name: &str,
     folder_path: &str,
+    mods_path: Option<&str>,
     status: &str,
     object_type: &str,
     is_favorite: bool,
+    is_safe: bool,
+    corridor_source: &str,
     disabled_reason: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO mods (id, game_id, actual_name, folder_path, status, object_type, is_favorite, disabled_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO mods (id, game_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, corridor_source, disabled_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(id)
     .bind(game_id)
     .bind(actual_name)
     .bind(folder_path)
+    .bind(folder_path_key(folder_path, mods_path.as_deref()))
     .bind(status)
     .bind(object_type)
     .bind(is_favorite)
+    .bind(is_safe)
+    .bind(corridor_source)
     .bind(disabled_reason)
     .execute(conn)
     .await?;
     Ok(())
+}
+
+pub async fn get_enabled_auto_tagged_mods_outside_corridor(
+    pool: &SqlitePool,
+    game_id: &str,
+    is_safe: bool,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, folder_path
+         FROM mods
+         WHERE game_id = ?
+           AND status = 'ENABLED'
+           AND COALESCE(is_safe, 1) != ?
+           AND COALESCE(corridor_source, ?) = ?",
+    )
+    .bind(game_id)
+    .bind(is_safe)
+    .bind(CORRIDOR_SOURCE_UNKNOWN)
+    .bind(CORRIDOR_SOURCE_AUTO_TAGGED)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn update_mod_object_id_and_type_tx(
@@ -667,8 +884,10 @@ pub async fn get_all_mods_id_and_paths_tx(
 pub async fn get_all_mods_sync_info_tx(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
-) -> Result<Vec<(String, String, String, Option<String>)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, folder_path, status, object_id FROM mods WHERE game_id = ?")
+) -> Result<Vec<(String, String, String, Option<String>, bool, Option<String>)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, folder_path, status, object_id, COALESCE(is_safe, 1), corridor_source FROM mods WHERE game_id = ?",
+    )
         .bind(game_id)
         .fetch_all(conn)
         .await
@@ -687,8 +906,9 @@ pub async fn get_mod_id_and_object_id_by_path(
     folder_path: &str,
     game_id: &str,
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, object_id FROM mods WHERE folder_path = ? AND game_id = ?")
-        .bind(folder_path)
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    sqlx::query_as("SELECT id, object_id FROM mods WHERE folder_path_key = ? AND game_id = ?")
+        .bind(folder_path_key(folder_path, mods_path.as_deref()))
         .bind(game_id)
         .fetch_optional(pool)
         .await
@@ -699,8 +919,10 @@ pub async fn update_mod_path_by_id(
     id: &str,
     new_path: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE mods SET folder_path = ? WHERE id = ?")
+    let mods_path = get_game_mod_path_for_mod_id(pool, id).await?;
+    sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE id = ?")
         .bind(new_path)
+        .bind(folder_path_key(new_path, mods_path.as_deref()))
         .bind(id)
         .execute(pool)
         .await?;
@@ -713,9 +935,10 @@ pub async fn get_system_disabled_mods(
     target_safe: bool,
 ) -> Result<Vec<(String, String)>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT id, folder_path FROM mods WHERE game_id = ? AND status = 'DISABLED' AND disabled_reason = 'SYSTEM' AND COALESCE(is_safe, 1) = ?"
+        "SELECT id, folder_path FROM mods WHERE game_id = ? AND status = 'DISABLED' AND disabled_reason = ? AND COALESCE(is_safe, 1) = ?"
     )
     .bind(game_id)
+    .bind(DISABLED_REASON_SYSTEM)
     .bind(target_safe)
     .fetch_all(pool)
     .await

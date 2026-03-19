@@ -99,6 +99,26 @@ describe('FolderCard', () => {
     expect(toggleSelection).toHaveBeenCalledWith(mockFolder.path, true, false);
   });
 
+  it('does not select InternalAssets on click', () => {
+    const toggleSelection = vi.fn();
+    const clearSelection = vi.fn();
+    const internalAssetFolder = { ...mockFolder, node_type: 'InternalAssets' } as ModFolder;
+
+    render(
+      <FolderCard
+        folder={internalAssetFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={toggleSelection}
+        clearSelection={clearSelection}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Test Mod'));
+    expect(clearSelection).not.toHaveBeenCalled();
+    expect(toggleSelection).not.toHaveBeenCalled();
+  });
+
   it('handles double click', () => {
     const onNavigate = vi.fn();
     render(

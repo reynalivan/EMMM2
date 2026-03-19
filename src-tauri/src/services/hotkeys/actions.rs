@@ -14,6 +14,7 @@
 
 use super::HotkeyAction;
 use crate::services::keyviewer::generator::StatusFields;
+use crate::services::path_key::{canonical_name_key, names_equal_by_key};
 
 // ─── Action Result ───────────────────────────────────────────────────────────
 
@@ -78,9 +79,13 @@ pub fn resolve_next_preset(
     }
 
     let mut sorted = preset_names.to_vec();
-    sorted.sort();
+    sorted.sort_by_key(|name| canonical_name_key(name));
 
-    let current_idx = current_preset_name.and_then(|name| sorted.iter().position(|p| p == name));
+    let current_idx = current_preset_name.and_then(|name| {
+        sorted
+            .iter()
+            .position(|preset| names_equal_by_key(preset, name))
+    });
 
     let next_idx = match (current_idx, direction) {
         (Some(idx), CycleDirection::Next) => (idx + 1) % sorted.len(),

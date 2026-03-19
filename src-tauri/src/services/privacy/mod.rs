@@ -1,6 +1,6 @@
 use crate::database::{collection_repo, game_repo, mod_repo};
 use crate::services::collections;
-use crate::services::collections::types::CollectionPreviewMod;
+use crate::services::corridor_constants::DISABLED_REASON_SYSTEM;
 use crate::services::scanner::watcher::WatcherState;
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -18,43 +18,6 @@ pub struct CorridorSwitchResult {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct CorridorPreview {
-    pub leaving_mods: Vec<CollectionPreviewMod>,
-    pub target_mods: Vec<CollectionPreviewMod>,
-    pub target_description: String,
-}
-
-/// Fetches both leaving and target corridor mod lists in a single call.
-/// Used by the ModeSwitchConfirmModal to show a side-by-side preview.
-pub async fn preview_corridor_switch(
-    pool: &SqlitePool,
-    game_id: &str,
-    current_safe: bool,
-    target_safe: bool,
-) -> Result<CorridorPreview, String> {
-    // Fetch both lists in parallel
-    let (leaving_result, target_result) = tokio::join!(
-        collections::get_active_mods_preview(pool, game_id, current_safe),
-        collections::get_system_disabled_preview(pool, game_id, target_safe),
-    );
-
-    let leaving_mods = leaving_result?;
-    let target_mods = target_result?;
-
-    let target_description = if target_mods.is_empty() {
-        "Empty State (All Disabled)".to_string()
-    } else {
-        format!("Restoring {} Mods", target_mods.len())
-    };
-
-    Ok(CorridorPreview {
-        leaving_mods,
-        target_mods,
-        target_description,
-    })
-}
-
 /// Executes the atomic Corridor Handoff between SFW and NSFW modes.
 ///
 /// 1. Snapshot leaving corridor's enabled mods as an `is_last_unsaved` collection
@@ -68,7 +31,7 @@ pub async fn switch_mode(
     watcher_state: &WatcherState,
     game_id: &str,
 ) -> Result<CorridorSwitchResult, String> {
-    let _leaving_safe = matches!(target_mode, Mode::NSFW); // switching TO nsfw = leaving SFW
+    let leaving_safe = matches!(target_mode, Mode::NSFW); // switching TO nsfw = leaving SFW
     let target_safe = matches!(target_mode, Mode::SFW);
 
     // Fetch mods_path once for both steps
@@ -77,10 +40,50 @@ pub async fn switch_mode(
         .map_err(|e| e.to_string())?;
     let mods_path = game_paths.get(game_id).cloned().unwrap_or_default();
 
-    // ─── STEP 1: Disable ALL enabled mods indiscriminately ──────────
-    // Guarantee 100% clean-slate before target corridor restoration.
+    // ─── STEP 0: Snapshot the LEAVING corridor ─────────────────────
+    // This runs BEFORE any state changes so the snapshot captures what was enabled.
+    // Gives the user the ability to "undo" the mode switch from within the leaving corridor.
+    let leaving_snapshot_id = collections::snapshot_current_state(pool, game_id, leaving_safe)
+        .await
+        .unwrap_or_else(|e| {
+            log::warn!("snapshot_current_state failed for leaving corridor: {e}");
+            String::new()
+        });
+
+    if !leaving_snapshot_id.is_empty() {
+        let existing_active_collection_id =
+            match crate::database::corridor_state_repo::get_corridor_state(
+                pool,
+                game_id,
+                leaving_safe,
+            )
+            .await
+            {
+                Ok(state) => state.active_collection_id,
+                Err(e) => {
+                    log::warn!("Failed to read corridor_state for leaving corridor: {e}");
+                    None
+                }
+            };
+
+        if let Err(e) = crate::database::corridor_state_repo::upsert_corridor_state(
+            pool,
+            game_id,
+            leaving_safe,
+            existing_active_collection_id.as_deref(),
+            Some(&leaving_snapshot_id),
+        )
+        .await
+        {
+            log::warn!("Failed to update corridor_state for leaving corridor: {e}");
+        }
+    }
+
+    // ─── STEP 1: Disable enabled mods in the leaving corridor ───────
     // This marks them with disabled_reason = 'SYSTEM'
-    let disabled_count = disable_all_enabled_mods(pool, watcher_state, game_id, &mods_path).await?;
+    let disabled_count =
+        disable_enabled_mods_in_corridor(pool, watcher_state, game_id, leaving_safe, &mods_path)
+            .await?;
 
     // ─── STEP 2: Restore target corridor from its saved collection ──
     let (restored_count, warnings) =
@@ -93,25 +96,27 @@ pub async fn switch_mode(
     })
 }
 
-/// Disables ALL ENABLED mods for a game unconditionally.
-/// This enforces a 100% clean-slate before restoring the target corridor,
-/// preventing rogue background mods from bleeding through.
-async fn disable_all_enabled_mods(
+/// Disables enabled mods only in the corridor being left.
+/// This preserves the target corridor's current state and avoids unnecessary
+/// disable-then-restore churn on mods that are already in the destination corridor.
+async fn disable_enabled_mods_in_corridor(
     pool: &SqlitePool,
     watcher_state: &WatcherState,
     game_id: &str,
+    leaving_safe: bool,
     mods_path: &str,
 ) -> Result<usize, String> {
-    let enabled_mods: Vec<_> = collection_repo::get_enabled_mod_id_and_paths(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .filter(|(_, path)| {
-            // Filter out depth-1 folders (e.g. "Acheron"). These are Object containers.
-            // We only want to disable actual sub-mods (e.g. "Acheron/PinkAcheron").
-            std::path::Path::new(path).components().count() > 1
-        })
-        .collect();
+    let enabled_mods: Vec<_> =
+        collection_repo::get_enabled_mod_id_and_paths_for_corridor(pool, game_id, leaving_safe)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|(_, path)| {
+                // Filter out depth-1 folders (e.g. "Acheron"). These are Object containers.
+                // We only want to disable actual sub-mods (e.g. "Acheron/PinkAcheron").
+                std::path::Path::new(path).components().count() > 1
+            })
+            .collect();
 
     if enabled_mods.is_empty() {
         return Ok(0);
@@ -132,7 +137,7 @@ async fn disable_all_enabled_mods(
         game_id,
         enabled_mods,
         false,
-        Some("SYSTEM"),
+        Some(DISABLED_REASON_SYSTEM),
     )
     .await?;
 

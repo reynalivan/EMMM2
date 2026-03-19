@@ -1,4 +1,4 @@
-import type { CollectionPreviewMod } from '../../../types/collection';
+import type { CollectionObjectState, CollectionPreviewMod } from '../../../types/collection';
 
 export interface GroupedMod {
   id: string;
@@ -6,13 +6,26 @@ export interface GroupedMod {
   type: string;
   mods: CollectionPreviewMod[];
   unsafeCount: number;
+  is_enabled?: boolean;
+  is_editable?: boolean;
+}
+
+export interface GroupedObjectState extends CollectionObjectState {
+  name: string;
+  object_type: string;
+  is_editable?: boolean;
+}
+
+interface BuildGroupedModsWithObjectStatesOptions {
+  mode: 'workspace' | 'preview';
+  relevantObjectIds?: ReadonlySet<string>;
 }
 
 /**
  * Groups a flat list of CollectionPreviewMod by their parent object.
  * Used by CollectionWorkspace, ApplyCollectionModal, and any future views.
  */
-export function groupMods(mods: CollectionPreviewMod[]): GroupedMod[] {
+function groupMods(mods: CollectionPreviewMod[]): GroupedMod[] {
   const objectsMap = new Map<string, GroupedMod>();
   let hasUncategorized = false;
   const uncategorizedMods: CollectionPreviewMod[] = [];
@@ -72,4 +85,49 @@ export function groupMods(mods: CollectionPreviewMod[]): GroupedMod[] {
   });
 
   return groups;
+}
+
+export function buildGroupedModsWithObjectStates(
+  mods: CollectionPreviewMod[],
+  objectStates: GroupedObjectState[],
+  options: BuildGroupedModsWithObjectStatesOptions,
+): GroupedMod[] {
+  const groupedMods = groupMods(mods);
+  const groupedByKey = new Map(
+    groupedMods.map((group) => [group.id === group.name ? group.name : group.id, group]),
+  );
+
+  const mergedGroups: GroupedMod[] = objectStates.map((state) => {
+    const matchingGroup = groupedByKey.get(state.object_id) ?? groupedByKey.get(state.name);
+    if (matchingGroup) {
+      const matchingKey =
+        matchingGroup.id === matchingGroup.name ? matchingGroup.name : matchingGroup.id;
+      groupedByKey.delete(matchingKey);
+    }
+
+    return {
+      id: state.object_id,
+      name: state.name,
+      type: state.object_type,
+      mods: matchingGroup?.mods ?? [],
+      unsafeCount: matchingGroup?.unsafeCount ?? 0,
+      is_enabled: state.is_enabled,
+      is_editable: state.is_editable,
+    };
+  });
+
+  groupedByKey.forEach((group) => {
+    mergedGroups.push(group);
+  });
+
+  const relevantObjectIds = options.relevantObjectIds;
+  const filteredGroups =
+    options.mode === 'preview' && relevantObjectIds && relevantObjectIds.size > 0
+      ? mergedGroups.filter(
+          (group) => relevantObjectIds.has(group.id) || relevantObjectIds.has(group.name),
+        )
+      : mergedGroups;
+
+  filteredGroups.sort((left, right) => left.name.localeCompare(right.name));
+  return filteredGroups;
 }

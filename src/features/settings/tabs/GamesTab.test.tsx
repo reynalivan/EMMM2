@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamesTab from './GamesTab';
 import { useSettings } from '../../../hooks/useSettings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useToastStore } from '../../../stores/useToastStore';
+import { scanService } from '../../../lib/services/scanService';
+import { reconcileActiveCollection } from '../../collections/utils/reconcileActiveCollection';
 
 // Mock dependencies
 vi.mock('../../../hooks/useSettings', () => ({
@@ -17,6 +19,16 @@ vi.mock('../../../stores/useAppStore', () => ({
 
 vi.mock('../../../stores/useToastStore', () => ({
   useToastStore: vi.fn(),
+}));
+
+vi.mock('../../../lib/services/scanService', () => ({
+  scanService: {
+    syncDatabase: vi.fn(),
+  },
+}));
+
+vi.mock('../../collections/utils/reconcileActiveCollection', () => ({
+  reconcileActiveCollection: vi.fn(),
 }));
 
 // Mock the GameFormModal so we don't need to mount it fully for simple tests
@@ -193,5 +205,41 @@ describe('GamesTab (TC-02)', () => {
     // Click second game to make it active
     fireEvent.click(activeButtons[1]);
     expect(mockSetActiveGameId).toHaveBeenCalledWith('g2');
+  });
+
+  it('runs active collection reconciliation after successful rescan on active game', async () => {
+    (useSettings as any).mockReturnValue({
+      settings: {
+        games: [
+          {
+            id: 'g1',
+            name: 'Genshin Impact',
+            game_type: 'GIMI',
+            mod_path: 'C:/Mods',
+            game_exe: 'C:/Game/Genshin.exe',
+          },
+        ],
+      },
+      saveSettings: mockSaveSettings,
+    });
+    (useAppStore as any).mockReturnValue({
+      activeGameId: 'g1',
+      setActiveGameId: mockSetActiveGameId,
+    });
+    (scanService.syncDatabase as ReturnType<typeof vi.fn>).mockResolvedValue({
+      new_mods: 1,
+      updated_mods: 2,
+    });
+    (reconcileActiveCollection as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    render(<GamesTab />);
+
+    const rescanBtn = screen.getByTitle('Rescan Library');
+    fireEvent.click(rescanBtn);
+
+    await waitFor(() => {
+      expect(scanService.syncDatabase).toHaveBeenCalled();
+      expect(reconcileActiveCollection).toHaveBeenCalledWith({ gameId: 'g1' });
+    });
   });
 });

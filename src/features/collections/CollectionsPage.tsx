@@ -1,20 +1,41 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Layers, Trash2, Edit2, Check, X, Save, Loader2 } from 'lucide-react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import {
   useApplyCollection,
+  useCollectionRuntimePreview,
   useCollections,
+  useCorridorRuntimeSnapshot,
   useDeleteCollection,
   useUpdateCollection,
-  useActiveModsPreview,
 } from './hooks/useCollections';
-import type { Collection } from '../../types/collection';
+import type { Collection, CollectionObjectState, SaveCollectionMode } from '../../types/collection';
 import CollectionWorkspace from './components/CollectionWorkspace';
 import ApplyCollectionModal from './components/ApplyCollectionModal';
 import SaveCollectionModal from './components/SaveCollectionModal';
 import { useSafeModeToggle } from '../../hooks/useSafeModeToggle';
 import ModeSwitchConfirmModal from '../safe-mode/ModeSwitchConfirmModal';
 import PinEntryModal from '../safe-mode/PinEntryModal';
+import { toast } from '../../stores/useToastStore';
+import {
+  getWorkspaceSelectionForCorridor,
+  type CollectionWorkspaceSource,
+} from '../../lib/corridorSelection';
+import { useAppStore } from '../../stores/useAppStore';
+import {
+  areWorkspaceSourcesEqual,
+  buildCollectionWorkspaceRows,
+  findWorkspaceRow,
+  isWorkspaceSourceAvailable,
+  resolvePreferredWorkspaceSource,
+  type CollectionWorkspaceRow,
+} from './utils/workspaceSelection';
+
+interface SaveModalState {
+  mode: SaveCollectionMode;
+  sourceCollectionId?: string;
+  sourceCollectionName?: string;
+}
 
 export default function CollectionsPage() {
   const { activeGame } = useActiveGame();
@@ -23,44 +44,258 @@ export default function CollectionsPage() {
     handleConfirmSwitch,
     handlePinSuccess,
     confirmModalOpen,
-    confirmTargetEnabled,
+    confirmTargetSafeMode,
     closeConfirmModal,
     pinModalOpen,
     closePinModal,
     safeMode,
   } = useSafeModeToggle();
 
-  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [saveModalState, setSaveModalState] = useState<SaveModalState | null>(null);
+  const [pendingWorkspaceSource, setPendingWorkspaceSource] =
+    useState<CollectionWorkspaceSource | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [, setWorkspaceDraftObjectStates] = useState<CollectionObjectState[]>([]);
+  const [, setWorkspaceHasObjectStateChanges] = useState(false);
+  const workspaceDraftObjectStatesRef = useRef<CollectionObjectState[]>([]);
+  const workspaceHasObjectStateChangesRef = useRef(false);
   const [confirmApply, setConfirmApply] = useState<{
     id: string;
     name: string;
-    count: number;
   } | null>(null);
 
   const collectionsQuery = useCollections(activeGame?.id ?? null);
-  const activeModsQuery = useActiveModsPreview(activeGame?.id ?? null, safeMode);
   const updateMutation = useUpdateCollection();
   const deleteMutation = useDeleteCollection();
   const applyMutation = useApplyCollection();
+  const corridorRuntimeQuery = useCorridorRuntimeSnapshot(activeGame?.id ?? null, safeMode);
+  const {
+    workspaceSelectionByCorridor,
+    setWorkspaceSelectionForCorridor,
+    clearWorkspaceSelectionForCorridor,
+  } = useAppStore();
 
-  if (!activeGame) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center p-6 rounded-xl bg-base-200 border border-base-300">
-          <h2 className="text-lg font-semibold">No Active Game</h2>
-          <p className="text-sm text-base-content/70 mt-2">
-            Select a game first, then open Collections.
-          </p>
-        </div>
-      </div>
+  const persistedWorkspaceSource = useMemo(
+    () => getWorkspaceSelectionForCorridor(workspaceSelectionByCorridor, activeGame?.id, safeMode),
+    [activeGame?.id, safeMode, workspaceSelectionByCorridor],
+  );
+
+  const corridorCollections = useMemo(
+    () => collectionsQuery.data?.filter((c) => c.is_safe_context === safeMode) ?? [],
+    [collectionsQuery.data, safeMode],
+  );
+
+  const workspaceRows = useMemo(
+    () =>
+      buildCollectionWorkspaceRows(
+        activeGame?.id,
+        safeMode,
+        corridorCollections,
+        corridorRuntimeQuery.data,
+      ),
+    [activeGame?.id, corridorCollections, corridorRuntimeQuery.data, safeMode],
+  );
+
+  const resolvedWorkspaceSource = useMemo(
+    () => {
+      if (
+        pendingWorkspaceSource &&
+        !isWorkspaceSourceAvailable(workspaceRows, pendingWorkspaceSource)
+      ) {
+        return pendingWorkspaceSource;
+      }
+
+      return resolvePreferredWorkspaceSource(
+        workspaceRows,
+        persistedWorkspaceSource,
+        corridorRuntimeQuery.data,
+      );
+    },
+    [
+      corridorRuntimeQuery.data,
+      pendingWorkspaceSource,
+      persistedWorkspaceSource,
+      workspaceRows,
+    ],
+  );
+
+  const selectedWorkspaceRow = useMemo(
+    () => findWorkspaceRow(workspaceRows, resolvedWorkspaceSource),
+    [resolvedWorkspaceSource, workspaceRows],
+  );
+
+  const selectedStoredCollectionId =
+    resolvedWorkspaceSource?.kind === 'stored_collection'
+      ? resolvedWorkspaceSource.collection_id
+      : null;
+
+  const selectedCollectionPreview = useCollectionRuntimePreview(
+    selectedStoredCollectionId,
+    activeGame?.id ?? null,
+  );
+
+  const selectedWorkspaceObjectStates = useMemo(() => {
+    const sourceStates =
+      resolvedWorkspaceSource?.kind === 'current_runtime'
+        ? (corridorRuntimeQuery.data?.object_states ?? [])
+        : (selectedCollectionPreview.data?.object_states ?? []);
+    return sourceStates.map((state) => ({
+      object_id: state.object_id,
+      is_enabled: state.is_enabled,
+      name: state.name,
+      object_type: state.object_type,
+    }));
+  }, [
+    corridorRuntimeQuery.data?.object_states,
+    resolvedWorkspaceSource?.kind,
+    selectedCollectionPreview.data?.object_states,
+  ]);
+
+  const selectedPreviewRoots = useMemo(() => {
+    if (resolvedWorkspaceSource?.kind === 'current_runtime') {
+      return corridorRuntimeQuery.data?.roots ?? [];
+    }
+    return selectedCollectionPreview.data?.roots ?? [];
+  }, [corridorRuntimeQuery.data?.roots, resolvedWorkspaceSource?.kind, selectedCollectionPreview.data?.roots]);
+
+  const isSelectedPreviewLoading =
+    resolvedWorkspaceSource?.kind === 'current_runtime'
+      ? corridorRuntimeQuery.isLoading
+      : selectedCollectionPreview.isLoading;
+
+  useEffect(() => {
+    setWorkspaceDraftObjectStates([]);
+    setWorkspaceHasObjectStateChanges(false);
+    workspaceDraftObjectStatesRef.current = [];
+    workspaceHasObjectStateChangesRef.current = false;
+  }, [
+    resolvedWorkspaceSource?.kind,
+    resolvedWorkspaceSource?.kind === 'stored_collection'
+      ? resolvedWorkspaceSource.collection_id
+      : null,
+  ]);
+
+  useEffect(() => {
+    if (
+      pendingWorkspaceSource &&
+      isWorkspaceSourceAvailable(workspaceRows, pendingWorkspaceSource)
+    ) {
+      setPendingWorkspaceSource(null);
+    }
+  }, [pendingWorkspaceSource, workspaceRows]);
+
+  useEffect(() => {
+    if (!activeGame) {
+      return;
+    }
+    if (!collectionsQuery.isSuccess) {
+      return;
+    }
+    if (collectionsQuery.isFetching) {
+      return;
+    }
+    if (
+      pendingWorkspaceSource &&
+      !isWorkspaceSourceAvailable(workspaceRows, pendingWorkspaceSource)
+    ) {
+      return;
+    }
+    if (!resolvedWorkspaceSource) {
+      if (persistedWorkspaceSource) {
+        clearWorkspaceSelectionForCorridor(activeGame.id, safeMode);
+      }
+      return;
+    }
+
+    if (areWorkspaceSourcesEqual(persistedWorkspaceSource, resolvedWorkspaceSource)) {
+      return;
+    }
+
+    setWorkspaceSelectionForCorridor(activeGame.id, safeMode, resolvedWorkspaceSource);
+  }, [
+    activeGame,
+    collectionsQuery.isFetching,
+    collectionsQuery.isSuccess,
+    clearWorkspaceSelectionForCorridor,
+    persistedWorkspaceSource,
+    pendingWorkspaceSource,
+    resolvedWorkspaceSource,
+    safeMode,
+    setWorkspaceSelectionForCorridor,
+    workspaceRows,
+  ]);
+
+  const saveObjectStates = useCallback(
+    async (collection: Collection, objectStates: CollectionObjectState[]): Promise<boolean> => {
+      if (!activeGame) return false;
+
+      try {
+        await updateMutation.mutateAsync({
+          id: collection.id,
+          game_id: activeGame.id,
+          object_states: objectStates.map(({ object_id, is_enabled }) => ({
+            object_id,
+            is_enabled,
+          })),
+        });
+        toast.success(`Updated object states for ${collection.name}`);
+        return true;
+      } catch (error) {
+        toast.error(String(error));
+        return false;
+      }
+    },
+    [activeGame, updateMutation],
+  );
+
+  const autoSaveWorkspaceIfNeeded = useCallback(async (): Promise<boolean> => {
+    if (!workspaceHasObjectStateChangesRef.current) {
+      return true;
+    }
+
+    if (selectedWorkspaceRow?.sourceKind !== 'named_collection') {
+      return true;
+    }
+
+    if (workspaceDraftObjectStatesRef.current.length === 0) {
+      return true;
+    }
+
+    const success = await saveObjectStates(
+      selectedWorkspaceRow.collection,
+      workspaceDraftObjectStatesRef.current,
     );
-  }
+    if (!success) {
+      toast.error('Failed to auto-save workspace changes. Switch is cancelled.');
+      return false;
+    }
 
-  const handleApply = async (collection: Collection) => {
-    setConfirmApply({ id: collection.id, name: collection.name, count: collection.member_count });
+    return true;
+  }, [
+    saveObjectStates,
+    selectedWorkspaceRow,
+  ]);
+
+  const handleApply = async (collection: Collection, skipWorkspaceSave: boolean) => {
+    if (
+      !skipWorkspaceSave &&
+      selectedWorkspaceRow?.source.kind === 'stored_collection' &&
+      selectedWorkspaceRow.collection.id === collection.id
+    ) {
+      const saved = await autoSaveWorkspaceIfNeeded();
+      if (!saved) {
+        return;
+      }
+    }
+
+    if (activeGame) {
+      setWorkspaceSelectionForCorridor(activeGame.id, safeMode, {
+        kind: 'stored_collection',
+        collection_id: collection.id,
+      });
+    }
+    setConfirmApply({ id: collection.id, name: collection.name });
   };
 
   const startEdit = (collection: Collection) => {
@@ -74,6 +309,10 @@ export default function CollectionsPage() {
   };
 
   const saveEdit = async (collection: Collection) => {
+    if (!activeGame) {
+      return;
+    }
+
     if (!editName.trim() || editName.trim() === collection.name) {
       cancelEdit();
       return;
@@ -86,33 +325,117 @@ export default function CollectionsPage() {
     setEditingId(null);
   };
 
-  // Synthesize "Unsaved" collection to guarantee it's always accessible and reflects live state
-  const fmtUnsavedName = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `Unsaved ${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
-  };
+  const handleCollectionSelect = useCallback(
+    async (nextSource: CollectionWorkspaceSource) => {
+      if (areWorkspaceSourcesEqual(nextSource, resolvedWorkspaceSource)) {
+        return;
+      }
 
-  let filteredList = collectionsQuery.data?.filter((c) => c.is_safe_context === safeMode) ?? [];
-  if (activeGame && collectionsQuery.isSuccess) {
-    const activeMods = activeModsQuery.data?.length ?? 0;
-    if (!filteredList.some((c) => c.is_last_unsaved) && activeMods > 0) {
-      filteredList = [
-        {
-          id: 'virtual-unsaved',
-          name: fmtUnsavedName(),
-          game_id: activeGame.id,
-          is_safe_context: safeMode,
-          member_count: activeMods,
-          is_last_unsaved: true,
-        },
-        ...filteredList,
-      ];
-    } else if (filteredList.some((c) => c.is_last_unsaved)) {
-      filteredList = filteredList.map((c) =>
-        c.is_last_unsaved ? { ...c, name: fmtUnsavedName(), member_count: activeMods } : c,
-      );
-    }
+      const saved = await autoSaveWorkspaceIfNeeded();
+      if (!saved) {
+        return;
+      }
+
+      if (activeGame) {
+        setWorkspaceSelectionForCorridor(activeGame.id, safeMode, nextSource);
+      }
+    },
+    [
+      activeGame,
+      autoSaveWorkspaceIfNeeded,
+      resolvedWorkspaceSource,
+      safeMode,
+      setWorkspaceSelectionForCorridor,
+    ],
+  );
+
+  const handleCorridorTabSwitch = useCallback(
+    async (targetSafeMode: boolean) => {
+      if (safeMode === targetSafeMode) {
+        return;
+      }
+
+      const saved = await autoSaveWorkspaceIfNeeded();
+      if (!saved) {
+        return;
+      }
+
+      await toggleSafeMode();
+      setWorkspaceDraftObjectStates([]);
+      setWorkspaceHasObjectStateChanges(false);
+      workspaceDraftObjectStatesRef.current = [];
+      workspaceHasObjectStateChangesRef.current = false;
+    },
+    [safeMode, autoSaveWorkspaceIfNeeded, toggleSafeMode],
+  );
+
+  const handleWorkspaceStateChange = useCallback(
+    (draftStates: CollectionObjectState[], hasChanges: boolean) => {
+      workspaceDraftObjectStatesRef.current = draftStates;
+      workspaceHasObjectStateChangesRef.current = hasChanges;
+      setWorkspaceDraftObjectStates(draftStates);
+      setWorkspaceHasObjectStateChanges(hasChanges);
+    },
+    [],
+  );
+
+  const openCurrentStateSaveModal = useCallback(() => {
+    setSaveModalState({ mode: 'current_state' });
+  }, []);
+
+  const openSnapshotSaveModal = useCallback((collection: Collection) => {
+    setSaveModalState({
+      mode: 'snapshot_collection',
+      sourceCollectionId: collection.id,
+      sourceCollectionName: collection.name,
+    });
+  }, []);
+
+  const handleRowPrimaryAction = useCallback(
+    async (row: CollectionWorkspaceRow) => {
+      const saved = await autoSaveWorkspaceIfNeeded();
+      if (!saved) {
+        return;
+      }
+
+      if (activeGame) {
+        setWorkspaceSelectionForCorridor(activeGame.id, safeMode, row.source);
+      }
+
+      if (row.primaryActionKind === 'save_current') {
+        openCurrentStateSaveModal();
+        return;
+      }
+
+      if (row.primaryActionKind === 'save_snapshot') {
+        openSnapshotSaveModal(row.collection);
+        return;
+      }
+
+      await handleApply(row.collection, true);
+    },
+    [
+      activeGame,
+      autoSaveWorkspaceIfNeeded,
+      handleApply,
+      openCurrentStateSaveModal,
+      openSnapshotSaveModal,
+      safeMode,
+      setWorkspaceSelectionForCorridor,
+    ],
+  );
+
+  if (!activeGame) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center p-6 rounded-xl bg-base-200 border border-base-300">
+          <h2 className="text-lg font-semibold">No Active Game</h2>
+          <p className="text-sm text-base-content/70 mt-2">
+            Select a game first, then open Collections.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -134,10 +457,7 @@ export default function CollectionsPage() {
           <button
             className={`tab tab-sm flex-1 transition-colors ${safeMode ? 'tab-active bg-success/20 text-success rounded-md! font-medium shadow-sm' : 'text-base-content/60 hover:text-base-content'}`}
             onClick={() => {
-              if (!safeMode) {
-                toggleSafeMode();
-                setSelectedCollectionId(null);
-              }
+              void handleCorridorTabSwitch(true);
             }}
           >
             SAFE
@@ -145,15 +465,17 @@ export default function CollectionsPage() {
           <button
             className={`tab tab-sm flex-1 transition-colors ${!safeMode ? 'tab-active bg-error/20 text-error rounded-md! font-medium shadow-sm' : 'text-base-content/60 hover:text-base-content'}`}
             onClick={() => {
-              if (safeMode) {
-                toggleSafeMode();
-                setSelectedCollectionId(null);
-              }
+              void handleCorridorTabSwitch(false);
             }}
           >
             UNSAFE
           </button>
         </div>
+
+        <button className="btn btn-secondary btn-sm" onClick={openCurrentStateSaveModal}>
+          <Save size={14} />
+          Save Current State
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
@@ -167,7 +489,7 @@ export default function CollectionsPage() {
                 </div>
               ) : (
                 (() => {
-                  if (filteredList.length === 0) {
+                  if (workspaceRows.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center p-8 text-center h-full absolute inset-0">
                         <div className="w-16 h-16 rounded-full bg-base-300 flex items-center justify-center mb-4 text-base-content/30 mt-8">
@@ -194,18 +516,37 @@ export default function CollectionsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredList.map((collection) => (
+                        {workspaceRows.map((row) => {
+                          const isSelected = areWorkspaceSourcesEqual(
+                            row.source,
+                            resolvedWorkspaceSource,
+                          );
+                          const badgeLabel =
+                            row.sourceKind === 'current_runtime'
+                              ? 'Current'
+                              : row.sourceKind === 'stored_unsaved_snapshot'
+                                ? 'Last Unsaved'
+                                : null;
+                          const modCount = isSelected
+                            ? selectedPreviewRoots.length
+                            : row.source.kind === 'current_runtime'
+                              ? (corridorRuntimeQuery.data?.roots.length ?? row.collection.member_count)
+                              : row.collection.member_count;
+
+                          return (
                           <tr
-                            key={collection.id}
-                            onClick={() => setSelectedCollectionId(collection.id)}
+                            key={row.collection.id}
+                            onClick={() => {
+                              void handleCollectionSelect(row.source);
+                            }}
                             className={`hover border-white/5 transition-colors group cursor-pointer ${
-                              selectedCollectionId === collection.id
+                              isSelected
                                 ? 'bg-primary/10 border-l-2 border-l-primary'
                                 : ''
                             }`}
                           >
                             <td className="pl-4">
-                              {editingId === collection.id ? (
+                              {editingId === row.collection.id ? (
                                 <div className="flex items-center gap-2">
                                   <input
                                     type="text"
@@ -215,7 +556,7 @@ export default function CollectionsPage() {
                                     onClick={(e) => e.stopPropagation()}
                                     autoFocus
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter') saveEdit(collection);
+                                      if (e.key === 'Enter') saveEdit(row.collection);
                                       if (e.key === 'Escape') cancelEdit();
                                     }}
                                   />
@@ -223,7 +564,7 @@ export default function CollectionsPage() {
                                     className="btn btn-xs btn-square btn-success text-white shrink-0"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      saveEdit(collection);
+                                      saveEdit(row.collection);
                                     }}
                                   >
                                     <Check size={14} />
@@ -241,19 +582,19 @@ export default function CollectionsPage() {
                               ) : (
                                 <div className="font-medium text-[15px] flex items-center gap-2">
                                   <span className="truncate max-w-30 2xl:max-w-50">
-                                    {collection.name}
+                                    {row.collection.name}
                                   </span>
-                                  {collection.is_last_unsaved && (
+                                  {badgeLabel && (
                                     <span className="badge badge-sm badge-warning opacity-90 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
-                                      Last Unsaved
+                                      {badgeLabel}
                                     </span>
                                   )}
-                                  {!collection.is_last_unsaved && (
+                                  {row.sourceKind === 'named_collection' && (
                                     <button
                                       className="btn btn-xs btn-square btn-ghost opacity-0 group-hover:opacity-100 transition-opacity text-base-content/40 hover:text-white shrink-0"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        startEdit(collection);
+                                        startEdit(row.collection);
                                       }}
                                       title="Rename"
                                     >
@@ -265,48 +606,52 @@ export default function CollectionsPage() {
                             </td>
                             <td>
                               <span className="badge badge-sm badge-ghost opacity-70 shrink-0">
-                                {collection.member_count} mods
+                                {modCount} mods
                               </span>
                             </td>
 
                             <td className="text-right pr-4">
                               <div className="flex items-center justify-end gap-2">
                                 <button
-                                  className={`btn btn-sm ${collection.is_last_unsaved ? 'btn-secondary' : 'btn-primary'}`}
+                                  className={`btn btn-sm ${row.primaryActionKind === 'apply' ? 'btn-primary' : 'btn-secondary'}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (collection.is_last_unsaved) {
-                                      setIsSaveModalOpen(true);
-                                    } else {
-                                      handleApply(collection);
-                                    }
+                                    void handleRowPrimaryAction(row);
                                   }}
                                   disabled={
-                                    collection.is_last_unsaved
-                                      ? false // Never disable Save on the Unsaved preset!
-                                      : applyMutation.isPending || collection.member_count === 0
+                                    row.primaryActionKind === 'apply'
+                                      ? applyMutation.isPending || row.collection.member_count === 0
+                                      : false
                                   }
                                 >
-                                  {collection.is_last_unsaved ? (
+                                  {row.primaryActionKind === 'save_current' ? (
                                     <>
                                       <Save size={14} className="mr-1" />
-                                      Save
+                                      Save Current
+                                    </>
+                                  ) : row.primaryActionKind === 'save_snapshot' ? (
+                                    <>
+                                      <Save size={14} className="mr-1" />
+                                      Save As...
                                     </>
                                   ) : (
                                     'Apply'
                                   )}
                                 </button>
-                                {!collection.is_last_unsaved && (
+                                {row.sourceKind === 'named_collection' && (
                                   <button
                                     className="btn btn-sm btn-square btn-ghost text-error/70 hover:text-error hover:bg-error/10 shrink-0"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       deleteMutation.mutate({
-                                        id: collection.id,
+                                        id: row.collection.id,
                                         gameId: activeGame.id,
                                       });
-                                      if (selectedCollectionId === collection.id) {
-                                        setSelectedCollectionId(null);
+                                      if (
+                                        resolvedWorkspaceSource?.kind === 'stored_collection' &&
+                                        resolvedWorkspaceSource.collection_id === row.collection.id
+                                      ) {
+                                        clearWorkspaceSelectionForCorridor(activeGame.id, safeMode);
                                       }
                                     }}
                                     disabled={deleteMutation.isPending}
@@ -318,7 +663,8 @@ export default function CollectionsPage() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   );
@@ -330,21 +676,34 @@ export default function CollectionsPage() {
 
         {/* RIGHT COLUMN: Collection Preview Sidebar */}
         <div className="lg:col-span-4 flex flex-col min-h-0 bg-base-200/30 rounded-2xl border border-white/5 overflow-hidden shadow-lg">
-          {selectedCollectionId && filteredList.find((c) => c.id === selectedCollectionId) ? (
+          {selectedWorkspaceRow ? (
             <CollectionWorkspace
-              collection={filteredList.find((c) => c.id === selectedCollectionId)!}
-              onApply={(collection) => {
-                if (collection.is_last_unsaved) {
-                  setIsSaveModalOpen(true);
-                } else {
-                  setConfirmApply({
-                    id: collection.id,
-                    name: collection.name,
-                    count: collection.member_count,
-                  });
+              collection={selectedWorkspaceRow.collection}
+              sourceKind={selectedWorkspaceRow.sourceKind}
+              primaryActionKind={selectedWorkspaceRow.primaryActionKind}
+              previewRoots={selectedPreviewRoots}
+              isPreviewLoading={isSelectedPreviewLoading}
+              onPrimaryAction={(collection) => {
+                if (selectedWorkspaceRow.primaryActionKind === 'save_snapshot') {
+                  openSnapshotSaveModal(collection);
+                  return;
                 }
+                if (selectedWorkspaceRow.primaryActionKind === 'save_current') {
+                  openCurrentStateSaveModal();
+                  return;
+                }
+                void handleApply(collection, false);
               }}
               isApplying={applyMutation.isPending}
+              objectStates={selectedWorkspaceObjectStates}
+              allowObjectStateEditing={selectedWorkspaceRow.sourceKind === 'named_collection'}
+              isSavingObjectStates={updateMutation.isPending}
+              onSaveObjectStates={(states) =>
+                selectedWorkspaceRow.sourceKind === 'named_collection'
+                  ? saveObjectStates(selectedWorkspaceRow.collection, states)
+                  : Promise.resolve(false)
+              }
+              onWorkspaceStateChange={handleWorkspaceStateChange}
             />
           ) : (
             <div className="flex flex-col items-center justify-center p-8 text-center h-full">
@@ -362,14 +721,26 @@ export default function CollectionsPage() {
       </div>
 
       {/* Save Modal */}
-      {isSaveModalOpen && <SaveCollectionModal onClose={() => setIsSaveModalOpen(false)} />}
+      {saveModalState && (
+        <SaveCollectionModal
+          mode={saveModalState.mode}
+          sourceCollectionId={saveModalState.sourceCollectionId}
+          sourceCollectionName={saveModalState.sourceCollectionName}
+          onSaved={(collectionId) => {
+            setPendingWorkspaceSource({
+              kind: 'stored_collection',
+              collection_id: collectionId,
+            });
+          }}
+          onClose={() => setSaveModalState(null)}
+        />
+      )}
 
       {/* Apply Confirmation Modal */}
       {confirmApply && (
         <ApplyCollectionModal
           collectionId={confirmApply.id}
           collectionName={confirmApply.name}
-          memberCount={confirmApply.count}
           onClose={() => setConfirmApply(null)}
         />
       )}
@@ -377,7 +748,7 @@ export default function CollectionsPage() {
       {/* Confirmation Modal for Corridor Switch */}
       <ModeSwitchConfirmModal
         open={confirmModalOpen}
-        targetEnabled={confirmTargetEnabled}
+        targetSafeMode={confirmTargetSafeMode}
         onClose={closeConfirmModal}
         onConfirm={handleConfirmSwitch}
       />

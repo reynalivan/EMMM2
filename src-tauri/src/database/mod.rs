@@ -1,4 +1,6 @@
 pub mod collection_repo;
+pub mod corridor_runtime_cache_repo;
+pub mod corridor_state_repo;
 pub mod dashboard_repo;
 pub mod dedup_repo;
 pub mod game_repo;
@@ -6,3 +8,4 @@ pub mod mod_repo;
 pub mod models;
 pub mod object_repo;
 pub mod settings_repo;
+pub mod unicode_keys;

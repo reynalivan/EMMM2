@@ -14,6 +14,8 @@ use std::path::Path;
 use crate::services::explorer::classifier::{classify_folder, NodeType};
 use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_display_name};
 
+const MAX_CONTAINER_DEPTH: usize = 5;
+
 /// A nested mod discovered by walking the filesystem.
 #[derive(Debug, Clone, Serialize)]
 pub struct NestedModState {
@@ -31,7 +33,7 @@ pub struct NestedModState {
     pub node_type: String,
 }
 
-/// Walk all folders under `mods_path` recursively (up to depth 3) and return
+/// Walk all folders under `mods_path` recursively (up to depth 5) and return
 /// nested mod folders that are NOT immediate children of `mods_path`.
 ///
 /// Immediate children are already in the `mods` table — this function only
@@ -78,7 +80,14 @@ pub fn walk_nested_mods(mods_path: &str) -> Result<Vec<NestedModState>, String> 
         let object_name = normalize_display_name(&top_name);
 
         // Walk children of this container (depth-2+)
-        walk_children(&top_path, &object_name, &mut results, 3)?;
+        let top_disabled = is_disabled_folder(&top_name);
+        walk_children(
+            &top_path,
+            &object_name,
+            &mut results,
+            MAX_CONTAINER_DEPTH,
+            top_disabled,
+        )?;
     }
 
     Ok(results)
@@ -90,6 +99,7 @@ fn walk_children(
     object_name: &str,
     results: &mut Vec<NestedModState>,
     remaining_depth: usize,
+    ancestor_disabled: bool,
 ) -> Result<(), String> {
     if remaining_depth == 0 {
         return Ok(());
@@ -117,10 +127,11 @@ fn walk_children(
         }
 
         let (node_type, _) = classify_folder(&path);
+        let is_disabled = ancestor_disabled || is_disabled_folder(&folder_name);
 
         match node_type {
             NodeType::ModPackRoot | NodeType::VariantContainer | NodeType::FlatModRoot => {
-                let is_enabled = !is_disabled_folder(&folder_name);
+                let is_enabled = !is_disabled;
                 let display_name = normalize_display_name(&folder_name);
                 let is_safe = read_is_safe(&path);
 
@@ -135,7 +146,13 @@ fn walk_children(
             }
             NodeType::ContainerFolder => {
                 // Recurse deeper into container folders
-                walk_children(&path, object_name, results, remaining_depth - 1)?;
+                walk_children(
+                    &path,
+                    object_name,
+                    results,
+                    remaining_depth - 1,
+                    is_disabled,
+                )?;
             }
             NodeType::InternalAssets => {
                 // Skip — these are referenced by a parent mod's ini
@@ -155,7 +172,7 @@ fn read_is_safe(path: &Path) -> bool {
 }
 
 /// Generate a deterministic synthetic ID for a nested mod path.
-/// Used as the `mod_id` in `collection_items` for nested mods without DB entries.
+/// Used only by legacy snapshot/backfill flows for nested mods without DB rows.
 pub fn nested_mod_id(folder_path: &str) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -233,5 +250,28 @@ mod tests {
             .unwrap();
         assert!(deep.is_enabled);
         assert_eq!(deep.object_name.as_deref(), Some("Character"));
+    }
+
+    #[test]
+    fn test_walk_nested_mods_marks_children_under_disabled_ancestor_as_disabled() {
+        let tmp = TempDir::new().unwrap();
+        let mods_path = tmp.path();
+
+        let disabled_object = mods_path.join("Ainoz");
+        fs::create_dir(&disabled_object).unwrap();
+        let disabled_parent = disabled_object.join("DISABLED 아이농");
+        fs::create_dir(&disabled_parent).unwrap();
+        let nested_child = disabled_parent.join("아이농 누드");
+        fs::create_dir(&nested_child).unwrap();
+        fs::write(nested_child.join("mod.ini"), "[TextureOverride]").unwrap();
+
+        let results = walk_nested_mods(&mods_path.to_string_lossy()).unwrap();
+        let nested = results
+            .iter()
+            .find(|m| m.display_name == "아이농 누드")
+            .unwrap();
+
+        assert!(!nested.is_enabled);
+        assert_eq!(nested.object_name.as_deref(), Some("Ainoz"));
     }
 }

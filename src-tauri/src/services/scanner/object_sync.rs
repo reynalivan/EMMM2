@@ -1,3 +1,4 @@
+use crate::services::path_key::canonical_name_key;
 use crate::types::errors::CommandResult;
 use std::collections::HashSet;
 
@@ -53,7 +54,7 @@ pub async fn sync_objects_for_game(
             let mut db_folders_normalized = HashSet::new();
             for fp in &current_objects_paths {
                 let norm = crate::services::scanner::core::normalizer::normalize_display_name(fp);
-                db_folders_normalized.insert(norm.to_lowercase());
+                db_folders_normalized.insert(canonical_name_key(&norm));
             }
 
             let mut new_objects_count = 0;
@@ -62,7 +63,7 @@ pub async fn sync_objects_for_game(
                 for folder in &fs_folders {
                     let norm =
                         crate::services::scanner::core::normalizer::normalize_display_name(folder);
-                    if !db_folders_normalized.contains(&norm.to_lowercase()) {
+                    if !db_folders_normalized.contains(&canonical_name_key(&norm)) {
                         changes = true;
                         let obj_name =
                             crate::services::scanner::core::normalizer::normalize_display_name(
@@ -112,13 +113,13 @@ pub async fn sync_objects_for_game(
                     .map(|f| {
                         let norm =
                             crate::services::scanner::core::normalizer::normalize_display_name(f);
-                        (norm.to_lowercase(), f)
+                        (canonical_name_key(&norm), f)
                     })
                     .collect();
                 for fp in &current_objects_paths {
-                    let db_norm =
-                        crate::services::scanner::core::normalizer::normalize_display_name(fp)
-                            .to_lowercase();
+                    let db_norm = canonical_name_key(
+                        &crate::services::scanner::core::normalizer::normalize_display_name(fp),
+                    );
                     if let Some(actual) = fs_norm_map.get(&db_norm) {
                         if fp != *actual {
                             let _ = crate::database::object_repo::update_object_folder_path(

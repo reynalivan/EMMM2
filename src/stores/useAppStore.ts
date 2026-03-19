@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { SortField, SortOrder, ViewMode } from '../types/mod';
+import { invalidateCollectionRuntime } from '../features/collections/utils/invalidateCollectionRuntime';
+import { corridorRuntimeKeys } from '../features/collections/queryKeys';
+import { refetchCollectionRuntime } from '../features/collections/utils/refetchCollectionRuntime';
+import {
+  buildCorridorSelectionKey,
+  normalizePersistedWorkspaceSelections,
+  type CollectionWorkspaceSource,
+  type CorridorSelectionMap,
+} from '../lib/corridorSelection';
 
 /** Structured error returned by toggle_mod when target path already exists. */
 export interface RenameConflictError {
@@ -16,6 +25,14 @@ export interface CorridorSwitchResult {
   disabled_count: number;
   restored_count: number;
   warnings: string[];
+}
+
+interface BackendSettings {
+  active_game_id: string | null;
+  safe_mode: {
+    enabled: boolean;
+  };
+  auto_close_launcher?: boolean;
 }
 
 type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings' | 'browser' | 'downloads';
@@ -39,9 +56,9 @@ interface AppState {
   isPreviewOpen: boolean;
 
   // Selection State
-  activeCollectionId: string | null;
   selectedObjectFolderPath: string | null;
   gridSelection: Set<string>;
+  workspaceSelectionByCorridor: CorridorSelectionMap;
 
   // Epic 3: Sidebar State
   selectedObjectType: string | null;
@@ -81,8 +98,13 @@ interface AppState {
 
   setWorkspaceView: (view: WorkspaceView) => void;
   setCurrentPath: (path: string[]) => void;
-  setActiveCollectionId: (id: string | null) => void;
   setSelectedObjectFolderPath: (folderPath: string | null) => void;
+  setWorkspaceSelectionForCorridor: (
+    gameId: string,
+    isSafe: boolean,
+    selection: CollectionWorkspaceSource,
+  ) => void;
+  clearWorkspaceSelectionForCorridor: (gameId: string, isSafe: boolean) => void;
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
   setGridSelection: (selection: Set<string>) => void;
@@ -130,7 +152,7 @@ const debouncedStorage = {
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Defaults
       activeGameId: null,
       safeMode: true,
@@ -138,9 +160,9 @@ export const useAppStore = create<AppState>()(
       isStoreInitialized: false,
       workspaceView: 'dashboard',
       currentPath: [],
-      activeCollectionId: null,
       selectedObjectFolderPath: null,
       gridSelection: new Set(),
+      workspaceSelectionByCorridor: {},
       leftPanelWidth: 260,
       rightPanelWidth: 320,
 
@@ -178,9 +200,7 @@ export const useAppStore = create<AppState>()(
       initStore: async () => {
         try {
           const { invoke } = await import('@tauri-apps/api/core');
-          // Fetch full settings from backend (source of truth)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const settings = await invoke<Record<string, any>>('get_settings');
+          const settings = await invoke<BackendSettings>('get_settings');
 
           set({
             activeGameId: settings.active_game_id,
@@ -188,6 +208,21 @@ export const useAppStore = create<AppState>()(
             autoCloseLauncher: settings.auto_close_launcher ?? false,
             isStoreInitialized: true,
           });
+
+          if (settings.active_game_id) {
+            const { queryClient } = await import('../lib/queryClient');
+            await queryClient.prefetchQuery({
+              queryKey: corridorRuntimeKeys.snapshot(
+                settings.active_game_id,
+                settings.safe_mode.enabled,
+              ),
+              queryFn: () =>
+                invoke('get_corridor_runtime_snapshot', {
+                  gameId: settings.active_game_id,
+                  isSafe: settings.safe_mode.enabled,
+                }),
+            });
+          }
         } catch (err) {
           console.error('Failed to init store from backend:', err);
           set({ isStoreInitialized: true });
@@ -213,6 +248,13 @@ export const useAppStore = create<AppState>()(
 
         try {
           await invoke('set_active_game', { gameId: id });
+          if (id) {
+            const { queryClient } = await import('../lib/queryClient');
+            await refetchCollectionRuntime(queryClient, {
+              gameId: id,
+              isSafe: get().safeMode,
+            });
+          }
         } catch (e) {
           console.error('Failed to sync active game to backend', e);
         }
@@ -221,7 +263,9 @@ export const useAppStore = create<AppState>()(
       setSafeMode: async (enabled) => {
         const { invoke } = await import('@tauri-apps/api/core');
         try {
-          const result = await invoke<CorridorSwitchResult>('set_safe_mode_enabled', { enabled });
+          const result = await invoke<CorridorSwitchResult>('set_safe_mode_enabled', {
+            enabled,
+          });
           // Clear grid selection: FolderGrid items may change with safe mode.
           // ObjectList handles filtering via TanStack query keys (auto-refetch).
           set({
@@ -232,11 +276,14 @@ export const useAppStore = create<AppState>()(
           // Invalidate caches: mod-folders don't include safe_mode in query keys.
           // Objects auto-refetch via key change (safe_mode is in the ObjectFilter key).
           const { queryClient } = await import('../lib/queryClient');
-          queryClient.invalidateQueries({ queryKey: ['objects'] });
-          queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-          queryClient.invalidateQueries({ queryKey: ['collections'] });
-          queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
-          queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+          await invalidateCollectionRuntime(queryClient);
+          const activeGameId = get().activeGameId;
+          if (activeGameId) {
+            await refetchCollectionRuntime(queryClient, {
+              gameId: activeGameId,
+              isSafe: enabled,
+            });
+          }
           return result;
         } catch (e) {
           console.error('Failed to sync safe mode to backend', e);
@@ -259,13 +306,32 @@ export const useAppStore = create<AppState>()(
 
       setWorkspaceView: (view) => set({ workspaceView: view }),
       setCurrentPath: (path) => set({ currentPath: path }),
-      setActiveCollectionId: (id) => set({ activeCollectionId: id }),
 
       setSelectedObjectFolderPath: (folderPath) =>
         set({
           selectedObjectFolderPath: folderPath,
           // Auto-navigate to grid on mobile when object selected
           mobileActivePane: folderPath ? 'grid' : 'sidebar',
+        }),
+
+      setWorkspaceSelectionForCorridor: (gameId, isSafe, selection) =>
+        set((state) => ({
+          workspaceSelectionByCorridor: {
+            ...state.workspaceSelectionByCorridor,
+            [buildCorridorSelectionKey(gameId, isSafe)]: selection,
+          },
+        })),
+
+      clearWorkspaceSelectionForCorridor: (gameId, isSafe) =>
+        set((state) => {
+          const key = buildCorridorSelectionKey(gameId, isSafe);
+          if (!(key in state.workspaceSelectionByCorridor)) {
+            return state;
+          }
+
+          const nextSelections = { ...state.workspaceSelectionByCorridor };
+          delete nextSelections[key];
+          return { workspaceSelectionByCorridor: nextSelections };
         }),
 
       toggleGridSelection: (id, multi = false) =>
@@ -345,6 +411,7 @@ export const useAppStore = create<AppState>()(
         currentPath: state.currentPath,
         explorerSubPath: state.explorerSubPath,
         explorerScrollOffset: state.explorerScrollOffset,
+        workspaceSelectionByCorridor: state.workspaceSelectionByCorridor,
         // Epic 3: Persist collapsed categories (serializable array)
         collapsedCategories: Array.from(state.collapsedCategories),
       }),
@@ -352,7 +419,18 @@ export const useAppStore = create<AppState>()(
         const pState = persistedState as Partial<AppState>;
         return {
           ...currentState,
-          ...pState,
+          leftPanelWidth: pState.leftPanelWidth ?? currentState.leftPanelWidth,
+          rightPanelWidth: pState.rightPanelWidth ?? currentState.rightPanelWidth,
+          isPreviewOpen: pState.isPreviewOpen ?? currentState.isPreviewOpen,
+          sortField: pState.sortField ?? currentState.sortField,
+          sortOrder: pState.sortOrder ?? currentState.sortOrder,
+          viewMode: pState.viewMode ?? currentState.viewMode,
+          currentPath: pState.currentPath ?? currentState.currentPath,
+          explorerSubPath: pState.explorerSubPath ?? currentState.explorerSubPath,
+          explorerScrollOffset: pState.explorerScrollOffset ?? currentState.explorerScrollOffset,
+          workspaceSelectionByCorridor: normalizePersistedWorkspaceSelections(
+            (pState as { workspaceSelectionByCorridor?: unknown }).workspaceSelectionByCorridor,
+          ),
           // Deserialize array back to Set when loading
           collapsedCategories: pState?.collapsedCategories
             ? new Set(pState.collapsedCategories)

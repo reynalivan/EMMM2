@@ -3,6 +3,7 @@ use tokio::task::JoinSet;
 
 use crate::database::{mod_repo, object_repo};
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
+use crate::services::path_key::folder_path_key;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 
 use super::core_ops::standardize_prefix;
@@ -108,9 +109,10 @@ pub async fn bulk_toggle_mods(
     for (id, old_rel, new_rel) in &successes {
         // Update mod identity
         sqlx::query(
-            "UPDATE mods SET folder_path = ?, status = ?, disabled_reason = ? WHERE id = ?",
+            "UPDATE mods SET folder_path = ?, folder_path_key = ?, status = ?, disabled_reason = ? WHERE id = ?",
         )
         .bind(new_rel)
+        .bind(folder_path_key(new_rel, Some(mods_path)))
         .bind(new_status)
         .bind(disabled_reason)
         .bind(id)
@@ -126,11 +128,12 @@ pub async fn bulk_toggle_mods(
                 .map_err(|e| e.to_string())?;
 
             for (old_sep, new_sep) in [("\\", "\\"), ("/", "/")] {
-                let _ = mod_repo::update_child_paths(
+                let _ = mod_repo::update_child_paths_tx(
                     &mut *tx,
                     game_id,
                     &format!("{}{}", old_rel, old_sep),
                     &format!("{}{}", new_rel, new_sep),
+                    Some(mods_path),
                 )
                 .await;
             }

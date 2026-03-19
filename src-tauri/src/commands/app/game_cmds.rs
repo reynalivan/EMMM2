@@ -1,8 +1,13 @@
 use crate::database::models::GameType;
 use crate::services::config::{ConfigService, GameConfig};
 use crate::services::game::validator;
+use crate::services::path_key::folder_path_key;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+fn canonical_game_path_key(path: &str) -> String {
+    folder_path_key(path, None)
+}
 
 /// Auto-detect games by scanning an XXMI root folder.
 /// Validates each subfolder, saves valid games to ConfigService.
@@ -45,18 +50,11 @@ pub async fn auto_detect_games_inner(
         };
 
         // Check for duplicates
-        let normalized_path = game
-            .game_exe
-            .to_string_lossy()
-            .replace('\\', "/")
-            .to_lowercase();
-        let is_duplicate = settings.games.iter().any(|g| {
-            g.game_exe
-                .to_string_lossy()
-                .replace('\\', "/")
-                .to_lowercase()
-                == normalized_path
-        });
+        let normalized_path = canonical_game_path_key(&game.game_exe.to_string_lossy());
+        let is_duplicate = settings
+            .games
+            .iter()
+            .any(|g| canonical_game_path_key(&g.game_exe.to_string_lossy()) == normalized_path);
 
         if !is_duplicate {
             new_games.push(game);
@@ -97,13 +95,9 @@ pub async fn add_game_manual_inner(
     let settings = service.get_settings();
 
     // Duplicate path check (TC-1.5-01, NC-1.3-02)
-    let normalized_path = info.path.replace('\\', "/").to_lowercase();
+    let normalized_path = canonical_game_path_key(&info.path);
     for g in &settings.games {
-        let existing_normalized = g
-            .game_exe
-            .to_string_lossy()
-            .replace('\\', "/")
-            .to_lowercase();
+        let existing_normalized = canonical_game_path_key(&g.game_exe.to_string_lossy());
         if existing_normalized == normalized_path {
             return Err(format!(
                 "This game path is already registered as '{}'.",
@@ -156,19 +150,12 @@ pub async fn save_onboarding_games_inner(
     let mut added_count = 0;
     for game in games {
         // Double check for duplicates
-        let normalized_path = game
-            .game_exe
-            .to_string_lossy()
-            .replace('\\', "/")
-            .to_lowercase();
+        let normalized_path = canonical_game_path_key(&game.game_exe.to_string_lossy());
 
-        let is_duplicate = settings.games.iter().any(|g| {
-            g.game_exe
-                .to_string_lossy()
-                .replace('\\', "/")
-                .to_lowercase()
-                == normalized_path
-        });
+        let is_duplicate = settings
+            .games
+            .iter()
+            .any(|g| canonical_game_path_key(&g.game_exe.to_string_lossy()) == normalized_path);
 
         if !is_duplicate {
             settings.games.push(game);

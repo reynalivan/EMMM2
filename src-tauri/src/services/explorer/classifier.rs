@@ -11,6 +11,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::services::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
+
 /// The classification result for a folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeType {
@@ -65,7 +67,7 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>) {
     for entry in entries.filter_map(|e| e.ok()) {
         let p = entry.path();
         if p.is_dir() {
-            let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let fname = path_file_name_lossy(&p).unwrap_or_default();
             if !fname.starts_with('.') {
                 child_dirs.push(p);
             }
@@ -74,11 +76,11 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>) {
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or_default()
-                .to_lowercase();
+                .to_ascii_lowercase();
 
             if ext == "ini" {
-                let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-                if !fname.eq_ignore_ascii_case("desktop.ini") {
+                let fname = path_file_name_lossy(&p).unwrap_or_default();
+                if !names_equal_by_key(&fname, "desktop.ini") {
                     ini_files.push(p);
                 }
             } else if !has_assets && MOD_ASSET_EXTENSIONS.contains(&ext.as_str()) {
@@ -93,17 +95,14 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>) {
     let mut reasons: Vec<String> = Vec::new();
 
     for ini_path in &ini_files {
-        let fname = ini_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default();
+        let fname = path_file_name_lossy(ini_path).unwrap_or_default();
 
         let content = match fs::read_to_string(ini_path) {
             Ok(c) => c,
             Err(_) => continue,
         };
 
-        let (found_mod, subs) = scan_ini_content(&content, fname);
+        let (found_mod, subs) = scan_ini_content(&content, &fname);
         if found_mod {
             has_mod_ini = true;
             reasons.push(format!("Mod ini: {fname}"));
@@ -140,10 +139,10 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>) {
 
     // Check for meaningful child dirs (not internal/referenced by INI)
     let has_meaningful_children = child_dirs.iter().any(|dir| {
-        let fname = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let fname = path_file_name_lossy(dir).unwrap_or_default();
         !referenced_subs
             .iter()
-            .any(|sub| sub.eq_ignore_ascii_case(fname))
+            .any(|sub| names_equal_by_key(sub, &fname))
     });
 
     if !has_meaningful_children {
@@ -171,13 +170,13 @@ fn has_any_mod_ini(path: &Path) -> bool {
         if !ext.eq_ignore_ascii_case("ini") {
             continue;
         }
-        let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-        if fname.eq_ignore_ascii_case("desktop.ini") {
+        let fname = path_file_name_lossy(&p).unwrap_or_default();
+        if names_equal_by_key(&fname, "desktop.ini") {
             continue;
         }
         // Quick scan: just check for section headers, don't parse filename= refs
         if let Ok(content) = fs::read_to_string(&p) {
-            let (has_mod, _) = scan_ini_content(&content, fname);
+            let (has_mod, _) = scan_ini_content(&content, &fname);
             if has_mod {
                 return true;
             }
@@ -199,7 +198,7 @@ fn scan_ini_content(content: &str, _ini_filename: &str) -> (bool, Vec<String>) {
         // Check section headers
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             let section = &trimmed[1..trimmed.len() - 1];
-            let lower = section.to_lowercase();
+            let lower = canonical_name_key(section);
             if MOD_SECTION_PREFIXES.iter().any(|p| lower.starts_with(p)) {
                 has_mod_section = true;
             }
@@ -207,20 +206,23 @@ fn scan_ini_content(content: &str, _ini_filename: &str) -> (bool, Vec<String>) {
         }
 
         // Check filename= references for subfolder detection
-        let lower = trimmed.to_lowercase();
-        if lower.starts_with("filename") {
-            if let Some((_key, value)) = trimmed.split_once('=') {
-                let val = value.trim();
-                // Extract first path component (subfolder name)
-                if let Some(sub) = val.split(['/', '\\']).next() {
-                    let sub = sub.trim();
-                    if !sub.is_empty()
-                        && !sub.contains('.')
-                        && !sub.starts_with('$')
-                        && !referenced_subs.contains(&sub.to_string())
-                    {
-                        referenced_subs.push(sub.to_string());
-                    }
+        if let Some((key, value)) = trimmed.split_once('=') {
+            if !names_equal_by_key(key.trim(), "filename") {
+                continue;
+            }
+
+            let val = value.trim();
+            // Extract first path component (subfolder name)
+            if let Some(sub) = val.split(['/', '\\']).next() {
+                let sub = sub.trim();
+                if !sub.is_empty()
+                    && !sub.contains('.')
+                    && !sub.starts_with('$')
+                    && !referenced_subs
+                        .iter()
+                        .any(|item| names_equal_by_key(item, sub))
+                {
+                    referenced_subs.push(sub.to_string());
                 }
             }
         }

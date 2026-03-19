@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_utils::{insert_test_mod, insert_test_object, TestModFixture, TestObjectFixture};
 use crate::types::errors::CommandResult;
 use sqlx::SqlitePool;
 use std::fs;
@@ -36,14 +37,16 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
 
     // The physical folder exists; now also insert an object row in the DB
     // so that `get_objects_cmd_inner` (which queries the DB) can find it.
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES (?, ?, ?, ?, 'Other')"
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "obj_disabled",
+            game_id: &game_id,
+            name: "MyFallbackMod",
+            folder_path: Some(folder_name),
+            object_type: "Other",
+        },
     )
-    .bind("obj_disabled")
-    .bind(&game_id)
-    .bind("MyFallbackMod")
-    .bind(folder_name)
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -94,12 +97,16 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
     let mods_path = _tmp.path().join("Mods");
     std::fs::create_dir_all(mods_path.join("NSFW_Mod_Folder")).unwrap();
 
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES (?, ?, 'NSFW_Mod', 'NSFW_Mod_Folder', 'Character')"
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: obj_id,
+            game_id: &game_id,
+            name: "NSFW_Mod",
+            folder_path: Some("NSFW_Mod_Folder"),
+            object_type: "Character",
+        },
     )
-    .bind(obj_id)
-    .bind(&game_id)
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -205,12 +212,16 @@ async fn test_update_object_cmd() -> CommandResult<()> {
     let mods_path = _tmp.path().join("Mods");
     std::fs::create_dir_all(mods_path.join("test_obj_folder")).unwrap();
 
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES (?, ?, 'OldName', 'test_obj_folder', 'Other')"
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: obj_id,
+            game_id: &game_id,
+            name: "OldName",
+            folder_path: Some("test_obj_folder"),
+            object_type: "Other",
+        },
     )
-    .bind(obj_id)
-    .bind(&game_id)
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -257,32 +268,48 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
 
     // Create an empty object
     let empty_obj_id = "empty_obj";
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type) VALUES (?, ?, 'Empty', 'Character')",
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: empty_obj_id,
+            game_id: &game_id,
+            name: "Empty",
+            folder_path: None,
+            object_type: "Character",
+        },
     )
-    .bind(empty_obj_id)
-    .bind(&game_id)
-    .execute(&pool)
     .await
     .unwrap();
 
     // Create an object with mods inside it
     let full_obj_id = "full_obj";
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, object_type) VALUES (?, ?, 'Full', 'Weapon')",
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: full_obj_id,
+            game_id: &game_id,
+            name: "Full",
+            folder_path: None,
+            object_type: "Weapon",
+        },
     )
-    .bind(full_obj_id)
-    .bind(&game_id)
-    .execute(&pool)
     .await
     .unwrap();
 
-    sqlx::query(
-        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, status, object_type) VALUES ('mod1', ?, ?, 'ModName', 'Path', 'DISABLED', 'Weapon')"
+    insert_test_mod(
+        &pool,
+        &TestModFixture {
+            id: "mod1",
+            game_id: &game_id,
+            object_id: Some(full_obj_id),
+            actual_name: "ModName",
+            folder_path: "Path",
+            status: "DISABLED",
+            is_safe: true,
+            object_type: Some("Weapon"),
+            mods_path: None,
+        },
     )
-    .bind(&game_id)
-    .bind(full_obj_id)
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -333,12 +360,16 @@ async fn test_pin_object_cmd() -> CommandResult<()> {
     let mods_path = _tmp.path().join("Mods");
     std::fs::create_dir_all(mods_path.join("test_obj_pin_folder")).unwrap();
 
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, is_pinned) VALUES (?, ?, 'Normal', 'test_obj_pin_folder', 'Character', 0)"
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: obj_id,
+            game_id: &game_id,
+            name: "Normal",
+            folder_path: Some("test_obj_pin_folder"),
+            object_type: "Character",
+        },
     )
-    .bind(obj_id)
-    .bind(&game_id)
-    .execute(&pool)
     .await
     .unwrap();
 

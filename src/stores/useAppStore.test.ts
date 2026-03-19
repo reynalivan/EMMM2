@@ -24,8 +24,8 @@ describe('useAppStore', () => {
         isStoreInitialized: false,
         workspaceView: 'dashboard',
         currentPath: [],
-        activeCollectionId: null,
         gridSelection: new Set(),
+        workspaceSelectionByCorridor: {},
         leftPanelWidth: 260,
         rightPanelWidth: 320,
         selectedObjectType: null,
@@ -142,6 +142,7 @@ describe('useAppStore', () => {
 
   it('setActiveGameId resets explorer and sidebar states and calls invoke', async () => {
     const invoke = (await import('@tauri-apps/api/core')).invoke;
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
 
     // Set some state to test resetting
     act(() => {
@@ -172,7 +173,39 @@ describe('useAppStore', () => {
     expect(state.selectedObjectType).toBeNull();
     expect(state.collapsedCategories.size).toBe(0);
 
-    expect(invoke).toHaveBeenCalledWith('set_active_game', { gameId: 'game1' });
+    expect(invoke).toHaveBeenNthCalledWith(1, 'set_active_game', { gameId: 'game1' });
+  });
+
+  it('persists typed workspace selection by corridor key', () => {
+    act(() => {
+      useAppStore.getState().setWorkspaceSelectionForCorridor('game-1', true, {
+        kind: 'stored_collection',
+        collection_id: 'c-safe',
+      });
+      useAppStore.getState().setWorkspaceSelectionForCorridor('game-1', false, {
+        kind: 'current_runtime',
+      });
+    });
+
+    expect(useAppStore.getState().workspaceSelectionByCorridor).toEqual({
+      'game-1::safe': {
+        kind: 'stored_collection',
+        collection_id: 'c-safe',
+      },
+      'game-1::unsafe': {
+        kind: 'current_runtime',
+      },
+    });
+
+    act(() => {
+      useAppStore.getState().clearWorkspaceSelectionForCorridor('game-1', true);
+    });
+
+    expect(useAppStore.getState().workspaceSelectionByCorridor).toEqual({
+      'game-1::unsafe': {
+        kind: 'current_runtime',
+      },
+    });
   });
 
   it('setSafeMode calls invoke and updates state', async () => {
@@ -209,6 +242,18 @@ describe('useAppStore', () => {
       safe_mode: { enabled: true },
       auto_close_launcher: true,
     });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      game_id: 'game-123',
+      is_safe: true,
+      active_collection_id: 'c-1',
+      state_name: 'Preset A',
+      state_kind: 'named',
+      roots: [],
+      object_states: [],
+      signature: 'sig',
+      snapshot_source: 'startup_reconcile',
+      reconciled_count: 0,
+    });
 
     await act(async () => {
       await useAppStore.getState().initStore();
@@ -219,7 +264,11 @@ describe('useAppStore', () => {
     expect(state.safeMode).toBe(true);
     expect(state.autoCloseLauncher).toBe(true);
     expect(state.isStoreInitialized).toBe(true);
-    expect(invoke).toHaveBeenCalledWith('get_settings');
+    expect(invoke).toHaveBeenNthCalledWith(1, 'get_settings');
+    expect(invoke).toHaveBeenNthCalledWith(2, 'get_corridor_runtime_snapshot', {
+      gameId: 'game-123',
+      isSafe: true,
+    });
   });
 
   it('openConflictDialog displays dialog with conflict data', () => {

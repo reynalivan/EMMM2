@@ -50,8 +50,30 @@ pub async fn verify_pin(
 pub async fn set_active_game(
     game_id: Option<String>,
     state: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
 ) -> Result<(), String> {
-    state.set_active_game(game_id)
+    let _lock = op_lock.acquire().await?;
+    state.set_active_game(game_id.clone())?;
+    if game_id.is_none() {
+        return Ok(());
+    }
+
+    crate::services::corridor_runtime::reconcile_active_game_corridor(
+        pool.inner(),
+        &watcher_state,
+        state.inner(),
+    )
+    .await?;
+
+    crate::services::collections::materialize_game_collections_if_missing(
+        pool.inner(),
+        game_id.as_deref().ok_or("No active game selected")?,
+    )
+    .await?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -75,6 +97,17 @@ pub async fn set_safe_mode_enabled(
     let result =
         crate::services::privacy::switch_mode(mode, &pool, &watcher_state, &game_id).await?;
     state.set_safe_mode_enabled(enabled)?;
+    let _ = crate::services::corridor_runtime::reconcile_active_game_corridor(
+        pool.inner(),
+        &watcher_state,
+        state.inner(),
+    )
+    .await?;
+    let _ = crate::services::collections::materialize_game_collections_if_missing(
+        pool.inner(),
+        &game_id,
+    )
+    .await?;
     Ok(result)
 }
 
@@ -83,13 +116,18 @@ pub async fn preview_corridor_switch(
     target_enabled: bool,
     state: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<crate::services::privacy::CorridorPreview, String> {
+) -> Result<crate::services::corridor_types::CorridorPreview, String> {
     let settings = state.get_settings();
     let game_id = settings.active_game_id.ok_or("No active game selected")?;
     let current_safe = settings.safe_mode.enabled;
 
-    crate::services::privacy::preview_corridor_switch(&pool, &game_id, current_safe, target_enabled)
-        .await
+    crate::services::corridor_runtime::preview_corridor_switch(
+        &pool,
+        &game_id,
+        current_safe,
+        target_enabled,
+    )
+    .await
 }
 
 #[tauri::command]

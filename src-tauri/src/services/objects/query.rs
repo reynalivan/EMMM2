@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::database::object_repo::{GetObjectsResult, ObjectFilter};
+use crate::services::path_key::object_name_key;
 use crate::services::scanner::core::normalizer::normalize_display_name;
 
 /// Pure DB read — no filesystem access.
@@ -84,7 +85,7 @@ pub async fn gc_lost_objects(
             if entry.path().is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if !name.starts_with('.') {
-                    let key = normalize_display_name(&name).to_lowercase();
+                    let key = object_name_key(&normalize_display_name(&name));
                     norm_set.entry(key).or_default().push(name);
                 }
             }
@@ -107,7 +108,7 @@ pub async fn gc_lost_objects(
     // Phase 1: Collect candidates (do NOT delete yet)
     let mut candidates: Vec<(String, String, String)> = Vec::new(); // (id, name, folder_path)
     for obj in &objects {
-        let key = normalize_display_name(&obj.folder_path).to_lowercase();
+        let key = object_name_key(&normalize_display_name(&obj.folder_path));
         if !norm_set.contains_key(&key) {
             candidates.push((obj.id.clone(), obj.name.clone(), obj.folder_path.clone()));
         }

@@ -95,3 +95,13 @@ fn test_watcher_nonexistent_path() {
     let result = watch_mod_directory(Path::new("/nonexistent/path"), suppressed);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_detect_status_change_with_unicode_folder_name() {
+    let from = Path::new(r"C:\Mods\日本語Mod");
+    let to = Path::new(r"C:\Mods\DISABLED 日本語Mod");
+
+    let status = detect_status_change(from, to);
+
+    assert_eq!(status, Some(("ENABLED", "DISABLED")));
+}

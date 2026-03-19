@@ -5,6 +5,7 @@ import * as z from 'zod';
 import { open } from '@tauri-apps/plugin-dialog';
 import { X, FolderOpen } from 'lucide-react';
 import type { GameConfig } from '../../../hooks/useSettings';
+import { pathsEqual } from '../../../lib/pathKey';
 
 const gameSchema = z.object({
   id: z.string().optional(),
@@ -54,11 +55,7 @@ export default function GameFormModal({
 
   const modPathField = register('mod_path', {
     validate: (value) => {
-      const current = value.trim().replace(/\\/g, '/').toLowerCase();
-      const isDuplicate = existingModPaths.some((path) => {
-        const next = path.trim().replace(/\\/g, '/').toLowerCase();
-        return next === current;
-      });
+      const isDuplicate = existingModPaths.some((path) => pathsEqual(path, value));
       return isDuplicate ? 'Already registered' : true;
     },
   });

@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use std::collections::HashMap;
 
+use crate::services::corridor_constants::{CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN};
+use crate::services::path_key::{folder_path_key, object_name_key};
+
 #[derive(Clone, Deserialize)]
 pub struct ObjectFilter {
     pub game_id: String,
@@ -39,6 +42,16 @@ pub struct ObjectSummary {
     pub has_naming_conflict: bool,
 }
 
+#[derive(Clone, Debug, Serialize, sqlx::FromRow)]
+pub struct ObjectRuntimeDescriptor {
+    pub id: String,
+    pub name: String,
+    pub folder_path: String,
+    pub folder_path_key: String,
+    pub object_type: String,
+    pub thumbnail_path: Option<String>,
+}
+
 #[derive(Clone, Serialize, sqlx::FromRow)]
 pub struct CategoryCount {
     pub object_type: String,
@@ -54,15 +67,23 @@ pub async fn get_filtered_objects(
     // Safe mode = count only Safe mods (is_safe = 1)
     // Unsafe mode = count only Unsafe mods (is_safe = 0)
     let count_expr = if filter.safe_mode {
-        r#"
-            COUNT(CASE WHEN m.is_safe = 1 THEN m.id END) as mod_count,
-            COUNT(CASE WHEN m.is_safe = 1 AND m.status = 'ENABLED' THEN 1 END) as enabled_count,
-        "#
+        format!(
+            r#"
+            COUNT(CASE WHEN COALESCE(m.is_safe, 1) = 1 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}') THEN m.id END) as mod_count,
+            COUNT(CASE WHEN (COALESCE(m.is_safe, 1) = 1 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}')) AND m.status = 'ENABLED' THEN 1 END) as enabled_count,
+        "#,
+            unknown = CORRIDOR_SOURCE_UNKNOWN,
+            manual = CORRIDOR_SOURCE_MANUAL,
+        )
     } else {
-        r#"
-            COUNT(CASE WHEN m.is_safe = 0 THEN m.id END) as mod_count,
-            COUNT(CASE WHEN m.is_safe = 0 AND m.status = 'ENABLED' THEN 1 END) as enabled_count,
-        "#
+        format!(
+            r#"
+            COUNT(CASE WHEN COALESCE(m.is_safe, 1) = 0 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}') THEN m.id END) as mod_count,
+            COUNT(CASE WHEN (COALESCE(m.is_safe, 1) = 0 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}')) AND m.status = 'ENABLED' THEN 1 END) as enabled_count,
+        "#,
+            unknown = CORRIDOR_SOURCE_UNKNOWN,
+            manual = CORRIDOR_SOURCE_MANUAL,
+        )
     };
 
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(format!(
@@ -96,11 +117,12 @@ pub async fn get_filtered_objects(
     if let Some(sq) = &filter.search_query {
         let trimmed = sq.trim();
         if !trimmed.is_empty() {
-            let search_term = format!("%{}%", trimmed.to_lowercase());
-            qb.push(" AND (LOWER(o.name) LIKE ");
-            qb.push_bind(search_term.clone());
+            let name_search_term = format!("%{}%", object_name_key(trimmed));
+            let tag_search_term = format!("%{}%", trimmed.to_lowercase());
+            qb.push(" AND (o.name_key LIKE ");
+            qb.push_bind(name_search_term);
             qb.push(" OR LOWER(o.tags) LIKE ");
-            qb.push_bind(search_term);
+            qb.push_bind(tag_search_term);
             qb.push(")");
         }
     }
@@ -139,6 +161,29 @@ pub async fn get_filtered_objects(
     };
 
     qb.build_query_as::<ObjectSummary>().fetch_all(pool).await
+}
+
+pub async fn get_runtime_descriptors(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Vec<ObjectRuntimeDescriptor>, sqlx::Error> {
+    sqlx::query_as::<_, ObjectRuntimeDescriptor>(
+        r#"
+        SELECT
+            id,
+            name,
+            folder_path,
+            folder_path_key,
+            object_type,
+            thumbnail_path
+        FROM objects
+        WHERE game_id = ?
+        ORDER BY name ASC
+        "#,
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn get_category_counts(
@@ -181,20 +226,22 @@ pub async fn create_object(
     metadata_str: &str,
     thumbnail_path: Option<&String>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+    sqlx::query(
         r#"
-        INSERT INTO objects (id, game_id, name, folder_path, object_type, sub_category, is_auto_sync, tags, metadata, thumbnail_path, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, datetime('now'))
+        INSERT INTO objects (id, game_id, name, name_key, folder_path, folder_path_key, object_type, sub_category, is_auto_sync, tags, metadata, thumbnail_path, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, datetime('now'))
         "#,
-        id,
-        game_id,
-        name,
-        folder_path,
-        object_type,
-        sub_category,
-        metadata_str,
-        thumbnail_path
     )
+    .bind(id)
+    .bind(game_id)
+    .bind(name)
+    .bind(object_name_key(name))
+    .bind(folder_path)
+    .bind(folder_path_key(folder_path, None))
+    .bind(object_type)
+    .bind(sub_category)
+    .bind(metadata_str)
+    .bind(thumbnail_path)
     .execute(pool)
     .await?;
     Ok(())
@@ -220,23 +267,23 @@ pub async fn delete_object_and_mods_by_folder(
     game_id: &str,
     folder_path: &str,
 ) -> Result<u64, sqlx::Error> {
-    // Delete child mods (both slash styles to be OS-agnostic)
-    let prefix_fwd = format!("{}/", folder_path);
-    let prefix_back = format!("{}\\", folder_path);
-    let mods_deleted = sqlx::query(
-        "DELETE FROM mods WHERE game_id = ? AND (folder_path LIKE ? OR folder_path LIKE ?)",
-    )
-    .bind(game_id)
-    .bind(format!("{}%", prefix_fwd))
-    .bind(format!("{}%", prefix_back))
-    .execute(&mut *conn)
-    .await?
-    .rows_affected();
+    let mods_path: Option<String> = sqlx::query_scalar("SELECT mod_path FROM games WHERE id = ?")
+        .bind(game_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .flatten();
+    let child_prefix_key = format!("{}/%", folder_path_key(folder_path, mods_path.as_deref()));
+    let mods_deleted = sqlx::query("DELETE FROM mods WHERE game_id = ? AND folder_path_key LIKE ?")
+        .bind(game_id)
+        .bind(child_prefix_key)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
 
     // Delete the object itself
-    sqlx::query("DELETE FROM objects WHERE game_id = ? AND folder_path = ?")
+    sqlx::query("DELETE FROM objects WHERE game_id = ? AND folder_path_key = ?")
         .bind(game_id)
-        .bind(folder_path)
+        .bind(folder_path_key(folder_path, None))
         .execute(&mut *conn)
         .await?;
 
@@ -295,20 +342,22 @@ pub async fn update_object_folder_path<'c, E>(
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
-    // If the object's name is identical to its old folder path, rename the object as well
-    // so that local disk renames are reflected in the UI for objects that haven't been custom-named.
     sqlx::query(
         "UPDATE objects
          SET folder_path = ?,
-             name = CASE WHEN name = ? OR name = ? THEN ? ELSE name END
-         WHERE game_id = ? AND folder_path = ?",
+             folder_path_key = ?,
+             name = CASE WHEN name = ? THEN ? ELSE name END,
+             name_key = CASE WHEN name = ? THEN ? ELSE name_key END
+         WHERE game_id = ? AND folder_path_key = ?",
     )
     .bind(new_path)
+    .bind(folder_path_key(new_path, None))
     .bind(old_path)
-    .bind(old_path.to_ascii_lowercase()) // Simple case fallback, though exact match covers most
     .bind(new_path)
-    .bind(game_id)
     .bind(old_path)
+    .bind(object_name_key(new_path))
+    .bind(game_id)
+    .bind(folder_path_key(old_path, None))
     .execute(executor)
     .await?;
     Ok(())
@@ -339,6 +388,8 @@ pub async fn update_object(
         }
         qb.push("name = ");
         qb.push_bind(name.trim().to_string());
+        qb.push(", name_key = ");
+        qb.push_bind(object_name_key(name.trim()));
         is_first = false;
     }
     if let Some(obj_type) = &updates.object_type {
@@ -471,70 +522,61 @@ pub async fn ensure_object_exists(
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
     use sqlx::Row;
-    let existing_rows = sqlx::query(
-        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata FROM objects WHERE game_id = ? AND (folder_path = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)",
+    let name_key = object_name_key(obj_name);
+    let folder_key = folder_path_key(folder_path, None);
+
+    let match_name = sqlx::query(
+        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata
+         FROM objects
+         WHERE game_id = ? AND name_key = ?",
     )
     .bind(game_id)
-    .bind(folder_path)
-    .bind(obj_name)
-    .fetch_all(&mut *conn)
+    .bind(&name_key)
+    .fetch_optional(&mut *conn)
     .await
     .map_err(|e| e.to_string())?;
 
-    let mut match_name = None;
-    let mut match_folder = None;
+    let match_folder = sqlx::query(
+        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata
+         FROM objects
+         WHERE game_id = ? AND folder_path_key = ?",
+    )
+    .bind(game_id)
+    .bind(&folder_key)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    for row in existing_rows {
+    if let Some(row) = match_name {
         let id: String = row.try_get("id").unwrap_or_default();
-        let name: String = row.try_get("name").unwrap_or_default();
-        let fp: String = row.try_get("folder_path").unwrap_or_default();
-        let o_type: String = row
+        let existing_name: String = row.try_get("name").unwrap_or_default();
+        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
+        let existing_type: String = row
             .try_get("object_type")
             .unwrap_or_else(|_| "Other".to_string());
-        let thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
-        let tags: String = row.try_get("tags").unwrap_or_else(|_| "[]".to_string());
-        let meta: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
+        let existing_thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
+        let existing_tags: String = row.try_get("tags").unwrap_or_else(|_| "[]".to_string());
+        let existing_meta: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
 
-        if name.eq_ignore_ascii_case(obj_name) {
-            match_name = Some((
-                id.clone(),
-                name.clone(),
-                fp.clone(),
-                o_type.clone(),
-                thumb.clone(),
-                tags.clone(),
-                meta.clone(),
-            ));
-        }
-        if fp.eq_ignore_ascii_case(folder_path) {
-            match_folder = Some((id, name, fp, o_type, thumb, tags, meta));
-        }
-    }
-
-    if let Some((
-        id,
-        _existing_name,
-        existing_fp,
-        existing_type,
-        existing_thumb,
-        existing_tags,
-        existing_meta,
-    )) = match_name
-    {
-        let has_folder_conflict = match_folder.as_ref().is_some_and(|f| f.0 != id);
+        let has_folder_conflict = match_folder
+            .as_ref()
+            .and_then(|folder_row| folder_row.try_get::<String, _>("id").ok())
+            .is_some_and(|folder_id| folder_id != id);
 
         if existing_fp != folder_path && !has_folder_conflict {
-            sqlx::query("UPDATE objects SET folder_path = ? WHERE id = ?")
+            sqlx::query("UPDATE objects SET folder_path = ?, folder_path_key = ? WHERE id = ?")
                 .bind(folder_path)
+                .bind(&folder_key)
                 .bind(&id)
                 .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
-        if _existing_name != obj_name {
-            sqlx::query("UPDATE objects SET name = ? WHERE id = ?")
+        if existing_name != obj_name {
+            sqlx::query("UPDATE objects SET name = ?, name_key = ? WHERE id = ?")
                 .bind(obj_name)
+                .bind(&name_key)
                 .bind(&id)
                 .execute(&mut *conn)
                 .await
@@ -578,19 +620,17 @@ pub async fn ensure_object_exists(
         }
 
         return Ok(id);
-    } else if let Some((
-        id,
-        _existing_name,
-        existing_fp,
-        _existing_type,
-        existing_thumb,
-        existing_tags,
-        existing_meta,
-    )) = match_folder
-    {
+    } else if let Some(row) = match_folder {
+        let id: String = row.try_get("id").unwrap_or_default();
+        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
+        let existing_thumb: Option<String> = row.try_get("thumbnail_path").unwrap_or(None);
+        let existing_tags: String = row.try_get("tags").unwrap_or_else(|_| "[]".to_string());
+        let existing_meta: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
+
         if existing_fp != folder_path {
-            sqlx::query("UPDATE objects SET folder_path = ? WHERE id = ?")
+            sqlx::query("UPDATE objects SET folder_path = ?, folder_path_key = ? WHERE id = ?")
                 .bind(folder_path)
+                .bind(&folder_key)
                 .bind(&id)
                 .execute(&mut *conn)
                 .await
@@ -598,16 +638,18 @@ pub async fn ensure_object_exists(
         }
 
         if db_thumbnail.is_some() {
-            sqlx::query("UPDATE objects SET name = ?, object_type = ? WHERE id = ?")
+            sqlx::query("UPDATE objects SET name = ?, name_key = ?, object_type = ? WHERE id = ?")
                 .bind(obj_name)
+                .bind(&name_key)
                 .bind(obj_type)
                 .bind(&id)
                 .execute(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
         } else {
-            sqlx::query("UPDATE objects SET name = ? WHERE id = ?")
+            sqlx::query("UPDATE objects SET name = ?, name_key = ? WHERE id = ?")
                 .bind(obj_name)
+                .bind(&name_key)
                 .bind(&id)
                 .execute(&mut *conn)
                 .await
@@ -646,12 +688,14 @@ pub async fn ensure_object_exists(
 
     let new_id = uuid::Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type, thumbnail_path, tags, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO objects (id, game_id, name, name_key, folder_path, folder_path_key, object_type, thumbnail_path, tags, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&new_id)
     .bind(game_id)
     .bind(obj_name)
+    .bind(&name_key)
     .bind(folder_path)
+    .bind(&folder_key)
     .bind(obj_type)
     .bind(db_thumbnail)
     .bind(db_tags_json)

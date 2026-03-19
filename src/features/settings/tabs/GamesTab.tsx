@@ -5,6 +5,7 @@ import GameFormModal from '../modals/GameFormModal';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useToastStore } from '../../../stores/useToastStore';
 import { scanService } from '../../../lib/services/scanService';
+import { reconcileActiveCollection } from '../../collections/utils/reconcileActiveCollection';
 
 export default function GamesTab() {
   const { settings, saveSettings } = useSettings();
@@ -73,6 +74,10 @@ export default function GamesTab() {
         'success',
         `Scan complete! Found ${result.new_mods} new mods and ${result.updated_mods} updates.`,
       );
+
+      if (activeGameId === game.id) {
+        await reconcileActiveCollection({ gameId: game.id });
+      }
     } catch (e) {
       console.error(e);
       useToastStore.getState().removeToast(toastId);

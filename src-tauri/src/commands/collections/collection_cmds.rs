@@ -1,11 +1,14 @@
 use crate::services::collections::{
     apply_collection as apply_collection_service, create_collection as create_collection_service,
     delete_collection as delete_collection_service,
-    get_active_mods_preview as get_active_mods_preview_service,
-    get_collection_preview as get_collection_preview_service,
-    list_collections as list_collections_service, undo_collection as undo_collection_service,
-    update_collection as update_collection_service, ApplyCollectionResult, Collection,
-    CollectionDetails, CollectionPreviewMod, CreateCollectionInput, UpdateCollectionInput,
+    get_collection_runtime_preview as get_collection_runtime_preview_service,
+    list_collections as list_collections_service,
+    resolve_corridor_runtime_snapshot as get_corridor_runtime_snapshot_service,
+    save_snapshot_collection_as_named as save_snapshot_collection_as_named_service,
+    undo_collection as undo_collection_service, update_collection as update_collection_service,
+    ApplyCollectionProgress, ApplyCollectionResult, Collection, CollectionDetails,
+    CollectionRuntimePreview, CorridorRuntimeSnapshot, CreateCollectionInput,
+    UpdateCollectionInput,
 };
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::operation_lock::OperationLock;
@@ -26,8 +29,18 @@ pub async fn list_collections(
 #[tauri::command]
 pub async fn create_collection(
     pool: State<'_, SqlitePool>,
+    watcher_state: State<'_, WatcherState>,
+    op_lock: State<'_, OperationLock>,
     input: CreateCollectionInput,
 ) -> Result<CollectionDetails, String> {
+    let _lock = op_lock.acquire().await?;
+    let _ = crate::services::corridor_runtime::reconcile_current_corridor(
+        pool.inner(),
+        &watcher_state,
+        &input.game_id,
+        input.is_safe_context,
+    )
+    .await?;
     create_collection_service(pool.inner(), input).await
 }
 
@@ -59,6 +72,13 @@ pub async fn apply_collection(
 ) -> Result<ApplyCollectionResult, String> {
     let _lock = op_lock.acquire().await?;
     let safe_mode_enabled = config.get_settings().safe_mode.enabled;
+    let _ = crate::services::corridor_runtime::reconcile_current_corridor(
+        pool.inner(),
+        &watcher_state,
+        &game_id,
+        safe_mode_enabled,
+    )
+    .await?;
     apply_collection_service(
         pool.inner(),
         &watcher_state,
@@ -70,21 +90,57 @@ pub async fn apply_collection(
 }
 
 #[tauri::command]
-pub async fn get_collection_preview(
-    pool: State<'_, SqlitePool>,
-    collection_id: String,
-    game_id: String,
-) -> Result<Vec<CollectionPreviewMod>, String> {
-    get_collection_preview_service(pool.inner(), &collection_id, &game_id).await
+pub async fn get_apply_progress(game_id: String) -> Result<ApplyCollectionProgress, String> {
+    Ok(crate::services::collections::apply_progress::get_apply_progress(&game_id))
 }
 
 #[tauri::command]
-pub async fn get_active_mods_preview(
+pub async fn get_collection_runtime_preview(
+    pool: State<'_, SqlitePool>,
+    collection_id: String,
+    game_id: String,
+) -> Result<CollectionRuntimePreview, String> {
+    get_collection_runtime_preview_service(pool.inner(), &collection_id, &game_id).await
+}
+
+#[tauri::command]
+pub async fn save_snapshot_collection_as_named(
+    pool: State<'_, SqlitePool>,
+    op_lock: State<'_, OperationLock>,
+    source_collection_id: String,
+    game_id: String,
+    name: String,
+) -> Result<CollectionDetails, String> {
+    let _lock = op_lock.acquire().await?;
+    save_snapshot_collection_as_named_service(pool.inner(), &source_collection_id, &game_id, &name)
+        .await
+}
+
+#[tauri::command]
+pub async fn get_corridor_runtime_snapshot(
     pool: State<'_, SqlitePool>,
     game_id: String,
-    safe_mode: bool,
-) -> Result<Vec<CollectionPreviewMod>, String> {
-    get_active_mods_preview_service(pool.inner(), &game_id, safe_mode).await
+    is_safe: bool,
+) -> Result<CorridorRuntimeSnapshot, String> {
+    get_corridor_runtime_snapshot_service(pool.inner(), &game_id, is_safe).await
+}
+
+#[tauri::command]
+pub async fn reconcile_current_corridor(
+    pool: State<'_, SqlitePool>,
+    watcher_state: State<'_, WatcherState>,
+    op_lock: State<'_, OperationLock>,
+    game_id: String,
+    is_safe: bool,
+) -> Result<usize, String> {
+    let _lock = op_lock.acquire().await?;
+    crate::services::corridor_runtime::reconcile_current_corridor(
+        pool.inner(),
+        &watcher_state,
+        &game_id,
+        is_safe,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -99,6 +155,7 @@ pub async fn undo_collection(
     let safe_mode_enabled = config.get_settings().safe_mode.enabled;
     undo_collection_service(pool.inner(), &watcher_state, &game_id, safe_mode_enabled).await
 }
+
 #[cfg(test)]
 #[path = "tests/collection_cmds_tests.rs"]
 mod tests;

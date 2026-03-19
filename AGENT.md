@@ -9,6 +9,7 @@ EMMM2: Premium Mod Orchestrator (3DMigoto Ecosystem: Genshin, HSR, ZZZ, WuWa, En
 3. Soft Delete: Never hard delete. Move to `./app_data/trash/`. Detect collisions before move.
 4. Scale First: Virtualize all grids/lists > 50 items (@tanstack/react-virtual). 10k+ capacity.
 5. Rust Compute: Offload logic (scanning, hashing, parsing) to Rust `tauri::command`. Keep FE UI thread free.
+6. Post-log: after every completed implementation session, execute `.agent/rules/post_log.md`.
 
 ## 2. Tech Stack Consistency
 
@@ -21,7 +22,7 @@ For all non-trivial tasks, force the following sequence:
 
 - PLAN: Research context first. Create implementation_plan.md. Get User Approval. No guessing.
 - ACT: Execute via ./.agent/workflows/ using ./.agent/skills/. No logic truncation (Zero-Truncation Policy).
-- REFLECT: Verify via /verify-quality. Log patterns to supermemory.
+- REFLECT: Verify via /verify-quality. Then execute the post-log rule at `.agent/rules/post_log.md`.
 
 ## 4. Directory Standards
 
@@ -34,3 +35,12 @@ For all non-trivial tasks, force the following sequence:
 - Directive Mode: Concise technical sentences. No fluff, no conversational fillers.
 - Tooling: Use narsil-mcp (Trace flow/security) and exa (Docs) before implementation.
 - Safety: Full file outputs or valid unified diffs only. No placeholders (// ...).
+
+## 6. Final Check
+
+- Simplest solution?
+- Side effects handled?
+- No duplication?
+- All code used?
+- State consistent?
+- Post-log rule executed: `.agent/rules/post_log.md`.

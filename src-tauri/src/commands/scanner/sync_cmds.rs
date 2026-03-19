@@ -6,6 +6,24 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 use tauri::{ipc::Channel, Manager, State};
 
+async fn reconcile_active_corridor_if_needed(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    watcher_state: &WatcherState,
+    game_id: &str,
+) -> Result<(), String> {
+    crate::services::corridor_runtime::reconcile_if_active_game_corridor(
+        pool,
+        watcher_state,
+        app.state::<crate::services::config::ConfigService>()
+            .inner(),
+        game_id,
+    )
+    .await?;
+
+    Ok(())
+}
+
 /// Sync the database with the filesystem.
 /// Scans the folder, updates existing mods, finds new ones, detects objects, and removes deleted ones.
 ///
@@ -71,7 +89,7 @@ pub async fn sync_database_cmd(
         .keywords;
 
     // 3. Commit the results to DB
-    sync::commit_scan_results(
+    let result = sync::commit_scan_results(
         &pool,
         &game_id,
         &game_name,
@@ -82,7 +100,11 @@ pub async fn sync_database_cmd(
         &keywords,
         preserve_existing_mappings,
     )
-    .await
+    .await?;
+
+    reconcile_active_corridor_if_needed(&app, pool.inner(), &state, &game_id).await?;
+
+    Ok(result)
 }
 
 /// Phase 1: Scan folders + run Deep Matcher, return preview without writing to DB.
@@ -155,7 +177,7 @@ pub async fn commit_scan_cmd(
         .safe_mode
         .keywords;
 
-    sync::commit_scan_results(
+    let result = sync::commit_scan_results(
         &pool,
         &game_id,
         &game_name,
@@ -166,7 +188,11 @@ pub async fn commit_scan_cmd(
         &keywords,
         false, // Interactive review uses explicit matches/unmatches, do not preserve blindly
     )
-    .await
+    .await?;
+
+    reconcile_active_corridor_if_needed(&app, pool.inner(), &state, &game_id).await?;
+
+    Ok(result)
 }
 
 /// Compute percentage scores for a specific batch of candidates against a folder.

@@ -5,47 +5,140 @@ import { ShieldCheck, ShieldAlert, Loader2, ArrowRight } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '../../stores/useAppStore';
 import { ModGroupList } from '../collections/components/ModGroupList';
-import { groupMods } from '../collections/utils/groupMods';
-import type { CollectionPreviewMod } from '../../types/collection';
+import { buildGroupedModsWithObjectStates } from '../collections/utils/groupMods';
+import { corridorPreviewKeys } from '../collections/queryKeys';
+import { useCorridorRuntimeSnapshot } from '../collections/hooks/useCollections';
+import {
+  ALL_DISABLED_LABEL,
+  buildCorridorModeSwitchTitle,
+  buildCorridorEmptyStateLabel,
+  buildLeavingCorridorLabel,
+  buildMissingTargetCorridorDescription,
+  buildTargetCorridorDescription,
+  buildTargetCorridorLabel,
+  getCorridorStateName,
+} from '../../lib/corridorLabels';
+import type { CorridorPreview } from '../../types/collection';
 
-/** Backend response from preview_corridor_switch */
-interface CorridorPreview {
-  leaving_mods: CollectionPreviewMod[];
-  target_mods: CollectionPreviewMod[];
-  target_description: string;
+function buildRelevantObjectIds(preview: CorridorPreview | undefined): Set<string> {
+  const relevantObjectIds = new Set<string>();
+  if (!preview) {
+    return relevantObjectIds;
+  }
+
+  preview.leaving_mods.forEach((mod) => {
+    if (mod.object_id) {
+      relevantObjectIds.add(mod.object_id);
+    }
+  });
+  preview.target_mods.forEach((mod) => {
+    if (mod.object_id) {
+      relevantObjectIds.add(mod.object_id);
+    }
+  });
+  preview.leaving_object_states.forEach((state) => {
+    relevantObjectIds.add(state.object_id);
+  });
+  preview.target_object_states.forEach((state) => {
+    relevantObjectIds.add(state.object_id);
+  });
+
+  return relevantObjectIds;
+}
+
+function buildLeavingSubtitle(preview: CorridorPreview | undefined): string {
+  return getCorridorStateName(preview?.leaving_state_name);
+}
+
+function buildTargetSubtitle(preview: CorridorPreview | undefined): string {
+  if (!preview || preview.target_state_kind === 'none') {
+    return ALL_DISABLED_LABEL;
+  }
+
+  return getCorridorStateName(preview.target_state_name);
+}
+
+function buildLeavingDescription(): string {
+  return 'Current Active Mods';
+}
+
+function buildTargetDescription(preview: CorridorPreview | undefined): string {
+  if (!preview || preview.target_state_kind === 'none') {
+    return buildTargetCorridorDescription(null);
+  }
+
+  return buildTargetCorridorDescription(preview.target_state_name);
+}
+
+function buildTargetEmptyState(preview: CorridorPreview | undefined): string {
+  if (!preview || preview.target_state_kind === 'none') {
+    return buildMissingTargetCorridorDescription();
+  }
+
+  return buildCorridorEmptyStateLabel(preview.target_state_name);
 }
 
 interface ModeSwitchConfirmModalProps {
   open: boolean;
-  targetEnabled: boolean; // true = SFW (Standard), false = NSFW (Privacy)
+  targetSafeMode: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
 
 export default function ModeSwitchConfirmModal({
   open,
-  targetEnabled,
+  targetSafeMode,
   onClose,
   onConfirm,
 }: ModeSwitchConfirmModalProps) {
-  const { activeGameId } = useAppStore();
+  const { activeGameId, safeMode } = useAppStore();
+  const currentRuntimeQuery = useCorridorRuntimeSnapshot(activeGameId, safeMode);
+  const currentStateToken = useMemo(() => {
+    if (!currentRuntimeQuery.data) {
+      return 'unknown';
+    }
 
-  // Single consolidated query — replaces the old 3-query pattern
+    return [
+      currentRuntimeQuery.data.state_kind,
+      currentRuntimeQuery.data.active_collection_id ?? '',
+      currentRuntimeQuery.data.state_name ?? '',
+      currentRuntimeQuery.data.signature,
+    ].join(':');
+  }, [currentRuntimeQuery.data]);
+
   const { data: preview, isLoading } = useQuery<CorridorPreview>({
-    queryKey: ['corridor-preview', activeGameId, targetEnabled],
-    queryFn: () => invoke<CorridorPreview>('preview_corridor_switch', { targetEnabled }),
-    enabled: open && !!activeGameId,
-    staleTime: 0, // Always refetch when modal opens
+    queryKey: corridorPreviewKeys.detail(
+      activeGameId ?? '',
+      safeMode,
+      targetSafeMode,
+      currentStateToken,
+    ),
+    queryFn: () => invoke<CorridorPreview>('preview_corridor_switch', { targetEnabled: targetSafeMode }),
+    enabled: open && !!activeGameId && currentRuntimeQuery.status === 'success',
+    staleTime: 0,
   });
+  const isPreviewLoading = currentRuntimeQuery.status !== 'success' || isLoading;
 
   const leavingGroups = useMemo(() => {
-    if (!preview?.leaving_mods) return [];
-    return groupMods(preview.leaving_mods);
+    if (!preview) {
+      return [];
+    }
+    const relevantObjectIds = buildRelevantObjectIds(preview);
+    return buildGroupedModsWithObjectStates(preview.leaving_mods, preview.leaving_object_states, {
+      mode: 'preview',
+      relevantObjectIds,
+    });
   }, [preview]);
 
   const targetGroups = useMemo(() => {
-    if (!preview?.target_mods?.length) return [];
-    return groupMods(preview.target_mods);
+    if (!preview) {
+      return [];
+    }
+    const relevantObjectIds = buildRelevantObjectIds(preview);
+    return buildGroupedModsWithObjectStates(preview.target_mods, preview.target_object_states, {
+      mode: 'preview',
+      relevantObjectIds,
+    });
   }, [preview]);
 
   if (!open) return null;
@@ -56,8 +149,8 @@ export default function ModeSwitchConfirmModal({
         {/* Header */}
         <div className="p-6 pb-4 border-b border-white/5 shrink-0 bg-base-300/30">
           <h3 className="font-bold text-lg flex items-center gap-2 text-warning mb-1">
-            {!targetEnabled ? <ShieldAlert size={20} /> : <ShieldCheck size={20} />}
-            Switch to {!targetEnabled ? 'Privacy Mode' : 'Standard Mode'}
+            {targetSafeMode ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
+            {buildCorridorModeSwitchTitle(targetSafeMode)}
           </h3>
           <p className="text-sm text-base-content/70">
             Review the changes to your active loadout before switching corridors.
@@ -66,7 +159,7 @@ export default function ModeSwitchConfirmModal({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col bg-base-100/50 min-h-0">
-          {isLoading ? (
+          {isPreviewLoading ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-base-content/50 min-h-75">
               <Loader2 size={32} className="animate-spin mb-4 opacity-50 text-warning" />
               <p>Loading preview...</p>
@@ -76,26 +169,29 @@ export default function ModeSwitchConfirmModal({
               {/* Left Column: Leaving */}
               <div className="flex-1 border-r border-white/5 flex flex-col min-h-0 sm:max-w-[50%]">
                 <div
-                  className={`p-4 border-b border-white/5 ${targetEnabled ? 'bg-error/5' : 'bg-success/5'} shrink-0`}
+                  className={`p-4 border-b border-white/5 ${targetSafeMode ? 'bg-error/5' : 'bg-success/5'} shrink-0`}
                 >
                   <h4
-                    className={`font-semibold text-sm flex justify-between items-center ${targetEnabled ? 'text-error/90' : 'text-success/90'} mb-1`}
+                    className={`text-[11px] uppercase tracking-[0.2em] flex justify-between items-center ${targetSafeMode ? 'text-error/70' : 'text-success/70'} mb-2`}
                   >
-                    Leaving State ({targetEnabled ? 'Unsafe Mode' : 'Safe Mode'})
+                    {buildLeavingCorridorLabel(targetSafeMode)}
                     <span
-                      className={`badge badge-sm ${targetEnabled ? 'badge-error' : 'badge-success'} badge-outline`}
+                      className={`badge badge-sm ${targetSafeMode ? 'badge-error' : 'badge-success'} badge-outline`}
                     >
                       Snapshot
                     </span>
                   </h4>
-                  <p className="text-xs text-base-content/50 break-all leading-tight">
-                    Current Active Mods
+                  <p
+                    className={`text-lg font-semibold break-all leading-tight ${targetSafeMode ? 'text-error/90' : 'text-success/90'}`}
+                  >
+                    {buildLeavingSubtitle(preview)}
                   </p>
+                  <p className="text-xs text-base-content/45 mt-1">{buildLeavingDescription()}</p>
                 </div>
                 <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
                   <ModGroupList
                     groups={leavingGroups}
-                    colorClass={targetEnabled ? 'text-error' : 'text-success'}
+                    colorClass={targetSafeMode ? 'text-error' : 'text-success'}
                   />
                 </div>
               </div>
@@ -110,33 +206,38 @@ export default function ModeSwitchConfirmModal({
               {/* Right Column: Target */}
               <div className="flex-1 flex flex-col min-h-0 sm:max-w-[50%]">
                 <div
-                  className={`p-4 border-b border-white/5 ${targetEnabled ? 'bg-success/5' : 'bg-error/5'} shrink-0`}
+                  className={`p-4 border-b border-white/5 ${targetSafeMode ? 'bg-success/5' : 'bg-error/5'} shrink-0`}
                 >
                   <h4
-                    className={`font-semibold text-sm flex justify-between items-center ${targetEnabled ? 'text-success/90' : 'text-error/90'} mb-1`}
+                    className={`text-[11px] uppercase tracking-[0.2em] flex justify-between items-center ${targetSafeMode ? 'text-success/70' : 'text-error/70'} mb-2`}
                   >
-                    Destination State ({targetEnabled ? 'Safe Mode' : 'Unsafe Mode'})
+                    {buildTargetCorridorLabel(targetSafeMode)}
                     <span
-                      className={`badge badge-sm ${targetEnabled ? 'badge-success' : 'badge-error'} badge-outline`}
+                      className={`badge badge-sm ${targetSafeMode ? 'badge-success' : 'badge-error'} badge-outline`}
                     >
                       Restore
                     </span>
                   </h4>
-                  <p className="text-xs text-base-content/50 break-all leading-tight">
-                    {preview?.target_description || 'Empty State'}
+                  <p
+                    className={`text-lg font-semibold break-all leading-tight ${targetSafeMode ? 'text-success/90' : 'text-error/90'}`}
+                  >
+                    {buildTargetSubtitle(preview)}
+                  </p>
+                  <p className="text-xs text-base-content/45 mt-1">
+                    {buildTargetDescription(preview)}
                   </p>
                 </div>
                 <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
                   {targetGroups.length > 0 ? (
                     <ModGroupList
                       groups={targetGroups}
-                      colorClass={targetEnabled ? 'text-success' : 'text-error'}
+                      colorClass={targetSafeMode ? 'text-success' : 'text-error'}
                     />
                   ) : (
                     <div
-                      className={`text-center p-8 text-sm text-base-content/40 border ${targetEnabled ? 'border-success/20' : 'border-error/20'} border-dashed rounded-lg bg-base-100/10 m-2 mt-4`}
+                      className={`text-center p-8 text-sm text-base-content/40 border ${targetSafeMode ? 'border-success/20' : 'border-error/20'} border-dashed rounded-lg bg-base-100/10 m-2 mt-4`}
                     >
-                      Target state is empty (All Disabled)
+                      {buildTargetEmptyState(preview)}
                     </div>
                   )}
                 </div>
@@ -151,14 +252,14 @@ export default function ModeSwitchConfirmModal({
             <button
               onClick={onClose}
               className="btn btn-ghost hover:bg-white/5"
-              disabled={isLoading}
+              disabled={isPreviewLoading}
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
               className="btn btn-warning shadow-lg shadow-warning/10 font-bold tracking-wide"
-              disabled={isLoading}
+              disabled={isPreviewLoading}
             >
               Continue {'->'}
             </button>

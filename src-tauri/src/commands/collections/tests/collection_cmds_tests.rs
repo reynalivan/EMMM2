@@ -1,6 +1,13 @@
 use super::*;
 use crate::services::collections::CreateCollectionInput;
 use crate::services::scanner::watcher::WatcherState;
+use crate::test_utils::{
+    insert_test_collection, insert_test_collection_item, insert_test_collection_object_state,
+    insert_test_mod, insert_test_nested_collection_item, insert_test_object,
+    update_test_mod_path_and_status, TestCollectionFixture, TestCollectionItemFixture,
+    TestCollectionObjectStateFixture, TestModFixture, TestNestedCollectionItemFixture,
+    TestObjectFixture,
+};
 
 use sqlx::SqlitePool;
 use std::fs;
@@ -38,17 +45,20 @@ async fn seed_mod(
     status: &str,
     is_safe: bool,
 ) {
-    sqlx::query(
-        "INSERT INTO mods (id, game_id, actual_name, folder_path, status, is_safe)
-         VALUES (?, ?, ?, ?, ?, ?)",
+    insert_test_mod(
+        pool,
+        &TestModFixture {
+            id,
+            game_id,
+            object_id: None,
+            actual_name: name,
+            folder_path: path,
+            status,
+            is_safe,
+            object_type: Some("Other"),
+            mods_path: None,
+        },
     )
-    .bind(id)
-    .bind(game_id)
-    .bind(name)
-    .bind(path)
-    .bind(status)
-    .bind(is_safe)
-    .execute(pool)
     .await
     .unwrap();
 }
@@ -68,6 +78,7 @@ async fn test_create_and_list_collection() {
         is_safe_context: true,
         auto_snapshot: Some(false),
         mod_ids: vec!["m1".to_string(), "m2".to_string()],
+        object_states: None,
     };
 
     let details = create_collection_service(&pool, input).await.unwrap();
@@ -79,6 +90,130 @@ async fn test_create_and_list_collection() {
     assert_eq!(collections.len(), 1);
     assert_eq!(collections[0].name, "TestCollection");
     assert_eq!(collections[0].member_count, 2);
+}
+
+#[tokio::test]
+async fn test_save_snapshot_collection_as_named_clones_unsaved_snapshot() {
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "obj-1",
+            game_id: "g1",
+            name: "Ainoz",
+            folder_path: None,
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    seed_mod(
+        &pool,
+        "m1",
+        "g1",
+        "AinoMod",
+        "E:/Mods/Ainoz/AinoMod",
+        "ENABLED",
+        true,
+    )
+    .await;
+
+    sqlx::query("UPDATE mods SET object_id = 'obj-1' WHERE id = 'm1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    insert_test_collection(
+        &pool,
+        &TestCollectionFixture {
+            id: "c-unsaved",
+            name: "Unsaved 202603182218",
+            game_id: "g1",
+            is_safe_context: true,
+            is_last_unsaved: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    insert_test_collection_item(
+        &pool,
+        &TestCollectionItemFixture {
+            collection_id: "c-unsaved",
+            mod_id: "m1",
+            mod_path: "E:/Mods/Ainoz/AinoMod",
+            mods_path: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    insert_test_nested_collection_item(
+        &pool,
+        &TestNestedCollectionItemFixture {
+            collection_id: "c-unsaved",
+            mod_path: "E:/Mods/Ainoz/NestedMod",
+            mods_path: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    insert_test_collection_object_state(
+        &pool,
+        &TestCollectionObjectStateFixture {
+            collection_id: "c-unsaved",
+            object_id: "obj-1",
+            is_enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::database::corridor_state_repo::update_active_collection_id(
+        &pool,
+        "g1",
+        true,
+        Some("c-unsaved"),
+    )
+    .await
+    .unwrap();
+
+    let saved =
+        save_snapshot_collection_as_named_service(&pool, "c-unsaved", "g1", "Saved Snapshot")
+            .await
+            .unwrap();
+
+    assert_eq!(saved.collection.name, "Saved Snapshot");
+    assert!(!saved.collection.is_last_unsaved);
+    assert_eq!(saved.mod_ids, vec!["m1".to_string()]);
+    assert_eq!(saved.object_states.len(), 1);
+    assert_eq!(saved.object_states[0].object_id, "obj-1");
+    assert!(!saved.object_states[0].is_enabled);
+
+    let cloned_preview = crate::services::collections::get_collection_runtime_preview(
+        &pool,
+        &saved.collection.id,
+        "g1",
+    )
+    .await
+    .unwrap();
+    assert_eq!(cloned_preview.roots.len(), 1);
+    assert_eq!(cloned_preview.object_states.len(), 1);
+    assert_eq!(cloned_preview.object_states[0].object_id, "obj-1");
+    assert!(!cloned_preview.object_states[0].is_enabled);
+
+    let corridor_state =
+        crate::database::corridor_state_repo::get_corridor_state(&pool, "g1", true)
+            .await
+            .unwrap();
+    assert_eq!(
+        corridor_state.active_collection_id,
+        Some(saved.collection.id)
+    );
 }
 
 #[tokio::test]
@@ -128,28 +263,47 @@ async fn test_apply_collection_atomic() {
 
     // Create a collection capturing ONLY m1 and m2
     // m3 is ENABLED now, but when we apply the collection, it should be DISABLED
-    sqlx::query(
-        "INSERT INTO collections (id, name, game_id, is_safe_context) VALUES ('c1', 'C1', 'g1', 1)",
+    insert_test_collection(
+        &pool,
+        &TestCollectionFixture {
+            id: "c1",
+            name: "C1",
+            game_id: "g1",
+            is_safe_context: true,
+            is_last_unsaved: false,
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-
-    sqlx::query("INSERT INTO collection_items (collection_id, mod_id, mod_path) VALUES ('c1', 'm1', ?), ('c1', 'm2', ?)")
-        .bind(&mod1_dir.to_string_lossy().to_string())
-        .bind(&mod2_dir.to_string_lossy().to_string())
-        .execute(&pool)
+    for (mod_id, mod_path) in [
+        ("m1", mod1_dir.to_string_lossy().to_string()),
+        ("m2", mod2_dir.to_string_lossy().to_string()),
+    ] {
+        insert_test_collection_item(
+            &pool,
+            &TestCollectionItemFixture {
+                collection_id: "c1",
+                mod_id,
+                mod_path: &mod_path,
+                mods_path: None,
+            },
+        )
         .await
         .unwrap();
+    }
 
     // Now change physical status of m2 to DISABLED first to test apply
     let mod2_disabled = tmp.path().join("DISABLED Mod2");
     fs::rename(&mod2_dir, &mod2_disabled).unwrap();
-    sqlx::query("UPDATE mods SET folder_path = ?, status = 'DISABLED' WHERE id = 'm2'")
-        .bind(mod2_disabled.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    update_test_mod_path_and_status(
+        &pool,
+        "m2",
+        &mod2_disabled.to_string_lossy(),
+        None,
+        "DISABLED",
+    )
+    .await
+    .unwrap();
 
     let watcher_state = WatcherState::new();
 
@@ -230,10 +384,30 @@ async fn test_apply_disables_all_non_collection_mods() {
     .await;
 
     // Insert objects to satisfy FK constraints for mods.object_id
-    sqlx::query("INSERT INTO objects (id, game_id, name, object_type) VALUES ('raiden', 'g1', 'Raiden', 'Character'), ('barbara', 'g1', 'Barbara', 'Character')")
-        .execute(&pool)
-        .await
-        .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "raiden",
+            game_id: "g1",
+            name: "Raiden",
+            folder_path: None,
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "barbara",
+            game_id: "g1",
+            name: "Barbara",
+            folder_path: None,
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
 
     // Set object_ids
     sqlx::query("UPDATE mods SET object_id = 'raiden' WHERE id IN ('a', 'd')")
@@ -248,13 +422,28 @@ async fn test_apply_disables_all_non_collection_mods() {
     // ModC has NULL object_id
 
     // Collection only contains ModA
-    sqlx::query("INSERT INTO collections (id, name, game_id, is_safe_context) VALUES ('c1', 'OnlyA', 'g1', 1)")
-        .execute(&pool).await.unwrap();
-    sqlx::query(
-        "INSERT INTO collection_items (collection_id, mod_id, mod_path) VALUES ('c1', 'a', ?)",
+    insert_test_collection(
+        &pool,
+        &TestCollectionFixture {
+            id: "c1",
+            name: "OnlyA",
+            game_id: "g1",
+            is_safe_context: true,
+            is_last_unsaved: false,
+        },
     )
-    .bind(&mod_a.to_string_lossy().to_string())
-    .execute(&pool)
+    .await
+    .unwrap();
+    let mod_a_path = mod_a.to_string_lossy().to_string();
+    insert_test_collection_item(
+        &pool,
+        &TestCollectionItemFixture {
+            collection_id: "c1",
+            mod_id: "a",
+            mod_path: &mod_a_path,
+            mods_path: None,
+        },
+    )
     .await
     .unwrap();
 
@@ -303,26 +492,43 @@ async fn test_undo_action() {
     // Snapshot current state
     let watcher_state = WatcherState::new();
 
-    sqlx::query("INSERT INTO collections (id, name, game_id, is_safe_context, is_last_unsaved) VALUES ('snap1', 'Unsaved', 'g1', 1, 1)")
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "INSERT INTO collection_items (collection_id, mod_id, mod_path) VALUES ('snap1', 'm1', ?)",
+    insert_test_collection(
+        &pool,
+        &TestCollectionFixture {
+            id: "snap1",
+            name: "Unsaved",
+            game_id: "g1",
+            is_safe_context: true,
+            is_last_unsaved: true,
+        },
     )
-    .bind(&mod1_dir.to_string_lossy().to_string())
-    .execute(&pool)
+    .await
+    .unwrap();
+    let mod1_snapshot_path = mod1_dir.to_string_lossy().to_string();
+    insert_test_collection_item(
+        &pool,
+        &TestCollectionItemFixture {
+            collection_id: "snap1",
+            mod_id: "m1",
+            mod_path: &mod1_snapshot_path,
+            mods_path: None,
+        },
+    )
     .await
     .unwrap();
 
     // Change mod1 physical state (simulate user doing something else)
     let mod1_disabled = tmp.path().join("DISABLED Mod1");
     fs::rename(&mod1_dir, &mod1_disabled).unwrap();
-    sqlx::query("UPDATE mods SET status = 'DISABLED', folder_path = ? WHERE id = 'm1'")
-        .bind(&mod1_disabled.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    update_test_mod_path_and_status(
+        &pool,
+        "m1",
+        &mod1_disabled.to_string_lossy(),
+        None,
+        "DISABLED",
+    )
+    .await
+    .unwrap();
 
     // Call Undo
     let res = undo_collection_service(&pool, &watcher_state, "g1", true)
@@ -363,6 +569,7 @@ async fn test_collection_captures_nested_mods() {
         is_safe_context: true,
         auto_snapshot: Some(true),
         mod_ids: vec![],
+        object_states: None,
     };
 
     let details = create_collection_service(&pool, create_input)

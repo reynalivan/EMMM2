@@ -1,69 +1,61 @@
 import { ShieldCheck, ShieldAlert, Save, Layers, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../../stores/useAppStore';
 import ApplyCollectionModal from '../../../features/collections/components/ApplyCollectionModal';
+import SaveCollectionModal from '../../../features/collections/components/SaveCollectionModal';
 import {
   useCollections,
-  useSaveCurrentAsCollection,
+  useCorridorRuntimeSnapshot,
 } from '../../../features/collections/hooks/useCollections';
+import { getCorridorStateName } from '../../../lib/corridorLabels';
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useSafeModeToggle } from '../../../hooks/useSafeModeToggle';
 import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
 import ModeSwitchConfirmModal from '../../../features/safe-mode/ModeSwitchConfirmModal';
 
 export default function ContextControls() {
-  const { activeCollectionId, setActiveCollectionId, activeGameId, setWorkspaceView } =
+  const { activeGameId, safeMode, setWorkspaceView, setWorkspaceSelectionForCorridor } =
     useAppStore();
   const {
     toggleSafeMode,
     handleConfirmSwitch,
     handlePinSuccess,
     confirmModalOpen,
-    confirmTargetEnabled,
+    confirmTargetSafeMode,
     closeConfirmModal,
     pinModalOpen,
     closePinModal,
-    safeMode,
   } = useSafeModeToggle();
   const { data: collections = [], isLoading } = useCollections(activeGameId);
-  const saveMutation = useSaveCurrentAsCollection();
+  const corridorOverviewQuery = useCorridorRuntimeSnapshot(activeGameId, safeMode);
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const [newCollectionName, setNewCollectionName] = useState('');
   const [collectionToApply, setCollectionToApply] = useState<{ id: string; name: string } | null>(
     null,
   );
 
-  const activeCollection = collections.find((c) => c.id === activeCollectionId);
-  const triggerText = activeCollection ? activeCollection.name : '(Unsaved presets)';
+  const activeNamedCollectionId =
+    corridorOverviewQuery.data?.state_kind === 'named'
+      ? corridorOverviewQuery.data.active_collection_id
+      : null;
+  const triggerText =
+    activeGameId && corridorOverviewQuery.status === 'pending'
+      ? 'Loading...'
+      : getCorridorStateName(corridorOverviewQuery.data?.state_name);
+  const corridorCollections = collections.filter(
+    (collection) => collection.is_safe_context === safeMode && !collection.is_last_unsaved,
+  );
 
   const handleApplyClick = (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
     if (!activeGameId) return;
+    setWorkspaceSelectionForCorridor(activeGameId, safeMode, {
+      kind: 'stored_collection',
+      collection_id: id,
+    });
     setCollectionToApply({ id, name });
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-  };
-
-  const handleSaveCurrent = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeGameId || !newCollectionName.trim()) return;
-
-    saveMutation.mutate(
-      {
-        name: newCollectionName.trim(),
-        game_id: activeGameId,
-        is_safe_context: safeMode,
-      },
-      {
-        onSuccess: (res) => {
-          setSaveModalOpen(false);
-          setNewCollectionName('');
-          setActiveCollectionId(res.collection.id);
-        },
-      },
-    );
   };
 
   return (
@@ -83,7 +75,7 @@ export default function ContextControls() {
           <div
             tabIndex={0}
             role="button"
-            className={`px-3 py-1 rounded-full text-xs font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer flex items-center gap-2 max-w-37.5 ${!activeCollection && collections.length > 0 ? 'italic opacity-80' : ''}`}
+            className={`px-3 py-1 rounded-full text-xs font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer flex items-center gap-2 max-w-37.5 ${activeNamedCollectionId === null && collections.length > 0 ? 'italic opacity-80' : ''}`}
             title={triggerText}
           >
             <span className="truncate">{triggerText}</span>{' '}
@@ -121,17 +113,16 @@ export default function ContextControls() {
               </li>
             ) : (
               (() => {
-                const userCollections = collections.filter((c) => !c.is_last_unsaved);
-                return userCollections.length === 0 ? (
+                return corridorCollections.length === 0 ? (
                   <li className="disabled">
                     <span className="text-xs opacity-50 px-2">No collections saved</span>
                   </li>
                 ) : (
                   <div className="max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
-                    {userCollections.map((c) => (
+                    {corridorCollections.map((c) => (
                       <li key={c.id}>
                         <button
-                          className={`text-sm justify-between ${activeCollectionId === c.id ? 'bg-white/10 text-white font-medium' : 'hover:bg-white/5'}`}
+                          className={`text-sm justify-between ${activeNamedCollectionId === c.id ? 'bg-white/10 text-white font-medium' : 'hover:bg-white/5'}`}
                           onClick={(e) => handleApplyClick(e, c.id, c.name)}
                         >
                           <span className="truncate max-w-32.5">{c.name}</span>
@@ -169,7 +160,6 @@ export default function ContextControls() {
         <ApplyCollectionModal
           collectionId={collectionToApply.id}
           collectionName={collectionToApply.name}
-          memberCount={0} // Placeholder, as member_count is not directly available here
           onClose={() => setCollectionToApply(null)}
         />
       )}
@@ -177,7 +167,7 @@ export default function ContextControls() {
       {/* Confirmation Modal for Corridor Switch */}
       <ModeSwitchConfirmModal
         open={confirmModalOpen}
-        targetEnabled={confirmTargetEnabled}
+        targetSafeMode={confirmTargetSafeMode}
         onClose={closeConfirmModal}
         onConfirm={handleConfirmSwitch}
       />
@@ -191,61 +181,9 @@ export default function ContextControls() {
         }}
       />
 
-      {saveModalOpen &&
-        createPortal(
-          <dialog className="modal modal-open z-100">
-            <div className="modal-box bg-base-200 border border-white/10 shadow-2xl">
-              <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                <Save size={20} className="text-primary" />
-                Save Current Setup
-              </h3>
-              <p className="text-sm text-base-content/70 mb-5">
-                This will create a new collection from your currently enabled mods and variants.
-              </p>
-              <form onSubmit={handleSaveCurrent}>
-                <div className="form-control mb-6">
-                  <label className="label">
-                    <span className="label-text opacity-70">Collection Name</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Boss Fight Loadout"
-                    className="input input-bordered w-full bg-base-300 focus:border-primary transition-colors"
-                    value={newCollectionName}
-                    onChange={(e) => setNewCollectionName(e.target.value)}
-                    autoFocus
-                    required
-                  />
-                </div>
-                <div className="modal-action">
-                  <button
-                    type="button"
-                    className="btn btn-ghost hover:bg-white/5 text-white/70"
-                    onClick={() => setSaveModalOpen(false)}
-                    disabled={saveMutation.isPending}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary min-w-25"
-                    disabled={!newCollectionName.trim() || saveMutation.isPending}
-                  >
-                    {saveMutation.isPending ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      'Save'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-            <form method="dialog" className="modal-backdrop">
-              <button onClick={() => setSaveModalOpen(false)}>close</button>
-            </form>
-          </dialog>,
-          document.body,
-        )}
+      {saveModalOpen && (
+        <SaveCollectionModal mode="current_state" onClose={() => setSaveModalOpen(false)} />
+      )}
     </>
   );
 }

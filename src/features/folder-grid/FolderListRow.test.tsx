@@ -72,4 +72,22 @@ describe('FolderListRow', () => {
     expect(clearSelection).toHaveBeenCalled();
     expect(toggleSelection).toHaveBeenCalledWith('C:\\mods\\folder1', false);
   });
+
+  it('does not select InternalAssets on click', () => {
+    const toggleSelection = vi.fn();
+    const clearSelection = vi.fn();
+
+    render(
+      <FolderListRow
+        item={{ ...dummyFolder, node_type: 'InternalAssets' } as ModFolder}
+        isSelected={false}
+        toggleSelection={toggleSelection}
+        clearSelection={clearSelection}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Folder 1'));
+    expect(clearSelection).not.toHaveBeenCalled();
+    expect(toggleSelection).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Keyboard, Eye, AlertTriangle } from 'lucide-react';
 import { useSettings } from '../../../hooks/useSettings';
 import type { HotkeyConfig, KeyViewerConfig } from '../../../hooks/useSettings';
@@ -80,7 +81,7 @@ function detectConflicts(config: HotkeyConfig): string[] {
 }
 
 export default function HotkeyTab() {
-  const { settings, saveSettings } = useSettings();
+  const { settings, saveSettingsAsync } = useSettings();
   const { addToast } = useToastStore();
   const [isSaving, setIsSaving] = useState(false);
 
@@ -95,10 +96,11 @@ export default function HotkeyTab() {
     if (!settings) return;
     setIsSaving(true);
     try {
-      saveSettings({
+      await saveSettingsAsync({
         ...settings,
         hotkeys: { ...hotkeys, ...patch },
       });
+      await invoke('update_hotkey_config');
     } catch (err) {
       addToast('error', `Failed to save hotkey settings: ${String(err)}`);
     } finally {
@@ -110,7 +112,7 @@ export default function HotkeyTab() {
     if (!settings) return;
     setIsSaving(true);
     try {
-      saveSettings({
+      await saveSettingsAsync({
         ...settings,
         keyviewer: { ...keyviewer, ...patch },
       });
@@ -122,12 +124,20 @@ export default function HotkeyTab() {
   };
 
   const handleResetAll = () => {
-    saveSettings({
-      ...settings,
-      hotkeys: { ...DEFAULT_HOTKEYS },
-      keyviewer: { ...DEFAULT_KEYVIEWER },
-    });
-    addToast('success', 'Hotkey settings reset to defaults.');
+    void (async () => {
+      if (!settings) return;
+      try {
+        await saveSettingsAsync({
+          ...settings,
+          hotkeys: { ...DEFAULT_HOTKEYS },
+          keyviewer: { ...DEFAULT_KEYVIEWER },
+        });
+        await invoke('update_hotkey_config');
+        addToast('success', 'Hotkey settings reset to defaults.');
+      } catch (err) {
+        addToast('error', `Failed to reset hotkey settings: ${String(err)}`);
+      }
+    })();
   };
 
   return (

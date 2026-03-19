@@ -23,6 +23,21 @@ pub async fn init_test_db() -> TestContext {
         .run(&pool)
         .await
         .expect("Failed to run migrations");
+    emmm2_lib::database::unicode_keys::ensure_unicode_keys(&pool)
+        .await
+        .expect("Failed to backfill unicode keys");
 
     TestContext { pool }
+}
+
+#[allow(dead_code)]
+pub async fn refresh_unicode_keys(pool: &Pool<Sqlite>) {
+    sqlx::query("DELETE FROM app_meta WHERE key = 'unicode_key_version'")
+        .execute(pool)
+        .await
+        .expect("reset unicode key marker");
+
+    emmm2_lib::database::unicode_keys::ensure_unicode_keys(pool)
+        .await
+        .expect("refresh unicode keys");
 }

@@ -27,6 +27,23 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+
+                    if event.state != ShortcutState::Pressed {
+                        return;
+                    }
+
+                    if let Some(hotkey_manager) = app.try_state::<services::hotkeys::manager::HotkeyManager>() {
+                        hotkey_manager
+                            .inner()
+                            .on_shortcut_pressed(app, &shortcut.to_string());
+                    }
+                })
+                .build(),
+        )
+        .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
                 .targets([
@@ -38,6 +55,7 @@ pub fn run() {
                 ])
                 .build(),
         )
+        .manage(services::scanner::watcher::WatcherState::new())
         .setup(move |app| {
             let app_handle = app.handle();
 
@@ -137,6 +155,10 @@ pub fn run() {
                             log::warn!("Stable ID migration skipped: {e}");
                         }
 
+                        if let Err(e) = database::unicode_keys::ensure_unicode_keys(&p).await {
+                            log::warn!("Unicode key backfill skipped: {e}");
+                        }
+
                         p
                     });
                     app.manage(pool);
@@ -154,6 +176,9 @@ pub fn run() {
             let hotkey_config = config_ref.get_settings().hotkeys;
             match services::hotkeys::manager::HotkeyManager::new(&hotkey_config) {
                 Ok(hk_manager) => {
+                    if let Err(e) = hk_manager.update_bindings(&app_handle, &hotkey_config) {
+                        log::warn!("Failed to register startup hotkeys: {e}. Hotkeys disabled.");
+                    }
                     app.manage(hk_manager);
                     log::info!("HotkeyManager initialized");
                 }
@@ -203,6 +228,38 @@ pub fn run() {
                             }
                             Err(e) => log::warn!("Startup sync failed for '{}': {e}", game.name),
                         }
+
+                        if let Err(e) = services::collections::materialize_game_collections_if_missing(
+                            &pool_clone,
+                            &game.id,
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                "Collection runtime materialization failed for '{}': {e}",
+                                game.name
+                            );
+                        }
+                    }
+                });
+            }
+
+            {
+                let config_svc: tauri::State<'_, services::config::ConfigService> = app.state();
+                let pool_state: tauri::State<'_, sqlx::SqlitePool> = app.state();
+                let watcher_state: tauri::State<'_, services::scanner::watcher::WatcherState> =
+                    app.state();
+
+                use tauri::async_runtime::block_on;
+                block_on(async {
+                    if let Err(e) = services::corridor_runtime::reconcile_active_game_corridor(
+                        pool_state.inner(),
+                        watcher_state.inner(),
+                        config_svc.inner(),
+                    )
+                    .await
+                    {
+                        log::warn!("Startup corridor reconcile failed: {e}");
                     }
                 });
             }
@@ -211,7 +268,6 @@ pub fn run() {
         })
         .manage(commands::scanner::scan_cmds::ScanState::new())
         .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
-        .manage(services::scanner::watcher::WatcherState::new())
         .manage(services::fs_utils::operation_lock::OperationLock::new())
         .manage(commands::objects::master_db_cmds::MasterDbCache::new())
         .manage(commands::scanner::archive_cmds::ExtractionState::new())
@@ -289,6 +345,8 @@ pub fn run() {
             commands::mods::preview_cmds::save_mod_preview_image,
             commands::mods::preview_cmds::remove_mod_preview_image,
             commands::mods::preview_cmds::clear_mod_preview_images,
+            commands::collections::collection_cmds::get_corridor_runtime_snapshot,
+            commands::collections::collection_cmds::reconcile_current_corridor,
             commands::app::settings_cmds::get_settings,
             commands::app::settings_cmds::save_settings,
             commands::app::settings_cmds::set_safe_mode_pin,
@@ -316,9 +374,10 @@ pub fn run() {
             commands::collections::collection_cmds::update_collection,
             commands::collections::collection_cmds::delete_collection,
             commands::collections::collection_cmds::apply_collection,
+            commands::collections::collection_cmds::get_apply_progress,
             commands::collections::collection_cmds::undo_collection,
-            commands::collections::collection_cmds::get_collection_preview,
-            commands::collections::collection_cmds::get_active_mods_preview,
+            commands::collections::collection_cmds::save_snapshot_collection_as_named,
+            commands::collections::collection_cmds::get_collection_runtime_preview,
             commands::scanner::sync_cmds::sync_database_cmd,
             commands::scanner::sync_cmds::scan_preview_cmd,
             commands::scanner::sync_cmds::commit_scan_cmd,

@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use crate::services::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
 use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_display_name};
 
 use crate::services::explorer::helpers::analyze_mod_metadata;
@@ -26,7 +27,7 @@ pub async fn scan_fs_folders(
         .filter_map(|entry| build_mod_folder_from_fs_entry(entry, sub_path))
         .collect();
 
-    folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    folders.sort_by_key(|folder| canonical_name_key(&folder.name));
 
     Ok(folders)
 }
@@ -116,14 +117,14 @@ pub async fn list_mod_folders_inner(
     let target = if target.exists() {
         target
     } else if let (Some(parent), Some(name)) = (target.parent(), target.file_name()) {
-        let needle = name.to_string_lossy().to_lowercase();
+        let needle = name.to_string_lossy().to_string();
         // Fallback 1: Case-insensitive match on exact name
         let case_insensitive_match = std::fs::read_dir(parent)
             .ok()
             .and_then(|entries| {
                 entries
                     .flatten()
-                    .find(|e| e.file_name().to_string_lossy().to_lowercase() == needle)
+                    .find(|e| names_equal_by_key(&e.file_name().to_string_lossy(), &needle))
             })
             .map(|e| e.path());
 
@@ -131,13 +132,13 @@ pub async fn list_mod_folders_inner(
             path
         } else {
             // Fallback 2: Check for DISABLED prefix variant
-            let disabled_needle = format!("disabled {}", needle);
+            let disabled_needle = format!("DISABLED {}", needle);
             std::fs::read_dir(parent)
                 .ok()
                 .and_then(|entries| {
-                    entries
-                        .flatten()
-                        .find(|e| e.file_name().to_string_lossy().to_lowercase() == disabled_needle)
+                    entries.flatten().find(|e| {
+                        names_equal_by_key(&e.file_name().to_string_lossy(), &disabled_needle)
+                    })
                 })
                 .map(|e| e.path())
                 .unwrap_or(target)
@@ -165,7 +166,7 @@ pub async fn list_mod_folders_inner(
 
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, f) in folders.iter().enumerate() {
-        let base_key = normalize_display_name(&f.folder_name).to_lowercase();
+        let base_key = canonical_name_key(&normalize_display_name(&f.folder_name));
         groups.entry(base_key).or_default().push(i);
     }
 
@@ -260,7 +261,7 @@ pub async fn list_mod_folders_inner(
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     parent_dir.to_string_lossy().hash(&mut hasher);
-                    self_base.to_lowercase().hash(&mut hasher);
+                    canonical_name_key(&self_base).hash(&mut hasher);
                     let group_id = format!("cg_{:016x}", hasher.finish());
 
                     let self_meta = std::fs::metadata(&target);
@@ -311,12 +312,9 @@ pub async fn list_mod_folders_inner(
         || self_node_type == crate::services::explorer::classifier::NodeType::ModPackRoot;
 
     // Determine self_is_enabled based on the final path directory component prefix
-    let self_is_enabled = if let Some(sp) = &sub_path {
-        let name = Path::new(sp)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        !is_disabled_folder(name)
+    let self_is_enabled = if sub_path.as_ref().is_some_and(|sp| !sp.is_empty()) {
+        let name = path_file_name_lossy(&target).unwrap_or_default();
+        !is_disabled_folder(&name)
     } else {
         true
     };

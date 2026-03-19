@@ -71,10 +71,13 @@ pub async fn detect_hotkey_conflicts(
 /// This saves settings to DB AND tells the HotkeyManager to re-register.
 #[tauri::command]
 pub async fn update_hotkey_config(
+    app: tauri::AppHandle,
     config_state: State<'_, ConfigService>,
     hotkey_manager: State<'_, HotkeyManager>,
 ) -> Result<(), String> {
     let settings = config_state.get_settings();
-    hotkey_manager.inner().update_bindings(&settings.hotkeys)?;
+    hotkey_manager
+        .inner()
+        .update_bindings(&app, &settings.hotkeys)?;
     Ok(())
 }

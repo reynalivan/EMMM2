@@ -20,10 +20,13 @@ use tauri::Emitter;
 async fn rename_object_folder(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
+    mods_path: &Path,
     old_folder: &str,
     new_folder: &str,
     new_status: Option<&str>,
 ) -> Result<(), String> {
+    let mods_root = mods_path.to_string_lossy().to_string();
+
     // 1. Update object's folder_path
     crate::database::object_repo::update_object_folder_path(
         &mut *conn, game_id, old_folder, new_folder,
@@ -36,9 +39,15 @@ async fn rename_object_folder(
         (format!("{}\\", old_folder), format!("{}\\", new_folder)),
         (format!("{}/", old_folder), format!("{}/", new_folder)),
     ] {
-        crate::database::mod_repo::update_child_paths(&mut *conn, game_id, &old_sep, &new_sep)
-            .await
-            .map_err(|e| format!("Failed to update child paths: {}", e))?;
+        crate::database::mod_repo::update_child_paths_tx(
+            &mut *conn,
+            game_id,
+            &old_sep,
+            &new_sep,
+            Some(&mods_root),
+        )
+        .await
+        .map_err(|e| format!("Failed to update child paths: {}", e))?;
     }
 
     // 3. Optionally update status for all child mods
@@ -311,6 +320,8 @@ async fn sync_watcher_event(
     mods_path: &Path,
     event: &ModWatchEvent,
 ) -> Result<(), String> {
+    let mods_root = mods_path.to_string_lossy().to_string();
+
     match event {
         ModWatchEvent::Created(p) => {
             let p_obj = Path::new(&p);
@@ -340,6 +351,7 @@ async fn sync_watcher_event(
                             game_id,
                             &folder_name,
                             &relative_folder_path,
+                            Some(&mods_root),
                             current_status,
                         )
                         .await
@@ -384,8 +396,15 @@ async fn sync_watcher_event(
                     // Depth 1: Object folder rename (e.g. Alhaitham → Alhaitham2)
                     let old_folder = comp_from[0].as_os_str().to_string_lossy().to_string();
                     let new_folder = comp_to[0].as_os_str().to_string_lossy().to_string();
-                    rename_object_folder(&mut *conn, game_id, &old_folder, &new_folder, None)
-                        .await?;
+                    rename_object_folder(
+                        &mut *conn,
+                        game_id,
+                        mods_path,
+                        &old_folder,
+                        &new_folder,
+                        None,
+                    )
+                    .await?;
                 } else if comp_from.len() == 2 && comp_to.len() == 2 {
                     // Depth 2: Mod folder rename
                     let old_rel = rel_from.to_string_lossy().to_string();
@@ -408,6 +427,7 @@ async fn sync_watcher_event(
                         new_status,
                         &old_rel,
                         game_id,
+                        Some(&mods_root),
                     )
                     .await
                     .map_err(|e| format!("Failed to update mod identity: {}", e))?;
@@ -469,7 +489,10 @@ async fn sync_watcher_event(
                     // Depth 2: mod folder deleted
                     let rel_path = rel.to_string_lossy().to_string();
                     crate::database::mod_repo::delete_mod_by_path_and_game(
-                        &mut *conn, &rel_path, game_id,
+                        &mut *conn,
+                        &rel_path,
+                        game_id,
+                        Some(&mods_root),
                     )
                     .await
                     .map_err(|e| format!("Failed to delete mod: {}", e))?;

@@ -40,7 +40,7 @@ export default function PrivacyTab() {
     handleConfirmSwitch,
     handlePinSuccess,
     confirmModalOpen,
-    confirmTargetEnabled,
+    confirmTargetSafeMode,
     closeConfirmModal,
     pinModalOpen: corridorPinModalOpen,
     closePinModal: closeCorridorPinModal,
@@ -337,7 +337,7 @@ export default function PrivacyTab() {
       {/* Confirmation Modal for Corridor Switch */}
       <ModeSwitchConfirmModal
         open={confirmModalOpen}
-        targetEnabled={confirmTargetEnabled}
+        targetSafeMode={confirmTargetSafeMode}
         onClose={closeConfirmModal}
         onConfirm={handleConfirmSwitch}
       />

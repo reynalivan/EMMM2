@@ -1,4 +1,6 @@
-use crate::services::explorer::listing::{build_mod_folder_from_fs_entry, scan_fs_folders};
+use crate::services::explorer::listing::{
+    build_mod_folder_from_fs_entry, list_mod_folders_inner, scan_fs_folders,
+};
 use std::fs;
 use tempfile::TempDir;
 
@@ -65,4 +67,39 @@ fn test_build_mod_folder_from_fs_entry() {
     assert_eq!(folder.name, "my_mod");
     assert_eq!(folder.folder_name, "my_mod");
     assert!(folder.is_enabled);
+}
+
+#[tokio::test]
+async fn test_scan_fs_folders_keeps_unicode_disabled_folder_state() {
+    let temp_dir = TempDir::new().unwrap();
+    let mods_path = temp_dir.path();
+
+    let unicode_mod = mods_path.join("DISABLED 日本語Mod");
+    fs::create_dir(&unicode_mod).unwrap();
+
+    let result = scan_fs_folders(mods_path, mods_path, None).await.unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, "日本語Mod");
+    assert_eq!(result[0].folder_name, "DISABLED 日本語Mod");
+    assert!(!result[0].is_enabled);
+}
+
+#[tokio::test]
+async fn test_list_mod_folders_inner_resolves_unicode_disabled_fallback() {
+    let temp_dir = TempDir::new().unwrap();
+    let mods_path = temp_dir.path();
+    let unicode_mod = mods_path.join("DISABLED 日本語Mod");
+    fs::create_dir(&unicode_mod).unwrap();
+    fs::write(unicode_mod.join("mod.ini"), "[TextureOverride]\n").unwrap();
+
+    let result = list_mod_folders_inner(
+        mods_path.to_string_lossy().to_string(),
+        Some("日本語Mod".to_string()),
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.self_is_enabled);
+    assert!(result.self_is_mod);
 }

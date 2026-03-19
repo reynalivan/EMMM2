@@ -15,6 +15,7 @@ import {
   type ConfirmedScanItem,
 } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
+import { reconcileActiveCollection } from '../collections/utils/reconcileActiveCollection';
 import { parseMasterDb } from './objHandlersHelpers';
 import type { ObjectSummary } from '../../types/object';
 import type { ModFolder } from '../../hooks/useFolders';
@@ -107,6 +108,7 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      await reconcileActiveCollection({ gameId: activeGame.id });
     } catch (e) {
       console.error('Background sync failed:', e);
     } finally {
@@ -130,6 +132,7 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
         queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+        await reconcileActiveCollection({ gameId: activeGame.id });
         toast.success(
           `Sync complete: ${result.total_scanned} scanned, ${result.new_mods} new, ${result.new_objects} objects`,
         );

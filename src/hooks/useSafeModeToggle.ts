@@ -6,9 +6,13 @@
  */
 
 import { useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../stores/useAppStore';
 import { useSettings } from './useSettings';
 import { toast, useToastStore } from '../stores/useToastStore';
+import { queryClient } from '../lib/queryClient';
+import { corridorPreviewKeys, corridorRuntimeKeys } from '../features/collections/queryKeys';
+import type { CorridorRuntimeSnapshot } from '../types/collection';
 
 interface UseSafeModeToggleReturn {
   /** Initiate safe mode toggle. Opens the confirmation modal first. */
@@ -16,14 +20,14 @@ interface UseSafeModeToggleReturn {
   /** Handle the actual switch after confirmation (checks PIN if needed). */
   handleConfirmSwitch: () => Promise<void>;
   /** Called when PIN succeeds during global toggle flow. */
-  handlePinSuccess: () => void;
+  handlePinSuccess: () => Promise<void>;
   /** Direct set after PIN verified (e.g. called from PinEntryModal onSuccess). */
   setSafeModeWithToast: (enabled: boolean) => Promise<void>;
 
   /** Whether the confirm modal should be open. */
   confirmModalOpen: boolean;
-  /** The target safe mode state for the confirm modal (true = Safe/Private). */
-  confirmTargetEnabled: boolean;
+  /** The target corridor for the confirm modal. */
+  confirmTargetSafeMode: boolean;
   /** Close the confirm modal. */
   closeConfirmModal: () => void;
 
@@ -36,24 +40,50 @@ interface UseSafeModeToggleReturn {
 }
 
 export function useSafeModeToggle(): UseSafeModeToggleReturn {
-  const { safeMode, setSafeMode } = useAppStore();
+  const { activeGameId, safeMode, setSafeMode } = useAppStore();
   const { settings, isLoading } = useSettings();
   const [pinModalOpen, setPinModalOpen] = useState(false);
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [confirmTargetEnabled, setConfirmTargetEnabled] = useState(true);
+  const [confirmTargetSafeMode, setConfirmTargetSafeMode] = useState(true);
+
+  const prepareSwitchPreview = useCallback(
+    async (targetSafeMode: boolean) => {
+      if (!activeGameId) {
+        return;
+      }
+
+      await queryClient.fetchQuery({
+        queryKey: corridorRuntimeKeys.snapshot(activeGameId, safeMode),
+        queryFn: () =>
+          invoke<CorridorRuntimeSnapshot>('get_corridor_runtime_snapshot', {
+            gameId: activeGameId,
+            isSafe: safeMode,
+          }),
+        staleTime: 0,
+      });
+
+      queryClient.removeQueries({
+        queryKey: [
+          ...corridorPreviewKeys.all,
+          activeGameId,
+          safeMode,
+          targetSafeMode,
+        ],
+        exact: false,
+      });
+    },
+    [activeGameId, safeMode],
+  );
 
   const setSafeModeWithToast = useCallback(
     async (enabled: boolean) => {
-      const toastId = toast.info(
-        enabled ? 'Enabling Privacy Mode...' : 'Disabling Privacy Mode...',
-        0,
-      );
+      const toastId = toast.info(enabled ? 'Switching to SAFE...' : 'Switching to UNSAFE...', 0);
       try {
         const result = await setSafeMode(enabled);
         useToastStore.getState().removeToast(toastId);
 
-        const label = enabled ? 'Privacy Mode Enabled' : 'Privacy Mode Disabled';
+        const label = enabled ? 'SAFE Mode Enabled' : 'UNSAFE Mode Enabled';
         const parts: string[] = [];
         if (result.disabled_count > 0) parts.push(`Disabled ${result.disabled_count}`);
         if (result.restored_count > 0) parts.push(`Restored ${result.restored_count}`);
@@ -89,22 +119,24 @@ export function useSafeModeToggle(): UseSafeModeToggleReturn {
     }
 
     // No PIN or moving Unsafe → Safe: go straight to confirmation/preview
-    setConfirmTargetEnabled(!safeMode);
+    await prepareSwitchPreview(!safeMode);
+    setConfirmTargetSafeMode(!safeMode);
     setConfirmModalOpen(true);
-  }, [safeMode, settings, isLoading]);
+  }, [isLoading, prepareSwitchPreview, safeMode, settings]);
 
   /** Called when PIN is successfully verified. Transitions to the confirmation modal. */
-  const handlePinSuccess = useCallback(() => {
+  const handlePinSuccess = useCallback(async () => {
     setPinModalOpen(false);
-    setConfirmTargetEnabled(false); // We were Safe, going Unsafe
+    await prepareSwitchPreview(false);
+    setConfirmTargetSafeMode(false);
     setConfirmModalOpen(true);
-  }, []);
+  }, [prepareSwitchPreview]);
 
   const handleConfirmSwitch = useCallback(async () => {
     setConfirmModalOpen(false);
     // PIN was already checked by toggleSafeMode -> handlePinSuccess path
-    await setSafeModeWithToast(confirmTargetEnabled);
-  }, [confirmTargetEnabled, setSafeModeWithToast]);
+    await setSafeModeWithToast(confirmTargetSafeMode);
+  }, [confirmTargetSafeMode, setSafeModeWithToast]);
 
   const closePinModal = useCallback(() => {
     setPinModalOpen(false);
@@ -120,7 +152,7 @@ export function useSafeModeToggle(): UseSafeModeToggleReturn {
     handlePinSuccess,
     setSafeModeWithToast,
     confirmModalOpen,
-    confirmTargetEnabled,
+    confirmTargetSafeMode,
     closeConfirmModal,
     pinModalOpen,
     closePinModal,

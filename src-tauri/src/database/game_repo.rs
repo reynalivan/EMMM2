@@ -84,9 +84,10 @@ pub async fn count_games(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
 pub async fn get_all_game_mod_paths(
     pool: &SqlitePool,
 ) -> Result<std::collections::HashMap<String, String>, sqlx::Error> {
-    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT id, mod_path FROM games")
-        .fetch_all(pool)
-        .await?;
+    let rows: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT id, COALESCE(NULLIF(mod_path, ''), path) FROM games")
+            .fetch_all(pool)
+            .await?;
 
     let map = rows
         .into_iter()
@@ -98,10 +99,12 @@ pub async fn get_all_game_mod_paths(
 
 /// Get the mod path for a specific game by ID.
 pub async fn get_mod_path(pool: &SqlitePool, game_id: &str) -> Result<Option<String>, sqlx::Error> {
-    let row = sqlx::query("SELECT mod_path FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT COALESCE(NULLIF(mod_path, ''), path) AS mod_path FROM games WHERE id = ?",
+    )
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await?;
 
     if let Some(r) = row {
         use sqlx::Row;

@@ -23,7 +23,7 @@ export default function GlobalActions() {
     handleConfirmSwitch,
     handlePinSuccess,
     confirmModalOpen,
-    confirmTargetEnabled,
+    confirmTargetSafeMode,
     closeConfirmModal,
     pinModalOpen,
     closePinModal,
@@ -66,7 +66,7 @@ export default function GlobalActions() {
       {/* Confirmation Modal for Corridor Switch */}
       <ModeSwitchConfirmModal
         open={confirmModalOpen}
-        targetEnabled={confirmTargetEnabled}
+        targetSafeMode={confirmTargetSafeMode}
         onClose={closeConfirmModal}
         onConfirm={handleConfirmSwitch}
       />

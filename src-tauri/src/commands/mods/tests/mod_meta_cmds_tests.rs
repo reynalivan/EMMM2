@@ -1,29 +1,13 @@
 use crate::services::mods::info_json;
-use sqlx::sqlite::SqlitePoolOptions;
+use crate::test_utils::{
+    insert_test_game, insert_test_mod, insert_test_object, TestGameFixture, TestModFixture,
+    TestObjectFixture,
+};
 use std::fs;
 use tempfile::TempDir;
 
 async fn setup_test_db() -> sqlx::SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-
-    sqlx::query(
-        "CREATE TABLE games (id TEXT PRIMARY KEY, name TEXT, mod_path TEXT);
-         CREATE TABLE objects (id TEXT PRIMARY KEY, game_id TEXT, name TEXT, folder_path TEXT, object_type TEXT);
-         CREATE TABLE mods (
-             id TEXT PRIMARY KEY, game_id TEXT, object_id TEXT, actual_name TEXT,
-             folder_path TEXT, is_pinned INTEGER DEFAULT 0, is_favorite INTEGER DEFAULT 0,
-             status TEXT, object_type TEXT, is_safe INTEGER DEFAULT 1
-         );",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    pool
+    crate::test_utils::init_test_db().await.pool
 }
 
 // ── TC-40: pin_mod updates DB ──────────────────────────────────────────────
@@ -32,17 +16,42 @@ async fn setup_test_db() -> sqlx::SqlitePool {
 async fn test_pin_mod_updates_db() {
     let pool = setup_test_db().await;
 
-    sqlx::query(
-        "INSERT INTO mods (id, folder_path, is_pinned) VALUES ('mod1', '/Mods/TestMod', 0)",
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: "type",
+            path: "/Mods",
+            mod_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
+    .await
+    .unwrap();
+    insert_test_mod(
+        &pool,
+        &TestModFixture {
+            id: "mod1",
+            game_id: "g1",
+            object_id: None,
+            actual_name: "TestMod",
+            folder_path: "/Mods/TestMod",
+            status: "DISABLED",
+            is_safe: true,
+            object_type: Some("Other"),
+            mods_path: Some("/Mods"),
+        },
+    )
     .await
     .unwrap();
 
     // Navigate direct DB rather than Tauri State — test the raw DB logic
-    sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path = ?")
+    sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path_key = ?")
         .bind(true)
-        .bind("/Mods/TestMod")
+        .bind(crate::services::path_key::folder_path_key(
+            "/Mods/TestMod",
+            Some("/Mods"),
+        ))
         .execute(&pool)
         .await
         .unwrap();
@@ -127,33 +136,107 @@ async fn test_suggest_random_mods() {
     let pool = setup_test_db().await;
 
     // Insert Game
-    sqlx::query("INSERT INTO games (id, name, mod_path) VALUES ('g1', 'Genshin', '/Mods')")
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    // Insert Objects
-    sqlx::query(
-        "INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES 
-        ('obj1', 'g1', 'Hu Tao', 'Hu Tao', 'Character'),
-        ('obj2', 'g1', 'Kazuha', 'Kazuha', 'Character'),
-        ('obj3', 'g1', 'Weapon', 'Weapon', 'Weapon')",
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: "type",
+            path: "/Mods",
+            mod_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
 
-    // Insert Mods
-    sqlx::query("INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, status, is_safe) VALUES 
-        ('m1', 'g1', 'obj1', 'Hu Tao Skin 1', '/Mods/Hu Tao/Skin1', 'DISABLED', 1),
-        ('m2', 'g1', 'obj1', 'Hu Tao Skin 2', '/Mods/Hu Tao/Skin2', 'ENABLED', 1),
-        ('m3', 'g1', 'obj1', 'Hu Tao NSFW', '/Mods/Hu Tao/NSFWSkin', 'DISABLED', 0),
-        ('m4', 'g1', 'obj2', 'Kazuha Mod', '/Mods/Kazuha/Mod', 'DISABLED', 1),
-        ('m5', 'g1', 'obj2', 'Kazuha Dot', '/Mods/Kazuha/.HiddenMod', 'DISABLED', 1),
-        ('m6', 'g1', 'obj3', 'Weapon Mod', '/Mods/Weapon/Mod', 'DISABLED', 1)")
-        .execute(&pool)
+    // Insert Objects
+    for (id, name, folder_path, object_type) in [
+        ("obj1", "Hu Tao", "Hu Tao", "Character"),
+        ("obj2", "Kazuha", "Kazuha", "Character"),
+        ("obj3", "Weapon", "Weapon", "Weapon"),
+    ] {
+        insert_test_object(
+            &pool,
+            &TestObjectFixture {
+                id,
+                game_id: "g1",
+                name,
+                folder_path: Some(folder_path),
+                object_type,
+            },
+        )
         .await
         .unwrap();
+    }
+
+    // Insert Mods
+    for (id, object_id, actual_name, folder_path, status, is_safe) in [
+        (
+            "m1",
+            Some("obj1"),
+            "Hu Tao Skin 1",
+            "/Mods/Hu Tao/Skin1",
+            "DISABLED",
+            true,
+        ),
+        (
+            "m2",
+            Some("obj1"),
+            "Hu Tao Skin 2",
+            "/Mods/Hu Tao/Skin2",
+            "ENABLED",
+            true,
+        ),
+        (
+            "m3",
+            Some("obj1"),
+            "Hu Tao NSFW",
+            "/Mods/Hu Tao/NSFWSkin",
+            "DISABLED",
+            false,
+        ),
+        (
+            "m4",
+            Some("obj2"),
+            "Kazuha Mod",
+            "/Mods/Kazuha/Mod",
+            "DISABLED",
+            true,
+        ),
+        (
+            "m5",
+            Some("obj2"),
+            "Kazuha Dot",
+            "/Mods/Kazuha/.HiddenMod",
+            "DISABLED",
+            true,
+        ),
+        (
+            "m6",
+            Some("obj3"),
+            "Weapon Mod",
+            "/Mods/Weapon/Mod",
+            "DISABLED",
+            true,
+        ),
+    ] {
+        insert_test_mod(
+            &pool,
+            &TestModFixture {
+                id,
+                game_id: "g1",
+                object_id,
+                actual_name,
+                folder_path,
+                status,
+                is_safe,
+                object_type: Some("Other"),
+                mods_path: Some("/Mods"),
+            },
+        )
+        .await
+        .unwrap();
+    }
 
     // Test 1: Safe Mode OFF (is_safe = false)
     let proposals_unsafe = suggest_random_mods(&pool, "g1", false).await.unwrap();

@@ -14,6 +14,9 @@ import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
 import { folderKeys, updateFolderCache } from './useFolders';
+import { reconcileActiveCollection } from '../features/collections/utils/reconcileActiveCollection';
+import { invalidateCorridorRuntime } from '../features/collections/utils/invalidateCorridorRuntime';
+import { refetchCurrentCorridorRuntime } from '../features/collections/utils/refetchCurrentCorridorRuntime';
 import type {
   FolderGridResponse,
   BulkResult,
@@ -95,7 +98,7 @@ export function useToggleModSafe() {
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
       invoke<void>('toggle_mod_safe', params),
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       // Phase 24 barrier: The mod just switched contexts.
       // Remove it from the current grid view aggressively so it doesn't linger.
       updateFolderCache(queryClient, [variables.folderPath], undefined, true);
@@ -107,7 +110,8 @@ export function useToggleModSafe() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+      await invalidateCorridorRuntime(queryClient);
+      await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
     },
   });
 }
@@ -199,8 +203,7 @@ export function useBulkToggle() {
   return useMutation({
     mutationFn: (params: { paths: string[]; enable: boolean }) =>
       invoke<BulkResult>('bulk_toggle_mods', params),
-    onSuccess: (result, variables) => {
-      useAppStore.getState().setActiveCollectionId(null);
+    onSuccess: async (result, variables) => {
       result.success.forEach((newPath) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
 
@@ -218,6 +221,11 @@ export function useBulkToggle() {
       // directly to Path Instability and silent UI failures.
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      const activeGameId = useAppStore.getState().activeGameId;
+      if (activeGameId) {
+        await invalidateCorridorRuntime(queryClient);
+        await refetchCurrentCorridorRuntime(queryClient, activeGameId);
+      }
 
       if (result.success.length > 0) {
         const action = variables.enable ? 'Enabled' : 'Disabled';
@@ -237,13 +245,17 @@ export function useBulkDelete() {
   return useMutation({
     mutationFn: (params: { paths: string[]; gameId?: string }) =>
       invoke<BulkResult>('bulk_delete_mods', params),
-    onSuccess: (result) => {
+    onSuccess: async (result, variables) => {
       result.success.forEach((path) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
       });
       // Targeted cache update instead of full refetch: remove deleted folders
       updateFolderCache(queryClient, result.success, undefined, true);
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      await invalidateCorridorRuntime(queryClient);
+      if (variables.gameId) {
+        await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
+      }
 
       if (result.success.length > 0) {
         toast.success(getBulkToastMessage(queryClient, result.success, 'Deleted'));
@@ -353,6 +365,8 @@ export function useImportMods() {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      void invalidateCorridorRuntime(queryClient);
+      void reconcileActiveCollection();
       if (result.success.length > 0) {
         toast.success(`Imported ${result.success.length} items`);
       }
@@ -374,6 +388,8 @@ export function useAutoOrganizeMods() {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      void invalidateCorridorRuntime(queryClient);
+      void reconcileActiveCollection();
     },
   });
 }
@@ -391,7 +407,6 @@ export function useEnableOnlyThis() {
     mutationFn: (params: { targetPath: string; gameId: string }) =>
       invoke<BulkResult>('enable_only_this', params),
     onSuccess: (result) => {
-      useAppStore.getState().setActiveCollectionId(null);
       // The first item is the one enabled, the rest are disabled
       result.success.forEach((newPath, idx) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
@@ -410,6 +425,7 @@ export function useEnableOnlyThis() {
       // desync risk. It is a rare operation where an active refetch is 100% justified.
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      void invalidateCorridorRuntime(queryClient);
 
       const disabled = result.success.length - 1;
       if (disabled > 0) {

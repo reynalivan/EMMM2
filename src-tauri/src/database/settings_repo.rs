@@ -39,7 +39,25 @@ pub async fn reset_all_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     // Child tables first (FK dependencies)
+    sqlx::query("DELETE FROM collection_signatures")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM collection_roots")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM corridor_runtime_cache")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM collection_object_states")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM collection_nested_items")
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM collection_items")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM corridor_state")
         .execute(&mut *tx)
         .await?;
     sqlx::query("DELETE FROM dedup_group_members")
@@ -85,17 +103,6 @@ pub async fn get_all_thumbnail_paths(pool: &SqlitePool) -> Result<Vec<String>, s
             .fetch_all(pool)
             .await?;
     Ok(rows.into_iter().map(|r| r.get("thumbnail_path")).collect())
-}
-
-pub async fn remove_orphaned_collection_items(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
-        "DELETE FROM collection_items
-         WHERE collection_id NOT IN (SELECT id FROM collections)
-            OR mod_id NOT IN (SELECT id FROM mods)",
-    )
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected())
 }
 
 pub async fn get_app_meta(pool: &SqlitePool, key: &str) -> Option<String> {

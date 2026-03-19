@@ -85,6 +85,44 @@ async fn test_add_game_manual_and_duplicate() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_add_game_manual_rejects_unicode_duplicate_with_ascii_case_and_slash_variants() {
+    let pool = setup_pool().await;
+    let service = ConfigService::new_for_test(pool);
+
+    let tmp = TempDir::new().unwrap();
+    let game_dir = tmp.path().join("My日本語GIMI");
+    create_valid_instance(&game_dir);
+
+    let game = crate::commands::app::game_cmds::add_game_manual_inner(
+        &service,
+        "GIMI",
+        &game_dir.to_string_lossy(),
+    )
+    .await
+    .unwrap();
+
+    crate::commands::app::game_cmds::save_onboarding_games_inner(&service, vec![game])
+        .await
+        .unwrap();
+
+    let duplicate_variant = game_dir
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace("My", "my")
+        .replace("GIMI", "gimi");
+
+    let dup_result = crate::commands::app::game_cmds::add_game_manual_inner(
+        &service,
+        "GIMI",
+        &duplicate_variant,
+    )
+    .await;
+
+    assert!(dup_result.is_err());
+    assert!(dup_result.unwrap_err().contains("already registered"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_remove_game_cascading() {
     let pool = setup_pool().await;
     let service = ConfigService::new_for_test(pool.clone());

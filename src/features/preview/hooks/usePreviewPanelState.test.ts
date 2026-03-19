@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook, waitFor } from '../../../testing/test-utils';
+import { act, cleanup, renderHook, waitFor } from '../../../testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
 import * as usePreviewDataModule from './usePreviewData';
 import * as useFoldersModule from '../../../hooks/useFolders';
@@ -106,6 +106,7 @@ describe('usePreviewPanelState', () => {
 
   afterEach(() => {
     cleanup(); // React Testing Library cleanup
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -118,6 +119,52 @@ describe('usePreviewPanelState', () => {
       expect(result.current.images).toEqual([]);
       expect(result.current.hasUnsavedEditorChanges).toBe(false);
     });
+  });
+
+  it('syncs activePath from selection without requiring timer flush', async () => {
+    vi.useFakeTimers();
+
+    const selectedPath = 'E:/Mods/Parent/VariantA';
+    const useSelectedModPathMock = usePreviewDataModule.useSelectedModPath as any;
+    const useModFoldersMock = useFoldersModule.useModFolders as any;
+
+    useSelectedModPathMock.mockReturnValue(selectedPath);
+    useModFoldersMock.mockReturnValue(
+      createMockQuery({
+        children: [
+          {
+            node_type: 'ContainerFolder',
+            classification_reasons: [],
+            name: 'VariantA',
+            folder_name: 'VariantA',
+            path: selectedPath,
+            is_enabled: true,
+            is_directory: true,
+            thumbnail_path: null,
+            modified_at: 0,
+            size_bytes: 0,
+            has_info_json: false,
+            is_favorite: false,
+            is_misplaced: false,
+            is_safe: true,
+            metadata: null,
+            category: null,
+            conflict_group_id: null,
+            conflict_state: null,
+          },
+        ],
+        self_is_mod: false,
+      }),
+    );
+
+    const { result } = renderHook(() => usePreviewPanelState());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.activePath).toBe(selectedPath);
+    vi.useRealTimers();
   });
 
   // Covers: TC-6.1-01 (Title and description sync from metadata)

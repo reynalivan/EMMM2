@@ -58,10 +58,11 @@ commands.allow = [
     "gc_lost_objects_cmd",
     "get_active_keybindings",
     "get_active_mod_conflicts",
-    "get_active_mods_preview",
+    "get_apply_progress",
     "get_category_counts_cmd",
-    "get_collection_preview",
     "get_conflict_details",
+    "get_collection_runtime_preview",
+    "get_corridor_runtime_snapshot",
     "get_dashboard_stats",
     "get_game_schema",
     "get_games",
@@ -99,6 +100,7 @@ commands.allow = [
     "preview_corridor_switch",
     "read_mod_info",
     "read_mod_ini",
+    "reconcile_current_corridor",
     "remove_game",
     "remove_mod_preview_image",
     "rename_mod_folder",
@@ -111,6 +113,7 @@ commands.allow = [
     "run_maintenance",
     "save_mod_preview_image",
     "save_onboarding_games",
+    "save_snapshot_collection_as_named",
     "save_settings",
     "scan_preview_cmd",
     "score_candidates_batch_cmd",
@@ -140,4 +143,3 @@ commands.allow = [
     "verify_pin",
     "write_mod_ini"
 ]
-

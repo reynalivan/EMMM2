@@ -89,3 +89,130 @@ async fn test_object_crud() {
     let name_del = get_object_name_by_id(&pool, "obj1").await.unwrap();
     assert!(name_del.is_none());
 }
+
+#[tokio::test]
+async fn ensure_object_exists_matches_unicode_names_without_duplicate_rows() {
+    let pool = setup_pool().await;
+
+    let game = GameRow {
+        id: "g_unicode".into(),
+        name: "Game Unicode".into(),
+        game_type: "GIMI".into(),
+        path: "C:\\GameUnicode".into(),
+        mod_path: None,
+        game_exe: None,
+        launcher_path: None,
+        loader_exe: None,
+        launch_args: None,
+    };
+    upsert_game(&pool, &game).await.unwrap();
+
+    create_object(
+        &pool,
+        "obj_unicode",
+        "g_unicode",
+        "Preset_日本語",
+        "한글MOD",
+        "Character",
+        None,
+        "{}",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    let mut new_objects_count = 0;
+    let object_id = ensure_object_exists(
+        &mut tx,
+        "g_unicode",
+        "한글mod",
+        "preset_日本語",
+        "Character",
+        None,
+        "[]",
+        "{}",
+        &mut new_objects_count,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(object_id, "obj_unicode");
+    assert_eq!(new_objects_count, 0);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
+        .bind("g_unicode")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn delete_object_and_mods_by_folder_matches_unicode_prefix_with_ascii_case_variants() {
+    let pool = setup_pool().await;
+
+    let game = GameRow {
+        id: "g_delete".into(),
+        name: "Game Delete".into(),
+        game_type: "GIMI".into(),
+        path: "C:\\GameDelete".into(),
+        mod_path: Some("C:\\Mods".into()),
+        game_exe: None,
+        launcher_path: None,
+        loader_exe: None,
+        launch_args: None,
+    };
+    upsert_game(&pool, &game).await.unwrap();
+
+    create_object(
+        &pool,
+        "obj_delete",
+        "g_delete",
+        "한국Character",
+        "한국Character",
+        "Character",
+        None,
+        "{}",
+        None,
+    )
+    .await
+    .unwrap();
+
+    crate::database::mod_repo::insert_new_mod(
+        &pool,
+        "child_delete",
+        "g_delete",
+        "日本語Mod",
+        "한국Character/日本語Mod",
+        Some("C:\\Mods"),
+        "ENABLED",
+    )
+    .await
+    .unwrap();
+
+    let deleted = {
+        let mut tx = pool.acquire().await.unwrap();
+        delete_object_and_mods_by_folder(&mut tx, "g_delete", "한국character")
+            .await
+            .unwrap()
+    };
+
+    assert_eq!(deleted, 1);
+
+    let remaining_objects: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
+            .bind("g_delete")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let remaining_mods: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
+        .bind("g_delete")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(remaining_objects, 0);
+    assert_eq!(remaining_mods, 0);
+}

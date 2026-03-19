@@ -14,6 +14,7 @@ import {
   deleteObject,
   createObject,
 } from '../lib/services/objectService';
+import { invalidateCorridorRuntime } from '../features/collections/utils/invalidateCorridorRuntime';
 import type {
   ObjectSummary,
   ObjectFilter,
@@ -120,7 +121,7 @@ export function useGameSwitch() {
     queryClient.invalidateQueries({ queryKey: objectKeys.all });
     queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
     queryClient.invalidateQueries({ queryKey: ['collections'] });
-    queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+    await invalidateCorridorRuntime(queryClient);
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 

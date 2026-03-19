@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
+import { pathsEqual } from '../../lib/pathKey';
 import { scanService } from '../../lib/services/scanService';
 import ManualSetupForm from './ManualSetupForm';
 import AutoDetectResult from './AutoDetectResult';
@@ -54,10 +55,7 @@ export default function WelcomeScreen({
   };
 
   const handleManualComplete = (game: GameConfig) => {
-    // Normalize paths for comparison (forward slashes, lowercase)
-    const normalize = (p: string) => p.replace(/\\/g, '/').toLowerCase();
-    const newPath = normalize(game.game_exe);
-    const duplicate = detectedGames.find((g) => normalize(g.game_exe) === newPath);
+    const duplicate = detectedGames.find((g) => pathsEqual(g.game_exe, game.game_exe));
 
     if (duplicate) {
       setError(`This game folder is already added as "${duplicate.name}".`);

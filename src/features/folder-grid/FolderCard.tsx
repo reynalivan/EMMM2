@@ -129,6 +129,10 @@ function FolderCardInner({
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    if (folder.node_type === 'InternalAssets') {
+      return;
+    }
+
     if (!e.ctrlKey && !e.shiftKey) clearSelection();
     toggleSelection(folder.path, e.ctrlKey || e.shiftKey, e.shiftKey);
   };

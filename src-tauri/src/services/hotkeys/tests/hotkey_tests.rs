@@ -191,6 +191,18 @@ fn unknown_current_starts_at_first() {
 }
 
 #[test]
+fn unicode_preset_cycle_matches_current_name_with_ascii_case_fold_only() {
+    let presets = vec![
+        "프리셋_日本語".into(),
+        "Preset_日本語".into(),
+        "中文Preset".into(),
+    ];
+    let next = resolve_next_preset(&presets, Some("preset_日本語"), CycleDirection::Next);
+
+    assert_eq!(next, Some("中文Preset".to_string()));
+}
+
+#[test]
 fn plan_cycle_preset_sets_status() {
     let result = plan_cycle_preset("MyPreset", true);
     assert_eq!(result.status.preset_name, Some("MyPreset".to_string()));

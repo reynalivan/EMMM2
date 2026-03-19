@@ -1,7 +1,7 @@
 //! Application-level maintenance service.
 //!
-//! Extracts the vacuum-db + prune-thumbnails + orphan-collection-cleanup +
-//! trash-purge orchestration that was previously inlined in `settings_cmds.rs`.
+//! Extracts the vacuum-db + prune-thumbnails + trash-purge orchestration that
+//! was previously inlined in `settings_cmds.rs`.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -25,19 +25,13 @@ pub async fn run_maintenance(pool: &SqlitePool, app_data_dir: &Path) -> Result<S
     let pruned_count =
         ThumbnailCache::prune_orphans(&valid_paths).map_err(|e| format!("Prune failed: {}", e))?;
 
-    // 3. Remove orphaned collection_items rows
-    let orphan_rows_affected =
-        crate::database::settings_repo::remove_orphaned_collection_items(pool)
-            .await
-            .map_err(|e| format!("Orphan cleanup failed: {e}"))?;
-
-    // 4. Purge empty trash entries older than 30 days
+    // 3. Purge empty trash entries older than 30 days
     let trash_dir = app_data_dir.join("trash");
     let purged_trash_count = cleanup_old_empty_trash_entries(&trash_dir)?;
 
     Ok(format!(
-        "Maintenance complete. Database optimized. Pruned {} thumbnails. Removed {} orphaned collection rows. Purged {} old empty trash entries.",
-        pruned_count, orphan_rows_affected, purged_trash_count
+        "Maintenance complete. Database optimized. Pruned {} thumbnails. Purged {} old empty trash entries.",
+        pruned_count, purged_trash_count
     ))
 }
 

@@ -10,7 +10,9 @@
 //! Cargo.toml dependencies are introduced.
 
 pub mod actions;
+pub mod focus;
 pub mod manager;
+pub mod reload;
 
 #[cfg(test)]
 mod tests;

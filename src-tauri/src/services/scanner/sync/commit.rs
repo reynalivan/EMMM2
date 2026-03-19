@@ -4,6 +4,10 @@ use std::path::Path;
 
 use super::helpers::{ensure_game_exists, ensure_object_exists, generate_stable_id};
 use super::types::{ConfirmedScanItem, SyncResult};
+use crate::services::corridor_constants::{
+    CORRIDOR_SOURCE_AUTO_TAGGED, CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN,
+    DISABLED_REASON_USER,
+};
 
 /// Phase 2: Commit user-confirmed scan results to DB (Two-Phase Diffing).
 #[allow(clippy::too_many_arguments)]
@@ -190,20 +194,38 @@ pub async fn commit_scan_results(
         let (mod_id, existing_object_id) = if let Some(&db_idx) = disk_to_db.get(&disk_idx) {
             let db_mod = &db_mods[db_idx];
             let id = db_mod.0.clone();
+            let existing_corridor_source = db_mod.5.as_deref().unwrap_or(CORRIDOR_SOURCE_UNKNOWN);
+            let (auto_safe, auto_source) =
+                classify_corridor(&item.display_name, safe_mode_keywords);
+            let (next_is_safe, next_corridor_source) =
+                if existing_corridor_source == CORRIDOR_SOURCE_MANUAL {
+                    (db_mod.4, existing_corridor_source)
+                } else {
+                    (auto_safe, auto_source)
+                };
 
             let path_changed = db_mod.1 != actual_folder_path;
             let status_changed = db_mod.2 != current_status;
+            let safety_changed =
+                db_mod.4 != next_is_safe || existing_corridor_source != next_corridor_source;
 
-            if path_changed || status_changed {
-                let _reason = if item.is_disabled { Some("USER") } else { None };
+            if path_changed || status_changed || safety_changed {
+                let _reason = if item.is_disabled {
+                    Some(DISABLED_REASON_USER)
+                } else {
+                    None
+                };
                 crate::database::mod_repo::update_mod_identity_tx(
                     &mut tx,
                     &id,
                     &actual_folder_path,
                     &item.display_name,
                     current_status,
+                    next_is_safe,
+                    next_corridor_source,
                     &db_mod.1, // old path
                     game_id,
+                    Some(mods_path),
                 )
                 .await
                 .map_err(|e| e.to_string())?;
@@ -213,16 +235,25 @@ pub async fn commit_scan_results(
         } else {
             let id = generate_stable_id(game_id, &actual_folder_path);
             let object_type = item.object_type.as_deref().unwrap_or("Other");
-            let reason = if item.is_disabled { Some("USER") } else { None };
+            let reason = if item.is_disabled {
+                Some(DISABLED_REASON_USER)
+            } else {
+                None
+            };
+            let (is_safe, corridor_source) =
+                classify_corridor(&item.display_name, safe_mode_keywords);
             crate::database::mod_repo::insert_mod_with_reason_tx(
                 &mut tx,
                 &id,
                 game_id,
                 &item.display_name,
                 &actual_folder_path,
+                Some(mods_path),
                 current_status,
                 object_type,
                 false,
+                is_safe,
+                corridor_source,
                 reason,
             )
             .await
@@ -295,17 +326,7 @@ pub async fn commit_scan_results(
             .await
             .map_err(|e| e.to_string())?;
         }
-
-        // Handle auto-classification
-        let folder_name_lower = item.display_name.to_lowercase();
-        let mut is_safe = true;
-        for kw in safe_mode_keywords {
-            if folder_name_lower.contains(&kw.to_lowercase()) {
-                is_safe = false;
-                break;
-            }
-        }
-
+        let (is_safe, _) = classify_corridor(&item.display_name, safe_mode_keywords);
         if !is_safe {
             let update = crate::services::mods::info_json::ModInfoUpdate {
                 is_safe: Some(false),
@@ -348,4 +369,16 @@ pub async fn commit_scan_results(
         deleted_mods: deleted_mods_count,
         new_objects: new_objects_count,
     })
+}
+fn classify_corridor(display_name: &str, safe_mode_keywords: &[String]) -> (bool, &'static str) {
+    let folder_name_lower = display_name.to_lowercase();
+    let keyword_match = safe_mode_keywords
+        .iter()
+        .any(|kw| folder_name_lower.contains(&kw.to_lowercase()));
+
+    if keyword_match {
+        return (false, CORRIDOR_SOURCE_AUTO_TAGGED);
+    }
+
+    (true, CORRIDOR_SOURCE_UNKNOWN)
 }

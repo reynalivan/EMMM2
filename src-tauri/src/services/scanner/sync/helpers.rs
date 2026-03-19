@@ -27,7 +27,8 @@ pub fn auto_matched_candidate(
 ///
 /// Detects mod rows whose `id` matches UUID v4 format (36 chars with dashes)
 /// and replaces them with `generate_stable_id(game_id, folder_path)`.
-/// Also updates FK references in `collection_items`.
+/// Collection matching is path-key based, so legacy collection rows can be
+/// materialized later without rewriting historical `collection_items`.
 pub async fn migrate_to_stable_ids(pool: &SqlitePool) -> Result<usize, String> {
     let rows = crate::database::mod_repo::get_mods_with_uuid_format(pool)
         .await
@@ -45,12 +46,6 @@ pub async fn migrate_to_stable_ids(pool: &SqlitePool) -> Result<usize, String> {
         if &new_id == old_id {
             continue;
         }
-
-        crate::database::collection_repo::update_collection_item_mod_id_global(
-            &mut tx, old_id, &new_id,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
 
         crate::database::mod_repo::update_mod_id(&mut tx, old_id, &new_id)
             .await

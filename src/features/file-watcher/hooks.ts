@@ -4,8 +4,10 @@ import { listen } from '@tauri-apps/api/event';
 import { QueryClient } from '@tanstack/react-query';
 import { folderKeys } from '../../hooks/useFolders';
 import { thumbnailKeys } from '../../hooks/useThumbnail';
+import { relativePathFromRoot } from '../../lib/pathKey';
 import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
+import { reconcileActiveCollection } from '../collections/utils/reconcileActiveCollection';
 import type { GameConfig } from '../../types/game';
 
 /**
@@ -52,18 +54,11 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
  * Internal helper to check if a path is a mod folder (depth 1 or 2)
  * vs a file/unrelated folder.
  */
-function isModFolder(targetPath: string | undefined, rootPath: string | undefined): boolean {
+export function isModFolder(targetPath: string | undefined, rootPath: string | undefined): boolean {
   if (!targetPath || !rootPath) return false;
 
-  const normalizedEventPath = targetPath.replace(/\\/g, '/');
-  const normalizedRoot = rootPath.replace(/\\/g, '/');
-  const rootLower = normalizedRoot.toLowerCase();
-
-  // Windows paths might have different drive letter casing between Tauri and DB
-  if (!normalizedEventPath.toLowerCase().startsWith(rootLower)) return false;
-
-  const relative = normalizedEventPath.slice(normalizedRoot.length);
-  const relativeClean = relative.startsWith('/') ? relative.slice(1) : relative;
+  const relativeClean = relativePathFromRoot(rootPath, targetPath);
+  if (relativeClean === null) return false;
 
   // Depth 1 = object folder (Mods/Alhaitham)
   // Depth 2 = mod folder (Mods/Alhaitham/Hair)
@@ -203,6 +198,7 @@ export function useWatcherReactions(events: WatchEventPayload[], queryClient: Qu
       // Status change only: invalidate objects and category counts
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      void reconcileActiveCollection();
     }
 
     if (hasStructureChange) {
@@ -211,6 +207,7 @@ export function useWatcherReactions(events: WatchEventPayload[], queryClient: Qu
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      void reconcileActiveCollection();
     }
 
     if (totals.modified > 0 && !hasStructureChange && totals.statusChanged === 0) {

@@ -23,6 +23,7 @@ import {
   toIniWritePayload,
 } from '../previewPanelUtils';
 import { useMetadataDraft } from './useMetadataDraft';
+import { resolvePreviewTargetPath } from '../previewTargetResolver';
 
 type PendingTransition =
   | { kind: 'mod'; path: string | null }
@@ -47,8 +48,12 @@ export function usePreviewPanelState() {
     return `${modPath.replace(/\\/g, '/')}/${explorerSubPath.replace(/\\/g, '/')}`;
   }, [isFlatModRoot, modPath, explorerSubPath]);
 
-  // Use gridSelection path, or fall back to FlatModRoot's own path
-  const effectivePath = externalSelectedPath ?? flatModRootPath;
+  // Use gridSelection path with parent-mod anchoring, or fall back to FlatModRoot's own path
+  const effectivePath = useMemo(
+    () =>
+      resolvePreviewTargetPath(externalSelectedPath, flatModRootPath, rawResponse?.children ?? []),
+    [externalSelectedPath, flatModRootPath, rawResponse?.children],
+  );
 
   const [activePath, setActivePath] = useState<string | null>(effectivePath);
   const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null);
@@ -75,10 +80,45 @@ export function usePreviewPanelState() {
     () => rawResponse?.children || ([] as ModFolder[]),
     [rawResponse?.children],
   );
-  const selectedFolder = useMemo(
-    () => folders.find((folder) => folder.path === activePath) ?? null,
-    [folders, activePath],
-  );
+  const selectedFolder = useMemo(() => {
+    const byChildren = folders.find((folder) => folder.path === activePath) ?? null;
+    if (byChildren) {
+      return byChildren;
+    }
+
+    if (
+      !activePath ||
+      !flatModRootPath ||
+      activePath !== flatModRootPath ||
+      !(rawResponse?.self_is_mod ?? false)
+    ) {
+      return null;
+    }
+
+    const normalizedSubPath = explorerSubPath?.replace(/\\/g, '/').replace(/\/+$/g, '') ?? '';
+    const folderName = normalizedSubPath.split('/').filter(Boolean).pop() ?? 'Mod';
+
+    return {
+      node_type: rawResponse?.self_node_type ?? 'FlatModRoot',
+      classification_reasons: rawResponse?.self_classification_reasons ?? [],
+      name: folderName,
+      folder_name: folderName,
+      path: activePath,
+      is_enabled: rawResponse?.self_is_enabled ?? true,
+      is_directory: true,
+      thumbnail_path: null,
+      modified_at: 0,
+      size_bytes: 0,
+      has_info_json: false,
+      is_favorite: false,
+      is_misplaced: false,
+      is_safe: true,
+      metadata: null,
+      category: null,
+      conflict_group_id: null,
+      conflict_state: null,
+    } as ModFolder;
+  }, [folders, activePath, flatModRootPath, rawResponse, explorerSubPath]);
 
   const iniFiles = useMemo(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
   const allIniQueries = useAllModIniDocuments(activePath, iniFiles);
@@ -197,57 +237,39 @@ export function usePreviewPanelState() {
         });
       }
 
-      // Defer state update to avoid "setState during render" warning
-      setTimeout(() => {
-        setPendingTransition({ kind: 'mod', path: effectivePath });
-        setShowUnsavedModal(true);
-      }, 0);
+      setPendingTransition({ kind: 'mod', path: effectivePath });
+      setShowUnsavedModal(true);
       return;
     }
 
-    // Defer state update (derived from props)
-    setTimeout(() => {
-      setActivePath(effectivePath);
-    }, 0);
+    setActivePath(effectivePath);
   }, [effectivePath, activePath, hasUnsavedChanges]);
 
-  // Reset image index when active path or image count changes
-  // Reset image index when active path or image count changes
-  const [prevActivePathForImg, setPrevActivePathForImg] = useState(activePath);
-  const [prevImgLen, setPrevImgLen] = useState(images.length);
-  if (activePath !== prevActivePathForImg || images.length !== prevImgLen) {
-    setPrevActivePathForImg(activePath);
-    setPrevImgLen(images.length);
+  useEffect(() => {
     setCurrentImageIndex(0);
-  }
+  }, [activePath, images.length]);
 
-  // Stable identity for allKeyBindFields via JSON key
   const fieldIds = useMemo(() => allKeyBindFields.map((f) => f.id).join('\0'), [allKeyBindFields]);
-  const [prevFieldIds, setPrevFieldIds] = useState(fieldIds);
-
-  if (fieldIds !== prevFieldIds) {
-    setPrevFieldIds(fieldIds);
+  useEffect(() => {
     if (!hasUnsavedEditorChanges) {
       const nextInitialMap = toFieldValueMap(allKeyBindFields);
       setInitialByField(nextInitialMap);
       setDraftByField(nextInitialMap);
       setFieldErrors({});
     }
-  }
+  }, [fieldIds, hasUnsavedEditorChanges, allKeyBindFields]);
 
-  // Stable identity for keyBindSections via JSON key
   const sectionIds = useMemo(() => keyBindSections.map((s) => s.id).join('\0'), [keyBindSections]);
-  const [prevSectionIds, setPrevSectionIds] = useState(sectionIds);
-
-  if (sectionIds !== prevSectionIds) {
-    setPrevSectionIds(sectionIds);
+  useEffect(() => {
     const validIds = new Set(keyBindSections.map((section) => section.id));
-    const next = new Set(Array.from(openSectionIds).filter((id) => validIds.has(id)));
-    if (next.size === 0 && keyBindSections[0]) {
-      next.add(keyBindSections[0].id);
-    }
-    setOpenSectionIds(next);
-  }
+    setOpenSectionIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+      if (next.size === 0 && keyBindSections[0]) {
+        next.add(keyBindSections[0].id);
+      }
+      return next;
+    });
+  }, [sectionIds, keyBindSections]);
 
   const applyPendingTransition = (transition: PendingTransition) => {
     if (!transition) {

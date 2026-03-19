@@ -84,6 +84,10 @@ function FolderListRowInner({
   }, [thumbnailPath]);
 
   const handleContextClick = (_: React.MouseEvent) => {
+    if (item.node_type === 'InternalAssets') {
+      return;
+    }
+
     // If we right click and it's NOT selected, select it (and clear others if no modifier)
     // Actually ContextMenu trigger handles visibility, but we want to ensure selection logic is visually consistent.
     // If user right clicks an unselected item, standard OS behavior is to select it.
@@ -151,6 +155,10 @@ function FolderListRowInner({
       <div
         id={`grid-item-${item.path}`}
         onClick={(e) => {
+          if (item.node_type === 'InternalAssets') {
+            return;
+          }
+
           if (!e.ctrlKey && !e.shiftKey) clearSelection();
           toggleSelection(item.path, e.ctrlKey || e.shiftKey);
         }}

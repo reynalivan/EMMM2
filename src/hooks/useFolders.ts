@@ -10,6 +10,9 @@ import { toast } from '../stores/useToastStore';
 import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
+import { reconcileActiveCollection } from '../features/collections/utils/reconcileActiveCollection';
+import { invalidateCorridorRuntime } from '../features/collections/utils/invalidateCorridorRuntime';
+import { refetchCurrentCorridorRuntime } from '../features/collections/utils/refetchCurrentCorridorRuntime';
 import type {
   ModFolder,
   FolderGridResponse,
@@ -124,6 +127,9 @@ async function fallbackSync(queryClient: ReturnType<typeof useQueryClient>, game
     queryClient.invalidateQueries({ queryKey: folderKeys.all });
     queryClient.invalidateQueries({ queryKey: ['objects'] });
     queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+    await invalidateCorridorRuntime(queryClient);
+    await refetchCurrentCorridorRuntime(queryClient, gameId);
+    await reconcileActiveCollection({ gameId });
   }
 }
 
@@ -176,10 +182,9 @@ export function useToggleMod() {
       return { previousQueries };
     },
 
-    onSuccess: (newPath, variables) => {
+    onSuccess: async (newPath, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) }); // Invalidate old thumbnail URI
-      useAppStore.getState().setActiveCollectionId(null); // Unsaved preset state
-      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+      await invalidateCorridorRuntime(queryClient);
 
       const action = variables.enable ? 'Enabled' : 'Disabled';
       let modName = variables.path.split(/[/\\]/).pop() || 'mod';
@@ -224,7 +229,7 @@ export function useToggleMod() {
               queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
               queryClient.invalidateQueries({ queryKey: folderKeys.all });
               queryClient.invalidateQueries({ queryKey: ['objects'] });
-              queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+              void refetchCurrentCorridorRuntime(queryClient, variables.gameId);
             });
           },
         });
@@ -238,6 +243,8 @@ export function useToggleMod() {
             /* non-critical — silently ignore */
           });
       }
+
+      await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
     },
 
     onError: (error, variables, context) => {
@@ -294,7 +301,7 @@ export function useRenameMod() {
         new_name: params.newName,
         game_id: params.gameId,
       }),
-    onSuccess: (result, variables) => {
+    onSuccess: async (result, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
 
       // Opt-Z2: Fix path instability. The folder was physically renamed.
@@ -313,6 +320,8 @@ export function useRenameMod() {
       useAppStore.getState().setWatcherCooldown(Date.now() + 500);
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
+      await invalidateCorridorRuntime(queryClient, { refetchType: 'none' });
+      await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
     },
     onError: (error, variables) => {
       const errStr = String(error);
@@ -334,11 +343,15 @@ export function useDeleteMod() {
 
   return useMutation({
     mutationFn: (params: { path: string; gameId?: string }) => invoke<void>('delete_mod', params),
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) });
       // Targeted: remove deleted folder from cache instead of full re-listing
       updateFolderCache(queryClient, [variables.path], undefined, true);
       queryClient.invalidateQueries({ queryKey: ['objects'] });
+      await invalidateCorridorRuntime(queryClient);
+      if (variables.gameId) {
+        await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
+      }
     },
     onError: (error, variables) => {
       const errStr = String(error);
@@ -361,11 +374,15 @@ export function useRestoreMod() {
   return useMutation({
     mutationFn: (params: { trashId: string; gameId?: string }) =>
       invoke<string>('restore_mod', { trashId: params.trashId, gameId: params.gameId }),
-    onSuccess: () => {
+    onSuccess: async (_, variables) => {
       // New folder appears on disk — active refetch needed (no optimistic data)
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['trash'] });
+      await invalidateCorridorRuntime(queryClient);
+      if (variables.gameId) {
+        await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
+      }
     },
   });
 }

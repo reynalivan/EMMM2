@@ -1,87 +1,161 @@
-import { useState, useMemo } from 'react';
-import { X, Save, Loader2, Package, FolderTree, ShieldAlert } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { X, Save, Loader2, Package } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast, useToastStore } from '../../../stores/useToastStore';
-import { scanService } from '../../../lib/services/scanService';
-import { useActiveModsPreview, useSaveCurrentAsCollection } from '../hooks/useCollections';
-import { useQueryClient } from '@tanstack/react-query';
+import { ALL_DISABLED_LABEL } from '../../../lib/corridorLabels';
+import { ModGroupList } from './ModGroupList';
+import { buildGroupedModsWithObjectStates } from '../utils/groupMods';
+import {
+  useCollectionRuntimePreview,
+  useCorridorRuntimeSnapshot,
+  useSaveCurrentAsCollection,
+  useSaveSnapshotCollectionAsNamed,
+} from '../hooks/useCollections';
+import { invalidateCorridorRuntime } from '../utils/invalidateCorridorRuntime';
+import { refetchCollectionRuntime } from '../utils/refetchCollectionRuntime';
+import type { SaveCollectionMode } from '../../../types/collection';
 
 interface SaveCollectionModalProps {
+  mode: SaveCollectionMode;
+  sourceCollectionId?: string;
+  sourceCollectionName?: string;
+  onSaved?: (collectionId: string) => void;
   onClose: () => void;
 }
 
-export default function SaveCollectionModal({ onClose }: SaveCollectionModalProps) {
-  const { activeGame } = useActiveGame();
-  const { safeMode } = useAppStore();
-  const queryClient = useQueryClient();
+function buildDefaultCollectionName(): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  return `Unsaved ${yyyy}${mm}${dd}${hh}${min}`;
+}
 
-  const [name, setName] = useState(() => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const hh = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    return `Unsaved ${yyyy}${mm}${dd}${hh}${min}`;
-  });
-  const [isSyncing, setIsSyncing] = useState(false);
+export default function SaveCollectionModal({
+  mode,
+  sourceCollectionId,
+  sourceCollectionName,
+  onSaved,
+  onClose,
+}: SaveCollectionModalProps) {
+  const { activeGame } = useActiveGame();
+  const { safeMode, setWorkspaceSelectionForCorridor } = useAppStore();
+  const queryClient = useQueryClient();
+  const isSnapshotMode = mode === 'snapshot_collection';
+
+  const [name, setName] = useState(buildDefaultCollectionName());
   const [isDisablingAll, setIsDisablingAll] = useState(false);
 
-  const saveMutation = useSaveCurrentAsCollection();
-  const activeModsQuery = useActiveModsPreview(activeGame?.id ?? null, safeMode);
-  const activeModsData = activeModsQuery.data;
+  const saveCurrentMutation = useSaveCurrentAsCollection();
+  const saveSnapshotMutation = useSaveSnapshotCollectionAsNamed();
+  const corridorRuntimeQuery = useCorridorRuntimeSnapshot(activeGame?.id ?? null, safeMode);
+  const snapshotPreviewQuery = useCollectionRuntimePreview(
+    sourceCollectionId ?? null,
+    activeGame?.id ?? null,
+  );
 
-  const groupedActiveMods = useMemo(() => {
-    if (!activeModsData) return {};
-    return activeModsData.reduce(
-      (acc, mod) => {
-        const group = mod.object_name || 'Uncategorized';
-        if (!acc[group]) acc[group] = [];
-        acc[group].push(mod);
-        return acc;
-      },
-      {} as Record<string, typeof activeModsData>,
-    );
-  }, [activeModsData]);
+  const previewMods = isSnapshotMode
+    ? (snapshotPreviewQuery.data?.roots ?? [])
+    : (corridorRuntimeQuery.data?.roots ?? []);
+  const previewObjectStates = isSnapshotMode
+    ? (snapshotPreviewQuery.data?.object_states ?? [])
+    : (corridorRuntimeQuery.data?.object_states ?? []);
+  const isLoadingPreview = isSnapshotMode ? snapshotPreviewQuery.isLoading : corridorRuntimeQuery.isLoading;
+  const isSaving = isSnapshotMode ? saveSnapshotMutation.isPending : saveCurrentMutation.isPending;
+  const activeModCount = previewMods.length;
 
-  const activeModCount = activeModsQuery.data?.length ?? 0;
+  const objectStates = useMemo(
+    () =>
+      (corridorRuntimeQuery.data?.object_states ?? []).map((object) => ({
+        object_id: object.object_id,
+        is_enabled: object.is_enabled,
+      })),
+    [corridorRuntimeQuery.data?.object_states],
+  );
 
-  const handleSaveCurrent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !activeGame) return;
+  const previewRelevantObjectIds = useMemo(() => {
+    const relevantObjectIds = new Set<string>();
+    previewMods.forEach((mod) => {
+      if (mod.object_id) {
+        relevantObjectIds.add(mod.object_id);
+      }
+    });
+    previewObjectStates.forEach((state) => {
+      if (!state.is_enabled) {
+        relevantObjectIds.add(state.object_id);
+      }
+    });
+    return relevantObjectIds;
+  }, [previewMods, previewObjectStates]);
+
+  const groupedPreviewMods = useMemo(
+    () =>
+      buildGroupedModsWithObjectStates(previewMods, previewObjectStates, {
+        mode: 'preview',
+        relevantObjectIds: previewRelevantObjectIds.size > 0 ? previewRelevantObjectIds : undefined,
+      }),
+    [previewMods, previewObjectStates, previewRelevantObjectIds],
+  );
+
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activeGame || !name.trim()) {
+      return;
+    }
+
+    if (isSnapshotMode) {
+      if (!sourceCollectionId) {
+        toast.error('No snapshot selected to save.');
+        return;
+      }
+
+      const result = await saveSnapshotMutation.mutateAsync({
+        source_collection_id: sourceCollectionId,
+        game_id: activeGame.id,
+        name: name.trim(),
+      });
+      setWorkspaceSelectionForCorridor(activeGame.id, safeMode, {
+        kind: 'stored_collection',
+        collection_id: result.collection.id,
+      });
+      onSaved?.(result.collection.id);
+      onClose();
+      return;
+    }
 
     try {
-      setIsSyncing(true);
-      await scanService.syncDatabase(
-        activeGame.id,
-        activeGame.name,
-        activeGame.game_type,
-        activeGame.mod_path,
-      );
-      setIsSyncing(false);
-
-      await queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
-
-      await saveMutation.mutateAsync({
+      const result = await saveCurrentMutation.mutateAsync({
         name: name.trim(),
         game_id: activeGame.id,
         is_safe_context: safeMode,
+        object_states: objectStates,
       });
+      setWorkspaceSelectionForCorridor(activeGame.id, safeMode, {
+        kind: 'stored_collection',
+        collection_id: result.collection.id,
+      });
+      onSaved?.(result.collection.id);
       onClose();
-    } catch (err) {
-      setIsSyncing(false);
-      toast.error(`Sync failed: ${String(err)}`);
+    } catch (error) {
+      toast.error(String(error));
     }
   };
 
   const handleDisableAll = async () => {
-    if (!activeGame || !activeModsData || activeModsData.length === 0) return;
+    if (!activeGame || isSnapshotMode || activeModCount === 0) {
+      return;
+    }
+
     setIsDisablingAll(true);
     const toastId = toast.info('Disabling all mods...', 0);
+
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const modIds = activeModsData.filter((m) => !m.id.startsWith('nested_')).map((m) => m.id);
+      const modIds = previewMods.filter((mod) => !mod.id.startsWith('nested_')).map((mod) => mod.id);
 
       await invoke('bulk_toggle_mods_by_ids', {
         modIds,
@@ -89,19 +163,31 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
         gameId: activeGame.id,
       });
 
-      queryClient.invalidateQueries({ queryKey: ['active-mods-preview'] });
+      await invalidateCorridorRuntime(queryClient);
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      await refetchCollectionRuntime(queryClient, {
+        gameId: activeGame.id,
+        isSafe: safeMode,
+      });
 
       useToastStore.getState().removeToast(toastId);
-      toast.success(`Cleared loadout.`);
-    } catch (err) {
+      toast.success('Cleared loadout.');
+    } catch (error) {
       useToastStore.getState().removeToast(toastId);
-      toast.error(String(err));
+      toast.error(String(error));
     } finally {
       setIsDisablingAll(false);
     }
   };
+
+  const heading = isSnapshotMode ? 'Save Snapshot as Collection' : 'Save Current State';
+  const description = isSnapshotMode
+    ? `Save the selected snapshot${sourceCollectionName ? ` (${sourceCollectionName})` : ''} as a new named ${safeMode ? 'Safe' : 'Unsafe'} collection.`
+    : `Snapshots the current ${safeMode ? 'Safe' : 'Unsafe'} corridor state into a new named collection.`;
+  const privacyHint = isSnapshotMode
+    ? 'The new collection keeps the selected snapshot context.'
+    : `To save a ${safeMode ? 'Unsafe' : 'Safe'} collection, close this and switch tabs.`;
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -109,23 +195,21 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
         <div className="card-body p-6">
           <div className="flex items-center justify-between mb-2">
             <h2 className="card-title text-xl flex gap-2 items-center">
-              <Save size={20} className="text-secondary" /> Save Current State
+              <Save size={20} className="text-secondary" />
+              {heading}
             </h2>
             <button
               className="btn btn-sm btn-circle btn-ghost"
               onClick={onClose}
-              disabled={isSyncing || isDisablingAll || saveMutation.isPending}
+              disabled={isDisablingAll || isSaving}
             >
               <X size={16} />
             </button>
           </div>
 
-          <p className="text-sm text-base-content/60 mb-6">
-            Snapshots all currently enabled mods into a new {safeMode ? 'Safe' : 'Unsafe'}{' '}
-            collection.
-          </p>
+          <p className="text-sm text-base-content/60 mb-6">{description}</p>
 
-          <form onSubmit={handleSaveCurrent} className="space-y-5">
+          <form onSubmit={handleSave} className="space-y-5">
             <div className="form-control">
               <label className="label py-1">
                 <span className="label-text font-medium text-base-content/80">Collection Name</span>
@@ -134,7 +218,7 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
                 className="input input-bordered focus:border-secondary bg-base-300 w-full"
                 placeholder="e.g. Abyss Run 1"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(event) => setName(event.target.value)}
                 autoFocus
                 required
               />
@@ -148,9 +232,7 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
                 </p>
               </div>
               <div className="text-right max-w-30">
-                <p className="text-[10px] text-base-content/50 leading-tight">
-                  To save a {safeMode ? 'Unsafe' : 'Safe'} collection, close this and switch tabs.
-                </p>
+                <p className="text-[10px] text-base-content/50 leading-tight">{privacyHint}</p>
               </div>
             </div>
 
@@ -158,68 +240,44 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
               <div className="flex items-center justify-between bg-base-300/50 p-3 border-b border-white/5">
                 <h3 className="text-xs font-bold text-base-content/70 uppercase tracking-wider flex items-center gap-1.5">
                   <Package size={14} />
-                  Enabled Mods ({activeModCount})
+                  {isSnapshotMode ? 'Snapshot Mods' : 'Current Mods'} ({activeModCount})
                 </h3>
-                {activeModCount > 0 && (
+                {!isSnapshotMode && activeModCount > 0 && (
                   <button
                     type="button"
                     onClick={handleDisableAll}
-                    disabled={isDisablingAll || isSyncing || saveMutation.isPending}
+                    disabled={isDisablingAll || isSaving}
                     className="btn btn-xs btn-outline btn-error opacity-80 hover:opacity-100"
                   >
-                    {isDisablingAll ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      'Disable All'
-                    )}
+                    {isDisablingAll ? <Loader2 size={12} className="animate-spin" /> : 'Disable All'}
                   </button>
                 )}
               </div>
 
               <div className="p-2">
-                {activeModsQuery.isLoading ? (
+                {isLoadingPreview ? (
                   <div className="flex justify-center py-6 text-base-content/40">
                     <Loader2 size={20} className="animate-spin" />
                   </div>
-                ) : activeModCount === 0 ? (
+                ) : groupedPreviewMods.length === 0 ? (
                   <p className="text-xs text-center py-6 text-base-content/40 italic">
-                    No enabled mods to save.
+                    {isSnapshotMode
+                      ? 'Selected snapshot has no stored mods.'
+                      : `No enabled main mods. Saving now will create an ${ALL_DISABLED_LABEL} snapshot.`}
                   </p>
                 ) : (
-                  <div className="space-y-3 max-h-48 overflow-y-auto custom-scrollbar pr-2 pl-1 py-1">
-                    {Object.keys(groupedActiveMods)
-                      .sort()
-                      .map((groupName) => (
-                        <div key={groupName}>
-                          <div className="text-[11px] font-bold text-secondary/80 uppercase tracking-wider mb-1">
-                            {groupName}{' '}
-                            <span className="text-base-content/30 ml-1">
-                              ({groupedActiveMods[groupName].length})
-                            </span>
-                          </div>
-                          <ul className="space-y-1">
-                            {groupedActiveMods[groupName].map((mod) => (
-                              <li
-                                key={mod.id}
-                                className="text-xs text-base-content/80 flex items-center gap-2 pl-2 p-1 rounded hover:bg-white/5 transition-colors"
-                                title={mod.folder_path}
-                              >
-                                {mod.id.startsWith('nested_') && (
-                                  <span title="Nested Mod" className="flex shrink-0">
-                                    <FolderTree size={12} className="text-info/70" />
-                                  </span>
-                                )}
-                                {!mod.is_safe && (
-                                  <span title="Unsafe / Non-Safe Mod" className="flex shrink-0">
-                                    <ShieldAlert size={12} className="text-warning" />
-                                  </span>
-                                )}
-                                <span className="truncate">{mod.actual_name}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
+                  <div className="max-h-48 overflow-y-auto custom-scrollbar pr-2 pl-1 py-1">
+                    <ModGroupList
+                      groups={groupedPreviewMods}
+                      colorClass="text-secondary/80"
+                      emptyGroupMessage="No mods in this object."
+                      emptyStateMessage={
+                        isSnapshotMode
+                          ? 'Selected snapshot has no stored mods.'
+                          : `No enabled main mods. Saving now will create an ${ALL_DISABLED_LABEL} snapshot.`
+                      }
+                      resetKey={`save-modal-${mode}-${sourceCollectionId ?? 'current'}`}
+                    />
                   </div>
                 )}
               </div>
@@ -228,25 +286,17 @@ export default function SaveCollectionModal({ onClose }: SaveCollectionModalProp
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={
-                  !name.trim() ||
-                  saveMutation.isPending ||
-                  isSyncing ||
-                  activeModCount === 0 ||
-                  isDisablingAll
-                }
+                disabled={!name.trim() || isSaving || isDisablingAll}
                 className="btn btn-secondary w-full"
               >
-                {isSyncing ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" /> Syncing State...
-                  </>
-                ) : saveMutation.isPending ? (
+                {isSaving ? (
                   <>
                     <Loader2 size={18} className="animate-spin" /> Saving...
                   </>
+                ) : isSnapshotMode ? (
+                  'Save Snapshot as Collection'
                 ) : (
-                  `Save Collection`
+                  'Save Collection'
                 )}
               </button>
             </div>

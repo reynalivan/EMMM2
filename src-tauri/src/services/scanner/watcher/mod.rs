@@ -12,6 +12,7 @@
 //!
 //! # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 
+use crate::services::path_key::path_file_name_lossy;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -176,11 +177,11 @@ fn is_relevant_path(path: &Path) -> bool {
 fn detect_status_change(from_path: &Path, to_path: &Path) -> Option<(&'static str, &'static str)> {
     use crate::services::scanner::core::normalizer;
 
-    let old_name = from_path.file_name()?.to_str()?;
-    let new_name = to_path.file_name()?.to_str()?;
+    let old_name = path_file_name_lossy(from_path)?;
+    let new_name = path_file_name_lossy(to_path)?;
 
-    let old_disabled = normalizer::is_disabled_folder(old_name);
-    let new_disabled = normalizer::is_disabled_folder(new_name);
+    let old_disabled = normalizer::is_disabled_folder(&old_name);
+    let new_disabled = normalizer::is_disabled_folder(&new_name);
 
     if old_disabled != new_disabled {
         let old_status = if old_disabled { "DISABLED" } else { "ENABLED" };

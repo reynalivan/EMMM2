@@ -237,7 +237,6 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
             return {
               ...o,
               folder_path: toggleDisabledInPath(o.folder_path, enable),
-              enabled_count: enable ? o.mod_count : 0,
               is_object_disabled: !enable,
             };
           });
@@ -251,6 +250,8 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
         });
 
         if (activeGame.mod_path) syncExplorerAfterRename(activeGame.mod_path, targetPath, newPath);
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
       } catch (e) {
         for (const [key, data] of prevObjectQueries) {

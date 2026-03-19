@@ -98,71 +98,12 @@ pub async fn toggle_mod_inner_service(
     let new_absolute_path = toggle_mod_inner(state, path.clone(), enable).await?;
     let new_status = if enable { "ENABLED" } else { "DISABLED" };
 
-    let disabled_reason = if enable { None } else { Some("USER") };
-
-    // DB stores folder_path as absolute (set by scanner). Try absolute first, then relative fallback.
-    let abs_result = crate::database::mod_repo::update_mod_path_status_and_reason(
-        pool,
-        game_id,
-        &path,
-        &new_absolute_path,
-        new_status,
-        disabled_reason,
-    )
-    .await;
-
-    let rows_updated = match &abs_result {
-        Ok(()) => {
-            // Check if any rows were actually affected by querying the new path
-            let check = crate::database::mod_repo::get_mod_id_and_status_by_path_pool(
-                pool,
-                &new_absolute_path,
-                game_id,
-            )
-            .await;
-            if check.ok().flatten().is_some() {
-                1
-            } else {
-                0
-            }
-        }
-        Err(_) => 0,
+    let disabled_reason = if enable {
+        None
+    } else {
+        Some(crate::services::corridor_constants::DISABLED_REASON_USER)
     };
 
-    if rows_updated == 0 {
-        // Fallback: try relative paths (legacy or migrated DBs)
-        let new_rel = Path::new(&new_absolute_path)
-            .strip_prefix(base)
-            .unwrap_or(Path::new(&new_absolute_path))
-            .to_string_lossy()
-            .to_string();
-
-        let old_rel = Path::new(&path)
-            .strip_prefix(base)
-            .unwrap_or(Path::new(&path))
-            .to_string_lossy()
-            .to_string();
-
-        let rel_result = crate::database::mod_repo::update_mod_path_status_and_reason(
-            pool,
-            game_id,
-            &old_rel,
-            &new_rel,
-            new_status,
-            disabled_reason,
-        )
-        .await;
-
-        if let Err(e) = &rel_result {
-            log::warn!(
-                "toggle_mod DB update failed for '{}' (both abs and rel): {}",
-                path,
-                e
-            );
-        }
-    }
-
-    // Update object folder_path and child paths if this is a top-level folder
     let old_rel = Path::new(&path)
         .strip_prefix(base)
         .unwrap_or(Path::new(&path))
@@ -174,19 +115,23 @@ pub async fn toggle_mod_inner_service(
         .to_string_lossy()
         .to_string();
 
+    crate::database::mod_repo::update_mod_path_status_and_reason(
+        pool,
+        game_id,
+        &old_rel,
+        &new_rel,
+        new_status,
+        disabled_reason,
+    )
+    .await
+    .map_err(|e| format!("Failed to update mod path/status: {e}"))?;
+
+    // Update object folder_path and child paths if this is a top-level folder
+
     let rel_components: Vec<_> = Path::new(&old_rel).components().collect();
     if rel_components.len() == 1 {
         let _ = crate::database::object_repo::update_object_folder_path(
             pool, game_id, &old_rel, &new_rel,
-        )
-        .await;
-
-        // Also try updating with absolute paths for objects
-        let _ = crate::database::object_repo::update_object_folder_path(
-            pool,
-            game_id,
-            &path,
-            &new_absolute_path,
         )
         .await;
 
@@ -195,26 +140,21 @@ pub async fn toggle_mod_inner_service(
         let old_prefix_fwd = format!("{}/", old_rel);
         let new_prefix_fwd = format!("{}/", new_rel);
 
-        let _ =
-            crate::database::mod_repo::update_child_paths(pool, game_id, &old_prefix, &new_prefix)
-                .await;
+        let _ = crate::database::mod_repo::update_child_paths(
+            pool,
+            game_id,
+            &old_prefix,
+            &new_prefix,
+            Some(&mods_path),
+        )
+        .await;
 
         let _ = crate::database::mod_repo::update_child_paths(
             pool,
             game_id,
             &old_prefix_fwd,
             &new_prefix_fwd,
-        )
-        .await;
-
-        // Also try absolute-path child updates
-        let old_abs_prefix = format!("{}\\", path);
-        let new_abs_prefix = format!("{}\\", new_absolute_path);
-        let _ = crate::database::mod_repo::update_child_paths(
-            pool,
-            game_id,
-            &old_abs_prefix,
-            &new_abs_prefix,
+            Some(&mods_path),
         )
         .await;
     }
@@ -260,6 +200,7 @@ pub async fn toggle_and_sync_db(
                     game_id,
                     &format!("{}{}", rel_path, old_sep),
                     &format!("{}{}", new_rel, new_sep),
+                    Some(mods_path),
                 )
                 .await;
             }
@@ -376,7 +317,10 @@ pub async fn rename_mod_folder_inner_service(
         .to_string_lossy()
         .to_string();
 
-    let _ = crate::database::mod_repo::update_mod_path_by_old_path(pool, &old_rel, &new_rel).await;
+    let _ = crate::database::mod_repo::update_mod_path_by_old_path_in_game(
+        pool, game_id, &old_rel, &new_rel,
+    )
+    .await;
 
     let rel_components: Vec<_> = Path::new(&old_rel).components().collect();
     if rel_components.len() == 1 {
@@ -390,15 +334,21 @@ pub async fn rename_mod_folder_inner_service(
         let old_prefix_fwd = format!("{}/", old_rel);
         let new_prefix_fwd = format!("{}/", new_rel);
 
-        let _ =
-            crate::database::mod_repo::update_child_paths(pool, game_id, &old_prefix, &new_prefix)
-                .await;
+        let _ = crate::database::mod_repo::update_child_paths(
+            pool,
+            game_id,
+            &old_prefix,
+            &new_prefix,
+            Some(&mods_path),
+        )
+        .await;
 
         let _ = crate::database::mod_repo::update_child_paths(
             pool,
             game_id,
             &old_prefix_fwd,
             &new_prefix_fwd,
+            Some(&mods_path),
         )
         .await;
     }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::database::game_repo::{upsert_game, GameRow};
 use crate::database::object_repo::create_object;
+use crate::services::path_key::folder_path_key;
 use sqlx::SqlitePool;
 
 async fn setup_pool() -> SqlitePool {
@@ -42,9 +43,17 @@ async fn test_mod_repo_crud() {
     .unwrap();
 
     // Insert Mod
-    insert_new_mod(&pool, "mod1", "g1", "My Mod", "Mods/Obj1/Mod1", "ENABLED")
-        .await
-        .unwrap();
+    insert_new_mod(
+        &pool,
+        "mod1",
+        "g1",
+        "My Mod",
+        "Mods/Obj1/Mod1",
+        None,
+        "ENABLED",
+    )
+    .await
+    .unwrap();
 
     // Set mod object id manually
     set_mod_object(&pool, "mod1", "obj1").await.unwrap();
@@ -84,4 +93,104 @@ async fn test_mod_repo_crud() {
     delete_mod_by_id(&pool, "mod1").await.unwrap();
     let mod_info2 = get_mod_by_object_id(&pool, "obj1").await.unwrap();
     assert!(mod_info2.is_none());
+}
+
+#[tokio::test]
+async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
+    let pool = setup_pool().await;
+
+    let game = GameRow {
+        id: "g_unicode".into(),
+        name: "Game Unicode".into(),
+        game_type: "GIMI".into(),
+        path: "C:\\GameUnicode".into(),
+        mod_path: Some("C:\\Mods".into()),
+        game_exe: None,
+        launcher_path: None,
+        loader_exe: None,
+        launch_args: None,
+    };
+    upsert_game(&pool, &game).await.unwrap();
+
+    insert_new_mod(
+        &pool,
+        "child_mod",
+        "g_unicode",
+        "日本語Variant",
+        "한국Character/日本語Root/VariantA",
+        Some("C:\\Mods"),
+        "ENABLED",
+    )
+    .await
+    .unwrap();
+
+    update_child_paths(
+        &pool,
+        "g_unicode",
+        "한국character\\",
+        "한국Renamed\\",
+        Some("C:\\Mods"),
+    )
+    .await
+    .unwrap();
+
+    let updated_path: String = sqlx::query_scalar("SELECT folder_path FROM mods WHERE id = ?")
+        .bind("child_mod")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let updated_key: String = sqlx::query_scalar("SELECT folder_path_key FROM mods WHERE id = ?")
+        .bind("child_mod")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(updated_path, "한국Renamed/日本語Root/VariantA");
+    assert_eq!(
+        updated_key,
+        folder_path_key("한국Renamed/日本語Root/VariantA", Some("C:\\Mods"))
+    );
+}
+
+#[tokio::test]
+async fn update_status_for_object_matches_unicode_object_folder_with_ascii_case_variants() {
+    let pool = setup_pool().await;
+
+    let game = GameRow {
+        id: "g_status".into(),
+        name: "Game Status".into(),
+        game_type: "GIMI".into(),
+        path: "C:\\GameStatus".into(),
+        mod_path: Some("C:\\Mods".into()),
+        game_exe: None,
+        launcher_path: None,
+        loader_exe: None,
+        launch_args: None,
+    };
+    upsert_game(&pool, &game).await.unwrap();
+
+    insert_new_mod(
+        &pool,
+        "status_mod",
+        "g_status",
+        "中文Mod",
+        "한국Character/中文Mod",
+        Some("C:\\Mods"),
+        "ENABLED",
+    )
+    .await
+    .unwrap();
+
+    let mut conn = pool.acquire().await.unwrap();
+    update_status_for_object(&mut conn, "g_status", "한국character", "DISABLED")
+        .await
+        .unwrap();
+
+    let status: String = sqlx::query_scalar("SELECT status FROM mods WHERE id = ?")
+        .bind("status_mod")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(status, "DISABLED");
 }
