@@ -1,8 +1,16 @@
 import { Monitor, Languages, Database, LogOut } from 'lucide-react';
 import { useAppStore } from '../../../stores/useAppStore';
+import { useSettings } from '../../../hooks/useSettings';
+import { THEME_OPTIONS, normalizeThemeSetting, type ThemeSetting } from '../theme/themeOptions';
 
 export default function GeneralTab() {
   const { autoCloseLauncher, setAutoCloseLauncher } = useAppStore();
+  const { settings, updateTheme } = useSettings();
+  const selectedTheme = normalizeThemeSetting(settings?.theme);
+
+  const handleThemeChange = (value: string) => {
+    updateTheme.mutate(normalizeThemeSetting(value as ThemeSetting));
+  };
 
   return (
     <div className="space-y-6">
@@ -15,14 +23,21 @@ export default function GeneralTab() {
           </h3>
 
           <div className="form-control max-w-xs mt-2">
-            <label className="label">
+            <label className="label" htmlFor="theme-select">
               <span className="label-text">Theme</span>
             </label>
-            <select className="select select-bordered w-full" defaultValue="dark">
-              <option value="system">System Default</option>
-              <option value="dark">Dark (Dracula)</option>
-              <option value="light">Light</option>
-              <option value="cyberpunk">Cyberpunk</option>
+            <select
+              id="theme-select"
+              className="select select-bordered w-full theme-controller"
+              value={selectedTheme}
+              onChange={(e) => handleThemeChange(e.target.value)}
+              disabled={updateTheme.isPending || !settings}
+            >
+              {THEME_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </div>
 

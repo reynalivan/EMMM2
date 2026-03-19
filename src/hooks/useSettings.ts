@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '../stores/useToastStore';
+import { normalizeThemeSetting, type ThemeSetting } from '../features/settings/theme/themeOptions';
 
 import type { GameConfig } from '../types/game';
 
@@ -148,6 +149,27 @@ export function useSettings() {
     },
   });
 
+  const updateThemeMutation = useMutation({
+    mutationFn: async (theme: ThemeSetting) => {
+      if (!settingsQuery.data) throw new Error('Settings not loaded');
+
+      const newSettings = {
+        ...settingsQuery.data,
+        theme: normalizeThemeSetting(theme),
+      };
+
+      return invoke('save_settings', { settings: newSettings });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+      addToast('success', 'Theme Updated: Appearance updated successfully.');
+    },
+    onError: (err) => {
+      console.error(err);
+      addToast('error', `Theme Update Failed: ${String(err)}`);
+    },
+  });
+
   return {
     settings: settingsQuery.data,
     isLoading: settingsQuery.isLoading,
@@ -163,5 +185,6 @@ export function useSettings() {
     verifyPin: verifyPinMutation.mutateAsync,
     runMaintenance: maintenanceMutation.mutate,
     updateAiConfig: aiConfigMutation,
+    updateTheme: updateThemeMutation,
   };
 }
