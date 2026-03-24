@@ -1,0 +1,55 @@
+{
+  "welcome": {
+    "title": "Selamat Datang di EMMM",
+    "subtitle": "Mod Manager yang Ditingkatkan untuk Game 3DMigoto",
+    "auto_detect": "Deteksi Otomatis XXMI",
+    "auto_detect_tip": "Pilih folder root XXMI Anda, contoh: D:/Games/XXMI Launcher/",
+    "manual_setup": "Tambah Game Manual",
+    "description": "Deteksi otomatis memindai folder XXMI Launcher Anda untuk game yang terinstal.",
+    "select_folder_title": "Pilih folder XXMI Launcher Anda",
+    "duplicate_error": "Folder game ini sudah ditambahkan sebagai \"{{name}}\"."
+  },
+  "manual_setup": {
+    "title": "Setup Manual",
+    "subtitle": "Tambah instance game 3DMigoto secara manual",
+    "game_type": "Tipe Game",
+    "game_type_placeholder": "Pilih game...",
+    "game_folder": "Folder Game",
+    "game_folder_placeholder": "Klik Telusuri untuk memilih folder...",
+    "browse": "Telusuri",
+    "hint": "Pilih folder root yang berisi d3dx.ini, d3d11.dll, dan /Mods",
+    "submit_button": "Tambah Game",
+    "submitting": "Memvalidasi...",
+    "game_types": {
+      "gimi": "Genshin Impact",
+      "srmi": "Star Rail",
+      "zzmi": "ZZZ",
+      "wwmi": "Wuthering Waves",
+      "efmi": "Arknight Endfield"
+    },
+    "validation": {
+      "game_type_required": "Silakan pilih tipe game",
+      "path_required": "Silakan pilih folder game",
+      "select_folder_title": "Pilih folder game 3DMigoto"
+    }
+  },
+  "result": {
+    "back_to_welcome": "Kembali ke Selamat Datang",
+    "back": "Kembali",
+    "title_one": "Game Ditemukan!",
+    "title_other": "{{count}} Game Ditemukan!",
+    "subtitle": "Game berikut telah terdeteksi dan siap dikelola.",
+    "remove_tip": "Hapus dari deteksi",
+    "warnings_header": "Peringatan Setup — Anda masih bisa melanjutkan",
+    "add_another": "Tambah Lagi",
+    "confirm": "Konfirmasi"
+  },
+  "scanning": {
+    "title": "Memindai game...",
+    "subtitle": "Mencari instance 3DMigoto di subfolder XXMI"
+  },
+  "indexing": {
+    "title": "Mengindeks mod Anda...",
+    "subtitle": "Harap tunggu sementara EMMM memindai folder game."
+  }
+}

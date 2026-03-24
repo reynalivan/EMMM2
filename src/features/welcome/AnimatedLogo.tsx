@@ -28,7 +28,7 @@ export default function AnimatedLogo() {
         {/* Top Path */}
         <motion.path
           d="M302.783 63.75H136.5C98.1162 63.75 67 94.8662 67 133.25C67 171.634 98.1162 202.75 136.5 202.75H189.996C208.55 202.75 226.428 195.779 240.086 183.22L370 63.75V171.5"
-          stroke="white"
+          stroke="currentColor"
           strokeWidth="34"
           strokeMiterlimit="16"
           strokeLinecap="round"
@@ -41,7 +41,7 @@ export default function AnimatedLogo() {
         {/* Bottom Path */}
         <motion.path
           d="M299 247H136.5C98.1162 247 67 278.116 67 316.5C67 354.884 98.1162 386 136.5 386H296C336.869 386 370 352.869 370 312V304"
-          stroke="white"
+          stroke="currentColor"
           strokeWidth="34"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -54,7 +54,7 @@ export default function AnimatedLogo() {
         <motion.circle
           cy="132.5"
           r="40.5"
-          fill="white"
+          fill="currentColor"
           variants={{
             initial: { opacity: 0, scale: 0, cx: 136.5 },
             idle: {
@@ -85,7 +85,7 @@ export default function AnimatedLogo() {
         <motion.circle
           cy="316.5"
           r="40.5"
-          fill="white"
+          fill="currentColor"
           variants={{
             initial: { opacity: 0, scale: 0, cx: 300.5 },
             idle: {

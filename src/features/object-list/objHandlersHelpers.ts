@@ -46,7 +46,7 @@ export function parseMasterDb(dbJson: string): MasterDbEntry[] {
   }
 }
 
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
 import type { QueryClient } from '@tanstack/react-query';
 import { toast } from '../../stores/useToastStore';
 
@@ -63,14 +63,11 @@ export async function executeImportAndInvalidate(
     objectName?: string;
   },
 ): Promise<void> {
-  const result = await invoke<{
-    success: string[];
-    failures: { path: string; error: string }[];
-  }>('import_mods_from_paths', {
+  const result = await commands.importModsFromPaths({
     paths,
     targetDir,
     strategy: 'Raw',
-    dbJson: null,
+    dbJson: undefined,
   });
 
   queryClient.invalidateQueries({ queryKey: ['objects'] });

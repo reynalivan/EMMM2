@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { commands } from '../../lib/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
 import { pathsEqual } from '../../lib/pathKey';
 import { scanService } from '../../lib/services/scanService';
-import ManualSetupForm from './ManualSetupForm';
-import AutoDetectResult from './AutoDetectResult';
+import { ManualSetupForm } from './ManualSetupForm';
+import { AutoDetectResult } from './AutoDetectResult';
 import AuroraBackground from '../welcome/AuroraBackground';
 import SmartDemoStrip from '../welcome/SmartDemoStrip';
 import AnimatedLogo from '../welcome/AnimatedLogo';
@@ -19,7 +20,8 @@ export default function WelcomeScreen({
 }: {
   onComplete: (games: GameConfig[]) => void;
 }) {
-  const [screen, setScreen] = useState<Screen>('welcome');
+  const { t } = useTranslation(['welcome', 'onboarding']);
+  const [view, setView] = useState<Screen>('welcome');
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,23 +34,23 @@ export default function WelcomeScreen({
       const selectedPath = await open({
         directory: true,
         multiple: false,
-        title: 'Select your XXMI Launcher folder',
+        title: t('onboarding:welcome.select_folder_title'),
       });
 
       if (!selectedPath) return;
 
       setIsScanning(true);
-      setScreen('auto-detect');
+      setView('auto-detect');
 
-      const games = await invoke<GameConfig[]>('auto_detect_games', {
+      const games = await commands.autoDetectGames({
         rootPath: selectedPath,
       });
 
       setDetectedGames(games);
-      setScreen('result');
+      setView('result');
     } catch (err) {
       setError(String(err));
-      setScreen('welcome');
+      setView('welcome');
     } finally {
       setIsScanning(false);
     }
@@ -58,20 +60,20 @@ export default function WelcomeScreen({
     const duplicate = detectedGames.find((g) => pathsEqual(g.game_exe, game.game_exe));
 
     if (duplicate) {
-      setError(`This game folder is already added as "${duplicate.name}".`);
+      setError(t('onboarding:welcome.duplicate_error', { name: duplicate.name }));
       return; // Do NOT navigate away — stay on the manual form
     }
 
     setError(null);
     setDetectedGames((prev) => [...prev, game]);
-    setScreen('result');
+    setView('result');
   };
 
   const handleRemoveGame = (gameId: string) => {
     setDetectedGames((prev) => {
       const remaining = prev.filter((g) => g.id !== gameId);
       if (remaining.length === 0) {
-        setScreen('welcome');
+        setView('welcome');
       }
       return remaining;
     });
@@ -83,11 +85,9 @@ export default function WelcomeScreen({
       setIsIndexing(true);
 
       // Save the games to DB — this is mandatory
-      await invoke('save_onboarding_games', { games });
+      await commands.saveOnboardingGames({ games });
 
       // Best-effort sync: try to import mods from each game folder.
-      // If this fails (e.g. network unavailable for master DB, or empty /Mods),
-      // we still navigate to dashboard. The file watcher will handle initial indexing.
       for (const game of games) {
         try {
           await scanService.syncDatabase(game.id, game.name, game.game_type, game.mod_path);
@@ -107,8 +107,8 @@ export default function WelcomeScreen({
     }
   };
 
-  // == Welcome Screen ==
-  if (screen === 'welcome') {
+  // == Welcome View ==
+  if (view === 'welcome') {
     return (
       <div className="h-screen w-full bg-transparent overflow-y-auto overflow-x-hidden relative flex flex-col items-center justify-center p-6 z-0">
         <div className="fixed inset-0 z-[-1]">
@@ -118,7 +118,7 @@ export default function WelcomeScreen({
         <div className="max-w-4xl w-full text-center space-y-6 z-10 py-6 my-auto origin-center [@media(max-height:800px)]:scale-95 [@media(max-height:750px)]:scale-90 [@media(max-height:700px)]:scale-[0.85] [@media(max-height:650px)]:scale-[0.8] transition-transform duration-500 ease-out">
           {/* Logo & Title */}
           <div className="flex flex-col [@media(max-height:750px)]:flex-row items-center justify-center gap-3 [@media(max-height:750px)]:gap-5">
-            <div className="mx-auto [@media(max-height:750px)]:mx-0 w-16 h-16 sm:w-20 sm:h-20 [@media(max-height:750px)]:w-14 [@media(max-height:750px)]:h-14 flex items-center justify-center shrink-0">
+            <div className="mx-auto [@media(max-height:750px)]:mx-0 w-16 h-16 sm:w-20 sm:h-20 [@media(max-height:750px)]:w-14 [@media(max-height:750px)]:h-14 flex items-center justify-center shrink-0 text-base-content hover:text-primary transition-colors duration-300">
               <AnimatedLogo />
             </div>
             <motion.div
@@ -128,10 +128,10 @@ export default function WelcomeScreen({
               className="[@media(max-height:750px)]:text-left flex flex-col justify-center"
             >
               <h1 className="text-3xl sm:text-4xl md:text-5xl [@media(max-height:750px)]:text-2xl font-extrabold bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent drop-shadow-sm pb-1">
-                Welcome to EMMM2
+                {t('onboarding:welcome.title')}
               </h1>
               <p className="text-base-content/60 text-base md:text-lg [@media(max-height:750px)]:text-xs font-medium tracking-wide mt-1">
-                Enhanced Mod Manager for 3DMigoto Games
+                {t('onboarding:welcome.subtitle')}
               </p>
             </motion.div>
           </div>
@@ -150,7 +150,7 @@ export default function WelcomeScreen({
           <div className="max-w-2xl mx-auto flex flex-col [@media(max-height:750px)]:flex-row max-sm:flex-col! [@media(max-height:750px)]:w-full gap-4">
             <div
               className="w-full [@media(max-height:750px)]:flex-1 max-sm:flex-none tooltip tooltip-bottom flex min-w-0"
-              data-tip="Select your root XXMI folder, e.g. D:/Games/XXMI Launcher/"
+              data-tip={t('onboarding:welcome.auto_detect_tip')}
             >
               <motion.button
                 whileHover="hover"
@@ -169,7 +169,7 @@ export default function WelcomeScreen({
               >
                 <Search className="w-5 h-5 shrink-0" />
                 <span className="flex-1 text-left truncate [@media(max-height:750px)]:text-sm">
-                  XXMI Auto-Detect
+                  {t('onboarding:welcome.auto_detect')}
                 </span>
                 <motion.div
                   variants={{ hover: { x: 6 } }}
@@ -185,7 +185,11 @@ export default function WelcomeScreen({
               whileHover="hover"
               whileTap="tap"
               variants={{
-                hover: { y: -2, boxShadow: '0 8px 30px -5px var(--color-base-content)' },
+                hover: {
+                  y: -2,
+                  boxShadow:
+                    '0 8px 30px -5px color-mix(in srgb, var(--color-base-content), transparent 50%)',
+                },
                 tap: { scale: 0.98 },
               }}
               onHoverStart={() => setIsDemoPaused(true)}
@@ -196,12 +200,12 @@ export default function WelcomeScreen({
               className="btn btn-outline btn-lg w-full [@media(max-height:750px)]:flex-1 max-sm:flex-none! gap-2 sm:gap-3 outline-offset-2 border-base-content/20 hover:bg-base-content hover:text-base-100 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4 min-w-0"
               onClick={() => {
                 setError(null);
-                setScreen('manual');
+                setView('manual');
               }}
             >
               <FolderOpen className="w-5 h-5 shrink-0" />
               <span className="flex-1 text-left truncate [@media(max-height:750px)]:text-sm">
-                Add Game Manually
+                {t('onboarding:welcome.manual_setup')}
               </span>
               <motion.div
                 variants={{ hover: { x: 6 } }}
@@ -213,8 +217,8 @@ export default function WelcomeScreen({
             </motion.button>
           </div>
 
-          <p className="text-base-content/40 text-sm">
-            Auto-detect scans your XXMI Launcher folder for installed games.
+          <p className="text-base-content/50 text-sm font-medium">
+            {t('onboarding:welcome.description')}
           </p>
         </div>
       </div>
@@ -222,16 +226,14 @@ export default function WelcomeScreen({
   }
 
   // == Scanning State ==
-  if (screen === 'auto-detect' && isScanning) {
+  if (view === 'auto-detect' && isScanning) {
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
         <div className="text-center space-y-6">
           <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
           <div>
-            <h2 className="text-2xl font-semibold">Scanning for games...</h2>
-            <p className="text-base-content/60 mt-2">
-              Looking for 3DMigoto instances in XXMI subfolders
-            </p>
+            <h2 className="text-2xl font-semibold">{t('onboarding:scanning.title')}</h2>
+            <p className="text-base-content/60 mt-2">{t('onboarding:scanning.subtitle')}</p>
           </div>
           {/* Shimmer placeholder cards (EC-1.07) */}
           <div className="w-80 mx-auto space-y-3">
@@ -251,45 +253,42 @@ export default function WelcomeScreen({
         <div className="text-center space-y-6">
           <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
           <div>
-            <h2 className="text-2xl font-semibold">Indexing your mods...</h2>
-            <p className="text-base-content/60 mt-2">
-              Please wait while EMMM2 scans the game folders.
-            </p>
+            <h2 className="text-2xl font-semibold">{t('onboarding:indexing.title')}</h2>
+            <p className="text-base-content/60 mt-2">{t('onboarding:indexing.subtitle')}</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // == Manual Setup Screen ==
-  if (screen === 'manual') {
+  // == Manual Setup View ==
+  if (view === 'manual') {
     return (
       <ManualSetupForm
         onBack={() => {
           if (detectedGames.length > 0) {
-            setScreen('result');
+            setView('result');
           } else {
-            setScreen('welcome');
+            setView('welcome');
           }
         }}
-        onComplete={handleManualComplete}
+        onSuccess={handleManualComplete}
       />
     );
   }
 
-  // == Result Screen ==
-  if (screen === 'result') {
+  // == Result View ==
+  if (view === 'result') {
     return (
       <AutoDetectResult
         games={detectedGames}
-        onContinue={() => handleFinalize(detectedGames)}
-        onAddMore={() => setScreen('manual')}
-        onRemoveGame={handleRemoveGame}
-        onGoBack={() => {
+        onConfirm={() => handleFinalize(detectedGames)}
+        onBack={() => {
           setDetectedGames([]);
           setError(null);
-          setScreen('welcome');
+          setView('welcome');
         }}
+        onRemoveGame={handleRemoveGame}
       />
     );
   }

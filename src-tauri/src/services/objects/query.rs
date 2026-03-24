@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::database::object_repo::{GetObjectsResult, ObjectFilter};
+use crate::repo::object_repo::{GetObjectsResult, ObjectFilter};
 use crate::services::path_key::object_name_key;
 use crate::services::scanner::core::normalizer::normalize_display_name;
 
@@ -11,9 +11,11 @@ pub async fn get_filtered_objects_with_conflict_check(
     pool: &sqlx::SqlitePool,
     filter: &ObjectFilter,
 ) -> Result<GetObjectsResult, String> {
-    let objects = crate::database::object_repo::get_filtered_objects(pool, filter)
+    let objects = crate::repo::object_repo::get_filtered_objects(pool, filter)
         .await
         .map_err(|e| e.to_string())?;
+
+    // No further processing needed for now.
 
     Ok(GetObjectsResult {
         objects,
@@ -51,7 +53,7 @@ pub async fn gc_lost_objects(
         status_filter: None,
     };
 
-    let objects = crate::database::object_repo::get_filtered_objects(pool, &filter)
+    let objects = crate::repo::object_repo::get_filtered_objects(pool, &filter)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -59,7 +61,7 @@ pub async fn gc_lost_objects(
         return Ok(vec![]);
     }
 
-    let mod_path_opt = crate::database::game_repo::get_mod_path(pool, game_id)
+    let mod_path_opt = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -121,8 +123,8 @@ pub async fn gc_lost_objects(
     if !candidates.is_empty() && candidates.len() == objects.len() && objects.len() > 1 {
         log::error!(
             "GC ABORTED for game '{}': would delete ALL {} objects. \
-             This indicates a folder_path format mismatch between DB and FS, \
-             not legitimate cleanup. DB objects kept intact.",
+              This indicates a folder_path format mismatch between DB and FS, \
+              not legitimate cleanup. DB objects kept intact.",
             game_id,
             objects.len()
         );
@@ -137,7 +139,7 @@ pub async fn gc_lost_objects(
             name,
             folder_path
         );
-        let _ = crate::database::object_repo::delete_object(pool, id).await;
+        let _ = crate::repo::object_repo::delete_object(pool, id).await;
         lost_names.push(name.clone());
     }
 
@@ -148,8 +150,8 @@ pub async fn get_category_counts_service(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     safe_mode: bool,
-) -> Result<Vec<crate::database::object_repo::CategoryCount>, String> {
-    crate::database::object_repo::get_category_counts(pool, game_id, safe_mode)
+) -> Result<Vec<crate::repo::object_repo::CategoryCount>, String> {
+    crate::repo::object_repo::get_category_counts(pool, game_id, safe_mode)
         .await
         .map_err(|e| e.to_string())
 }
@@ -158,7 +160,7 @@ pub async fn get_object_by_id_service(
     pool: &sqlx::SqlitePool,
     id: &str,
 ) -> Result<Option<crate::services::scanner::core::types::GameObject>, String> {
-    crate::database::object_repo::get_game_object_by_id(pool, id)
+    crate::repo::object_repo::get_game_object_by_id(pool, id)
         .await
         .map_err(|e| e.to_string())
 }

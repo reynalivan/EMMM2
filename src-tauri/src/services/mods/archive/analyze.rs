@@ -20,7 +20,7 @@ pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
         return Err("Multi-volume archives not supported".into());
     }
 
-    let format = ArchiveFormat::from_path(archive_path)
+    let format = ArchiveFormat::detect(archive_path)
         .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
 
     match format {

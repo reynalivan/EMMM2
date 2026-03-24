@@ -17,7 +17,8 @@ pub(crate) fn canonical_path_key_for_path(path: &Path) -> String {
 }
 
 pub(crate) fn canonical_name_key(value: &str) -> String {
-    value
+    let normalized = crate::services::scanner::core::normalizer::normalize_display_name(value);
+    normalized
         .chars()
         .map(|ch| {
             if ch.is_ascii_uppercase() {
@@ -33,7 +34,7 @@ pub(crate) fn names_equal_by_key(left: &str, right: &str) -> bool {
     canonical_name_key(left) == canonical_name_key(right)
 }
 
-pub(crate) fn folder_path_key(folder_path: &str, mods_path: Option<&str>) -> String {
+pub fn folder_path_key(folder_path: &str, mods_path: Option<&str>) -> String {
     canonical_collection_path_key(folder_path, mods_path)
         .unwrap_or_else(|| canonical_path_key_for_path(Path::new(folder_path)))
 }
@@ -44,10 +45,6 @@ pub(crate) fn object_name_key(name: &str) -> String {
 
 pub(crate) fn collection_name_key(name: &str) -> String {
     canonical_name_key(name.trim())
-}
-
-pub(crate) fn collection_mod_path_key(path: &str, mods_path: Option<&str>) -> String {
-    folder_path_key(path, mods_path)
 }
 
 pub(crate) fn resolve_collection_path(

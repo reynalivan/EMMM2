@@ -199,22 +199,40 @@ async fn test_list_mod_folders_malformed_info_json() {
 
 #[tokio::test]
 async fn test_get_filtered_objects_unsafe() {
-    use crate::database::object_repo::{get_filtered_objects, ObjectFilter};
-    use sqlx::sqlite::SqlitePoolOptions;
+    use crate::repo::object_repo::{get_filtered_objects, ObjectFilter};
 
-    let pool = SqlitePoolOptions::new()
-        .connect("sqlite:///C:/Users/yusri/AppData/Roaming/com.emmm2.app/app.db")
-        .await
-        .unwrap();
+    let test_db = crate::test_utils::init_test_db().await;
+    let pool = &test_db.pool;
 
-    // fetch a real game_id from DB
-    let game_id: (String,) = sqlx::query_as("SELECT game_id FROM objects LIMIT 1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    // Insert a dummy game and object
+    crate::test_utils::insert_test_game(
+        pool,
+        &crate::test_utils::TestGameFixture {
+            id: "test_game",
+            name: "Test",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_object(
+        pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "obj1",
+            game_id: "test_game",
+            name: "Object 1",
+            folder_path: Some("Obj1"),
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
 
     let filter = ObjectFilter {
-        game_id: game_id.0,
+        game_id: "test_game".to_string(),
         search_query: None,
         object_type: None,
         safe_mode: false,
@@ -223,17 +241,13 @@ async fn test_get_filtered_objects_unsafe() {
         status_filter: None,
     };
 
-    let result = get_filtered_objects(&pool, &filter).await;
+    let result = get_filtered_objects(pool, &filter).await;
     match result {
         Ok(objects) => {
-            println!("UNSAFE_MODE: Success! Found {} objects.", objects.len());
-            for o in objects.iter().take(5) {
-                println!("  - {}", o.name);
-            }
+            assert!(objects.len() >= 1);
         }
         Err(e) => {
-            println!("UNSAFE_MODE: ERROR! {:?}", e);
-            panic!("SQL Error");
+            panic!("SQL Error: {:?}", e);
         }
     }
 }

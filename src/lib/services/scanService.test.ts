@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { scanService } from './scanService';
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { GameType } from '../../types/game';
 
 vi.mock('@tauri-apps/api/core', () => {
   class ChannelMock {
@@ -20,8 +21,8 @@ describe('scanService', () => {
   describe('getMasterDb', () => {
     it('should invoke get_master_db with gameType', async () => {
       vi.mocked(invoke).mockResolvedValueOnce('{"mock":"json"}');
-      const result = await scanService.getMasterDb('GIMI');
-      expect(invoke).toHaveBeenCalledWith('get_master_db', { gameType: 'GIMI' });
+      const result = await scanService.getMasterDb(GameType.GIMI);
+      expect(invoke).toHaveBeenCalledWith('get_master_db', { gameType: GameType.GIMI });
       expect(result).toBe('{"mock":"json"}');
     });
   });
@@ -78,9 +79,9 @@ describe('scanService', () => {
       });
 
       const onEvent = vi.fn();
-      const result = await scanService.startScan('GIMI', '/mods', onEvent);
+      const result = await scanService.startScan(GameType.GIMI, '/mods', onEvent);
 
-      expect(invoke).toHaveBeenCalledWith('get_master_db', { gameType: 'GIMI' });
+      expect(invoke).toHaveBeenCalledWith('get_master_db', { gameType: GameType.GIMI });
 
       const startScanCallArgs = vi
         .mocked(invoke)
@@ -100,7 +101,7 @@ describe('scanService', () => {
         }>;
       expect(channelInstance.onmessage).toBeInstanceOf(Function);
 
-      const mockEvent = { type: 'progress', message: 'test' };
+      const mockEvent = { type: 'progress', message: '', action: 'Ignore' };
       channelInstance.onmessage(mockEvent);
       expect(onEvent).toHaveBeenCalledWith(mockEvent);
     });
@@ -113,7 +114,7 @@ describe('scanService', () => {
         return [];
       });
 
-      await scanService.getScanResult('GIMI', '/mods');
+      await scanService.getScanResult(GameType.GIMI, '/mods');
       expect(invoke).toHaveBeenCalledWith('get_scan_result', {
         modsPath: '/mods',
         dbJson: '[]',
@@ -152,7 +153,13 @@ describe('scanService', () => {
       });
 
       const onEvent = vi.fn();
-      const result = await scanService.syncDatabase('g1', 'Genshin', 'GIMI', '/mods', onEvent);
+      const result = await scanService.syncDatabase(
+        'g1',
+        'Genshin',
+        GameType.GIMI,
+        '/mods',
+        onEvent,
+      );
 
       const syncCallArgs = vi
         .mocked(invoke)
@@ -175,7 +182,7 @@ describe('scanService', () => {
         return { total_scanned: 10 };
       });
 
-      await scanService.syncDatabase('g1', 'Genshin', 'GIMI', '/mods');
+      await scanService.syncDatabase('g1', 'Genshin', GameType.GIMI, '/mods');
 
       const syncCallArgs = vi
         .mocked(invoke)
@@ -192,7 +199,7 @@ describe('scanService', () => {
       });
 
       const onEvent = vi.fn();
-      await scanService.scanPreview('g1', 'GIMI', '/mods', onEvent, ['/specific']);
+      await scanService.scanPreview('g1', GameType.GIMI, '/mods', onEvent, ['/specific']);
 
       const previewCallArgs = vi
         .mocked(invoke)
@@ -211,7 +218,7 @@ describe('scanService', () => {
 
   describe('quickImport', () => {
     it('should invoke sync_database_cmd with empty dbJson', async () => {
-      await scanService.quickImport('g1', 'Genshin', 'GIMI', '/mods');
+      await scanService.quickImport('g1', 'Genshin', GameType.GIMI, '/mods');
 
       const args = vi
         .mocked(invoke)
@@ -227,7 +234,7 @@ describe('scanService', () => {
           typeof scanService.commitScan
         >[4][0],
       ];
-      await scanService.commitScan('g1', 'Genshin', 'GIMI', '/mods', items);
+      await scanService.commitScan('g1', 'Genshin', GameType.GIMI, '/mods', items);
       expect(invoke).toHaveBeenCalledWith('commit_scan_cmd', {
         gameId: 'g1',
         gameName: 'Genshin',
@@ -245,7 +252,11 @@ describe('scanService', () => {
         return { Candidate1: 85 };
       });
 
-      const result = await scanService.scoreCandidatesBatch('/mods/MyMod', ['Candidate1'], 'GIMI');
+      const result = await scanService.scoreCandidatesBatch(
+        '/mods/MyMod',
+        ['Candidate1'],
+        GameType.GIMI,
+      );
 
       expect(invoke).toHaveBeenCalledWith('score_candidates_batch_cmd', {
         folderPath: '/mods/MyMod',

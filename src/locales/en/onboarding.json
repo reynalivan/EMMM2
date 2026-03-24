@@ -1,0 +1,55 @@
+{
+  "welcome": {
+    "title": "Welcome to EMMM",
+    "subtitle": "Enhanced Mod Manager for 3DMigoto Games",
+    "auto_detect": "XXMI Auto-Detect",
+    "auto_detect_tip": "Select your root XXMI folder, e.g. D:/Games/XXMI Launcher/",
+    "manual_setup": "Add Game Manually",
+    "description": "Auto-detect scans your XXMI Launcher folder for installed games.",
+    "select_folder_title": "Select your XXMI Launcher folder",
+    "duplicate_error": "This game folder is already added as \"{{name}}\"."
+  },
+  "manual_setup": {
+    "title": "Manual Setup",
+    "subtitle": "Add a 3DMigoto game instance manually",
+    "game_type": "Game Type",
+    "game_type_placeholder": "Select a game...",
+    "game_folder": "Game Folder",
+    "game_folder_placeholder": "Click Browse to select folder...",
+    "browse": "Browse",
+    "hint": "Select the root folder containing d3dx.ini, d3d11.dll, and /Mods",
+    "submit_button": "Add Game",
+    "submitting": "Validating...",
+    "game_types": {
+      "gimi": "Genshin Impact",
+      "srmi": "Star Rail",
+      "zzmi": "ZZZ",
+      "wwmi": "Wuthering Waves",
+      "efmi": "Arknight Endfield"
+    },
+    "validation": {
+      "game_type_required": "Please select a game type",
+      "path_required": "Please select a game folder",
+      "select_folder_title": "Select 3DMigoto game folder"
+    }
+  },
+  "result": {
+    "back_to_welcome": "Back to Welcome",
+    "back": "Back",
+    "title_one": "Game Found!",
+    "title_other": "{{count}} Games Found!",
+    "subtitle": "The following games have been detected and are ready to manage.",
+    "remove_tip": "Remove from detection",
+    "warnings_header": "Setup Warnings — you can still proceed",
+    "add_another": "Add Another",
+    "confirm": "Confirm"
+  },
+  "scanning": {
+    "title": "Scanning for games...",
+    "subtitle": "Looking for 3DMigoto instances in XXMI subfolders"
+  },
+  "indexing": {
+    "title": "Indexing your mods...",
+    "subtitle": "Please wait while EMMM scans the game folders."
+  }
+}

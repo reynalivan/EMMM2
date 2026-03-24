@@ -13,7 +13,7 @@ Systematic approach to cleaning code while keeping it green.
 - **One Thing at a Time**: Don't mix Feature work with Refactoring.
 - **Behavior Preserving**: The external API and behavior must not change.
 
-## 2. Project Rules (EMMM2 Context)
+## 2. Project Rules (EMMM Context)
 
 - **350-Line Limit**: Split files exceeding this limit (Rule: `meta_coding_standards.md`).
 - **No Truncation**: Always rewrite the full file.

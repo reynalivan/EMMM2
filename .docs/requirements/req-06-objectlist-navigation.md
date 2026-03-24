@@ -21,12 +21,12 @@
 
 As a user, I want to adjust the width of the objectlist, so that I can allocate screen space to the grid or preview panel as needed.
 
-| ID        | Type        | Criteria                                                                                                                                                                           |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Type        | Criteria                                                                                                                                                                              |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-06.1.1 | ✅ Positive | Given the main workspace, when the user drags the left divider, then the objectlist width updates in real-time between 180px (min) and 600px (max) at ≥ 60fps                         |
 | AC-06.1.2 | ✅ Positive | Given the user has resized the objectlist, when the app restarts, then the previous width (as a fractional percentage) is restored from `localStorage` in ≤ 50ms — before first paint |
 | AC-06.1.3 | ❌ Negative | Given the user drags the divider past the minimum (180px), then the drag stops at the boundary — objectlist content is never clipped or zero-width                                    |
-| AC-06.1.4 | ⚠️ Edge     | Given the OS window is resized to < 1024px total width, then all three panels redistribute fractionally while each stays above its minimum — no panel fully disappears             |
+| AC-06.1.4 | ⚠️ Edge     | Given the OS window is resized to < 1024px total width, then all three panels redistribute fractionally while each stays above its minimum — no panel fully disappears                |
 
 ---
 
@@ -34,12 +34,12 @@ As a user, I want to adjust the width of the objectlist, so that I can allocate 
 
 As a user, I want the objects in the objectlist grouped by logical categories (Characters, Weapons, UI), so that I can scan a large object list without scrolling through an unsorted flat list.
 
-| ID        | Type        | Criteria                                                                                                                                                                                      |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-06.2.1 | ✅ Positive | Given a parsed `GameSchema` with defined categories, when the objectlist renders, then objects are grouped under sticky category headers matching the schema                                   |
-| AC-06.2.2 | ✅ Positive | Given a successful render, then empty categories (no matching objects) are skipped entirely to save vertical space                                                                            |
-| AC-06.2.3 | ❌ Negative | Given an object with no schema category match, then it is placed in an "Uncategorized" section — the render cycle does not throw or produce a blank objectlist                                   |
-| AC-06.2.4 | ⚠️ Edge     | Given a large dataset, the list renders using a single flat virtualization instance (tanstack/react-virtual) — providing smooth continuous scroll across category boundaries                    |
+| ID        | Type        | Criteria                                                                                                                                                                     |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-06.2.1 | ✅ Positive | Given a parsed `GameSchema` with defined categories, when the objectlist renders, then objects are grouped under sticky category headers matching the schema                 |
+| AC-06.2.2 | ✅ Positive | Given a successful render, then empty categories (no matching objects) are skipped entirely to save vertical space                                                           |
+| AC-06.2.3 | ❌ Negative | Given an object with no schema category match, then it is placed in an "Uncategorized" section — the render cycle does not throw or produce a blank objectlist               |
+| AC-06.2.4 | ⚠️ Edge     | Given a large dataset, the list renders using a single flat virtualization instance (tanstack/react-virtual) — providing smooth continuous scroll across category boundaries |
 
 ---
 
@@ -47,11 +47,11 @@ As a user, I want the objects in the objectlist grouped by logical categories (C
 
 As a small-viewport user, I want the objectlist to become a slide-out drawer, so that the folder grid uses the full screen width.
 
-| ID        | Type        | Criteria                                                                                                                                                                               |
-| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Type        | Criteria                                                                                                                                                                                  |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-06.3.1 | ✅ Positive | Given viewport width < 768px, when the workspace renders, then the objectlist transforms into an absolutely-positioned overlay drawer (CSS `position: fixed`) — not a shrunk static panel |
-| AC-06.3.2 | ✅ Positive | Given the mobile drawer is open, when the user selects an object, then the drawer closes automatically within ≤ 200ms, revealing the full-width folder grid                            |
-| AC-06.3.3 | ❌ Negative | Given viewport < 768px and the drawer is closed, then the underlying grid/preview content is fully interactable — no invisible overlay blocking clicks                                 |
+| AC-06.3.2 | ✅ Positive | Given the mobile drawer is open, when the user selects an object, then the drawer closes automatically within ≤ 200ms, revealing the full-width folder grid                               |
+| AC-06.3.3 | ❌ Negative | Given viewport < 768px and the drawer is closed, then the underlying grid/preview content is fully interactable — no invisible overlay blocking clicks                                    |
 | AC-06.3.4 | ⚠️ Edge     | Given the user rotates the device from portrait (< 768px) to landscape (≥ 768px) mid-session, then the objectlist transitions from drawer to panel layout without requiring a page reload |
 
 ---

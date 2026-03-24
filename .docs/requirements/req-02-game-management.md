@@ -35,14 +35,14 @@ As a user, I want the app to auto-detect installed games from my launcher folder
 
 As a user, I want to manually add a game by selecting its type and folder path, so that I can configure games the auto-detect heuristic missed.
 
-| ID        | Type        | Criteria                                                                                                                                                                                          |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-02.2.1 | ✅ Positive | Given a valid `SupportedGame` variant and a valid folder path, when submission is invoked, then the game is validated, assigned a UUID, and persisted to `games` table in ≤ 300ms                 |
-| AC-02.2.2 | ✅ Positive | Given the newly added game is the first game in the DB, then it is automatically set as the `active_game_id` and the frontend re-routes to `/dashboard`                                           |
-| AC-02.2.3 | ❌ Negative | Given a game type + physical path combination already exists in the DB, when manual addition is invoked, then a `DuplicateGame` error is returned — no second record is created                   |
-| AC-02.2.4 | ❌ Negative | Given a path missing the `/Mods` folder, `d3dx.ini`, `d3d11.dll`, or a loader `.exe`, when add is invoked, then the backend returns a `PathValidationError` showing which core file is missing    |
-| AC-02.2.5 | ❌ Negative | Given an unrecognized or spoofed `game_type` string in the RPC payload, when the backend deserializes it, then `serde` fails safely and returns a typed error — never executes unknown code paths |
-| AC-02.2.6 | ⚠️ Edge     | Given multiple rapid clicks on the "Submit" button before the first request resolves, then the backend `INSERT` is idempotent (UNIQUE constraint) and only one DB record is created               |
+| ID        | Type        | Criteria                                                                                                                                                                                           |
+| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-02.2.1 | ✅ Positive | Given a valid `SupportedGame` variant and a valid folder path, when submission is invoked, then the game is validated, assigned a UUID, and persisted to `games` table in ≤ 300ms                  |
+| AC-02.2.2 | ✅ Positive | Given the newly added game is the first game in the DB, then it is automatically set as the `active_game_id` and the frontend re-routes to `/dashboard`                                            |
+| AC-02.2.3 | ❌ Negative | Given a game type + physical path combination already exists in the DB, when manual addition is invoked, then a `DuplicateGame` error is returned — no second record is created                    |
+| AC-02.2.4 | ❌ Negative | Given a path missing the `/Mods` folder, `d3dx.ini`, `d3d11.dll`, or a loader `.exe`, when add is invoked, then the backend returns a `PathValidationError` showing which core file is missing     |
+| AC-02.2.5 | ❌ Negative | Given an unrecognized or spoofed `game_type` integer in the RPC payload, when the backend deserializes it, then `serde` fails safely and returns a typed error — never executes unknown code paths |
+| AC-02.2.6 | ⚠️ Edge     | Given multiple rapid clicks on the "Submit" button before the first request resolves, then the backend `INSERT` is idempotent (UNIQUE constraint) and only one DB record is created                |
 
 ---
 
@@ -66,7 +66,7 @@ As a user, I want to launch my game with mod injections active, so that I can pl
 | ID        | Type        | Criteria                                                                                                                                                                                                    |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-02.4.1 | ✅ Positive | Given a configured game with a loader exe, when launch is invoked, then the mod loader starts first, followed by the game exe — both as detached child processes — with the loader launching within ≤ 200ms |
-| AC-02.4.2 | ✅ Positive | Given `auto_close_on_launch = true`, when the game launches successfully, then the EMMM2 process terminates gracefully within 2s                                                                            |
+| AC-02.4.2 | ✅ Positive | Given `auto_close_on_launch = true`, when the game launches successfully, then the EMMM process terminates gracefully within 2s                                                                             |
 | AC-02.4.3 | ✅ Positive | Given custom launch arguments are stored for the game, when launching, then the arguments are appended verbatim to the game exe process                                                                     |
 | AC-02.4.4 | ❌ Negative | Given no game config found for the given `game_id`, when launch is invoked, then a "Game not found" error toast is shown — no process is spawned                                                            |
 | AC-02.4.5 | ❌ Negative | Given the game executable path no longer exists on disk, when launch is invoked, then an `IO: NotFound` error is returned to the user — no crash                                                            |

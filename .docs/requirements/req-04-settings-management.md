@@ -5,8 +5,9 @@
 - **Problem Statement**: Users need persistent control over app-wide preferences (theme, game paths, data hygiene, error monitoring) in a single place — without re-configuring after restarts or dealing with silent state drift between the UI and backend.
 - **Proposed Solution**: A centralized Settings panel (tabs: General / Games / Privacy / Advanced / Logs) backed by a DB key-value store, with optimistic preference updates, game CRUD proxy, a "Rescan Library" trigger, a weekly scheduled maintenance task (orphan cleanup + thumbnail LRU), a guarded factory reset with pre-wipe backup, and an Error Log Viewer reading from `tauri-plugin-log` files.
 - **Success Criteria**:
-  - Any preference change (toggle, dropdown) reflects in the UI in ≤ 100ms (optimistic local update).
-  - Settings page initial load completes in ≤ 300ms.
+  - App reaches interactive state (window fully rendered, IPC ready) in ≤ 2s on an NTFS SSD from cold start.
+  - Multi-language localization (EN, ID, ZH) initializes in ≤ 200ms during boot.
+  - DB migration completes in ≤ 500ms for a database with up to 10,000 rows.
   - Atomic config save completes in ≤ 30ms (`*.tmp` → rename).
   - Factory reset completes (wipe + backup) in ≤ 3s for a DB up to 50MB.
   - Database maintenance completes in ≤ 10s for a DB with 10,000 mod records.
@@ -23,12 +24,12 @@
 
 As a user, I want to configure the app's theme and behavior from the General tab, so that the app matches my preferences and saves across restarts.
 
-| ID        | Type        | Criteria                                                                                                                                                                                        |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-04.1.1 | ✅ Positive | Given the General tab, when I change Theme (Dark / Light / System / Cyberpunk), then the CSS theme class changes on `<html>` within ≤ 100ms and the value persists across restart               |
-| AC-04.1.2 | ✅ Positive | Given the General tab, when I toggle "Auto-Close on Launch", then the setting is persisted to DB and the next game launch respects the new value                                                |
-| AC-04.1.3 | ❌ Negative | Given the Language dropdown, when I select any option other than English (EN), then a tooltip indicates "Only English is supported in this version" and the selection is reverted               |
-| AC-04.1.4 | ⚠️ Edge     | Given rapid toggling of the theme setting (> 5 clicks in 1s), then all intermediate states resolve in order (no queue race to DB) and the final persisted value matches the last user selection |
+| ID        | Type        | Criteria                                                                                                                                                                                                                            |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-04.1.1 | ✅ Positive | Given the General tab, when I change Theme (Dark / Light / System / Cyberpunk / Onyx), then the CSS theme class changes on `<html>` within ≤ 100ms and the value persists across restart; UI must adhere to **Zero-Literal Policy** |
+| AC-04.1.2 | ✅ Positive | Given the General tab, when I toggle "Auto-Close on Launch", then the setting is persisted to DB and the next game launch respects the new value                                                                                    |
+| AC-04.1.3 | ✅ Positive | Given the Language dropdown, when I select English (EN), Indonesian (ID), or Chinese (ZH), then the UI swaps languages instantly (≤ 100ms) and persists the choice                                                                  |
+| AC-04.1.4 | ⚠️ Edge     | Given a language selection not yet supported, then a tooltip "Requested language not yet available" is shown and the selection is reverted                                                                                          |
 
 ---
 
@@ -119,29 +120,29 @@ As a developer/power-user, I want to view recent application logs from within Se
 ```
 Settings Page (React)
   ├── Tab: General
-  │   ├── theme toggle → invoke('set_preference', { key: 'theme', value })
-  │   └── auto_close toggle → invoke('set_preference', { key: 'auto_close', value })
+  │   ├── theme toggle → commands.setPreference({ key: 'theme', value })
+  │   └── auto_close toggle → commands.setPreference({ key: 'auto_close', value })
   ├── Tab: Games
   │   ├── list → useQuery('games', get_games)
   │   ├── add → AddGameModal (Epic 02)
-  │   ├── rescan → invoke('trigger_scan', { game_id })
-  │   └── remove → invoke('remove_game', game_id)
+  │   ├── rescan → commands.triggerScan({ game_id })
+  │   └── remove → commands.removeGame({ game_id })
   ├── Tab: Privacy
-  │   ├── PIN set/change → invoke('set_pin', { plain_pin }) → Argon2 hash stored
-  │   ├── keywords list → invoke('set_safe_mode_keywords', { keywords })
+  │   ├── PIN set/change → commands.setPin({ plain_pin }) → Argon2 hash stored
+  │   ├── keywords list → commands.setSafeModeKeywords({ keywords })
   │   └── force_exclusive_mode toggle
   ├── Tab: Advanced
-  │   ├── maintenance → invoke('run_db_maintenance') → MaintenanceResult
-  │   └── factory reset → invoke('factory_reset') → navigate('/welcome')
+  │   ├── maintenance → commands.runDbMaintenance() → MaintenanceResult
+  │   └── factory reset → commands.factoryReset() → navigate('/welcome')
   └── Tab: Logs
-      └── invoke('get_recent_logs', { limit: 500, level_filter }) → Vec<LogEntry>
+      └── commands.getLogs({ limit: 500, count: 500 }) → Vec<String>
 
 Backend
   ├── set_preference(key: SettingKey, value) → preferences KV table
   ├── run_db_maintenance() → { rows_deleted, bytes_freed }
   ├── factory_reset() → backup DB → wipe tables → seed empty migrations
   ├── set_pin(plain_pin) → Argon2::hash(plain_pin) → save to config
-  └── get_recent_logs(limit, level_filter) → read tauri-plugin-log file tail
+  └── get_logs(limit, count) → read tauri-plugin-log file tail using app_log_dir()
 
 Weekly Scheduled Maintenance (Tokio interval, 7 days):
   remove orphaned collection_items WHERE folder_id NOT IN (SELECT id FROM folders)
@@ -151,17 +152,17 @@ Weekly Scheduled Maintenance (Tokio interval, 7 days):
 
 ### Integration Points
 
-| Component    | Detail                                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------------------- |
-| Persistence  | SQLite `app_settings` (K-V) and `games` tables; `ConfigService` uses `Mutex<AppSettings>` and synchronous DB writes |
-| PIN Hashing  | `Argon2` via `argon2` crate; stored in `safe_mode.pin_hash`                                                   |
-| Mode Switch  | `PrivacyManager::switch_mode` → atomic database updates + corridor directory moves + watcher suppression       |
-| Maintenance  | `maintenance_service.rs` → `VACUUM`, `ThumbnailCache::prune_orphans`, `remove_orphaned_collection_items`, `cleanup_old_empty_trash_entries` |
-| Trash Purge  | `cleanup_old_empty_trash_entries` logic in `maintenance_service.rs` handles folders > 30 days old             |
-| Log Viewer   | `tauri-plugin-log` integration via `SettingsPage` log tab                                                     |
-| Validation   | Frontend: `react-hook-form` + `zod`; Backend: `normalize_keywords` trim/lowercase                             |
-| Game Setup   | `invoke('add_game')` and `invoke('auto_detect_games')` (Epic 03)                                              |
-| Weekly Scheduler    | `tokio::time::interval(Duration::from_secs(7 * 86400))` — runs in background task     |
+| Component        | Detail                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Persistence      | SQLite `app_settings` (K-V) and `games` tables; `ConfigService` uses `Mutex<AppSettings>` and synchronous DB writes                         |
+| PIN Hashing      | `Argon2` via `argon2` crate; stored in `safe_mode.pin_hash`                                                                                 |
+| Mode Switch      | `PrivacyManager::switch_mode` → atomic database updates + corridor directory moves + watcher suppression                                    |
+| Maintenance      | `maintenance_service.rs` → `VACUUM`, `ThumbnailCache::prune_orphans`, `remove_orphaned_collection_items`, `cleanup_old_empty_trash_entries` |
+| Trash Purge      | `cleanup_old_empty_trash_entries` logic in `maintenance_service.rs` handles folders > 30 days old                                           |
+| Log Viewer       | `tauri-plugin-log` integration via `SettingsPage` log tab                                                                                   |
+| Validation       | Frontend: `react-hook-form` + `zod`; Backend: `normalize_keywords` trim/lowercase                                                           |
+| Game Setup       | `commands.addGame()` and `commands.autoDetectGames()` (Epic 03)                                                                             |
+| Weekly Scheduler | `tokio::time::interval(Duration::from_secs(7 * 86400))` — runs in background task                                                           |
 
 ### Security & Privacy
 

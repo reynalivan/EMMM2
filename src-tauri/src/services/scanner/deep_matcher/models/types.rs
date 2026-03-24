@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ==================== STAGED TYPES (NEW) ====================
 
 /// Matching mode for staged matcher.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum MatchMode {
     /// Fast mode: minimal INI scan, shallow recursion.
     Quick,
@@ -26,7 +26,7 @@ impl std::fmt::Display for MatchMode {
 }
 
 /// Match status indicating whether candidate needs review.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum MatchStatus {
     /// Accepted automatically with high confidence.
     AutoMatched,
@@ -47,9 +47,10 @@ impl std::fmt::Display for MatchStatus {
 }
 
 /// A single candidate with score and structured reasons.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Candidate {
     /// Stable identifier for the database entry.
+    #[specta(type = f64)]
     pub entry_id: usize,
     /// Display name.
     pub name: String,
@@ -64,7 +65,7 @@ pub struct Candidate {
 }
 
 /// Evidence collected during matching process.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Evidence {
     /// Unique hashes found and matched (sorted).
     pub matched_hashes: Vec<String>,
@@ -73,8 +74,10 @@ pub struct Evidence {
     /// INI section headers matched (sorted).
     pub matched_sections: Vec<String>,
     /// Number of INI files scanned.
+    #[specta(type = f64)]
     pub scanned_ini_files: usize,
     /// Number of name items (subfolders + file stems) scanned.
+    #[specta(type = f64)]
     pub scanned_name_items: usize,
 }
 
@@ -97,7 +100,7 @@ impl Default for Evidence {
 }
 
 /// Structured reason explaining why a candidate scored.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type")]
 pub enum Reason {
     /// Hash overlap evidence.
@@ -128,7 +131,7 @@ pub enum Reason {
 }
 
 /// Result contract for staged matcher (new implementation).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct StagedMatchResult {
     /// Match status after staged evaluation.
     pub status: MatchStatus,
@@ -208,7 +211,9 @@ pub const MAX_EVIDENCE_SECTIONS: usize = 50;
 // ==================== SHARED TYPES ====================
 
 /// Matching confidence level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, specta::Type,
+)]
 pub enum Confidence {
     None,
     Low,
@@ -230,7 +235,7 @@ impl std::fmt::Display for Confidence {
 }
 
 /// A named skin/outfit with aliases.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CustomSkin {
     pub name: String,
     #[serde(default)]
@@ -242,7 +247,7 @@ pub struct CustomSkin {
 }
 
 /// A single DB entry from Master DB.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DbEntry {
     pub name: String,
     #[serde(default)]

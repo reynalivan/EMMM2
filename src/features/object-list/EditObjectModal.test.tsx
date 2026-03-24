@@ -170,6 +170,8 @@ const mockObject: ObjectSummary = {
   folder_path: 'Diluc',
   object_type: 'Character',
   sub_category: null,
+  status: 1,
+  created_at: '2025-01-01T00:00:00Z',
   mod_count: 5,
   enabled_count: 2,
   thumbnail_path: null,
@@ -179,6 +181,8 @@ const mockObject: ObjectSummary = {
   has_naming_conflict: false,
   metadata: '{"element":"Pyro"}',
   tags: '[]',
+  hash_db: null,
+  custom_skins: null,
 };
 
 describe('EditObjectModal', () => {
@@ -233,7 +237,7 @@ describe('EditObjectModal', () => {
           formState: {
             ...real.form.formState,
             errors: {
-              name: { type: 'required', message: 'Name is required' },
+              name: { type: 'required', message: '', action: 'Ignore' },
             },
           },
         },

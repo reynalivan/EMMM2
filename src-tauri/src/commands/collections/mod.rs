@@ -1,1 +1,1 @@
-pub mod collection_cmds;
+pub mod cmds;

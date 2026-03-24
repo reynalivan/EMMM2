@@ -18,10 +18,13 @@ pub use types::ModFolder;
 /// Returns folder entries with enabled/disabled state, thumbnails, metadata.
 /// Covers: TC-4.1-01 (Deep Navigation), TC-4.1-02 (Sort by Date)
 #[tauri::command]
+#[specta::specta]
 pub async fn list_mod_folders(
     config: tauri::State<'_, ConfigService>,
+    _game_id: String,
     mods_path: String,
     sub_path: Option<String>,
+    _object_id: Option<String>,
 ) -> Result<types::FolderGridResponse, String> {
     let mut response = listing::list_mod_folders_inner(mods_path, sub_path).await?;
     response.children = helpers::apply_safe_mode_filter(response.children, &config);
@@ -33,7 +36,9 @@ pub async fn list_mod_folders(
 /// Delegates to ThumbnailCache::resolve() which caps concurrency (4 max),
 /// checks folder-keyed L1, and falls back to FS traversal + image processing.
 #[tauri::command]
+#[specta::specta]
 pub async fn get_mod_thumbnail(
+    game_id: String,
     folder_path: String,
     config: tauri::State<'_, ConfigService>,
 ) -> Result<Option<String>, String> {
@@ -46,11 +51,12 @@ pub async fn get_mod_thumbnail(
         }
     }
 
-    ThumbnailCache::resolve(&folder_path).await
+    ThumbnailCache::resolve(&game_id, &folder_path).await
 }
 
 /// Delete the thumbnail file for a mod folder (if found) and invalidate cache.
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_mod_thumbnail(folder_path: String) -> Result<(), String> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
     use crate::services::scanner::core::thumbnail::find_thumbnail;

@@ -9,6 +9,7 @@
 
 import { X, Check, Ban, Search } from 'lucide-react';
 import { useState, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { type ScanPreviewItem, type ConfirmedScanItem } from '../../lib/services/scanService';
 
 import type { GameConfig } from '../../types/game';
@@ -34,6 +35,7 @@ export default function ScanReviewModal({
   onConfirm,
   onClose,
 }: ScanReviewModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   // Overrides: folder_path -> MasterDbEntry
   const [overrides, setOverrides] = useState<Record<string, MasterDbEntry | null>>({});
   // Skips: folder_path -> boolean
@@ -114,6 +116,9 @@ export default function ScanReviewModal({
         thumbnailPath: ov ? ov.thumbnail_path : item.thumbnailPath,
         tagsJson: ov ? JSON.stringify(ov.tags) : item.tagsJson,
         metadataJson: ov ? (ov.metadata ? JSON.stringify(ov.metadata) : null) : item.metadataJson,
+        hashDbJson: item.hashDbJson,
+        customSkinsJson: item.customSkinsJson,
+        dbThumbnail: item.dbThumbnail,
         skip: isSkipped,
       };
     });
@@ -183,13 +188,15 @@ export default function ScanReviewModal({
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t('common:close')}
           disabled={isCommitting}
         >
           <X size={16} />
         </button>
 
-        <h3 className="font-bold text-xl mb-3">Review {items.length} Scan Results</h3>
+        <h3 className="font-bold text-xl mb-3">
+          {t('objects:scan_review.title', { count: items.length })}
+        </h3>
 
         {/* Header Controls: Main Tabs & Delete Bulk Action */}
         <div className="flex items-end justify-between mb-1 mt-2">
@@ -220,7 +227,7 @@ export default function ScanReviewModal({
                     setSelected(new Set()); // Reset selection
                   }}
                 >
-                  {tab}
+                  {t(`objects:scan_review.tabs.${tab.toLowerCase()}`, tab)}
                   <span
                     className={`text-[10px] uppercase font-bold px-1.5 py-0.5 leading-none rounded-full border ${pillClass}`}
                   >
@@ -238,9 +245,9 @@ export default function ScanReviewModal({
             <button
               className="btn btn-xs h-7 min-h-0 btn-error shadow-sm shadow-error/10 hover:shadow-error/20 btn-outline ml-4 mb-2.5"
               onClick={handleDeclineSelected}
-              title="Bulk skip all selected items"
+              title={t('objects:scan_review.bulk_skip_tip')}
             >
-              <Ban size={12} /> Flag as Skip ({selected.size})
+              <Ban size={12} /> {t('objects:scan_review.bulk_skip_label')} ({selected.size})
             </button>
           )}
         </div>
@@ -251,7 +258,7 @@ export default function ScanReviewModal({
             {activeMainTab !== 'Existing' && (
               <>
                 <span className="text-xs uppercase font-semibold text-base-content/40 tracking-wider mr-2">
-                  Filter:
+                  {t('objects:scan_review.filter_label')}:
                 </span>
                 {['Excellent', 'High', 'Medium', 'Low', 'Manual'].map((conf) => {
                   // calculate count for this chip based on activeMainTab
@@ -272,7 +279,7 @@ export default function ScanReviewModal({
                           : 'badge-outline border-base-300 text-base-content/60 hover:bg-base-200'
                       }`}
                     >
-                      {conf}
+                      {t(`objects:scan_review.tabs.${conf.toLowerCase()}`, conf)}
                       <span
                         className={`text-[9px] rounded-full px-1 py-0.5 leading-none ${
                           activeFilters.has(conf)
@@ -298,7 +305,7 @@ export default function ScanReviewModal({
             <input
               type="text"
               className="input input-sm w-full pl-9 pr-3 bg-base-200/50 border-base-300 focus:border-primary/50"
-              placeholder="Search by folder name..."
+              placeholder={t('objects:scan_review.search_placeholder')}
               value={globalSearch}
               onChange={(e) => setGlobalSearch(e.target.value)}
             />
@@ -308,7 +315,7 @@ export default function ScanReviewModal({
         {/* Main list */}
         <div className="flex-1 mt-2 overflow-y-auto overflow-x-hidden border border-base-300/30 rounded-lg bg-base-200/30 relative">
           <table className="table table-sm table-pin-rows">
-            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 z-150 [&_th]:bg-black/40 [&_th]:backdrop-blur-md">
+            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 z-150 [&_th]:bg-base-300/40 [&_th]:backdrop-blur-md">
               <tr>
                 <th className="w-10 text-center">
                   <input
@@ -325,14 +332,16 @@ export default function ScanReviewModal({
                           visibleItems.every((i) => selected.has(i.folderPath)),
                       )
                     }
-                    title="Select/Deselect all visible items"
+                    title={t('objects:scan_review.select_deselect_all_tip')}
                   />
                 </th>
-                <th className="pl-4">Folder Name</th>
-                <th>Target Detected</th>
-                <th>Type</th>
-                <th className="text-center">Percentage</th>
-                <th className="text-center border-l border-white/5">Action</th>
+                <th className="pl-4">{t('objects:scan_review.headers.folder_name')}</th>
+                <th>{t('objects:scan_review.headers.target_detected')}</th>
+                <th>{t('objects:scan_review.headers.type')}</th>
+                <th className="text-center">{t('objects:scan_review.headers.percentage')}</th>
+                <th className="text-center border-l border-base-content/5">
+                  {t('objects:scan_review.headers.action')}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -367,7 +376,7 @@ export default function ScanReviewModal({
               {items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-8 text-base-content/40 text-sm">
-                    No mod folders found.
+                    {t('objects:scan_review.no_folders')}
                   </td>
                 </tr>
               )}
@@ -378,7 +387,7 @@ export default function ScanReviewModal({
         {/* Actions */}
         <div className="modal-action border-t border-base-200 pt-4 mt-3">
           <button className="btn btn-sm" onClick={onClose} disabled={isCommitting}>
-            Cancel
+            {t('common:action.cancel')}
           </button>
           <button
             className="btn btn-sm btn-primary gap-2"
@@ -391,8 +400,10 @@ export default function ScanReviewModal({
               <Check size={14} />
             )}
             {isCommitting
-              ? 'Committing...'
-              : `Confirm ${matchedCount + unmatchedCount + alreadyMatchedCount} Mods`}
+              ? t('objects:scan_review.committing_state')
+              : t('objects:scan_review.confirm_button_label', {
+                  count: matchedCount + unmatchedCount + alreadyMatchedCount,
+                })}
           </button>
         </div>
       </div>

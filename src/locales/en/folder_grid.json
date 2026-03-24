@@ -1,0 +1,50 @@
+{
+  "conflicts": {
+    "title": "Mod Conflict",
+    "desc": "Multiple mods for the same object are enabled.",
+    "resolution_desc": "Select the mod you want to keep active, or ignore the warning to allow this specific combination.",
+    "incoming": "Incoming",
+    "keep_selected": "Enable Only Selected",
+    "ignore_warning": "Ignore Warning",
+    "toast": {
+      "resolved": "Conflict resolved: only selected mod is enabled.",
+      "ignored": "Conflict ignored for this combination.",
+      "resolve_failed": "Resolution failed: {{error}}",
+      "ignore_failed": "Failed to ignore: {{error}}"
+    }
+  },
+  "move": {
+    "title": "Move to Object",
+    "label": "Object",
+    "placeholder": "Search objects...",
+    "no_results": "No objects found",
+    "current_marker": "(Current)",
+    "status_label": "Set Status",
+    "toast": {
+      "success": "Moved to {{name}}",
+      "failed": "Failed to move: {{error}}"
+    }
+  },
+  "tags": {
+    "title": "Bulk Tagging",
+    "placeholder": "Type tag & press Enter...",
+    "empty": "No tags added yet",
+    "toast": {
+      "success": "Tags updated for {{count}} mods",
+      "failed": "Failed to update tags: {{error}}"
+    }
+  },
+  "resolution": {
+    "title": "Name Conflict Detected",
+    "loading": "Loading folder details...",
+    "enabled_label": "Enabled Version",
+    "disabled_label": "Disabled Version"
+  },
+  "breadcrumbs": {
+    "root": "ROOT"
+  },
+  "context": {
+    "switching": "Switching context...",
+    "active_warning": "However, this mod is currently <strong>Active (Enabled)</strong>. Active mods cannot be modified directly."
+  }
+}

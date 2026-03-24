@@ -3,4 +3,5 @@ pub mod dashboard_cmds;
 pub mod game_cmds;
 pub mod hotkey_cmds;
 pub mod settings_cmds;
+pub mod theme_cmds;
 pub mod update_cmds;

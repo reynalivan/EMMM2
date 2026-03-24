@@ -13,6 +13,7 @@ interface FolderCardContextMenuProps {
   onOpenMoveDialog?: (folder: ModFolder) => void;
   onNavigate?: (folderName: string) => void;
   onToggleSafe?: () => void;
+  onSyncWithDb?: () => void;
 }
 
 export default function FolderCardContextMenu({
@@ -25,6 +26,7 @@ export default function FolderCardContextMenu({
   onOpenMoveDialog,
   onNavigate,
   onToggleSafe,
+  onSyncWithDb,
 }: FolderCardContextMenuProps) {
   const items = useModContextMenuItems({
     folder,
@@ -36,6 +38,7 @@ export default function FolderCardContextMenu({
     onToggleSafe,
     onOpenMoveDialog,
     onNavigateModPack: onNavigate,
+    onSyncWithDb,
   });
 
   return (

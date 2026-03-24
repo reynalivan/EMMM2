@@ -46,7 +46,7 @@ fn rename_rejects_case_insensitive_duplicate() {
     ));
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already exists"));
+    assert!(result.unwrap_err().to_string().contains("already exists"));
 }
 
 #[test]
@@ -101,7 +101,10 @@ fn rename_rejects_invalid_chars() {
     ));
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid folder name"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Invalid folder name"));
 }
 
 #[test]
@@ -190,7 +193,7 @@ fn rename_path_collision() {
     ));
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already exists"));
+    assert!(result.unwrap_err().to_string().contains("already exists"));
 }
 
 // Covers: TC-20-05 (Collision detection on toggle)
@@ -213,7 +216,7 @@ fn toggle_mod_collision() {
     ));
 
     assert!(result.is_err());
-    let err_msg = result.unwrap_err();
+    let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("Conflict") || err_msg.contains("exists"));
 }
 
@@ -260,4 +263,20 @@ fn rename_updates_info_json_preserves_other_keys() {
     assert_eq!(parsed["author"], "TestAuthor");
     assert_eq!(parsed["description"], "Don't touch this");
     assert_eq!(parsed["is_favorite"], true);
+}
+
+#[test]
+fn test_open_in_explorer_rejects_escape() {
+    let tmp = TempDir::new().unwrap();
+
+    // Build a traversal path that does NOT exist under the temp dir:
+    // e.g. /tmp/abc123/../../nonexistent
+    let escape_path = tmp.path().join("..\\..\\nonexistent_escape_path_xyz");
+
+    // check_folder_contents is the guard function — it rejects non-existent paths.
+    // The open_in_explorer command's path-cap guard (canonicalize + starts_with) is
+    // tested at the integration level since it requires Tauri's ConfigService state.
+    let result = check_folder_contents(&escape_path);
+
+    assert!(result.is_err(), "Expected Err for escape path, got Ok");
 }

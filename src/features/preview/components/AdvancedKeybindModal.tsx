@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Keyboard, Check, X, Lightbulb } from 'lucide-react';
 import { mapBrowserKeyTo3DMigoto } from './keyMapper';
 
@@ -19,6 +20,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
   objectName,
   folderName,
 }) => {
+  const { t } = useTranslation(['preview', 'common']);
   const [isListening, setIsListening] = useState(true);
 
   const lowerInitial = initialValue.toLowerCase();
@@ -131,7 +133,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
   return (
     <dialog
       ref={dialogRef}
-      className="modal bg-base-300/60 backdrop-blur-sm"
+      className="modal bg-overlay-mask backdrop-blur-sm"
       onClick={handleDialogClick}
       onClose={onClose}
     >
@@ -140,7 +142,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Keyboard className="text-primary" size={20} />
-              <h3 className="font-bold text-lg">Advanced Key Capture</h3>
+              <h3 className="font-bold text-lg">{t('preview:ini_editor.advanced_capture')}</h3>
             </div>
             <button className="btn btn-sm btn-circle btn-ghost" onClick={handleCancel}>
               <X size={16} />
@@ -162,13 +164,13 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
             )}
 
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-base-content/50">Original Key:</span>
+              <span className="text-base-content/50">{t('preview:ini_editor.original_key')}:</span>
               {initialValue ? (
                 <kbd className="font-mono bg-base-200/50 px-1.5 py-0.5 rounded text-base-content/80 font-medium tracking-wide">
                   {initialValue}
                 </kbd>
               ) : (
-                <span className="text-base-content/30 italic">Not set</span>
+                <span className="text-base-content/30 italic">{t('common:status.not_set')}</span>
               )}
             </div>
           </div>
@@ -194,12 +196,14 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
             {isListening ? (
               <div className="flex flex-col items-center gap-2 text-primary animate-pulse">
                 <Keyboard size={32} />
-                <span className="font-bold tracking-wide">PRESS KEY COMBINATION...</span>
+                <span className="font-bold tracking-wide">
+                  {t('preview:ini_editor.press_key_combo')}
+                </span>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2 text-base-content/70">
                 <span className="text-sm font-medium">
-                  Captured. Click to recapture or edit below.
+                  {t('preview:ini_editor.captured_click_to_recapture')}
                 </span>
               </div>
             )}
@@ -212,11 +216,13 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
             {shiftKey && <kbd className="kbd text-secondary border-secondary/30">SHIFT</kbd>}
 
             {mainKey ? (
-              <kbd className="kbd bg-base-100 text-white shadow-sm border-base-content/30 px-4">
+              <kbd className="kbd bg-base-100 text-base-content shadow-sm border-base-content/30 px-4">
                 {mainKey}
               </kbd>
             ) : (
-              <span className="text-base-content/30 font-medium">No Key</span>
+              <span className="text-base-content/30 font-medium">
+                {t('preview:ini_editor.no_key')}
+              </span>
             )}
           </div>
 
@@ -224,18 +230,17 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
           <div className="bg-base-100 rounded-lg p-4 border border-base-content/10">
             <div className="flex items-center gap-2 text-sm font-medium mb-3 text-base-content/80">
               <Lightbulb size={16} className="text-warning" />
-              <span>Strict Modifiers (3DMigoto)</span>
+              <span>{t('preview:ini_editor.strict_modifiers')}</span>
             </div>
 
             <p className="text-xs text-base-content/60 mb-4 leading-relaxed">
-              By default, a keybind triggers even if extra modifiers are pressed. Check these to{' '}
-              <b>prevent</b> triggering when the modifier is held down.
+              {t('preview:ini_editor.strict_modifiers_hint')}
             </p>
 
             <div className="flex items-center gap-6">
               <label
                 className={`flex gap-3 items-center cursor-pointer transition-opacity ${shiftKey ? 'opacity-40 grayscale pointer-events-none' : 'hover:opacity-80'}`}
-                title={shiftKey ? 'Shift is part of the combo, cannot restrict.' : ''}
+                title={shiftKey ? t('preview:ini_editor.shift_restriction_disabled') : ''}
               >
                 <input
                   type="checkbox"
@@ -244,12 +249,12 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
                   onChange={(e) => setNoShift(e.target.checked)}
                   disabled={shiftKey}
                 />
-                <span className="text-sm font-medium">no_shift</span>
+                <span className="text-sm font-medium">{t('preview:ini_editor.no_shift')}</span>
               </label>
 
               <label
                 className={`flex gap-3 items-center cursor-pointer transition-opacity ${ctrlKey ? 'opacity-40 grayscale pointer-events-none' : 'hover:opacity-80'}`}
-                title={ctrlKey ? 'Ctrl is part of the combo, cannot restrict.' : ''}
+                title={ctrlKey ? t('preview:ini_editor.ctrl_restriction_disabled') : ''}
               >
                 <input
                   type="checkbox"
@@ -258,12 +263,12 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
                   onChange={(e) => setNoCtrl(e.target.checked)}
                   disabled={ctrlKey}
                 />
-                <span className="text-sm font-medium">no_ctrl</span>
+                <span className="text-sm font-medium">{t('preview:ini_editor.no_ctrl')}</span>
               </label>
 
               <label
                 className={`flex gap-3 items-center cursor-pointer transition-opacity ${altKey ? 'opacity-40 grayscale pointer-events-none' : 'hover:opacity-80'}`}
-                title={altKey ? 'Alt is part of the combo, cannot restrict.' : ''}
+                title={altKey ? t('preview:ini_editor.alt_restriction_disabled') : ''}
               >
                 <input
                   type="checkbox"
@@ -272,7 +277,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
                   onChange={(e) => setNoAlt(e.target.checked)}
                   disabled={altKey}
                 />
-                <span className="text-sm font-medium">no_alt</span>
+                <span className="text-sm font-medium">{t('preview:ini_editor.no_alt')}</span>
               </label>
             </div>
           </div>
@@ -280,11 +285,11 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
 
         <div className="bg-base-300 px-6 py-4 flex items-center justify-end gap-3 border-t border-base-content/10">
           <button className="btn btn-ghost" onClick={handleCancel}>
-            Cancel
+            {t('common:actions.cancel')}
           </button>
           <button className="btn btn-primary min-w-25" onClick={handleApply} disabled={!mainKey}>
             <Check size={18} />
-            Apply
+            {t('common:actions.apply')}
           </button>
         </div>
       </div>

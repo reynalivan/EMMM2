@@ -1,9 +1,9 @@
 use crate::services::ini::document as ini_document;
-use serde::Serialize;
+
 use std::path::Path;
 
 /// A keybinding entry extracted from an enabled mod's INI file.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct ActiveKeyBinding {
     pub mod_name: String,
     pub section_name: String,
@@ -16,7 +16,7 @@ pub async fn get_active_keybindings_service(
     game_id: &str,
 ) -> Result<Vec<ActiveKeyBinding>, String> {
     // 1. Fetch enabled mods' folder paths and names for this game
-    let rows = crate::database::mod_repo::get_enabled_mods_names_and_paths(pool, game_id)
+    let rows = crate::repo::mod_repo::get_enabled_mods_names_and_paths(pool, game_id)
         .await
         .map_err(|e| format!("Failed to query enabled mods: {e}"))?;
 
@@ -57,13 +57,13 @@ pub async fn get_active_keybindings_service(
 }
 
 /// Full dashboard payload struct (mirrors the command type).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct DashboardPayload {
-    pub stats: crate::database::dashboard_repo::DashboardStats,
+    pub stats: crate::repo::dashboard_repo::DashboardStats,
     pub duplicate_waste_bytes: i64,
-    pub category_distribution: Vec<crate::database::dashboard_repo::CategorySlice>,
-    pub game_distribution: Vec<crate::database::dashboard_repo::GameSlice>,
-    pub recent_mods: Vec<crate::database::dashboard_repo::RecentMod>,
+    pub category_distribution: Vec<crate::repo::dashboard_repo::CategorySlice>,
+    pub game_distribution: Vec<crate::repo::dashboard_repo::GameSlice>,
+    pub recent_mods: Vec<crate::repo::dashboard_repo::RecentMod>,
 }
 
 /// Fetch all dashboard data in a single service call.
@@ -72,7 +72,7 @@ pub async fn get_dashboard_payload(
     pool: &sqlx::SqlitePool,
     safe_mode: bool,
 ) -> Result<DashboardPayload, String> {
-    use crate::database::dashboard_repo;
+    use crate::repo::dashboard_repo;
 
     let stats = dashboard_repo::fetch_global_stats(pool, safe_mode)
         .await

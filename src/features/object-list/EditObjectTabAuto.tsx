@@ -5,6 +5,7 @@ import type { GameSchema, FilterDef } from '../../types/object';
 import type { DbEntryFull } from './hooks/useMasterDbSync';
 import { Search, ChevronDown, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 
 interface EditObjectTabAutoProps {
   form: UseFormReturn<EditObjectFormData>;
@@ -39,6 +40,7 @@ export function EditObjectTabAuto({
   handleDbSelect,
   searchContainerRef,
 }: EditObjectTabAutoProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const { watch, setValue } = form;
   const objectType = watch('object_type');
 
@@ -47,7 +49,7 @@ export function EditObjectTabAuto({
       {/* Name & Search/Suggestions */}
       <div className="form-control w-full relative">
         <label className="label py-1">
-          <span className="label-text font-medium">Name</span>
+          <span className="label-text font-medium">{t('create_modal.name')}</span>
         </label>
 
         <div className="flex flex-col gap-2">
@@ -62,7 +64,9 @@ export function EditObjectTabAuto({
               }}
             >
               <Search className="w-4 h-4 opacity-50" />
-              <span className="flex-1 truncate">{dbSearch || 'Click to search database...'}</span>
+              <span className="flex-1 truncate">
+                {dbSearch || t('edit_modal.db_search_placeholder')}
+              </span>
               <ChevronDown className="w-4 h-4 opacity-50" />
             </label>
 
@@ -71,7 +75,7 @@ export function EditObjectTabAuto({
               <div className="absolute left-0 top-full z-80 mt-1 w-full rounded-box border border-base-300 bg-base-100 p-2 shadow-xl">
                 <input
                   type="text"
-                  placeholder="Type to filter..."
+                  placeholder={t('edit_modal.db_filter_placeholder')}
                   className="input input-sm input-bordered w-full mb-2"
                   autoFocus
                   value={dbSearch}
@@ -81,7 +85,7 @@ export function EditObjectTabAuto({
                 <div className="h-64 overflow-y-auto">
                   {isLoading ? (
                     <div className="flex h-full items-center justify-center text-center text-sm opacity-50">
-                      Loading...
+                      {t('edit_modal.db_loading')}
                     </div>
                   ) : dbOptions.length > 0 ? (
                     <ul className="menu menu-xs p-0 w-full">
@@ -119,13 +123,11 @@ export function EditObjectTabAuto({
                     </ul>
                   ) : (
                     <div className="flex h-full items-center justify-center text-center text-sm opacity-50">
-                      {error ? 'Error loading DB' : 'No matches found'}
+                      {error ? t('edit_modal.db_error') : t('edit_modal.db_no_matches')}
                     </div>
                   )}
                 </div>
-                <p className="mt-2 h-4 text-[10px] opacity-60">
-                  Showing first results. Type more letters to narrow down.
-                </p>
+                <p className="mt-2 h-4 text-[10px] opacity-60">{t('edit_modal.db_hint')}</p>
               </div>
             )}
           </div>
@@ -135,7 +137,7 @@ export function EditObjectTabAuto({
             <div className="flex flex-col gap-1 mt-1">
               <div className="flex items-center gap-1 text-xs font-bold opacity-60 px-1">
                 <Sparkles size={12} className="text-secondary" />
-                <span>Smart Suggestions</span>
+                <span>{t('edit_modal.smart_suggestions')}</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {suggestions.map((sugg) => (
@@ -158,7 +160,7 @@ export function EditObjectTabAuto({
                     <div className="flex flex-col overflow-hidden">
                       <span className="text-xs font-bold truncate">{sugg.name}</span>
                       <span className="text-[10px] opacity-50 truncate">
-                        {(sugg.score * 100).toFixed(0)}% Match
+                        {t('edit_modal.match_percent', { percent: (sugg.score * 100).toFixed(0) })}
                       </span>
                     </div>
                   </div>
@@ -172,13 +174,13 @@ export function EditObjectTabAuto({
       {/* Category Dropdown (Read-only in Sync Mode) */}
       <div className="form-control w-full">
         <label className="label py-1">
-          <span className="label-text font-medium">Category</span>
+          <span className="label-text font-medium">{t('create_modal.category')}</span>
         </label>
         <div className="px-3 py-1 font-semibold text-base-content hover:bg-base-200/50 rounded transition-colors inline-block self-start">
           {selectedSyncEntry
             ? gameSchema?.categories.find((c) => c.name === objectType)?.label ||
               objectType ||
-              'None'
+              t('common:actions.none')
             : '-'}
         </div>
       </div>
@@ -190,7 +192,9 @@ export function EditObjectTabAuto({
             <span className="label-text">{filter.label}</span>
           </label>
           <div className="px-3 py-1 font-semibold text-base-content hover:bg-base-200/50 rounded transition-colors inline-block self-start">
-            {selectedSyncEntry ? (watch(`metadata.${filter.key}`) as string) || 'None' : '-'}
+            {selectedSyncEntry
+              ? (watch(`metadata.${filter.key}`) as string) || t('common:actions.none')
+              : '-'}
           </div>
         </div>
       ))}
@@ -201,7 +205,7 @@ export function EditObjectTabAuto({
           {/* Tags */}
           <div className="form-control w-full mt-2">
             <label className="label py-1">
-              <span className="label-text">Tags (Aliases)</span>
+              <span className="label-text">{t('edit_modal.aliases')}</span>
             </label>
             <div className="flex flex-wrap gap-1 px-3">
               {selectedSyncEntry.tags && selectedSyncEntry.tags.length > 0 ? (
@@ -219,7 +223,7 @@ export function EditObjectTabAuto({
           {/* Custom Skin Selection */}
           <div className="form-control w-full mt-2">
             <label className="label py-1">
-              <span className="label-text font-medium">Mapped Skin</span>
+              <span className="label-text font-medium">{t('edit_modal.skin_mapping')}</span>
             </label>
             {selectedSyncEntry.custom_skins && selectedSyncEntry.custom_skins.length > 0 ? (
               <div className="flex flex-col gap-2">
@@ -242,12 +246,17 @@ export function EditObjectTabAuto({
                       );
                       if (foundSkin) {
                         setValue('has_custom_skin', true);
-                        setValue('custom_skin', foundSkin);
+                        setValue('custom_skin', {
+                          name: foundSkin.name,
+                          aliases: foundSkin.aliases || [],
+                          thumbnail_skin_path: foundSkin.thumbnail_skin_path || '',
+                          rarity: foundSkin.rarity || '',
+                        });
                       }
                     }
                   }}
                 >
-                  <option value="">Default / Base Skin</option>
+                  <option value="">{t('edit_modal.default_skin')}</option>
                   {selectedSyncEntry.custom_skins.map((skin) => (
                     <option key={skin.name} value={skin.name}>
                       {skin.name}
@@ -273,7 +282,7 @@ export function EditObjectTabAuto({
                       <span className="font-semibold">{watch('custom_skin.name')}</span>
                       {watch('custom_skin.aliases') && watch('custom_skin.aliases')!.length > 0 && (
                         <span className="text-[10px] opacity-70">
-                          Aliases: {watch('custom_skin.aliases')!.join(', ')}
+                          {t('edit_modal.aliases')}: {watch('custom_skin.aliases')!.join(', ')}
                         </span>
                       )}
                     </div>
@@ -282,7 +291,7 @@ export function EditObjectTabAuto({
               </div>
             ) : (
               <div className="font-semibold text-base-content hover:bg-base-200/50 rounded transition-colors inline-block self-start px-3 py-1 bg-base-200/30">
-                Default / Base Skin
+                {t('edit_modal.default_skin')}
               </div>
             )}
           </div>

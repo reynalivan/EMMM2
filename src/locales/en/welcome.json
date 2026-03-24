@@ -1,0 +1,35 @@
+{
+  "title": "Welcome to EMMM",
+  "subtitle": "The ultimate mod manager for 3DMigoto",
+  "get_started": "Get Started",
+  "features": {
+    "auto_organize": "Smart Auto-Organize",
+    "auto_organize_desc": "Automatically group and manage your 3DMigoto mods with zero effort.",
+    "toggle_presets": "Instant Toggling",
+    "toggle_presets_desc": "Swap between different mod variants or presets in a single click.",
+    "keybind_spotlight": "Smart Keybindings",
+    "keybind_spotlight_desc": "Control everything with your favorite shortcuts, fully customizable.",
+    "auto_organized": "Auto-organized"
+  },
+  "demo": {
+    "mod_character_dress": "Character Mod - Dress",
+    "mod_weapon_glowing": "Weapon Mod - Glowing",
+    "mod_ui_transparent": "UI Mod - Transparent",
+    "mod_character_snow": "Character Mod - Snow",
+    "mod_weapon_dark": "Weapon Mod - Dark",
+    "action_show_keybinds": "Show Keybinds",
+    "action_toggle_preview": "Toggle Preview",
+    "action_quick_search": "Quick Search",
+    "tag_character": "Character",
+    "tag_weapon": "Weapon",
+    "tag_ui": "UI",
+    "aria_label": "Smart Features Demonstration",
+    "aria_go_to_scene": "Go to scene {{count}}",
+    "one_click_presets": "One-click Presets",
+    "applied_instantly": "Applied instantly",
+    "preset_on": "Preset ON",
+    "preset_off": "Preset OFF",
+    "keybinds_instantly": "Keybinds, instantly",
+    "press_help": "Press ? to view keybinds"
+  }
+}

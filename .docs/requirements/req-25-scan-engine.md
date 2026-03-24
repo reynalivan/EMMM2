@@ -36,7 +36,7 @@ As a user, I want to stop a long-running scan, so that I can regain control of t
 
 | ID        | Type        | Criteria                                                                                                                                                                                   |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-25.2.1 | ✅ Positive | Given a scan is running, when `invoke('cancel_scan')` is called, then the `CancellationToken` is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled`            |
+| AC-25.2.1 | ✅ Positive | Given a scan is running, when `commands.cancelScan()` is called, then the `CancellationToken` is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled`            |
 | AC-25.2.2 | ✅ Positive | Given cancellation, the partial scan results collected so far are NOT discarded — they can still be retrieved via `get_scan_result` and processed by the Deep Matcher over the partial set |
 | AC-25.2.3 | ⚠️ Edge     | Given `cancel_scan` is called after the scan has already `Completed`, then the command returns an `AlreadyCompleted` status — no error thrown                                              |
 
@@ -103,15 +103,15 @@ get_scan_result() → Vec<ScanResult>
 
 ### Integration Points
 
-| Component         | Detail                                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Walker            | `walkdir` crate — `WalkDir::new(mods_path).max_depth(8).follow_links(false)`                                     |
-| Cancellation      | `tokio_util::CancellationToken` — stored in `Arc` alongside `ScanState`                                          |
-| Signal Extraction | `services/scanner/signals.rs::extract_folder_signals` — uses GameSchema stopwords (Epic 09)                      |
-| Progress Events   | `window.emit('scan_progress', payload)` every 50 entries; includes `elapsedMs` and `etaMs`                       |
-| Frontend          | `useScannerStore.ts` listens to `scan_progress` → progress bar; `invoke('get_scan_result')` after `Finished`      |
-| Deep Matcher      | Consumes `Vec<ScanResult>` (Epic 26)                                                                             |
-| Archive Detection | `detect_archives` scans for `.zip`, `.7z`, `.rar` in root mods directory before full scan                        |
+| Component         | Detail                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| Walker            | `walkdir` crate — `WalkDir::new(mods_path).max_depth(8).follow_links(false)`                                |
+| Cancellation      | `tokio_util::CancellationToken` — stored in `Arc` alongside `ScanState`                                     |
+| Signal Extraction | `services/scanner/signals.rs::extract_folder_signals` — uses GameSchema stopwords (Epic 09)                 |
+| Progress Events   | `window.emit('scan_progress', payload)` every 50 entries; includes `elapsedMs` and `etaMs`                  |
+| Frontend          | `useScannerStore.ts` listens to `scan_progress` → progress bar; `commands.getScanResult()` after `Finished` |
+| Deep Matcher      | Consumes `Vec<ScanResult>` (Epic 26)                                                                        |
+| Archive Detection | `detect_archives` scans for `.zip`, `.7z`, `.rar` in root mods directory before full scan                   |
 
 ### Security & Privacy
 

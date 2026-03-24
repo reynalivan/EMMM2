@@ -84,7 +84,7 @@ find_free_suffix(path, suffix) → PathBuf:
 | ----------- | ----------------------------------------------------------------------------------------------- |
 | Error Catch | `useFolderGridActions.ts` catches `CommandError::PathCollision` → opens `ConflictResolveDialog` |
 | Dialog Data | `get_collision_info(path_a, path_b)` — shallow folder scan, returns summary structs             |
-| Resolution  | `invoke('resolve_conflict', { game_id, strategy, ... })` → OperationLock scope                  |
+| Resolution  | `commands.resolveConflict({ game_id, strategy, ... })` → OperationLock scope                    |
 | Auto-Retry  | After `resolve_conflict` returns Ok, frontend re-calls the original toggle mutation             |
 | Trash       | "Replace" strategy uses `trash::delete` (Epic 22) — never `fs::remove_dir_all`                  |
 

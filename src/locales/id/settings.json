@@ -1,0 +1,291 @@
+{
+  "page": {
+    "title": "Pengaturan",
+    "back": "Kembali"
+  },
+  "tabs": {
+    "general": "Umum",
+    "games": "Game",
+    "browser": "Browser & Impor",
+    "privacy": "Privasi & Safe Mode",
+    "hotkeys": "Hotkey & KeyViewer",
+    "ai": "Konfigurasi AI",
+    "maintenance": "Pemeliharaan",
+    "updates": "Pembaruan",
+    "logs": "Log"
+  },
+  "general": {
+    "appearance": {
+      "title": "Tampilan",
+      "import": "Impor Tema",
+      "theme_select": "Pilih Tema",
+      "groups": {
+        "builtin": "Bawaan",
+        "custom": "Tema Kustom"
+      },
+      "custom_active": "Tema Kustom Aktif",
+      "export": "Ekspor",
+      "remove": "Hapus",
+      "info": {
+        "title": "Info Tema",
+        "system": "Default sistem akan mengikuti preferensi OS Anda.",
+        "builtin": "Bawaan: Dioptimalkan untuk kontras maksimal.",
+        "custom": "Kustom: Dimuat dari file .json di folder data aplikasi Anda."
+      },
+      "import_success": "Tema \"{{name}}\" berhasil diimpor.",
+      "import_failed": "Gagal Mengimpor: {{error}}",
+      "export_success": "Tema diekspor ke {{name}}",
+      "export_failed": "Gagal Mengekspor: {{error}}",
+      "delete_confirm": "Apakah Anda yakin ingin menghapus tema ini?",
+      "delete_success": "Tema dihapus.",
+      "delete_failed": "Gagal Menghapus: {{error}}",
+      "themes": {
+        "system": "Default Sistem",
+        "onyx": "Gelap (Onyx)",
+        "light": "Terang"
+      }
+    },
+    "language": {
+      "title": "Bahasa",
+      "label": "Pilih Bahasa",
+      "options": {
+        "en": "English (US)",
+        "id": "Bahasa Indonesia",
+        "zh": "Chinese (Simplified)"
+      }
+    },
+    "behavior": {
+      "title": "Perilaku Aplikasi",
+      "auto_close": "Tutup Otomatis saat Meluncurkan",
+      "auto_close_desc": "Tutup EMMM secara otomatis saat Anda berhasil meluncurkan game."
+    },
+    "system": {
+      "title": "Informasi Sistem",
+      "app_version": "Versi Aplikasi",
+      "tauri_version": "Versi Tauri",
+      "database": "Database",
+      "engine": "Engine",
+      "db_val": "SQLite (SQLx)",
+      "engine_val": "Vite + React"
+    }
+  },
+  "games": {
+    "title": "Perpustakaan Game",
+    "desc": "Kelola lokasi instalasi dan konfigurasi game Anda.",
+    "add": "Tambah Game",
+    "empty": "Belum ada game yang dikonfigurasi. Klik \"Tambah Game\" untuk memulai.",
+    "active": "AKTIF",
+    "actions": {
+      "set_active": "Jadikan Aktif",
+      "rescan": "Pindai Ulang Perpustakaan",
+      "edit": "Edit Game",
+      "remove": "Hapus Game",
+      "scanning": "Memindai perpustakaan untuk {{name}}...",
+      "scan_success": "Pemindaian selesai! Menemukan {{new}} mod baru dan {{updated}} pembaruan.",
+      "scan_failed": "Pemindaian gagal: {{error}}"
+    },
+    "delete_confirm": "Apakah Anda yakin ingin menghapus konfigurasi game ini?",
+    "types": {
+      "gimi": "Genshin Impact",
+      "srmi": "Star Rail",
+      "zzmi": "ZZZ",
+      "wwmi": "Wuthering Waves",
+      "efmi": "Arknight Endfield"
+    },
+    "form": {
+      "title_add": "Tambah Game Baru",
+      "title_edit": "Edit Game",
+      "name_label": "Nama Tampilan",
+      "name_placeholder": "misal: Genshin Impact",
+      "type_label": "Tipe Game",
+      "path_label": "Path Folder Mod",
+      "path_placeholder": "C:/Games/Genshin Impact/Mods",
+      "path_help": "Pilih folder tempat Anda menyimpan Mod.",
+      "exe_label": "Executable Game (.exe)",
+      "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
+      "advanced_title": "Opsi Lanjutan",
+      "loader_label": "Loader 3DMigoto (Opsional)",
+      "loader_placeholder": "3DMigoto Loader.exe",
+      "args_label": "Argumen Peluncuran",
+      "args_placeholder": "-popupwindow",
+      "path_label_short": "Mod",
+      "exe_label_short": "Exe",
+      "browse": "Telusuri",
+      "save": "Simpan Perubahan",
+      "add_btn": "Tambah Game",
+      "validation": {
+        "name_required": "Nama wajib diisi",
+        "path_required": "Path mod wajib diisi",
+        "path_invalid": "Path mengandung karakter tidak valid",
+        "path_duplicate": "Sudah terdaftar",
+        "exe_required": "Executable game wajib diisi",
+        "pick_folder_error": "Gagal memilih folder",
+        "pick_file_error": "Gagal memilih file",
+        "pick_folder_title": "Pilih Folder Mod",
+        "pick_exe_title": "Pilih Executable Game",
+        "pick_loader_title": "Pilih Executable Loader"
+      }
+    }
+  },
+  "ai": {
+    "title": "AI Intelligent Reranking",
+    "desc": "Saat diaktifkan, EMMM akan menggunakan LLM melalui endpoint OpenAI-compatible yang disediakan untuk mencoba memulihkan folder mod yang ditandai sebagai \"Perlu Ditinjau\" oleh pipeline penilaian lokal.",
+    "enable": "Aktifkan AI Reranking",
+    "base_url": "Base URL Penyedia API",
+    "base_url_desc": "(Harus endpoint OpenAI-compatible /v1/chat/completions)",
+    "api_key": "Kunci API AI",
+    "api_key_desc": "Kunci ini disimpan secara lokal dan hanya dikirim ke URL basis yang dikonfigurasi.",
+    "show_key": "Tampilkan Kunci",
+    "hide_key": "Sembunyikan Kunci",
+    "save": "Simpan Konfigurasi",
+    "status": {
+      "loading": "Memuat konfigurasi AI...",
+      "enabled": "AI Reranking diaktifkan",
+      "disabled": "AI Reranking dinonaktifkan",
+      "saved": "Konfigurasi AI disimpan",
+      "save_failed": "Gagal menyimpan konfigurasi AI: {{error}}",
+      "update_failed": "Gagal memperbarui status: {{error}}",
+      "placeholder_url": "https://api.openai.com/v1/chat/completions",
+      "placeholder_key": "sk-..."
+    }
+  },
+  "browser": {
+    "title": "Temukan & Browser",
+    "homepage": "URL Beranda",
+    "homepage_desc": "Halaman default yang dibuka saat Anda mengklik Temukan (harus dimulai dengan http/https).",
+    "reset": "Reset",
+    "import_title": "Perilaku Impor Cerdas",
+    "auto_analysis": "Aktifkan Analisis Otomatis",
+    "auto_analysis_desc": "Saat mod selesai diunduh, otomatis ekstrak dan cocokan secara mendalam. Jika dinonaktifkan, impor harus dimulai secara manual.",
+    "skip_picker": "Lompati Pemilih Game (Game Tunggal)",
+    "skip_picker_desc": "Jika Anda hanya memiliki satu game yang dikonfigurasi, lompati modal Pemilih Game dan impor secara instan.",
+    "extensions": "Ekstensi yang Diizinkan",
+    "extensions_desc": "Daftar ekstensi yang dipisahkan koma yang diizinkan untuk diunduh oleh browser.",
+    "storage_title": "Penyimpanan & Retensi",
+    "custom_dir": "Direktori Unduhan Kustom",
+    "custom_dir_desc": "Biarkan kosong untuk menggunakan lokasi data aplikasi default. Mulai ulang diperlukan jika diubah.",
+    "retention": "Hari Retensi",
+    "retention_desc": "Berapa lama menyimpan arsip yang diunduh sebelum pembersihan otomatis.",
+    "clear_downloads": "Bersihkan Unduhan Lama Sekarang",
+    "clearing": "Membersihkan...",
+    "clear_success": "Berhasil membersihkan {{count}} unduhan lama.",
+    "clear_failed": "Gagal membersihkan unduhan: {{error}}",
+    "homepage_success": "Beranda berhasil diperbarui",
+    "homepage_failed": "Gagal memperbarui beranda: {{error}}",
+    "placeholder_extensions": ".zip, .7z, .rar",
+    "placeholder_dir": "Default: AppData/EMMM/BrowserDownloads",
+    "days": "hari"
+  },
+  "hotkeys": {
+    "title": "Hotkey Global",
+    "enabled": "Diaktifkan",
+    "desc": "Pintasan keyboard seluruh sistem untuk tindakan cepat saat bermain game. Pintasan ini ditangkap saat jendela game aktif.",
+    "cooldown": "Cooldown Tindakan",
+    "cooldown_desc": "Mencegah pemicuan ganda yang tidak disengaja",
+    "conflicts_title": "Konflik Kunci Terdeteksi",
+    "labels": {
+      "safe_mode": "Safe Mode (Tombol Panik)",
+      "next_preset": "Beralih ke Preset Berikutnya",
+      "prev_preset": "Beralih ke Preset Sebelumnya",
+      "toggle_overlay": "Alihkan Overlay (Banner + KeyViewer)"
+    },
+    "viewer_title": "Overlay KeyViewer",
+    "auto_reload": "Muat Ulang Otomatis",
+    "viewer_desc": "Secara otomatis menghasilkan dan mengelola daftar keybind dalam game berdasarkan karakter/objek yang sedang terdeteksi melalui hash 3DMigoto. Dialihkan bersama dengan Banner Status menggunakan {{key}}.",
+    "infrastructure_title": "Infrastruktur Runtime",
+    "infrastructure_desc": "Artefak dikelola di .emmm_data/. Tidak diperlukan konfigurasi pengguna untuk penerapan.",
+    "reset": "Atur Ulang Semua ke Default",
+    "reset_success": "Pengaturan hotkey diatur ulang ke default.",
+    "save_failed": "Gagal menyimpan pengaturan hotkey: {{error}}",
+    "viewer_save_failed": "Gagal menyimpan pengaturan KeyViewer: {{error}}",
+    "reset_tip": "Atur ulang ke default",
+    "conflicts": {
+      "share_key": "berbagi kunci",
+      "and": "dan",
+      "message": "{{label1}} dan {{label2}} menggunakan kunci yang sama \"{{key}}\""
+    }
+  },
+  "maintenance": {
+    "open_optimizer": "Buka Pengoptimal",
+    "retention_title": "Retensi Penyimpanan",
+    "trash_title": "Manajemen Tempat Sampah",
+    "trash_desc": "Hapus mod yang dihapus secara permanen untuk membebaskan ruang disk.",
+    "empty_trash": "Kosongkan Tempat Sampah",
+    "trash_confirm": "Apakah Anda yakin ingin menghapus semua item di Tempat Sampah secara permanen?",
+    "trash_success": "Tempat Sampah Dikosongkan: Semua item dihapus.",
+    "system_title": "Pemeliharaan Sistem",
+    "system_desc": "Jalankan tugas pembersihan otomatis, verifikasi integritas database, dan bersihkan metadata yatim piatu.",
+    "run_maintenance": "Jalankan Pemeliharaan",
+    "cache_title": "Bersihkan Cache Gambar",
+    "cache_desc": "Hapus thumbnail lama (lebih dari 30 hari) untuk menghemat ruang. Mereka akan dibuat ulang saat dibutuhkan.",
+    "clear_cache": "Bersihkan Cache Lama",
+    "clear_failed": "Gagal membersihkan cache: {{error}}",
+    "danger_title": "Atur Ulang Pengaturan Aplikasi",
+    "danger_desc": "Hapus semua registrasi game, metadata mod, dan pengaturan dari database. Aplikasi akan kembali ke layar pengaturan awal. Cadangan database akan disimpan ke folder sampah.",
+    "danger_info": "File dan folder mod Anda di disk tidak akan dihapus.",
+    "reset_btn": "Atur Ulang & Siapkan Ulang",
+    "modal_title": "Apakah Anda yakin?",
+    "modal_body": "Ini akan menghapus semua registrasi game, metadata mod, koleksi, dan pengaturan dari database. Cadangan akan disimpan ke folder sampah sebelum dihapus.",
+    "modal_error": "Anda perlu mengatur ulang aplikasi dari awal.",
+    "confirm_reset": "Ya, Atur Ulang Semuanya",
+    "reset_success": "Database diatur ulang. Mengalihkan ke penyiapan...",
+    "reset_failed": "Gagal Mengatur Ulang: {{error}}"
+  },
+  "update": {
+    "title": "Pembaruan Aplikasi",
+    "current_version": "Versi saat ini: v{{version}}",
+    "available": "Pembaruan Tersedia: v{{version}}",
+    "latest": "Anda menggunakan versi terbaru.",
+    "checking": "Memeriksa...",
+    "check_btn": "Periksa Pembaruan",
+    "install_btn": "Instal & Mulai Ulang",
+    "downloading": "Mengunduh... {{downloaded}} / {{total}}",
+    "metadata_title": "Sinkronisasi Metadata",
+    "metadata_desc": "Sinkronkan database karakter dan senjata dari server remote. Ini terjadi secara otomatis saat startup tetapi juga dapat dipicu secara manual.",
+    "sync_btn": "Sinkronkan Sekarang",
+    "syncing": "Menyinkronkan...",
+    "sync_success": "Metadata diperbarui ke versi {{version}}",
+    "sync_up_to_date": "Metadata sudah mutakhir.",
+    "sync_failed": "Gagal sinkronisasi metadata: {{error}}"
+  },
+  "privacy": {
+    "title": "Corridor & Safe Mode",
+    "desc": "Safe Mode (Corridor) menyembunyikan mod sensitif dari UI. Transisi keluar dari Safe Mode memerlukan pemeriksaan PIN jika dikonfigurasi.",
+    "keywords_title": "Kata Kunci Tersembunyi",
+    "keywords_placeholder": "misal: skin, lewd, bikini",
+    "keywords_add": "Tambah Kata Kunci",
+    "keywords_empty": "Tidak ada kata kunci tersembunyi yang dikonfigurasi.",
+    "keywords_exists": "Kata kunci sudah ada",
+    "keywords_update_failed": "Gagal memperbarui kata kunci: {{error}}",
+    "protection_title": "Paksa Mode Eksklusif",
+    "protection_desc": "Saat diaktifkan, mod yang tidak cocok dengan daftar putih koridor saat ini akan dinonaktifkan secara paksa saat peluncuran.",
+    "protection_update_failed": "Gagal memperbarui perlindungan: {{error}}",
+    "security_title": "PIN & Pemulihan",
+    "security_status_set": "Perlindungan PIN AKTIF.",
+    "security_status_none": "Tidak ada PIN yang disetel. Transisi tidak terlindungi.",
+    "security_recovery_configured": "Kode Pemulihan Dikonfigurasi",
+    "security_remove": "Hapus PIN",
+    "security_change": "Ganti PIN",
+    "security_set": "Setel PIN",
+    "security_modal_set_title": "Setel PIN Keamanan",
+    "security_modal_unlock_title": "Buka Perlindungan PIN",
+    "security_modal_set_desc": "Membuat PIN akan melindungi transisi dan pengaturan sensitif.",
+    "security_modal_unlock_desc": "Masukkan PIN Anda saat ini untuk melanjutkan."
+  },
+  "logs": {
+    "title": "Log Sistem",
+    "desc": "Log aplikasi terbaru untuk pemecahan masalah.",
+    "filter_label": "Filter log berdasarkan level",
+    "levels": {
+      "all": "Semua",
+      "info": "Info",
+      "warn": "Peringatan",
+      "error": "Kesalahan"
+    },
+    "refresh": "Segarkan",
+    "open_folder": "Buka Folder",
+    "empty": "Tidak ada entri log yang cocok dengan level yang dipilih.",
+    "load_failed": "Gagal memuat log: {{error}}",
+    "folder_failed": "Gagal membuka folder log: {{error}}"
+  }
+}

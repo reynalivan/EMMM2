@@ -103,3 +103,27 @@ async fn test_list_mod_folders_inner_resolves_unicode_disabled_fallback() {
     assert!(!result.self_is_enabled);
     assert!(result.self_is_mod);
 }
+
+#[tokio::test]
+async fn test_path_traversal_rejected() {
+    let temp_dir = TempDir::new().unwrap();
+    let mods_path = temp_dir.path();
+
+    // Create a legitimate child inside the mods directory
+    let child = mods_path.join("SomeMod");
+    fs::create_dir(&child).unwrap();
+
+    // Attempt to escape with a crafted sub_path
+    let result = list_mod_folders_inner(
+        mods_path.to_string_lossy().to_string(),
+        Some("../../".to_string()),
+    )
+    .await;
+
+    assert!(result.is_err(), "Expected Err for path escape, got Ok");
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("PathEscapeError"),
+        "Error should contain 'PathEscapeError', got: {err}"
+    );
+}

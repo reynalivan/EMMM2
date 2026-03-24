@@ -13,16 +13,17 @@ struct RemoteManifest {
 }
 
 /// Result of a metadata sync check
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, specta::Type)]
 pub struct MetadataSyncResult {
     pub updated: bool,
+    #[specta(type = Option<f64>)]
     pub version: Option<u64>,
 }
 
 /// Base URL for metadata files on GitHub CDN.
 /// Format: raw.githubusercontent.com/{owner}/{repo}/{branch}/data/
 const MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/reynalivan/EMMM2/main/data/manifest.json";
+    "https://raw.githubusercontent.com/reynalivan/EMMM/main/data/manifest.json";
 
 /// Maximum number of retries on rate-limit (HTTP 429).
 const MAX_RETRIES: u32 = 3;
@@ -165,9 +166,9 @@ async fn request_with_retry(
 // ── DB helpers for app_meta key-value store ──
 
 async fn get_meta(pool: &SqlitePool, key: &str) -> Option<String> {
-    crate::database::settings_repo::get_app_meta(pool, key).await
+    crate::repo::settings_repo::get_app_meta(pool, key).await
 }
 
 async fn set_meta(pool: &SqlitePool, key: &str, value: &str) {
-    crate::database::settings_repo::set_app_meta(pool, key, value).await;
+    crate::repo::settings_repo::set_app_meta(pool, key, value).await;
 }

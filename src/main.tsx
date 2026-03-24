@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import App from './App';
 import './App.css';
+import './lib/i18n';
 
 // Disable native browser context menu so Radix context menus work in Tauri WebView
 document.addEventListener('contextmenu', (e) => {

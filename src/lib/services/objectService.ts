@@ -1,13 +1,11 @@
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../bindings';
 import type {
-  ObjectSummary,
   ObjectFilter,
+  ObjectSummary,
   CategoryCount,
-  UpdateObjectInput,
   CreateObjectInput,
-  GetObjectsResult,
+  UpdateObjectInput,
 } from '../../types/object';
-import { useToastStore } from '../../stores/useToastStore';
 
 export function validateObjectName(name: string): string | null {
   const trimmed = name.trim();
@@ -41,50 +39,42 @@ export function validateObjectName(name: string): string | null {
 }
 
 export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]> {
-  const result = await invoke<GetObjectsResult>('get_objects_cmd', { filter });
-
-  if (result.lost_objects && result.lost_objects.length > 0) {
-    // Show a consolidated toast message indicating what was lost
-    const count = result.lost_objects.length;
-    let message = `Lost ${count} object${count > 1 ? 's' : ''} (directory missing on disk). Local DB synchronized.`;
-    if (count <= 3) {
-      message += `\n(${result.lost_objects.join(', ')})`;
-    }
-
-    useToastStore.getState().addToast('warning', message, 5000);
-  }
-
-  return result.objects;
+  const res = await commands.getObjects({ filter });
+  return res.objects;
 }
 
 export function getCategoryCounts(
   gameId: string,
   safeMode: boolean = false,
 ): Promise<CategoryCount[]> {
-  return invoke<CategoryCount[]>('get_category_counts_cmd', { gameId, safeMode });
+  return commands.getCategoryCounts({ gameId, safeMode });
 }
 
-export function createObject(input: CreateObjectInput): Promise<string> {
+export async function createObject(input: CreateObjectInput): Promise<ObjectSummary> {
   const nameError = validateObjectName(input.name);
-  if (nameError) return Promise.reject(new Error(nameError));
+  if (nameError) throw new Error(nameError);
 
-  return invoke<string>('create_object_cmd', { input });
+  const id = await commands.createObject({ input });
+  // Re-fetch since create_object_cmd only returns ID
+  return commands.getObject({ id });
 }
 
-export function updateObject(id: string, updates: UpdateObjectInput): Promise<void> {
-  if (updates.name !== undefined) {
+export async function updateObject(id: string, updates: UpdateObjectInput): Promise<ObjectSummary> {
+  if (updates.name !== undefined && updates.name !== null) {
     const nameError = validateObjectName(updates.name);
-    if (nameError) return Promise.reject(new Error(nameError));
+    if (nameError) throw new Error(nameError);
   }
 
-  return invoke('update_object_cmd', { id, updates });
+  await commands.updateObject({ id, updates });
+  return commands.getObject({ id });
 }
 
-export function deleteObject(id: string): Promise<void> {
-  return invoke('delete_object_cmd', { id });
+export function deleteObject(id: string, force: boolean): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return commands.deleteObject({ id, force } as any);
 }
 
 /** Garbage-collect objects whose disk folders are missing. Called at sync points only. */
 export function gcLostObjects(gameId: string): Promise<string[]> {
-  return invoke<string[]>('gc_lost_objects_cmd', { gameId });
+  return commands.gcLostObjects({ gameId });
 }

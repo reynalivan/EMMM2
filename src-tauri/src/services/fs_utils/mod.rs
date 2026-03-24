@@ -1,4 +1,6 @@
+pub mod locking;
 pub mod file_utils;
+pub mod guard;
 pub mod operation_lock;
 pub mod path_utils;
 

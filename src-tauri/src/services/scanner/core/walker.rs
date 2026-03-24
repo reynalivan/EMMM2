@@ -16,7 +16,7 @@ pub struct ModCandidate {
     pub raw_name: String,
     /// Clean display name (without DISABLED prefix).
     pub display_name: String,
-    /// Whether the folder has the `DISABLED ` prefix.
+    /// Whether the folder has the `DISABLED ` prefix or is inside a disabled parent.
     pub is_disabled: bool,
 }
 
@@ -40,13 +40,15 @@ pub struct FolderContent {
 }
 
 /// Info about a detected archive file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ArchiveInfo {
     pub path: String,
     pub name: String,
     pub extension: String,
+    #[specta(type = f64)]
     pub size_bytes: u64,
     pub has_ini: bool,
+    #[specta(type = f64)]
     pub file_count: usize,
     /// Whether the archive requires a password for extraction.
     pub is_encrypted: bool,
@@ -60,9 +62,11 @@ const ARCHIVE_EXTENSIONS: &[&str] = &["zip", "7z", "rar"];
 /// Extensions to check during content scanning per Epic 2 §B.2.
 const SCAN_EXTENSIONS: &[&str] = &["ini", "dds", "txt", "buf", "ib", "vb"];
 
-/// Scan the root Mods directory and return all immediate child folders as candidates.
+/// Scan the root Mods directory and return real mod folders as candidates.
 ///
-/// Filters out non-directory entries and archive files.
+/// Recurses up to a maximum depth of 6, using `classifier::classify_folder` to determine
+/// if a path is a true mod (e.g. `ModPackRoot`, `FlatModRoot`, `VariantContainer`) or a container.
+///
 /// # Covers: TC-2.3-01 (Folder listing)
 pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
     if !mods_path.exists() {
@@ -76,15 +80,21 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
         ));
     }
 
-    let entries =
-        std::fs::read_dir(mods_path).map_err(|e| format!("Failed to read mods directory: {e}"))?;
+    use crate::services::explorer::classifier::{self, NodeType};
 
     let mut candidates = Vec::new();
 
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
+    let mut it = WalkDir::new(mods_path)
+        .min_depth(1)
+        .max_depth(8)
+        .follow_links(false)
+        .into_iter();
+
+    loop {
+        let entry = match it.next() {
+            None => break,
+            Some(Ok(e)) => e,
+            Some(Err(e)) => {
                 log::warn!("Skipping unreadable entry: {e}");
                 continue;
             }
@@ -102,47 +112,117 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
 
         // Skip hidden/system folders (.temp_extract, .extracted, .archive_backup, etc.)
         if raw_name.starts_with('.') {
+            if entry.file_type().is_dir() {
+                it.skip_current_dir();
+            }
             continue;
         }
 
-        let is_disabled = normalizer::is_disabled_folder(&raw_name);
-        let display_name = normalizer::normalize_display_name(&raw_name);
+        let (node_type, _, _) = classifier::classify_folder(path);
 
-        candidates.push(ModCandidate {
-            path,
-            raw_name,
-            display_name,
-            is_disabled,
+        let is_disabled = path.components().any(|comp| {
+            let comp_name = comp.as_os_str().to_string_lossy();
+            normalizer::is_disabled_folder(&comp_name)
         });
+
+        match node_type {
+            NodeType::ModPackRoot | NodeType::FlatModRoot | NodeType::VariantContainer => {
+                let display_name = normalizer::normalize_display_name(&raw_name);
+                candidates.push(ModCandidate {
+                    path: path.to_path_buf(),
+                    raw_name,
+                    display_name,
+                    is_disabled,
+                });
+
+                // Do not recursively traverse inside actual mod folders
+                it.skip_current_dir();
+            }
+            NodeType::ContainerFolder => {
+                // Keep recursing deeper to find the actual mods inside
+            }
+            NodeType::InternalAssets => {
+                // Internal assets should not be recursed into to find mods
+                it.skip_current_dir();
+            }
+        }
     }
 
     Ok(candidates)
 }
 
-/// Scan specific subset of folders directly rather than iterating a parent directory.
+/// Scan specific subset of folders directly and deeply.
 /// Useful for drag-and-drop operations on explicit folders.
 pub fn scan_specific_folders(paths: &[PathBuf]) -> Result<Vec<ModCandidate>, String> {
+    use crate::services::explorer::classifier::{self, NodeType};
+
     let mut candidates = Vec::new();
 
-    for path in paths {
-        if !path.is_dir() {
+    for start_path in paths {
+        if !start_path.is_dir() {
             continue;
         }
 
-        let raw_name = match path.file_name() {
-            Some(n) => n.to_string_lossy().to_string(),
-            None => continue,
-        };
+        let mut it = WalkDir::new(start_path)
+            .min_depth(0) // Check the dropped path itself
+            .max_depth(8)
+            .follow_links(false)
+            .into_iter();
 
-        let is_disabled = normalizer::is_disabled_folder(&raw_name);
-        let display_name = normalizer::normalize_display_name(&raw_name);
+        loop {
+            let entry = match it.next() {
+                None => break,
+                Some(Ok(e)) => e,
+                Some(Err(e)) => {
+                    log::warn!("Skipping unreadable entry: {e}");
+                    continue;
+                }
+            };
 
-        candidates.push(ModCandidate {
-            path: path.clone(),
-            raw_name,
-            display_name,
-            is_disabled,
-        });
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let raw_name = match path.file_name() {
+                Some(n) => n.to_string_lossy().to_string(),
+                None => continue,
+            };
+
+            if raw_name.starts_with('.') {
+                if entry.file_type().is_dir() {
+                    it.skip_current_dir();
+                }
+                continue;
+            }
+
+            let (node_type, _, _) = classifier::classify_folder(path);
+
+            let is_disabled = path.components().any(|comp| {
+                let comp_name = comp.as_os_str().to_string_lossy();
+                normalizer::is_disabled_folder(&comp_name)
+            });
+
+            match node_type {
+                NodeType::ModPackRoot | NodeType::FlatModRoot | NodeType::VariantContainer => {
+                    let display_name = normalizer::normalize_display_name(&raw_name);
+                    candidates.push(ModCandidate {
+                        path: path.to_path_buf(),
+                        raw_name,
+                        display_name,
+                        is_disabled,
+                    });
+
+                    it.skip_current_dir();
+                }
+                NodeType::ContainerFolder => {
+                    // Dive in
+                }
+                NodeType::InternalAssets => {
+                    it.skip_current_dir();
+                }
+            }
+        }
     }
 
     Ok(candidates)

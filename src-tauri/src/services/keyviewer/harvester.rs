@@ -14,7 +14,7 @@ use crate::services::ini::document::list_ini_files;
 
 /// Regex matching `hash = XXXXXXXX` (8 hex digits, case-insensitive).
 static HASH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^\s*hash\s*=\s*([0-9a-f]{8})\s*(?:[;#].*)?$").expect("valid hash regex")
+    Regex::new(r"(?i)^\s*hash\s*=\s*(?:0x)?([0-9a-f]{8})\s*(?:[;#].*)?$").expect("valid hash regex")
 });
 
 /// Regex matching section headers like `[TextureOverrideFoo]` or `[ShaderOverrideBar]`.
@@ -180,4 +180,22 @@ pub fn harvest_hashes_from_mod(
     }
 
     Ok(hash_map)
+}
+
+/// Harvest key bindings from all INI files in a mod folder.
+///
+/// Uses `read_ini_document` to parse [Key*] sections.
+pub fn harvest_keybinds_from_mod(
+    mod_path: &Path,
+) -> Result<Vec<crate::services::ini::document::KeyBinding>, String> {
+    let ini_files = list_ini_files(mod_path)?;
+    let mut all_keybinds = Vec::new();
+
+    for ini_path in ini_files {
+        if let Ok(doc) = crate::services::ini::document::read_ini_document(&ini_path) {
+            all_keybinds.extend(doc.key_bindings);
+        }
+    }
+
+    Ok(all_keybinds)
 }

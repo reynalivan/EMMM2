@@ -45,6 +45,7 @@ const mockFolder: ModFolder = {
   is_safe: true,
   metadata: null,
   category: null,
+  warnings: [],
 };
 
 describe('FolderCard', () => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'motion/react';
 import { SCENE_DURATION_MS, usePrefersReducedMotion } from './demoTypes';
 
@@ -14,6 +15,7 @@ export default function SmartDemoStrip({
 }: {
   isPausedFromParent?: boolean;
 }) {
+  const { t } = useTranslation('welcome');
   const [currentSceneIdx, setCurrentSceneIdx] = useState(0);
   const prefersReduced = usePrefersReducedMotion();
 
@@ -61,11 +63,11 @@ export default function SmartDemoStrip({
 
   return (
     <div
-      className="w-full max-w-3xl mx-auto h-[300px] [@media(max-height:750px)]:h-[240px] relative rounded-2xl bg-base-100/40 backdrop-blur-md border border-base-content/10 shadow-xl overflow-hidden group flex items-start justify-center"
+      className="w-full max-w-3xl mx-auto h-75 [@media(max-height:750px)]:h-60 relative rounded-2xl bg-base-100/40 backdrop-blur-md border border-base-content/10 shadow-xl overflow-hidden group flex items-start justify-center"
       tabIndex={0}
-      aria-label="Smart Features Demonstration"
+      aria-label={t('welcome.demo.aria_label')}
     >
-      <div className="w-full h-[300px] absolute top-0 left-0 origin-top [@media(max-height:750px)]:scale-[0.8] transition-transform duration-500">
+      <div className="w-full h-75 absolute top-0 left-0 origin-top [@media(max-height:750px)]:scale-[0.8] transition-transform duration-500">
         <AnimatePresence mode="wait">
           {currentScene === 'A' && (
             <motion.div
@@ -113,7 +115,7 @@ export default function SmartDemoStrip({
         {SCENES.map((s, idx) => (
           <button
             key={s}
-            aria-label={`Go to scene ${idx + 1}`}
+            aria-label={t('welcome.demo.aria_go_to_scene', { count: idx + 1 })}
             onClick={() => setCurrentSceneIdx(idx)}
             className={`h-1.5 rounded-full transition-all duration-300 ${
               idx === currentSceneIdx

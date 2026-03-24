@@ -14,7 +14,7 @@ pub async fn resolve_mod_path_for_object(
     pool: &sqlx::SqlitePool,
     object_id: &str,
 ) -> Option<String> {
-    let (mod_id, folder_path) = crate::database::mod_repo::get_mod_by_object_id(pool, object_id)
+    let (mod_id, folder_path) = crate::repo::mod_repo::get_mod_by_object_id(pool, object_id)
         .await
         .ok()??;
 
@@ -24,7 +24,7 @@ pub async fn resolve_mod_path_for_object(
     }
 
     // Filesystem is source of truth — delete the stale row
-    let _ = crate::database::mod_repo::delete_mod_by_id(pool, &mod_id).await;
+    let _ = crate::repo::mod_repo::delete_mod_by_id(pool, &mod_id).await;
 
     log::warn!(
         "Deleted stale mod {} (folder gone): {}",

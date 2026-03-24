@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useWatcherLifecycle, useWatcherEvents, useWatcherReactions } from './hooks';
+import { useWatcherEvents, useWatcherLifecycle, useWatcherReactions } from './hooks';
+import { useAppStore } from '../../stores/useAppStore';
 
 /**
  * Headless component that acts as the orchestrator for the FileWatcher system.
@@ -12,10 +13,11 @@ import { useWatcherLifecycle, useWatcherEvents, useWatcherReactions } from './ho
  */
 export function ExternalChangeHandler() {
   const { activeGame } = useActiveGame();
+  const { safeMode } = useAppStore();
   const queryClient = useQueryClient();
 
   // 1. Start/Stop watcher on game change
-  useWatcherLifecycle(activeGame);
+  useWatcherLifecycle(activeGame, safeMode);
 
   // 2. Listen, filter, and debounce events into a batch queue
   const batchedEvents = useWatcherEvents(activeGame);

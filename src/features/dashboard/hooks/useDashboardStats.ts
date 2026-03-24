@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import { useAppStore } from '../../../stores/useAppStore';
+import { commands } from '../../../lib/bindings';
 import type { DashboardPayload } from '../../../types/dashboard';
+import { useAppStore } from '../../../stores/useAppStore';
 
 const DASHBOARD_QUERY_KEY = ['dashboard-stats'] as const;
 
@@ -17,7 +17,7 @@ export function useDashboardStats() {
 
   const query = useQuery<DashboardPayload>({
     queryKey: [...DASHBOARD_QUERY_KEY, safeMode],
-    queryFn: () => invoke<DashboardPayload>('get_dashboard_stats', { safeMode }),
+    queryFn: () => commands.getDashboardStats({ safeMode }),
     staleTime: 30_000,
   });
 

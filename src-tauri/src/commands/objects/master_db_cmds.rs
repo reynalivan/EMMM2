@@ -25,9 +25,10 @@ impl MasterDbCache {
 ///
 /// Covers: NC-3.4-02 (Schema Load Failure → fallback)
 #[tauri::command]
+#[specta::specta]
 pub async fn get_game_schema(
     app: tauri::AppHandle,
-    game_type: String,
+    game_type: i32,
 ) -> Result<schema_loader::GameSchema, String> {
     let resource_dir = app
         .path()
@@ -36,12 +37,13 @@ pub async fn get_game_schema(
 
     log::info!("get_game_schema: resource_dir = {}", resource_dir.display());
 
-    let schema = schema_loader::load_schema(&resource_dir, &game_type);
+    let schema = schema_loader::load_schema(&resource_dir, game_type);
     Ok(schema)
 }
 
 /// Get a single object by ID (full details including metadata).
 #[tauri::command]
+#[specta::specta]
 pub async fn get_object(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
@@ -55,16 +57,18 @@ pub async fn get_object(
 /// Returns array JSON for frontend compatibility (even if file uses new object format).
 /// When hash_db is present in source, merges hashes into matching entries.
 #[tauri::command]
-pub async fn get_master_db(app: tauri::AppHandle, game_type: String) -> Result<String, String> {
+#[specta::specta]
+pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<String, String> {
     let resource_dir = app
         .path()
         .resource_dir()
         .map_err(|e| format!("Failed to get resource dir: {e}"))?;
-    crate::services::scanner::master_db::load_master_db_json(&resource_dir, &game_type)
+    crate::services::scanner::master_db::load_master_db_json(&resource_dir, game_type)
 }
 
 /// Pin or unpin an object in the database.
 #[tauri::command]
+#[specta::specta]
 pub async fn pin_object(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
@@ -78,9 +82,10 @@ pub async fn pin_object(
 ///
 /// This is used for the "Sync with DB" context menu action on individual objects/folders.
 #[tauri::command]
+#[specta::specta]
 pub async fn match_object_with_db(
     app: tauri::AppHandle,
-    game_type: String,
+    game_type: i32,
     object_name: String,
 ) -> Result<Option<crate::services::scanner::master_db::MatchedDbEntry>, String> {
     let resource_dir = app
@@ -90,7 +95,7 @@ pub async fn match_object_with_db(
 
     crate::services::scanner::master_db::match_object_with_db_service(
         &resource_dir,
-        &game_type,
+        game_type,
         &object_name,
     )
 }
@@ -98,14 +103,15 @@ pub async fn match_object_with_db(
 /// Search Master DB from Rust to offload fuzzy matching from the JS thread.
 /// Finds the top results matching `query`, optionally filtering by `object_type`.
 #[tauri::command]
+#[specta::specta]
 pub async fn search_master_db(
     app: tauri::AppHandle,
     cache: tauri::State<'_, MasterDbCache>,
-    game_type: String,
+    game_type: i32,
     query: String,
     object_type: Option<String>,
 ) -> Result<Vec<crate::services::scanner::master_db::SearchResultEntry>, String> {
-    let canonical = schema_loader::normalize_game_type(&game_type);
+    let canonical = schema_loader::normalize_game_type(game_type);
 
     // 1. Try to get from cache
     let db = {

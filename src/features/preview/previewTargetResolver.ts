@@ -29,9 +29,7 @@ export function resolvePreviewTargetPath(
     return externalSelectedPath;
   }
 
-  const selectedChild = children.find(
-    (folder) => pathsEqual(folder.path, externalSelectedPath),
-  );
+  const selectedChild = children.find((folder) => pathsEqual(folder.path, externalSelectedPath));
 
   if (!selectedChild) {
     return selfModPath;

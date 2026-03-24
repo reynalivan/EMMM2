@@ -67,7 +67,7 @@ impl ThumbnailCache {
     /// 2. Acquire semaphore permit (caps concurrent generations to 4)
     /// 3. Double-check L1 (another task may have resolved while waiting)
     /// 4. Cold-resolve in `spawn_blocking` (FS traversal + image processing)
-    pub async fn resolve(folder_path: &str) -> Result<Option<String>, String> {
+    pub async fn resolve(_game_id: &str, folder_path: &str) -> Result<Option<String>, String> {
         let path = PathBuf::from(folder_path);
         if !path.is_dir() {
             debug!("[Thumbnail] Not a directory, skipping: {}", folder_path);
@@ -75,9 +75,9 @@ impl ThumbnailCache {
         }
 
         // Fast path: folder-keyed L1 hit
-        if let Some(hit) = Self::check_folder_l1(folder_path) {
+        if let Some(hit) = Self::get_folder_l1_hash(folder_path) {
             debug!("[Thumbnail] L1 hit for {}", folder_path);
-            return Ok(Some(hit));
+            return Ok(Some(hit)); // Return absolute disk path
         }
 
         // Acquire permit — async, does NOT block the Tokio runtime
@@ -87,18 +87,23 @@ impl ThumbnailCache {
             .map_err(|e| format!("Semaphore closed: {}", e))?;
 
         // Double-check after wait (dedup: another task may have resolved it)
-        if let Some(hit) = Self::check_folder_l1(folder_path) {
-            return Ok(Some(hit));
+        if let Some(hit) = Self::get_folder_l1_hash(folder_path) {
+            return Ok(Some(hit)); // Return absolute disk path
         }
 
         let folder_key = folder_path.to_string();
-        tokio::task::spawn_blocking(move || Self::resolve_cold(&path, &folder_key))
+        let hash = tokio::task::spawn_blocking(move || Self::resolve_cold(&path, &folder_key))
             .await
-            .map_err(|e| format!("Thumbnail task failed: {}", e))?
+            .map_err(|e| format!("Thumbnail task failed: {}", e))??;
+
+        match hash {
+            Some(h) => Ok(Some(h)), // Hash here is actually the absolute path from resolve_cold
+            None => Ok(None),
+        }
     }
 
-    /// Check folder-keyed L1. Returns the WebP path string if valid.
-    fn check_folder_l1(folder_path: &str) -> Option<String> {
+    /// Check folder-keyed L1. Returns the hash string if valid.
+    fn get_folder_l1_hash(folder_path: &str) -> Option<String> {
         let mut cache = Self::get_instance().lock().unwrap();
         if let Some(entry) = cache.folder_cache.get(folder_path) {
             if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists() {
@@ -110,7 +115,7 @@ impl ThumbnailCache {
     }
 
     /// Cold path: find_thumbnail → generate/read disk cache → insert L1.
-    fn resolve_cold(folder_path: &Path, folder_key: &str) -> Result<Option<String>, String> {
+    fn resolve_cold(folder_path: &Path, _folder_key: &str) -> Result<Option<String>, String> {
         use crate::services::scanner::core::thumbnail::find_thumbnail;
 
         let original = match find_thumbnail(folder_path) {
@@ -128,20 +133,6 @@ impl ThumbnailCache {
             warn!("[Thumbnail] Generate failed for {:?}: {}", original, e);
             e
         })?;
-
-        debug!("[Thumbnail] Resolved {:?} → {:?}", folder_path, webp_path);
-
-        // Insert into folder-keyed L1
-        {
-            let mut cache = Self::get_instance().lock().unwrap();
-            cache.folder_cache.put(
-                folder_key.to_string(),
-                CachedEntry {
-                    webp_path: webp_path.clone(),
-                    cached_at: Instant::now(),
-                },
-            );
-        }
 
         Ok(Some(webp_path.to_string_lossy().to_string()))
     }
@@ -169,7 +160,7 @@ impl ThumbnailCache {
     }
 
     /// Get/generate thumbnail by original image path (backward compat).
-    pub fn get_thumbnail(original_path: &Path) -> Result<PathBuf, String> {
+    pub fn get_thumbnail(_game_id: &str, original_path: &Path) -> Result<String, String> {
         let key = original_path.to_string_lossy().to_string();
 
         // Check image-keyed L1 with TTL
@@ -178,27 +169,14 @@ impl ThumbnailCache {
             if let Some(entry) = cache.image_cache.get(&key) {
                 if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists()
                 {
-                    return Ok(entry.webp_path.clone());
+                    return Ok(entry.webp_path.to_string_lossy().to_string());
                 }
                 cache.image_cache.pop(&key);
             }
         }
 
         let webp_path = Self::generate(original_path)?;
-
-        // Insert into image-keyed L1
-        {
-            let mut cache = Self::get_instance().lock().unwrap();
-            cache.image_cache.put(
-                key,
-                CachedEntry {
-                    webp_path: webp_path.clone(),
-                    cached_at: Instant::now(),
-                },
-            );
-        }
-
-        Ok(webp_path)
+        Ok(webp_path.to_string_lossy().to_string())
     }
 
     // ─── Shared internals ─────────────────────────────────────────────

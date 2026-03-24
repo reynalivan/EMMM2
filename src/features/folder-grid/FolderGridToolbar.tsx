@@ -1,4 +1,5 @@
 import { Search, ChevronLeft, ArrowUpDown, LayoutGrid, List, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import ExplorerBreadcrumbs from './Breadcrumbs';
 
 export interface FolderGridToolbarProps {
@@ -36,6 +37,8 @@ export default function FolderGridToolbar({
   visibleCount,
   handleRefresh,
 }: FolderGridToolbarProps) {
+  const { t } = useTranslation(['grid']);
+
   return (
     <>
       {/* Top Bar: Breadcrumbs & View Controls */}
@@ -61,7 +64,10 @@ export default function FolderGridToolbar({
           <button
             onClick={handleSortToggle}
             className="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content"
-            title={`Sort: ${sortLabel} ${sortOrder === 'asc' ? '↑' : '↓'}`}
+            title={t('toolbar.sort_title', {
+              label: sortLabel,
+              order: sortOrder === 'asc' ? '↑' : '↓',
+            })}
           >
             <ArrowUpDown size={14} />
             <span className="text-[10px] font-semibold hidden sm:inline">
@@ -97,19 +103,19 @@ export default function FolderGridToolbar({
           />
           <input
             type="text"
-            placeholder="Search mods..."
+            placeholder={t('toolbar.search_placeholder')}
             className="input input-sm w-full pl-10 bg-transparent border-transparent focus:border-transparent text-base-content placeholder:text-base-content/20 transition-all focus:bg-base-content/5 rounded-md"
             value={explorerSearchQuery}
             onChange={(e) => setExplorerSearch(e.target.value)}
           />
         </div>
         <span className="text-[10px] text-base-content/30 font-medium tabular-nums shrink-0">
-          {visibleCount} item{visibleCount !== 1 ? 's' : ''}
+          {t('toolbar.item_count', { count: visibleCount })}
         </span>
         <button
           onClick={handleRefresh}
           className="btn btn-ghost btn-xs btn-square text-base-content/30 hover:text-primary transition-colors"
-          title="Refresh folder list"
+          title={t('toolbar.refresh_title')}
         >
           <RefreshCw size={14} />
         </button>

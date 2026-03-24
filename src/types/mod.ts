@@ -3,49 +3,25 @@
  * Mirrors Rust structs from `folder_cmds.rs`, `trash.rs`, and `info_json.rs`.
  */
 
+import type {
+  ModFolder,
+  FolderGridResponse,
+  ConflictMember,
+  ConflictGroup,
+  ModInfo,
+  ModInfoUpdate,
+  RenameResult,
+} from './object';
+import type {
+  BulkActionError,
+  BulkResult,
+  ConflictInfo,
+  DuplicateInfo,
+  TrashMetadata,
+} from './scanner';
+
 /** A single mod folder entry from `list_mod_folders` backend command. */
-export interface ModFolder {
-  /** Folder classification: ContainerFolder | ModPackRoot | VariantContainer | InternalAssets */
-  node_type: string;
-  /** Diagnostic reasons for the classification (debug/tooltip) */
-  classification_reasons: string[];
-  /** Database ID (UUID), if available */
-  id?: string | null;
-  /** Linked Object ID (foreign key) */
-  object_id?: string | null;
-  /** Display name (without "DISABLED " prefix) */
-  name: string;
-  /** Actual folder name on disk */
-  folder_name: string;
-  /** Full absolute path */
-  path: string;
-  /** Whether the mod is enabled (no "DISABLED " prefix) */
-  is_enabled: boolean;
-  /** Whether this entry is a directory */
-  is_directory: boolean;
-  /** Discovered thumbnail image path (if any) */
-  thumbnail_path: string | null;
-  /** Last modified time (epoch seconds) */
-  modified_at: number;
-  /** Total size in bytes */
-  size_bytes: number;
-  /** Whether the folder contains an info.json */
-  has_info_json: boolean;
-  /** Whether the mod is marked as favorite */
-  is_favorite: boolean;
-  /** Whether the mod appears to be in the wrong category */
-  is_misplaced: boolean;
-  /** Whether the mod is marked as safe (from info.json) */
-  is_safe: boolean;
-  /** Metadata from info.json (element, rarity, etc.) */
-  metadata: Record<string, string> | null;
-  /** Category from info.json metadata */
-  category: string | null;
-  /** Conflict group ID if this folder is part of a name collision */
-  conflict_group_id?: string | null;
-  /** Conflict state: "EnabledDisabledBothPresent" when both X and DISABLED X exist */
-  conflict_state?: string | null;
-}
+export type { ModFolder };
 
 /** Possible folder classification values from the backend classifier. */
 export type NodeType =
@@ -56,31 +32,13 @@ export type NodeType =
   | 'FlatModRoot';
 
 /** Response from the `list_mod_folders` backend command. */
-export interface FolderGridResponse {
-  self_node_type: string | null;
-  self_is_mod: boolean;
-  self_is_enabled: boolean;
-  self_classification_reasons: string[];
-  children: ModFolder[];
-  /** Conflict groups detected in children (empty if none) */
-  conflicts: ConflictGroup[];
-}
+export type { FolderGridResponse };
 
 /** A single member of a conflict group. */
-export interface ConflictMember {
-  path: string;
-  folder_name: string;
-  is_enabled: boolean;
-  modified_at: number;
-  size_bytes: number;
-}
+export type { ConflictMember };
 
 /** A group of folders sharing the same base name in the same parent directory. */
-export interface ConflictGroup {
-  group_id: string;
-  base_name: string;
-  members: ConflictMember[];
-}
+export type { ConflictGroup };
 
 /** Only ContainerFolder allows double-click drill-down navigation. */
 export function isNavigable(folder: ModFolder): boolean {
@@ -88,49 +46,16 @@ export function isNavigable(folder: ModFolder): boolean {
 }
 
 /** Mod metadata stored in `info.json` inside each mod folder. */
-export interface ModInfo {
-  actual_name: string;
-  author: string;
-  description: string;
-  version: string;
-  tags: string[];
-  is_safe: boolean;
-  is_auto_sync: boolean;
-  is_favorite: boolean;
-  metadata?: Record<string, string>;
-}
+export type { ModInfo };
 
 /** Partial update for info.json — only provided fields are changed. */
-export interface ModInfoUpdate {
-  actual_name?: string;
-  author?: string;
-  description?: string;
-  version?: string;
-  tags?: string[];
-  tags_add?: string[];
-  tags_remove?: string[];
-  is_safe?: boolean;
-  is_auto_sync?: boolean;
-  is_favorite?: boolean;
-  metadata?: Record<string, string>;
-}
+export type { ModInfoUpdate };
 
 /** Metadata for a trashed mod folder. */
-export interface TrashEntry {
-  id: string;
-  original_path: string;
-  original_name: string;
-  deleted_at: string;
-  size_bytes: number;
-  game_id: string | null;
-}
+export type TrashEntry = TrashMetadata;
 
 /** Result of a rename operation. */
-export interface RenameResult {
-  old_path: string;
-  new_path: string;
-  new_name: string;
-}
+export type { RenameResult };
 
 /** Sort field for mod folder listing. */
 export type SortField = 'name' | 'modified_at' | 'size_bytes';
@@ -141,27 +66,11 @@ export type SortOrder = 'asc' | 'desc';
 /** Explorer view mode. */
 export type ViewMode = 'grid' | 'list';
 
-export interface BulkActionError {
-  path: string;
-  error: string;
-}
-
-export interface BulkResult {
-  success: string[];
-  failures: BulkActionError[];
-}
+export type { BulkActionError };
+export type { BulkResult };
 
 /** Info about a shader/buffer hash conflict. */
-export interface ConflictInfo {
-  hash: string;
-  section_name: string;
-  /** Full paths of mods involved in this conflict */
-  mod_paths: string[];
-}
+export type { ConflictInfo };
 
 /** Info about a duplicate/conflicting enabled mod. */
-export interface DuplicateInfo {
-  mod_id: string;
-  folder_path: string;
-  actual_name: string;
-}
+export type { DuplicateInfo };

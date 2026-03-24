@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: EMMM2 enforces a strict "no data loss" policy — hard-deleting mod folders with `fs::remove_dir_all` is never acceptable; accidental deletes must be recoverable via OS Trash or an in-app Trash Manager.
+- **Problem Statement**: EMMM enforces a strict "no data loss" policy — hard-deleting mod folders with `fs::remove_dir_all` is never acceptable; accidental deletes must be recoverable via OS Trash or an in-app Trash Manager.
 - **Proposed Solution**: All delete operations move folders to a protected `{app_data_dir}/trash/{uuid}/` storage area with a `metadata.json` sidecar. This ensures deterministic recovery and consistency regardless of OS-specific Trash behaviors or cross-drive limitations. An optional `TrashManagerModal` lists these soft-deleted items and allows restore or permanent purge.
 - **Success Criteria**:
   - Soft delete (move to Trash) completes in ≤ 500ms for a mod folder ≤ 1GB on SSD.
@@ -21,12 +21,12 @@
 
 As a user, I want clicking "Delete" to move the mod to a safe place, so that I can recover it if I made a mistake.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                  |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-22.1.1 | ✅ Positive | Given a mod folder, when I delete via context menu and confirm, then the folder is moved to the internal `{app_data_dir}/trash/` storage and the `folders` DB record is purged in ≤ 500ms                                         |
-| AC-22.1.2 | ✅ Positive | Given the delete succeeds, then: (1) the `FolderCard` disappears from the grid via optimistic splice, and (2) the parent Object's `total_count` and `enabled_count` decrement in the objectlist                              |
-| AC-22.1.3 | ✅ Positive | Given a delete operation, then a UUID is generated and the folder is renamed/moved to `{app_data_dir}/trash/{uuid}/` with a `metadata.json` containing the original path and delete timestamp |
-| AC-22.1.4 | ⚠️ Edge     | Given a mod folder that is in use by the game engine (file lock), when delete is attempted, then the OS returns a lock error; the app shows "Cannot delete — game may be running"; no partial move occurs                 |
+| ID        | Type        | Criteria                                                                                                                                                                                                  |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-22.1.1 | ✅ Positive | Given a mod folder, when I delete via context menu and confirm, then the folder is moved to the internal `{app_data_dir}/trash/` storage and the `folders` DB record is purged in ≤ 500ms                 |
+| AC-22.1.2 | ✅ Positive | Given the delete succeeds, then: (1) the `FolderCard` disappears from the grid via optimistic splice, and (2) the parent Object's `total_count` and `enabled_count` decrement in the objectlist           |
+| AC-22.1.3 | ✅ Positive | Given a delete operation, then a UUID is generated and the folder is renamed/moved to `{app_data_dir}/trash/{uuid}/` with a `metadata.json` containing the original path and delete timestamp             |
+| AC-22.1.4 | ⚠️ Edge     | Given a mod folder that is in use by the game engine (file lock), when delete is attempted, then the OS returns a lock error; the app shows "Cannot delete — game may be running"; no partial move occurs |
 
 ---
 
@@ -34,20 +34,20 @@ As a user, I want clicking "Delete" to move the mod to a safe place, so that I c
 
 As a user, I want to view and manage soft-deleted mods from the app, so that I can restore or permanently purge items without using the OS Recycle Bin.
 
-| ID        | Type        | Criteria                                                                                                                                                                                            |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-22.2.1 | ✅ Positive | Given the Trash Manager Modal, when opened, then it lists all app-managed soft-deleted mods found in `{app_data_dir}/trash/` with: mod name, deleted-at timestamp, and size |
-| AC-22.2.2 | ✅ Positive | Given clicking "Restore" on a trash item, then the folder is moved back to its original path in ≤ 500ms, the `folders` DB record is re-registered via watcher/sync, and the grid refreshes                             |
-| AC-22.2.3 | ✅ Positive | Given clicking "Empty Trash", then a confirmation dialog appears — on confirm, all folders in `{app_data_dir}/trash/` are permanently removed and the trash session is cleared        |
-| AC-22.2.4 | ❌ Negative | Given clicking "Restore" but the original path now contains a different folder (conflict), then an error toast appears — restore is blocked to prevent data overwrite                          |
-| AC-22.2.5 | ⚠️ Edge     | Given the app's `trash/` folder contains many items, the total count and size are displayed in the modal header to encourage cleanup                           |
+| ID        | Type        | Criteria                                                                                                                                                                                   |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-22.2.1 | ✅ Positive | Given the Trash Manager Modal, when opened, then it lists all app-managed soft-deleted mods found in `{app_data_dir}/trash/` with: mod name, deleted-at timestamp, and size                |
+| AC-22.2.2 | ✅ Positive | Given clicking "Restore" on a trash item, then the folder is moved back to its original path in ≤ 500ms, the `folders` DB record is re-registered via watcher/sync, and the grid refreshes |
+| AC-22.2.3 | ✅ Positive | Given clicking "Empty Trash", then a confirmation dialog appears — on confirm, all folders in `{app_data_dir}/trash/` are permanently removed and the trash session is cleared             |
+| AC-22.2.4 | ❌ Negative | Given clicking "Restore" but the original path now contains a different folder (conflict), then an error toast appears — restore is blocked to prevent data overwrite                      |
+| AC-22.2.5 | ⚠️ Edge     | Given the app's `trash/` folder contains many items, the total count and size are displayed in the modal header to encourage cleanup                                                       |
 
 ---
 
 ### Non-Goals
 
 - No browsing of OS Recycle Bin contents — the app strictly manages its own internal `trash/` storage.
-- No "Restore" for items deleted outside of EMMM2.
+- No "Restore" for items deleted outside of EMMM.
 - No undo stack — Trash IS the undo mechanism for deletes.
 - No file-level restore (only whole mod folder restore).
 
@@ -79,7 +79,7 @@ restore_mod(game_id, trash_uuid) → Result<(), CommandError>:
 
 | Component     | Detail                                                                                           |
 | ------------- | ------------------------------------------------------------------------------------------------ |
-| App Trash    | `{app_data_dir}/trash/{uuid}/` — full folder capture with metadata sidecar          |
+| App Trash     | `{app_data_dir}/trash/{uuid}/` — full folder capture with metadata sidecar                       |
 | Optimistic UI | `queryClient.setQueryData(['folders', gameId, subPath], prev => prev.filter(...))` on `onMutate` |
 | DB Purge      | `DELETE FROM folders WHERE folder_path = ?` — in same `sqlx` transaction as trash move           |
 | Trash Manager | `TrashManagerModal.tsx` → `list_trash`, `restore_mod`, `empty_trash` commands                    |

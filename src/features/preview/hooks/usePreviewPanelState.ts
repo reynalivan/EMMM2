@@ -15,12 +15,14 @@ import {
   useSelectedModPath,
   useUpdateModInfoDetails,
   useWriteModIni,
+  type IniFileEntry,
 } from './usePreviewData';
 import {
   buildKeyBindSections,
   getConflictingKeys,
   toFieldValueMap,
   toIniWritePayload,
+  type IniDocumentLike,
 } from '../previewPanelUtils';
 import { useMetadataDraft } from './useMetadataDraft';
 import { resolvePreviewTargetPath } from '../previewTargetResolver';
@@ -120,13 +122,20 @@ export function usePreviewPanelState() {
     } as ModFolder;
   }, [folders, activePath, flatModRootPath, rawResponse, explorerSubPath]);
 
-  const iniFiles = useMemo(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
+  // listModIniFiles returns string[] — map to IniFileEntry for useAllModIniDocuments
+  const iniFiles = useMemo(
+    () =>
+      (iniFilesQuery.data ?? []).map((filename) =>
+        typeof filename === 'string' ? { filename, path: filename } : filename,
+      ) as IniFileEntry[],
+    [iniFilesQuery.data],
+  );
   const allIniQueries = useAllModIniDocuments(activePath, iniFiles);
   const iniDocuments = useMemo(
     () =>
       iniFiles.map((file, index) => ({
         fileName: file.filename,
-        document: allIniQueries[index]?.data,
+        document: allIniQueries[index]?.data as IniDocumentLike | null | undefined,
       })),
     [iniFiles, allIniQueries],
   );
@@ -176,11 +185,10 @@ export function usePreviewPanelState() {
     activePath,
     fallbackTitle,
     source: metaSource,
-    onSave: async (folderPath, draft) =>
-      updateModInfo.mutateAsync({
-        folderPath,
-        update: draft,
-      }),
+    onSave: async (folderPath, draft) => {
+      await updateModInfo.mutateAsync({ folderPath, update: draft });
+      return draft;
+    },
   });
 
   const changedMetadataFields = useMemo(() => {

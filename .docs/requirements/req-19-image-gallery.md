@@ -72,7 +72,7 @@ As a user, I want to click a thumbnail to see a full-size version with prev/next
 
 ```
 GallerySection.tsx
-  └── useModImages(folderPath) → invoke('list_mod_preview_images', { folderPath }) → PathBuf[]
+  └── useModImages(folderPath) → commands.listModPreviewImages({ folderPath }) → PathBuf[]
       └── map paths → convertFileSrc(path) → asset:// URLs
           ├── ThumbGrid (CSS grid, auto-fill, minmax(100px, 1fr))
           │   └── <img src={assetUrl} loading="lazy" onClick → openLightbox(index) />
@@ -81,7 +81,7 @@ GallerySection.tsx
               └── Prev/Next → setCurrentIndex
 
 "Set as Thumbnail" btn (per thumbnail hover):
-  → invoke('set_mod_thumbnail', { folderPath, imagePath })
+  → commands.setModThumbnail({ folderPath, imagePath })
   → reads file bytes → writes to {folderPath}/preview.png
   → onSuccess: invalidateQueries(['folders', gameId]) + invalidateQueries(['modImages', folderPath])
 
@@ -98,17 +98,17 @@ Backend:
 
 | Component        | Detail                                                                                    |
 | ---------------- | ----------------------------------------------------------------------------------------- |
-| File Discovery   | `invoke('list_mod_preview_images', { folderPath })` → `preview_cmds.rs`                   |
+| File Discovery   | `commands.listModPreviewImages({ folderPath })` → `preview_cmds.rs`                       |
 | Asset Protocol   | Tauri `asset:` protocol — configured in `tauri.conf.json` `allowlist.protocol.asset`      |
 | Image URL        | `convertFileSrc(absolutePath)` from `@tauri-apps/api/tauri`                               |
-| Set Thumbnail    | `invoke('set_mod_thumbnail', { folderPath, imagePath })`                                  |
+| Set Thumbnail    | `commands.setModThumbnail({ folderPath, imagePath })`                                     |
 | Cache Invalidate | `queryClient.invalidateQueries(['folders', gameId])` on successful thumbnail set          |
 | Lazy Loading     | `<img loading="lazy">` — browser native, no additional virtualizer needed for ≤ 50 images |
 
 ### Security & Privacy
 
 - **All `imagePath` values are validated** backend-side via `canonicalize()` + `starts_with(mods_path)` — no arbitrary read or write outside the mod folder.
-- **Tauri `asset:` protocol scope** is restricted to `mods_path` in `tauri.conf.json` `fs.scope` — images outside that scope cannot be served as assets.
+- **Tauri `asset:` protocol scope** is set to `["**"]` in `tauri.conf.json` to support mod assets located in arbitrary user-defined mod directories outside AppData.
 - **Safe Mode**: If `safe_mode = true` and the selected mod has `is_safe = false`, the Gallery section is hidden entirely — no image paths are requested from the backend.
 
 ---

@@ -6,7 +6,6 @@ import { useDeleteObject, useUpdateObject } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { invoke } from '@tauri-apps/api/core';
 import { scanService } from '../../lib/services/scanService';
-// toast store mock unused
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -81,10 +80,14 @@ describe('useObjectListHandlers', () => {
         sub_category: null,
         mod_count: 0,
         enabled_count: 0,
+        tags: '[]',
+        metadata: '{}',
         is_auto_sync: false,
         is_object_disabled: false,
-        tags: '',
-        metadata: '{}',
+        status: 1,
+        created_at: '2025-01-01T00:00:00Z',
+        hash_db: null,
+        custom_skins: null,
         has_naming_conflict: false,
       },
     ],
@@ -94,6 +97,11 @@ describe('useObjectListHandlers', () => {
     } as unknown as import('../../types/object').GameSchema,
     mismatchConfirm: null,
     setMismatchConfirm: vi.fn(),
+    bulkSelect: {
+      selectedIds: new Set<string>(),
+      toggleSelect: vi.fn(),
+      clearSelection: vi.fn(),
+    },
   };
 
   it('handleToggle calls toggleMod mutation', () => {

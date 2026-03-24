@@ -1,11 +1,6 @@
-/**
- * useObjHandlersCrud — CRUD, pin/favorite, object toggle, and category handlers.
- * Extracted from useObjectListHandlers for SRP.
- */
-
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
 import { join } from '@tauri-apps/api/path';
 import { useToggleMod, useDeleteMod, type ModFolder } from '../../hooks/useFolders';
 import { useDeleteObject, useUpdateObject } from '../../hooks/useObjects';
@@ -14,6 +9,7 @@ import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
 import { toggleDisabledInPath } from '../../lib/disabledPrefix';
 import { syncExplorerAfterRename } from './objHandlersHelpers';
+import { useTranslation } from 'react-i18next';
 import type { ObjectSummary, GameSchema } from '../../types/object';
 
 interface CrudDeps {
@@ -23,6 +19,7 @@ interface CrudDeps {
 }
 
 export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
+  const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const queryClient = useQueryClient();
   const toggleMod = useToggleMod();
@@ -46,6 +43,13 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
     name: string;
   }>({ open: false, id: '', name: '' });
 
+  const [forceDeleteObjectDialog, setForceDeleteObjectDialog] = useState<{
+    open: boolean;
+    id: string;
+    name: string;
+    count: number;
+  }>({ open: false, id: '', name: '', count: 0 });
+
   const isTogglingObjectRef = useRef(false);
 
   // ── Toggle / Open / Delete ───────────────────────────────────────
@@ -65,8 +69,9 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
   );
 
   const handleOpen = async (path: string) => {
+    if (!activeGame?.id) return;
     try {
-      await invoke('open_in_explorer', { path });
+      await commands.openInExplorer({ gameId: activeGame.id, path });
     } catch (e) {
       console.error('Failed to open explorer:', e);
     }
@@ -75,12 +80,7 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
   const handleDelete = useCallback(
     async (path: string) => {
       try {
-        const info = await invoke<{
-          path: string;
-          name: string;
-          item_count: number;
-          is_empty: boolean;
-        }>('pre_delete_check', { path });
+        const info = await commands.preDeleteCheck({ path });
 
         if (info.is_empty) {
           deleteMod.mutate({ path, gameId: activeGame?.id });
@@ -111,17 +111,54 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
 
   const confirmDeleteObject = useCallback(async () => {
     const { id, name } = deleteObjectDialog;
-    setDeleteObjectDialog({ open: false, id: '', name: '' });
     try {
-      await deleteObjectMutation.mutateAsync(id);
+      await deleteObjectMutation.mutateAsync({ id, force: false });
+      setDeleteObjectDialog({ open: false, id: '', name: '' });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      toast.success(`Deleted "${name}" successfully.`);
-    } catch (e) {
-      console.error('Failed to delete object:', e);
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Failed to delete "${name}": ${msg}`);
+      toast.success(t('create_modal.success_message', { name }));
+    } catch (e: unknown) {
+      setDeleteObjectDialog({ open: false, id: '', name: '' });
+      const errObj = e as Record<string, unknown>;
+      const errStr = String(errObj?.message ?? e);
+      let count = 0;
+      let hasModsError = false;
+
+      try {
+        const payload = typeof e === 'string' ? JSON.parse(e) : e;
+        if (payload && typeof payload === 'object' && 'ObjectHasMods' in payload) {
+          hasModsError = true;
+          count = Number(payload.ObjectHasMods);
+        }
+      } catch {
+        if (errStr.includes('ObjectHasMods') || errStr.includes('Object has')) {
+          hasModsError = true;
+          const match = errStr.match(/\d+/);
+          count = match ? parseInt(match[0], 10) : 1;
+        }
+      }
+
+      if (hasModsError) {
+        setForceDeleteObjectDialog({ open: true, id, name, count });
+      } else {
+        console.error('Failed to delete object:', e);
+        toast.error(t('create_modal.error_message', { error: errStr }));
+      }
     }
-  }, [deleteObjectDialog, deleteObjectMutation, queryClient]);
+  }, [deleteObjectDialog, deleteObjectMutation, queryClient, t]);
+
+  const confirmForceDeleteObject = useCallback(async () => {
+    const { id, name } = forceDeleteObjectDialog;
+    setForceDeleteObjectDialog({ open: false, id: '', name: '', count: 0 });
+    try {
+      await deleteObjectMutation.mutateAsync({ id, force: true });
+      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      toast.success(t('create_modal.success_message', { name }));
+    } catch (e: unknown) {
+      console.error('Failed to force delete object:', e);
+      const errObj = e as Record<string, unknown>;
+      toast.error(t('create_modal.error_message', { error: String(errObj?.message ?? e) }));
+    }
+  }, [forceDeleteObjectDialog, deleteObjectMutation, queryClient, t]);
 
   // ── Edit ─────────────────────────────────────────────────────────
   const handleEdit = useCallback(
@@ -138,14 +175,17 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
       try {
         const obj = objects.find((o) => o.id === id);
         if (obj) {
-          await invoke('pin_object', { id, pin: !obj.is_pinned });
+          await commands.pinObject({ id, pin: !obj.is_pinned });
           queryClient.invalidateQueries({ queryKey: ['objects'] });
+          toast.success(
+            t(obj.is_pinned ? 'toasts.pin_removed_one' : 'toasts.pin_added_one', { count: 1 }),
+          );
         }
       } catch (e) {
         console.error('Failed to pin object:', e);
       }
     },
-    [objects, queryClient],
+    [objects, queryClient, t],
   );
 
   const handleFavorite = useCallback(
@@ -153,18 +193,23 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
       try {
         const folder = folders.find((f) => f.path === pathOrId);
         if (folder && activeGame?.id) {
-          await invoke('toggle_favorite', {
+          await commands.toggleFavorite({
             gameId: activeGame.id,
             folderPath: folder.path,
             favorite: !folder.is_favorite,
           });
           queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+          toast.success(
+            t(folder.is_favorite ? 'toasts.favorite_removed_one' : 'toasts.favorite_added_one', {
+              count: 1,
+            }),
+          );
         }
       } catch (e) {
         console.error('Failed to favorite:', e);
       }
     },
-    [folders, queryClient, activeGame?.id],
+    [folders, queryClient, activeGame?.id, t],
   );
 
   const handleMoveCategory = useCallback(
@@ -172,24 +217,23 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
       if (!activeGame) return;
       try {
         if (itemType === 'folder') {
-          await invoke('set_mod_category', {
+          await commands.setModCategory({
             gameId: activeGame.id,
             folderPath: id,
             category,
           });
         } else {
           await updateObject.mutateAsync({ id, updates: { object_type: category } });
-          const response = await invoke<import('../../types/mod').FolderGridResponse>(
-            'list_mod_folders',
-            {
-              gameId: activeGame.id,
-              modsPath: activeGame.mod_path,
-              subPath: undefined,
-              objectId: id,
-            },
-          );
+          const obj = objects.find((o) => o.id === id);
+          if (!obj) return;
+          const response = await commands.listModFolders({
+            gameId: activeGame.id,
+            modsPath: activeGame.mod_path,
+            subPath: obj.folder_path,
+            objectId: obj.id,
+          });
           for (const f of response.children) {
-            await invoke('set_mod_category', {
+            await commands.setModCategory({
               gameId: activeGame.id,
               folderPath: f.path,
               category,
@@ -203,7 +247,7 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
         console.error('Failed to move category:', e);
       }
     },
-    [activeGame, queryClient, updateObject],
+    [activeGame, objects, queryClient, updateObject],
   );
 
   const categoryNames = useMemo(
@@ -246,13 +290,17 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
           path: targetPath,
           enable,
           gameId: activeGame.id,
-          suppressToast,
+          suppressToast: true, // we handle our own localized toast
         });
 
         if (activeGame.mod_path) syncExplorerAfterRename(activeGame.mod_path, targetPath, newPath);
         queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+
+        if (!suppressToast) {
+          toast.success(t(enable ? 'toasts.enabled_one' : 'toasts.disabled_one', { count: 1 }));
+        }
       } catch (e) {
         for (const [key, data] of prevObjectQueries) {
           queryClient.setQueryData(key, data);
@@ -273,12 +321,12 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
             /* parse failed, fall through */
           }
         }
-        toast.error(`Failed to ${label.toLowerCase()} object`);
+        toast.error(t('create_modal.error_message', { error: String(e) }));
       } finally {
         isTogglingObjectRef.current = false;
       }
     },
-    [activeGame, objects, queryClient, toggleMod],
+    [activeGame, objects, queryClient, toggleMod, t],
   );
 
   const handleEnableObject = useCallback(
@@ -296,9 +344,9 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
       if (!activeGame) return;
       const obj = objects.find((o) => o.id === objectId);
       try {
-        await invoke('reveal_object_in_explorer', {
+        await commands.revealObjectInExplorer({
+          gameId: activeGame.id,
           objectId,
-          modsPath: activeGame.mod_path,
           objectName: obj?.folder_path ?? objectId,
         });
       } catch (e) {
@@ -334,5 +382,8 @@ export function useObjHandlersCrud({ objects, folders, schema }: CrudDeps) {
     handleEnableObject,
     handleDisableObject,
     handleRevealInExplorer,
+    forceDeleteObjectDialog,
+    setForceDeleteObjectDialog,
+    confirmForceDeleteObject,
   };
 }

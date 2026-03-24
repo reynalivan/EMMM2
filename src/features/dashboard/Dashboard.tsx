@@ -1,9 +1,7 @@
 import {
   Box,
-  CircuitBoard,
   Clock,
   Copy,
-  Download,
   FolderOpen,
   Gamepad2,
   Globe,
@@ -13,6 +11,7 @@ import {
   PlayCircle,
   RefreshCw,
   Settings,
+  Download,
 } from 'lucide-react';
 import {
   PieChart,
@@ -26,53 +25,106 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import type { DashboardPayload } from '../../types/dashboard';
 import { useAppStore } from '../../stores/useAppStore';
-import { useActiveGame } from '../../hooks/useActiveGame';
 import { useDashboardStats } from './hooks/useDashboardStats';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
+import { commands } from '../../lib/bindings';
+import { useActiveGame } from '../../hooks/useActiveGame';
+import { formatBytes } from '../../utils/formatters';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const CHART_COLORS = [
-  '#6366f1', // indigo
-  '#f59e0b', // amber
-  '#10b981', // emerald
-  '#ef4444', // red
-  '#8b5cf6', // violet
-  '#06b6d4', // cyan
-  '#ec4899', // pink
-  '#84cc16', // lime
-];
+const ONYX_PALETTE = {
+  primary: '#3b82f6',
+  secondary: '#8b5cf6',
+  accent: '#b15eff',
+  info: '#0ea5e9',
+  success: '#10b981',
+  warning: '#f59e0b',
+  error: '#ef4444',
+  neutral: '#111218',
+};
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const val = bytes / Math.pow(1024, i);
-  return `${val.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
+const LIGHT_PALETTE = {
+  primary: '#5865f2',
+  secondary: '#16a34a',
+  accent: '#1e293b',
+  info: '#0ea5e9',
+  success: '#22c55e',
+  warning: '#eab308',
+  error: '#ef4444',
+  neutral: '#cbd5e1',
+};
 
-function formatRelativeDate(dateStr: string | null): string {
-  if (!dateStr) return 'Unknown';
+const getChartColors = (theme: string) => {
+  const p = theme === 'onyx' ? ONYX_PALETTE : LIGHT_PALETTE;
+  return [
+    p.primary,
+    p.secondary,
+    p.accent,
+    p.info,
+    p.success,
+    p.warning,
+    p.error,
+    p.neutral,
+  ];
+};
+
+// ── SVG Gradients ───────────────────────────────────────────────────────────
+
+const ChartGradients = ({ theme }: { theme: string }) => {
+  const p = theme === 'onyx' ? ONYX_PALETTE : LIGHT_PALETTE;
+  return (
+    <defs>
+      <linearGradient id="gradientPrimary" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor={p.primary} stopOpacity={0.9} />
+        <stop offset="95%" stopColor={p.primary} stopOpacity={0.4} />
+      </linearGradient>
+      <linearGradient id="gradientSecondary" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor={p.secondary} stopOpacity={0.9} />
+        <stop offset="95%" stopColor={p.secondary} stopOpacity={0.4} />
+      </linearGradient>
+      <linearGradient id="gradientAccent" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor={p.accent} stopOpacity={0.9} />
+        <stop offset="95%" stopColor={p.accent} stopOpacity={0.4} />
+      </linearGradient>
+      <linearGradient id="gradientSuccess" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor={p.success} stopOpacity={0.9} />
+        <stop offset="95%" stopColor={p.success} stopOpacity={0.4} />
+      </linearGradient>
+      <linearGradient id="gradientInfo" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor={p.info} stopOpacity={0.9} />
+        <stop offset="95%" stopColor={p.info} stopOpacity={0.4} />
+      </linearGradient>
+    </defs>
+  );
+};
+
+function formatRelativeDate(
+  dateInput: string | number | null,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (!dateInput) return t('common:date.unknown');
   const now = Date.now();
-  const then = new Date(dateStr + 'Z').getTime();
+  const then = typeof dateInput === 'string' ? new Date(dateInput + 'Z').getTime() : dateInput;
   const diffMs = now - then;
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 1) return t('common:date.just_now');
+  if (diffMin < 60) return t('common:date.mins_ago', { count: diffMin });
   const diffHrs = Math.floor(diffMin / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
+  if (diffHrs < 24) return t('common:date.hours_ago', { count: diffHrs });
   const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-  return new Date(dateStr).toLocaleDateString();
+  if (diffDays < 30) return t('common:date.days_ago', { count: diffDays });
+  return new Date(then).toLocaleDateString();
 }
 
 // ── Skeleton Loading ────────────────────────────────────────────────────────
 
 function DashboardSkeleton() {
   return (
-    <div className="p-6 space-y-6 animate-pulse">
+    <div className="p-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Stat tiles skeleton */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -93,6 +145,7 @@ function DashboardSkeleton() {
 // ── Empty State ─────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const { t } = useTranslation(['dashboard']);
   const { setWorkspaceView } = useAppStore();
 
   return (
@@ -103,16 +156,14 @@ function EmptyState() {
           <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
           <Gamepad2 size={64} className="text-primary relative z-10 mx-auto" />
         </div>
-        <h1 className="text-3xl font-bold mb-3">Welcome to EMMM2</h1>
-        <p className="text-base-content/60 mb-8">
-          Get started by adding your first game to manage mods.
-        </p>
+        <h1 className="text-3xl font-bold mb-3">{t('empty.title')}</h1>
+        <p className="text-base-content/60 mb-8">{t('empty.subtitle')}</p>
         <button
           onClick={() => setWorkspaceView('settings')}
           className="btn btn-primary btn-lg gap-2"
         >
           <Gamepad2 size={20} />
-          Add Your First Game
+          {t('empty.add_game')}
         </button>
       </div>
     </div>
@@ -122,26 +173,21 @@ function EmptyState() {
 // ── Main Dashboard ──────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const { t } = useTranslation();
+  const setWorkspaceView = useAppStore((s) => s.setWorkspaceView);
+  const activeGameId = useAppStore((s) => s.activeGameId);
+  const theme = useAppStore((s) => s.theme);
+  const colors = getChartColors(theme);
+
   const { data, isLoading, isError, refresh } = useDashboardStats();
+  const { data: activeGame } = useActiveGame();
   const { keybindings, isLoading: kbLoading } = useActiveKeybindings();
-  const { activeGame } = useActiveGame();
-  const { setWorkspaceView } = useAppStore();
 
-  // Loading state
-  if (isLoading) return <DashboardSkeleton />;
-
-  // Error state
-  if (isError || !data) {
+  // Loading or Error state
+  if (isLoading || isError || !data) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
-        <div role="alert" className="alert alert-error alert-soft max-w-md">
-          <CircuitBoard size={20} />
-          <span>Failed to load dashboard data.</span>
-        </div>
-        <button onClick={refresh} className="btn btn-outline btn-sm gap-2">
-          <RefreshCw size={16} />
-          Retry
-        </button>
+      <div className="h-full flex items-center justify-center bg-base-100">
+        <span className="loading loading-spinner loading-lg text-primary"></span>
       </div>
     );
   }
@@ -149,8 +195,8 @@ export default function Dashboard() {
   // Empty state (no games configured)
   if (data.stats.total_games === 0) return <EmptyState />;
 
-  const { stats, duplicate_waste_bytes, category_distribution, game_distribution, recent_mods } =
-    data;
+  const { stats, duplicate_waste_bytes, category_distribution, game_distribution } = data;
+  const recent_mods: DashboardPayload['recent_mods'] = data.recent_mods || [];
 
   return (
     <div className="h-full overflow-y-auto bg-base-100">
@@ -158,19 +204,19 @@ export default function Dashboard() {
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('header.title')}</h1>
             <p className="text-sm text-base-content/50">
-              Overview of your mod ecosystem
-              {activeGame ? ` • ${activeGame.name}` : ''}
+              {t('header.subtitle')}
+              {activeGameId ? ` • ${activeGameId}` : ''}
             </p>
           </div>
           <button
             onClick={refresh}
             className="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content"
-            aria-label="Refresh dashboard"
+            aria-label={t('header.refresh')}
           >
             <RefreshCw size={16} />
-            Refresh
+            {t('header.refresh')}
           </button>
         </div>
 
@@ -178,16 +224,16 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-4">
           <button
             onClick={() => {
-              if (activeGame) invoke('launch_game', { gameId: activeGame.id }).catch(console.error);
+              if (activeGameId) commands.launchGame({ gameId: activeGameId }).catch(console.error);
             }}
-            disabled={!activeGame}
+            disabled={!activeGameId}
             className="flex flex-col items-center gap-3 py-6 px-4 rounded-2xl bg-base-200/60 border border-base-300 hover:bg-success/10 hover:border-success/30 hover:shadow-lg hover:shadow-success/5 hover:scale-[1.04] active:scale-[0.96] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed group"
           >
             <div className="w-14 h-14 rounded-2xl bg-success/20 flex items-center justify-center group-hover:bg-success/30 transition-colors">
               <PlayCircle size={28} className="text-success" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-success transition-colors">
-              Quick Play
+              {t('actions.quick_play')}
             </span>
           </button>
           <button
@@ -198,18 +244,18 @@ export default function Dashboard() {
               <FolderOpen size={28} className="text-primary" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-primary transition-colors">
-              Mods Manager
+              {t('actions.mods_manager')}
             </span>
           </button>
           <button
-            onClick={() => setWorkspaceView('settings')}
+            onClick={() => setWorkspaceView('storage-optimizer')}
             className="flex flex-col items-center gap-3 py-6 px-4 rounded-2xl bg-base-200/60 border border-base-300 hover:bg-warning/10 hover:border-warning/30 hover:shadow-lg hover:shadow-warning/5 hover:scale-[1.04] active:scale-[0.96] transition-all cursor-pointer group"
           >
             <div className="w-14 h-14 rounded-2xl bg-warning/20 flex items-center justify-center group-hover:bg-warning/30 transition-colors">
               <Copy size={28} className="text-warning" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-warning transition-colors">
-              Dedup Scanner
+              {t('actions.storage_optimizer')}
             </span>
           </button>
           <button
@@ -220,7 +266,7 @@ export default function Dashboard() {
               <Layers size={28} className="text-secondary" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-secondary transition-colors">
-              Collections
+              {t('actions.collections')}
             </span>
           </button>
           <button
@@ -231,7 +277,7 @@ export default function Dashboard() {
               <Settings size={28} className="text-accent" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-accent transition-colors">
-              Settings
+              {t('actions.settings')}
             </span>
           </button>
 
@@ -245,7 +291,7 @@ export default function Dashboard() {
               <Globe size={28} className="text-info" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-info transition-colors">
-              Discover
+              {t('actions.discover')}
             </span>
           </button>
 
@@ -259,7 +305,7 @@ export default function Dashboard() {
               <Download size={28} className="text-error" />
             </div>
             <span className="text-sm font-semibold text-base-content/80 group-hover:text-error transition-colors">
-              Downloads
+              {t('actions.downloads')}
             </span>
           </button>
         </div>
@@ -268,47 +314,50 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatTile
             icon={<Box size={22} />}
-            title="Total Mods"
+            title={t('stats.total_mods')}
             value={stats.total_mods.toLocaleString()}
-            desc={`${stats.enabled_mods} enabled · ${stats.disabled_mods} disabled`}
+            desc={`${stats.enabled_mods} ${t('stats.enabled')} · ${stats.disabled_mods} ${t('stats.disabled')}`}
             color="text-primary"
+            bgGradient="from-primary/10 to-transparent"
           />
           <StatTile
             icon={<Gamepad2 size={22} />}
-            title="Games"
+            title={t('stats.games')}
             value={stats.total_games.toLocaleString()}
-            desc="Configured"
+            desc={t('stats.configured')}
             color="text-secondary"
+            bgGradient="from-secondary/10 to-transparent"
           />
           <StatTile
             icon={<HardDrive size={22} />}
-            title="Storage"
+            title={t('stats.storage')}
             value={formatBytes(stats.total_size_bytes)}
-            desc="Total mod size"
+            desc={t('stats.total_size_desc')}
             color="text-accent"
+            bgGradient="from-accent/10 to-transparent"
           />
           <StatTile
             icon={<Layers size={22} />}
-            title="Collections"
+            title={t('stats.collections')}
             value={stats.total_collections.toLocaleString()}
-            desc="Presets saved"
+            desc={t('stats.presets_desc')}
             color="text-info"
+            bgGradient="from-info/10 to-transparent"
           />
         </div>
 
         {/* ── Duplicate Waste Banner ─────────────────────────────────── */}
-        {duplicate_waste_bytes > 0 && (
+        {typeof duplicate_waste_bytes !== 'undefined' && duplicate_waste_bytes > 0 && (
           <div
             role="alert"
             className="alert alert-warning alert-soft alert-horizontal cursor-pointer hover:brightness-95 transition-all"
-            onClick={() => setWorkspaceView('settings')}
+            onClick={() => setWorkspaceView('storage-optimizer')}
           >
             <Copy size={20} />
             <div>
-              <h3 className="font-bold">Duplicate Waste Detected</h3>
+              <h3 className="font-bold">{t('waste.title')}</h3>
               <p className="text-sm">
-                {formatBytes(duplicate_waste_bytes)} wasted on duplicate mods. Run Dedup Scanner to
-                clean up.
+                {t('waste.subtitle', { size: formatBytes(duplicate_waste_bytes) })}
               </p>
             </div>
           </div>
@@ -320,44 +369,55 @@ export default function Dashboard() {
           <div className="card bg-base-200/50 border border-base-300">
             <div className="card-body">
               <h2 className="card-title text-sm font-semibold text-base-content/70">
-                Category Distribution
+                {t('charts.category_title')}
               </h2>
               {category_distribution.length > 0 ? (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
+                      <ChartGradients theme={theme} />
                       <Pie
                         data={category_distribution}
                         cx="50%"
                         cy="50%"
                         innerRadius={55}
                         outerRadius={85}
-                        paddingAngle={3}
+                        paddingAngle={4}
                         dataKey="count"
                         nameKey="category"
+                        animationBegin={0}
+                        animationDuration={1200}
                         label={({ category, percent }: { category?: string; percent?: number }) =>
                           `${category ?? ''} ${((percent ?? 0) * 100).toFixed(0)}%`
                         }
                       >
-                        {category_distribution.map((_, i) => (
-                          <Cell key={`cat-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                        {category_distribution.map((_, i: number) => (
+                          <Cell
+                            key={`cat-${i}`}
+                            fill={colors[i % colors.length]}
+                            stroke="var(--b1)"
+                            strokeWidth={2}
+                          />
                         ))}
                       </Pie>
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: 'oklch(var(--b2))',
-                          border: '1px solid oklch(var(--b3))',
-                          borderRadius: '0.75rem',
+                          backgroundColor: 'var(--b2)',
+                          border: '1px solid var(--b3)',
+                          borderRadius: '1rem',
                           fontSize: '0.875rem',
+                          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          backdropFilter: 'blur(8px)',
                         }}
+                        itemStyle={{ color: 'var(--bc)' }}
                       />
-                      <Legend />
+                      <Legend verticalAlign="bottom" height={36} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               ) : (
                 <div className="h-64 flex items-center justify-center text-base-content/40">
-                  No mod data yet
+                  {t('charts.no_mod_data')}
                 </div>
               )}
             </div>
@@ -367,7 +427,7 @@ export default function Dashboard() {
           <div className="card bg-base-200/50 border border-base-300">
             <div className="card-body">
               <h2 className="card-title text-sm font-semibold text-base-content/70">
-                Mods per Game
+                {t('charts.game_title')}
               </h2>
               {game_distribution.length > 0 ? (
                 <div className="h-64">
@@ -376,35 +436,57 @@ export default function Dashboard() {
                       data={game_distribution}
                       margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
                     >
+                      <ChartGradients theme={theme} />
                       <XAxis
                         dataKey="game_name"
-                        tick={{ fontSize: 12 }}
-                        stroke="oklch(var(--bc) / 0.4)"
+                        tick={{ fontSize: 11, fill: 'var(--bc)', opacity: 0.6 }}
+                        axisLine={false}
+                        tickLine={false}
                       />
                       <YAxis
                         allowDecimals={false}
-                        tick={{ fontSize: 12 }}
-                        stroke="oklch(var(--bc) / 0.4)"
+                        tick={{ fontSize: 11, fill: 'var(--bc)', opacity: 0.6 }}
+                        axisLine={false}
+                        tickLine={false}
                       />
                       <Tooltip
+                        cursor={{ fill: 'var(--bc)', fillOpacity: 0.05 }}
                         contentStyle={{
-                          backgroundColor: 'oklch(var(--b2))',
-                          border: '1px solid oklch(var(--b3))',
-                          borderRadius: '0.75rem',
+                          backgroundColor: 'var(--b2)',
+                          border: '1px solid var(--b3)',
+                          borderRadius: '1rem',
                           fontSize: '0.875rem',
+                          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          backdropFilter: 'blur(8px)',
                         }}
+                        itemStyle={{ color: 'var(--bc)' }}
                       />
-                      <Bar dataKey="count" name="Mods" radius={[6, 6, 0, 0]}>
-                        {game_distribution.map((_, i) => (
-                          <Cell key={`game-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                        ))}
+                      <Bar
+                        dataKey="count"
+                        name="Mods"
+                        radius={[8, 8, 0, 0]}
+                        animationBegin={200}
+                        animationDuration={1500}
+                      >
+                        {game_distribution.map((_, i: number) => {
+                          const gradients = [
+                            'url(#gradientPrimary)',
+                            'url(#gradientSecondary)',
+                            'url(#gradientAccent)',
+                            'url(#gradientInfo)',
+                            'url(#gradientSuccess)',
+                          ];
+                          return (
+                            <Cell key={`game-${i}`} fill={gradients[i % gradients.length]} />
+                          );
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               ) : (
                 <div className="h-64 flex items-center justify-center text-base-content/40">
-                  No game data yet
+                  {t('charts.no_game_data')}
                 </div>
               )}
             </div>
@@ -418,7 +500,7 @@ export default function Dashboard() {
             <div className="card-body">
               <h2 className="card-title text-sm font-semibold text-base-content/70">
                 <Clock size={16} className="mr-1" />
-                Recently Added
+                {t('activity.recent_title')}
               </h2>
               {recent_mods.length > 0 ? (
                 <ul className="space-y-2">
@@ -430,18 +512,21 @@ export default function Dashboard() {
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{mod.name}</p>
                         <p className="text-xs text-base-content/50">
-                          {mod.game_name}
-                          {mod.object_name ? ` · ${mod.object_name}` : ''}
+                          {mod.category
+                            ? t('activity.category', { category: mod.category })
+                            : t('activity.uncategorized')}
                         </p>
                       </div>
                       <span className="text-xs text-base-content/40 whitespace-nowrap ml-3">
-                        {formatRelativeDate(mod.indexed_at)}
+                        {formatRelativeDate(mod.modified_at, t)}
                       </span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-base-content/40 py-4 text-center">No mods indexed yet</p>
+                <p className="text-sm text-base-content/40 py-4 text-center">
+                  {t('activity.no_mods')}
+                </p>
               )}
             </div>
           </div>
@@ -449,8 +534,10 @@ export default function Dashboard() {
           {/* Quick Play */}
           <div className="card bg-base-200/50 border border-base-300">
             <div className="card-body items-center text-center">
-              <h2 className="card-title text-sm font-semibold text-base-content/70">Quick Play</h2>
-              {activeGame ? (
+              <h2 className="card-title text-sm font-semibold text-base-content/70">
+                {t('actions.quick_play')}
+              </h2>
+              {activeGameId ? (
                 <>
                   <div className="my-3">
                     <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
@@ -458,19 +545,19 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <p className="font-semibold text-base">{activeGame.name}</p>
-                  <p className="text-xs text-base-content/50 mb-3">Last selected game</p>
+                  <p className="text-xs text-base-content/50 mb-3">{t('activity.last_selected')}</p>
                   <button
                     onClick={() => {
-                      invoke('launch_game', { gameId: activeGame.id }).catch(console.error);
+                      commands.launchGame({ gameId: activeGame.id }).catch(console.error);
                     }}
                     className="btn btn-primary btn-sm gap-2 w-full"
                   >
                     <PlayCircle size={16} />
-                    Launch
+                    {t('activity.launch')}
                   </button>
                 </>
               ) : (
-                <p className="text-sm text-base-content/40 py-4">No game selected</p>
+                <p className="text-sm text-base-content/40 py-4">{t('activity.no_game')}</p>
               )}
             </div>
           </div>
@@ -481,7 +568,7 @@ export default function Dashboard() {
           <div className="card-body">
             <h2 className="card-title text-sm font-semibold text-base-content/70">
               <Keyboard size={16} className="mr-1" />
-              Active Key Mapping
+              {t('keys.title')}
               {keybindings.length > 0 && (
                 <span className="badge badge-sm badge-ghost ml-1">{keybindings.length}</span>
               )}
@@ -495,16 +582,19 @@ export default function Dashboard() {
                 <table className="table table-xs table-zebra">
                   <thead className="sticky top-0 bg-base-200">
                     <tr>
-                      <th>Mod</th>
-                      <th>Section</th>
-                      <th>Key</th>
-                      <th>Back</th>
+                      <th>{t('keys.table_mod')}</th>
+                      <th>{t('keys.table_section')}</th>
+                      <th>{t('keys.table_key')}</th>
+                      <th>{t('keys.table_back')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {keybindings.map((kb, i) => (
                       <tr key={`${kb.mod_name}-${kb.section_name}-${i}`}>
-                        <td className="truncate max-w-[160px]" title={kb.mod_name}>
+                        <td
+                          className="truncate max-w-40"
+                          title={(kb.mod_name as string) ?? undefined}
+                        >
                           {kb.mod_name}
                         </td>
                         <td className="text-base-content/60">{kb.section_name}</td>
@@ -517,7 +607,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <p className="text-sm text-base-content/40 py-4 text-center">
-                No keybindings found in enabled mods
+                {t('keys.no_bindings')}
               </p>
             )}
           </div>
@@ -535,19 +625,26 @@ function StatTile({
   value,
   desc,
   color,
+  bgGradient,
 }: {
   icon: React.ReactNode;
   title: string;
   value: string;
   desc: string;
   color: string;
+  bgGradient: string;
 }) {
   return (
-    <div className="stat bg-base-200/50 backdrop-blur rounded-2xl border border-base-300 p-4">
-      <div className={`stat-figure ${color}`}>{icon}</div>
-      <div className="stat-title text-xs">{title}</div>
-      <div className="stat-value text-2xl">{value}</div>
-      <div className="stat-desc text-xs">{desc}</div>
+    <div className={`stat bg-base-200/50 backdrop-blur rounded-2xl border border-base-300 p-4 relative overflow-hidden group hover:bg-base-300/40 transition-colors`}>
+      <div className={`absolute inset-0 bg-linear-to-br ${bgGradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
+      <div className={`stat-figure ${color} relative z-10 scale-100 group-hover:scale-110 transition-transform`}>
+        {icon}
+      </div>
+      <div className="stat-title text-xs relative z-10">{title}</div>
+      <div className="stat-value text-2xl relative z-10 group-hover:translate-x-1 transition-transform">
+        {value}
+      </div>
+      <div className="stat-desc text-xs relative z-10">{desc}</div>
     </div>
   );
 }

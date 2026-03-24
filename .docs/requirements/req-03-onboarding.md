@@ -89,9 +89,9 @@ As a first-time user, I want to navigate back from sub-steps to the initial welc
 /welcome route (React)
   └── WelcomeStateMachine: landing → scanning → results → manual
       ├── landing:  Two CTA buttons
-      ├── scanning: invoke('auto_detect_games', rootPath) → GameConfig[]
-      ├── results:  Editable list → invoke('add_game') * N → navigate('/dashboard')
-      └── manual:   Form → invoke('add_game', gameType, path) → navigate('/dashboard')
+      ├── scanning: commands.autoDetectGames({ rootPath }) → GameConfig[]
+      ├── results:  Editable list → commands.addGame() * N → navigate('/dashboard')
+      └── manual:   Form → commands.addGame({ gameType, path }) → navigate('/dashboard')
 
 Backend
   ├── check_config_status() → FreshInstall | HasConfig   (Epic 01)
@@ -113,7 +113,7 @@ Backend
 ### Security & Privacy
 
 - **All folder paths entered during onboarding** are passed through `std::fs::canonicalize()` before `add_game` processes them — prevents path traversal on the very first interaction.
-- **`GameType` is always deserialized as a typed enum** (`serde` `#[serde(rename_all = "snake_case")]`) — unrecognized strings are rejected at the serde boundary, never reach DB.
+- **`GameType` is always deserialized as a typed integer enum** (`serde_repr`) — unrecognized integers are rejected at the serde boundary, never reach DB.
 - **Submit button is disabled while an IPC call is in-flight** — enforced in React state, not just UX polish — to prevent double-insert race conditions on rapid clicking.
 - **No user data is sent externally** during onboarding; all detection and validation is local.
 

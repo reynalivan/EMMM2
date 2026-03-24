@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from '../../stores/useToastStore';
 import { useBulkUpdateInfo } from '../../hooks/useFolders';
+import { useActiveGame } from '../../hooks/useActiveGame';
 import { X, Tag, Plus } from 'lucide-react';
-import { createPortal } from 'react-dom';
 
 interface BulkTagModalProps {
   isOpen: boolean;
@@ -10,8 +12,10 @@ interface BulkTagModalProps {
 }
 
 export function BulkTagModal({ isOpen, onClose, selectedPaths }: BulkTagModalProps) {
+  const { t } = useTranslation(['folder_grid', 'common']);
   const [tagInput, setTagInput] = useState('');
   const [tagsToAdd, setTagsToAdd] = useState<string[]>([]);
+  const { activeGame } = useActiveGame();
   const { mutate, isPending } = useBulkUpdateInfo();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,26 +51,35 @@ export function BulkTagModal({ isOpen, onClose, selectedPaths }: BulkTagModalPro
 
     mutate(
       {
+        gameId: activeGame?.id || '',
         paths: selectedPaths,
         update: { tags_add: tagsToAdd },
       },
       {
         onSuccess: () => {
+          toast.success(t('folder_grid:tags.toast.success', { count: selectedPaths.length }));
           onClose();
+        },
+        onError: (err) => {
+          toast.error(t('folder_grid:tags.toast.failed', { error: String(err) }));
         },
       },
     );
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+  return (
+    <dialog className="modal modal-open">
       <div className="modal-box bg-base-100 border border-base-content/10 shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-lg flex items-center gap-2">
             <Tag size={18} className="text-primary" />
-            Add Tags to {selectedPaths.length} Mods
+            {t('folder_grid:tags.title')} ({selectedPaths.length})
           </h3>
-          <button onClick={onClose} className="btn btn-sm btn-ghost btn-circle">
+          <button
+            onClick={onClose}
+            className="btn btn-sm btn-ghost btn-circle"
+            aria-label={t('common:actions.close')}
+          >
             <X size={18} />
           </button>
         </div>
@@ -76,20 +89,26 @@ export function BulkTagModal({ isOpen, onClose, selectedPaths }: BulkTagModalPro
             <input
               ref={inputRef}
               type="text"
-              placeholder="Type tag & press Enter..."
+              placeholder={t('folder_grid:tags.placeholder')}
               className="input input-bordered w-full input-sm"
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={handleKeyDown}
             />
-            <button className="btn btn-sm btn-square" onClick={handleAddTag}>
+            <button
+              className="btn btn-sm btn-square"
+              onClick={handleAddTag}
+              aria-label={t('common:actions.add')}
+            >
               <Plus size={16} />
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-base-200/50 rounded-lg">
+          <div className="flex flex-wrap gap-2 min-h-10 p-2 bg-base-200/50 rounded-lg">
             {tagsToAdd.length === 0 && (
-              <span className="text-base-content/40 text-sm italic py-1">No tags added yet</span>
+              <span className="text-base-content/40 text-sm italic py-1">
+                {t('folder_grid:tags.empty')}
+              </span>
             )}
             {tagsToAdd.map((tag) => (
               <div key={tag} className="badge badge-neutral gap-1 pr-1">
@@ -97,6 +116,7 @@ export function BulkTagModal({ isOpen, onClose, selectedPaths }: BulkTagModalPro
                 <button
                   onClick={() => removeTag(tag)}
                   className="hover:bg-base-content/20 rounded-full p-0.5"
+                  aria-label={t('common:actions.remove')}
                 >
                   <X size={10} />
                 </button>
@@ -106,19 +126,21 @@ export function BulkTagModal({ isOpen, onClose, selectedPaths }: BulkTagModalPro
 
           <div className="modal-action mt-2">
             <button className="btn btn-sm btn-ghost" onClick={onClose}>
-              Cancel
+              {t('common:actions.cancel')}
             </button>
             <button
               className="btn btn-sm btn-primary"
               onClick={startBulkUpdate}
               disabled={isPending || tagsToAdd.length === 0}
             >
-              {isPending ? 'Updating...' : `Add Tags`}
+              {isPending ? t('common:status.updating') : t('common:actions.add_tags')}
             </button>
           </div>
         </div>
       </div>
-    </div>,
-    document.body,
+      <form method="dialog" className="modal-backdrop backdrop-blur-sm bg-overlay-mask">
+        <button onClick={onClose}>{t('common:actions.close')}</button>
+      </form>
+    </dialog>
   );
 }

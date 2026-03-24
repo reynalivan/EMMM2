@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useEditObjectForm } from './hooks/useEditObjectForm';
 import { useMasterDbSync, type DbEntryFull } from './hooks/useMasterDbSync';
@@ -19,6 +20,7 @@ interface EditObjectModalProps {
 }
 
 export default function EditObjectModal({ open, object, onClose }: EditObjectModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const { data: gameSchema } = useGameSchema();
 
@@ -247,19 +249,19 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2 z-60"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t('common:actions.close')}
         >
           <X size={16} />
         </button>
 
         {/* Header with Context */}
-        <h3 className="font-bold text-lg mb-1">Edit Metadata</h3>
+        <h3 className="font-bold text-lg mb-1">{t('edit_modal.title')}</h3>
         <p className="text-sm opacity-50 mb-4 truncate">
-          Original: <span className="font-mono">{originalName}</span>
+          {t('edit_modal.original')}: <span className="font-mono">{originalName}</span>
         </p>
 
         {isLoadingDetails ? (
-          <div className="flex justify-center p-8">Loading details...</div>
+          <div className="flex justify-center p-8">{t('common:states.loading')}</div>
         ) : (
           <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col gap-4">
             {/* Tabs: Manual vs Auto Sync */}
@@ -272,7 +274,7 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
                 className={`tab ${activeTab === 'manual' ? 'tab-active font-bold border-b-2 border-primary' : ''}`}
                 onClick={() => handleTabSwitch('manual')}
               >
-                Manual
+                {t('edit_modal.tabs.manual')}
               </a>
               <a
                 role="tab"
@@ -283,9 +285,11 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
                   cursor: activeGame ? 'pointer' : 'not-allowed',
                 }}
               >
-                Auto Sync
+                {t('edit_modal.tabs.auto')}
                 {watch('is_auto_sync') ? (
-                  <div className="badge badge-sm badge-success text-white">Active</div>
+                  <div className="badge badge-sm badge-success text-success-content">
+                    {t('edit_modal.badges.active')}
+                  </div>
                 ) : (
                   suggestions.length > 0 && (
                     <div className="badge badge-sm badge-secondary">{suggestions.length}</div>
@@ -319,6 +323,7 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
                     form={form}
                     gameSchema={gameSchema}
                     categoryFilters={categoryFilters}
+                    isObject={isObject}
                   />
                 )}
 
@@ -336,14 +341,18 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
 
             <div className="modal-action mt-0 border-t border-base-200 bg-base-100/90 pt-4 backdrop-blur-sm">
               <button type="button" className="btn" onClick={onClose} disabled={isPending}>
-                Cancel
+                {t('common:actions.cancel')}
               </button>
               <button
                 type="submit"
                 className="btn btn-primary min-w-30"
                 disabled={isPending || (activeTab === 'auto' && !selectedSyncEntry)}
               >
-                {isPending ? <span className="loading loading-spinner"></span> : 'Save Changes'}
+                {isPending ? (
+                  <span className="loading loading-spinner"></span>
+                ) : (
+                  t('common:actions.save_changes')
+                )}
               </button>
             </div>
           </form>

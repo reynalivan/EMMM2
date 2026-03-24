@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../hooks/useSettings';
 import { useAppStore } from '../../stores/useAppStore'; // Import Store
 import GamesTab from './tabs/GamesTab';
@@ -24,19 +25,22 @@ type Tab =
   | 'logs';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('general');
-  const { setWorkspaceView } = useAppStore(); // Use Store Action
+  const { t } = useTranslation(['settings', 'common']);
+  const { setWorkspaceView } = useAppStore();
   const { isLoading, error } = useSettings();
+  const [activeTab, setActiveTab] = useState<Tab>('general');
 
   const handleBack = () => {
     // Close Settings View and return to Dashboard
     setWorkspaceView('dashboard');
   };
 
-  if (isLoading) return <div className="p-10 text-center">Loading settings...</div>;
+  if (isLoading) return <div className="p-10 text-center">{t('common:status.loading')}</div>;
   if (error)
     return (
-      <div className="p-10 text-center text-error">Error loading settings: {String(error)}</div>
+      <div className="p-10 text-center text-error">
+        {t('common:status.error')}: {String(error)}
+      </div>
     );
 
   return (
@@ -45,7 +49,7 @@ export default function SettingsPage() {
         <button className="btn btn-ghost btn-circle btn-sm" onClick={handleBack}>
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-xl font-bold flex-1">Settings</h2>
+        <h2 className="text-xl font-bold flex-1">{t('page.title')}</h2>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -57,7 +61,7 @@ export default function SettingsPage() {
                 className={activeTab === 'general' ? 'active' : ''}
                 onClick={() => setActiveTab('general')}
               >
-                General
+                {t('tabs.general')}
               </button>
             </li>
             <li>
@@ -65,7 +69,7 @@ export default function SettingsPage() {
                 className={activeTab === 'games' ? 'active' : ''}
                 onClick={() => setActiveTab('games')}
               >
-                Games
+                {t('tabs.games')}
               </button>
             </li>
             <li>
@@ -73,7 +77,7 @@ export default function SettingsPage() {
                 className={activeTab === 'browser' ? 'active' : ''}
                 onClick={() => setActiveTab('browser')}
               >
-                Browser & Import
+                {t('tabs.browser')}
               </button>
             </li>
             <li>
@@ -81,7 +85,7 @@ export default function SettingsPage() {
                 className={activeTab === 'privacy' ? 'active' : ''}
                 onClick={() => setActiveTab('privacy')}
               >
-                Privacy & Safe Mode
+                {t('tabs.privacy')}
               </button>
             </li>
             <li>
@@ -89,7 +93,7 @@ export default function SettingsPage() {
                 className={activeTab === 'hotkeys' ? 'active' : ''}
                 onClick={() => setActiveTab('hotkeys')}
               >
-                Hotkeys & KeyViewer
+                {t('tabs.hotkeys')}
               </button>
             </li>
             <li>
@@ -97,7 +101,7 @@ export default function SettingsPage() {
                 className={activeTab === 'ai' ? 'active' : ''}
                 onClick={() => setActiveTab('ai')}
               >
-                AI Configuration
+                {t('tabs.ai')}
               </button>
             </li>
             <li>
@@ -105,7 +109,7 @@ export default function SettingsPage() {
                 className={activeTab === 'maintenance' ? 'active' : ''}
                 onClick={() => setActiveTab('maintenance')}
               >
-                Maintenance
+                {t('tabs.maintenance')}
               </button>
             </li>
             <li>
@@ -113,7 +117,7 @@ export default function SettingsPage() {
                 className={activeTab === 'updates' ? 'active' : ''}
                 onClick={() => setActiveTab('updates')}
               >
-                Updates
+                {t('tabs.updates')}
               </button>
             </li>
             <div className="divider my-1"></div>
@@ -122,7 +126,7 @@ export default function SettingsPage() {
                 className={activeTab === 'logs' ? 'active' : ''}
                 onClick={() => setActiveTab('logs')}
               >
-                Logs
+                {t('tabs.logs')}
               </button>
             </li>
           </ul>

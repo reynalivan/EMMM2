@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: Users who organize mods in Windows Explorer while EMMM2 is open expect the app to reflect external changes instantly — without this, the UI shows stale data until a manual refresh, and bulk operations that fire filesystem events trigger unnecessary grid re-renders.
+- **Problem Statement**: Users who organize mods in Windows Explorer while EMMM is open expect the app to reflect external changes instantly — without this, the UI shows stale data until a manual refresh, and bulk operations that fire filesystem events trigger unnecessary grid re-renders.
 - **Proposed Solution**: A `notify`-crate watcher running as a background Tauri-managed service, watching the active game's `mods_path` with a poll-based event loop (500ms). It features a global `SuppressionGuard` (AtomicBool) to silence internally-generated events and an event loop that performs atomic DB synchronization before forwarding events to the frontend.
 - **Success Criteria**:
   - [x] External folder creation appears in the grid within ≤ 500ms of the OS delivering the `Create` event.
@@ -36,8 +36,8 @@ As a system, I want the watcher to ignore changes caused by the app's own intern
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                                       |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-28.2.1 | ✅ Positive | Given an internal operation (bulk toggle) holds a `SuppressionGuard`, when a filesystem event occurs, the watcher checks `suppressor` flag and discards the event — 0 `mod_watch:event` emitted. |
-| AC-28.2.2 | ✅ Positive | Given an internal operation panics or completes, the RAII `SuppressionGuard` drops and resets the flag to `false` automatically. |
+| AC-28.2.1 | ✅ Positive | Given an internal operation (bulk toggle) holds a `SuppressionGuard`, when a filesystem event occurs, the watcher checks `suppressor` flag and discards the event — 0 `mod_watch:event` emitted.                                                                               |
+| AC-28.2.2 | ✅ Positive | Given an internal operation panics or completes, the RAII `SuppressionGuard` drops and resets the flag to `false` automatically.                                                                                                                                               |
 | AC-28.2.3 | ⚠️ Edge     | Given a path is legitimately changed externally at the exact same time as an internal operation suppresses it, then the external event is also suppressed for that path — the frontend will re-fetch on the next React Query `staleTime` expiry (default: 30s) as a safety net |
 
 ---

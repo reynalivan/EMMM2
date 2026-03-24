@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { CheckCircle2, XCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useScannerStore } from '../../../stores/useScannerStore';
 
 interface Props {
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function ScanOverlay({ onCancel }: Props) {
+  const { t } = useTranslation(['scanner']);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const { isScanning, progress, stats } = useScannerStore();
 
@@ -27,7 +29,7 @@ export default function ScanOverlay({ onCancel }: Props) {
   return (
     <dialog ref={dialogRef} className="modal modal-bottom sm:modal-middle" onCancel={onCancel}>
       <div className="modal-box text-center">
-        <h3 className="font-bold text-lg mb-4">Scanning Mods...</h3>
+        <h3 className="font-bold text-lg mb-4">{t('scanner:overlay.title')}</h3>
 
         {/* Circular Progress */}
         <div
@@ -58,14 +60,14 @@ export default function ScanOverlay({ onCancel }: Props) {
         <div className="stats shadow w-full mb-6">
           <div className="stat place-items-center">
             <div className="stat-title text-success flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4" /> Matched
+              <CheckCircle2 className="w-4 h-4" /> {t('scanner:overlay.matched')}
             </div>
             <div className="stat-value text-success">{stats.matched}</div>
           </div>
 
           <div className="stat place-items-center">
             <div className="stat-title text-base-content/50 flex items-center gap-1">
-              <XCircle className="w-4 h-4" /> Unmatched
+              <XCircle className="w-4 h-4" /> {t('scanner:overlay.unmatched')}
             </div>
             <div className="stat-value">{stats.unmatched}</div>
           </div>
@@ -74,7 +76,7 @@ export default function ScanOverlay({ onCancel }: Props) {
         {/* Action */}
         <div className="modal-action justify-center">
           <button className="btn btn-outline btn-error" onClick={onCancel}>
-            Cancel Scan
+            {t('scanner:overlay.cancel')}
           </button>
         </div>
       </div>

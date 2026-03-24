@@ -1,16 +1,20 @@
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Play, RefreshCcw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSettings, GameConfig } from '../../../hooks/useSettings';
 import GameFormModal from '../modals/GameFormModal';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useToastStore } from '../../../stores/useToastStore';
 import { scanService } from '../../../lib/services/scanService';
-import { reconcileActiveCollection } from '../../collections/utils/reconcileActiveCollection';
+import { corridorKeys } from '../../collections/queryKeys';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function GamesTab() {
+  const { t } = useTranslation(['settings', 'common']);
   const { settings, saveSettings } = useSettings();
   const { setActiveGameId, activeGameId } = useAppStore();
   const { addToast } = useToastStore();
+  const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameConfig | null>(null);
   const [scanningId, setScanningId] = useState<string | null>(null);
@@ -27,7 +31,7 @@ export default function GamesTab() {
 
   const handleDelete = (id: string) => {
     if (!settings) return;
-    if (window.confirm('Are you sure you want to remove this game configuration?')) {
+    if (window.confirm(t('settings:games.delete_confirm'))) {
       const newGames = settings.games.filter((g) => g.id !== id);
       saveSettings({ ...settings, games: newGames });
 
@@ -58,7 +62,7 @@ export default function GamesTab() {
   const handleRescan = async (game: GameConfig) => {
     if (scanningId) return;
     setScanningId(game.id);
-    const toastId = addToast('info', `Scanning library for ${game.name}...`, 0); // Persist toast
+    const toastId = addToast('info', t('settings:games.actions.scanning', { name: game.name }), 0); // Persist toast
 
     try {
       const result = await scanService.syncDatabase(
@@ -72,41 +76,42 @@ export default function GamesTab() {
       useToastStore.getState().removeToast(toastId);
       addToast(
         'success',
-        `Scan complete! Found ${result.new_mods} new mods and ${result.updated_mods} updates.`,
+        t('settings:games.actions.scan_success', {
+          new: result.new_mods,
+          updated: result.updated_mods,
+        }),
       );
 
       if (activeGameId === game.id) {
-        await reconcileActiveCollection({ gameId: game.id });
+        queryClient.invalidateQueries({ queryKey: corridorKeys.all });
       }
     } catch (e) {
       console.error(e);
       useToastStore.getState().removeToast(toastId);
-      addToast('error', `Scan failed: ${String(e)}`);
+      addToast('error', t('settings:games.actions.scan_failed', { error: String(e) }));
     } finally {
       setScanningId(null);
     }
   };
 
-  if (!settings) return <div>Loading...</div>;
+  if (!settings) return <div>{t('common:status.loading')}</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center bg-base-200/50 p-4 rounded-xl border border-base-300">
         <div>
-          <h2 className="text-xl font-bold">Games Library</h2>
-          <p className="text-sm opacity-70">
-            Manage your install locations and game configurations.
-          </p>
+          <h2 className="text-xl font-bold">{t('settings:games.title')}</h2>
+          <p className="mt-1 text-sm opacity-70">{t('settings:games.desc')}</p>
         </div>
         <button className="btn btn-primary gap-2" onClick={handleAdd}>
-          <Plus size={18} /> Add Game
+          <Plus size={18} /> {t('settings:games.add')}
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         {settings.games.length === 0 ? (
           <div className="text-center py-12 opacity-50 border-2 border-dashed border-base-300 rounded-xl">
-            <p>No games configured. Click "Add Game" to get started.</p>
+            <p>{t('settings:games.empty')}</p>
           </div>
         ) : (
           settings.games.map((game) => (
@@ -123,15 +128,23 @@ export default function GamesTab() {
                     <h3 className="card-title text-base flex items-center gap-2">
                       {game.name}
                       {activeGameId === game.id && (
-                        <span className="badge badge-primary badge-xs">ACTIVE</span>
+                        <span className="badge badge-primary badge-xs">
+                          {t('settings:games.active')}
+                        </span>
                       )}
                     </h3>
                     <div className="text-xs space-y-1 mt-1 opacity-70">
                       <p className="flex items-center gap-1">
-                        <span className="font-semibold">Mods:</span> {game.mod_path}
+                        <span className="font-semibold">
+                          {t('settings:games.form.path_label_short')}:
+                        </span>{' '}
+                        {game.mod_path}
                       </p>
                       <p className="flex items-center gap-1">
-                        <span className="font-semibold">Exe:</span> {game.game_exe}
+                        <span className="font-semibold">
+                          {t('settings:games.form.exe_label_short')}:
+                        </span>{' '}
+                        {game.game_exe}
                       </p>
                     </div>
                   </div>
@@ -142,7 +155,7 @@ export default function GamesTab() {
                     className="btn btn-ghost btn-sm join-item text-primary"
                     onClick={() => setActiveGameId(game.id)}
                     disabled={activeGameId === game.id}
-                    title="Set as Active"
+                    title={t('settings:games.actions.set_active')}
                   >
                     <Play size={16} />
                   </button>
@@ -150,7 +163,7 @@ export default function GamesTab() {
                     className="btn btn-ghost btn-sm join-item text-secondary hover:bg-secondary/10"
                     onClick={() => void handleRescan(game)}
                     disabled={scanningId !== null}
-                    title="Rescan Library"
+                    title={t('settings:games.actions.rescan')}
                   >
                     <RefreshCcw
                       size={16}
@@ -161,7 +174,7 @@ export default function GamesTab() {
                     className="btn btn-ghost btn-sm join-item"
                     onClick={() => handleEdit(game)}
                     disabled={scanningId !== null}
-                    title="Edit Game"
+                    title={t('settings:games.actions.edit')}
                   >
                     <Edit2 size={16} />
                   </button>
@@ -169,7 +182,7 @@ export default function GamesTab() {
                     className="btn btn-ghost btn-sm join-item text-error hover:bg-error/10"
                     onClick={() => handleDelete(game.id)}
                     disabled={scanningId !== null}
-                    title="Remove Game"
+                    title={t('settings:games.actions.remove')}
                   >
                     <Trash2 size={16} />
                   </button>

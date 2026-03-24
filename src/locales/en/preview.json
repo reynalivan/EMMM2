@@ -1,0 +1,79 @@
+{
+  "empty": {
+    "no_mod_selected": "No mod selected",
+    "select_folder": "Select a folder from the list to view its details, manage images, and edit configuration."
+  },
+  "actions": {
+    "import_archives": "Import Archives",
+    "import_folders": "Import Folders",
+    "view_location": "View File Location",
+    "edit_metadata": "Edit Metadata",
+    "revert": "Revert",
+    "done": "Done",
+    "save": "Save",
+    "close": "Close",
+    "edit": "Edit"
+  },
+  "metadata": {
+    "title": "Metadata",
+    "author": "Author",
+    "author_placeholder": "Unknown",
+    "unknown_author": "Unknown Author",
+    "version": "Version",
+    "version_placeholder": "1.0",
+    "version_default": "1.0",
+    "version_aria": "Mod version",
+    "description": "Description",
+    "description_placeholder": "No description available.",
+    "no_description": "No description available.",
+    "auto_saving": "auto-saving...",
+    "revert_title": "Revert metadata changes and cancel auto-save",
+    "edit_title": "Edit Metadata",
+    "double_click_edit": "Double click to edit",
+    "auto_saving_label": "auto-saving…",
+    "done_label": "Done"
+  },
+  "gallery": {
+    "title": "Preview Images",
+    "no_preview": "No preview available",
+    "broken_image": "Broken image",
+    "image_placeholder": "Image placeholder",
+    "prev_image": "Previous image",
+    "next_image": "Next image",
+    "fullscreen": "Fullscreen",
+    "slider_label": "Preview image slider",
+    "go_to_image": "Go to image {{index}}",
+    "menu": {
+      "paste": "Paste Thumbnail",
+      "import": "Import Thumbnail",
+      "remove_current": "Remove This Thumbnail",
+      "clear_all": "Clear All Thumbnails"
+    }
+  },
+  "ini_editor": {
+    "title": "INI Editor",
+    "no_sections": "No key binding sections detected.",
+    "open_in_editor": "Open in default editor",
+    "edit_keybinds": "Edit keybinds",
+    "close_edit": "Close edit mode",
+    "revert_changes": "Discard INI changes",
+    "save_changes": "Save INI changes",
+    "enter_field": "Enter {{label}}...",
+    "auto_detect": "Auto Detect Key Combination",
+    "conflict_warning": "Warning: This key is used in multiple sections.",
+    "conflict_tooltip": "Key Conflict! Used in multiple sections.",
+    "advanced_capture": "Advanced Key Capture",
+    "original_key": "Original Key",
+    "press_key_combo": "Press Key Combination...",
+    "captured_click_to_recapture": "Key Captured (Click to recapture)",
+    "no_key": "No key detected",
+    "strict_modifiers": "Strict Modifiers (Recommended)",
+    "strict_modifiers_hint": "Ensures the action ONLY triggers when the EXACT combination is pressed, ignoring other held keys.",
+    "no_shift": "no_shift",
+    "no_ctrl": "no_ctrl",
+    "no_alt": "no_alt",
+    "shift_restriction_disabled": "Shift is part of the combo, cannot restrict.",
+    "ctrl_restriction_disabled": "Ctrl is part of the combo, cannot restrict.",
+    "alt_restriction_disabled": "Alt is part of the combo, cannot restrict."
+  }
+}

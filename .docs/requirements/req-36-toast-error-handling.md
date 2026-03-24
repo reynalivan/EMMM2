@@ -9,7 +9,7 @@
   - Error toasts include the specific `CommandError` type and human-readable message — never a raw Rust backtrace or `[object Object]`.
   - `ErrorBoundary` catches 100% of React render exceptions (by test suite coverage).
   - `get_log_lines` returns the last 200 log lines in ≤ 500ms.
-  - Zero unhandled promise rejections from IPC calls — all `invoke()` calls have `onError` handlers.
+  - Zero unhandled promise rejections from IPC calls — all `commands.*()` calls have `onError` handlers.
 
 ---
 
@@ -38,7 +38,7 @@ As a user, I want the app to catch catastrophic rendering errors, so that I see 
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-36.2.1 | ✅ Positive | Given a React component throws an unhandled exception during render, then the `ErrorBoundary` catches it and renders: "Oops, something went wrong" + component name (from `error.componentStack`) + "Reload App" button |
 | AC-36.2.2 | ✅ Positive | Given the ErrorBoundary fires, then the error details are also written to the Tauri log file via `tauri_plugin_log` — accessible in the Logs tab                                                                        |
-| AC-36.2.3 | ⚠️ Edge     | Given an error occurs in a sub-tree (e.g., FolderGrid crashes), then only that panel shows the ErrorBoundary fallback — the objectlist and top bar remain functional                                                       |
+| AC-36.2.3 | ⚠️ Edge     | Given an error occurs in a sub-tree (e.g., FolderGrid crashes), then only that panel shows the ErrorBoundary fallback — the objectlist and top bar remain functional                                                    |
 
 ---
 
@@ -46,11 +46,11 @@ As a user, I want the app to catch catastrophic rendering errors, so that I see 
 
 As a power user or developer, I want to read internal logs from within the UI, so that I can troubleshoot deeper issues.
 
-| ID        | Type        | Criteria                                                                                                                                                                                 |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-36.3.1 | ✅ Positive | Given the Settings > Logs tab, when opened, then `get_log_lines(200)` fetches the last 200 lines from `{app_data_dir}/logs/emmm2.log` and renders them in a monospaced, scrollable panel |
-| AC-36.3.2 | ✅ Positive | Given the Logs tab is open, when I click "Open Log Folder", then `open_log_folder()` opens Windows Explorer to `{app_data_dir}/logs` via `tauri::api::shell::open`                       |
-| AC-36.3.3 | ❌ Negative | Given the log file doesn't exist yet (first launch), then the Logs panel shows "No logs yet" — no crash, no empty-path error                                                             |
+| ID        | Type        | Criteria                                                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-36.3.1 | ✅ Positive | Given the Settings > Logs tab, when opened, then `get_log_lines(200)` fetches the last 200 lines from `{app_data_dir}/logs/emmm.log` and renders them in a monospaced, scrollable panel |
+| AC-36.3.2 | ✅ Positive | Given the Logs tab is open, when I click "Open Log Folder", then `open_log_folder()` opens Windows Explorer to `{app_data_dir}/logs` via `tauri::api::shell::open`                      |
+| AC-36.3.3 | ❌ Negative | Given the log file doesn't exist yet (first launch), then the Logs panel shows "No logs yet" — no crash, no empty-path error                                                            |
 
 ---
 
@@ -88,7 +88,7 @@ ErrorBoundary (class component):
   render: if hasError → fallback UI else children
 
 get_log_lines(n: usize) → Vec<String>:
-  tail last n lines from app_data_dir/logs/emmm2.log
+  tail last n lines from app_data_dir/logs/emmm.log
 
 open_log_folder() → ():
   shell::open(app_data_dir/logs)
@@ -99,14 +99,14 @@ open_log_folder() → ():
 | Component      | Detail                                                                              |
 | -------------- | ----------------------------------------------------------------------------------- |
 | Toast Store    | `useToastStore` (Zustand) — shared across all hooks via `addToast` export           |
-| Tauri Logs     | `tauri-plugin-log` (configured at bootstrap, Epic 01) → `emmm2.log` rolling file    |
+| Tauri Logs     | `tauri-plugin-log` (configured at bootstrap, Epic 01) → `emmm.log` rolling file     |
 | ErrorBoundary  | Wraps major UI regions: `FolderGrid`, `PreviewPanel`, full `App`                    |
 | `CommandError` | All backend endpoints return `Err(CommandError)` → `serde` serializes to typed JSON |
 
 ### Security & Privacy
 
 - **Log files contain path info but no user passwords or PIN hashes** — PIN is never logged.
-- **`get_log_lines` path is hardcoded to `app_data_dir/logs/emmm2.log`** — no user-supplied path injection.
+- **`get_log_lines` path is hardcoded to `app_data_dir/logs/emmm.log`** — no user-supplied path injection.
 - **ErrorBoundary output includes component name only** — no user file content in error screens.
 
 ---

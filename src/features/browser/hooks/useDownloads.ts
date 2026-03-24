@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
 import { listen } from '@tauri-apps/api/event';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -12,7 +12,7 @@ export function useDownloads() {
 
   const query = useQuery({
     queryKey: DOWNLOADS_QUERY_KEY,
-    queryFn: () => invoke<BrowserDownloadItem[]>('browser_list_downloads'),
+    queryFn: () => commands.browserListDownloads(),
     refetchOnWindowFocus: false,
   });
 
@@ -63,17 +63,17 @@ export function useDownloads() {
 
   const deleteMutation = useMutation({
     mutationFn: ({ id, deleteFile }: { id: string; deleteFile: boolean }) =>
-      invoke('browser_delete_download', { id, deleteFile }),
+      commands.browserDeleteDownload({ id, deleteFile }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: DOWNLOADS_QUERY_KEY }),
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (id: string) => invoke('browser_cancel_download', { id, deleteFile: false }),
+    mutationFn: (id: string) => commands.browserCancelDownload({ id, deleteFile: false }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: DOWNLOADS_QUERY_KEY }),
   });
 
   const clearImportedMutation = useMutation({
-    mutationFn: () => invoke('browser_clear_imported'),
+    mutationFn: () => commands.browserClearImported(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: DOWNLOADS_QUERY_KEY }),
   });
 
@@ -84,6 +84,7 @@ export function useDownloads() {
     deleteDownload: deleteMutation.mutate,
     cancelDownload: cancelMutation.mutate,
     clearImported: clearImportedMutation.mutate,
-    finishedCount: (query.data ?? []).filter((d) => d.status === 'finished').length,
+    finishedCount: (query.data ?? []).filter((d: BrowserDownloadItem) => d.status === 'finished')
+      .length,
   };
 }

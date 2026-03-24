@@ -3,10 +3,10 @@
 //! Resolves the game's mods_path from the DB and reads the filesystem to
 //! return a bounded list of child entries from a given directory.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A single item in a folder listing (used by the Scan Review hover tooltip).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct FolderEntry {
     pub name: String,
     pub is_dir: bool,
@@ -21,7 +21,7 @@ pub async fn list_folder_entries(
 ) -> Result<Vec<FolderEntry>, String> {
     use std::path::Path;
 
-    let mods_path = crate::database::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await
         .map_err(|e| format!("DB error: {}", e))?
         .ok_or_else(|| "Failed to fetch game mods path".to_string())?;

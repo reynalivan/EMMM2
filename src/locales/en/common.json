@@ -1,0 +1,53 @@
+{
+  "settings": {
+    "general": {
+      "language": "Interface Language",
+      "language_hint": "Only English is currently supported.",
+      "select_language": "Select Language",
+      "save_success": "Settings saved successfully",
+      "save_error": "Failed to save settings"
+    }
+  },
+  "date": {
+    "unknown": "Unknown",
+    "just_now": "Just now",
+    "mins_ago": "{{count}}m ago",
+    "hours_ago": "{{count}}h ago",
+    "days_ago": "{{count}}d ago"
+  },
+  "action": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close"
+  },
+  "actions": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "reload_app": "Reload Application",
+    "remove": "Remove {{item}}",
+    "save_changes": "Save Changes",
+    "retry": "Retry"
+  },
+  "errors": {
+    "no_active_game": "No active game selected",
+    "scan_failed": "Scan failed",
+    "unknown": "An unknown error occurred",
+    "unexpected": "An unexpected error occurred.",
+    "boundary_title": "Something went wrong",
+    "validation": {
+      "required": "This field is required",
+      "invalid": "Invalid input"
+    }
+  },
+  "status": {
+    "none": "None",
+    "no_subfolders": "No nested folders found"
+  }
+}

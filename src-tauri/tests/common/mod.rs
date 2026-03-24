@@ -23,7 +23,7 @@ pub async fn init_test_db() -> TestContext {
         .run(&pool)
         .await
         .expect("Failed to run migrations");
-    emmm2_lib::database::unicode_keys::ensure_unicode_keys(&pool)
+    emmm_lib::repo::unicode_keys::ensure_unicode_keys(&pool)
         .await
         .expect("Failed to backfill unicode keys");
 
@@ -37,7 +37,7 @@ pub async fn refresh_unicode_keys(pool: &Pool<Sqlite>) {
         .await
         .expect("reset unicode key marker");
 
-    emmm2_lib::database::unicode_keys::ensure_unicode_keys(pool)
+    emmm_lib::repo::unicode_keys::ensure_unicode_keys(pool)
         .await
         .expect("refresh unicode keys");
 }

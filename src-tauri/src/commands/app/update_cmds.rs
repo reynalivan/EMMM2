@@ -6,6 +6,7 @@ use tauri::{AppHandle, Manager};
 /// Check for metadata updates from the remote manifest.
 ///
 /// Returns whether an update was applied and the current version.
+#[specta::specta]
 #[tauri::command]
 pub async fn check_metadata_update(
     pool: tauri::State<'_, SqlitePool>,
@@ -17,6 +18,7 @@ pub async fn check_metadata_update(
 /// Fetch a missing asset file from the remote CDN.
 ///
 /// Returns the local path to the cached asset, or null if the fetch failed.
+#[specta::specta]
 #[tauri::command]
 pub async fn fetch_missing_asset(
     app: AppHandle,

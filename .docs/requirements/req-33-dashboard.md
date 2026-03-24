@@ -23,13 +23,13 @@
 
 As a user, I want to see a cross-game summary of my mod library, so that I know the total scope of my collection without checking each game individually.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                  |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-33.1.1 | ✅ Positive | Given the Dashboard is open, when it loads, then `StatCard` components display: total mods (all games), enabled/disabled distribution, total game count, total collections, and total disk size (GB/MB) — all respecting the active Safe Mode corridor. |
-| AC-33.1.2 | ✅ Positive | Given `duplicate_waste_bytes > 0` (Epic 32 dedup scan ran), then an interactive banner "⚠ {size} wasted on duplicates — click to scan" appears on the Dashboard; clicking navigates to the Dedup Scanner                                                  |
-| AC-33.1.3 | ✅ Positive | Given a dark mode theme, then all `StatCard` components use the design system's card tokens — consistent visual weight with the rest of the app                                                                                                           |
-| AC-33.1.4 | ❌ Negative | Given the `mods_path` directory is inaccessible, then the disk-size `StatCard` shows "Size unavailable" — other stats (DB `COUNT/SUM`) still display correctly                                                                                            |
-| AC-33.1.5 | ⚠️ Edge     | Given 0 mods are indexed (fresh install), then the Dashboard shows "Welcome! Add your first game to begin" empty state — no NaN, no zero-divide errors, no blank tiles                                                                                    |
+| AC-33.1.2 | ✅ Positive | Given `duplicate_waste_bytes > 0` (Epic 32 dedup scan ran), then an interactive banner "⚠ {size} wasted on duplicates — click to scan" appears on the Dashboard; clicking navigates to the Dedup Scanner                                                |
+| AC-33.1.3 | ✅ Positive | Given a dark mode theme, then all `StatCard` components use the design system's card tokens — consistent visual weight with the rest of the app                                                                                                         |
+| AC-33.1.4 | ❌ Negative | Given the `mods_path` directory is inaccessible, then the disk-size `StatCard` shows "Size unavailable" — other stats (DB `COUNT/SUM`) still display correctly                                                                                          |
+| AC-33.1.5 | ⚠️ Edge     | Given 0 mods are indexed (fresh install), then the Dashboard shows "Welcome! Add your first game to begin" empty state — no NaN, no zero-divide errors, no blank tiles                                                                                  |
 
 ---
 
@@ -50,12 +50,12 @@ As a mod collector, I want to see visual breakdowns of my mod distribution, so t
 
 As a busy user, I want quick access to recently added mods and the last game I played, so that I can jump right into action.
 
-| ID        | Type        | Criteria                                                                                                                                                                       |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ID        | Type        | Criteria                                                                                                                                                                                  |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-33.3.1 | ✅ Positive | Given the Dashboard loads, then a "Recently Added" feed shows the 5 most recently indexed mods (by `indexed_at DESC`) with name, game name, object name (if any), and relative timestamp. |
-| AC-33.3.2 | ✅ Positive | Given an active game, then a "Quick Play" button appears — clicking fires the same launch logic as the game switcher launch. |
-| AC-33.3.3 | ❌ Negative | Given only 2 mods exist in the library, then the "Recently Added" feed shows only 2 cards — no empty/null placeholders. |
-| AC-33.3.4 | ⚠️ Edge     | Given Safe Mode is ON, then the "Recently Added" feed filters out `is_safe = false` mods — NSFW entries do not appear in the feed. |
+| AC-33.3.2 | ✅ Positive | Given an active game, then a "Quick Play" button appears — clicking fires the same launch logic as the game switcher launch.                                                              |
+| AC-33.3.3 | ❌ Negative | Given only 2 mods exist in the library, then the "Recently Added" feed shows only 2 cards — no empty/null placeholders.                                                                   |
+| AC-33.3.4 | ⚠️ Edge     | Given Safe Mode is ON, then the "Recently Added" feed filters out `is_safe = false` mods — NSFW entries do not appear in the feed.                                                        |
 
 ---
 
@@ -76,12 +76,12 @@ As a user, I want to see which keybinds my currently active mods define, so that
 
 As a system, I want dashboard data to be cached and refreshable, so that the UI stays fast during normal browsing but updates are visible after bulk operations.
 
-| ID        | Type        | Criteria                                                                                                                                                                     |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-33.5.1 | ✅ Positive | Given Dashboard stats/distributions, they are cached with `staleTime: 30s` for rapid navigation access. |
-| AC-33.5.2 | ✅ Positive | Given active keybindings, they are cached with `staleTime: 60s` due to the intensive filesystem scan required for .ini parsing. |
-| AC-33.5.3 | ✅ Positive | Given a manual "Refresh" button, when clicked, then `invalidateQueries` fires and fresh data loads (skeleton shimmer visible during load). |
-| AC-33.5.3 | ❌ Negative | Given a DB aggregation query fails (DB locked), then the dashboard shows a skeleton loader + "Refresh" button — no white screen or unhandled error boundary                  |
+| ID        | Type        | Criteria                                                                                                                                                    |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-33.5.1 | ✅ Positive | Given Dashboard stats/distributions, they are cached with `staleTime: 30s` for rapid navigation access.                                                     |
+| AC-33.5.2 | ✅ Positive | Given active keybindings, they are cached with `staleTime: 60s` due to the intensive filesystem scan required for .ini parsing.                             |
+| AC-33.5.3 | ✅ Positive | Given a manual "Refresh" button, when clicked, then `invalidateQueries` fires and fresh data loads (skeleton shimmer visible during load).                  |
+| AC-33.5.3 | ❌ Negative | Given a DB aggregation query fails (DB locked), then the dashboard shows a skeleton loader + "Refresh" button — no white screen or unhandled error boundary |
 
 ---
 
@@ -124,7 +124,7 @@ get_distribution_by_game() → Vec<GameDistribution { game_name, count }>:
 get_recent_mods(limit=5) → Vec<RecentMod { id, name, indexed_at, game_name, object_name }>:
   SELECT f.id, f.name, f.indexed_at, g.name as game_name, f.object_name
   FROM folders f JOIN games g ON f.game_id = g.id
-  WHERE f.is_safe = ? 
+  WHERE f.is_safe = ?
   ORDER BY indexed_at DESC LIMIT 5
 
 get_active_keybindings(game_id) → Vec<KeybindEntry>:
@@ -144,16 +144,16 @@ Charts: Recharts PieChart + BarChart
 
 ### Integration Points
 
-| Component        | Detail                                                                                                    |
-| ---------------- | --------------------------------------------------------------------------------------------------------- |
-| Charts           | `recharts` — `PieChart` for category distribution, `BarChart` for game distribution; all have ARIA labels |
-| Stats Query      | Cross-game: no `game_id` filter — pure SQLite `COUNT`/`SUM` on all `folders`                              |
-| Disk Size        | Pre-computed `size_bytes` in `folders` table (set during scan); fallback `du()` bounded 5s                |
-| Keybindings      | Shared INI parser from Epic 18; supported by `DemoKeybindSpotlight` scene for visual emphasis             |
-| Duplicate Banner | `duplicate_waste_bytes` from dedup cache (Epic 32) — if > 0 shows banner                                  |
-| Quick Play       | `invoke('launch_game', { game_id: last_played_game_id })` — reuses Epic 01 launch logic                   |
-| Demo Scenes      | Integrated `SmartDemoStrip`, `DemoKeybindSpotlight`, and `DemoTogglePreset` for landing/onboarding visuals|
-| Cache            | React Query `staleTime: 30_000ms`; `invalidateQueries(['dashboardStats'])` after bulk ops                 |
+| Component        | Detail                                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Charts           | `recharts` — `PieChart` for category distribution, `BarChart` for game distribution; all have ARIA labels  |
+| Stats Query      | Cross-game: no `game_id` filter — pure SQLite `COUNT`/`SUM` on all `folders`                               |
+| Disk Size        | Pre-computed `size_bytes` in `folders` table (set during scan); fallback `du()` bounded 5s                 |
+| Keybindings      | Shared INI parser from Epic 18; supported by `DemoKeybindSpotlight` scene for visual emphasis              |
+| Duplicate Banner | `duplicate_waste_bytes` from dedup cache (Epic 32) — if > 0 shows banner                                   |
+| Quick Play       | `commands.launchGame({ game_id: last_played_game_id })` — reuses Epic 01 launch logic                      |
+| Demo Scenes      | Integrated `SmartDemoStrip`, `DemoKeybindSpotlight`, and `DemoTogglePreset` for landing/onboarding visuals |
+| Cache            | React Query `staleTime: 30_000ms`; `invalidateQueries(['dashboardStats'])` after bulk ops                  |
 
 ### Security & Privacy
 

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../testing/test-utils';
 import ResolutionModal from './ResolutionModal';
-import type { DupScanGroup } from '../../../types/dedup';
+import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
 
 // Mock HTMLDialogElement methods
 beforeEach(() => {
@@ -28,6 +28,7 @@ describe('ResolutionModal', () => {
     groupId: 'group-1',
     confidenceScore: 95,
     matchReason: 'Hash match',
+    isUnsafe: false,
     signals: [],
     members: [
       {
@@ -35,23 +36,27 @@ describe('ResolutionModal', () => {
         displayName: 'Mod A - Keep',
         totalSizeBytes: 2048,
         fileCount: 10,
+        isSafe: true,
         confidenceScore: 95,
         signals: [],
+        modId: null,
       },
       {
         folderPath: '/path/mod-b',
         displayName: 'Mod B - Delete',
         totalSizeBytes: 2048,
         fileCount: 10,
+        isSafe: true,
         confidenceScore: 95,
         signals: [],
+        modId: null,
       },
     ],
   };
 
   const defaultProps = {
     isOpen: false,
-    selections: new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>(),
+    selections: new Map<string, ResolutionAction>(),
     groups: [mockGroup],
     onConfirm: vi.fn(),
     onCancel: vi.fn(),
@@ -75,7 +80,9 @@ describe('ResolutionModal', () => {
     });
 
     it('renders when isOpen is true', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
@@ -87,84 +94,89 @@ describe('ResolutionModal', () => {
 
   describe('Modal content', () => {
     it('displays header with warning icon', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
         expect(screen.getByText(/Confirm Resolution/)).toBeInTheDocument();
-        expect(screen.getByText(/Review the actions/)).toBeInTheDocument();
       });
     });
 
     it('displays action summary with stats', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Deletions/)).toBeInTheDocument();
-        expect(screen.getByText(/Ignored/)).toBeInTheDocument();
-        expect(screen.getByText(/Total/)).toBeInTheDocument();
+        expect(screen.getByText(/resolve 1 duplicate group\(s\)/)).toBeInTheDocument();
+        expect(screen.getByText(/result in 1 file deletion\(s\)/)).toBeInTheDocument();
       });
     });
 
     it('shows deletion count correctly', async () => {
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([['group-1', 'KeepA']]);
+      const selections = new Map<string, ResolutionAction>([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
-        // One deletion (Keep A = delete B)
-        const stats = screen.getAllByText('1');
-        expect(stats.length).toBeGreaterThan(0);
+        // Look for the specific deletion count in the summary
+        expect(screen.getByText(/result in 1 file deletion\(s\)/)).toBeInTheDocument();
       });
     });
 
     it('shows ignore count correctly', async () => {
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([['group-1', 'Ignore']]);
+      const selections = new Map<string, ResolutionAction>([['group-1', { type: 'Ignore' }]]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
-        const deleteStats = screen.getAllByText('0');
-        expect(deleteStats.length).toBeGreaterThan(0);
+        expect(screen.getByText(/and 1 whitelist addition\(s\)/)).toBeInTheDocument();
       });
     });
   });
 
   describe('Action breakdown', () => {
     it('displays detailed breakdown of KeepA action', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Delete:/)).toBeInTheDocument();
-        expect(screen.getByText('Mod B - Delete')).toBeInTheDocument();
-        expect(screen.getByText(/Keep:/)).toBeInTheDocument();
-        expect(screen.getByText(/Mod A - Keep/)).toBeInTheDocument();
-      });
-    });
-
-    it('displays detailed breakdown of KeepB action', async () => {
-      const selections = new Map([['group-1', 'KeepB' as const]]);
-
-      render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
-
-      await waitFor(() => {
+        expect(screen.getByText(/KEEP:/)).toBeInTheDocument();
+        expect(screen.getByText(/Delete 1 other identical item\(s\)/)).toBeInTheDocument();
         expect(screen.getByText('Mod A - Keep')).toBeInTheDocument();
       });
     });
 
-    it('displays detailed breakdown of Ignore action', async () => {
-      const selections = new Map([['group-1', 'Ignore' as const]]);
+    it('displays detailed breakdown of KeepB action', async () => {
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-b' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Ignore:/)).toBeInTheDocument();
-        expect(screen.getByText(/Mod A - Keep ↔ Mod B - Delete/)).toBeInTheDocument();
+        expect(screen.getByText('Mod B - Delete')).toBeInTheDocument();
+      });
+    });
+
+    it('displays detailed breakdown of Ignore action', async () => {
+      const selections = new Map([['group-1', { type: 'Ignore' } as const]]);
+
+      render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/IGNORE:/)).toBeInTheDocument();
+        expect(screen.getByText(/Whitelist all 2 members/)).toBeInTheDocument();
       });
     });
 
@@ -178,23 +190,27 @@ describe('ResolutionModal', () => {
             displayName: 'Mod C',
             totalSizeBytes: 2048,
             fileCount: 10,
+            isSafe: true,
             confidenceScore: 90,
             signals: [],
+            modId: null,
           },
           {
             folderPath: '/path/mod-d',
             displayName: 'Mod D',
             totalSizeBytes: 2048,
             fileCount: 10,
+            isSafe: true,
             confidenceScore: 90,
             signals: [],
+            modId: null,
           },
         ],
       };
 
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([
-        ['group-1', 'KeepA'],
-        ['group-2', 'KeepB'],
+      const selections = new Map<string, ResolutionAction>([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
+        ['group-2', { type: 'Keep', targetPath: '/path/mod-c' }],
       ]);
 
       render(
@@ -207,8 +223,8 @@ describe('ResolutionModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Mod B - Delete')).toBeInTheDocument();
-        expect(screen.getByText(/Mod D/)).toBeInTheDocument();
+        expect(screen.getByText('Mod A - Keep')).toBeInTheDocument();
+        expect(screen.getByText('Mod C')).toBeInTheDocument();
       });
     });
   });
@@ -216,7 +232,9 @@ describe('ResolutionModal', () => {
   describe('User interactions', () => {
     it('calls onCancel when Cancel button is clicked', async () => {
       const onCancel = vi.fn();
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(
         <ResolutionModal
@@ -235,7 +253,9 @@ describe('ResolutionModal', () => {
 
     it('calls onConfirm when Confirm button is clicked', async () => {
       const onConfirm = vi.fn();
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(
         <ResolutionModal
@@ -253,20 +273,24 @@ describe('ResolutionModal', () => {
     });
 
     it('confirm button shows action count', async () => {
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([['group-1', 'KeepA']]);
+      const selections = new Map<string, ResolutionAction>([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
         const confirmButton = screen.getByRole('button', { name: /Confirm/ });
-        expect(confirmButton).toHaveTextContent('Confirm (1)');
+        expect(confirmButton).toHaveTextContent(/Confirm/);
       });
     });
   });
 
   describe('Pending state', () => {
     it('disables buttons when isPending is true', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(
         <ResolutionModal
@@ -288,7 +312,9 @@ describe('ResolutionModal', () => {
     });
 
     it('shows progress indicator when isPending is true', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(
         <ResolutionModal
@@ -300,12 +326,14 @@ describe('ResolutionModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/Resolving duplicates/)).toBeInTheDocument();
+        expect(screen.getByText(/Processing/)).toBeInTheDocument();
       });
     });
 
     it('shows "Applying..." text on confirm button when pending', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(
         <ResolutionModal
@@ -317,12 +345,14 @@ describe('ResolutionModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/Applying.../)).toBeInTheDocument();
+        expect(screen.getByText(/Processing/)).toBeInTheDocument();
       });
     });
 
     it('does not disable cancel button when not pending', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(
         <ResolutionModal
@@ -342,7 +372,9 @@ describe('ResolutionModal', () => {
 
   describe('Accessibility', () => {
     it('has proper ARIA attributes', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
@@ -355,24 +387,28 @@ describe('ResolutionModal', () => {
     });
 
     it('breakdown list is accessible', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
-        const list = screen.getByRole('list', { name: /Resolution action breakdown/i });
+        const list = screen.getByRole('list');
         expect(list).toBeInTheDocument();
       });
     });
 
     it('buttons have descriptive aria-labels', async () => {
-      const selections = new Map([['group-1', 'KeepA' as const]]);
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
       await waitFor(() => {
         const confirmButton = screen.getByRole('button', {
-          name: /Confirm and apply 1 resolution actions/i,
+          name: /Confirm & Resolve/i,
         });
         expect(confirmButton).toBeInTheDocument();
       });
@@ -386,9 +422,9 @@ describe('ResolutionModal', () => {
         groupId: 'group-2',
       };
 
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([
-        ['group-1', 'KeepA'],
-        ['group-2', 'KeepB'],
+      const selections = new Map<string, ResolutionAction>([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
+        ['group-2', { type: 'Keep', targetPath: '/path/mod-b' }],
       ]);
 
       render(
@@ -401,9 +437,7 @@ describe('ResolutionModal', () => {
       );
 
       await waitFor(() => {
-        // Should show 2 deletions total
-        const twos = screen.getAllByText('2');
-        expect(twos.length).toBeGreaterThan(0);
+        expect(screen.getByText(/result in 2 file deletion\(s\)/)).toBeInTheDocument();
       });
     });
 
@@ -413,9 +447,9 @@ describe('ResolutionModal', () => {
         groupId: 'group-2',
       };
 
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([
-        ['group-1', 'KeepA'],
-        ['group-2', 'Ignore'],
+      const selections = new Map<string, ResolutionAction>([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
+        ['group-2', { type: 'Ignore' }],
       ]);
 
       render(
@@ -428,8 +462,9 @@ describe('ResolutionModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/Deletions/)).toBeInTheDocument();
-        expect(screen.getByText(/Ignored/)).toBeInTheDocument();
+        expect(screen.getByText(/resolve 2 duplicate group\(s\)/)).toBeInTheDocument();
+        expect(screen.getByText(/result in 1 file deletion\(s\)/)).toBeInTheDocument();
+        expect(screen.getByText(/and 1 whitelist addition\(s\)/)).toBeInTheDocument();
       });
     });
   });

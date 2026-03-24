@@ -7,6 +7,34 @@ use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_d
 use crate::services::explorer::helpers::analyze_mod_metadata;
 use crate::services::explorer::types::ModFolder;
 
+/// Scans each segment of `sub_path` for a `DISABLED ` prefix.
+///
+/// Returns the **display name** (prefix stripped) of the nearest disabled
+/// ancestor segment, or `None` if the path is fully enabled.
+///
+/// - O(depth) — no filesystem I/O, no DB queries.
+/// - Multi-level aware: returns the first (outermost) disabled segment.
+///
+pub fn find_disabled_ancestor(mods_path: &str, sub_path: &str) -> Option<(String, String)> {
+    let base = Path::new(mods_path);
+    let mut current = base.to_path_buf();
+
+    for segment in sub_path.split(['/', '\\']) {
+        let trimmed = segment.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        current = current.join(trimmed);
+        if is_disabled_folder(trimmed) {
+            return Some((
+                normalize_display_name(trimmed),
+                current.to_string_lossy().to_string(),
+            ));
+        }
+    }
+    None
+}
+
 /// Read the filesystem, build `ModFolder` entries, then optionally enrich with DB IDs.
 /// Missing mods are automatically inserted into the database.
 pub async fn scan_fs_folders(
@@ -65,7 +93,7 @@ pub fn build_mod_folder_from_fs_entry(
     let size_bytes = entry_meta.map(|m| m.len()).unwrap_or(0);
 
     let info = analyze_mod_metadata(&path, sub_path);
-    let (node_type, classification_reasons) =
+    let (node_type, classification_reasons, warnings) =
         crate::services::explorer::classifier::classify_folder(&path);
 
     Some(ModFolder {
@@ -88,6 +116,7 @@ pub fn build_mod_folder_from_fs_entry(
         category: info.category,
         conflict_group_id: None,
         conflict_state: None,
+        warnings,
     })
 }
 
@@ -146,6 +175,22 @@ pub async fn list_mod_folders_inner(
     } else {
         target
     };
+
+    // ── Traversal guard ─────────────────────────────────────────────────────────
+    // Ensure the resolved target stays inside the declared mods root.
+    // A crafted sub_path like "../../etc" could otherwise escape the boundary.
+    {
+        let canonical_base = base
+            .canonicalize()
+            .map_err(|e| format!("Cannot canonicalize mods_path: {e}"))?;
+        // target may not exist yet if renamed; fall back to the raw path.
+        let canonical_target = target.canonicalize().unwrap_or_else(|_| target.clone());
+        if !canonical_target.starts_with(&canonical_base) {
+            return Err(format!(
+                "PathEscapeError: sub_path resolves outside of mods_path"
+            ));
+        }
+    }
 
     log::info!("Scanning filesystem for mods at {}", target.display());
 
@@ -305,11 +350,12 @@ pub async fn list_mod_folders_inner(
         }
     }
 
-    let (self_node_type, self_classification_reasons) =
+    let (self_node_type, self_classification_reasons, _) =
         crate::services::explorer::classifier::classify_folder(&target);
     let self_is_mod = self_node_type
         == crate::services::explorer::classifier::NodeType::FlatModRoot
-        || self_node_type == crate::services::explorer::classifier::NodeType::ModPackRoot;
+        || self_node_type == crate::services::explorer::classifier::NodeType::ModPackRoot
+        || self_node_type == crate::services::explorer::classifier::NodeType::VariantContainer;
 
     // Determine self_is_enabled based on the final path directory component prefix
     let self_is_enabled = if sub_path.as_ref().is_some_and(|sp| !sp.is_empty()) {
@@ -319,6 +365,20 @@ pub async fn list_mod_folders_inner(
         true
     };
 
+    // Compute ancestor lock status from sub_path segments (O(depth), zero I/O).
+    let ancestor_info = sub_path.as_deref().and_then(|sp| {
+        if sp.is_empty() {
+            None
+        } else {
+            find_disabled_ancestor(&mods_path, sp)
+        }
+    });
+
+    let (ancestor_disabled_by, ancestor_disabled_path) = match ancestor_info {
+        Some((name, path)) => (Some(name), Some(path)),
+        None => (None, None),
+    };
+
     Ok(crate::services::explorer::types::FolderGridResponse {
         self_node_type: Some(self_node_type.as_str().to_string()),
         self_is_mod,
@@ -326,6 +386,8 @@ pub async fn list_mod_folders_inner(
         self_classification_reasons,
         children: folders,
         conflicts,
+        ancestor_disabled_by,
+        ancestor_disabled_path,
     })
 }
 

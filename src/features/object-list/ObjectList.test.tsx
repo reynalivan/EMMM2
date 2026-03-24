@@ -90,7 +90,6 @@ describe('ObjectList Component', () => {
     collapsedCategories: new Set(),
     toggleCategoryCollapse: vi.fn(),
     safeMode: true,
-    setSafeMode: vi.fn(),
   };
 
   beforeEach(() => {

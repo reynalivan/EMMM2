@@ -1,26 +1,65 @@
+use crate::database::models::ItemStatus;
 use crate::services::scanner::core::walker;
 use crate::services::scanner::deep_matcher::{
     Candidate, Confidence, MatchStatus, StagedMatchResult,
 };
 use serde::{Deserialize, Serialize};
+
 use std::path::PathBuf;
+
+/// Represents a folder naming collision discovered during sync or organize.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CollisionInfo {
+    /// Unique ID for the collision (usually hash of target path)
+    pub id: String,
+    /// The mod folder we are trying to move/place
+    pub source_path: String,
+    /// The destination path that already exists
+    pub target_path: String,
+    /// Name of the object this mod belongs to
+    pub object_name: String,
+    /// ID of the mod already occupying the target path (if indexed)
+    pub existing_mod_id: Option<String>,
+}
+
+/// User resolution choice for a folder collision.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CollisionResolution {
+    /// Rename the incoming mod (e.g. Mod (2))
+    Rename,
+    /// Skip this mod entirely
+    Skip,
+    /// Delete existing and replace with new
+    Overwrite,
+    /// Merge contents (if both are folders)
+    Merge,
+}
 
 // ─── Event Types ───────────────────────────────────────────────────
 
 /// Progress events streamed to frontend via `Channel<ScanEvent>`.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum ScanEvent {
     /// Scan has started, includes total folder count.
     #[serde(rename_all = "camelCase")]
-    Started { total_folders: usize },
+    Started {
+        #[specta(type = f64)]
+        total_folders: usize,
+    },
     /// One folder has been processed.
     #[serde(rename_all = "camelCase")]
     Progress {
+        #[specta(type = f64)]
         current: usize,
+        #[specta(type = f64)]
         total: usize,
         folder_name: String,
+        #[specta(type = f64)]
         elapsed_ms: u64,
+        #[specta(type = f64)]
         eta_ms: u64,
     },
     /// A match was found for a folder.
@@ -32,13 +71,18 @@ pub enum ScanEvent {
     },
     /// Scan is complete.
     #[serde(rename_all = "camelCase")]
-    Finished { matched: usize, unmatched: usize },
+    Finished {
+        #[specta(type = f64)]
+        matched: usize,
+        #[specta(type = f64)]
+        unmatched: usize,
+    },
 }
 
 // ─── Result Types ──────────────────────────────────────────────────
 
 /// A single scan result item returned per mod folder.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanResultItem {
     pub path: String,
@@ -140,23 +184,22 @@ fn confidence_value_label(confidence: &Confidence) -> &'static str {
 mod tests;
 
 /// Represents a row in the `objects` table.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
 pub struct GameObject {
     pub id: String,
     pub game_id: String,
     pub name: String,
+    pub folder_path: String,
+    pub folder_path_key: String,
+    pub status: ItemStatus,
     pub object_type: String,
     pub sub_category: Option<String>,
-    pub sort_order: i64,
-    // stored as JSON string in DB, but we might want to deserialize it if we use sqlx json features
-    // For now, let's keep it as String to match existing code or use sqlx::types::Json
-    // Migration says TEXT for tags and metadata? Let's check migration 004.
-    // Assuming TEXT for simplicity as per TRD "JSON string".
     pub tags: String,
     pub metadata: String,
+    pub hash_db: Option<crate::database::models::HashDbPayload>,
+    pub custom_skins: Option<crate::database::models::CustomSkinsPayload>,
     pub thumbnail_path: Option<String>,
     pub is_pinned: bool,
-    #[sqlx(default)]
     pub is_auto_sync: bool,
     pub created_at: String,
 }

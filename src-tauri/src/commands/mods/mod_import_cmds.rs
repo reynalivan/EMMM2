@@ -5,12 +5,13 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 pub enum ImportStrategy {
     Raw,
     AutoOrganize,
 }
 
+#[specta::specta]
 #[tauri::command]
 pub async fn import_mods_from_paths(
     app: AppHandle,
@@ -69,7 +70,9 @@ pub async fn import_mods_from_paths(
         if !path.exists() {
             failures.push(BulkActionError {
                 path: path_str.clone(),
-                error: "Source path does not exist".to_string(),
+                error: crate::domain::errors::AppError::Io(
+                    "Source path does not exist".to_string(),
+                ),
             });
             continue;
         }
@@ -80,13 +83,13 @@ pub async fn import_mods_from_paths(
                 Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
                 Err(e) => failures.push(BulkActionError {
                     path: path_str.clone(),
-                    error: e.to_string(),
+                    error: crate::domain::errors::AppError::Io(e.to_string()),
                 }),
             }
             continue;
         }
 
-        if ArchiveFormat::from_path(path).is_some() {
+        if ArchiveFormat::detect(path).is_some() {
             handle_archive_import(
                 &state,
                 path,
@@ -104,7 +107,7 @@ pub async fn import_mods_from_paths(
             None => {
                 failures.push(BulkActionError {
                     path: path_str.clone(),
-                    error: "Invalid file name".to_string(),
+                    error: crate::domain::errors::AppError::Io("Invalid file name".to_string()),
                 });
                 continue;
             }
@@ -114,7 +117,9 @@ pub async fn import_mods_from_paths(
         if dest.exists() {
             failures.push(BulkActionError {
                 path: path_str.clone(),
-                error: "Destination already exists".to_string(),
+                error: crate::domain::errors::AppError::Io(
+                    "Destination already exists".to_string(),
+                ),
             });
             continue;
         }
@@ -127,7 +132,7 @@ pub async fn import_mods_from_paths(
             log::warn!("Move failed (fallback failed): {}", e);
             failures.push(BulkActionError {
                 path: path_str.clone(),
-                error: format!("Failed to move: {}", e),
+                error: crate::domain::errors::AppError::Io(format!("Failed to move: {}", e)),
             });
         } else {
             success.push(path_str.to_string());
@@ -153,9 +158,11 @@ fn handle_archive_import(
             if !result.success {
                 failures.push(BulkActionError {
                     path: path_str.to_string(),
-                    error: result
-                        .error
-                        .unwrap_or_else(|| "Unknown extraction error".into()),
+                    error: crate::domain::errors::AppError::Io(
+                        result
+                            .error
+                            .unwrap_or_else(|| "Unknown extraction error".into()),
+                    ),
                 });
                 return;
             }
@@ -206,12 +213,12 @@ fn handle_archive_import(
         }
         Err(e) => failures.push(BulkActionError {
             path: path_str.to_string(),
-            error: e,
+            error: crate::domain::errors::AppError::Io(e),
         }),
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct IngestResult {
     pub moved: Vec<String>,
     pub skipped: Vec<String>,
@@ -219,6 +226,7 @@ pub struct IngestResult {
     pub sync: crate::services::scanner::sync::SyncResult,
 }
 
+#[specta::specta]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_dropped_folders(
@@ -289,6 +297,7 @@ pub async fn ingest_dropped_folders_inner(
         updated_mods: 0,
         deleted_mods: 0,
         new_objects: 0,
+        collisions: Vec::new(),
     };
 
     Ok(IngestResult {

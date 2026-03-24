@@ -1,4 +1,5 @@
 use crate::database::models::ConfigStatus;
+use crate::database::models::GameType;
 use crate::services::app::app_service::{check_config_status, reset_database_service};
 use std::fs;
 use tempfile::TempDir;
@@ -21,10 +22,16 @@ async fn test_check_config_status_has_config() {
     let pool = setup_test_db().await;
 
     // Insert a dummy game
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'GenshinImpact', '/game/path')"
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: GameType::GIMI,
+            path: "/game/path",
+            mods_path: Some("/game/path/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -50,10 +57,16 @@ async fn test_reset_database_service() {
         .await
         .unwrap();
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'GenshinImpact', '/game/path')"
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: GameType::GIMI,
+            path: "/game/path",
+            mods_path: Some("/game/path/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
 

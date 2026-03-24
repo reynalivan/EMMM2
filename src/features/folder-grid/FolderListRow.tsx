@@ -16,11 +16,13 @@ import {
   Copy,
   Package,
   Layers,
+  AlertTriangle,
 } from 'lucide-react';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../types/mod';
 import BulkContextMenu from './BulkContextMenu';
 import { useAppStore } from '../../stores/useAppStore';
+import { commands } from '../../lib/bindings';
 
 import {
   ContextMenu,
@@ -32,7 +34,7 @@ import { useThumbnail } from '../../hooks/useThumbnail';
 interface FolderListRowProps {
   item: ModFolder;
   isSelected: boolean;
-  toggleSelection: (id: string, multi: boolean) => void;
+  toggleSelection: (id: string, multi: boolean, isShift?: boolean) => void;
   clearSelection: () => void;
   onToggleEnabled?: (folder: ModFolder) => void;
   onToggleFavorite?: (folder: ModFolder) => void;
@@ -72,9 +74,14 @@ function FolderListRowInner({
   onToggleSafe,
   hasConflict = false,
 }: FolderListRowProps) {
-  const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(item.path);
+  const { t } = useTranslation(['grid']);
+  const activeGameId = useAppStore((state) => state.activeGameId);
+  const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(
+    activeGameId || '',
+    item.path,
+  );
   const [imgError, setImgError] = useState(false);
-  const thumbnailSrc = thumbnailPath && !imgError ? convertFileSrc(thumbnailPath) : null;
+  const thumbnailSrc = thumbnailPath && !imgError ? thumbnailPath : null;
   const isBulkSelection =
     isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
 
@@ -116,35 +123,38 @@ function FolderListRowInner({
             <ContextMenuItem
               icon={ExternalLink}
               onClick={async () => {
-                const { invoke } = await import('@tauri-apps/api/core');
-                invoke('open_in_explorer', { path: item.path }).catch(console.error);
+                if (activeGameId) {
+                  commands
+                    .openInExplorer({ gameId: activeGameId, path: item.path })
+                    .catch(console.error);
+                }
               }}
             >
-              Open in Explorer
+              {t('context.open_explorer')}
             </ContextMenuItem>
             <ContextMenuItem icon={Pencil} onClick={() => onRename?.(item)}>
-              Rename
+              {t('context.rename')}
             </ContextMenuItem>
             <ContextMenuItem icon={ToggleLeft} onClick={() => onToggleEnabled?.(item)}>
-              {item.is_enabled ? 'Disable' : 'Enable'}
+              {item.is_enabled ? t('context.disable') : t('context.enable')}
             </ContextMenuItem>
             {onOpenMoveDialog && (
               <>
                 <ContextMenuSeparator />
                 <ContextMenuItem icon={ArrowRightLeft} onClick={() => onOpenMoveDialog(item)}>
-                  Move to Object...
+                  {t('context.move_to_object')}
                 </ContextMenuItem>
               </>
             )}
             <ContextMenuSeparator />
             <ContextMenuItem icon={Trash2} danger onClick={() => onDelete?.(item)}>
-              Delete to Trash
+              {t('context.delete_trash')}
             </ContextMenuItem>
             {onToggleSafe && (
               <>
                 <ContextMenuSeparator />
                 <ContextMenuItem icon={item.is_safe ? ToggleLeft : Star} onClick={onToggleSafe}>
-                  {item.is_safe ? 'Mark as Unsafe (Remove Privacy)' : 'Mark as Safe (Add Privacy)'}
+                  {item.is_safe ? t('context.mark_unsafe') : t('context.mark_safe')}
                 </ContextMenuItem>
               </>
             )}
@@ -160,7 +170,7 @@ function FolderListRowInner({
           }
 
           if (!e.ctrlKey && !e.shiftKey) clearSelection();
-          toggleSelection(item.path, e.ctrlKey || e.shiftKey);
+          toggleSelection(item.path, e.ctrlKey || e.shiftKey, e.shiftKey);
         }}
         onContextMenu={handleContextClick}
         className={`
@@ -170,7 +180,7 @@ function FolderListRowInner({
         ${isSelected ? 'border-primary/50 bg-primary/10' : 'border-base-content/5 bg-base-200 hover:bg-base-300'}
       `}
       >
-        <div className="w-10 h-10 shrink-0 bg-base-300 rounded-md overflow-hidden flex items-center justify-center select-none border border-base-content/5">
+        <div className="group relative w-10 h-10 shrink-0 bg-base-300 rounded-md overflow-hidden flex items-center justify-center select-none border border-base-content/5">
           {thumbLoading ? (
             <div className="w-full h-full skeleton bg-base-300" />
           ) : thumbnailSrc ? (
@@ -187,6 +197,25 @@ function FolderListRowInner({
           ) : (
             <File size={18} className="text-base-content/20" />
           )}
+
+          {/* Bulk Multi-Select Checkbox Overlay: positioned in top-right corner */}
+          <div
+            className={`absolute top-0.5 right-0.5 transition-all duration-200 z-20
+              ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'}`}
+          >
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary checkbox-xs border shadow-sm bg-base-100"
+              checked={isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                const isShift =
+                  e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey;
+                toggleSelection(item.path, true, isShift);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
 
         <div className="min-w-0 flex-1 flex items-center gap-3">
@@ -202,13 +231,13 @@ function FolderListRowInner({
           {item.node_type === 'ModPackRoot' && (
             <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-info/20 text-info rounded-md shrink-0">
               <Package size={10} />
-              <span className="text-[9px] font-bold">Mod Pack</span>
+              <span className="text-[9px] font-bold">{t('card.mod_pack')}</span>
             </div>
           )}
           {item.node_type === 'VariantContainer' && (
             <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-secondary/20 text-secondary rounded-md shrink-0">
               <Layers size={10} />
-              <span className="text-[9px] font-bold">Variants</span>
+              <span className="text-[9px] font-bold">{t('card.variants')}</span>
             </div>
           )}
 
@@ -216,10 +245,21 @@ function FolderListRowInner({
           {hasConflict && (
             <div
               className="flex items-center gap-0.5 px-1.5 py-0.5 bg-warning/20 text-warning rounded-md shrink-0"
-              title="Hash conflict with another enabled mod"
+              title={t('card.hash_conflict_title')}
             >
               <Copy size={10} />
-              <span className="text-[9px] font-bold">Conflict</span>
+              <span className="text-[9px] font-bold">{t('card.conflict')}</span>
+            </div>
+          )}
+
+          {/* Corrupt badge */}
+          {!hasConflict && item.warnings.length > 0 && (
+            <div
+              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-error/20 text-error rounded-md shrink-0"
+              title={item.warnings.join('\n') || t('card.corrupt_ini_title')}
+            >
+              <AlertTriangle size={10} />
+              <span className="text-[9px] font-bold">CORRUPT</span>
             </div>
           )}
 
@@ -236,7 +276,7 @@ function FolderListRowInner({
                      : 'text-base-content/20 opacity-0 group-hover:opacity-100 hover:text-warning hover:scale-110'
                  }
                `}
-              title={item.is_favorite ? 'Unfavorite' : 'Favorite'}
+              title={t(item.is_favorite ? 'card.unfavorite' : 'card.favorite')}
             >
               <Star
                 size={16}
@@ -254,7 +294,7 @@ function FolderListRowInner({
                 onChange={() => onToggleEnabled?.(item)}
               />
               <span className="text-[10px] font-semibold text-base-content/40 hidden sm:inline">
-                {item.is_enabled ? 'Enabled' : 'Disabled'}
+                {t(item.is_enabled ? 'card.status_enabled' : 'card.status_disabled')}
               </span>
             </label>
           </div>

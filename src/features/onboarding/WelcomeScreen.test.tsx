@@ -64,7 +64,7 @@ describe('WelcomeScreen (TC-03)', () => {
 
   it('renders initial welcome state properly', () => {
     render(<WelcomeScreen onComplete={mockOnComplete} />);
-    expect(screen.getByText('Welcome to EMMM2')).toBeInTheDocument();
+    expect(screen.getByText('Welcome to EMMM')).toBeInTheDocument();
     expect(screen.getByText('XXMI Auto-Detect')).toBeInTheDocument();
     expect(screen.getByText('Add Game Manually')).toBeInTheDocument();
   });
@@ -74,7 +74,7 @@ describe('WelcomeScreen (TC-03)', () => {
     fireEvent.click(screen.getByText('Add Game Manually'));
 
     // Confirm the WelcomeScreen elements are gone
-    expect(screen.queryByText('Welcome to EMMM2')).not.toBeInTheDocument();
+    expect(screen.queryByText('Welcome to EMMM')).not.toBeInTheDocument();
     // Confirm the Manual form is present
     expect(screen.getByTestId('manual-form')).toBeInTheDocument();
   });
@@ -128,7 +128,7 @@ describe('WelcomeScreen (TC-03)', () => {
     await waitFor(() => {
       expect(screen.getByText('Fake error from backend')).toBeInTheDocument();
       // It bounces back to welcome screen automatically
-      expect(screen.getByText('Welcome to EMMM2')).toBeInTheDocument();
+      expect(screen.getByText('Welcome to EMMM')).toBeInTheDocument();
     });
   });
 
@@ -160,7 +160,7 @@ describe('WelcomeScreen (TC-03)', () => {
     fireEvent.click(screen.getByText('Remove'));
 
     await waitFor(() => {
-      expect(screen.getByText('Welcome to EMMM2')).toBeInTheDocument();
+      expect(screen.getByText('Welcome to EMMM')).toBeInTheDocument();
     });
   });
 });

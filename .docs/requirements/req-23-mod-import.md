@@ -19,7 +19,7 @@
 
 #### US-23.1: Drag and Drop Ingest
 
-As a user, I want to drag a `.zip` mod file from my desktop directly into EMMM2, so that the app installs and categorizes it automatically.
+As a user, I want to drag a `.zip` mod file from my desktop directly into EMMM, so that the app installs and categorizes it automatically.
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -74,13 +74,14 @@ update_mod_metadata(path, update_struct):
 
 ### Integration Points
 
-| Component           | Detail                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| `info_json.rs`      | Single point of truth for mod-local metadata; handles serialization and default templates.      |
-| `metadata.rs`       | Orchestrates DB category updates (`set_mod_category`) and repair of orphan mods.                |
-| `preview_image.rs`  | Handles `preview_*.webp` generation and management within the mod folder.                        |
-| `Scanner Sync`      | Scanner calls `ensure_object_exists` and `repair_orphan_mods` during the ingestion phase.        |
-| `Rayon Parallel`    | `bulk_toggle_favorite` uses Rayon for high-speed parallel IO updates to multiple `info.json` files. |Detect format (zip/rar/7z by extension + magic bytes)
+| Component          | Detail                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `info_json.rs`     | Single point of truth for mod-local metadata; handles serialization and default templates.          |
+| `metadata.rs`      | Orchestrates DB category updates (`set_mod_category`) and repair of orphan mods.                    |
+| `preview_image.rs` | Handles `preview_*.webp` generation and management within the mod folder.                           |
+| `Scanner Sync`     | Scanner calls `ensure_object_exists` and `repair_orphan_mods` during the ingestion phase.           |
+| `Rayon Parallel`   | `bulk_toggle_favorite` uses Rayon for high-speed parallel IO updates to multiple `info.json` files. | Detect format (zip/rar/7z by extension + magic bytes) |
+
       2. Extract to {temp_dir}/{uuid}/ (zip crate or sevenz_rust)
       3. Normalize: if extracted has single top-level folder wrapping mod, unwrap it
       4. Classify inner structure (Epic 11 classifier) → confirm ModPackRoot
@@ -89,6 +90,7 @@ update_mod_metadata(path, update_struct):
       8. fs::rename(temp/uuid/, target_dir/extracted_name/)
       9. emit('import:progress', {current, total, name, status: Ok | Err})
     return ImportBatchResult { success_count, failed: Vec<ImportError> }
+
 ```
 
 ### Integration Points
@@ -115,3 +117,4 @@ update_mod_metadata(path, update_struct):
 
 - **Blocked by**: Epic 09 (Object Schema + Master DB — Deep Matcher uses aliases), Epic 26 (Deep Matcher — auto-categorization logic), Epic 24 (Conflict Resolution — per-archive conflict dialog).
 - **Blocks**: Nothing — import is an entry point into the mod lifecycle, not a prerequisite.
+```

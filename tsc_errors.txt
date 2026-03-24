@@ -1,0 +1,116 @@
+src/components/layout/top-bar/GameSelector.tsx(21,25): error TS7015: Element implicitly has an 'any' type because index expression is not of type 'number'.
+src/features/collections/components/ApplyCollectionModal.tsx(163,61): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(callbackfn: (previousValue: GroupedMod, currentValue: GroupedMod, currentIndex: number, array: GroupedMod[]) => GroupedMod, initialValue: GroupedMod): GroupedMod', gave the following error.
+    Type 'number' is not assignable to type 'GroupedMod'.
+  Overload 2 of 3, '(callbackfn: (previousValue: 0, currentValue: GroupedMod, currentIndex: number, array: GroupedMod[]) => 0, initialValue: 0): 0', gave the following error.
+    Type 'number' is not assignable to type '0'.
+src/features/collections/components/ApplyCollectionModal.tsx(193,60): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(callbackfn: (previousValue: GroupedMod, currentValue: GroupedMod, currentIndex: number, array: GroupedMod[]) => GroupedMod, initialValue: GroupedMod): GroupedMod', gave the following error.
+    Type 'number' is not assignable to type 'GroupedMod'.
+  Overload 2 of 3, '(callbackfn: (previousValue: 0, currentValue: GroupedMod, currentIndex: number, array: GroupedMod[]) => 0, initialValue: 0): 0', gave the following error.
+    Type 'number' is not assignable to type '0'.
+src/features/collections/components/CollectionPreviewPanel.tsx(88,50): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(callbackfn: (previousValue: GroupedMod, currentValue: GroupedMod, currentIndex: number, array: GroupedMod[]) => GroupedMod, initialValue: GroupedMod): GroupedMod', gave the following error.
+    Type 'number' is not assignable to type 'GroupedMod'.
+  Overload 2 of 3, '(callbackfn: (previousValue: 0, currentValue: GroupedMod, currentIndex: number, array: GroupedMod[]) => 0, initialValue: 0): 0', gave the following error.
+    Type 'number' is not assignable to type '0'.
+src/features/folder-grid/FolderGridModals.tsx(90,11): error TS2322: Type '{ open: true; onClose: () => void; objects: ObjectSummary[]; currentObjectId: undefined; currentStatus: boolean; onSubmit: (targetId: any, status: any) => void; }' is not assignable to type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+  Property 'open' does not exist on type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+src/features/folder-grid/FolderGridModals.tsx(95,22): error TS7006: Parameter 'targetId' implicitly has an 'any' type.
+src/features/folder-grid/FolderGridModals.tsx(95,32): error TS7006: Parameter 'status' implicitly has an 'any' type.
+src/features/folder-grid/MoveToObjectDialog.test.tsx(16,9): error TS2322: Type '{ open: boolean; onClose: Mock<Procedure>; objects: ObjectSummary[]; currentObjectId: string; currentStatus: boolean; onSubmit: Mock<Procedure>; }' is not assignable to type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+  Property 'open' does not exist on type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+src/features/folder-grid/MoveToObjectDialog.test.tsx(46,9): error TS2322: Type '{ open: boolean; onClose: Mock<Procedure>; objects: ObjectSummary[]; currentObjectId: string; currentStatus: boolean; onSubmit: Mock<Procedure>; }' is not assignable to type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+  Property 'open' does not exist on type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+src/features/folder-grid/MoveToObjectDialog.tsx(9,15): error TS2305: Module '"../../types/mod"' has no exported member 'ModStatus'.
+src/features/folder-grid/MoveToObjectDialog.tsx(36,23): error TS2339: Property 'searchObjects' does not exist on type '{ appStartupCheck: () => Promise<PipelineTask[]>; checkConfigStatus: () => Promise<boolean>; checkMetadataUpdate: () => Promise<MetadataSyncResult>; ... 152 more ...; deleteCustomTheme: (params: { ...; }) => Promise<...>; }'.
+src/features/folder-grid/MoveToObjectDialog.tsx(46,22): error TS2339: Property 'bulkMoveTo' does not exist on type '{ appStartupCheck: () => Promise<PipelineTask[]>; checkConfigStatus: () => Promise<boolean>; checkMetadataUpdate: () => Promise<MetadataSyncResult>; ... 152 more ...; deleteCustomTheme: (params: { ...; }) => Promise<...>; }'.
+src/features/folder-grid/MoveToObjectDialog.tsx(53,37): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/features/folder-grid/MoveToObjectDialog.tsx(90,27): error TS7006: Parameter 'obj' implicitly has an 'any' type.
+src/features/object-list/ObjectContextMenu.test.tsx(23,11): error TS2739: Type '{ type: "object"; id: string; name: string; objectType: string; isEnabled: true; isPinned: false; }' is missing the following properties from type 'ContextMenuTarget': enabledCount, modCount
+src/features/object-list/ObjectContextMenu.test.tsx(61,7): error TS2353: Object literal may only specify known properties, and 'path' does not exist in type 'ContextMenuTarget'.
+src/features/object-list/useObjHandlersArchive.ts(290,15): error TS2322: Type 'import("E:/Dev/EMMMNEW/src/types/game").GameType' is not assignable to type 'string'.
+src/features/object-list/useObjHandlersArchive.ts(404,13): error TS2322: Type 'import("E:/Dev/EMMMNEW/src/types/game").GameType' is not assignable to type 'string'.
+src/features/object-list/useObjHandlersDrop.ts(170,13): error TS2322: Type 'import("E:/Dev/EMMMNEW/src/types/game").GameType' is not assignable to type 'string'.
+src/features/object-list/useObjHandlersScan.ts(191,11): error TS2353: Object literal may only specify known properties, and 'gameId' does not exist in type '{ gameType: number; objectName: string; }'.
+src/features/onboarding/AutoDetectResult.test.tsx(3,8): error TS2613: Module '"E:/Dev/EMMMNEW/src/features/onboarding/AutoDetectResult"' has no default export. Did you mean to use 'import { AutoDetectResult } from "E:/Dev/EMMMNEW/src/features/onboarding/AutoDetectResult"' instead?
+src/features/onboarding/AutoDetectResult.tsx(74,37): error TS2352: Conversion of type 'import("E:/Dev/EMMMNEW/src/types/game").GameType' to type 'string' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/features/onboarding/ManualSetupForm.test.tsx(3,8): error TS2613: Module '"E:/Dev/EMMMNEW/src/features/onboarding/ManualSetupForm"' has no default export. Did you mean to use 'import { ManualSetupForm } from "E:/Dev/EMMMNEW/src/features/onboarding/ManualSetupForm"' instead?
+src/features/preview/components/PreviewPanelModals.tsx(79,11): error TS2322: Type '{ open: true; onClose: () => void; objects: ObjectSummary[]; currentObjectId: string; currentStatus: boolean; onSubmit: (targetId: string, status: "disabled" | "keep" | "only-enable") => void; }' is not assignable to type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+  Property 'open' does not exist on type 'IntrinsicAttributes & MoveToObjectDialogProps'.
+src/features/scanner/components/DuplicateTable.tsx(4,28): error TS2307: Cannot find module '../../../utils/formatters' or its corresponding type declarations.
+src/features/scanner/components/ResolutionModal.test.tsx(33,7): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/features/scanner/components/ResolutionModal.test.tsx(42,7): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/features/scanner/components/ResolutionModal.test.tsx(69,15): error TS2322: Type '{ isOpen: false; selections: Map<string, "Ignore" | "KeepA" | "KeepB">; groups: DupScanGroup[]; onConfirm: Mock<Procedure>; onCancel: Mock<Procedure>; isPending: boolean; }' is not assignable to type 'Props'.
+  Types of property 'selections' are incompatible.
+    Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+      Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+        Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(82,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(94,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(105,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(117,63): error TS2322: Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+    Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(129,63): error TS2322: Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+    Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(142,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(155,63): error TS2322: Type 'Map<string, "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepB"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(165,63): error TS2322: Type 'Map<string, "Ignore">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(178,11): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/features/scanner/components/ResolutionModal.test.tsx(187,11): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/features/scanner/components/ResolutionModal.test.tsx(208,11): error TS2322: Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+    Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(229,11): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(248,11): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(262,63): error TS2322: Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+    Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(279,11): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(301,11): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(318,11): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(335,11): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(351,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(364,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(375,63): error TS2322: Type 'Map<string, "KeepA">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"KeepA"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(402,11): error TS2322: Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+    Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/components/ResolutionModal.test.tsx(429,11): error TS2322: Type 'Map<string, "Ignore" | "KeepA" | "KeepB">' is not assignable to type 'Map<string, ResolutionAction>'.
+  Type '"Ignore" | "KeepA" | "KeepB"' is not assignable to type 'ResolutionAction'.
+    Type '"Ignore"' is not assignable to type 'ResolutionAction'.
+src/features/scanner/hooks/useDedup.test.ts(61,15): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/features/scanner/hooks/useDedup.test.ts(70,15): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/features/scanner/hooks/useDedup.test.ts(253,31): error TS2322: Type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }[]' is not assignable to type 'ResolutionRequest[]'.
+  Property 'allMembers' is missing in type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }' but required in type 'ResolutionRequest'.
+src/features/scanner/hooks/useDedup.test.ts(287,53): error TS2322: Type 'string' is not assignable to type 'ResolutionAction'.
+src/features/settings/theme/DynamicThemeInjector.tsx(2,29): error TS2307: Cannot find module '@/hooks/useSettings' or its corresponding type declarations.
+src/features/settings/theme/DynamicThemeInjector.tsx(3,44): error TS2307: Cannot find module '@/lib/bindings' or its corresponding type declarations.
+src/features/settings/theme/useCustomThemes.ts(2,46): error TS2307: Cannot find module '@/lib/bindings' or its corresponding type declarations.
+src/lib/services/dedupService.test.ts(124,15): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/lib/services/dedupService.test.ts(133,15): error TS2741: Property 'isSafe' is missing in type '{ folderPath: string; displayName: string; totalSizeBytes: number; fileCount: number; confidenceScore: number; signals: never[]; modId: null; }' but required in type 'DupScanMember'.
+src/lib/services/dedupService.test.ts(198,54): error TS2345: Argument of type '({ groupId: string; action: "KeepA"; folderA: string; folderB: string; } | { groupId: string; action: "Ignore"; folderA: string; folderB: string; })[]' is not assignable to parameter of type 'ResolutionRequest[]'.
+  Type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; } | { groupId: string; action: "Ignore"; folderA: string; folderB: string; }' is not assignable to type 'ResolutionRequest'.
+    Property 'allMembers' is missing in type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }' but required in type 'ResolutionRequest'.
+src/lib/services/dedupService.test.ts(215,13): error TS2322: Type 'string' is not assignable to type 'ResolutionAction'.
+src/lib/services/dedupService.test.ts(232,54): error TS2345: Argument of type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }[]' is not assignable to parameter of type 'ResolutionRequest[]'.
+  Property 'allMembers' is missing in type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }' but required in type 'ResolutionRequest'.
+src/lib/services/dedupService.test.ts(252,46): error TS2345: Argument of type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }[]' is not assignable to parameter of type 'ResolutionRequest[]'.
+  Property 'allMembers' is missing in type '{ groupId: string; action: "KeepA"; folderA: string; folderB: string; }' but required in type 'ResolutionRequest'.

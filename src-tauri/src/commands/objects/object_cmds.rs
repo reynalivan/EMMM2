@@ -2,11 +2,12 @@ use tauri::{Manager, State};
 
 use crate::types::errors::CommandResult;
 
-use crate::database::object_repo::{
+use crate::repo::object_repo::{
     CategoryCount, CreateObjectInput, GetObjectsResult, ObjectFilter, UpdateObjectInput,
 };
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_objects_cmd(
     filter: ObjectFilter,
     pool: State<'_, sqlx::SqlitePool>,
@@ -15,17 +16,30 @@ pub async fn get_objects_cmd(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn sync_objects_cmd(
     app: tauri::AppHandle,
     game_id: String,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CommandResult<()> {
-    let keywords = app
+    let settings = app
         .state::<crate::services::config::ConfigService>()
-        .get_settings()
-        .safe_mode
-        .keywords;
-    crate::services::scanner::object_sync::sync_objects_for_game(&pool, &game_id, &keywords).await
+        .get_settings();
+
+    let keywords = settings.safe_mode.keywords;
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| {
+            crate::types::errors::CommandError::App(format!("Game {} not found", game_id))
+        })?;
+    let mods_path = game.mod_path.to_str().unwrap_or("");
+
+    crate::services::scanner::object_sync::sync_objects_for_game(
+        &pool, &game_id, &mods_path, &keywords,
+    )
+    .await
 }
 
 pub async fn get_objects_cmd_inner(
@@ -41,6 +55,7 @@ pub async fn get_objects_cmd_inner(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_category_counts_cmd(
     game_id: String,
     safe_mode: bool,
@@ -49,12 +64,13 @@ pub async fn get_category_counts_cmd(
     let counts =
         crate::services::objects::query::get_category_counts_service(&pool, &game_id, safe_mode)
             .await
-            .map_err(crate::types::errors::CommandError::App)?;
+            .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))?;
 
     Ok(counts)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn create_object_cmd(
     input: CreateObjectInput,
     pool: State<'_, sqlx::SqlitePool>,
@@ -72,6 +88,7 @@ pub async fn create_object_cmd_inner(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_object_cmd(
     id: String,
     updates: UpdateObjectInput,
@@ -89,8 +106,10 @@ pub async fn update_object_cmd_inner(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_object_cmd(
     id: String,
+    force: bool,
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, crate::services::scanner::watcher::WatcherState>,
@@ -103,19 +122,34 @@ pub async fn delete_object_cmd(
             crate::types::errors::CommandError::Io(format!("Failed to get app data dir: {}", e))
         })?
         .join("trash");
-    crate::services::objects::mutate::delete_object(&pool, &id, &trash_dir, &state, &op_lock).await
+    crate::services::objects::mutate::delete_object(&pool, &id, force, &trash_dir, &state, &op_lock)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn pin_object_cmd(
+    id: String,
+    pin: bool,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CommandResult<()> {
+    crate::services::objects::mutate::toggle_pin_object(&pool, &id, pin)
+        .await
+        .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))
 }
 
 /// Garbage-collect objects whose folders no longer exist on disk.
+
 /// Called at sync points (game switch, manual sync) — NOT on every ObjectList render.
 #[tauri::command]
+#[specta::specta]
 pub async fn gc_lost_objects_cmd(
     game_id: String,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CommandResult<Vec<String>> {
     let lost = crate::services::objects::query::gc_lost_objects(&pool, &game_id)
         .await
-        .map_err(crate::types::errors::CommandError::App)?;
+        .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))?;
     Ok(lost)
 }
 

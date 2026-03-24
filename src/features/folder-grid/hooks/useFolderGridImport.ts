@@ -9,6 +9,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useImportMods, folderKeys } from '../../../hooks/useFolders';
 import { useFileDrop } from '../../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../../hooks/useDragAutoScroll';
+import { join } from '@tauri-apps/api/path';
+import { classifyDroppedPaths } from '../../object-list/dropUtils';
 
 interface FolderGridImportOptions {
   parentRef: React.RefObject<HTMLDivElement | null>;
@@ -28,13 +30,10 @@ export function useFolderGridImport({
     async (paths: string[]) => {
       if (!activeModPath || paths.length === 0) return;
 
-      const { join } = await import('@tauri-apps/api/path');
       const targetDir = explorerSubPath
         ? await join(activeModPath, explorerSubPath)
         : activeModPath;
 
-      // Classify paths to separate archives from folders/files
-      const { classifyDroppedPaths } = await import('../../object-list/dropUtils');
       const classified = classifyDroppedPaths(paths);
 
       // Archives → dispatch to ObjectList's shared ArchiveModal for preview/extraction

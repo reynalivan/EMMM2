@@ -8,15 +8,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "type", content = "data")]
 pub enum OrganizeError {
-    Duplicate { dest: String },
+    Collision(crate::services::scanner::core::types::CollisionInfo),
     Generic(String),
 }
 
 impl std::fmt::Display for OrganizeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OrganizeError::Duplicate { dest } => write!(f, "Destination already exists: {}", dest),
+            OrganizeError::Collision(info) => {
+                write!(f, "Collision at destination: {}", info.target_path)
+            }
             OrganizeError::Generic(msg) => write!(f, "{}", msg),
         }
     }
@@ -100,17 +103,11 @@ pub fn organize_mod(
     let category = auto_candidate.object_type.clone();
     let obj_name = auto_candidate.name.clone();
 
-    // Construct path: target_root / Category / ObjectName / ModResultName
-    // We sanitize ObjectName just in case
+    // AC-38.1.1: Standardize hierarchy to {target_root}/{Category}/{Object_Name}/{ModName}
     let safe_obj_name = sanitize_filename::sanitize(&obj_name);
     let safe_category = sanitize_filename::sanitize(&category);
 
-    let target_parent = if category.eq_ignore_ascii_case("Character") {
-        // Flatten Characters: Mods/Ayaka instead of Mods/Character/Ayaka
-        target_root.join(&safe_obj_name)
-    } else {
-        target_root.join(&safe_category).join(&safe_obj_name)
-    };
+    let target_parent = target_root.join(&safe_category).join(&safe_obj_name);
 
     let dest_folder_name = folder_name.clone();
 
@@ -132,9 +129,14 @@ pub fn organize_mod(
 
     // Check collision
     if target_path.exists() {
-        return Err(OrganizeError::Duplicate {
-            dest: target_path.to_string_lossy().to_string(),
-        });
+        use crate::services::scanner::core::types::CollisionInfo;
+        return Err(OrganizeError::Collision(CollisionInfo {
+            id: blake3::hash(target_path.to_string_lossy().as_bytes()).to_string(),
+            source_path: path.to_string_lossy().to_string(),
+            target_path: target_path.to_string_lossy().to_string(),
+            object_name: obj_name,
+            existing_mod_id: None, // We don't have the ID here without another DB lookup
+        }));
     }
 
     // Move

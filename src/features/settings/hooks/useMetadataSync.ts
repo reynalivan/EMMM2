@@ -1,10 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-
-interface MetadataSyncResult {
-  updated: boolean;
-  version: number | null;
-}
+import { commands } from '../../../lib/bindings';
+import type { MetadataSyncResult } from '../../../types/scanner';
 
 export const metadataSyncKeys = {
   sync: ['metadata-sync'] as const,
@@ -17,7 +13,7 @@ export const metadataSyncKeys = {
 export function useMetadataSyncQuery() {
   return useQuery<MetadataSyncResult>({
     queryKey: metadataSyncKeys.sync,
-    queryFn: () => invoke<MetadataSyncResult>('check_metadata_update'),
+    queryFn: () => commands.checkMetadataUpdate(),
     staleTime: 1000 * 60 * 60, // 1 hour — only check once per session
     retry: false, // Backend already handles retries
     refetchOnWindowFocus: false,
@@ -31,7 +27,7 @@ export function useMetadataSyncMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => invoke<MetadataSyncResult>('check_metadata_update'),
+    mutationFn: () => commands.checkMetadataUpdate(),
     onSuccess: (data) => {
       queryClient.setQueryData(metadataSyncKeys.sync, data);
     },
@@ -43,6 +39,6 @@ export function useMetadataSyncMutation() {
  */
 export function useAssetFetch() {
   return useMutation({
-    mutationFn: (assetName: string) => invoke<string | null>('fetch_missing_asset', { assetName }),
+    mutationFn: (assetName: string) => commands.fetchMissingAsset({ assetName }),
   });
 }

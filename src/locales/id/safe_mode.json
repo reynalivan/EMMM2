@@ -1,0 +1,98 @@
+{
+  "pin_entry": {
+    "title": "Masukkan PIN",
+    "desc": "PIN diperlukan untuk menonaktifkan Mode Aman.",
+    "placeholder": "••••••",
+    "error": {
+      "length": "PIN harus 6 digit",
+      "locked": "Terlalu banyak percobaan gagal. Terkunci selama {{seconds}} detik",
+      "invalid": "PIN tidak valid. {{count}} percobaan tersisa."
+    },
+    "lockout": "Coba lagi dalam {{seconds}} detik",
+    "forgot": "Lupa PIN? Gunakan Kode Pemulihan",
+    "verify": "Verifikasi",
+    "unlock": "Buka Kunci",
+    "set_pin": "Atur PIN",
+    "pin": "PIN",
+    "new_pin": "PIN Baru",
+    "confirm_new_pin": "Konfirmasi PIN Baru"
+  },
+  "recovery": {
+    "title": "Pemulihan PIN",
+    "desc_format": "Masukkan Kode Pemulihan Anda (format: EMMM-XXXX-XXXX-XXXX). Ini akan menghapus PIN Anda sehingga Anda dapat mengatur yang baru.",
+    "placeholder": "EMMM-XXXX-XXXX-XXXX",
+    "error": {
+      "empty": "Harap masukkan kode pemulihan Anda.",
+      "invalid": "Kode pemulihan tidak valid. Harap periksa dan coba lagi."
+    },
+    "reset": "Reset PIN",
+    "success": {
+      "title": "PIN Berhasil Dihapus",
+      "desc": "PIN Anda telah dihapus. Buka Pengaturan → Privasi → Atur PIN untuk membuat yang baru."
+    },
+    "error_match": "PIN tidak cocok",
+    "removed": "PIN Dihapus: Mode Aman sekarang tidak terlindungi.",
+    "remove_failed": "Gagal menghapus PIN: {{error}}"
+  },
+  "settings": {
+    "title": "Mode Aman",
+    "desc": "Saat diaktifkan, mod yang ditandai dengan kata kunci sensitif akan disembunyikan dari pustaka. Menonaktifkan mode ini mungkin memerlukan autentikasi jika PIN telah diatur.",
+    "toggle": "Aktifkan/nonaktifkan mode aman",
+    "keywords": {
+      "title": "Kata Kunci Terfilter",
+      "placeholder": "Tambah kata kunci (misal: nsfw)",
+      "add": "Tambah",
+      "remove": "Hapus {{keyword}}",
+      "empty": "Tidak ada kata kunci terfilter yang dikonfigurasi.",
+      "exists": "Kata kunci sudah ada.",
+      "update_failed": "Gagal memperbarui kata kunci: {{error}}"
+    },
+    "protection": {
+      "title": "Perlindungan Kata Kunci Ekstra",
+      "desc": "Saat AKTIF, mod yang cocok dengan kata kunci terfilter akan disembunyikan meskipun telah ditandai sebagai aman.",
+      "update_failed": "Gagal memperbarui filter Mode Aman: {{error}}"
+    },
+    "security": {
+      "title": "PIN Keamanan",
+      "status_set": "PIN sedang diatur. PIN diperlukan untuk menonaktifkan Mode Aman.",
+      "status_none": "Tidak ada PIN. Siapa pun dapat mengubah Mode Aman secara bebas.",
+      "recovery_configured": "Kode pemulihan telah dikonfigurasi",
+      "remove": "Hapus PIN",
+      "change": "Ubah PIN",
+      "set": "Atur PIN",
+      "modal_set_title": "Atur PIN Keamanan",
+      "modal_unlock_title": "Buka Kunci Pengaturan",
+      "modal_set_desc": "Buat PIN yang aman untuk melindungi pengaturan Mode Aman.",
+      "modal_unlock_desc": "Masukkan PIN Anda saat ini untuk melanjutkan."
+    }
+  },
+  "switch": {
+    "title_safe": "Pindah ke Mode AMAN",
+    "title_unsafe": "Pindah ke Mode TIDAK AMAN",
+    "desc": "Tinjau perubahan pada loadout aktif Anda sebelum berpindah koridor.",
+    "loading": "Memuat pratinjau...",
+    "leaving": "Status {{mode}} Saat Ini",
+    "target": "Status {{mode}} Tujuan",
+    "snapshot": "Snapshot",
+    "restore": "Pulihkan",
+    "active_mods": "Mod Aktif Saat Ini",
+    "empty": "{{name}} kosong (Semua Dinonaktifkan).",
+    "target_desc": {
+      "active": "Koleksi Aktif Terakhir",
+      "none": "Tidak ada koleksi aktif yang diingat"
+    },
+    "missing_target": "Tidak ada status tujuan yang disimpan. Semua mod akan tetap dinonaktifkan."
+  },
+  "recovery_modal": {
+    "title": "Simpan Kode Pemulihan Anda",
+    "desc": "Kode ini hanya ditampilkan sekali. Simpan di tempat yang aman — ini adalah satu-satunya cara untuk mereset PIN jika Anda lupa.",
+    "copy": "Salin Kode Pemulihan",
+    "copied": "Tersalin!",
+    "warning": "Jika Anda kehilangan kode ini dan lupa PIN, Anda perlu mereset database aplikasi secara manual untuk menghapusnya.",
+    "confirm_close": "Saya sudah menyimpannya, tutup"
+  },
+  "labels": {
+    "safe": "AMAN",
+    "unsafe": "TIDAK AMAN"
+  }
+}

@@ -6,6 +6,7 @@
 //!
 //! # Covers: Epic 4 §C, DI-4.03 (info.json Lifecycle)
 
+use crate::domain::errors::MetadataError;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -36,7 +37,7 @@ where
 ///
 /// Matches the default template from Epic 4 cross-cutting requirements:
 /// `{ actual_name, author, description, version, tags, is_safe, is_favorite }`
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 pub struct ModInfo {
     #[serde(default)]
     pub actual_name: String,
@@ -52,6 +53,8 @@ pub struct ModInfo {
     pub is_safe: bool,
     #[serde(default)]
     pub is_favorite: bool,
+    #[serde(default)]
+    pub is_pinned: bool,
     #[serde(default)]
     pub is_auto_sync: bool,
     #[serde(default, deserialize_with = "deserialize_string_or_vec")]
@@ -81,6 +84,7 @@ impl ModInfo {
             tags: Vec::new(),
             is_safe: true,
             is_favorite: false,
+            is_pinned: false,
             is_auto_sync: false,
             preset_name: Vec::new(),
             metadata: std::collections::HashMap::new(),
@@ -92,17 +96,15 @@ impl ModInfo {
 ///
 /// Returns `None` if the file doesn't exist.
 /// Returns `Err` if the file exists but is malformed.
-pub fn read_info_json(mod_path: &Path) -> Result<Option<ModInfo>, String> {
+pub fn read_info_json(mod_path: &Path) -> Result<Option<ModInfo>, MetadataError> {
     let info_path = mod_path.join("info.json");
     if !info_path.exists() {
         return Ok(None);
     }
 
-    let content =
-        fs::read_to_string(&info_path).map_err(|e| format!("Failed to read info.json: {e}"))?;
-
-    let info: ModInfo =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse info.json: {e}"))?;
+    let content = fs::read_to_string(&info_path)?;
+    let info: ModInfo = serde_json::from_str(&content)
+        .map_err(|e| MetadataError::Validation(format!("Failed to parse info.json: {e}")))?;
 
     Ok(Some(info))
 }
@@ -111,16 +113,16 @@ pub fn read_info_json(mod_path: &Path) -> Result<Option<ModInfo>, String> {
 ///
 /// Uses the folder's name as `actual_name`.
 /// Does NOT overwrite if the file already exists.
-pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, String> {
+pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, MetadataError> {
     let info_path = mod_path.join("info.json");
     if info_path.exists() {
         return read_info_json(mod_path)?
-            .ok_or_else(|| "info.json exists but is empty".to_string());
+            .ok_or_else(|| MetadataError::Validation("info.json exists but is empty".to_string()));
     }
 
     let folder_name = mod_path
         .file_name()
-        .ok_or("Invalid folder path")?
+        .ok_or_else(|| MetadataError::Validation("Invalid folder path".to_string()))?
         .to_string_lossy();
 
     // Strip "DISABLED " prefix if present
@@ -131,15 +133,15 @@ pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, String> {
     let info = ModInfo::from_folder_name(clean_name);
 
     let json = serde_json::to_string_pretty(&info)
-        .map_err(|e| format!("Failed to serialize info.json: {e}"))?;
-    fs::write(&info_path, json).map_err(|e| format!("Failed to write info.json: {e}"))?;
+        .map_err(|e| MetadataError::Validation(format!("Failed to serialize info.json: {e}")))?;
+    fs::write(&info_path, json)?;
 
     log::info!("Created default info.json for '{}'", clean_name);
     Ok(info)
 }
 
 /// Partial update struct — only fields that are `Some` will be updated.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, specta::Type)]
 pub struct ModInfoUpdate {
     pub actual_name: Option<String>,
     pub author: Option<String>,
@@ -150,6 +152,7 @@ pub struct ModInfoUpdate {
     pub tags_remove: Option<Vec<String>>,
     pub is_safe: Option<bool>,
     pub is_favorite: Option<bool>,
+    pub is_pinned: Option<bool>,
     pub is_auto_sync: Option<bool>,
     pub preset_name_add: Option<Vec<String>>,
     pub preset_name_remove: Option<Vec<String>>,
@@ -159,7 +162,7 @@ pub struct ModInfoUpdate {
 /// Update specific fields in an existing info.json (merge, not overwrite).
 ///
 /// If info.json doesn't exist, creates a default first, then applies the update.
-pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModInfo, String> {
+pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModInfo, MetadataError> {
     let mut info = match read_info_json(mod_path)? {
         Some(existing) => existing,
         None => create_default_info_json(mod_path)?,
@@ -200,6 +203,9 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
     if let Some(fav) = update.is_favorite {
         info.is_favorite = fav;
     }
+    if let Some(pinned) = update.is_pinned {
+        info.is_pinned = pinned;
+    }
     if let Some(sync) = update.is_auto_sync {
         info.is_auto_sync = sync;
     }
@@ -224,9 +230,9 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
 
     // Write back
     let info_path = mod_path.join("info.json");
-    let json =
-        serde_json::to_string_pretty(&info).map_err(|e| format!("Failed to serialize: {e}"))?;
-    fs::write(&info_path, json).map_err(|e| format!("Failed to write info.json: {e}"))?;
+    let json = serde_json::to_string_pretty(&info)
+        .map_err(|e| MetadataError::Validation(format!("Failed to serialize: {e}")))?;
+    fs::write(&info_path, json)?;
 
     Ok(info)
 }

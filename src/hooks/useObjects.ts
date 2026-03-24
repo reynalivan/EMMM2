@@ -4,7 +4,8 @@
  */
 
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../lib/bindings';
+import type { GameType } from '../types/game';
 import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
 import {
@@ -14,14 +15,15 @@ import {
   deleteObject,
   createObject,
 } from '../lib/services/objectService';
-import { invalidateCorridorRuntime } from '../features/collections/utils/invalidateCorridorRuntime';
-import type {
-  ObjectSummary,
-  ObjectFilter,
-  CategoryCount,
-  GameSchema,
-  UpdateObjectInput,
-  CreateObjectInput,
+import { corridorKeys } from '../features/collections/queryKeys';
+import {
+  type ObjectSummary,
+  type ObjectFilter,
+  type CategoryCount,
+  type GameSchema,
+  type UpdateObjectInput,
+  type CreateObjectInput,
+  ItemStatus,
 } from '../types/object';
 
 /** Query key factory for cache management */
@@ -30,7 +32,7 @@ const objectKeys = {
   lists: () => [...objectKeys.all, 'list'] as const,
   list: (filter: ObjectFilter) => [...objectKeys.lists(), filter] as const,
   counts: (gameId: string) => [...objectKeys.all, 'counts', gameId] as const,
-  schema: (gameType: string) => ['schema', gameType] as const,
+  schema: (gameType: GameType) => ['schema', gameType] as const,
 };
 
 interface UseObjectsOptions {
@@ -52,11 +54,16 @@ export function useObjects(options: UseObjectsOptions = {}) {
   const filter: ObjectFilter = {
     game_id: activeGame?.id ?? '',
     safe_mode: safeMode,
-    object_type: selectedObjectType ?? undefined,
-    search_query: options.localSearch ? undefined : sidebarSearchQuery || undefined,
-    meta_filters: options.metaFilters,
-    sort_by: options.sortBy,
-    status_filter: options.statusFilter,
+    object_type: selectedObjectType ?? null,
+    search_query: options.localSearch ? null : sidebarSearchQuery || null,
+    meta_filters: options.metaFilters || null,
+    sort_by: options.sortBy || null,
+    status_filter:
+      options.statusFilter === 'enabled'
+        ? ItemStatus.Enabled
+        : options.statusFilter === 'disabled'
+          ? ItemStatus.Disabled
+          : null,
   };
 
   // Use the full filter (including safe_mode) as the query key to ensure
@@ -98,12 +105,12 @@ export function useCategoryCounts() {
  */
 export function useGameSchema() {
   const { activeGame } = useActiveGame();
-  const gameType = activeGame?.game_type ?? '';
+  const gameType = activeGame?.game_type;
 
   return useQuery<GameSchema>({
-    queryKey: objectKeys.schema(gameType),
-    queryFn: () => invoke<GameSchema>('get_game_schema', { gameType }),
-    enabled: !!gameType,
+    queryKey: objectKeys.schema(gameType as GameType),
+    queryFn: () => commands.getGameSchema({ gameType: gameType! }),
+    enabled: gameType !== undefined,
     staleTime: Infinity, // Schemas don't change at runtime
   });
 }
@@ -121,7 +128,7 @@ export function useGameSwitch() {
     queryClient.invalidateQueries({ queryKey: objectKeys.all });
     queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
     queryClient.invalidateQueries({ queryKey: ['collections'] });
-    await invalidateCorridorRuntime(queryClient);
+    queryClient.invalidateQueries({ queryKey: corridorKeys.all });
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
@@ -152,7 +159,7 @@ export function useDeleteObject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => deleteObject(id),
+    mutationFn: ({ id, force }: { id: string; force: boolean }) => deleteObject(id, force),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: objectKeys.all });
     },
@@ -180,11 +187,11 @@ export function useCreateObject() {
  */
 export function useMasterDb() {
   const { activeGame } = useActiveGame();
-  const gameType = activeGame?.game_type ?? '';
+  const gameType = activeGame?.game_type;
 
   return useQuery<string>({
     queryKey: ['master-db', gameType],
-    queryFn: () => invoke<string>('get_master_db', { gameType }),
+    queryFn: () => commands.getMasterDb({ gameType: gameType! }),
     enabled: !!gameType,
     staleTime: Infinity,
   });

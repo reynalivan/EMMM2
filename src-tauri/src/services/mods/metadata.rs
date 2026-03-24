@@ -1,4 +1,9 @@
+use crate::domain::errors::MetadataError;
+use crate::services::config::ConfigService;
+use crate::services::fs_utils::guard::PathGuard;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::fs;
 use std::path::Path;
@@ -6,29 +11,36 @@ use std::path::Path;
 /// Set the category (Object Type) for a mod.
 /// Updates the `mods` table.
 pub async fn set_mod_category(
+    config: &ConfigService,
     pool: &SqlitePool,
     game_id: &str,
     folder_path: &str,
     category: &str,
-) -> Result<(), String> {
+) -> Result<(), MetadataError> {
+    let canonical_path =
+        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+
+    let folder_path_str = canonical_path.to_string_lossy();
+
     let exists =
-        crate::database::mod_repo::get_mod_id_and_object_id_by_path(pool, folder_path, game_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        crate::repo::mod_repo::get_mod_id_and_object_id_by_path(pool, &folder_path_str, game_id)
+            .await?;
 
     if let Some((mod_id, object_id)) = exists {
         let obj_id_str = object_id.unwrap_or_default();
-        let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
-        crate::database::mod_repo::update_mod_object_id_and_type_tx(
+        let mut conn = pool.acquire().await?;
+
+        crate::repo::mod_repo::update_mod_object_id_and_type_tx(
             &mut conn,
             &mod_id,
             &obj_id_str,
             category,
         )
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     } else {
-        return Err("Mod not found in database. Please sync first.".to_string());
+        return Err(MetadataError::NotFound(
+            "Mod not found in database. Please sync first.".to_string(),
+        ));
     }
 
     Ok(())
@@ -37,28 +49,32 @@ pub async fn set_mod_category(
 /// Update the thumbnail for a mod folder.
 /// Copies the source image to `preview.png` (or keeps extension) in the mod folder.
 /// Invalidates cache.
-pub fn update_mod_thumbnail(folder_path: &str, source_path: &str) -> Result<String, String> {
-    let target_dir = Path::new(folder_path);
-    let source_path_obj = Path::new(source_path);
+pub fn update_mod_thumbnail(
+    config: &ConfigService,
+    game_id: &str,
+    folder_path: &str,
+    source_path: &str,
+) -> Result<String, MetadataError> {
+    let target_dir =
+        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
 
-    if !target_dir.exists() || !target_dir.is_dir() {
-        return Err(format!("Target folder does not exist: {folder_path}"));
-    }
+    let source_path_obj = Path::new(source_path);
     if !source_path_obj.exists() || !source_path_obj.is_file() {
-        return Err(format!("Source file does not exist: {source_path}"));
+        return Err(MetadataError::NotFound(format!(
+            "Source file does not exist: {source_path}"
+        )));
     }
 
     // Determine the new thumbnail path within the mod folder
     let new_thumbnail_name = source_path_obj
         .file_name()
-        .ok_or("Invalid source file name")?
+        .ok_or_else(|| MetadataError::Validation("Invalid source file name".to_string()))?
         .to_string_lossy()
         .to_string();
     let new_thumbnail_path = target_dir.join(&new_thumbnail_name);
 
     // Copy the source image to the mod folder
-    fs::copy(source_path_obj, &new_thumbnail_path)
-        .map_err(|e| format!("Failed to copy thumbnail: {e}"))?;
+    fs::copy(source_path_obj, &new_thumbnail_path)?;
 
     // Invalidate cache for this mod's thumbnail
     ThumbnailCache::invalidate(&new_thumbnail_path);
@@ -67,7 +83,7 @@ pub fn update_mod_thumbnail(folder_path: &str, source_path: &str) -> Result<Stri
 }
 
 pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usize, String> {
-    let orphans = crate::database::mod_repo::get_orphan_mods(pool, game_id)
+    let orphans = crate::repo::mod_repo::get_orphan_mods(pool, game_id)
         .await
         .map_err(|e| format!("DB error: {}", e))?;
 
@@ -102,12 +118,14 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
             None,
             "[]",
             "{}",
+            None,
+            None,
             &mut new_objects_count,
         )
         .await
         .map_err(|e| e.to_string())?;
 
-        crate::database::mod_repo::update_mod_object_id_and_type_tx(
+        crate::repo::mod_repo::update_mod_object_id_and_type_tx(
             &mut tx, mod_id, &object_id, "Other",
         )
         .await
@@ -121,75 +139,116 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
 }
 
 pub async fn toggle_favorite(
+    config: &ConfigService,
     pool: &SqlitePool,
+    watcher: &WatcherState,
     game_id: &str,
     folder_path: &str,
     favorite: bool,
-) -> Result<(), String> {
-    let game_mod_path = crate::database::game_repo::get_mod_path(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Game not found or has no mods_path".to_string())?;
+) -> Result<(), MetadataError> {
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
+    let full_path =
+        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+
+    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| MetadataError::NotFound("Game not found or has no mods_path".to_string()))?;
 
     let base = std::path::Path::new(&game_mod_path);
-    let rel_path = std::path::Path::new(folder_path)
+    let rel_path = full_path
         .strip_prefix(base)
-        .unwrap_or(std::path::Path::new(folder_path))
+        .unwrap_or(&full_path)
         .to_string_lossy()
         .to_string();
 
-    crate::database::mod_repo::set_favorite_by_path(pool, game_id, &rel_path, favorite)
-        .await
-        .map_err(|e| e.to_string())?;
+    crate::repo::mod_repo::set_favorite_by_path(pool, game_id, &rel_path, favorite).await?;
 
-    let full_path = std::path::Path::new(folder_path);
-    if full_path.exists() {
-        let update = crate::services::mods::info_json::ModInfoUpdate {
-            is_favorite: Some(favorite),
-            ..Default::default()
-        };
-        let _ = crate::services::mods::info_json::update_info_json(full_path, &update);
-    }
+    let update = crate::services::mods::info_json::ModInfoUpdate {
+        is_favorite: Some(favorite),
+        ..Default::default()
+    };
+    let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
 
     Ok(())
 }
 
 pub async fn toggle_mod_safe(
+    config: &ConfigService,
     pool: &SqlitePool,
+    watcher: &WatcherState,
     game_id: &str,
     folder_path: &str,
     safe: bool,
-) -> Result<(), String> {
-    let game_mod_path = crate::database::game_repo::get_mod_path(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Game not found or has no mods_path".to_string())?;
+) -> Result<(), MetadataError> {
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
+    let full_path =
+        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+
+    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| MetadataError::NotFound("Game not found or has no mods_path".to_string()))?;
 
     let base = std::path::Path::new(&game_mod_path);
-    let rel_path = std::path::Path::new(folder_path)
+    let rel_path = full_path
         .strip_prefix(base)
-        .unwrap_or(std::path::Path::new(folder_path))
+        .unwrap_or(&full_path)
         .to_string_lossy()
         .to_string();
 
     // Update mod-level safety (is_safe lives on the mods table, not objects)
-    crate::database::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe)
-        .await
-        .map_err(|e| e.to_string())?;
+    crate::repo::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await?;
 
-    let full_path = std::path::Path::new(folder_path);
-    if full_path.exists() {
-        let update = crate::services::mods::info_json::ModInfoUpdate {
-            is_safe: Some(safe),
-            ..Default::default()
-        };
-        let _ = crate::services::mods::info_json::update_info_json(full_path, &update);
-    }
+    let update = crate::services::mods::info_json::ModInfoUpdate {
+        is_safe: Some(safe),
+        ..Default::default()
+    };
+    let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
+
+    // Trigger Dirty State for BOTH safety states (old and new)
+    // because the mod effectively "moved" corridors.
+    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, safe).await;
+    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, !safe).await;
 
     Ok(())
 }
 
-#[derive(Debug, serde::Serialize)]
+/// Toggle the pinned state of a single mod folder.
+/// Ensures synchronization between DB and info.json on disk.
+pub async fn toggle_pin(
+    config: &ConfigService,
+    pool: &SqlitePool,
+    watcher: &WatcherState,
+    game_id: &str,
+    folder_path: &str,
+    pin: bool,
+) -> Result<(), MetadataError> {
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
+    let full_path =
+        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+
+    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| MetadataError::NotFound("Game not found or has no mods_path".to_string()))?;
+
+    let base = std::path::Path::new(&game_mod_path);
+    let rel_path = full_path
+        .strip_prefix(base)
+        .unwrap_or(&full_path)
+        .to_string_lossy()
+        .to_string();
+
+    crate::repo::mod_repo::set_pinned_by_path(pool, game_id, &rel_path, pin).await?;
+
+    let update = crate::services::mods::info_json::ModInfoUpdate {
+        is_pinned: Some(pin),
+        ..Default::default()
+    };
+    let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
+
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct RandomModProposal {
     pub object_id: String,
     pub object_name: String,
@@ -206,7 +265,7 @@ pub async fn suggest_random_mods(
 ) -> Result<Vec<RandomModProposal>, String> {
     use rand::seq::SliceRandom;
 
-    let characters = crate::database::object_repo::get_characters_for_game(pool, game_id)
+    let characters = crate::repo::object_repo::get_characters_for_game(pool, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -217,10 +276,9 @@ pub async fn suggest_random_mods(
     let mut proposals = Vec::new();
 
     for (object_id, object_name) in characters {
-        let mods =
-            crate::database::mod_repo::get_disabled_mods_by_object_id(pool, &object_id, is_safe)
-                .await
-                .map_err(|e| e.to_string())?;
+        let mods = crate::repo::mod_repo::get_disabled_mods_by_object_id(pool, &object_id, is_safe)
+            .await
+            .map_err(|e| e.to_string())?;
 
         if mods.is_empty() {
             continue;
@@ -246,8 +304,8 @@ pub async fn suggest_random_mods(
         let mut rng = rand::thread_rng();
         if let Some((mod_id, name, path)) = candidates.choose(&mut rng) {
             proposals.push(RandomModProposal {
-                object_id,
-                object_name,
+                object_id: object_id.clone(),
+                object_name: object_name.clone(),
                 mod_id: mod_id.clone(),
                 name: name.clone(),
                 thumbnail_path: None,
@@ -263,7 +321,7 @@ pub async fn get_active_mod_conflicts(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, String> {
-    let rows = crate::database::mod_repo::get_enabled_mods_paths(pool, game_id)
+    let rows = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -280,12 +338,4 @@ pub async fn get_active_mod_conflicts(
 
     let conflicts = crate::services::scanner::conflict::detect_conflicts(&ini_files);
     Ok(conflicts)
-}
-
-/// Toggle the pinned state of a single mod (by its DB id).
-/// Covers: pin_mod command delegation.
-pub async fn toggle_pin(pool: &SqlitePool, id: &str, pin: bool) -> Result<(), String> {
-    crate::database::mod_repo::batch_set_pinned(pool, "", &[id.to_string()], pin)
-        .await
-        .map_err(|e| e.to_string())
 }

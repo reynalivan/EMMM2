@@ -37,7 +37,7 @@ As a user, I want the app to clean up DB entries for folders I deleted externall
 
 | ID        | Type        | Criteria                                                                                                                                                                                                               |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-27.2.1 | ✅ Positive | Given `repair_orphan_mods` runs after commit, then any `folders` row whose `folder_path` does not exist on disk is deleted — the objectlist counts update on next React Query fetch                                       |
+| AC-27.2.1 | ✅ Positive | Given `repair_orphan_mods` runs after commit, then any `folders` row whose `folder_path` does not exist on disk is deleted — the objectlist counts update on next React Query fetch                                    |
 | AC-27.2.2 | ✅ Positive | Given N orphans were removed, then the commit result includes `{added, updated, removed}` counts — a toast shows "Scan complete: N added, M updated, K removed"                                                        |
 | AC-27.2.3 | ⚠️ Edge     | Given the filesystem check for each row's existence is slow (network drive), then `repair_orphan_mods` runs with a 10s timeout — partial results are still committed, unverified rows are left as-is with a `warn` log |
 
@@ -72,17 +72,17 @@ commit_scan(game_id, candidates: Vec<ApprovedCandidate>) → CommitResult:
 
 Frontend:
   ScanReviewModal → "Commit to Library" button
-    → invoke('commit_scan', { game_id, candidates })
+    → commands.commitScan({ game_id, candidates })
     → queryClient.invalidateQueries()  (all caches)
 ```
 
 ### Integration Points
 
-| Component        | Detail                                                                                                |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| DB               | `sqlx` SQLite with `BEGIN EXCLUSIVE / COMMIT` for atomic batch upsert                                 |
-| BLAKE3           | `blake3::hash(ini_content_bytes)` — computed at commit time for moved-folder detection                |
-| Frontend         | `ScanReviewModal.tsx` — "Commit to Library" → `useMutation(invoke('commit_scan'))`                    |
+| Component        | Detail                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| DB               | `sqlx` SQLite with `BEGIN EXCLUSIVE / COMMIT` for atomic batch upsert                                    |
+| BLAKE3           | `blake3::hash(ini_content_bytes)` — computed at commit time for moved-folder detection                   |
+| Frontend         | `ScanReviewModal.tsx` — "Commit to Library" → `useMutation(commands.commitScan())`                       |
 | Cache Invalidate | `queryClient.invalidateQueries()` on success — refreshes objectlist `['objects']` and grid `['folders']` |
 
 ### Security & Privacy

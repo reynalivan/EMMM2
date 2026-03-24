@@ -14,18 +14,19 @@
   - Completed downloads appear in the Download Manager with `Finished` status and checkboxes for selection.
   - User can single-select or bulk-select finished files and trigger "Import Selected" with a game picker dialog.
   - UI includes Reload and "Clear Data" (cookies/cache) buttons for session management.
-  - The browser isolates remote pages from EMMM2 IPC (no `window.__TAURI__` access).
+  - The browser isolates remote pages from EMMM IPC (no `window.__TAURI__` access).
 
 ---
 
 #### US-44.6: Downloads Central
+
 As a user, I want a dedicated area to manage all my mod downloads, so I can import them later or clean up old files.
 
-| ID | Type | Criteria |
-|---|---|---|
+| ID        | Type        | Criteria                                                                                                                              |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-44.6.1 | ✅ Positive | Given the Downloads Manager page, it lists all intercepted files with status badges (Downloading, Ready, Failed, Canceled, Imported). |
-| AC-44.6.2 | ✅ Positive | Given a "Ready" download, clicking "Import" opens the Game Picker to begin the smart extraction pipeline. |
-| AC-44.6.3 | ✅ Positive | Given the "Clear Imported" action, it removes all items marked as 'imported' from the tracker list. |
+| AC-44.6.2 | ✅ Positive | Given a "Ready" download, clicking "Import" opens the Game Picker to begin the smart extraction pipeline.                             |
+| AC-44.6.3 | ✅ Positive | Given the "Clear Imported" action, it removes all items marked as 'imported' from the tracker list.                                   |
 
 ---
 
@@ -34,7 +35,7 @@ As a user, I want a dedicated area to manage all my mod downloads, so I can impo
 | Term                     | Definition                                                                                                                |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | **Discover Hub**         | The in-app mod search page pre-loaded with GameBanana, inside the in-app browser.                                         |
-| **In-App Browser**       | Multi-tab Tauri WebView2 browser window managed by EMMM2. NOT an iframe.                                                  |
+| **In-App Browser**       | Multi-tab Tauri WebView2 browser window managed by EMMM. NOT an iframe.                                                   |
 | **Browser Homepage**     | The URL loaded when a new tab is created or the browser is first opened. Default: `https://www.google.com`. Configurable. |
 | **Tab**                  | One instance of a WebView2 window managed by the Tab Manager UI.                                                          |
 | **BrowserDownloadsRoot** | `AppData/EMM2/BrowserDownloads/` — the controlled staging folder for all in-app downloads.                                |
@@ -55,7 +56,7 @@ As a user, I want a dedicated area to manage all my mod downloads, so I can impo
 - **Download Manager**: Status panel showing download items. Supports single-select and multi-select with bulk import.
 - **Game Picker (Auto-Organize)**: Before importing, user selects which game's workspace to target.
 - **Auto Smart Import**: Event-triggered pipeline (staging → extract → deep matcher → place as DISABLED).
-- **Remote Security**: Remote web pages have **zero IPC access** to EMMM2 commands.
+- **Remote Security**: Remote web pages have **zero IPC access** to EMMM commands.
 
 **Non-Goals (This Phase):**
 
@@ -71,9 +72,9 @@ As a user, I want a dedicated area to manage all my mod downloads, so I can impo
 
 1. User opens "Discover Hub" → browser opens to GameBanana (default tab).
 2. User finds a mod → clicks "Download" card action.
-3. EMMM2 creates a **Download Session** (`source=gamebanana`) and opens a new tab to the mod's `profile_url`.
+3. EMMM creates a **Download Session** (`source=gamebanana`) and opens a new tab to the mod's `profile_url`.
 4. User clicks the real download button on the website.
-5. WebView2 `DownloadEvent::Requested` fires → EMMM2 redirects the destination to `BrowserDownloadsRoot/<path>`.
+5. WebView2 `DownloadEvent::Requested` fires → EMMM redirects the destination to `BrowserDownloadsRoot/<path>`.
 6. Download runs. Progress shown in the **Download Manager** (badge on browser icon + slide-in panel).
 7. WebView2 `DownloadEvent::Finished` fires → Item in Download Manager changes to `✅ Finished`.
 8. Toast: "Download complete — ready to import".
@@ -86,7 +87,7 @@ As a user, I want a dedicated area to manage all my mod downloads, so I can impo
 
 1. User clicks "+" for a new tab. Tab opens to the **Browser Homepage** (default: Google Search).
 2. User navigates freely to any HTTPS site and downloads a file.
-3. EMMM2 intercepts → routes to `BrowserDownloadsRoot` (no session → marked `adhoc`).
+3. EMMM intercepts → routes to `BrowserDownloadsRoot` (no session → marked `adhoc`).
 4. File appears in Download Manager as `Finished` (or `Adhoc`).
 5. User selects and imports — same flow as Flow A from step 9.
 
@@ -119,6 +120,7 @@ As a user, I want a dedicated area to manage all my mod downloads, so I can impo
 - **Download badge**: shows count of finished downloads in this session.
 
 **Planned / Under Revision:**
+
 - Back / Forward / Stop buttons.
 - "Open in external browser" button.
 
@@ -167,14 +169,15 @@ The Download Manager is a **persistent slide-in panel** accessible from the brow
 
 Each item in the Download Manager displays:
 
-| Field        | Description                                                                     |
-| ------------ | ------------------------------------------------------------------------------- |
-| **Filename** | Safe, sanitized filename.                                                       |
-| **Status**   | One of: `Queued`, `Downloading`, `Ready` (Finished), `Failed`, `Canceled`.       |
-| **Progress** | Progress bar (during `Downloading`). Shows bytes received / total.              |
-| **Actions**  | Context-sensitive buttons (Import, Cancel, Delete).                             |
+| Field        | Description                                                                |
+| ------------ | -------------------------------------------------------------------------- |
+| **Filename** | Safe, sanitized filename.                                                  |
+| **Status**   | One of: `Queued`, `Downloading`, `Ready` (Finished), `Failed`, `Canceled`. |
+| **Progress** | Progress bar (during `Downloading`). Shows bytes received / total.         |
+| **Actions**  | Context-sensitive buttons (Import, Cancel, Delete).                        |
 
 **Planned / Under Revision:**
+
 - Source (automatic linking to sessions), Size (standalone label), Timestamp.
 
 ### 6.2 Actions per Item
@@ -236,6 +239,7 @@ The Game Picker Dialog appears before any import job is submitted when the targe
 - **Buttons**: "Import Now" (primary, confirms selection), "Cancel".
 
 **Planned / Under Revision:**
+
 - "Remember choice" checkbox for session-level persistence.
 - Game icons/thumbnails and mod counts in the picker list.
 
@@ -285,7 +289,7 @@ Requested → InProgress → Finished
            ↘ Canceled
 ```
 
-- `Requested`: `DownloadEvent::Requested` fires; EMMM2 sets destination.
+- `Requested`: `DownloadEvent::Requested` fires; EMMM sets destination.
 - `InProgress`: Progress updates streamed (bytes received / total).
 - `Finished`: `DownloadEvent::Finished` fires with `success=true`.
 - `Failed`: `DownloadEvent::Finished` fires with `success=false`, or timeout.
@@ -350,8 +354,8 @@ Threshold: `confidence >= 0.70` → `AutoMatched`. Below → `NeedsReview`.
 ### 10.4 Place to Workspace
 
 - Target path: `<game_mods_root>/<ObjectCategory>/<NormalizedModName>/`.
-- Folder name is prefixed with `DISABLED ` to set the EMMM2-standard disabled state.
-- Metadata written to `info.json` (or EMMM2 metadata store):
+- Folder name is prefixed with `DISABLED ` to set the EMMM-standard disabled state.
+- Metadata written to `info.json` (or EMMM metadata store):
   - `source`: `"gamebanana"` | `"adhoc"`.
   - `source_url`: Mod profile URL.
   - `submission_id`: GameBanana submission ID (if known).
@@ -425,9 +429,9 @@ On `DownloadEvent::Requested`:
 
 ## 13. Security Requirements
 
-- **IPC Isolation**: Remote browser tabs **must not** initialize Tauri IPC. They cannot invoke any EMMM2 command.
+- **IPC Isolation**: Remote browser tabs **must not** initialize Tauri IPC. They cannot invoke any EMMM command.
 - **Scheme block**: `on_navigation` in Rust enforces HTTP/HTTPS only. All other schemes are cancelled with inline error.
-- **No script injection**: EMMM2 must not inject any JavaScript into remote pages.
+- **No script injection**: EMMM must not inject any JavaScript into remote pages.
 - **Download extension filter**: Files with extensions not on the allowlist pass through to browser default behavior (or are blocked).
 - **Cookie/Cache**: Follows WebView2 default behavior. Settings option: "Clear browser data" (cookies, cache, history).
 
@@ -464,7 +468,7 @@ On `DownloadEvent::Requested`:
 | AC-44.11 | Opening ≥5 tabs, switching between them, and closing all — no crash occurs.                                                                      |
 | AC-44.12 | Corrupted archive → Import Job status is `Failed: InvalidArchive`. UI offers "Retry" and "Open file location".                                   |
 | AC-44.13 | Low-confidence match (< 0.70) → Import Job is suspended; Needs Review modal appears with candidate list.                                         |
-| AC-44.14 | Remote web page inside a browser tab cannot invoke any EMMM2 Tauri command (IPC is isolated).                                                    |
+| AC-44.14 | Remote web page inside a browser tab cannot invoke any EMMM Tauri command (IPC is isolated).                                                     |
 | AC-44.15 | Duplicate archive (same `archive_hash`) → flagged as duplicate; auto-mode keeps both with suffix `(2)`.                                          |
 
 ---

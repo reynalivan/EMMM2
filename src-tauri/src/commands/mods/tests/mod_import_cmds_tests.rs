@@ -49,4 +49,4 @@ async fn test_ingest_dropped_folders_success() {
 
 // Since import_mods_from_paths requires AppHandle & State which are hard to mock in isolated cargo tests
 // without a full Tauri builder, we rely on the inner functions or test what we can.
-// EMMM2 codebase limits full mocked Tauri context in these basic tests.
+// EMMM codebase limits full mocked Tauri context in these basic tests.

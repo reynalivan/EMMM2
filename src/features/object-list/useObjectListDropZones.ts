@@ -1,13 +1,19 @@
 import { useState, useCallback, type RefObject } from 'react';
 import type { DragPosition } from '../../hooks/useFileDrop';
-import { classifyDroppedPaths, validateDropForZone, type DropZone } from './dropUtils';
+import { classifyDroppedPaths, validateDropForZone } from './dropUtils';
 import type { DropValidation } from './DropConfirmModal';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
 import type { ObjectSummary } from '../../types/object';
+import type { GameType } from '../../types/game';
+
+export type DropZone = 'auto-organize' | 'item' | 'new-object';
 
 export interface UseObjectListDropZonesProps {
-  activeGame: { id: string; name: string; game_type: string; mod_path: string } | null | undefined;
+  activeGame:
+    | { id: string; name: string; game_type: GameType; mod_path: string }
+    | null
+    | undefined;
   objects: ObjectSummary[];
   toolbarRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;

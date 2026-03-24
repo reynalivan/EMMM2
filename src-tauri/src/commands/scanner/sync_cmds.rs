@@ -6,29 +6,12 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 use tauri::{ipc::Channel, Manager, State};
 
-async fn reconcile_active_corridor_if_needed(
-    app: &tauri::AppHandle,
-    pool: &sqlx::SqlitePool,
-    watcher_state: &WatcherState,
-    game_id: &str,
-) -> Result<(), String> {
-    crate::services::corridor_runtime::reconcile_if_active_game_corridor(
-        pool,
-        watcher_state,
-        app.state::<crate::services::config::ConfigService>()
-            .inner(),
-        game_id,
-    )
-    .await?;
-
-    Ok(())
-}
-
 /// Sync the database with the filesystem.
 /// Scans the folder, updates existing mods, finds new ones, detects objects, and removes deleted ones.
 ///
 /// # Covers: US-3.5 (Sync)
 #[tauri::command]
+#[specta::specta]
 #[allow(clippy::too_many_arguments)]
 pub async fn sync_database_cmd(
     app: tauri::AppHandle,
@@ -77,6 +60,9 @@ pub async fn sync_database_cmd(
             thumbnail_path: item.thumbnail_path,
             tags_json: item.tags_json,
             metadata_json: item.metadata_json,
+            hash_db_json: item.hash_db_json,
+            custom_skins_json: item.custom_skins_json,
+            db_thumbnail: item.db_thumbnail,
             skip: false,
             move_from_temp: false,
         })
@@ -102,8 +88,6 @@ pub async fn sync_database_cmd(
     )
     .await?;
 
-    reconcile_active_corridor_if_needed(&app, pool.inner(), &state, &game_id).await?;
-
     Ok(result)
 }
 
@@ -112,6 +96,7 @@ pub async fn sync_database_cmd(
 ///
 /// # Covers: US-2.3 (Review & Organize UI)
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_preview_cmd(
     app: tauri::AppHandle,
     game_id: String,
@@ -155,6 +140,7 @@ pub async fn scan_preview_cmd(
 ///
 /// # Covers: US-2.3 (Review & Organize UI — Confirm)
 #[tauri::command]
+#[specta::specta]
 pub async fn commit_scan_cmd(
     app: tauri::AppHandle,
     state: State<'_, WatcherState>,
@@ -190,8 +176,6 @@ pub async fn commit_scan_cmd(
     )
     .await?;
 
-    reconcile_active_corridor_if_needed(&app, pool.inner(), &state, &game_id).await?;
-
     Ok(result)
 }
 
@@ -200,6 +184,7 @@ pub async fn commit_scan_cmd(
 ///
 /// # Covers: US-2.3 (Review & Organize UI — Lazy Scoring)
 #[tauri::command]
+#[specta::specta]
 pub async fn score_candidates_batch_cmd(
     folder_path: String,
     candidate_names: Vec<String>,
@@ -220,6 +205,7 @@ pub async fn score_candidates_batch_cmd(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_folder_entries_cmd(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     folder_path: String,

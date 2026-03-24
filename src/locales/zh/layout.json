@@ -1,0 +1,53 @@
+{
+  "app_locked_title": "应用已锁定",
+  "app_locked_description": "在不安全模式下访问应用需要 PIN 码。",
+  "nav": {
+    "dashboard": "仪表板",
+    "mods_manager": "模组管理器",
+    "collections": "收藏集",
+    "settings": "设置",
+    "storage_optimizer": "存储优化器",
+    "app_menu_tip": "应用菜单",
+    "quick_play": "快速开始",
+    "no_game_selected": "未选择游戏",
+    "back_to_dashboard": "返回仪表板"
+  },
+  "empty": {
+    "no_selection": "未选择对象",
+    "select_category": "从侧边栏选择一个类别（如 <0>角色</0> 或 <1>武器</1>）以查看和管理您的模组。"
+  },
+  "maintenance": {
+    "clear_success": "成功清除了 {{count}} 个旧缩略图。",
+    "maintenance_success": "维护完成。数据库已优化。修剪了 {{pruned}} 个缩略图。清理了 {{trash}} 个旧的空回收站条目。"
+  },
+  "actions": {
+    "trash": "垃圾桶",
+    "refresh": "刷新",
+    "settings": "设置",
+    "safe_mode": "安全模式",
+    "privacy_mode": "隐私模式",
+    "privacy_toggle": "切换主隐私模式",
+    "hide_preview": "隐藏预览",
+    "show_preview": "显示预览"
+  },
+  "game_selector": {
+    "select_game": "选择游戏",
+    "loading": "加载中...",
+    "add_game": "添加游戏"
+  },
+  "context": {
+    "safe_mode_tip": "切换安全模式",
+    "loading": "加载中...",
+    "collections_title": "收藏集",
+    "save_current": "保存当前状态",
+    "no_collections": "无已保存的收藏",
+    "manage_collections": "管理收藏集"
+  },
+  "launch_bar": {
+    "play": "开始游戏",
+    "launching": "启动中...",
+    "randomizer": "随机化 (扭蛋)",
+    "conflicts": "冲突",
+    "conflict_toast": "检测到 {{count}} 个着色器冲突"
+  }
+}

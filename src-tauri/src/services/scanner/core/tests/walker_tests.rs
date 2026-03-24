@@ -6,9 +6,17 @@ fn create_test_mods_dir() -> TempDir {
     let dir = TempDir::new().expect("Failed to create temp dir");
 
     // Create mod folders
-    fs::create_dir(dir.path().join("Raiden Mod")).unwrap();
-    fs::create_dir(dir.path().join("DISABLED ayaka_skin")).unwrap();
-    fs::create_dir(dir.path().join("unknown_123")).unwrap();
+    let mod1 = dir.path().join("Raiden Mod");
+    fs::create_dir(&mod1).unwrap();
+    fs::write(mod1.join("mod.ini"), "[TextureOverrideTest]").unwrap();
+
+    let mod2 = dir.path().join("DISABLED ayaka_skin");
+    fs::create_dir(&mod2).unwrap();
+    fs::write(mod2.join("mod.ini"), "[TextureOverrideTest]").unwrap();
+
+    let mod3 = dir.path().join("unknown_123");
+    fs::create_dir(&mod3).unwrap();
+    fs::write(mod3.join("mod.ini"), "[TextureOverrideTest]").unwrap();
 
     // Create a non-dir file (should be ignored)
     fs::write(dir.path().join("readme.txt"), "test").unwrap();

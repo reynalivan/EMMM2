@@ -6,6 +6,7 @@ import FolderGrid from '../../features/folder-grid/FolderGrid';
 import PreviewPanel from '../../features/preview/PreviewPanel';
 import SettingsPage from '../../features/settings/SettingsPage';
 import CollectionsPage from '../../features/collections/CollectionsPage';
+import StorageOptimizerPage from '../../features/scanner/StorageOptimizerPage';
 import ExplorerEmptyState from '../../features/folder-grid/ExplorerEmptyState';
 import { BrowserPage } from '../../features/browser/components/BrowserPage';
 import DownloadsPage from '../../features/downloads/DownloadsPage';
@@ -36,9 +37,13 @@ export default function MainLayout() {
           ) : workspaceView === 'settings' ? (
             <SettingsPage />
           ) : workspaceView === 'browser' ? (
-            <BrowserPage />
+            <div className="h-full bg-base-100 overflow-hidden relative">
+              <BrowserPage />
+            </div>
           ) : workspaceView === 'downloads' ? (
             <DownloadsPage />
+          ) : workspaceView === 'storage-optimizer' ? (
+            <StorageOptimizerPage />
           ) : (
             <ResizableWorkspace
               leftPanel={<ObjectList />}

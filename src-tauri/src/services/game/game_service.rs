@@ -15,7 +15,7 @@ pub async fn remove_game_service(config: &ConfigService, game_id: &str) -> Resul
 
     // 2. Remove from DB (the config file only contains shallow info;
     //    the DB row also stores object/mod relationships that need cleaning)
-    crate::database::game_repo::delete_game(config.pool(), game_id)
+    crate::repo::game_repo::delete_game(config.pool(), game_id)
         .await
         .map_err(|e| format!("Failed to remove game from db: {e}"))?;
 

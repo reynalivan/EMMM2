@@ -21,11 +21,11 @@
 
 As a user, I want the app to use the correct mod categories for my current game, so that Genshin mods show "Characters/Weapons" and ZZZ mods show their own in-game terminology.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                              |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-09.1.1 | ✅ Positive | Given a specific active game, when the object list renders, then category headers exactly match that game's `schema.json` category definitions — no hardcoded labels                                                  |
+| ID        | Type        | Criteria                                                                                                                                                                                                                 |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-09.1.1 | ✅ Positive | Given a specific active game, when the object list renders, then category headers exactly match that game's `schema.json` category definitions — no hardcoded labels                                                     |
 | AC-09.1.2 | ✅ Positive | Given a missing or corrupt game-specific schema file, when the app loads, then it falls back to a default schema with generic categories ("Mods") — no blank objectlist                                                  |
-| AC-09.1.3 | ❌ Negative | Given a fatally malformed `schema.json` (invalid JSON, missing required fields), when the backend validates it at startup, then the process fails with a clear structured error log — not a silent corrupted state    |
+| AC-09.1.3 | ❌ Negative | Given a fatally malformed `schema.json` (invalid JSON, missing required fields), when the backend validates it at startup, then the process fails with a clear structured error log — not a silent corrupted state       |
 | AC-09.1.4 | ⚠️ Edge     | Given an object whose `category_id` no longer exists in a newer schema version (after an app update), when the objectlist renders, then the object falls into an "Uncategorized" section — no panic, no invisible object |
 
 ---
@@ -43,49 +43,8 @@ As a system, I want to resolve raw folder name tokens to canonical official enti
 
 ---
 
-### Non-Goals
-
-- No user-editable schema files via UI in this phase — schemas are bundled assets, updated only via app update (Epic 34).
-- No remote schema fetch at runtime; all schemas are embedded in the app bundle.
-- No multilingual alias UI display — canonical names are stored and displayed in English.
-- No community-uploaded custom schemas in this phase.
-
----
-
-## 3. Technical Specifications
-
-### Architecture Overview
-
-```
-Schema System (Rust)
-  ├── schema.json (per game, bundled asset)
-  │   ├── categories: [{ id, label, icon, sort_order }]
-  │   ├── stopwords: ["mod", "v2", "by", ...]
-  │   └── aliases: { "raiden": "Raiden Shogun", "hu_tao": "Hu Tao" }
-  ├── services/schema/loader.rs
-  │   └── load_schema(game_type) → GameSchema (cached in Arc<RwLock<HashMap<GameType, GameSchema>>>)
-  └── services/schema/matcher.rs
-      └── resolve_name(raw_tokens) → Option<CanonicalName>
-
-Master DB (Rust)
-  └── master_db.json (bundled, per game)
-      └── entity_list: [{ id, canonical_name, aliases: [...], category_id }]
-      → loaded into HashMap<String, EntityRecord> at startup
-
-Frontend
-  └── useGameSchema() → invoke('get_schema', { gameType }) → GameSchema JSON
-      └── Driven by React Query, rehydrated on game switch
-```
-
-### Integration Points
-
-| Component     | Detail                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| Schema Load   | `tauri::include_str!("assets/schemas/{game}.json")` — embedded at compile time                |
-| Schema Cache  | `Arc<RwLock<HashMap<GameType, GameSchema>>>` — loaded once on bootstrap, read-only after      |
-| Master DB     | `HashMap<String (alias_key), EntityRecord>` — built at startup from bundled JSON              |
-| Scan Engine   | Passes raw folder name tokens through `matcher.rs` during Epic 25 scan (used in Epic 26)      |
-| Frontend Hook | `useGameSchema(gameType)` → React Query → `invoke('get_schema')` — invalidated on game switch |
+| Scan Engine | Passes raw folder name tokens through `matcher.rs` during Epic 25 scan (used in Epic 26) |
+| Frontend Hook | `useGameSchema(gameType)` → React Query → `commands.getSchema()` — invalidated on game switch |
 
 ### Security & Privacy
 

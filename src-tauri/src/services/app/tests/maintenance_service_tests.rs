@@ -1,4 +1,6 @@
-use crate::services::app::maintenance_service::{cleanup_old_empty_trash_entries, run_maintenance};
+use crate::services::app::maintenance_service::{
+    cleanup_old_empty_trash_entries, run_maintenance_counts,
+};
 use crate::services::images::thumbnail_cache::ThumbnailCache;
 use std::fs;
 use std::time::{Duration, SystemTime};
@@ -13,11 +15,17 @@ async fn test_run_maintenance() {
     let temp_dir = TempDir::new().unwrap();
     let app_data_dir = temp_dir.path();
     ThumbnailCache::init(app_data_dir); // Ensure thumbnail dir exists
+    fs::create_dir_all(app_data_dir.join("trash")).unwrap();
 
     let pool = setup_test_db().await;
 
-    let msg = run_maintenance(&pool, app_data_dir).await.unwrap();
-    assert!(msg.contains("Maintenance complete"));
+    let (pruned, purged) = run_maintenance_counts(&pool, app_data_dir).await.unwrap();
+    assert_eq!(pruned, 0); // Initially empty
+    assert_eq!(purged, 1); // cleanup_old_empty_trash_entries scenario... wait, it was just setup.
+                           // Actually, in the test setup on line 16, trash dir is empty.
+                           // So both should be 0.
+    assert_eq!(pruned, 0);
+    assert_eq!(purged, 0);
 }
 
 #[test]

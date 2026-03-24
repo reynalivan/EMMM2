@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useMemo, useRef, useState, forwardRef } from 'react';
-import { ClipboardPaste, ImagePlus, Loader2, Maximize2, Trash2 } from 'lucide-react';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { ClipboardPaste, ImagePlus, Loader2, Maximize2, Trash2, ImageIcon } from 'lucide-react';
+import { getFileUrl } from '../../../lib/utils';
 import {
   ContextMenu,
   ContextMenuItem,
@@ -41,33 +42,36 @@ const GalleryMenuContent = ({
   onImport: () => void;
   onRequestRemoveCurrent: () => void;
   onRequestClearAll: () => void;
-}) => (
-  <>
-    <ContextMenuItem icon={ClipboardPaste} onClick={onPaste} disabled={!canEdit || isMutating}>
-      Paste Thumbnail
-    </ContextMenuItem>
-    <ContextMenuItem icon={ImagePlus} onClick={onImport} disabled={!canEdit || isMutating}>
-      Import Thumbnail
-    </ContextMenuItem>
-    <ContextMenuSeparator />
-    <ContextMenuItem
-      icon={Trash2}
-      danger
-      onClick={onRequestRemoveCurrent}
-      disabled={!activePath || isMutating}
-    >
-      Remove This Thumbnail
-    </ContextMenuItem>
-    <ContextMenuItem
-      icon={Trash2}
-      danger
-      onClick={onRequestClearAll}
-      disabled={!hasImages || isMutating}
-    >
-      Clear All Thumbnails
-    </ContextMenuItem>
-  </>
-);
+}) => {
+  const { t } = useTranslation(['preview']);
+  return (
+    <>
+      <ContextMenuItem icon={ClipboardPaste} onClick={onPaste} disabled={!canEdit || isMutating}>
+        {t('preview:gallery.menu.paste')}
+      </ContextMenuItem>
+      <ContextMenuItem icon={ImagePlus} onClick={onImport} disabled={!canEdit || isMutating}>
+        {t('preview:gallery.menu.import')}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        icon={Trash2}
+        danger
+        onClick={onRequestRemoveCurrent}
+        disabled={!activePath || isMutating}
+      >
+        {t('preview:gallery.menu.remove_current')}
+      </ContextMenuItem>
+      <ContextMenuItem
+        icon={Trash2}
+        danger
+        onClick={onRequestClearAll}
+        disabled={!hasImages || isMutating}
+      >
+        {t('preview:gallery.menu.clear_all')}
+      </ContextMenuItem>
+    </>
+  );
+};
 
 const GalleryTrigger = forwardRef<
   HTMLDivElement,
@@ -86,14 +90,16 @@ const GalleryTrigger = forwardRef<
     { hasImages, images, boundedIndex, brokenPaths, onPrev, onNext, activePath, setBrokenPaths },
     ref,
   ) => {
+    const { t } = useTranslation(['preview', 'common']);
     return (
       <div
         ref={ref}
         className="group relative aspect-square overflow-hidden rounded-lg border border-base-content/5 bg-base-300/50"
       >
         {!hasImages && (
-          <div className="flex h-full items-center justify-center text-xs text-base-content/30">
-            No preview available
+          <div className="flex flex-col h-full items-center justify-center text-xs text-base-content/30 gap-2">
+            <ImageIcon size={24} className="opacity-20" />
+            {t('preview:gallery.no_preview')}
           </div>
         )}
 
@@ -109,7 +115,7 @@ const GalleryTrigger = forwardRef<
             >
               {shouldLoad && !isBroken ? (
                 <img
-                  src={convertFileSrc(imagePath)}
+                  src={getFileUrl(imagePath)}
                   alt="Mod preview"
                   className="h-full w-full object-cover"
                   loading="lazy"
@@ -122,8 +128,10 @@ const GalleryTrigger = forwardRef<
                   }}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-xs text-base-content/30">
-                  {shouldLoad && isBroken ? 'Broken image' : 'Image placeholder'}
+                <div className="flex h-full items-center justify-center text-xs text-base-content/30 text-center px-4">
+                  {shouldLoad && isBroken
+                    ? t('preview:gallery.broken_image')
+                    : t('preview:gallery.placeholder_image')}
                 </div>
               )}
             </div>
@@ -134,23 +142,23 @@ const GalleryTrigger = forwardRef<
           <div className="absolute left-2 right-2 top-1/2 flex -translate-y-1/2 justify-between opacity-0 transition-opacity group-hover:opacity-100">
             <button
               type="button"
-              aria-label="Previous image"
+              aria-label={t('common:actions.prev')}
               onClick={(e) => {
                 e.stopPropagation(); // Prevent menu open on nav click
                 onPrev();
               }}
-              className="btn btn-circle btn-xs border-white/10 bg-black/50 text-white hover:border-primary hover:bg-primary"
+              className="btn btn-circle btn-xs border-base-content/20 bg-base-300/70 text-base-content hover:border-primary hover:bg-primary hover:text-primary-content"
             >
               ❮
             </button>
             <button
               type="button"
-              aria-label="Next image"
+              aria-label={t('common:actions.next')}
               onClick={(e) => {
                 e.stopPropagation();
                 onNext();
               }}
-              className="btn btn-circle btn-xs border-white/10 bg-black/50 text-white hover:border-primary hover:bg-primary"
+              className="btn btn-circle btn-xs border-base-content/20 bg-base-300/70 text-base-content hover:border-primary hover:bg-primary hover:text-primary-content"
             >
               ❯
             </button>
@@ -159,12 +167,12 @@ const GalleryTrigger = forwardRef<
 
         {activePath && (
           <button
-            aria-label="Open current image fullscreen"
-            className="btn btn-circle btn-xs absolute bottom-2 right-2 border-white/10 bg-black/50 text-white opacity-0 transition-opacity hover:border-primary hover:bg-primary group-hover:opacity-100"
-            title="Fullscreen"
+            aria-label={t('preview:gallery.maximize_label')}
+            className="btn btn-circle btn-xs absolute bottom-2 right-2 border-base-content/20 bg-base-300/70 text-base-content opacity-0 transition-opacity hover:border-primary hover:bg-primary hover:text-primary-content group-hover:opacity-100"
+            title={t('preview:gallery.maximize_label')}
             onClick={(e) => {
               e.stopPropagation();
-              window.open(convertFileSrc(activePath), '_blank', 'noopener,noreferrer');
+              window.open(getFileUrl(activePath), '_blank', 'noopener,noreferrer');
             }}
           >
             <Maximize2 size={14} />
@@ -191,6 +199,7 @@ export default function GallerySection({
   onRequestRemoveCurrent,
   onRequestClearAll,
 }: GallerySectionProps) {
+  const { t } = useTranslation(['preview']);
   const hasImages = images.length > 0;
   const boundedIndex = Math.min(currentImageIndex, Math.max(images.length - 1, 0));
   const [brokenPaths, setBrokenPaths] = useState<Set<string>>(new Set());
@@ -206,8 +215,8 @@ export default function GallerySection({
   return (
     <div className="mb-6">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">
-          Preview Images
+        <h3 className="text-xs font-bold uppercase tracking-widest text-base-content/40">
+          {t('preview:gallery.title')}
         </h3>
         <div className="flex items-center gap-2 text-[10px] text-base-content/40">
           {isFetching && <Loader2 size={14} className="animate-spin" />}
@@ -231,7 +240,7 @@ export default function GallerySection({
       >
         <div
           role="region"
-          aria-label="Preview image slider"
+          aria-label={t('preview:gallery.slider_label')}
           onContextMenuCapture={(event) => {
             // Prevent native WebView context menu from stealing focus/closing Radix in Tauri.
             event.preventDefault();
@@ -276,7 +285,7 @@ export default function GallerySection({
             <button
               key={`${imagePath}-dot`}
               type="button"
-              aria-label={`Go to image ${index + 1}`}
+              aria-label={t('preview:gallery.go_to_image', { index: index + 1 })}
               className={`h-2 w-2 rounded-full transition-all ${
                 index === boundedIndex
                   ? 'bg-primary shadow-[0_0_8px_var(--color-primary)]'

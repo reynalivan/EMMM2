@@ -21,7 +21,7 @@ async fn test_get_scan_result_auto_matched_uses_staged_status_semantics() {
     let mod_dir = dir.path().join("Mystery Mod");
     fs::create_dir(&mod_dir).unwrap();
     fs::write(
-        mod_dir.join("config.ini"),
+        mod_dir.join("mod.ini"),
         "[TextureOverrideBody]\nhash = d94c8962\n",
     )
     .unwrap();
@@ -63,6 +63,11 @@ async fn test_get_scan_result_needs_review_does_not_auto_assign_object() {
     let dir = TempDir::new().unwrap();
     let mod_dir = dir.path().join("Sunset Pack");
     fs::create_dir(&mod_dir).unwrap();
+    fs::write(
+        mod_dir.join("mod.ini"),
+        "[TextureOverrideSunset]\nhash = aabbccdd\n",
+    )
+    .unwrap();
 
     let db_json = json!([
         {

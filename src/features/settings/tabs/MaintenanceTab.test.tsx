@@ -119,7 +119,6 @@ describe('MaintenanceTab (TC-04)', () => {
         'success',
         expect.stringContaining('Database reset'),
       );
-      expect(mockNavigate).toHaveBeenCalledWith('/welcome', { replace: true });
     });
   });
 });

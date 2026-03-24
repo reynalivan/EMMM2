@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Base URL for asset files on GitHub CDN.
-const ASSET_BASE_URL: &str = "https://raw.githubusercontent.com/reynalivan/EMMM2/main/assets/";
+const ASSET_BASE_URL: &str = "https://raw.githubusercontent.com/reynalivan/EMMM/main/assets/";
 
 /// Fetch an asset file if it's not already cached locally.
 ///

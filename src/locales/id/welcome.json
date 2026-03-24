@@ -1,0 +1,35 @@
+{
+  "title": "Selamat Datang di EMMM",
+  "subtitle": "Mod manager terbaik untuk 3DMigoto",
+  "get_started": "Mulai Sekarang",
+  "features": {
+    "auto_organize": "Auto-Organisir Pintar",
+    "auto_organize_desc": "Kelola mod 3DMigoto Anda secara otomatis tanpa repot.",
+    "toggle_presets": "Toggle Instan",
+    "toggle_presets_desc": "Ganti varian mod atau preset dalam satu klik.",
+    "keybind_spotlight": "Shortcut Pintar",
+    "keybind_spotlight_desc": "Kendalikan semuanya dengan shortcut favorit Anda.",
+    "auto_organized": "Terorganisir otomatis"
+  },
+  "demo": {
+    "mod_character_dress": "Mod Karakter - Gaun",
+    "mod_weapon_glowing": "Mod Senjata - Bersinar",
+    "mod_ui_transparent": "Mod UI - Transparan",
+    "mod_character_snow": "Mod Karakter - Salju",
+    "mod_weapon_dark": "Mod Senjata - Gelap",
+    "action_show_keybinds": "Lihat Shortcut",
+    "action_toggle_preview": "Toggle Preview",
+    "action_quick_search": "Pencarian Cepat",
+    "tag_character": "Karakter",
+    "tag_weapon": "Senjata",
+    "tag_ui": "UI",
+    "aria_label": "Demonstrasi Fitur Pintar",
+    "aria_go_to_scene": "Ke adegan {{count}}",
+    "one_click_presets": "Preset Sekali-Klik",
+    "applied_instantly": "Diterapkan instan",
+    "preset_on": "Preset AKTIF",
+    "preset_off": "Preset MATI",
+    "keybinds_instantly": "Shortcut, instan",
+    "press_help": "Tekan ? untuk melihat shortcut"
+  }
+}

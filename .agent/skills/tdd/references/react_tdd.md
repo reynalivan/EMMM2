@@ -26,18 +26,27 @@ export function Button({ onClick, children }) {
 }
 ```
 
-## 2. Mocking Tauri
+## 2. Mocking Tauri (Typed Commands)
 
-Mock `invoke` calls to simulate backend responses.
+Mock the typed `commands` object from `bindings.ts`. Do NOT mock raw `invoke`.
 
 ```ts
 // setups/test-setup.ts
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn((cmd) => {
-    if (cmd === 'get_version') return Promise.resolve('1.0.0');
-    return Promise.reject('Unknown command');
-  }),
+vi.mock('../../lib/bindings', () => ({
+  commands: {
+    getVersion: vi.fn(() => Promise.resolve('1.0.0')),
+    listGames: vi.fn(() => Promise.resolve([])),
+    // Add mocks for commands used in the test
+  },
 }));
+```
+
+### Per-test override
+
+```ts
+import { commands } from '../../lib/bindings';
+
+vi.mocked(commands.getVersion).mockResolvedValue('2.0.0');
 ```
 
 ## 3. Hook Testing

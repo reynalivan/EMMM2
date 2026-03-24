@@ -12,6 +12,7 @@ import {
   updateFolderCache,
   ModFolder,
 } from '../../../hooks/useFolders';
+import { commands } from '../../../lib/bindings';
 import type { DuplicateInfo } from '../../../types/mod';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
@@ -140,7 +141,7 @@ export function usePreviewPanelActions() {
         console.error('Rename failed', err);
       }
     },
-    [renameDialog.folder, renameMod, activeGame?.id],
+    [renameDialog.folder, renameMod, activeGame],
   );
 
   const handleRenameCancel = useCallback(() => {
@@ -178,8 +179,7 @@ export function usePreviewPanelActions() {
     ) => {
       if (!activeGame?.id) return;
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('move_mod_to_object', {
+        await commands.moveModToObject({
           gameId: activeGame.id,
           folderPath: folder.path,
           targetObjectId,
@@ -215,7 +215,7 @@ export function usePreviewPanelActions() {
         });
       }
     },
-    [toggleModSafe, activeGame?.id],
+    [toggleModSafe, activeGame],
   );
 
   const handleToggleSafeSubmit = useCallback(() => {
@@ -226,7 +226,7 @@ export function usePreviewPanelActions() {
       safe: false,
     });
     setPinSafeDialog({ open: false, folder: null });
-  }, [pinSafeDialog.folder, toggleModSafe, activeGame?.id]);
+  }, [pinSafeDialog.folder, toggleModSafe, activeGame]);
 
   const handleToggleSafeCancel = useCallback(() => {
     setPinSafeDialog({ open: false, folder: null });

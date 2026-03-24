@@ -7,17 +7,18 @@
 
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands, type IngestResult } from '../../lib/bindings';
+import type { ArchiveInfo, ScanPreviewItem } from '../../types/scanner';
 import { basename } from '@tauri-apps/api/path';
 import { exists, mkdir } from '@tauri-apps/plugin-fs';
 import { useActiveGame } from '../../hooks/useActiveGame';
+import { getGameTypeKey } from '../../types/game';
 import { useAppStore } from '../../stores/useAppStore';
-import { scanService, type ScanPreviewItem } from '../../lib/services/scanService';
+import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
 import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
 import type { ObjectSummary } from '../../types/object';
 import type { MasterDbEntry } from './scanReviewHelpers';
-import type { ArchiveAnalysis, ArchiveInfo } from '../../types/scanner';
 
 interface ArchiveDeps {
   objects: ObjectSummary[];
@@ -77,7 +78,7 @@ export function useObjHandlersArchive({
       const archiveInfos = await Promise.all(
         archivePaths.map(async (path) => {
           try {
-            const analysis = await invoke<ArchiveAnalysis>('analyze_archive_cmd', {
+            const analysis = await commands.analyzeArchiveCmd({
               archivePath: path,
             });
             const name = await basename(path);
@@ -104,7 +105,8 @@ export function useObjHandlersArchive({
               file_count: 0,
               is_encrypted: false,
               contains_nested_archives: false,
-            } as import('../../types/scanner').ArchiveInfo;
+              entries: [],
+            } satisfies ArchiveInfo;
           }
         }),
       );
@@ -143,12 +145,12 @@ export function useObjHandlersArchive({
         error: null,
         extractProgress: { current: 0, total: 0 },
       }));
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppressionCmd({ suppressed: true });
 
       try {
         const extractTarget =
           pendingDropContext.type === 'auto-organize'
-            ? `${activeGame.mod_path}\\.emmm2_temp`
+            ? `${activeGame.mod_path}\\.emmm_temp`
             : activeGame.mod_path;
 
         if (pendingDropContext.type === 'auto-organize' && !(await exists(extractTarget))) {
@@ -281,12 +283,12 @@ export function useObjHandlersArchive({
           const looseFiles = pendingDropContext.baseLooseFiles || [];
 
           if (looseFiles.length > 0) {
-            const ingestResult = await invoke<{ moved: string[] }>('ingest_dropped_folders', {
+            const ingestResult: IngestResult = await commands.ingestDroppedFolders({
               paths: looseFiles,
               modsPath: extractTarget,
               gameId: activeGame.id,
               gameName: activeGame.name,
-              gameType: activeGame.game_type,
+              gameType: getGameTypeKey(activeGame.game_type),
             });
             folderPaths.push(...ingestResult.moved);
           }
@@ -325,7 +327,7 @@ export function useObjHandlersArchive({
         const archiveCount = archiveModal.archives.length;
         const cooldown = Math.min(1000 + archiveCount * 500, 5000);
         useAppStore.getState().setWatcherCooldown(Date.now() + cooldown);
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppressionCmd({ suppressed: false });
         if (pendingDropContext.type === 'auto-organize') setIsSyncing(false);
       }
     },
@@ -343,7 +345,7 @@ export function useObjHandlersArchive({
 
   const handleStopExtraction = useCallback(async () => {
     try {
-      await invoke('abort_extraction_cmd');
+      await commands.cancelScanCmd(); // abort_extraction_cmd was replaced by cancelScanCmd in some contexts or missing
     } catch (e) {
       console.error('Failed to abort extraction:', e);
     }
@@ -365,7 +367,7 @@ export function useObjHandlersArchive({
       }
 
       try {
-        await invoke('set_watcher_suppression_cmd', { suppressed: true });
+        await commands.setWatcherSuppressionCmd({ suppressed: true });
         await executeImportAndInvalidate(
           pendingDropContext.pathsToIngest,
           pendingDropContext.targetFolder!,
@@ -377,7 +379,7 @@ export function useObjHandlersArchive({
         toast.error('Failed to import items');
       } finally {
         useAppStore.getState().setWatcherCooldown(Date.now() + 1000);
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     } else if (pendingDropContext.type === 'auto-organize') {
       try {
@@ -390,17 +392,17 @@ export function useObjHandlersArchive({
         }
 
         setIsSyncing(true);
-        await invoke('set_watcher_suppression_cmd', { suppressed: true });
+        await commands.setWatcherSuppressionCmd({ suppressed: true });
 
-        const extractTarget = `${activeGame.mod_path}\\.emmm2_temp`;
+        const extractTarget = `${activeGame.mod_path}\\.emmm_temp`;
         if (looseFiles.length > 0) {
           if (!(await exists(extractTarget))) await mkdir(extractTarget, { recursive: true });
-          const ingestResult = await invoke<{ moved: string[] }>('ingest_dropped_folders', {
+          const ingestResult: IngestResult = await commands.ingestDroppedFolders({
             paths: looseFiles,
             modsPath: extractTarget,
             gameId: activeGame.id,
             gameName: activeGame.name,
-            gameType: activeGame.game_type,
+            gameType: getGameTypeKey(activeGame.game_type),
           });
           folderPaths.push(...ingestResult.moved);
         }
@@ -431,7 +433,7 @@ export function useObjHandlersArchive({
       } finally {
         setIsSyncing(false);
         useAppStore.getState().setWatcherCooldown(Date.now() + 1000);
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     }
   }, [

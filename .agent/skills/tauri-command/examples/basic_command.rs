@@ -9,5 +9,5 @@ pub async fn greet(name: String) -> Result<String, String> {
         return Err("Name cannot be empty".to_string());
     }
     
-    Ok(format!("Hello, {}! Welcome to EMMM2.", name))
+    Ok(format!("Hello, {}! Welcome to EMMM.", name))
 }

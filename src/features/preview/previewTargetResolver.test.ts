@@ -20,6 +20,7 @@ const createFolder = (path: string, node_type: string): ModFolder =>
     is_safe: true,
     metadata: null,
     category: null,
+    warnings: [],
   }) as ModFolder;
 
 describe('resolvePreviewTargetPath', () => {

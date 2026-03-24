@@ -35,8 +35,8 @@ As a user, I want my metadata edits to save automatically when I blur a field, s
 
 | ID        | Type        | Criteria                                                                                                                                                                                                           |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-17.2.1 | ✅ Positive | Given I edit any field and click away (`onBlur`), then `update_mod_info(folderPath, {field: value})` is invoked; on success, a "Saved ✓" indicator pulses for 1.5s beside the field                                |
-| AC-17.2.2 | ✅ Positive | Given the "Saved" indicator has shown, when I switch to a different mod without any new edits, then no extra save call is made                                                                                     |
+| AC-17.2.1 | ✅ Positive | Given I edit any field, a "Auto-saving..." badge with a pulsing pulse indicates activity; on success, a "Done" label with a green indicator appears and stays for 2s                                               |
+| AC-17.2.2 | ✅ Positive | Given the "Done" indicator has shown, when I switch to a different mod without any new edits, then no extra save call is made                                                                                      |
 | AC-17.2.3 | ❌ Negative | Given an `info.json` write fails (read-only file, disk full), then the field reverts to its previous value and an error toast "Save failed: {reason}" is shown                                                     |
 | AC-17.2.4 | ⚠️ Edge     | Given I rapidly cycle between two mods while a save is in-flight for the first, then the in-flight save completes for the correct `folderPath` — the second mod's fields are not overwritten with the first's data |
 
@@ -69,7 +69,7 @@ As a user, I want to provide and open an external mod link (GameBanana, NexusMod
 
 ```
 MetadataSection.tsx
-  └── useModInfo(folderPath) → invoke('read_mod_info', { folderPath }) → ModInfo
+  └── useModInfo(folderPath) → commands.readModInfo({ folderPath }) → ModInfo
       ├── EditableField (name, author, version) → onBlur → useUpdateModInfo.mutate
       ├── TextArea (description) → onBlur → useUpdateModInfo.mutate
       ├── TagsInput (tags[]) → onChange debounced 500ms → useUpdateModInfo.mutate
@@ -87,12 +87,12 @@ Backend:
 
 ### Integration Points
 
-| Component          | Detail                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Read Hook          | `useQuery(['modInfo', folderPath], () => invoke('read_mod_info', { folderPath }))`                            |
-| Write Hook         | `useMutation(invoke('update_mod_info', ...))` with `onSuccess: setQueryData(['modInfo', folderPath], result)` |
-| WatcherSuppression | Applied for `folder_path/info.json` — prevents file watcher from triggering grid re-fetch on metadata save    |
-| Shell Open         | `invoke('open_url', { url })` → Rust `tauri::api::shell::open(url)` after URL allowlist check                 |
+| Component          | Detail                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Read Hook          | `useQuery(['modInfo', folderPath], () => commands.readModInfo({ folderPath }))`                            |
+| Write Hook         | `useMutation(commands.updateModInfo(...))` with `onSuccess: setQueryData(['modInfo', folderPath], result)` |
+| WatcherSuppression | Applied for `folder_path/info.json` — prevents file watcher from triggering grid re-fetch on metadata save |
+| Shell Open         | `commands.openUrl({ url })` → Rust `tauri::api::shell::open(url)` after URL allowlist check                |
 
 ### Security & Privacy
 

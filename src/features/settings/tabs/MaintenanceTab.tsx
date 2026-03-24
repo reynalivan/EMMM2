@@ -1,26 +1,28 @@
 import { useState, useRef } from 'react';
-import { Trash2, Wrench, Eraser, RotateCcw } from 'lucide-react';
+import { Trash2, Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
 import { useToastStore } from '../../../stores/useToastStore';
-import DedupFeature from '../../scanner/DedupFeature';
+import { useAppStore } from '../../../stores/useAppStore';
 
 export default function MaintenanceTab() {
+  const { t } = useTranslation(['settings', 'common', 'layout']);
   const { runMaintenance } = useSettings();
   const { addToast } = useToastStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const resetModalRef = useRef<HTMLDialogElement>(null);
 
   const handleEmptyTrash = async () => {
-    if (!confirm('Are you sure you want to permanently delete all items in the Trash?')) return;
+    if (!confirm(t('settings:maintenance.trash_confirm'))) return;
 
     setIsProcessing(true);
     try {
-      await invoke('empty_trash');
-      addToast('success', 'Trash Emptied: All items deleted.');
+      await commands.emptyTrash();
+      addToast('success', t('settings:maintenance.trash_success'));
     } catch (e) {
       console.error(e);
-      addToast('error', `Failed: ${String(e)}`);
+      addToast('error', t('common:error.generic', { error: String(e) }));
     } finally {
       setIsProcessing(false);
     }
@@ -37,11 +39,17 @@ export default function MaintenanceTab() {
   const handleClearCache = async () => {
     setIsProcessing(true);
     try {
-      const msg = await invoke<string>('clear_old_thumbnails');
-      addToast('success', msg);
+      const count = await commands.clearOldThumbnails();
+      addToast(
+        'success',
+        t('layout:maintenance.clear_success', {
+          count,
+          defaultValue: `Cleared ${count} old thumbnails.`,
+        }),
+      );
     } catch (e) {
       console.error(e);
-      addToast('error', `Failed to clear cache: ${String(e)}`);
+      addToast('error', t('settings:maintenance.clear_failed', { error: String(e) }));
     } finally {
       setIsProcessing(false);
     }
@@ -51,38 +59,58 @@ export default function MaintenanceTab() {
     resetModalRef.current?.close();
     setIsProcessing(true);
     try {
-      await invoke('reset_database');
+      await commands.resetDatabase();
       // Clear Zustand persisted state from localStorage
       localStorage.removeItem('vibecode-storage');
-      addToast('success', 'Database reset. Redirecting to setup...');
+      addToast('success', t('settings:maintenance.reset_success'));
       window.location.reload();
     } catch (e) {
       console.error(e);
-      addToast('error', `Reset Failed: ${String(e)}`);
+      addToast('error', t('settings:maintenance.reset_failed', { error: String(e) }));
       setIsProcessing(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      <DedupFeature />
+      <div className="card bg-base-200 shadow-sm border border-base-300">
+        <div className="card-body">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="card-title text-lg flex items-center gap-2">
+                <HardDrive className="text-warning" size={20} />
+                {t('settings:maintenance.storage_title')}
+              </h3>
+              <p className="text-sm opacity-70 mt-1 max-w-2xl">
+                {t('settings:maintenance.storage_desc')}
+              </p>
+            </div>
+            <div className="card-actions shrink-0">
+              <button
+                className="btn btn-warning gap-2"
+                onClick={() => useAppStore.getState().setWorkspaceView('storage-optimizer')}
+              >
+                <HardDrive size={18} /> {t('settings:maintenance.open_optimizer')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="card bg-base-200 shadow-sm border border-base-300">
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
             <Trash2 className="text-error" size={20} />
-            Trash Management
+            {t('settings:maintenance.trash_title')}
           </h3>
-          <p className="text-sm opacity-70">
-            Permanently remove deleted mods to free up disk space.
-          </p>
+          <p className="text-sm opacity-70">{t('settings:maintenance.trash_desc')}</p>
           <div className="card-actions justify-end mt-4">
             <button
               className="btn btn-error btn-outline gap-2"
               onClick={handleEmptyTrash}
               disabled={isProcessing}
             >
-              <Trash2 size={18} /> Empty Trash
+              <Trash2 size={18} /> {t('settings:maintenance.empty_trash')}
             </button>
           </div>
         </div>
@@ -92,18 +120,16 @@ export default function MaintenanceTab() {
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
             <Wrench className="text-primary" size={20} />
-            System Maintenance
+            {t('settings:maintenance.system_title')}
           </h3>
-          <p className="text-sm opacity-70">
-            Run automated cleanup tasks, verify database integrity, and prune orphaned metadata.
-          </p>
+          <p className="text-sm opacity-70">{t('settings:maintenance.system_desc')}</p>
           <div className="card-actions justify-end mt-4">
             <button
               className="btn btn-primary gap-2"
               onClick={handleMaintenance}
               disabled={isProcessing}
             >
-              <Wrench size={18} /> Run Maintenance
+              <Wrench size={18} /> {t('settings:maintenance.run_maintenance')}
             </button>
           </div>
         </div>
@@ -113,19 +139,16 @@ export default function MaintenanceTab() {
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
             <Eraser className="text-secondary" size={20} />
-            Clear Image Cache
+            {t('settings:maintenance.cache_title')}
           </h3>
-          <p className="text-sm opacity-70">
-            Remove old generated thumbnails (older than 30 days) to save space. They will be
-            regenerated as needed.
-          </p>
+          <p className="text-sm opacity-70">{t('settings:maintenance.cache_desc')}</p>
           <div className="card-actions justify-end mt-4">
             <button
               className="btn btn-secondary btn-outline gap-2"
               onClick={() => void handleClearCache()}
               disabled={isProcessing}
             >
-              <Eraser size={18} /> Clear Old Cache
+              <Eraser size={18} /> {t('settings:maintenance.clear_cache')}
             </button>
           </div>
         </div>
@@ -136,16 +159,10 @@ export default function MaintenanceTab() {
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
             <RotateCcw className="text-error" size={20} />
-            Reset Application Setup
+            {t('settings:maintenance.danger_title')}
           </h3>
-          <p className="text-sm opacity-70">
-            Clear all game registrations, mod metadata, and settings from the database. The
-            application will return to the initial setup screen. A backup of the database will be
-            saved to the trash folder.
-          </p>
-          <p className="text-sm text-info mt-1">
-            Your mod files and folders on disk will not be deleted.
-          </p>
+          <p className="text-sm opacity-70">{t('settings:maintenance.danger_desc')}</p>
+          <p className="text-sm text-info mt-1">{t('settings:maintenance.danger_info')}</p>
           <div className="card-actions justify-end mt-4">
             <button
               id="btn-reset-database"
@@ -153,7 +170,7 @@ export default function MaintenanceTab() {
               onClick={() => resetModalRef.current?.showModal()}
               disabled={isProcessing}
             >
-              <RotateCcw size={18} /> Reset & Re-Setup
+              <RotateCcw size={18} /> {t('settings:maintenance.reset_btn')}
             </button>
           </div>
         </div>
@@ -162,28 +179,23 @@ export default function MaintenanceTab() {
       {/* Confirmation Modal */}
       <dialog ref={resetModalRef} className="modal modal-bottom sm:modal-middle">
         <div className="modal-box">
-          <h3 className="text-lg font-bold">Are you sure?</h3>
-          <p className="py-4">
-            This will clear all game registrations, mod metadata, collections, and settings from the
-            database. A backup will be saved to the trash folder before clearing.
-          </p>
-          <p className="text-info text-sm">
-            Your mod files and folders on disk will not be affected.
-          </p>
+          <h3 className="text-lg font-bold">{t('settings:maintenance.modal_title')}</h3>
+          <p className="py-4">{t('settings:maintenance.modal_body')}</p>
+          <p className="text-info text-sm">{t('settings:maintenance.danger_info')}</p>
           <p className="text-error text-sm font-semibold mt-2">
-            You will need to set up the application again.
+            {t('settings:maintenance.modal_error')}
           </p>
           <div className="modal-action">
             <form method="dialog">
-              <button className="btn btn-ghost">Cancel</button>
+              <button className="btn btn-ghost">{t('common:action.cancel')}</button>
             </form>
             <button id="btn-confirm-reset" className="btn btn-error" onClick={handleResetDatabase}>
-              Yes, Reset Everything
+              {t('settings:maintenance.confirm_reset')}
             </button>
           </div>
         </div>
-        <form method="dialog" className="modal-backdrop">
-          <button>close</button>
+        <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-sm">
+          <button>{t('common:action.close')}</button>
         </form>
       </dialog>
     </div>

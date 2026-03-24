@@ -3,13 +3,12 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: 3DMigoto uses `hash = <hex>` keys in `.ini` files to intercept specific draw calls — two enabled mods with overlapping hashes produce visual glitches or game crashes; users have no in-app tool to detect these conflicts before launching.
-- **Proposed Solution**: Two-tier conflict system: (1) a fast "duplicate Object" check during toggle (same Object, more than one mod enabled), surfacing a `ConflictResolveDialog` with "Enable Only This" action; (2) a deep hash scanner that parses all enabled `.ini` files and builds a `hash → {mod, line}` map, reporting every collision with exact file/line detail.
+- **Proposed Solution**: Three-tier conflict system: (1) **Implicit Variant Swap**: Toggling a variant within the same `VariantContainer` (same parent folder) disables the previous variant without warning; (2) **Try-First Duplicate Warning**: The `toggle_mod` command returns a `DuplicateConflict` error if non-variant siblings are enabled, triggering an `ObjectConflictModal` for resolution or "Ignore Warning" persistence; (3) **Deep Hash Scanner**: A multi-threaded scanner parsers `.ini` files for exact `hash = <hex>` collisions.
 - **Success Criteria**:
-  - Duplicate Object check completes in ≤ 50ms (DB `COUNT` query + in-memory check).
-  - "Enable Only This" atomically disables all other enabled mods in the same Object and enables the target in ≤ 500ms.
-  - Deep hash scan over 100 enabled mods (avg 2 `.ini` each, ~200 files) completes in ≤ 10s on SSD.
-  - Hash conflict report correctly identifies colliding `[TextureOverride]` sections with ≥ 95% accuracy against a 20-mod benchmark set of known conflicting mods.
-  - Zero false positives from the duplicate Object warning when only one mod is enabled per Object.
+  - Duplicate Object check via `toggle_mod` completes in ≤ 100ms (SQL index optimized).
+  - Toggling a mod with "Enable Only Selected" resolution completes in ≤ 500ms (atomic transaction).
+  - "Ignore Warning" persists the specific mod combination to the `ignored_object_conflicts` table.
+  - Variant detection has 100% accuracy for mods inside a `VariantContainer` folder.
 
 ---
 
@@ -21,12 +20,14 @@
 
 As a user, I want to be warned when I try to enable a second mod for the same Object, so that I don't accidentally cause visual overlap.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                        |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-29.1.1 | ✅ Positive | Given Object "Keqing" has one mod already enabled, when I toggle a second mod for "Keqing" on, then `check_duplicate_enabled` returns `DuplicateInfo` containing the name and path of the currently enabled mod |
-| AC-29.1.2 | ✅ Positive | Given a `DuplicateInfo` warning, then `ConflictResolveDialog` shows: "Mod X is already enabled for Keqing — Enable Only This (disabling X), or Enable Anyway (both on)"                                         |
-| AC-29.1.3 | ❌ Negative | Given "Enable Anyway" is selected, then both mods remain enabled — no further action; user accepts the risk                                                                                                     |
-| AC-29.1.4 | ⚠️ Edge     | Given an Object has 3 mods enabled (e.g., from a past bulk import), when a 4th is toggled with "Enable Only This", then all 3 are disabled atomically and only the 4th is enabled                               |
+| ID        | Type        | Criteria                                                                                                                                                                                   |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-29.1.1 | ✅ Positive | Given Object "Keqing" has one mod already enabled, when I toggle a second mod for "Keqing" on, then `toggle_mod` returns a `DuplicateConflict` error containing the enabled mod's metadata |
+| AC-29.1.2 | ✅ Positive | Given a `DuplicateConflict` error, then `ObjectConflictModal` shows: "Mod X is already enabled — Keep Only Selected (atomically disables siblings), or Ignore Warning (both stay on)"      |
+| AC-29.1.3 | ✅ Positive | Given "Ignore Warning" is selected, then the specific `(object_id, mod_ids)` combination is persisted to the DB; subsequent toggles of this set skip the warning                           |
+| AC-29.1.4 | ✅ Positive | Given a mod is inside a `VariantContainer` (Epic 11), when it is toggled while a sibling variant is enabled, then the sibling is disabled _silently_ without a conflict prompt             |
+| AC-29.1.5 | ❌ Negative | Given any mod combination is "Ignored", then the user can view and revoke this status in the `IgnoreManagementModal` (Settings > Advanced > Ignored Conflicts)                             |
+| AC-29.1.4 | ⚠️ Edge     | Given an Object has 3 mods enabled (e.g., from a past bulk import), when a 4th is toggled with "Enable Only This", then all 3 are disabled atomically and only the 4th is enabled          |
 
 ---
 
@@ -37,7 +38,7 @@ As a user, I want a one-click way to switch between two character skins, so that
 | ID        | Type        | Criteria                                                                                                                                                                                                                |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-29.2.1 | ✅ Positive | Given the context menu for any mod in an Object, clicking "Enable Only This" disables all currently enabled mods in the same Object and enables the target mod — all inside one atomic `OperationLock` + DB transaction |
-| AC-29.2.2 | ✅ Positive | Given the atomic swap completes, then the grid reflects the new enabled state and the objectlist `enabled_count = 1` for that Object — both update via React Query cache invalidation                                      |
+| AC-29.2.2 | ✅ Positive | Given the atomic swap completes, then the grid reflects the new enabled state and the objectlist `enabled_count = 1` for that Object — both update via React Query cache invalidation                                   |
 | AC-29.2.3 | ⚠️ Edge     | Given "Enable Only This" is used on a mod that is the only enabled mod in its Object, then the operation is no-op — the mod stays enabled, no extra renaming occurs                                                     |
 
 ---
@@ -46,12 +47,12 @@ As a user, I want a one-click way to switch between two character skins, so that
 
 As a user, I want the app to scan all active mods for colliding texture override hashes, so that I can identify incompatible mods from different Objects.
 
-| ID        | Type        | Criteria                                                                                                                                                                                         |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ID        | Type        | Criteria                                                                                                                                                                                                                       |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-29.3.1 | ✅ Positive | Given the user triggers a global conflict scan, then the scanner parses all enabled `.ini` files for `[TextureOverride...]` sections and builds a `hash → [{mod_path, section}]` map; any hash with ≥ 2 entries is a collision |
-| AC-29.3.2 | ✅ Positive | Given a detected collision, the UI shows a `ConflictModal` with: conflicting hash, section name, and paths of the conflicting mod folders |
-| AC-29.3.3 | ❌ Negative | Given 0 hash collisions are found, then the conflict modal (or trigger) indicates no shader conflicts were detected |
-| AC-29.3.4 | ⚠️ Edge     | Given a malformed `.ini` (missing `=`, binary content), then the scanner skips that file with a `warn` log — it does not abort the entire scan                                                   |
+| AC-29.3.2 | ✅ Positive | Given a detected collision, the UI shows a `ConflictModal` with: conflicting hash, section name, and paths of the conflicting mod folders                                                                                      |
+| AC-29.3.3 | ❌ Negative | Given 0 hash collisions are found, then the conflict modal (or trigger) indicates no shader conflicts were detected                                                                                                            |
+| AC-29.3.4 | ⚠️ Edge     | Given a malformed `.ini` (missing `=`, binary content), then the scanner skips that file with a `warn` log — it does not abort the entire scan                                                                                 |
 
 ---
 
@@ -69,38 +70,29 @@ As a user, I want the app to scan all active mods for colliding texture override
 ### Architecture Overview
 
 ```
-check_duplicate_enabled(game_id, object_id) → Option<Vec<DuplicateInfo>>:
-  SELECT folder_path, name FROM folders WHERE object_id = ? AND is_enabled = true
-  → if count > 0: return Some(Vec<DuplicateInfo>)
-
-enable_only_this(game_id, target_folder_path) → ():
-  1. Acquire OperationLock(game_id) + WatcherSuppression(all paths in object)
-  2. SELECT folder_path FROM folders WHERE object_id = target.object_id AND is_enabled = true
-  3. For each currently_enabled != target: rename to "DISABLED " + name
-  4. If target is disabled: rename to strip "DISABLED "
-  5. UPDATE is_enabled flags in DB atomically
-  6. Return Ok(())
-
-detect_conflicts_in_folder_cmd(mods_path) → Vec<ConflictInfo { hash, section_name, mod_paths }>:
-  1. Walk all ENABLED mod folders → extract .ini paths
-  2. Parse each .ini for `hash = <hex>` in `[TextureOverride...]`
-  3. HashMap collision detection by hash value
-  4. Return entries where multiple mod roots share the same hash
+detect_conflicts_service(game_id, folder_path) → Result<(), CommandError>:
+  1. Determine `object_id` from `folder_path`.
+  2. IDENTIFY siblings: `SELECT * FROM mods WHERE object_id = ? AND status = 'ENABLED'`.
+  3. VARIANT CHECK: If `folder_path` and a sibling share a `VariantContainer` parent, PERFORM "Implicit Swap" (disable sibling, enable target) -> return Ok.
+  4. IGNORE CHECK: If `(object_id, target_path, sibling_paths)` is in `ignored_object_conflicts` -> return Ok.
+  5. CONFLICT: return `Err(DuplicateConflict(siblings))`.
 
 Frontend:
-  ConflictResolveDialog.tsx (shown for DuplicateInfo errors)
-  ConflictScanReport.tsx (shown after deep scan, lists all ConflictReport entries)
+  ObjectConflictModal.tsx (shown for DuplicateConflict errors)
+  IgnoreManagementModal.tsx (lists and revokes ignored entries)
+  ConflictScanReport.tsx (shown after deep hash scan)
 ```
 
 ### Integration Points
 
-| Component        | Detail                                                                                              |
-| ---------------- | --------------------------------------------------------------------------------------------------- |
-| Duplicate Check  | Hook into `toggle_mod` flow — called before `fs::rename`, inside `OperationLock`                    |
-| Enable Only This | `conflict_cmds.rs::enable_only_this` — shares `OperationLock` + `WatcherSuppression` with toggle    |
-| INI Parser       | `services/ini/document.rs` (Epic 18 INI parser) — reused for hash extraction                        |
-| Deep Scan        | `conflict_cmds.rs::detect_conflicts_in_folder_cmd` → background Tokio task                          |
-| Frontend         | `useFolderGridActions.ts` catches `CommandError::DuplicateConflict` → opens `ConflictResolveDialog` |
+| Component         | Detail                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| Duplicate Check   | Embedded in `toggle_mod` flow — returns error if non-variant duplicates are enabled |
+| Persistent Ignore | `ignored_object_conflicts` table stores (game_id, object_id, mod_ids_hash)          |
+| Variant Support   | Backend detects shared `VariantContainer` folders and performs implicit swapping    |
+| INI Parser        | `services/ini/document.rs` (Epic 18) — reused for hash extraction                   |
+| Deep Scan         | `conflict_cmds.rs::check_shader_conflicts` → multi-threaded Tokio task              |
+| Frontend          | `useAppStore` handles `DuplicateConflict` globally → opening `ObjectConflictModal`  |
 
 ### Security & Privacy
 

@@ -1,4 +1,4 @@
-# EMMM2 Changelog Style Guide
+# EMMM Changelog Style Guide
 
 ## 1. Format
 

@@ -3,7 +3,10 @@
 //! Commands that require DB access for "Enable Only This" and conflict checks.
 //! Separated from mod_cmds.rs to keep file sizes manageable.
 
+use crate::domain::errors::AppError;
 use crate::services::fs_utils::operation_lock::OperationLock;
+
+use crate::services::config::ConfigService;
 use crate::services::mods::bulk::BulkResult;
 use crate::services::scanner::conflict::ConflictInfo;
 use crate::services::scanner::watcher::WatcherState;
@@ -14,7 +17,7 @@ use tauri::State;
 
 /// Info about a duplicate/conflicting enabled mod.
 /// Covers: NC-5.2-03
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct DuplicateInfo {
     pub mod_id: String,
     pub folder_path: String,
@@ -25,41 +28,66 @@ pub struct DuplicateInfo {
 /// Atomic: disable siblings first, then enable target.
 ///
 /// # Covers: TC-5.3-01 (Enable Only This)
+#[specta::specta]
 #[tauri::command]
 pub async fn enable_only_this(
+    _app: tauri::AppHandle,
+    config: State<'_, ConfigService>,
     pool: State<'_, SqlitePool>,
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     target_path: String,
     game_id: String,
-) -> Result<BulkResult, String> {
-    let _lock = op_lock.acquire().await?;
+) -> Result<BulkResult, AppError> {
+    let mods_path = crate::repo::game_repo::get_mod_path(pool.inner(), &game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
 
-    crate::services::scanner::conflict::enable_only_this_service(
+    let _lock = op_lock
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    let result = crate::services::scanner::conflict::enable_only_this_service(
         pool.inner(),
         &state,
         target_path,
         &game_id,
     )
-    .await
+    .await?;
+
+    let post_ctx = crate::services::app::post_apply::PostApplyContext {
+        game_id: game_id.clone(),
+        pool: pool.inner().clone(),
+        is_safe: config.get_settings().safe_mode.enabled,
+        mods_path: mods_path.into(),
+        suppressor: state.suppressor.clone(),
+        settings: config.get_settings(),
+        status_fields: None,
+    };
+    let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
+
+    Ok(result)
 }
 
 /// Check if enabling a mod would create a duplicate (same object already enabled).
 /// Returns list of currently enabled mods sharing the same object_id.
 ///
 /// # Covers: NC-5.2-03 (Duplicate Character Warning)
+#[specta::specta]
 #[tauri::command]
 pub async fn check_duplicate_enabled(
     pool: State<'_, SqlitePool>,
     folder_path: String,
     game_id: String,
-) -> Result<Vec<DuplicateInfo>, String> {
-    let dups = crate::services::scanner::conflict::get_duplicates_for_mod_service(
-        pool.inner(),
-        &folder_path,
-        &game_id,
-    )
-    .await?;
+) -> Result<Vec<DuplicateInfo>, AppError> {
+    let dups: Vec<crate::domain::mods::DuplicateModInfo> =
+        crate::services::scanner::conflict::get_duplicates_for_mod_service(
+            pool.inner(),
+            &folder_path,
+            &game_id,
+        )
+        .await?;
 
     Ok(dups
         .into_iter()
@@ -75,19 +103,24 @@ pub async fn check_duplicate_enabled(
 /// Returns conflicts involving the target mod folder.
 ///
 /// # Covers: US-5.7 (Shader Conflict Warning)
+#[specta::specta]
 #[tauri::command]
-pub async fn check_shader_conflicts(folder_path: String) -> Result<Vec<ConflictInfo>, String> {
+pub async fn check_shader_conflicts(folder_path: String) -> Result<Vec<ConflictInfo>, AppError> {
     let target = PathBuf::from(&folder_path);
-    let parent = target.parent().ok_or("Invalid folder path")?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| AppError::Internal("Invalid folder path".to_string()))?;
 
     crate::services::scanner::conflict::detect::detect_conflicts_for_mod_service(&target, parent)
+        .map_err(AppError::Internal)
 }
 
 /// Detect shader/buffer hash conflicts across INI files.
 ///
 /// # Covers: US-2.Z, TC-2.4-01
+#[specta::specta]
 #[tauri::command]
-pub async fn detect_conflicts_cmd(ini_paths: Vec<String>) -> Result<Vec<ConflictInfo>, String> {
+pub async fn detect_conflicts_cmd(ini_paths: Vec<String>) -> Result<Vec<ConflictInfo>, AppError> {
     let paths: Vec<(PathBuf, PathBuf)> = ini_paths
         .into_iter()
         .map(|p| {
@@ -106,12 +139,14 @@ pub async fn detect_conflicts_cmd(ini_paths: Vec<String>) -> Result<Vec<Conflict
 ///
 /// More efficient for frontend usage as it avoids passing thousands of paths.
 /// # Covers: US-2.Z
+#[specta::specta]
 #[tauri::command]
 pub async fn detect_conflicts_in_folder_cmd(
     mods_path: String,
-) -> Result<Vec<ConflictInfo>, String> {
+) -> Result<Vec<ConflictInfo>, AppError> {
     let path = Path::new(&mods_path);
     crate::services::scanner::conflict::detect::detect_conflicts_in_folder_service(path)
+        .map_err(AppError::Internal)
 }
 
 #[cfg(test)]

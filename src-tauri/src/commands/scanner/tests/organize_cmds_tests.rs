@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::services::config::ConfigService;
 use crate::services::mods::organizer_ext::auto_organize_mods_service;
 use crate::services::scanner::watcher::WatcherState;
 use serde_json::json;
@@ -14,10 +15,17 @@ async fn setup_test_db() -> sqlx::SqlitePool {
         .await
         .expect("in-memory pool");
 
-    sqlx::query("CREATE TABLE mods (id TEXT PRIMARY KEY, folder_path TEXT NOT NULL);")
+    sqlx::query("CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, name TEXT NOT NULL, game_type TEXT NOT NULL, path TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, mod_path TEXT);")
         .execute(&pool)
         .await
         .unwrap();
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS mods (id TEXT PRIMARY KEY, folder_path TEXT NOT NULL);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     pool
 }
@@ -32,7 +40,14 @@ async fn test_auto_organize_mods_success() {
     let source = tmp.path().join("Raiden Shogun Pack");
     fs::create_dir(&source).unwrap();
 
-    // Insert mod in DB
+    // Insert game and mod in DB
+    sqlx::query("INSERT INTO games (id, name, game_type, path, mod_path) VALUES ('game1', 'Test Game', 'Other', ?, ?)")
+        .bind(tmp.path().to_string_lossy().to_string())
+        .bind(tmp.path().to_string_lossy().to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
     sqlx::query("INSERT INTO mods (id, folder_path) VALUES ('1', ?)")
         .bind(source.to_string_lossy().to_string())
         .execute(&pool)
@@ -54,12 +69,14 @@ async fn test_auto_organize_mods_success() {
     .to_string();
 
     let watcher = WatcherState::new();
+    let config = ConfigService::new_for_test(pool.clone());
 
     let res = auto_organize_mods_service(
+        &config,
         &pool,
+        "game1",
         vec![source.to_string_lossy().to_string()],
-        root.to_string_lossy().to_string(),
-        db_json,
+        &db_json,
         &watcher,
     )
     .await

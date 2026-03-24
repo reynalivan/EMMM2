@@ -2,15 +2,14 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: Users switch contexts frequently (e.g., streaming, full-overhaul, vanilla), making manual toggling of tens of mods error-prone. Restoring exact loadouts requires a system capable of atomic mass activation, conflict resolution, and self-healing.
-- **Proposed Solution**: Virtual Collections built on a `collections` and `collection_items` mapping. The system features a **Full Loadout Swap** (disabling non-collection mods within the same safety corridor), **Double ID Tracking** (ID + path relinking if mod ID changes), `is_safe_context` awareness (Exclusive Corridors), and a **"Last Unsaved" Snapshot** hidden collection for 1-click Undo.
+- **Problem Statement**: Users frequently switch gameplay contexts (e.g., streaming, full-overhaul, vanilla), making manual toggling of dozens of mods error-prone. Restoring exact loadouts requires a system capable of atomic mass activation, conflict resolution, graceful failure handling, and self-healing when folders are moved.
+- **Proposed Solution**: Virtual Collections built on a robust `collections`, `collection_mods`, and `collection_objects` mapping. The system features an **Exclusive Swap** (disabling non-collection mods within the same safety corridor), **Dirty State Tracking** (auto-generating an `Unsaved` collection on manual/FileWatcher edits), **Pre-Apply Disk Validation** (preventing ghost applies), **Cross-Collection Auto-Healing** (updating paths if mods move), and **Task Recovery** to resume operations interrupted by app crashes.
 - **Success Criteria**:
-  - `apply_collection` for 100 operations (50 enable + 50 disable) completes in ≤ 5s on SSD.
-  - **Exclusivity**: Applying a collection automatically disables all currently enabled mods in the same safety context (Safe vs Unsafe corridor) that are not part of the collection.
-  - **Persistence**: Collection items successfully relink using their `folder_path` if the mod ID changes (e.g., after a re-scan or DB wipe).
-  - **Nested Support**: Deep nested mods (depth 2-3) are correctly captured and toggled via the `nested_walker` filesystem logic.
-  - **Undo**: A hidden snapshot collection allows rolling back the entire state in ≤ 5s.
-  - **Corridor Isolation**: Collections tagged as Unsafe (`is_safe_context = 0`) are completely hidden from UI and Apply interfaces when Safe Mode is Active.
+  - `apply_collection` exclusively enables target mods and disables the rest within the same safety corridor in ≤ 5s for 100 mods on an SSD.
+  - Manual mod toggles or external FileWatcher events immediately flag the state as "Dirty", generating an `Unsaved Collection` (format: `YYYYMMDDXXXX`) as the active state.
+  - Pre-Apply Validation accurately detects physically missing mods and prompts a resolution dialog (Skip/Cancel) before any disk mutations occur.
+  - Moving or renaming a mod cascades path updates to all saved collections automatically.
+  - App crashes during `apply_collection` or Safe Mode `switch_mode` are caught on next boot via the `tasks` table, prompting a Recovery Action.
 
 ---
 
@@ -18,60 +17,88 @@
 
 ### User Stories
 
-#### US-31.1: Loadout Creation & Context Sensitivity
+#### US-31.1: Context-Sensitive Creation & Save As
 
-As a user, I want to create mod collections (e.g., "Stream Loadout"), so that I can bundle specific mods into a single click package.
+As a user, I want to save my currently active mods as a permanent collection, so that I can easily revert to this exact setup later.
 
-| ID        | Type        | Criteria                                                                                                                                                                    |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.1.1 | ✅ Positive | Given the Collections tab, when I click "Save Current State", the system captures currently enabled `folder_path` and `mod_id` values into `collection_items`. |
-| AC-31.1.2 | ✅ Positive | Given a created Collection, the current Safe Mode state determines its `is_safe_context`. If created while Safe Mode is OFF (contains NSFW), the context is marked as Unsafe (`0`). |
-| AC-31.1.3 | ✅ Positive | Given Safe Mode is ON, only Collections with `is_safe_context = 1` are returned by the API. Unsafe collections are entirely hidden to prevent accidental exposure. |
-| AC-31.1.4 | ⚠️ Edge     | When a collection is created/updated, its `preset_name` is written to the portable `info.json` file inside each member mod's folder to ensure metadata portability          |
-
----
-
-#### US-31.2: Exclusive Loadout Swap & Nested Support
-
-As a user, I want to activate a preset and have the app automatically disable all other mods in that corridor, so that I have a clean, predictable environment.
-
-| ID        | Type        | Criteria                                                                                                                                                                                                                                          |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.2.1 | ✅ Positive | Given a collection is Apply-clicked, the system pre-computes the diff. Any mod currently enabled in the same safety context (Safe vs Unsafe) that is NOT in the collection is automatically selected for disable (Exclusive Swap).               |
-| AC-31.2.2 | ✅ Positive | Given the diff is calculated, the system engages an `OperationLock` and `WatcherSuppression`, completing the mass physical folder rename (adding/removing `DISABLED ` prefix) cleanly.                                                            |
-| AC-31.2.3 | ✅ Positive | Given the collection includes deep nested mods (depth 2-3 inside object folders), the `nested_walker` crawler locates and renames them to match the target state.                                                                                |
-| AC-31.2.4 | ❌ Negative | Given the apply fails halfway due to an OS lock, the system halts and logs warnings. The user can use the "Undo" button (if snapshot was created) to revert the partial changes.                                                                   |
+| ID        | Type        | Criteria                                                                                                                                                                                                                     |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.1.1 | ✅ Positive | Given the active state is an Unsaved Collection, when I click "Save Collection", the system prompts for a name and performs a "Save As" operation — creating a new permanent collection and deleting the old Unsaved record. |
+| AC-31.1.2 | ✅ Positive | Given the Save operation is triggered, the backend validates all active mods against the physical disk; if a mod has 0 active items, the save is rejected with a "Cannot save an empty collection" error.                    |
+| AC-31.1.3 | ✅ Positive | Given a created Collection, the current Safe Mode state determines its `is_safe_context`. If created in Safe Mode, it is hidden entirely when the app is in Unsafe Mode, ensuring zero cross-corridor leakage.               |
+| AC-31.1.4 | ❌ Negative | Given I click Save but a physical folder for an active mod has just been deleted externally by the user, the disk validation fails to find it and silently drops it from the saved payload — the Disk is the Absolute Truth. |
 
 ---
 
-#### US-31.3: Smart Tracing & Healing (Double ID)
+#### US-31.2: Pre-Apply Validation & Exclusive Swap
 
-As a user, I want collections to survive folder renames, so that organizing my library doesn't destroy my saved presets.
+As a user, I want to activate a preset and have the app automatically disable all other mods, while warning me if any saved mods have gone missing from my disk.
 
-| ID        | Type        | Criteria                                                                                                                                                                                      |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.3.1 | ✅ Positive | Given a collection item's `mod_id` is missing in the DB during Apply, the system tries to find the mod using its saved `folder_path` (Self-Healing).                                          |
-| AC-31.3.2 | ✅ Positive | Given the mod was found via path, the `collection_items` record is updated with the new ID and the Apply continues.                                                                           |
-| AC-31.3.3 | ❌ Negative | Given the mod folder no longer exists at the saved path, a warning "Skipping missing mod: {name}" is appended to the result; the rest of the collection is applied.                            |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                         |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-31.2.1 | ✅ Positive | Given a collection is clicked, the system runs a Pre-Apply Validation. If all physical mod paths exist, the system proceeds to the Exclusive Swap automatically.                                                                                 |
+| AC-31.2.2 | ❌ Negative | Given some mods in the collection are physically missing from the disk, the backend returns a `MissingModsError` array. The React UI intercepts this and displays a "Missing Mods" dialog listing the lost paths.                                |
+| AC-31.2.3 | ✅ Positive | Given the Missing Mods dialog, if the user clicks "Skip & Apply", the frontend re-triggers the apply command with `ignore_missing = true`, skipping the lost mods and proceeding with the swap.                                                  |
+| AC-31.2.4 | ✅ Positive | Given the swap executes, it acquires an `OperationLock`, suppresses the Watcher, removes `DISABLED ` from targets, and prepends `DISABLED ` to non-targets in the same corridor, setting `disabled_reason = 'COLLECTION'` for the disabled ones. |
+| AC-31.2.5 | ⚠️ Edge     | Given the collection contains multiple active mods for the same Object (e.g., two skins for Albedo), the automated apply ignores/bypasses standard duplicate hash warnings and applies them simultaneously.                                      |
 
 ---
 
-#### US-31.4: Cheat Death (One-Click Undo)
+#### US-31.3: Dirty State & Topbar Synchronization
 
-As a user, I want to cancel an applied preset if it looks wrong, so that I can experiment without fear.
+As a user, I want the system to recognize when I manually modify an active preset, so that my changes are tracked and my Topbar reflects the "Unsaved" status.
 
-| ID        | Type        | Criteria                                                                                                                                                                            |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.4.1 | ✅ Positive | Given a preset applied successfully, a success toast appears with an "Undo" button (active for 10s).                                                |
-| AC-31.4.2 | ✅ Positive | Given I click Undo, the system applies the "Last Unsaved" hidden collection (snapshot of enabled state prior to apply), restoring the previous corridor loadout.    |
-| AC-31.4.3 | ⚠️ Edge     | Current implementation overwrites the snapshot on every `apply_collection` call, ensuring only the most recent atomic action can be reverted.                      |
+| ID        | Type        | Criteria                                                                                                                                                                                                               |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.3.1 | ✅ Positive | Given a saved Collection is active, when I toggle a mod manually OR a FileWatcher event detects a folder rename, the state becomes "Dirty".                                                                            |
+| AC-31.3.2 | ✅ Positive | Given a Dirty event, the backend automatically upserts ONE `is_unsaved = true` collection for the current corridor, named with the timestamp (e.g., `202603230850`), and snapshots the currently enabled mods into it. |
+| AC-31.3.3 | ✅ Positive | Given the Unsaved Collection is created, the React Topbar immediately updates its selection to this new collection and renders an "Unsaved \*" badge next to the name.                                                 |
+| AC-31.3.4 | ⚠️ Edge     | Given the user manually switches back to the original saved Collection via the Topbar, the system applies it, overriding the Unsaved changes, and updates the Topbar to the clean state.                               |
+
+---
+
+#### US-31.4: Cross-Collection Auto-Healing
+
+As a user, I want my saved collections to remain intact even if I move a mod folder to a different Object category or rename it.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                    |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.4.1 | ✅ Positive | Given a user moves a mod via the "Move to Object" dialog, the backend triggers `handle_mod_moved_or_renamed`.                                                                                               |
+| AC-31.4.2 | ✅ Positive | Given `handle_mod_moved_or_renamed` fires, the system updates `mod_path` and `object_id` for that specific `mod_id` across ALL saved collections in the database.                                           |
+| AC-31.4.3 | ✅ Positive | Given the path cascades successfully, the user can apply a collection from 3 months ago and it will correctly activate the mod in its newly moved location without triggering a Pre-Apply Validation error. |
+
+---
+
+#### US-31.5: Task Recovery (Crash Resiliency)
+
+As a system, I want to track mass I/O operations, so that if the app is killed forcefully, it can recover safely on the next boot.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                                 |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-31.5.1 | ✅ Positive | Given `apply_collection` or `switch_mode` starts, it writes a `PENDING` record to the `tasks` DB table containing the operation payload.                                                                                 |
+| AC-31.5.2 | ✅ Positive | Given the operation finishes successfully, the `tasks` record is marked `COMPLETED`.                                                                                                                                     |
+| AC-31.5.3 | ❌ Negative | Given the app is force-closed during the rename loop, the `tasks` record remains `PENDING`. On next boot, the backend emits `RECOVERY_REQUIRED` to the frontend.                                                         |
+| AC-31.5.4 | ✅ Positive | Given the `RECOVERY_REQUIRED` event, the UI blocks the grid and shows a Dialog: "An operation was interrupted. Resume or Abort?", allowing the backend to re-run the Pre-Apply Validation and finish the remaining loop. |
+
+---
+
+#### US-31.6: Active Collection Deletion
+
+As a user, I want to delete a preset I no longer need without it altering the physical mods that are currently active in my game.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                            |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.6.1 | ✅ Positive | Given the user deletes a Collection that is currently NOT active, the DB record is deleted and nothing else changes.                                                                                                |
+| AC-31.6.2 | ✅ Positive | Given the user deletes the currently active Collection, the physical disk is NOT altered (no mods are disabled).                                                                                                    |
+| AC-31.6.3 | ✅ Positive | Given the active collection is deleted, the backend immediately snapshots the current active disk state into a new `Unsaved Collection` (`YYYYMMDDXXXX`) and sets it as active in the Topbar to prevent state loss. |
 
 ---
 
 ### Non-Goals
 
-- No multi-level undo history — only the latest apply's snapshot is retained.
-- No cross-game collections — presets are strictly bound to a single `game_id`.
+- No multi-level Undo history (Undo is implicitly handled by re-selecting a previous collection).
+- No cross-game collections (collections are strictly scoped to `game_id`).
+- No writing collection names into the portable `info.json` (collections are purely DB-driven for faster I/O).
 
 ---
 
@@ -80,42 +107,49 @@ As a user, I want to cancel an applied preset if it looks wrong, so that I can e
 ### Architecture Overview
 
 ```rust
-// Backend Service: Collections (apply.rs, storage.rs)
-// metadata portability via update_info_json triggers
+// Backend Service: Collections (apply.rs, storage.rs, recovery.rs)
 
-apply_collection(game_id, collection_id):
-  1. Acquire OperationLock(game_id)
-  2. Snapshot current corridor enabled state → snapshot_current_state()
-     - Captures both DB-tracked mods and nested mods (is_enabled && is_safe == context)
-  3. Load collection_members of target preset.
-  4. Diff: to_disable (active NOT IN target), to_enable (target NOT IN active)
-  5. Engage WatcherSuppression via SuppressionGuard.
-  6. Atomic Rename: 
-     - DB Mods: apply_state_change -> batch_update_mods_status_and_path
-       - Sets `disabled_reason = 'COLLECTION'` for newly disabled mods, clears for enabled.
-     - Nested Mods: apply_nested_mods renames subfolders directly on disk
-  7. Return ApplyCollectionResult { changed_count, warnings }
-```
+apply_collection(game_id, collection_id, ignore_missing):
+  1. Insert into `tasks` table -> status = 'PENDING'.
+  2. Pre-Apply Validation:
+     - Query collection_mods.
+     - Check `Path::exists()` for all items.
+     - If missing && !ignore_missing -> Return MissingModsError(paths).
+  3. Acquire OperationLock(game_id) & Suppress Watcher.
+  4. Exclusive Diff Calculation:
+     - `to_enable`: Targets that are currently disabled.
+     - `to_disable`: Non-targets currently enabled in the same `is_safe_context`.
+  5. Atomic FS Rename Loop:
+     - Apply/strip "DISABLED " up to depth 5 for `ModPackRoot`/`VariantContainer`.
+     - Cascade DB updates (`status`, `folder_path`).
+     - Set `disabled_reason = 'COLLECTION'` for disabled, `NULL` for enabled.
+  6. DB State Update: Set target collection `last_active = true`, others false.
+  7. Update `tasks` table -> status = 'COMPLETED'.
+  8. Return `ApplyCollectionResult { collection_id, changed_count }`.
+
+handle_dirty_state(game_id, current_context):
+  1. Triggered by IPC from React or Watcher event.
+  2. Upsert `is_unsaved = true` collection for `current_context`.
+  3. Rename to `chrono::Local::now().format("%Y%m%d%H%M")`.
+  4. Snapshot current ENABLED mods/objects into DB.
+  5. Set `last_active = true`.
 
 ### Integration Points
 
-| Component            | Detail                                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Persistence Tracking | `collection_items` stores `mod_id` + `mod_path`. Relinks via path if ID missing (Double-ID Tracking).       |
-| Portable JSON        | `storage::update_info_json` writes preset membership to folder's `info.json` upon save/update/delete.      |
-| Exclusive Corridors  | `is_safe_context` separation enforced; `list_collections` and `apply_collection` respect `safe_mode_enabled`.|
-| Nested Support       | `nested_walker` crawls ContainerFolders; `apply_nested_mods` renames them to match preset state.           |
-| Undo Logic           | `snapshot_current_state` creates/overwrites `is_last_unsaved=1` collection; 10s frontend toast for revert. |
-| Suppression          | `SuppressionGuard::new(&watcher_state.suppressor)` prevents watcher storms during bulk renames.            |
+| Component | Detail |
+| --- | --- |
+| Topbar State Sync | Commands return `active_collection_id`; React binds Topbar Dropdown value directly to `activeCollectionId` Zustand state. |
+| ObjectList Payload | Backend queries MUST return `active_mod_paths: string[]` per Object so the UI Preview Panel correctly highlights active mods. |
+| FileWatcher Hook | `notify` crate events map to `handle_dirty_state` to immediately mark manual Explorer changes as Unsaved. |
+| Move/Rename Hook | `move_mod` command directly calls `UPDATE collection_mods SET mod_path...` to ensure Auto-Healing. |
 
 ### Security & Privacy
-
-- **Leakage Prevention**: API queries strictly isolate results by `safe_mode_enabled`. Unsafe collections never leave the backend if Safe Mode is active.
-- **Atomic Operations**: State changes use `OperationLock` and `WatcherSuppression` to prevent race conditions or secondary sync triggers during mass renames.
+- **Corridor Enforcement**: A Safe Mode collection query strictly appends `AND is_safe_context = ?`. An unsafe collection is mathematically impossible to apply while the frontend is in Safe Mode.
+- **SSoT Validation**: The `save_collection` command strictly validates `Path::exists()` before committing to DB, preventing ghost entries from creeping into long-term storage.
 
 ---
 
 ## 4. Dependencies
-
-- **Blocked by**: Epic 20 (Mod Toggle - Standardizer prefix logic), Epic 14 (OperationLock), Epic 30 (Safe Mode state), Epic 09 (Object Schema for Conflict Resolution IDs).
+- **Blocked by**: Epic 13 (Core Mod Ops - `rename_mod`), Epic 14 (OperationLock), Epic 28 (File Watcher), Epic 30 (Safe Mode - `switch_mode` uses these APIs).
 - **Blocks**: Epic 35 (Smart Randomizer - uses collections backend to commit proposals).
+```

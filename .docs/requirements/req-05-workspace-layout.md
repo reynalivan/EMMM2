@@ -25,7 +25,7 @@ As a user, I want to adjust the size of the objectlist, grid, and preview panel,
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-05.1.1 | ✅ Positive | Given the resizable workspace, when the user drags a divider, then panel proportions update fluidly at ≥ 60fps with no visual tearing or ghost elements                     |
 | AC-05.1.2 | ✅ Positive | Given the user changes panel widths, when the app reloads, then the stored fractions are restored within ≤ 50ms so the user sees their saved layout immediately             |
-| AC-05.1.3 | ❌ Negative | Given a panel reaches its defined minimum width (ObjectList: 180px, Preview: 240px, Explorer: 300px), then the divider stops moving — content is never hidden or zero-width    |
+| AC-05.1.3 | ❌ Negative | Given a panel reaches its defined minimum width (ObjectList: 180px, Preview: 240px, Explorer: 300px), then the divider stops moving — content is never hidden or zero-width |
 | AC-05.1.4 | ⚠️ Edge     | Given the user resizes the OS window to < 1024px width, then panels redistribute fractionally but all three remain visible above their minimums — no single panel is hidden |
 
 ---
@@ -34,12 +34,12 @@ As a user, I want to adjust the size of the objectlist, grid, and preview panel,
 
 As a user, I want a persistent top navigation bar, so that I can switch between Dashboard, Mod Manager, Collections, and Settings without losing my place.
 
-| ID        | Type        | Criteria                                                                                                                                                                                      |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-05.2.1 | ✅ Positive | Given the top bar, when I click the EMMM2 logo/menu, a navigation popover renders all destinations (Dashboard, Mods Manager, Collections, Settings) with the current active route highlighted |
-| AC-05.2.2 | ✅ Positive | Given the Game Selector dropdown, when I select a different game, then `activeGameId` in Zustand updates, the watcher restarts, and all dependent queries invalidate — all within ≤ 200ms     |
-| AC-05.2.3 | ❌ Negative | Given the user clicks the route they are currently viewing, then the router performs a no-op — no DOM unmount/remount cycle occurs                                                            |
-| AC-05.2.4 | ⚠️ Edge     | Given the user types keyboard shortcut Alt+1 / Alt+2 / Alt+3 while any modal is open, then the navigation shortcut is suppressed — modals take focus priority                                 |
+| ID        | Type        | Criteria                                                                                                                                                                                     |
+| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-05.2.1 | ✅ Positive | Given the top bar, when I click the EMMM logo/menu, a navigation popover renders all destinations (Dashboard, Mods Manager, Collections, Settings) with the current active route highlighted |
+| AC-05.2.2 | ✅ Positive | Given the Game Selector dropdown, when I select a different game, then `activeGameId` in Zustand updates, the watcher restarts, and all dependent queries invalidate — all within ≤ 200ms    |
+| AC-05.2.3 | ❌ Negative | Given the user clicks the route they are currently viewing, then the router performs a no-op — no DOM unmount/remount cycle occurs                                                           |
+| AC-05.2.4 | ⚠️ Edge     | Given the user types keyboard shortcut Alt+1 / Alt+2 / Alt+3 while any modal is open, then the navigation shortcut is suppressed — modals take focus priority                                |
 
 ---
 
@@ -51,7 +51,7 @@ As a user, I want a dedicated launch bar area to start my game and check for con
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-05.3.1 | ✅ Positive | Given the Launch Bar, when I click "Play", then the game launch sequence from Epic 02 is invoked and the button shows a loading state for ≤ 200ms until the process spawns                        |
 | AC-05.3.2 | ✅ Positive | Given hash conflicts are detected by the scan engine, when the Launch Bar renders, then a pulsing amber "Conflicts" badge is visible with a count, and clicking it navigates to the conflict view |
-| AC-05.3.3 | ✅ Positive | Given `auto_close = true` in Settings, when Play is clicked and the game spawns successfully, then the EMMM2 process gracefully terminates within 2s                                              |
+| AC-05.3.3 | ✅ Positive | Given `auto_close = true` in Settings, when Play is clicked and the game spawns successfully, then the EMMM process gracefully terminates within 2s                                               |
 | AC-05.3.4 | ❌ Negative | Given no active game is configured, when the Launch Bar renders, then the "Play" button is disabled and shows "No game configured" tooltip                                                        |
 | AC-05.3.5 | ⚠️ Edge     | Given background jobs (bulk import, dedup scan) are running when Play is clicked, then a warning dialog asks "Background tasks will be cancelled — continue?" before proceeding                   |
 
@@ -78,7 +78,7 @@ MainLayout (React)
   ├── ToastContainer
   └── TopBar
       ├── NavPopover → React Router navigate()
-      ├── GameSelector → invoke('set_active_game') + invalidateQueries
+      ├── GameSelector → commands.setActiveGame({ gameId }) + invalidateQueries
       └── [children route outlet]
 
 ResizableWorkspace (react-resizable-panels)
@@ -89,7 +89,7 @@ ResizableWorkspace (react-resizable-panels)
   └── Panel: Preview → PreviewPanel (Epic 16)
 
 LaunchBar
-  ├── PlayButton → invoke('launch_game', activeGameId)
+  ├── PlayButton → commands.launchGame({ game_id: activeGameId })
   ├── ConflictsBadge → Pulsing amber alert if conflicts > 0 → navigate('/conflicts')
   └── RandomizerButton → Shuffle icon → opens RandomizerModal (Epic 35)
   └── ConflictToast → Inline alert for quick conflict dismissal
@@ -101,8 +101,8 @@ LaunchBar
 | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Panel Persistence | `react-resizable-panels` `onLayout` callback → debounced `localStorage.setItem('panelLayout', JSON.stringify(sizes))` |
 | Panel Restore     | `defaultLayout` prop reads `localStorage.getItem('panelLayout')` on mount                                             |
-| Game Switch       | `invoke('set_active_game', { gameId })` (Epic 02) + `queryClient.invalidateQueries()`                                 |
-| Launch            | `invoke('launch_game', { gameId })` (Epic 02)                                                                         |
+| Game Switch       | `commands.setActiveGame({ gameId })` (Epic 02) + `queryClient.invalidateQueries()`                                    |
+| Launch            | `commands.launchGame({ gameId })` (Epic 02)                                                                           |
 | Conflicts         | Conflict count read from `useActiveConflicts` hook; modal displays `ConflictModal`                                    |
 | Randomizer        | Opens `RandomizerModal` (Epic 35) directly from button                                                                |
 | Routing           | React Router v6 — `useNavigate()` — no full page reloads                                                              |
@@ -111,12 +111,35 @@ LaunchBar
 
 - **No backend calls** for layout or panel sizing; persistence is `localStorage`-only — no user data at risk.
 - **Active game switching** validates the new `gameId` against the `games` DB table on the backend (`set_active_game` rejects unknown IDs).
-- **Launch Bar Play button** does not execute arbitrary paths — it delegates to `launch_game` which uses the pre-validated path stored in the `games` DB record.
-- **Navigation popover** uses a static hardcoded route list — no user-supplied route strings are ever passed to `navigate()`.
+- **Launch Bar Play button** does not execute arbitrary paths —- **Navigation popover** uses a static hardcoded route list — no user-supplied route strings are ever passed to `navigate()`.
+- **Zero-Literal Policy Enforcement**: All UI components must pass a static analysis check (ripgrep) ensuring zero hardcoded Tailwind color scales or hex literals.
 
 ---
 
-## 4. Dependencies
+## 5. Global UI/UX & Theme Standards
+
+### Zero-Literal Theme Policy
+
+To ensure infinite theme compatibility (e.g., Onyx, Light, Discord-Dark), all frontend components MUST adhere to the following rules:
+
+- **No Hardcoded Colors**: `text-white`, `bg-black`, `slate-500`, etc., are PROHIBITED.
+- **Semantic Tokens Only**: Use `text-base-content`, `bg-base-100`, `primary`, `success`, `warning`, `error`, and `info` tokens.
+- **Overlay Consistency**: All modal and overlay backdrops must use `bg-overlay-mask backdrop-blur-sm`.
+- **Dynamic Shadows**: Avoid `shadow-black`. Use `shadow-[0_4px_12px_var(--color-border-muted)]` or similar variable-based elevation.
+- **Verification**: Every new UI component must be verified in both the highest-contrast Light and Dark themes before merging.
+
+### Standardized Internationalization (I18n)
+
+The application is a multi-language platform (English, Indonesian, Chinese).
+
+- **No Hardcoded Strings**: All UI labels, tooltips, and messages must use the `useTranslation` hook.
+- **Namespace-Scoped**: Standardize keys in relevant namespaces (e.g., `common`, `folder_grid`, `preview`).
+- **Dynamic Labels**: Use `t('key', { variable })` for all dynamic data strings.
+- **RTL Readiness**: Layouts should be flex/grid based to support future RTL translations if needed.
+
+---
+
+## 6. Dependencies
 
 - **Blocked by**: Epic 01 (App Bootstrap), Epic 02 (Game Management — game switcher, launch), Epic 04 (Settings — `auto_close` flag).
 - **Blocks**: Epic 06 (ObjectList Navigation), Epic 07 (Object List), Epic 12 (Folder Grid UI), Epic 16 (Preview Panel) — all are mounted inside the `ResizableWorkspace`.

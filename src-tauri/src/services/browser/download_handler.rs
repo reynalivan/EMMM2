@@ -34,7 +34,7 @@ pub async fn start_concurrent_download(
     };
 
     let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) EMMM2/0.1.0")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) EMMM/0.1.0")
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 

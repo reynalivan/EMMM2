@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../../hooks/useSettings';
+import { commands } from '../../lib/bindings';
 import { ShieldCheck, ShieldAlert, X, KeyRound, RotateCcw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface PinEntryModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (pin: string) => void;
   title?: string;
   description?: string;
+  cancellable?: boolean;
 }
 
 type View = 'pin' | 'recovery';
@@ -17,9 +20,11 @@ export default function PinEntryModal({
   open,
   onClose,
   onSuccess,
-  title = 'Enter PIN',
-  description = 'A PIN is required to disable Safe Mode.',
+  title,
+  description,
+  cancellable = true,
 }: PinEntryModalProps) {
+  const { t } = useTranslation(['safe_mode', 'common']);
   const [view, setView] = useState<View>('pin');
   const [pin, setPin] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -57,21 +62,24 @@ export default function PinEntryModal({
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pin.length !== 6) {
-      setErrorMsg('PIN must be 6 digits');
+      setErrorMsg(t('safe_mode:pin_entry.error.length'));
       return;
     }
 
     try {
-      const status = await verifyPin(pin);
-      if (status.valid) {
-        onSuccess();
+      const isValid = await verifyPin(pin);
+      if (isValid) {
+        onSuccess(pin);
         onClose();
       } else {
-        if (status.locked_seconds_remaining > 0) {
-          setLockoutTimer(status.locked_seconds_remaining);
-          setErrorMsg(`Too many failed attempts. Locked for ${status.locked_seconds_remaining}s`);
+        const status = await commands.getPinStatus();
+        if (status.is_locked) {
+          setLockoutTimer(status.lockout_seconds_remaining);
+          setErrorMsg(
+            t('safe_mode:pin_entry.error.locked', { seconds: status.lockout_seconds_remaining }),
+          );
         } else {
-          setErrorMsg(`Invalid PIN. ${status.attempts_remaining} attempts remaining.`);
+          setErrorMsg(t('safe_mode:pin_entry.error.invalid', { count: status.attempts_remaining }));
         }
         setPin('');
       }
@@ -85,7 +93,7 @@ export default function PinEntryModal({
     setRecoveryError(null);
 
     if (!recoveryInput.trim()) {
-      setRecoveryError('Please enter your recovery code.');
+      setRecoveryError(t('safe_mode:recovery.error.empty'));
       return;
     }
 
@@ -94,7 +102,7 @@ export default function PinEntryModal({
       if (valid) {
         setRecoverySuccess(true);
       } else {
-        setRecoveryError('Invalid recovery code. Please check and try again.');
+        setRecoveryError(t('safe_mode:recovery.error.invalid'));
       }
     } catch (err) {
       setRecoveryError(String(err));
@@ -107,23 +115,27 @@ export default function PinEntryModal({
 
   return createPortal(
     <div className="modal modal-open z-1000">
-      <div className="modal-box bg-base-300 border border-white/10 shadow-2xl safe-mode-modal relative">
-        <button
-          onClick={onClose}
-          className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-        >
-          <X size={18} />
-        </button>
+      <div className="modal-box bg-base-300 border border-base-content/10 shadow-2xl safe-mode-modal relative">
+        {cancellable && (
+          <button
+            onClick={onClose}
+            className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+          >
+            <X size={18} />
+          </button>
+        )}
 
         {/* ── PIN View ── */}
         {view === 'pin' && (
           <>
             <h3 className="font-bold text-lg flex items-center gap-2 text-warning mb-2">
               {isLocked ? <ShieldAlert size={20} /> : <ShieldCheck size={20} />}
-              {title}
+              {title || t('safe_mode:pin_entry.title')}
             </h3>
 
-            <p className="py-2 text-sm text-white/70">{description}</p>
+            <p className="py-2 text-sm text-base-content/70">
+              {description || t('safe_mode:pin_entry.desc')}
+            </p>
 
             <form onSubmit={handlePinSubmit} className="mt-4 form-control w-full">
               <input
@@ -131,9 +143,9 @@ export default function PinEntryModal({
                 className={`input input-bordered w-full text-center text-2xl tracking-[0.5em] transition-all bg-base-200 outline-none ${
                   errorMsg
                     ? 'border-error/50 focus:border-error'
-                    : 'border-white/10 focus:border-primary'
+                    : 'border-base-content/10 focus:border-primary'
                 }`}
-                placeholder="••••••"
+                placeholder={t('safe_mode:pin_entry.placeholder')}
                 maxLength={6}
                 value={pin}
                 onChange={(e) => {
@@ -148,25 +160,27 @@ export default function PinEntryModal({
                 {errorMsg && <span className="text-xs text-error font-medium">{errorMsg}</span>}
                 {isLocked && !errorMsg && (
                   <span className="text-xs text-warning font-medium">
-                    Try again in {lockoutTimer} seconds
+                    {t('safe_mode:pin_entry.lockout', { seconds: lockoutTimer })}
                   </span>
                 )}
               </div>
 
               <div className="modal-action mt-6 gap-2">
-                <button
-                  type="button"
-                  className="btn btn-ghost hover:bg-white/5 flex-1"
-                  onClick={onClose}
-                >
-                  Cancel
-                </button>
+                {cancellable && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost hover:bg-base-content/5 flex-1"
+                    onClick={onClose}
+                  >
+                    {t('common:actions.cancel')}
+                  </button>
+                )}
                 <button
                   type="submit"
                   className="btn btn-primary flex-1 shadow-lg shadow-primary/20"
                   disabled={pin.length !== 6 || isLocked}
                 >
-                  Verify
+                  {t('safe_mode:pin_entry.verify')}
                 </button>
               </div>
             </form>
@@ -180,7 +194,7 @@ export default function PinEntryModal({
                   onClick={() => setView('recovery')}
                 >
                   <RotateCcw size={12} />
-                  Forgot PIN? Use Recovery Code
+                  {t('safe_mode:pin_entry.forgot')}
                 </button>
               </div>
             )}
@@ -192,15 +206,13 @@ export default function PinEntryModal({
           <>
             <h3 className="font-bold text-lg flex items-center gap-2 text-warning mb-2">
               <KeyRound size={20} />
-              PIN Recovery
+              {t('safe_mode:recovery.title')}
             </h3>
 
             {!recoverySuccess ? (
               <>
-                <p className="py-2 text-sm text-white/70">
-                  Enter your <strong>Recovery Code</strong> (format:{' '}
-                  <span className="font-mono text-warning">EMMM-XXXX-XXXX-XXXX</span>). This will
-                  remove your PIN so you can set a new one.
+                <p className="py-2 text-sm text-base-content/70">
+                  {t('safe_mode:recovery.desc_format')}
                 </p>
 
                 <form onSubmit={handleRecoverySubmit} className="mt-4 form-control w-full">
@@ -209,9 +221,9 @@ export default function PinEntryModal({
                     className={`input input-bordered w-full font-mono text-center tracking-widest uppercase bg-base-200 outline-none ${
                       recoveryError
                         ? 'border-error/50 focus:border-error'
-                        : 'border-white/10 focus:border-warning'
+                        : 'border-base-content/10 focus:border-warning'
                     }`}
-                    placeholder="EMMM-XXXX-XXXX-XXXX"
+                    placeholder={t('safe_mode:recovery.placeholder')}
                     value={recoveryInput}
                     onChange={(e) => {
                       setRecoveryError(null);
@@ -227,17 +239,17 @@ export default function PinEntryModal({
                   <div className="modal-action mt-6 gap-2">
                     <button
                       type="button"
-                      className="btn btn-ghost hover:bg-white/5 flex-1"
+                      className="btn btn-ghost hover:bg-base-content/5 flex-1"
                       onClick={() => setView('pin')}
                     >
-                      ← Back
+                      ← {t('common:actions.back')}
                     </button>
                     <button
                       type="submit"
                       className="btn btn-warning flex-1"
                       disabled={!recoveryInput.trim()}
                     >
-                      Reset PIN
+                      {t('safe_mode:recovery.reset')}
                     </button>
                   </div>
                 </form>
@@ -248,22 +260,23 @@ export default function PinEntryModal({
                   <ShieldCheck size={28} className="text-success" />
                 </div>
                 <div>
-                  <p className="font-bold text-success">PIN Removed Successfully</p>
+                  <p className="font-bold text-success">{t('safe_mode:recovery.success.title')}</p>
                   <p className="text-sm text-base-content/60 mt-1">
-                    Your PIN has been cleared. Go to <strong>Settings → Privacy → Set PIN</strong>{' '}
-                    to create a new one.
+                    {t('safe_mode:recovery.success.desc')}
                   </p>
                 </div>
                 <button className="btn btn-success w-full" onClick={onClose}>
-                  Close
+                  {t('common:actions.close')}
                 </button>
               </div>
             )}
           </>
         )}
       </div>
-      <form method="dialog" className="modal-backdrop bg-black/40 backdrop-blur-[2px]">
-        <button onClick={onClose}>close</button>
+      <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-[2px]">
+        <button onClick={cancellable ? onClose : undefined} disabled={!cancellable}>
+          {t('common:actions.close')}
+        </button>
       </form>
     </div>,
     document.body,

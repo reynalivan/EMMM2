@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient } from '@tanstack/react-query';
 import { folderKeys } from '../../hooks/useFolders';
@@ -7,8 +6,8 @@ import { thumbnailKeys } from '../../hooks/useThumbnail';
 import { relativePathFromRoot } from '../../lib/pathKey';
 import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
-import { reconcileActiveCollection } from '../collections/utils/reconcileActiveCollection';
 import type { GameConfig } from '../../types/game';
+import { commands } from '../../lib/bindings';
 
 /**
  * Typed IPC payload from the Rust backend.
@@ -26,28 +25,37 @@ export type WatchEventPayload =
  * Hook 1: Manages the lifecycle (start/stop) of the Rust filesystem watcher
  * when the active game changes.
  */
-export function useWatcherLifecycle(activeGame: GameConfig | null) {
+export function useWatcherLifecycle(activeGame: GameConfig | null, safeMode: boolean) {
   useEffect(() => {
     let cancelled = false;
     const init = async () => {
+      console.log('[Watcher] SafeMode changed or Game changed. Initializing lifecycle...');
       // Always stop existing watcher first to prevent duplicates
-      await invoke('stop_watcher_cmd').catch(() => {});
+      await commands.stopWatcherCmd().catch(() => {});
       if (cancelled) return;
 
       if (activeGame?.mod_path && activeGame?.id) {
-        await invoke('start_watcher_cmd', {
-          path: activeGame.mod_path,
-          gameId: activeGame.id,
-        }).catch((err) => console.error('Failed to start watcher:', err));
+        console.log(
+          `[Watcher] Starting watcher for ${activeGame.id} at ${activeGame.mod_path} (SafeMode: ${safeMode})`,
+        );
+        await commands
+          .startWatcherCmd({
+            path: activeGame.mod_path,
+            gameId: activeGame.id,
+          })
+          .catch((err: unknown) => console.error('[Watcher] Failed to start:', err));
+      } else {
+        console.log('[Watcher] No active game or path, watcher will remain stopped.');
       }
     };
     init();
 
     return () => {
+      console.log('[Watcher] Cleanup: Stopping watcher');
       cancelled = true;
-      invoke('stop_watcher_cmd').catch(() => {});
+      commands.stopWatcherCmd().catch(() => {});
     };
-  }, [activeGame?.mod_path, activeGame?.id]);
+  }, [activeGame?.mod_path, activeGame?.id, safeMode]);
 }
 
 /**
@@ -198,22 +206,22 @@ export function useWatcherReactions(events: WatchEventPayload[], queryClient: Qu
       // Status change only: invalidate objects and category counts
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      void reconcileActiveCollection();
+      queryClient.invalidateQueries({ queryKey: ['corridor'] });
     }
 
     if (hasStructureChange) {
       // Structure change: invalidate all queries
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      void reconcileActiveCollection();
+      queryClient.invalidateQueries({ queryKey: ['corridor'] });
     }
 
     if (totals.modified > 0 && !hasStructureChange && totals.statusChanged === 0) {
       // Only modified files (e.g. .ini, thumbnail edits): silent invalidation
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'active' });
     }
 
     // Only show toast if user is actively viewing mods (req-05)

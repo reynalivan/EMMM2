@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
 import { useUpdateObject } from '../../../hooks/useObjects';
 import {
   useRenameMod,
@@ -14,18 +14,22 @@ import {
   ModFolder,
   ModInfo,
 } from '../../../hooks/useFolders';
-import type { ObjectSummary, GameObject } from '../../../types/object';
+import { ItemStatus } from '../../../types/object';
+import type { ObjectSummary } from '../../../types/object';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 
 export const schema = z
   .object({
     name: z.string().min(1, 'Name is required'),
-    object_type: z.string().min(1, 'Type is required'),
+    object_type: z.string().min(1, 'Category is required'),
     sub_category: z.string().optional().nullable(),
     is_safe: z.boolean(),
     is_auto_sync: z.boolean(),
     metadata: z.record(z.string(), z.unknown()).optional(),
     tags: z.array(z.string()).optional(),
+    status: z.nativeEnum(ItemStatus).optional(),
+    hash_db: z.string().optional().nullable(),
+    custom_skins: z.string().optional().nullable(),
     has_custom_skin: z.boolean().optional(),
     custom_skin: z
       .object({
@@ -77,7 +81,7 @@ export function useEditObjectForm(
 
   // Detect type
   const isFolder = object && 'path' in object;
-  const isObject = object && 'id' in object && !('path' in object);
+  const isObject = !!(object && 'id' in object && !('path' in object));
 
   // Fetch full details
   const {
@@ -93,12 +97,10 @@ export function useEditObjectForm(
       if (!object) return null;
       if (isFolder) {
         const folder = object as ModFolder;
-        const info = await invoke<ModInfo | null>('read_mod_info', { folderPath: folder.path });
-        return { type: 'folder', data: info };
+        return { type: 'folder', data: await commands.readModInfo({ folderPath: folder.path }) };
       } else {
         const obj = object as ObjectSummary;
-        const data = await invoke<GameObject | null>('get_object', { id: obj.id });
-        return { type: 'object', data };
+        return { type: 'object', data: await commands.getObject({ id: obj.id }) };
       }
     },
     enabled: !!open && !!object,
@@ -116,6 +118,9 @@ export function useEditObjectForm(
       is_auto_sync: false,
       metadata: {},
       tags: [],
+      status: ItemStatus.Enabled,
+      hash_db: null,
+      custom_skins: null,
       has_custom_skin: false,
       custom_skin: { name: '', aliases: [], thumbnail_skin_path: '', rarity: '' },
     },
@@ -133,6 +138,9 @@ export function useEditObjectForm(
     let defaultAutoSync: boolean;
     let defaultMeta: Record<string, unknown> = {};
     let defaultTags: string[] = [];
+    let defaultStatus: ItemStatus = ItemStatus.Enabled;
+    let defaultHashDb: string | null = null;
+    let defaultCustomSkins: string | null = null;
     let defaultCustomSkin:
       | {
           name: string;
@@ -157,14 +165,14 @@ export function useEditObjectForm(
         }
       }
     } else if (fullDetails?.type === 'object' && fullDetails.data) {
-      const obj = fullDetails.data as GameObject;
+      const obj = fullDetails.data as unknown as ObjectSummary;
       defaultType = obj.object_type;
       defaultAutoSync = obj.is_auto_sync;
       try {
         if (typeof obj.metadata === 'string') {
           defaultMeta = JSON.parse(obj.metadata);
         } else {
-          defaultMeta = obj.metadata as Record<string, unknown>;
+          defaultMeta = (obj.metadata as Record<string, unknown>) || {};
         }
         if (defaultMeta.custom_skin) {
           defaultCustomSkin = defaultMeta.custom_skin as unknown as NonNullable<
@@ -185,15 +193,26 @@ export function useEditObjectForm(
       } catch {
         // Ignore JSON parse error
       }
+      defaultStatus = obj.status ?? ItemStatus.Enabled;
+      defaultHashDb = obj.hash_db ? JSON.stringify(obj.hash_db, null, 2) : null;
+      defaultCustomSkins = obj.custom_skins ? JSON.stringify(obj.custom_skins, null, 2) : null;
     } else {
       defaultType = isObject ? (object as ObjectSummary).object_type : '';
       defaultAutoSync = isObject ? (object as ObjectSummary).is_auto_sync : false;
-      if (isObject && (object as ObjectSummary).tags) {
-        try {
-          const parsedTags = JSON.parse((object as ObjectSummary).tags);
-          if (Array.isArray(parsedTags)) defaultTags = parsedTags.map(String);
-        } catch {
-          // Ignore JSON parse error
+      if (isObject) {
+        const objSum = object as ObjectSummary;
+        defaultStatus = objSum.status ?? ItemStatus.Enabled;
+        defaultHashDb = objSum.hash_db ? JSON.stringify(objSum.hash_db, null, 2) : null;
+        defaultCustomSkins = objSum.custom_skins
+          ? JSON.stringify(objSum.custom_skins, null, 2)
+          : null;
+        if (objSum.tags) {
+          try {
+            const parsedTags = JSON.parse(objSum.tags);
+            if (Array.isArray(parsedTags)) defaultTags = parsedTags.map(String);
+          } catch {
+            // Ignore JSON parse error
+          }
         }
       }
     }
@@ -204,6 +223,9 @@ export function useEditObjectForm(
       sub_category: isObject ? (object as ObjectSummary).sub_category : '',
       is_safe: defaultSafe,
       is_auto_sync: defaultAutoSync,
+      status: defaultStatus,
+      hash_db: defaultHashDb,
+      custom_skins: defaultCustomSkins,
       metadata: defaultMeta,
       tags: defaultTags,
       has_custom_skin: defaultHasCustomSkin,
@@ -242,6 +264,9 @@ export function useEditObjectForm(
             object_type: data.object_type,
             sub_category: data.sub_category || undefined,
             is_auto_sync: data.is_auto_sync,
+            status: data.status,
+            hash_db: data.hash_db ? JSON.parse(data.hash_db) : null,
+            custom_skins: data.custom_skins ? JSON.parse(data.custom_skins) : null,
             metadata: finalMeta,
             tags: data.tags || [],
             thumbnail_path:

@@ -10,6 +10,19 @@ vi.mock('./hooks/useFolderGrid', () => ({
   useFolderGrid: () => mockUseFolderGrid(),
 }));
 
+const mockAppStoreState = {
+  safeMode: true,
+  activePane: 'folderGrid',
+  setActivePane: vi.fn(),
+};
+
+vi.mock('../../stores/useAppStore', () => ({
+  useAppStore: Object.assign(
+    vi.fn((selector) => (selector ? selector(mockAppStoreState) : mockAppStoreState)),
+    { getState: () => mockAppStoreState },
+  ),
+}));
+
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
@@ -20,6 +33,10 @@ vi.mock('../../hooks/useFolders', () => ({
 
 vi.mock('../../hooks/useSettings', () => ({
   useSettings: () => ({ data: { organize_subfolders: true }, isLoading: false }),
+}));
+
+vi.mock('../../hooks/useActiveGame', () => ({
+  useActiveGame: () => ({ activeGame: { id: 'test-game', mod_path: 'C:\\mods' } }),
 }));
 
 // Mock subcomponents
@@ -33,8 +50,10 @@ vi.mock('./FolderListRow', () => ({
   default: ({ item }: { item: ModFolder }) => <div data-testid="folder-row">{item.name}</div>,
 }));
 
-vi.mock('./Breadcrumbs', () => ({
-  default: () => <div>Breadcrumbs</div>,
+vi.mock('../../components/ui/ContextMenu', () => ({
+  ContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ContextMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ContextMenuSeparator: () => <hr />,
 }));
 
 vi.mock('./DragOverlay', () => ({
@@ -47,6 +66,18 @@ vi.mock('../../components/ui/ConfirmDialog', () => ({
 
 vi.mock('./BulkTagModal', () => ({
   BulkTagModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div>BulkTagModal</div> : null),
+}));
+
+vi.mock('./BulkActionBar', () => ({
+  default: () => <div data-testid="bulk-action-bar" />,
+}));
+
+vi.mock('./FolderGridModals', () => ({
+  default: () => <div data-testid="folder-grid-modals" />,
+}));
+
+vi.mock('./BulkProgressBar', () => ({
+  default: () => <div data-testid="bulk-progress-bar" />,
 }));
 
 const defaultHookReturn = {
@@ -71,6 +102,7 @@ const defaultHookReturn = {
 
   // Virtualization
   parentRef: { current: null },
+  virtualItems: [],
   rowVirtualizer: {
     getTotalSize: () => 1000,
     getVirtualItems: () => [],
@@ -189,12 +221,14 @@ describe('FolderGrid', () => {
         is_safe: true,
         metadata: null,
         category: null,
+        warnings: [],
       },
     ];
 
     mockUseFolderGrid.mockReturnValue({
       ...defaultHookReturn,
       sortedFolders: mockData,
+      virtualItems: [{ index: 0, start: 0, size: 200, key: '0' }],
       rowVirtualizer: {
         getTotalSize: () => 200,
         getVirtualItems: () => [{ index: 0, start: 0, size: 200, key: '0' }],
@@ -213,6 +247,7 @@ describe('FolderGrid', () => {
       sortedFolders: [
         { name: 'Mod A', path: '/Mod A', is_directory: true } as unknown as ModFolder,
       ],
+      virtualItems: [{ index: 0, start: 0, size: 200, key: '0' }],
       rowVirtualizer: {
         getTotalSize: () => 200,
         getVirtualItems: () => [{ index: 0, start: 0, size: 200, key: '0' }],
@@ -231,6 +266,7 @@ describe('FolderGrid', () => {
       sortedFolders: [
         { name: 'Mod B', path: '/Mod B', is_directory: true } as unknown as ModFolder,
       ],
+      virtualItems: [{ index: 0, start: 0, size: 50, key: '0' }],
       rowVirtualizer: {
         getTotalSize: () => 50,
         getVirtualItems: () => [{ index: 0, start: 0, size: 50, key: '0' }],

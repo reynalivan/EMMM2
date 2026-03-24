@@ -45,21 +45,25 @@ describe('useSafeMode', () => {
 });
 ```
 
-## 3. Mocking Tauri Commands
+## 3. Mocking Tauri Commands (Typed)
 
-**Use for:** Components that call backend via `invoke`.
+**Use for:** Components/hooks that call backend via typed `commands` from `bindings.ts`.
+
+> **IMPORTANT:** Do NOT mock raw `invoke` from `@tauri-apps/api/core`. Always mock the typed `commands` object.
 
 ```tsx
-// test/setup.ts or inside test file
-import { mockIPC } from '@tauri-apps/api/mocks';
+import { commands } from '../../lib/bindings';
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+// Mock the entire bindings module
+vi.mock('../../lib/bindings', () => ({
+  commands: {
+    listMods: vi.fn(),
+    getVersion: vi.fn(),
+  },
 }));
 
 it('fetches mods on mount', async () => {
-  const invokeMock = vi.mocked(invoke);
-  invokeMock.mockResolvedValue([{ id: 1, name: 'Mod A' }]);
+  vi.mocked(commands.listMods).mockResolvedValue([{ id: 1, name: 'Mod A' }]);
 
   render(<ModList />);
 

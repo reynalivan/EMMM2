@@ -26,6 +26,8 @@ describe('ObjectContextMenu', () => {
       name: 'Zeta',
       objectType: 'Character',
       isEnabled: true,
+      enabledCount: 5,
+      modCount: 10,
       isPinned: false,
     };
     const onPin = vi.fn();
@@ -58,9 +60,12 @@ describe('ObjectContextMenu', () => {
   it('renders folder menu correctly', () => {
     const folderTarget: ContextMenuTarget = {
       type: 'folder',
-      path: 'C:\\mods',
+      id: 'C:\\mods',
       name: 'Mods',
       isEnabled: true,
+      enabledCount: 0,
+      modCount: 0,
+      isPinned: false,
     };
     const onToggle = vi.fn();
 

@@ -1,0 +1,79 @@
+{
+  "empty": {
+    "no_mod_selected": "Tidak ada mod terpilih",
+    "select_folder": "Pilih folder dari daftar untuk melihat detail, mengelola gambar, dan mengedit konfigurasi."
+  },
+  "actions": {
+    "import_archives": "Impor Arsip",
+    "import_folders": "Impor Folder",
+    "view_location": "Buka Lokasi File",
+    "edit_metadata": "Edit Metadata",
+    "revert": "Urungkan",
+    "done": "Selesai",
+    "save": "Simpan",
+    "close": "Tutup",
+    "edit": "Edit"
+  },
+  "metadata": {
+    "title": "Metadata",
+    "author": "Penulis",
+    "author_placeholder": "Tidak diketahui",
+    "unknown_author": "Penulis Tidak Diketahui",
+    "version": "Versi",
+    "version_placeholder": "1.0",
+    "version_default": "1.0",
+    "version_aria": "Versi mod",
+    "description": "Deskripsi",
+    "description_placeholder": "Tidak ada deskripsi tersedia.",
+    "no_description": "Tidak ada deskripsi tersedia.",
+    "auto_saving": "menyimpan otomatis...",
+    "revert_title": "Urungkan perubahan metadata dan batalkan simpan otomatis",
+    "edit_title": "Edit Metadata",
+    "double_click_edit": "Klik dua kali untuk mengedit",
+    "auto_saving_label": "menyimpan otomatis…",
+    "done_label": "Selesai"
+  },
+  "gallery": {
+    "title": "Gambar Pratinjau",
+    "no_preview": "Pratinjau tidak tersedia",
+    "broken_image": "Gambar rusak",
+    "image_placeholder": "Placeholder gambar",
+    "prev_image": "Gambar sebelumnya",
+    "next_image": "Gambar berikutnya",
+    "fullscreen": "Layar Penuh",
+    "slider_label": "Slider gambar pratinjau",
+    "go_to_image": "Ke gambar {{index}}",
+    "menu": {
+      "paste": "Tempel Thumbnail",
+      "import": "Impor Thumbnail",
+      "remove_current": "Hapus Thumbnail Ini",
+      "clear_all": "Hapus Semua Thumbnail"
+    }
+  },
+  "ini_editor": {
+    "title": "INI Editor",
+    "no_sections": "Tidak ada bagian pengikatan kunci yang terdeteksi.",
+    "open_in_editor": "Buka di editor default",
+    "edit_keybinds": "Edit pengikatan kunci",
+    "close_edit": "Tutup mode edit",
+    "revert_changes": "Batalkan perubahan INI",
+    "save_changes": "Simpan perubahan INI",
+    "enter_field": "Masukkan {{label}}...",
+    "auto_detect": "Deteksi Otomatis Kombinasi Kunci",
+    "conflict_warning": "Peringatan: Kunci ini digunakan di beberapa bagian.",
+    "conflict_tooltip": "Konflik Kunci! Digunakan di beberapa bagian.",
+    "advanced_capture": "Penangkapan Kunci Lanjutan",
+    "original_key": "Kunci Asli",
+    "press_key_combo": "Tekan Kombinasi Kunci...",
+    "captured_click_to_recapture": "Kunci Ditangkap (Klik untuk menangkap ulang)",
+    "no_key": "Tidak ada kunci terdeteksi",
+    "strict_modifiers": "Modifier Ketat (Direkomendasikan)",
+    "strict_modifiers_hint": "Memastikan tindakan HANYA dipicu saat kombinasi TEPAT ditekan, mengabaikan kunci lain yang ditahan.",
+    "no_shift": "no_shift",
+    "no_ctrl": "no_ctrl",
+    "no_alt": "no_alt",
+    "shift_restriction_disabled": "Shift adalah bagian dari kombo, tidak bisa dibatasi.",
+    "ctrl_restriction_disabled": "Ctrl adalah bagian dari kombo, tidak bisa dibatasi.",
+    "alt_restriction_disabled": "Alt adalah bagian dari kombo, tidak bisa dibatasi."
+  }
+}

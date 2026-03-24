@@ -4,6 +4,7 @@
  */
 
 import { Loader2, AlertCircle, FolderOpen, FolderPlus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface StatesProps {
   isLoading: boolean;
@@ -32,6 +33,8 @@ export default function ObjectListStates({
   onCreateNew,
   onAutoSetup,
 }: StatesProps) {
+  const { t } = useTranslation(['objects']);
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center" data-testid="loading-spinner">
@@ -45,7 +48,7 @@ export default function ObjectListStates({
       <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4">
         <AlertCircle size={24} className="text-error/50" />
         <p className="text-xs text-base-content/50 text-center">
-          {errorMessage ?? 'Failed to load data'}
+          {errorMessage ?? t('states.load_error')}
         </p>
       </div>
     );
@@ -55,9 +58,7 @@ export default function ObjectListStates({
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
         <FolderOpen size={40} className="text-base-content/15" />
-        <p className="text-sm text-base-content/40 text-center">
-          Select a game from the top bar to get started
-        </p>
+        <p className="text-sm text-base-content/40 text-center">{t('states.select_game')}</p>
       </div>
     );
   }
@@ -65,10 +66,10 @@ export default function ObjectListStates({
   if (isEmpty) {
     const hasActiveFilters = Object.values(activeFilters).some((v) => v.length > 0);
     const message = sidebarSearchQuery
-      ? 'No results match your search'
+      ? t('states.no_search_results')
       : hasActiveFilters
-        ? 'No objects match filter'
-        : 'Drag mod folders here or create an object';
+        ? t('states.no_filter_results')
+        : t('states.empty_hint');
 
     return (
       <div
@@ -83,7 +84,7 @@ export default function ObjectListStates({
             onClick={onClearFilters}
             data-testid="clear-filters-btn"
           >
-            Clear Filters
+            {t('states.clear_filters')}
           </button>
         )}
         {sidebarSearchQuery && (
@@ -92,18 +93,18 @@ export default function ObjectListStates({
             onClick={onClearSearch}
             data-testid="clear-search-btn"
           >
-            Clear Search
+            {t('states.clear_search')}
           </button>
         )}
         {!sidebarSearchQuery && !hasActiveFilters && (
-          <div className="flex flex-col gap-2 mt-4 w-full max-w-[200px] items-center">
+          <div className="flex flex-col gap-2 mt-4 w-full max-w-50 items-center">
             <button className="btn btn-outline w-full gap-2" onClick={onCreateNew}>
               <FolderPlus size={16} />
-              Add New Folder
+              {t('states.add_folder')}
             </button>
             <button className="btn btn-primary w-full gap-2" onClick={onAutoSetup}>
               <FolderPlus size={16} />
-              Auto Setup Folder
+              {t('states.auto_setup')}
             </button>
           </div>
         )}

@@ -58,6 +58,24 @@ async fn test_scan_preview_needs_review_has_no_auto_assignment() {
     let temp_dir = TempDir::new().unwrap();
     let mod_dir = temp_dir.path().join("Sunset Pack");
     fs::create_dir(&mod_dir).unwrap();
+    fs::write(
+        mod_dir.join("mod.ini"),
+        "[TextureOverrideSunset]\nhash=12345678",
+    )
+    .unwrap();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/"),
+        },
+    )
+    .await
+    .unwrap();
 
     let db = needs_review_db();
     let items = scan_preview(&pool, "g1", temp_dir.path(), &db, None, None, None)
@@ -76,6 +94,7 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
     let temp_dir = TempDir::new().unwrap();
     let mod_dir = temp_dir.path().join("Sunset Pack");
     fs::create_dir(&mod_dir).unwrap();
+    fs::write(mod_dir.join("mod.ini"), "").unwrap();
 
     let items = vec![ConfirmedScanItem {
         folder_path: mod_dir.to_string_lossy().to_string(),
@@ -86,6 +105,9 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         thumbnail_path: None,
         tags_json: None,
         metadata_json: None,
+        hash_db_json: None,
+        custom_skins_json: None,
+        db_thumbnail: None,
         skip: false,
         move_from_temp: false,
     }];
@@ -130,6 +152,11 @@ async fn test_ensure_object_case_insensitive_merge() {
     let temp_dir = TempDir::new().unwrap();
     let mod_dir = temp_dir.path().join("hook");
     fs::create_dir(&mod_dir).unwrap();
+    fs::write(
+        mod_dir.join("mod.ini"),
+        "[TextureOverrideHook]\nhash=12345678",
+    )
+    .unwrap();
 
     // First commit: unmatched → obj_name = "hook" (Other, no thumbnail)
     let items_unmatched = vec![ConfirmedScanItem {
@@ -141,6 +168,9 @@ async fn test_ensure_object_case_insensitive_merge() {
         thumbnail_path: None,
         tags_json: None,
         metadata_json: None,
+        hash_db_json: None,
+        custom_skins_json: None,
+        db_thumbnail: None,
         skip: false,
         move_from_temp: false,
     }];
@@ -178,6 +208,9 @@ async fn test_ensure_object_case_insensitive_merge() {
         thumbnail_path: Some("thumbnails/hook.png".to_string()),
         tags_json: Some(r#"["fire"]"#.to_string()),
         metadata_json: Some(r#"{"rarity":"4-Star"}"#.to_string()),
+        hash_db_json: None,
+        custom_skins_json: None,
+        db_thumbnail: None,
         skip: false,
         move_from_temp: false,
     }];
@@ -232,6 +265,24 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
     let temp_dir = TempDir::new().unwrap();
     let mod_dir = temp_dir.path().join("Kazuha_New");
     fs::create_dir(&mod_dir).unwrap();
+    fs::write(
+        mod_dir.join("mod.ini"),
+        "[TextureOverrideKazuha]\nhash=12345678",
+    )
+    .unwrap();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/"),
+        },
+    )
+    .await
+    .unwrap();
 
     let items = vec![ConfirmedScanItem {
         folder_path: mod_dir.to_string_lossy().to_string(),
@@ -242,6 +293,9 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
         thumbnail_path: None,
         tags_json: Some("[]".to_string()),
         metadata_json: Some("{}".to_string()),
+        hash_db_json: None,
+        custom_skins_json: None,
+        db_thumbnail: None,
         skip: false,
         move_from_temp: false,
     }];
@@ -281,6 +335,11 @@ async fn test_commit_rolls_back_on_failure() {
     // Valid item
     let mod1_dir = temp_dir.path().join("Valid_Mod");
     fs::create_dir(&mod1_dir).unwrap();
+    fs::write(
+        mod1_dir.join("mod.ini"),
+        "[TextureOverrideValid]\nhash=12345678",
+    )
+    .unwrap();
 
     // Invalid item (will fail because source doesn't exist but move_from_temp = true)
     let mod2_dir = temp_dir.path().join("Missing_Temp_Mod");
@@ -295,6 +354,9 @@ async fn test_commit_rolls_back_on_failure() {
             thumbnail_path: None,
             tags_json: None,
             metadata_json: None,
+            hash_db_json: None,
+            custom_skins_json: None,
+            db_thumbnail: None,
             skip: false,
             move_from_temp: false,
         },
@@ -307,6 +369,9 @@ async fn test_commit_rolls_back_on_failure() {
             thumbnail_path: None,
             tags_json: None,
             metadata_json: None,
+            hash_db_json: None,
+            custom_skins_json: None,
+            db_thumbnail: None,
             skip: false,
             move_from_temp: true, // Will fail because source dir doesn't exist
         },
@@ -344,10 +409,18 @@ async fn test_commit_garbage_collects_ghost_objects() {
     let temp_dir = TempDir::new().unwrap();
 
     // Insert game first to satisfy FK
-    sqlx::query("INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Game', 'gimi', '/')")
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
 
     // Insert an object manually that has NO associated mods
     sqlx::query(

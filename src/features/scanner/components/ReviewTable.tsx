@@ -1,6 +1,7 @@
-import { flexRender } from '@tanstack/react-table';
 import type { ScanResultItem } from '../../../types/scanner';
 import { useReviewTable } from './useReviewTable';
+import { useTranslation } from 'react-i18next';
+import { flexRender } from '@tanstack/react-table';
 
 interface Props {
   data: ScanResultItem[];
@@ -21,6 +22,7 @@ export default function ReviewTable({
   onBulkDelete,
   onAutoOrganize,
 }: Props) {
+  const { t } = useTranslation(['scanner']);
   // logic extracted to useReviewTable to handle React Compiler compatibility
   const table = useReviewTable({ data, onOpenFolder, onRename });
 
@@ -32,7 +34,9 @@ export default function ReviewTable({
       {/* Bulk Actions Toolbar */}
       {selectedPaths.length > 0 && (
         <div className="flex items-center gap-2 p-2 bg-base-200 rounded-lg animate-in fade-in slide-in-from-top-1">
-          <span className="text-sm font-medium px-2">{selectedPaths.length} selected</span>
+          <span className="text-sm font-medium px-2">
+            {t('scanner:review.selected', { count: selectedPaths.length })}
+          </span>
           <div className="divider divider-horizontal my-0"></div>
           {onBulkEnable && (
             <button
@@ -42,7 +46,7 @@ export default function ReviewTable({
                 table.resetRowSelection();
               }}
             >
-              Enable
+              {t('scanner:review.actions.enable')}
             </button>
           )}
           {onBulkDisable && (
@@ -53,7 +57,7 @@ export default function ReviewTable({
                 table.resetRowSelection();
               }}
             >
-              Disable
+              {t('scanner:review.actions.disable')}
             </button>
           )}
           {onAutoOrganize && (
@@ -64,7 +68,7 @@ export default function ReviewTable({
                 table.resetRowSelection();
               }}
             >
-              Auto Organize
+              {t('scanner:review.actions.organize')}
             </button>
           )}
           {onBulkDelete && (
@@ -75,7 +79,7 @@ export default function ReviewTable({
                 table.resetRowSelection();
               }}
             >
-              Delete
+              {t('scanner:review.actions.delete')}
             </button>
           )}
         </div>
@@ -109,7 +113,7 @@ export default function ReviewTable({
 
         {data.length === 0 && (
           <div className="text-center py-8 text-base-content/50 text-sm">
-            No mods found. Try scanning again.
+            {t('scanner:review.empty')}
           </div>
         )}
       </div>

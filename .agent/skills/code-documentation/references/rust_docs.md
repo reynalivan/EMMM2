@@ -35,12 +35,14 @@ Place at the top of `mod.rs` or `lib.rs`.
 
 ## 3. Tauri Commands
 
-Document the Frontend <-> Backend contract.
+Document the Frontend ↔ Backend contract. Frontend uses typed `commands` from `lib/bindings.ts` (Specta-generated), NOT raw `invoke()`.
 
 ```rust
 /// Scans a directory for mods.
 ///
-/// **Frontend invoke:** `invoke('scan_mods', { path: '...' })`
+/// **Frontend usage:** `commands.scanMods({ path: '...' })`
+/// (auto-generated in `lib/bindings.ts` via Specta)
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_mods(path: String) -> CommandResult<Vec<Mod>> { ... }
 ```

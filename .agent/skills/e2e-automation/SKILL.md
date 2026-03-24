@@ -6,7 +6,7 @@ triggers: ['e2e', 'webdriverio', 'tauri automation testing', 'create e2e test']
 
 # 🤖 E2E Automation Skill (WebdriverIO + Tauri)
 
-This skill provides guidelines and patterns for writing GUI integration tests in EMMM2 using WebdriverIO and Tauri's native WebDriver.
+This skill provides guidelines and patterns for writing GUI integration tests in EMMM using WebdriverIO and Tauri's native WebDriver.
 
 ## 1. Directory Structure
 
@@ -20,7 +20,7 @@ Use standard Mocha `describe` and `it` blocks.
 ```typescript
 import { expect, browser, $ } from '@wdio/globals';
 
-describe('EMMM2 Feature: Mod Toggling', () => {
+describe('EMMM Feature: Mod Toggling', () => {
   it('should enable a disabled mod folder', async () => {
     // 1. Arrange: Find the target element
     const toggleGridItem = await $('[data-testid="mod-item-DISABLED-TestMod"]');
@@ -40,7 +40,7 @@ describe('EMMM2 Feature: Mod Toggling', () => {
 
 ## 3. Dealing With Asynchrony (CRITICAL)
 
-Tauri commands (`invoke`) and React State (`zustand`) take time.
+Tauri typed `commands` (from `bindings.ts`) and React State (`zustand`) take time.
 
 - NEVER assume the UI updates instantly.
 - **Good:** `await myBtn.waitForClickable({ timeout: 3000 })`
@@ -56,7 +56,7 @@ DaisyUI elements can sometimes be tricky to select via standard paths.
 
 ## 5. Mocking vs Native Execution
 
-WebdriverIO runs against the REAL `emmm2.exe`. If you edit a file during testing, it changes the real disk. Do NOT mock Rust logic during E2E. The intent of E2E in this project is to verify the IPC bridge end-to-end.
+WebdriverIO runs against the REAL `emmm.exe`. If you edit a file during testing, it changes the real disk. Do NOT mock Rust logic during E2E. The intent of E2E in this project is to verify the typed IPC bridge (`commands` from `bindings.ts`) end-to-end.
 
 ## 6. Execution & Build Requirements
 

@@ -1,0 +1,50 @@
+{
+  "conflicts": {
+    "title": "Konflik Mod",
+    "desc": "Beberapa mod untuk objek yang sama sedang diaktifkan.",
+    "resolution_desc": "Pilih mod yang ingin Anda biarkan aktif, atau abaikan peringatan untuk mengizinkan kombinasi spesifik ini.",
+    "incoming": "Masuk",
+    "keep_selected": "Aktifkan Hanya yang Dipilih",
+    "ignore_warning": "Abaikan Peringatan",
+    "toast": {
+      "resolved": "Konflik teratasi: hanya mod terpilih yang diaktifkan.",
+      "ignored": "Konflik diabaikan untuk kombinasi ini.",
+      "resolve_failed": "Resolusi gagal: {{error}}",
+      "ignore_failed": "Gagal mengabaikan: {{error}}"
+    }
+  },
+  "move": {
+    "title": "Pindah ke Objek",
+    "label": "Objek",
+    "placeholder": "Cari objek...",
+    "no_results": "Objek tidak ditemukan",
+    "current_marker": "(Sekarang)",
+    "status_label": "Atur Status",
+    "toast": {
+      "success": "Dipindahkan ke {{name}}",
+      "failed": "Gagal memindahkan: {{error}}"
+    }
+  },
+  "tags": {
+    "title": "Tag Massal",
+    "placeholder": "Ketik tag & tekan Enter...",
+    "empty": "Belum ada tag yang ditambahkan",
+    "toast": {
+      "success": "Tag diperbarui untuk {{count}} mod",
+      "failed": "Gagal memperbarui tag: {{error}}"
+    }
+  },
+  "resolution": {
+    "title": "Konflik Nama Terdeteksi",
+    "loading": "Memuat detail folder...",
+    "enabled_label": "Versi Aktif",
+    "disabled_label": "Versi Nonaktif"
+  },
+  "breadcrumbs": {
+    "root": "ROOT"
+  },
+  "context": {
+    "switching": "Beralih konteks...",
+    "active_warning": "Namun, mod ini saat ini sedang <strong>Aktif</strong>. Mod aktif tidak dapat diubah secara langsung."
+  }
+}

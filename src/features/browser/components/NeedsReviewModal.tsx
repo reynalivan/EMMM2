@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { ImportJobItem } from '../types';
 import type { GameConfig } from '../../../types/game';
+import { commands } from '../../../lib/bindings';
+import type { ImportJobItem } from '../types';
+import { ObjectCategory, OBJECT_CATEGORIES } from '../../../types/object';
 
 interface Props {
   job: ImportJobItem;
@@ -12,15 +14,18 @@ interface Props {
   onSkip: () => void;
 }
 
-const CATEGORIES = ['Character', 'Weapon', 'UI', 'Other'] as const;
+const CATEGORIES = OBJECT_CATEGORIES;
 
 export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Props) {
+  const { t } = useTranslation(['browser']);
   const [selectedGameId, setSelectedGameId] = useState<string>(job.game_id ?? '');
-  const [selectedCategory, setSelectedCategory] = useState<string>(job.match_category ?? 'Other');
+  const [selectedCategory, setSelectedCategory] = useState<string>(
+    job.match_category ?? ObjectCategory.Other,
+  );
 
   const gamesQuery = useQuery({
     queryKey: ['games'],
-    queryFn: () => invoke<GameConfig[]>('get_games'),
+    queryFn: () => commands.getGames(),
     enabled: open,
   });
 
@@ -56,22 +61,24 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
             </svg>
           </div>
           <div>
-            <h3 className="font-bold text-lg leading-tight">Manual Review Required</h3>
+            <h3 className="font-bold text-lg leading-tight">{t('review.title')}</h3>
             <p className="text-sm text-base-content/60 mt-1">{job.match_reason}</p>
           </div>
         </div>
 
         {/* Archive info */}
         <div className="bg-base-300 rounded-lg p-3 mb-4">
-          <p className="text-xs text-base-content/50 mb-1">Archive</p>
+          <p className="text-xs text-base-content/50 mb-1">{t('review.archive')}</p>
           <p className="text-sm font-mono truncate">{job.archive_path.split(/[/\\]/).pop()}</p>
-          {job.is_duplicate && <div className="badge badge-warning badge-sm mt-2">Duplicate</div>}
+          {job.is_duplicate && (
+            <div className="badge badge-warning badge-sm mt-2">{t('review.duplicate')}</div>
+          )}
         </div>
 
         {/* Game Picker */}
         <div className="form-control mb-4">
           <label className="label py-1">
-            <span className="label-text font-medium">Target Game</span>
+            <span className="label-text font-medium">{t('review.target_game')}</span>
           </label>
           <select
             id="review-game-select"
@@ -79,8 +86,8 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
             value={selectedGameId}
             onChange={(e) => setSelectedGameId(e.target.value)}
           >
-            <option value="">— Select game —</option>
-            {games.map((g) => (
+            <option value="">{t('review.select_game')}</option>
+            {games.map((g: GameConfig) => (
               <option key={g.id} value={g.id}>
                 {g.name}
               </option>
@@ -91,7 +98,7 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
         {/* Category Picker */}
         <div className="form-control mb-4">
           <label className="label py-1">
-            <span className="label-text font-medium">Mod Category</span>
+            <span className="label-text font-medium">{t('review.mod_category')}</span>
           </label>
           <div className="flex gap-2 flex-wrap">
             {CATEGORIES.map((cat) => (
@@ -121,10 +128,10 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
 
         <div className="modal-action mt-2">
           <button className="btn btn-ghost btn-sm" onClick={onSkip}>
-            Skip
+            {t('review.skip')}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            Cancel
+            {t('review.cancel')}
           </button>
           <button
             id="review-confirm-btn"
@@ -132,7 +139,7 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
             disabled={!selectedGameId || !selectedCategory}
             onClick={() => onConfirm(selectedGameId, selectedCategory, null)}
           >
-            Confirm & Import
+            {t('review.confirm')}
           </button>
         </div>
       </div>

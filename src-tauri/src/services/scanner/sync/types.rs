@@ -1,16 +1,24 @@
+use crate::services::scanner::core::types::CollisionInfo;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncResult {
+    #[specta(type = f64)]
     pub total_scanned: usize,
+    #[specta(type = f64)]
     pub new_mods: usize,
+    #[specta(type = f64)]
     pub updated_mods: usize,
+    #[specta(type = f64)]
     pub deleted_mods: usize,
+    #[specta(type = f64)]
     pub new_objects: usize,
+    pub collisions: Vec<CollisionInfo>,
 }
 
 /// A single preview item returned by scan_preview (before user confirms).
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanPreviewItem {
     pub folder_path: String,
@@ -34,10 +42,15 @@ pub struct ScanPreviewItem {
     pub already_matched: bool,
     /// Top-k scored candidates from the matcher (name + percentage).
     pub scored_candidates: Vec<ScoredCandidate>,
+    /// Optional hash_db from MasterDB entry (JSON object string)
+    pub hash_db_json: Option<String>,
+    /// Optional custom_skins from MasterDB entry (JSON array string)
+    pub custom_skins_json: Option<String>,
+    pub db_thumbnail: Option<String>,
 }
 
 /// A lightweight scored candidate for the frontend dropdown.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoredCandidate {
     pub name: String,
@@ -46,7 +59,7 @@ pub struct ScoredCandidate {
 }
 
 /// User-confirmed item sent back from the review modal.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmedScanItem {
     pub folder_path: String,
@@ -57,6 +70,9 @@ pub struct ConfirmedScanItem {
     pub thumbnail_path: Option<String>,
     pub tags_json: Option<String>,
     pub metadata_json: Option<String>,
+    pub hash_db_json: Option<String>,
+    pub custom_skins_json: Option<String>,
+    pub db_thumbnail: Option<String>,
     pub skip: bool,
     #[serde(default)]
     pub move_from_temp: bool,

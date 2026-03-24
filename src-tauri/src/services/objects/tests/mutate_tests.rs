@@ -1,4 +1,4 @@
-use crate::database::object_repo::{CreateObjectInput, UpdateObjectInput};
+use crate::repo::object_repo::{CreateObjectInput, UpdateObjectInput};
 use crate::services::objects::mutate::{
     create_object_cmd_inner, delete_object, toggle_pin_object, update_object,
 };
@@ -12,10 +12,16 @@ async fn test_create_object_cmd_inner_success() {
     let pool = setup_test_db().await;
 
     // Insert a game
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -25,8 +31,11 @@ async fn test_create_object_cmd_inner_success() {
         folder_path: Some("my_folder".to_string()),
         object_type: "Character".to_string(),
         sub_category: None,
+        status: None,
         metadata: None,
         thumbnail_url: None,
+        hash_db: None,
+        custom_skins: None,
     };
 
     let id = create_object_cmd_inner(&pool, None, input)
@@ -46,10 +55,16 @@ async fn test_create_object_cmd_inner_success() {
 async fn test_create_object_cmd_inner_conflict() {
     let pool = setup_test_db().await;
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -59,8 +74,11 @@ async fn test_create_object_cmd_inner_conflict() {
         folder_path: None,
         object_type: "Weapon".to_string(),
         sub_category: None,
+        status: None,
         metadata: None,
         thumbnail_url: None,
+        hash_db: None,
+        custom_skins: None,
     };
 
     // First creation should succeed
@@ -79,53 +97,91 @@ async fn test_create_object_cmd_inner_conflict() {
 async fn test_toggle_pin_object() {
     let pool = setup_test_db().await;
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES ('o1', 'g1', 'Obj1', 'path', 'Char')")
-        .execute(&pool).await.unwrap();
+
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Obj1",
+            folder_path: Some("path"),
+            object_type: "Char",
+        },
+    )
+    .await
+    .unwrap();
 
     toggle_pin_object(&pool, "o1", true).await.unwrap();
 
-    let is_pinned: bool = sqlx::query_scalar("SELECT is_pinned FROM objects WHERE id = 'o1'")
+    let is_pinned: i32 = sqlx::query_scalar("SELECT is_pinned FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert!(is_pinned);
+    assert_eq!(is_pinned, 1);
 
     toggle_pin_object(&pool, "o1", false).await.unwrap();
 
-    let is_pinned: bool = sqlx::query_scalar("SELECT is_pinned FROM objects WHERE id = 'o1'")
+    let is_pinned: i32 = sqlx::query_scalar("SELECT is_pinned FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert!(!is_pinned);
+    assert_eq!(is_pinned, 0);
 }
 
 #[tokio::test]
 async fn test_update_object() {
     let pool = setup_test_db().await;
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES ('o1', 'g1', 'Obj1', 'path', 'Char')")
-        .execute(&pool).await.unwrap();
+
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Obj1",
+            folder_path: Some("path"),
+            object_type: "Char",
+        },
+    )
+    .await
+    .unwrap();
 
     let updates = UpdateObjectInput {
         name: Some("RenamedObj".to_string()),
         object_type: None,
         sub_category: None,
+        status: None,
         metadata: None,
         thumbnail_path: None,
         is_auto_sync: None,
+        is_pinned: None,
         tags: None,
+        hash_db: None,
+        custom_skins: None,
     };
 
     update_object(&pool, "o1", &updates).await.unwrap();
@@ -146,16 +202,33 @@ async fn test_delete_object_empty() {
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES ('o1', 'g1', 'Obj1', 'path', 'Char')")
-        .execute(&pool).await.unwrap();
 
-    delete_object(&pool, "o1", &trash_dir, &watcher_state, &op_lock)
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Obj1",
+            folder_path: Some("path"),
+            object_type: "Char",
+        },
+    )
+    .await
+    .unwrap();
+
+    delete_object(&pool, "o1", false, &trash_dir, &watcher_state, &op_lock)
         .await
         .unwrap();
 
@@ -175,21 +248,68 @@ async fn test_delete_object_cascade_mods() {
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Genshin', 'type', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type) VALUES ('o1', 'g1', 'Obj1', 'path', 'Char')")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, object_id, status, is_safe) VALUES ('m1', 'Mod1', 'p1', 'g1', 'o1', 'ENABLED', 1)")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, object_id, status, is_safe) VALUES ('m2', 'Mod2', 'p2', 'g1', 'o1', 'ENABLED', 1)")
-        .execute(&pool).await.unwrap();
+
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Obj1",
+            folder_path: Some("path"),
+            object_type: "Char",
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "m1",
+            game_id: "g1",
+            object_id: Some("o1"),
+            actual_name: "Mod1",
+            folder_path: "p1",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Char"),
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "m2",
+            game_id: "g1",
+            object_id: Some("o1"),
+            actual_name: "Mod2",
+            folder_path: "p2",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Char"),
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
 
     // Deletion should cascade — remove mods + object
-    delete_object(&pool, "o1", &trash_dir, &watcher_state, &op_lock)
+    delete_object(&pool, "o1", true, &trash_dir, &watcher_state, &op_lock)
         .await
         .unwrap();
 

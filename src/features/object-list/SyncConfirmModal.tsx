@@ -10,6 +10,7 @@
 
 import { X, Check, Edit, AlertTriangle, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /** Shape returned by Rust `match_object_with_db` command. */
 export interface MatchedDbEntry {
@@ -94,13 +95,13 @@ export default function SyncConfirmModal({
   onEditManually,
   onClose,
 }: SyncConfirmModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   // Editable copy of the match — user can tweak fields before applying
   const [editedMatch, setEditedMatch] = useState<MatchedDbEntry | null>(null);
 
   // Reset editable state when match changes
   useEffect(() => {
     if (match) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditedMatch({ ...match, metadata: match.metadata ? { ...match.metadata } : null });
     } else {
       setEditedMatch(null);
@@ -142,17 +143,19 @@ export default function SyncConfirmModal({
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t('common:actions.close')}
         >
           <X size={16} />
         </button>
 
-        <h3 className="font-bold text-lg mb-4">Sync with Database</h3>
+        <h3 className="font-bold text-lg mb-4">{t('context.sync.title')}</h3>
 
         {isLoading && (
           <div className="flex justify-center items-center p-8">
             <span className="loading loading-spinner loading-md text-primary" />
-            <span className="ml-3 text-base-content/60">Matching "{objectName}"…</span>
+            <span className="ml-3 text-base-content/60">
+              {t('context.sync.matching_name', { name: objectName })}
+            </span>
           </div>
         )}
 
@@ -160,18 +163,18 @@ export default function SyncConfirmModal({
           <div className="flex flex-col items-center gap-3 p-6">
             <AlertTriangle size={32} className="text-warning/60" />
             <p className="text-sm text-base-content/60 text-center">
-              No match found for <strong>"{objectName}"</strong> in the database.
+              {t('context.sync.no_match_found', { name: objectName })}
             </p>
             <p className="text-xs text-base-content/40 text-center">
-              You can edit metadata manually instead.
+              {t('context.sync.no_match_hint')}
             </p>
             <div className="flex gap-2 mt-2">
               <button className="btn btn-sm btn-outline" onClick={onEditManually}>
                 <Edit size={14} />
-                Edit Manually
+                {t('context.sync.edit_manually')}
               </button>
               <button className="btn btn-sm" onClick={onClose}>
-                Cancel
+                {t('common:actions.cancel')}
               </button>
             </div>
           </div>
@@ -199,7 +202,7 @@ export default function SyncConfirmModal({
                     <button
                       className="btn btn-ghost btn-xs"
                       onClick={resetToOriginal}
-                      title="Reset to original match"
+                      title={t('context.sync.reset_match')}
                     >
                       <RotateCcw size={12} />
                     </button>
@@ -217,7 +220,9 @@ export default function SyncConfirmModal({
                       {editedMatch.match_level} — {editedMatch.match_confidence}
                     </span>
                   )}
-                  {hasEdits && <span className="badge badge-xs badge-info">Edited</span>}
+                  {hasEdits && (
+                    <span className="badge badge-xs badge-info">{t('badge_edited')}</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -225,16 +230,16 @@ export default function SyncConfirmModal({
             {/* Diff table — per-field comparison (editable) */}
             <div className="mt-3 flex flex-col gap-1.5 p-2 rounded-lg bg-base-200/30 border border-base-300/20">
               <div className="text-[10px] uppercase tracking-wider text-base-content/30 font-medium mb-1">
-                Field Comparison (click new value to edit)
+                {t('context.sync.comparison_header')}
               </div>
               <DiffField
-                label="Name"
+                label={t('common:fields.name')}
                 current={currentData?.name ?? objectName}
                 incoming={editedMatch.name}
                 onEdit={(v) => setField('name', v)}
               />
               <DiffField
-                label="Category"
+                label={t('common:fields.category')}
                 current={currentData?.object_type ?? ''}
                 incoming={editedMatch.object_type}
                 onEdit={(v) => setField('object_type', v)}
@@ -258,15 +263,15 @@ export default function SyncConfirmModal({
             {/* Actions */}
             <div className="modal-action border-t border-base-200 pt-4 mt-4">
               <button className="btn btn-sm" onClick={onClose}>
-                Cancel
+                {t('common:actions.cancel')}
               </button>
               <button className="btn btn-sm btn-outline" onClick={onEditManually}>
                 <Edit size={14} />
-                Edit Manually
+                {t('context.sync.edit_manually')}
               </button>
               <button className="btn btn-sm btn-primary" onClick={() => onApply(editedMatch)}>
                 <Check size={14} />
-                {hasEdits ? 'Apply Edited' : 'Apply Match'}
+                {hasEdits ? t('context.sync.apply_edited') : t('context.sync.apply_match')}
               </button>
             </div>
           </>

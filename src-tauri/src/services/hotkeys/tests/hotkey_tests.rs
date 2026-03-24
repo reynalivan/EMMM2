@@ -18,13 +18,10 @@ use crate::services::hotkeys::{
 fn hotkey_config_defaults() {
     let config = HotkeyConfig::default();
     assert!(config.enabled);
-    assert!(config.game_focus_only);
     assert_eq!(config.cooldown_ms, 500);
     assert_eq!(config.toggle_safe_mode, "F5");
     assert_eq!(config.next_preset, "F6");
     assert_eq!(config.prev_preset, "Shift+F6");
-    assert_eq!(config.next_variant, "F8");
-    assert_eq!(config.prev_variant, "Shift+F8");
     assert_eq!(config.toggle_overlay, "F7");
 }
 
@@ -32,9 +29,6 @@ fn hotkey_config_defaults() {
 fn keyviewer_config_defaults() {
     let config = KeyViewerConfig::default();
     assert!(config.enabled);
-    assert!((config.status_ttl_seconds - 3.0).abs() < f32::EPSILON);
-    assert_eq!(config.overlay_toggle_key, "F7");
-    assert_eq!(config.keybinds_dir, "EMM2/keybinds/active");
 }
 
 #[test]
@@ -46,19 +40,17 @@ fn get_key_string_maps_correctly() {
         get_key_string(&config, HotkeyAction::PrevPreset),
         "Shift+F6"
     );
-    assert_eq!(
-        get_key_string(&config, HotkeyAction::NextVariantFolder),
-        "F8"
-    );
     assert_eq!(get_key_string(&config, HotkeyAction::ToggleOverlay), "F7");
 }
 
 #[test]
-fn list_bindings_returns_all_six() {
+fn list_bindings_returns_correct_count() {
     let config = HotkeyConfig::default();
     let bindings = list_bindings(&config);
-    assert_eq!(bindings.len(), 6);
+    assert_eq!(bindings.len(), 4);
 }
+
+// ... existing conflict and debounce tests ...
 
 // ─── Conflict Detection ──────────────────────────────────────────────────────
 

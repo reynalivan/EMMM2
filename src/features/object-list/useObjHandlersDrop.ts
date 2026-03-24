@@ -5,15 +5,16 @@
 
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands, type IngestResult } from '../../lib/bindings';
+import type { ScanPreviewItem } from '../../types/scanner';
 import { exists, mkdir } from '@tauri-apps/plugin-fs';
 import { useActiveGame } from '../../hooks/useActiveGame';
+import { getGameTypeKey } from '../../types/game';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
 import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
 import { classifyDroppedPaths } from './dropUtils';
 import type { ObjectSummary } from '../../types/object';
-import type { ScanPreviewItem } from '../../lib/services/scanService';
 import type { MasterDbEntry } from './scanReviewHelpers';
 
 interface PendingDropContext {
@@ -77,7 +78,7 @@ export function useObjHandlersDrop({
         return;
       }
 
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppression({ suppressed: true });
       try {
         if (pathsToIngest.length === 0) {
           toast.info('No items to import.');
@@ -127,7 +128,7 @@ export function useObjHandlersDrop({
         console.error('Drop on item failed:', e);
         toast.error('Failed to import dropped items');
       } finally {
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     [activeGame, objects, queryClient, handleArchivesInteractively, setMismatchConfirm],
@@ -154,25 +155,20 @@ export function useObjHandlersDrop({
         return;
       }
 
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppression({ suppressed: true });
       try {
-        const tempPath = `${activeGame.mod_path}\\.emmm2_temp`;
+        const tempPath = `${activeGame.mod_path}\\.emmm_temp`;
         if (looseFiles.length > 0 && !(await exists(tempPath))) {
           await mkdir(tempPath, { recursive: true });
         }
 
         if (looseFiles.length > 0) {
-          const ingestResult = await invoke<{
-            moved: string[];
-            skipped: string[];
-            not_dirs: string[];
-            sync: { new_mods: number; new_objects: number };
-          }>('ingest_dropped_folders', {
+          const ingestResult: IngestResult = await commands.ingestDroppedFolders({
             paths: looseFiles,
             modsPath: tempPath,
             gameId: activeGame.id,
             gameName: activeGame.name,
-            gameType: activeGame.game_type,
+            gameType: getGameTypeKey(activeGame.game_type),
           });
           folderPaths.push(...ingestResult.moved);
         }
@@ -204,7 +200,7 @@ export function useObjHandlersDrop({
         toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setIsSyncing(false);
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     [activeGame, handleArchivesInteractively, setScanReview, setIsSyncing],
@@ -241,7 +237,7 @@ export function useObjHandlersDrop({
         return;
       }
 
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppression({ suppressed: true });
       try {
         if (pathsToIngest.length === 0) {
           toast.success(`Created ${objectName} successfully (no items imported).`);
@@ -256,7 +252,7 @@ export function useObjHandlersDrop({
         console.error('Drop on new object failed:', e);
         toast.error('Failed to import dropped items');
       } finally {
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     [activeGame, queryClient, handleArchivesInteractively],

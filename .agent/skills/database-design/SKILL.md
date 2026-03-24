@@ -5,7 +5,7 @@ description: Database schema design, optimization, and migration patterns for SQ
 
 # Database Design Skill
 
-Patterns for EMMM2's **SQLite** engine.
+Patterns for EMMM's **SQLite** engine.
 
 ## 1. Schema Principles
 

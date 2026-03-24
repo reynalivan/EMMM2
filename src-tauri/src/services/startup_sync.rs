@@ -79,6 +79,11 @@ pub async fn reconcile_game(
         );
     }
 
+    // Step 3.5: Task GC (cleanup logs older than 7 days)
+    if let Err(e) = gc_old_tasks(pool).await {
+        log::warn!("reconcile_game: Task GC failed: {e}");
+    }
+
     // Step 4: Run GC (remove objects whose folders were deleted from disk)
     if let Err(e) = crate::services::objects::query::gc_lost_objects(pool, game_id).await {
         log::warn!("reconcile_game: GC failed for '{}': {e}", game_id);
@@ -88,6 +93,7 @@ pub async fn reconcile_game(
     if let Err(e) = crate::services::scanner::object_sync::sync_objects_for_game(
         pool,
         game_id,
+        mod_path,
         safe_mode_keywords,
     )
     .await
@@ -97,4 +103,16 @@ pub async fn reconcile_game(
 
     log::info!("reconcile_game: complete for '{}'", game_id);
     Ok(current_mtime)
+}
+
+/// Purge tasks older than 7 days.
+async fn gc_old_tasks(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM tasks WHERE created_at < datetime('now', '-7 days')")
+        .execute(pool)
+        .await?;
+    let affected = result.rows_affected();
+    if affected > 0 {
+        log::info!("gc_old_tasks: purged {affected} old task logs");
+    }
+    Ok(affected)
 }

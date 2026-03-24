@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Package, Lock, AlertTriangle, CheckCircle2, Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ArchiveInfo } from '../../../types/scanner';
 import ArchiveFileTree from './ArchiveFileTree';
 
@@ -53,6 +54,7 @@ export default function ArchiveModal({
   existingFolders = [],
   targetObjectName,
 }: Props) {
+  const { t } = useTranslation(['scanner']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => {
@@ -167,14 +169,17 @@ export default function ArchiveModal({
   };
 
   // E1: Folder name validation — block illegal chars and empty names
-  const validateFolderName = useCallback((name: string): string | null => {
-    const ILLEGAL_CHARS = /[<>:"/\\|?*]/;
-    const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/i;
-    if (!name.trim()) return 'Name cannot be empty';
-    if (ILLEGAL_CHARS.test(name)) return 'Contains illegal characters';
-    if (WINDOWS_RESERVED.test(name.trim())) return 'Reserved Windows name';
-    return null;
-  }, []);
+  const validateFolderName = useCallback(
+    (name: string): string | null => {
+      const ILLEGAL_CHARS = /[<>:"/\\|?*]/;
+      const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/i;
+      if (!name.trim()) return t('extract.validation.empty');
+      if (ILLEGAL_CHARS.test(name)) return t('extract.validation.illegal');
+      if (WINDOWS_RESERVED.test(name.trim())) return t('extract.validation.reserved');
+      return null;
+    },
+    [t],
+  );
 
   const hasValidationErrors = useMemo(() => {
     for (const path of selectedPaths) {
@@ -189,7 +194,7 @@ export default function ArchiveModal({
   /** Render a single archive row with folder name preview */
   const renderArchiveRow = (archive: ArchiveInfo, isEncryptedGroup: boolean) => {
     const isEmpty = archive.file_count === 0 || archive.has_ini === false;
-    const titleAttr = isEmpty ? 'Archive contains no mod files' : undefined;
+    const titleAttr = isEmpty ? t('extract.no_mod_files') : undefined;
     const isSelected = selectedPaths.has(archive.path);
     const nameDuplicate = isDuplicate(archive.path);
     const nameError = validateFolderName(folderNames[archive.path] || '');
@@ -223,10 +228,10 @@ export default function ArchiveModal({
               {archive.contains_nested_archives && (
                 <div
                   className="badge badge-primary badge-outline badge-xs opacity-70 cursor-help tooltip tooltip-right flex gap-1 items-center"
-                  data-tip="Contains zip/rar inside. Will be unpacked if Auto-unpack is checked."
+                  data-tip={t('extract.nested_tooltip')}
                 >
                   <Package className="w-3 h-3" />
-                  Nested
+                  {t('extract.nested_label')}
                 </div>
               )}
             </div>
@@ -243,7 +248,7 @@ export default function ArchiveModal({
               <div className="flex flex-col gap-0.5">
                 <input
                   type="password"
-                  placeholder="Key"
+                  placeholder={t('extract.password_placeholder')}
                   className={`input input-xs input-bordered w-full max-w-50 bg-base-100 mt-1 ${passwordError?.path === archive.path ? 'input-error' : ''}`}
                   value={passwords[archive.path] || ''}
                   onChange={(e) => setPasswordForPath(archive.path, e.target.value)}
@@ -282,9 +287,7 @@ export default function ArchiveModal({
               onClick={() => !isEmpty && setEditingPath(archive.path)}
               title={
                 nameError ||
-                (nameDuplicate
-                  ? 'Duplicate name — will auto-rename or overwrite'
-                  : 'Click to rename')
+                (nameDuplicate ? t('extract.duplicate_name_action') : t('extract.rename_tooltip'))
               }
             >
               <span className="text-xs font-mono truncate max-w-36">
@@ -298,18 +301,18 @@ export default function ArchiveModal({
         {/* Status icon */}
         <td className="w-10 text-center">
           {isEmpty ? (
-            <div
-              className="tooltip tooltip-left text-warning"
-              data-tip="Archive contains no mod files"
-            >
+            <div className="tooltip tooltip-left text-warning" data-tip={t('extract.no_mod_files')}>
               <AlertTriangle className="w-4 h-4 cursor-help" />
             </div>
           ) : nameDuplicate ? (
-            <div className="tooltip tooltip-left text-warning" data-tip="Duplicate folder name">
+            <div
+              className="tooltip tooltip-left text-warning"
+              data-tip={t('extract.duplicate_name')}
+            >
               <AlertTriangle className="w-4 h-4" />
             </div>
           ) : isEncryptedGroup ? (
-            <div className="tooltip tooltip-left" data-tip="Requires password to extract">
+            <div className="tooltip tooltip-left" data-tip={t('extract.password_required')}>
               <Lock className="w-4 h-4 text-warning/70" />
             </div>
           ) : null}
@@ -327,20 +330,18 @@ export default function ArchiveModal({
             <Package className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-bold text-lg">Archives Detected</h3>
+            <h3 className="font-bold text-lg">{t('scanner:extract.title')}</h3>
             {targetObjectName ? (
               <p className="text-xs text-base-content/80 mt-0.5 flex flex-col gap-1">
-                <span>
-                  Importing to: <span className="font-bold text-primary">{targetObjectName}</span>
-                </span>
+                <span>{t('scanner:extract.import_to', { name: targetObjectName })}</span>
                 <span className="text-[10px] text-warning/80 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
-                  Archives will be checked for compatibility after extraction.
+                  {t('scanner:extract.compatibility_check')}
                 </span>
               </p>
             ) : (
               <p className="text-xs text-base-content/60">
-                Found {archives.length} archive(s) ready for import.
+                {t('scanner:extract.found_count', { count: archives.length })}
               </p>
             )}
           </div>
@@ -360,7 +361,7 @@ export default function ArchiveModal({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-success px-1">
                 <CheckCircle2 className="w-4 h-4" />
-                No Password Required ({unencrypted.length})
+                {t('extract.no_password', { count: unencrypted.length })}
               </div>
               <div className="overflow-hidden border border-base-300 rounded-lg">
                 <table className="table table-sm">
@@ -377,7 +378,7 @@ export default function ArchiveModal({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-warning px-1">
                 <Lock className="w-4 h-4" />
-                Password Protected ({encrypted.length})
+                {t('extract.password_protected', { count: encrypted.length })}
               </div>
               <div className="overflow-hidden border border-warning/30 rounded-lg">
                 <table className="table table-sm">
@@ -404,16 +405,16 @@ export default function ArchiveModal({
                 />
                 <div className="flex flex-col">
                   {autoRename ? (
-                    <span className="label-text text-sm">Auto rename folder if name conflict</span>
+                    <span className="label-text text-sm">{t('extract.option_auto_rename')}</span>
                   ) : (
                     <>
                       <span className="label-text text-sm text-error">
-                        Overwrite existing folder
+                        {t('extract.option_overwrite')}
                       </span>
                       <span className="text-[10px] text-error/70">
-                        Original files will be permanently overwritten
+                        {t('extract.option_overwrite_desc')}
                         <span className="badge badge-error badge-xs ml-2 align-middle">
-                          Not Recommended
+                          {t('extract.not_recommended')}
                         </span>
                       </span>
                     </>
@@ -431,7 +432,7 @@ export default function ArchiveModal({
                   checked={disableByDefault}
                   onChange={(e) => setDisableByDefault(e.target.checked)}
                 />
-                <span className="label-text text-sm">Set as disabled after extraction</span>
+                <span className="label-text text-sm">{t('extract.option_disabled')}</span>
               </label>
             </div>
 
@@ -439,7 +440,7 @@ export default function ArchiveModal({
               <div className="form-control bg-primary/5 rounded-lg p-3 border border-primary/20">
                 <label
                   className="label cursor-pointer justify-start gap-3 py-0 tooltip tooltip-right"
-                  data-tip="Recursively unpack zip/rar files hidden inside the main archive"
+                  data-tip={t('extract.option_unpack_nested_tooltip')}
                 >
                   <input
                     type="checkbox"
@@ -449,7 +450,7 @@ export default function ArchiveModal({
                   />
                   <div className="flex flex-col text-left">
                     <span className="label-text text-sm font-medium">
-                      Auto-unpack nested archives (Modpacks)
+                      {t('extract.option_unpack_nested')}
                     </span>
                   </div>
                 </label>
@@ -464,7 +465,10 @@ export default function ArchiveModal({
             <div className="flex flex-col gap-1 w-full">
               <div className="flex justify-between text-xs text-base-content/60">
                 <span>
-                  Extracting archive {extractProgress.current} of {extractProgress.total}...
+                  {t('extract.progress_archive', {
+                    current: extractProgress.current,
+                    total: extractProgress.total,
+                  })}
                 </span>
                 <span>{Math.round((extractProgress.current / extractProgress.total) * 100)}%</span>
               </div>
@@ -477,11 +481,14 @@ export default function ArchiveModal({
                 <div className="flex flex-col gap-0.5 mt-1">
                   <div className="flex justify-between text-[10px] text-base-content/40">
                     <span className="truncate max-w-70" title={fileProgress.fileName}>
-                      {fileProgress.fileName || 'Extracting...'}
+                      {fileProgress.fileName || t('extract.progress_extracting')}
                     </span>
                     {fileProgress.totalFiles > 0 && (
                       <span>
-                        {fileProgress.fileIndex}/{fileProgress.totalFiles} files
+                        {t('extract.progress_files', {
+                          current: fileProgress.fileIndex,
+                          total: fileProgress.totalFiles,
+                        })}
                       </span>
                     )}
                   </div>
@@ -498,14 +505,16 @@ export default function ArchiveModal({
           )}
           <div className="flex justify-between items-center w-full">
             <button className="btn btn-ghost btn-sm" onClick={onSkip} disabled={isExtracting}>
-              Skip Extraction
+              {t('extract.action_skip')}
             </button>
             <div className="flex gap-2 items-center">
-              <div className="text-xs text-base-content/50 mr-2">{selectedPaths.size} selected</div>
+              <div className="text-xs text-base-content/50 mr-2">
+                {t('extract.selected_count', { count: selectedPaths.size })}
+              </div>
 
               {isExtracting ? (
                 <button className="btn btn-error btn-sm" onClick={() => setShowStopConfirm(true)}>
-                  Stop
+                  {t('extract.action_stop')}
                 </button>
               ) : (
                 <button
@@ -513,7 +522,7 @@ export default function ArchiveModal({
                   onClick={handleExtract}
                   disabled={selectedPaths.size === 0 || hasValidationErrors}
                 >
-                  Extract Selected
+                  {t('extract.action_extract')}
                 </button>
               )}
             </div>
@@ -522,19 +531,16 @@ export default function ArchiveModal({
 
         {/* Confirmation Overlay for Stop */}
         {showStopConfirm && (
-          <div className="absolute inset-0 bg-base-100/90 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
+          <div className="absolute inset-0 bg-overlay-mask backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
             <div className="bg-base-200 border border-base-300 p-6 rounded-xl shadow-xl max-w-sm flex flex-col gap-4">
               <div className="flex items-center gap-3 text-error">
                 <AlertTriangle size={24} />
-                <h3 className="font-bold text-lg">Stop Extraction?</h3>
+                <h3 className="font-bold text-lg">{t('extract.stop_confirm_title')}</h3>
               </div>
-              <p className="text-sm">
-                Are you sure you want to stop? The currently extracting archive will be reverted,
-                but any already-extracted archives will remain.
-              </p>
+              <p className="text-sm">{t('extract.stop_confirm_desc')}</p>
               <div className="flex justify-end gap-2 mt-2">
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowStopConfirm(false)}>
-                  Cancel
+                  {t('extract.action_cancel')}
                 </button>
                 <button
                   className="btn btn-error btn-sm"
@@ -543,7 +549,7 @@ export default function ArchiveModal({
                     onStop();
                   }}
                 >
-                  Yes, Stop
+                  {t('extract.action_yes_stop')}
                 </button>
               </div>
             </div>
@@ -552,15 +558,14 @@ export default function ArchiveModal({
 
         {/* #6: Confirmation Overlay for Overwrite */}
         {showOverwriteConfirm && (
-          <div className="absolute inset-0 bg-base-100/90 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
+          <div className="absolute inset-0 bg-overlay-mask backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
             <div className="bg-base-200 border border-base-300 p-6 rounded-xl shadow-xl max-w-sm flex flex-col gap-4">
               <div className="flex items-center gap-3 text-warning">
                 <AlertTriangle size={24} />
-                <h3 className="font-bold text-lg">Overwrite Existing Folders?</h3>
+                <h3 className="font-bold text-lg">{t('extract.overwrite_confirm_title')}</h3>
               </div>
               <p className="text-sm">
-                The following {overwriteTargets.length} folder(s) already exist and will be
-                permanently replaced:
+                {t('extract.overwrite_confirm_desc', { count: overwriteTargets.length })}
               </p>
               <ul className="text-sm list-disc list-inside max-h-32 overflow-y-auto bg-base-300/50 rounded-lg p-2">
                 {overwriteTargets.map((name) => (
@@ -574,10 +579,10 @@ export default function ArchiveModal({
                   className="btn btn-ghost btn-sm"
                   onClick={() => setShowOverwriteConfirm(false)}
                 >
-                  Cancel
+                  {t('scanner:extract.action_cancel')}
                 </button>
                 <button className="btn btn-warning btn-sm" onClick={doExtract}>
-                  Yes, Overwrite
+                  {t('scanner:extract.action_yes_overwrite')}
                 </button>
               </div>
             </div>

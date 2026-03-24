@@ -11,7 +11,8 @@ import {
 } from '@tanstack/react-table';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FolderOpen, ArrowUpDown, Sparkles } from 'lucide-react';
-import { ScanResultItem } from '../../../types/scanner';
+import { useTranslation } from 'react-i18next';
+import type { ScanResultItem } from '../../../types/scanner';
 import { IndeterminateCheckbox, EditableCell } from './ReviewTableComponents';
 
 const columnHelper = createColumnHelper<ScanResultItem>();
@@ -27,7 +28,7 @@ export function useReviewTable({
   onOpenFolder,
   onRename,
 }: UseReviewTableProps): Table<ScanResultItem> {
-  'use no memo'; // Opt out: useReactTable returns un-memoizable functions
+  const { t } = useTranslation(['scanner']);
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const [rowSelection, setRowSelection] = useState({});
@@ -62,7 +63,7 @@ export function useReviewTable({
       // Thumbnail
       columnHelper.accessor('thumbnailPath', {
         id: 'thumbnail',
-        header: 'Preview',
+        header: t('scanner:review.columns.preview'),
         cell: (info) => {
           const path = info.getValue();
           if (!path) return <div className="w-10 h-10 bg-base-300 rounded-md" />;
@@ -80,7 +81,7 @@ export function useReviewTable({
       columnHelper.accessor('displayName', {
         header: ({ column }) => (
           <button className="btn btn-ghost btn-xs gap-1" onClick={column.getToggleSortingHandler()}>
-            Mod Name
+            {t('scanner:review.columns.name')}
             <ArrowUpDown className="w-3 h-3" />
           </button>
         ),
@@ -95,7 +96,7 @@ export function useReviewTable({
       }),
       // Matched Object
       columnHelper.accessor('matchedObject', {
-        header: 'Category',
+        header: t('scanner:review.columns.category'),
         cell: (info) => {
           const val = info.getValue();
           return val ? (
@@ -110,7 +111,7 @@ export function useReviewTable({
         header: () => (
           <span className="flex items-center gap-1">
             <Sparkles className="w-3 h-3" />
-            Skin
+            {t('scanner:review.columns.skin')}
           </span>
         ),
         cell: (info) => {
@@ -119,11 +120,11 @@ export function useReviewTable({
           if (!skin) return <span className="text-base-content/20 text-xs">—</span>;
           return (
             <div className="flex flex-col gap-0.5">
-              <span className="badge badge-xs badge-primary badge-outline truncate max-w-[140px]">
+              <span className="badge badge-xs badge-primary badge-outline truncate max-w-35">
                 {skin}
               </span>
               {folderName && (
-                <span className="text-[10px] text-base-content/40 font-mono truncate max-w-[140px]">
+                <span className="text-[10px] text-base-content/40 font-mono truncate max-w-35">
                   → {folderName}
                 </span>
               )}
@@ -133,22 +134,32 @@ export function useReviewTable({
       }),
       // Confidence
       columnHelper.accessor('confidence', {
-        header: 'Confidence',
+        header: t('scanner:review.columns.confidence'),
         cell: (info) => {
           const val = info.getValue();
           const color =
             val === 'High' ? 'badge-success' : val === 'Medium' ? 'badge-warning' : 'badge-ghost';
-          return <span className={`badge badge-xs ${color} badge-soft`}>{val}</span>;
+          return (
+            <span className={`badge badge-xs ${color} badge-soft`}>
+              {val === 'High'
+                ? t('scanner:optimizer.tabs.high')
+                : val === 'Medium'
+                  ? t('scanner:optimizer.tabs.medium')
+                  : t('scanner:optimizer.tabs.low')}
+            </span>
+          );
         },
       }),
       // Status
       columnHelper.accessor('isDisabled', {
-        header: 'Status',
+        header: t('scanner:review.columns.status'),
         cell: (info) => (
           <span
             className={`badge badge-xs ${info.getValue() ? 'badge-error badge-outline' : 'badge-success badge-outline'}`}
           >
-            {info.getValue() ? 'Disabled' : 'Enabled'}
+            {info.getValue()
+              ? t('scanner:review.status.disabled')
+              : t('scanner:review.status.enabled')}
           </span>
         ),
       }),
@@ -159,7 +170,7 @@ export function useReviewTable({
           <div className="flex gap-2 justify-end">
             <button
               className="btn btn-ghost btn-xs btn-square tooltip tooltip-left"
-              data-tip="Open Folder"
+              data-tip={t('scanner:review.open_folder')}
               onClick={() => onOpenFolder(info.row.original.path)}
             >
               <FolderOpen className="w-4 h-4" />
@@ -168,7 +179,7 @@ export function useReviewTable({
         ),
       }),
     ],
-    [onOpenFolder, onRename],
+    [onOpenFolder, onRename, t],
   );
 
   const table = useReactTable({

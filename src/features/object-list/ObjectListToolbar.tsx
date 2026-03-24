@@ -5,6 +5,7 @@
 
 import { Search, RefreshCw, RotateCcw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { GameSchema, FilterDef, CategoryDef } from '../../types/object';
 import FilterPanel from './FilterPanel';
 import ObjectBulkActionBar from './ObjectBulkActionBar';
@@ -44,6 +45,8 @@ interface ToolbarProps {
     onAddTags: () => void;
     onRemoveTags: () => void;
     onAutoOrganize: () => void;
+    onFavorite: (fav: boolean) => void;
+    onMarkSafe: (safe: boolean) => void;
     onClear: () => void;
   };
 }
@@ -71,6 +74,7 @@ export default function ObjectListToolbar({
   isActiveZone,
   bulkSelect,
 }: ToolbarProps) {
+  const { t } = useTranslation(['objects']);
   const [filterOpen, setFilterOpen] = useState(true);
 
   /** Count of active filters for badge */
@@ -101,7 +105,7 @@ export default function ObjectListToolbar({
               className={`flex items-center gap-2 ${isActiveZone ? 'text-primary font-bold' : 'text-base-content/50'}`}
             >
               <Sparkles size={20} className={isActiveZone ? 'animate-pulse' : ''} />
-              <span className="text-sm font-semibold">Auto Organize</span>
+              <span className="text-sm font-semibold">{t('toolbar.auto_organize')}</span>
             </div>
           </div>
         )}
@@ -116,7 +120,7 @@ export default function ObjectListToolbar({
               />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder={t('toolbar.search_placeholder')}
                 className="input input-sm w-full pl-8 bg-base-200/40 border-base-300/20 focus:border-primary/40 text-sm focus:outline-none"
                 value={sidebarSearchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
@@ -139,7 +143,7 @@ export default function ObjectListToolbar({
                       : 'btn-ghost text-base-content/50 hover:text-primary'
                 }`}
                 onClick={() => setFilterOpen((prev) => !prev)}
-                title={filterOpen ? 'Hide Filters' : 'Show Filters'}
+                title={filterOpen ? t('toolbar.hide_filters') : t('toolbar.show_filters')}
               >
                 <SlidersHorizontal size={15} />
                 {activeCount > 0 && !filterOpen && (
@@ -153,14 +157,14 @@ export default function ObjectListToolbar({
             <button
               className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
               onClick={onRefresh}
-              title="Refresh list"
+              title={t('toolbar.refresh_list')}
             >
               <RotateCcw size={15} />
             </button>
             <button
               className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
               onClick={onSync}
-              title="Auto Reorganize (Full scan & sync)"
+              title={t('toolbar.auto_reorganize')}
               disabled={isSyncing}
             >
               <RefreshCw size={16} />
@@ -168,7 +172,7 @@ export default function ObjectListToolbar({
             <button
               className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
               onClick={onCreateNew}
-              title="Create New Object"
+              title={t('toolbar.create_new')}
             >
               <Plus size={16} />
             </button>
@@ -200,7 +204,7 @@ export default function ObjectListToolbar({
             <span
               className="badge badge-sm badge-accent gap-1 cursor-pointer hover:badge-error transition-colors"
               onClick={() => onSelectObjectType(null)}
-              title={`Category: ${selectedObjectType} — click to clear`}
+              title={`${t('toolbar.filter_category', { category: selectedObjectType })} — ${t('toolbar.click_to_clear')}`}
             >
               <span className="text-[10px]">{selectedObjectType}</span>
               <X size={10} />
@@ -210,6 +214,7 @@ export default function ObjectListToolbar({
             .filter(([, vals]) => vals.length > 0)
             .map(([key, vals]) => {
               const filterDef = categoryFilters.find((f) => f.key === key);
+              const label = filterDef?.label ?? key;
               return vals.map((val) => (
                 <span
                   key={`${key}-${val}`}
@@ -220,7 +225,7 @@ export default function ObjectListToolbar({
                       vals.filter((v) => v !== val),
                     )
                   }
-                  title={`${filterDef?.label ?? key}: ${val} — click to remove`}
+                  title={`${t('toolbar.filter_meta', { label, value: val })} — ${t('toolbar.click_to_remove')}`}
                 >
                   <span className="text-[10px] max-w-20 truncate">{val}</span>
                   <X size={10} />
@@ -233,10 +238,12 @@ export default function ObjectListToolbar({
                 statusFilter === 'enabled' ? 'badge-success' : 'badge-warning'
               }`}
               onClick={() => onStatusFilterChange('all')}
-              title={`Status: ${statusFilter} — click to clear`}
+              title={`${t('toolbar.filter_status', { status: statusFilter })} — ${t('toolbar.click_to_clear')}`}
             >
               <span className="text-[10px]">
-                {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                {statusFilter === 'enabled'
+                  ? t('filter.status_active')
+                  : t('filter.status_disabled')}
               </span>
               <X size={10} />
             </span>
@@ -247,9 +254,9 @@ export default function ObjectListToolbar({
               onClearFilters();
               onSelectObjectType(null);
             }}
-            title="Clear all filters"
+            title={t('states.clear_filters')}
           >
-            Clear
+            {t('toolbar.clear_all')}
           </button>
         </div>
       )}

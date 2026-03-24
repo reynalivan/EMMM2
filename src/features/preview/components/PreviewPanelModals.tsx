@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/mod';
 import MoveToObjectDialog from '../../folder-grid/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import DuplicateWarningModal, { type DuplicateInfo } from '../../folder-grid/DuplicateWarningModal';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
-import { useObjects } from '../../../hooks/useObjects';
 
 interface PreviewPanelModalsProps {
   // Move Dialog
@@ -15,6 +15,7 @@ interface PreviewPanelModalsProps {
     targetId: string,
     status: 'disabled' | 'only-enable' | 'keep',
   ) => void;
+  objectId?: string;
 
   // Delete Dialog
   deleteConfirm: { open: boolean; folder: ModFolder | null };
@@ -42,6 +43,7 @@ export default function PreviewPanelModals({
   moveDialog,
   closeMoveDialog,
   handleMoveToObject,
+  objectId,
   deleteConfirm,
   setDeleteConfirm,
   handleDeleteConfirm,
@@ -56,9 +58,7 @@ export default function PreviewPanelModals({
   handleToggleSafeCancel,
   handleToggleSafeSubmit,
 }: PreviewPanelModalsProps) {
-  // We need to fetch objects for the MoveToObjectDialog
-  const { data: objectsData } = useObjects();
-  const objects = objectsData || [];
+  const { t } = useTranslation(['preview', 'common']);
 
   // Local state for Rename input
   const [renameInput, setRenameInput] = useState('');
@@ -69,17 +69,20 @@ export default function PreviewPanelModals({
     }
   }, [renameDialog.open, renameDialog.folder]);
 
+  // currentPath from moveDialog.folder for the new MoveToObjectDialog props
+  const currentPath = moveDialog.folder?.path ?? '';
+  // Note: objectId is already in props, so we just use that directly or as defined below if shadowed
+
   return (
     <>
       {/* Move To Object Dialog */}
       {moveDialog.open && moveDialog.folder && (
         <MoveToObjectDialog
-          open={moveDialog.open}
+          isOpen={moveDialog.open}
           onClose={closeMoveDialog}
-          objects={objects}
-          currentObjectId={moveDialog.folder.object_id ?? undefined}
-          currentStatus={moveDialog.folder.is_enabled}
-          onSubmit={(targetId, status) => {
+          targetModPaths={[currentPath]}
+          currentObjectId={objectId || undefined}
+          onSubmit={(targetId: string, status: 'disabled' | 'only-enable' | 'keep') => {
             if (!moveDialog.folder) return;
             handleMoveToObject(moveDialog.folder, targetId, status);
             closeMoveDialog();
@@ -90,9 +93,9 @@ export default function PreviewPanelModals({
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         open={deleteConfirm.open}
-        title="Delete to Trash?"
-        message={`Are you sure you want to move "${deleteConfirm.folder?.name}" to trash? You can undo this later.`}
-        confirmLabel="Move to Trash"
+        title={t('preview:modals.delete_title')}
+        message={t('preview:modals.delete_message', { name: deleteConfirm.folder?.name })}
+        confirmLabel={t('preview:modals.delete_confirm')}
         danger
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirm({ open: false, folder: null })}
@@ -101,9 +104,9 @@ export default function PreviewPanelModals({
       {/* Rename Dialog */}
       <dialog className={`modal ${renameDialog.open ? 'modal-open' : ''}`}>
         <div className="modal-box">
-          <h3 className="font-bold text-lg">Rename Folder</h3>
+          <h3 className="font-bold text-lg">{t('preview:modals.rename_title')}</h3>
           <p className="py-4 text-sm opacity-80">
-            Enter a new folder name for "{renameDialog.folder?.name}".
+            {t('preview:modals.rename_message', { name: renameDialog.folder?.name })}
           </p>
           <input
             type="text"
@@ -117,14 +120,14 @@ export default function PreviewPanelModals({
           />
           <div className="modal-action">
             <button className="btn" onClick={handleRenameCancel}>
-              Cancel
+              {t('common:actions.cancel')}
             </button>
             <button
               className="btn btn-primary"
               onClick={() => handleRenameSubmit(renameInput)}
               disabled={!renameInput.trim() || renameInput === renameDialog.folder?.name}
             >
-              Rename
+              {t('preview:actions.rename')}
             </button>
           </div>
         </div>

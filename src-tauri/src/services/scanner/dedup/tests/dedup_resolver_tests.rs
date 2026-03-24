@@ -1,6 +1,5 @@
 use super::{resolve_batch, ResolutionAction, ResolutionRequest};
 use crate::services::fs_utils::operation_lock::OperationLock;
-use sqlx::sqlite::SqlitePoolOptions;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -15,45 +14,27 @@ struct TestContext {
 }
 
 async fn setup_context() -> TestContext {
+    println!("DEBUG: setup_context START");
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path().join("Mods");
     let trash_root = temp.path().join("app_data").join("trash");
     fs::create_dir_all(&mods_root).unwrap();
     fs::create_dir_all(&trash_root).unwrap();
 
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
+    println!("DEBUG: calling init_test_db...");
+    let ctx = crate::test_utils::init_test_db().await;
+    let pool = ctx.pool;
 
-    sqlx::query(
-        "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL, object_id TEXT, status TEXT NOT NULL DEFAULT 'ENABLED')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "game-1",
+            name: "Game 1",
+            game_type: crate::database::models::GameType::GIMI,
+            path: mods_root.parent().unwrap().to_str().unwrap(),
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
     )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "CREATE TABLE dedup_groups (
-            id TEXT PRIMARY KEY,
-            resolution_status TEXT NOT NULL,
-            resolved_at DATETIME
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "CREATE TABLE duplicate_whitelist (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            folder_a_id TEXT NOT NULL,
-            folder_b_id TEXT NOT NULL,
-            reason TEXT,
-            UNIQUE (game_id, folder_a_id, folder_b_id)
-        )",
-    )
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -75,21 +56,56 @@ async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
 
     let folder_a_path = folder_a.to_string_lossy().to_string();
     let folder_b_path = folder_b.to_string_lossy().to_string();
+    let folder_a_key = crate::services::path_key::folder_path_key(
+        &folder_a_path,
+        Some(context.mods_root.to_str().unwrap()),
+    );
+    let folder_b_key = crate::services::path_key::folder_path_key(
+        &folder_b_path,
+        Some(context.mods_root.to_str().unwrap()),
+    );
+    println!(
+        "DEBUG: folder_a_path: {}, key: {}",
+        folder_a_path, folder_a_key
+    );
+    println!(
+        "DEBUG: folder_b_path: {}, key: {}",
+        folder_b_path, folder_b_key
+    );
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(&folder_a_path)
-        .execute(&context.pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(&folder_b_path)
-        .execute(&context.pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &context.pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "Aether",
+            folder_path: &folder_a_path,
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(context.mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &context.pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "Lumine",
+            folder_path: &folder_b_path,
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(context.mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     (folder_a_path, folder_b_path)
 }
@@ -97,6 +113,7 @@ async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
 // Covers: TC-9.2-01 (Trash Duplicate KeepA)
 #[tokio::test]
 async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
+    println!("DEBUG: TEST START");
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
@@ -293,20 +310,39 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
         let folder_a_path = folder_a.to_string_lossy().to_string();
         let folder_b_path = folder_b.to_string_lossy().to_string();
 
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-{}-a", i))
-            .bind(game_id)
-            .bind(&folder_a_path)
-            .execute(&context.pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-{}-b", i))
-            .bind(game_id)
-            .bind(&folder_b_path)
-            .execute(&context.pool)
-            .await
-            .unwrap();
+        crate::test_utils::insert_test_mod(
+            &context.pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-{}-a", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("Original{}", i),
+                folder_path: &folder_a_path,
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(context.mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::test_utils::insert_test_mod(
+            &context.pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-{}-b", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("Duplicate{}", i),
+                folder_path: &folder_b_path,
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(context.mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
 
         sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
             .bind(format!("group-{}", i))
@@ -391,20 +427,39 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
         let folder_a_path = folder_a.to_string_lossy().to_string();
         let folder_b_path = folder_b.to_string_lossy().to_string();
 
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-lock-{}-a", i))
-            .bind(game_id)
-            .bind(&folder_a_path)
-            .execute(&context.pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-lock-{}-b", i))
-            .bind(game_id)
-            .bind(&folder_b_path)
-            .execute(&context.pool)
-            .await
-            .unwrap();
+        crate::test_utils::insert_test_mod(
+            &context.pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-lock-{}-a", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("OriginalLock{}", i),
+                folder_path: &folder_a_path,
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(context.mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::test_utils::insert_test_mod(
+            &context.pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-lock-{}-b", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("DuplicateLock{}", i),
+                folder_path: &folder_b_path,
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(context.mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
 
         sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
             .bind(format!("group-lock-{}", i))

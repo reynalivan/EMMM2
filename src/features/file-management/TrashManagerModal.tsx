@@ -5,25 +5,22 @@
 
 import { useRef, useEffect, useMemo } from 'react';
 import { Trash2, RotateCcw, Loader2, FolderOpen, Clock, HardDrive, XCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useListTrash, useRestoreMod, useEmptyTrash } from '../../hooks/useFolders';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { toast } from '../../stores/useToastStore';
+import { formatBytes } from '../../utils/formatters';
 
 interface TrashManagerModalProps {
   open: boolean;
   onClose: () => void;
 }
 
-/** Format bytes into human-readable string. */
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
 /** Format ISO date to relative or short date string. */
-function formatDate(isoDate: string): string {
+function formatDate(
+  isoDate: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
   const date = new Date(isoDate);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -31,14 +28,15 @@ function formatDate(isoDate: string): string {
   const diffHours = Math.floor(diffMs / 3_600_000);
   const diffDays = Math.floor(diffMs / 86_400_000);
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return t('common:date.just_now');
+  if (diffMins < 60) return t('common:date.mins_ago', { count: diffMins });
+  if (diffHours < 24) return t('common:date.hours_ago', { count: diffHours });
+  if (diffDays < 7) return t('common:date.days_ago', { count: diffDays });
   return date.toLocaleDateString();
 }
 
 export default function TrashManagerModal({ open, onClose }: TrashManagerModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const { data: trashItems = [], isLoading, isError, refetch } = useListTrash(open);
   const { activeGame } = useActiveGame();
@@ -48,9 +46,9 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
   const handleEmptyTrash = async () => {
     try {
       const count = await emptyTrashMutation.mutateAsync();
-      toast.success(`Emptied trash (${count} item${count !== 1 ? 's' : ''} removed)`);
+      toast.success(t('objects:trash.toasts.empty_success', { count }));
     } catch (err) {
-      toast.error(`Failed to empty trash: ${String(err)}`);
+      toast.error(t('objects:trash.toasts.empty_failed', { error: String(err) }));
     }
   };
 
@@ -73,9 +71,9 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
   const handleRestore = async (trashId: string, name: string) => {
     try {
       await restoreMutation.mutateAsync({ trashId, gameId: activeGame?.id });
-      toast.success(`Restored "${name}"`);
+      toast.success(t('objects:trash.toasts.restore_success', { name }));
     } catch (err) {
-      toast.error(`Failed to restore: ${String(err)}`);
+      toast.error(t('objects:trash.toasts.restore_failed', { error: String(err) }));
     }
   };
 
@@ -94,9 +92,11 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
               <Trash2 size={20} />
             </div>
             <div>
-              <h3 className="font-semibold text-base text-base-content">Trash</h3>
+              <h3 className="font-semibold text-base text-base-content">
+                {t('objects:trash.title')}
+              </h3>
               <p className="text-xs text-base-content/50">
-                {trashItems.length} item{trashItems.length !== 1 ? 's' : ''}
+                {t('objects:trash.item_count', { count: trashItems.length })}
                 {trashItems.length > 0 && ` · ${formatBytes(totalSize)}`}
               </p>
             </div>
@@ -116,9 +116,9 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
 
           {isError && (
             <div className="flex flex-col items-center justify-center py-8 gap-2">
-              <p className="text-sm text-error/70">Failed to load trash</p>
+              <p className="text-sm text-error/70">{t('objects:trash.error_load')}</p>
               <button className="btn btn-xs btn-ghost text-primary" onClick={() => refetch()}>
-                Retry
+                {t('common:actions.retry')}
               </button>
             </div>
           )}
@@ -126,7 +126,7 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
           {!isLoading && !isError && sortedItems.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 gap-2">
               <FolderOpen size={32} className="text-base-content/15" />
-              <p className="text-sm text-base-content/40">Trash is empty</p>
+              <p className="text-sm text-base-content/40">{t('objects:trash.empty_state')}</p>
             </div>
           )}
 
@@ -145,7 +145,7 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
                   <div className="flex items-center gap-3 mt-0.5">
                     <span className="flex items-center gap-1 text-xs text-base-content/40">
                       <Clock size={10} />
-                      {formatDate(item.deleted_at)}
+                      {formatDate(item.deleted_at, t)}
                     </span>
                     <span className="flex items-center gap-1 text-xs text-base-content/40">
                       <HardDrive size={10} />
@@ -159,10 +159,10 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
                   className="btn btn-xs btn-ghost text-primary opacity-0 group-hover:opacity-100 transition-opacity gap-1"
                   onClick={() => handleRestore(item.id, item.original_name)}
                   disabled={restoreMutation.isPending}
-                  title="Restore to original location"
+                  title={t('objects:trash.restore_tip')}
                 >
                   <RotateCcw size={12} />
-                  Restore
+                  {t('objects:trash.action_restore')}
                 </button>
               </div>
             ))}
@@ -175,25 +175,25 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
               className="btn btn-sm btn-error btn-outline gap-1"
               onClick={handleEmptyTrash}
               disabled={emptyTrashMutation.isPending}
-              title="Permanently delete all items"
+              title={t('objects:trash.empty_tip')}
             >
               {emptyTrashMutation.isPending ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <XCircle size={12} />
               )}
-              Empty Trash
+              {t('objects:trash.action_empty')}
             </button>
           )}
           <button className="btn btn-sm btn-ghost" onClick={onClose}>
-            Close
+            {t('common:action.close')}
           </button>
         </div>
       </div>
 
       {/* Backdrop click closes */}
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>close</button>
+        <button onClick={onClose}>{t('common:action.close')}</button>
       </form>
     </dialog>
   );

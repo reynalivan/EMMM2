@@ -21,13 +21,14 @@
 
 As a user, I want to select multiple mods using checkboxes or keyboard modifiers, so that I can apply bulk actions over a set without clicking each individually.
 
-| ID        | Type        | Criteria                                                                                                                                                                               |
-| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-14.1.1 | ✅ Positive | Given an active grid, when hovering a card, a checkbox appears (visible on hover, always visible when any item is selected); clicking it adds the item to `selectedItems[]` in Zustand |
-| AC-14.1.2 | ✅ Positive | Given `selectedItems.length ≥ 1`, then the `BulkActionBar` slides in at the bottom of the grid in ≤ 100ms, showing count and available actions                                         |
-| AC-14.1.3 | ✅ Positive | Given I shift-click a second item after selecting the first, then all items between them (by current sort order) are added to the selection in ≤ 50ms                                  |
-| AC-14.1.4 | ❌ Negative | Given a user attempts to select an item currently being processed by a background operation (item in `pendingOps` set), that item's checkbox is disabled — no selection occurs         |
-| AC-14.1.5 | ⚠️ Edge     | Given the user navigates to a different object or sub-path while a selection is active, then `selectedItems` is cleared immediately (no cross-folder batch)                            |
+| ID        | Type        | Criteria                                                                                                                                                                       |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-14.1.1 | ✅ Positive | Given an active grid, when hovering a card or during selection, a checkbox appears in the **top-right corner**; clicking it adds the item to `selectedItems[]` in Zustand      |
+| AC-14.1.2 | ✅ Positive | Given `selectedItems.length ≥ 1`, then the `BulkActionBar` slides in at the bottom of the grid in ≤ 100ms, showing count and available actions                                 |
+| AC-14.1.3 | ✅ Positive | Given I shift-click a second item after selecting the first, then all items between them (by current sort order) are added to the selection in ≤ 50ms                          |
+| AC-14.1.4 | ✅ Positive | Given the `Escape` key is pressed while items are selected, all selection is cleared immediately and the action bar hides                                                      |
+| AC-14.1.5 | ❌ Negative | Given a user attempts to select an item currently being processed by a background operation (item in `pendingOps` set), that item's checkbox is disabled — no selection occurs |
+| AC-14.1.6 | ⚠️ Edge     | Given the user navigates to a different object or sub-path while a selection is active, then `selectedItems` is cleared immediately (no cross-folder batch)                    |
 
 ---
 
@@ -74,10 +75,10 @@ Frontend:
   selectedItems: Set<string>  ← folder_paths, in Zustand
 
   BulkActionBar (portal-mounted, slides in when selectedItems.size > 0)
-    ├── "Enable All" → invoke('bulk_toggle', { paths: [...selectedItems], enable: true })
-    ├── "Disable All" → invoke('bulk_toggle', { paths: [...selectedItems], enable: false })
-    ├── "Move to Object…" → ObjectPickerModal → invoke('bulk_move', { paths, targetObjectPath })
-    └── "Delete Selected" → ConfirmDialog → invoke('bulk_delete', { paths: [...selectedItems] })
+    ├── "Enable All" → commands.bulkToggle({ paths: [...selectedItems], enable: true })
+    ├── "Disable All" → commands.bulkToggle({ paths: [...selectedItems], enable: false })
+    ├── "Move to Object…" → ObjectPickerModal → commands.bulkMove({ paths, targetObjectPath })
+    └── "Delete Selected" → ConfirmDialog → commands.bulkDelete({ paths: [...selectedItems] })
 
 Backend:
   bulk_toggle_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
@@ -94,13 +95,13 @@ Backend:
 
 ### Integration Points
 
-| Component | Detail |
-|---|---|
-| Selection State | `useAppStore.gridSelection: Set<string>` (folder_paths). |
-| `OperationLock` | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock. |
-| Progress Events | Tauri `Window::emit("bulk-progress", {current, total, label, active})`. |
-| Cache Invalidate| `queryClient.invalidateQueries(['mod-folders'])` after bulk rename ops. |
-| `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes                  |
+| Component            | Detail                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| Selection State      | `useAppStore.gridSelection: Set<string>` (folder_paths).                                    |
+| `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock.               |
+| Progress Events      | Tauri `Window::emit("bulk-progress", {current, total, label, active})`.                     |
+| Cache Invalidate     | `queryClient.invalidateQueries(['mod-folders'])` after bulk rename ops.                     |
+| `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes |
 
 ### Security & Privacy
 

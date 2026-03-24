@@ -5,6 +5,9 @@
 //!
 //! # Covers: US-4.4 (Soft Delete), TC-4.5-01, DI-4.01
 
+use crate::domain::errors::AppError;
+use crate::services::config::ConfigService;
+use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
@@ -14,7 +17,7 @@ use std::time::SystemTime;
 use uuid::Uuid;
 
 /// Metadata stored alongside each trashed item for restore.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct TrashMetadata {
     /// Unique ID for this trash entry
     pub id: String,
@@ -38,35 +41,67 @@ pub struct TrashMetadata {
 ///
 /// Returns the `TrashMetadata` on success.
 pub async fn delete_mod_service(
+    config: &ConfigService,
     pool: &sqlx::SqlitePool,
     state: &WatcherState,
     op_lock: &OperationLock,
     trash_dir: std::path::PathBuf,
     path: String,
     game_id: Option<String>,
-) -> Result<(), String> {
-    let _lock = op_lock.acquire().await?;
+) -> Result<(), AppError> {
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
 
     if !trash_dir.exists() {
-        fs::create_dir_all(&trash_dir).map_err(|e| format!("Failed to create trash dir: {}", e))?;
+        fs::create_dir_all(&trash_dir)
+            .map_err(|e| AppError::Io(format!("Failed to create trash dir: {}", e)))?;
     }
 
     if let Some(ref gid) = game_id {
-        if let Ok(Some(mods_path)) = crate::database::game_repo::get_mod_path(pool, gid).await {
-            let base = std::path::Path::new(&mods_path);
-            let target = std::path::Path::new(&path);
-            if !crate::services::fs_utils::path_utils::is_path_safe(base, target) {
-                return Err(
-                    "Security Error: Path attempts to escape mods directory bounds".to_string(),
-                );
-            }
-        }
+        PathGuard::validate_path(config, gid, &path).map_err(AppError::Security)?;
     }
+
+    let is_safe = if let Some(ref gid) = game_id {
+        // Need to find relative path to query DB is_safe BEFORE deletion
+        let mods_path = crate::repo::game_repo::get_mod_path(pool, gid)
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(mp) = mods_path {
+            let base = Path::new(&mp);
+            let rel = Path::new(&path)
+                .strip_prefix(base)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.clone());
+
+            sqlx::query_scalar::<_, i32>(
+                "SELECT is_safe FROM mods WHERE game_id = ? AND folder_path = ? LIMIT 1",
+            )
+            .bind(gid)
+            .bind(rel)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v != 0)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let path_obj = Path::new(&path);
     let _guard = SuppressionGuard::new(&state.suppressor);
-    move_to_trash(path_obj, &trash_dir, game_id)?;
-    let _ = crate::database::mod_repo::delete_mod_by_path(pool, &path).await;
+
+    move_to_trash(path_obj, &trash_dir, game_id.clone())?;
+    let _ = crate::repo::mod_repo::delete_mod_by_path(pool, &path).await;
+
+    // Trigger Dirty State: Register unsaved change so TopBar switches to "Unsaved"
+    if let (Some(gid), Some(safe)) = (game_id, is_safe) {
+        let _ = crate::services::collection_service::handle_dirty_state(pool, &gid, safe).await;
+    }
+
     Ok(())
 }
 
@@ -76,7 +111,7 @@ pub async fn move_to_trash_guarded(
     trash_dir: &Path,
     path: String,
     game_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let path_obj = Path::new(&path);
     let _guard = SuppressionGuard::new(&state.suppressor);
     move_to_trash(path_obj, trash_dir, game_id).map(|_| ())
@@ -86,17 +121,20 @@ pub fn move_to_trash(
     source_path: &Path,
     trash_dir: &Path,
     game_id: Option<String>,
-) -> Result<TrashMetadata, String> {
+) -> Result<TrashMetadata, AppError> {
     if !source_path.exists() {
-        return Err(format!("Source does not exist: {}", source_path.display()));
+        return Err(AppError::Io(format!(
+            "Source does not exist: {}",
+            source_path.display()
+        )));
     }
     if !source_path.is_dir() {
-        return Err("Only directories can be trashed".to_string());
+        return Err(AppError::Io("Only directories can be trashed".to_string()));
     }
 
     let folder_name = source_path
         .file_name()
-        .ok_or("Invalid folder name")?
+        .ok_or_else(|| AppError::Internal("Invalid folder name".to_string()))?
         .to_string_lossy()
         .to_string();
 
@@ -105,7 +143,7 @@ pub fn move_to_trash(
 
     // Create trash entry directory
     fs::create_dir_all(&trash_entry_dir)
-        .map_err(|e| format!("Failed to create trash entry: {e}"))?;
+        .map_err(|e| AppError::Io(format!("Failed to create trash entry: {e}")))?;
 
     // Calculate size before move (shallow)
     let size_bytes = fs::metadata(source_path).map(|m| m.len()).unwrap_or(0);
@@ -128,13 +166,24 @@ pub fn move_to_trash(
     // Write metadata.json first (before moving content)
     let metadata_path = trash_entry_dir.join("metadata.json");
     let json = serde_json::to_string_pretty(&metadata)
-        .map_err(|e| format!("Failed to serialize metadata: {e}"))?;
-    fs::write(&metadata_path, json).map_err(|e| format!("Failed to write metadata: {e}"))?;
+        .map_err(|e| AppError::Io(format!("Failed to serialize metadata: {e}")))?;
+    fs::write(&metadata_path, json)
+        .map_err(|e| AppError::Io(format!("Failed to write metadata: {e}")))?;
 
     // Move the folder content into trash entry
     let dest = trash_entry_dir.join(&folder_name);
     crate::services::fs_utils::file_utils::rename_cross_drive_fallback(source_path, &dest)
         .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                let processes =
+                    crate::services::fs_utils::locking::get_locking_processes(source_path);
+                if !processes.is_empty() {
+                    return AppError::FileInUse {
+                        path: source_path.to_string_lossy().to_string(),
+                        processes,
+                    };
+                }
+            }
             // If rename fails (cross-device), try copy + delete
             log::warn!("rename failed, attempting copy: {e}");
             copy_dir_recursive(source_path, &dest)
@@ -145,8 +194,9 @@ pub fn move_to_trash(
                 .unwrap_or_else(|copy_err| {
                     log::error!("Copy fallback also failed: {copy_err}");
                 });
-            format!("Failed to move to trash: {e}")
+            AppError::Io(format!("Failed to move to trash: {e}"))
         })?;
+
 
     log::info!("Moved '{}' to trash (id: {})", folder_name, trash_id);
     Ok(metadata)
@@ -157,62 +207,83 @@ pub fn restore_from_trash(
     trash_id: &str,
     trash_dir: &Path,
     target_game_id: Option<&String>,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let entry_dir = trash_dir.join(trash_id);
     if !entry_dir.exists() {
-        return Err(format!("Trash entry not found: {trash_id}"));
+        return Err(AppError::Io(format!("Trash entry not found: {trash_id}")));
     }
 
     // Read metadata
     let metadata_path = entry_dir.join("metadata.json");
     let raw = fs::read_to_string(&metadata_path)
-        .map_err(|e| format!("Failed to read trash metadata: {e}"))?;
-    let metadata: TrashMetadata =
-        serde_json::from_str(&raw).map_err(|e| format!("Invalid trash metadata: {e}"))?;
+        .map_err(|e| AppError::Io(format!("Failed to read trash metadata: {e}")))?;
+    let metadata: TrashMetadata = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Io(format!("Invalid trash metadata: {e}")))?;
 
     // Context Parity Check: Prevent restoring a mod into the wrong game context
     if let (Some(meta_game), Some(target_game)) = (&metadata.game_id, target_game_id) {
         if meta_game != target_game {
-            return Err("Context mismatch: Cannot restore a mod from a different game".to_string());
+            return Err(AppError::Io(
+                "Context mismatch: Cannot restore a mod from a different game".to_string(),
+            ));
         }
     } else if metadata.game_id.is_some() && target_game_id.is_none() {
-        return Err("Context mismatch: Target game context is missing".to_string());
+        return Err(AppError::Io(
+            "Context mismatch: Target game context is missing".to_string(),
+        ));
     }
 
     let original = Path::new(&metadata.original_path);
 
     // Check if original location already exists
     if original.exists() {
-        return Err(format!(
+        return Err(AppError::Io(format!(
             "Original path already exists: {}",
             original.display()
-        ));
+        )));
     }
 
     // Find the content folder (should be the only non-metadata item)
     let content_dir = entry_dir.join(&metadata.original_name);
     if !content_dir.exists() {
-        return Err("Trash content missing — cannot restore".to_string());
+        return Err(AppError::Io(
+            "Trash content missing — cannot restore".to_string(),
+        ));
     }
 
     // Move back
     crate::services::fs_utils::file_utils::rename_cross_drive_fallback(&content_dir, original)
-        .map_err(|e| format!("Failed to restore from trash: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                let processes =
+                    crate::services::fs_utils::locking::get_locking_processes(&content_dir);
+                if !processes.is_empty() {
+                    return AppError::FileInUse {
+                        path: content_dir.to_string_lossy().to_string(),
+                        processes,
+                    };
+                }
+            }
+            AppError::Io(format!("Failed to restore from trash: {e}"))
+        })?;
+
 
     // Cleanup trash entry
-    fs::remove_dir_all(&entry_dir).map_err(|e| format!("Failed to cleanup trash entry: {e}"))?;
+    fs::remove_dir_all(&entry_dir)
+        .map_err(|e| AppError::Io(format!("Failed to cleanup trash entry: {e}")))?;
 
     log::info!("Restored '{}' from trash", metadata.original_name);
     Ok(metadata.original_path)
 }
 
 /// List all items in the trash directory.
-pub fn list_trash(trash_dir: &Path) -> Result<Vec<TrashMetadata>, String> {
+pub fn list_trash(trash_dir: &Path) -> Result<Vec<TrashMetadata>, AppError> {
     if !trash_dir.exists() {
         return Ok(Vec::new());
     }
 
-    let entries = fs::read_dir(trash_dir).map_err(|e| format!("Failed to read trash dir: {e}"))?;
+    let entries = fs::read_dir(trash_dir)
+        .map_err(|e| AppError::Io(format!("Failed to read trash dir: {e}")))?;
 
     let mut items = Vec::new();
     for entry in entries.flatten() {
@@ -232,18 +303,19 @@ pub fn list_trash(trash_dir: &Path) -> Result<Vec<TrashMetadata>, String> {
 }
 
 /// Permanently delete all items in the trash.
-pub fn empty_trash(trash_dir: &Path) -> Result<u64, String> {
+pub fn empty_trash(trash_dir: &Path) -> Result<u64, AppError> {
     if !trash_dir.exists() {
         return Ok(0);
     }
 
-    let entries = fs::read_dir(trash_dir).map_err(|e| format!("Failed to read trash: {e}"))?;
+    let entries =
+        fs::read_dir(trash_dir).map_err(|e| AppError::Io(format!("Failed to read trash: {e}")))?;
 
     let mut count = 0u64;
     for entry in entries.flatten() {
         if entry.path().is_dir() {
             fs::remove_dir_all(entry.path())
-                .map_err(|e| format!("Failed to remove trash entry: {e}"))?;
+                .map_err(|e| AppError::Io(format!("Failed to remove trash entry: {e}")))?;
             count += 1;
         }
     }

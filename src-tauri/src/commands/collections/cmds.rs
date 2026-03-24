@@ -1,0 +1,529 @@
+use sqlx::SqlitePool;
+use tauri::State;
+
+use crate::domain::collection::{
+    ApplyPreview, ApplyResult, CollectionPreview, CollectionSummary, CreateCollectionInput,
+    UpdateCollectionInput,
+};
+use crate::domain::corridor::{CorridorSnapshot, CorridorSwitchPreview, SwitchResult};
+use crate::domain::errors::AppError;
+use crate::domain::pin::PinStatus;
+use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::{collection_service, corridor_service, pin_service};
+
+// ============================================================================
+// Corridor Commands
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_corridor_state(
+    pool: State<'_, SqlitePool>,
+    game_id: String,
+    is_safe: bool,
+) -> Result<CorridorSnapshot, AppError> {
+    let snapshot = corridor_service::get_corridor_state(pool.inner(), &game_id, is_safe).await?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn switch_corridor(
+    pool: State<'_, SqlitePool>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    config: State<'_, crate::services::config::ConfigService>,
+    op_lock: State<'_, OperationLock>,
+    game_id: String,
+    target_safe: bool,
+) -> Result<SwitchResult, AppError> {
+    let _guard = op_lock
+        .inner()
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e))?;
+    let settings = config.get_settings();
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| {
+            AppError::Corridor(crate::domain::errors::CorridorError::GameNotFound {
+                game_id: game_id.clone(),
+            })
+        })?;
+
+    let mods_path = game.mod_path.clone();
+
+    let result = corridor_service::switch_corridor(
+        pool.inner(),
+        &game_id,
+        target_safe,
+        mods_path,
+        watcher_state.suppressor.clone(),
+        &watcher_state,
+        settings,
+    )
+    .await?;
+
+    // Sync in-game overlay artifacts (Req-43)
+    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        pool.inner(),
+        config.inner(),
+        watcher_state.suppressor.clone(),
+    )
+    .await;
+
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_corridor_switch(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    game_id: String,
+    target_safe: bool,
+) -> Result<CorridorSwitchPreview, AppError> {
+    let settings = config.get_settings();
+    let mods_path = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .map(|g| g.mod_path.to_string_lossy().to_string());
+
+    let preview =
+        corridor_service::preview_switch(pool.inner(), &game_id, target_safe, mods_path.as_deref())
+            .await?;
+    Ok(preview)
+}
+
+// ============================================================================
+// Collection Commands
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_collections(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    game_id: String,
+) -> Result<Vec<CollectionSummary>, AppError> {
+    let settings = config.get_settings();
+    let is_safe = settings.safe_mode.enabled;
+
+    let result = collection_service::list_collections(pool.inner(), &game_id, is_safe).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_collection(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    game_id: String,
+    name: String,
+) -> Result<CollectionSummary, AppError> {
+    let settings = config.get_settings();
+    let is_safe = settings.safe_mode.enabled;
+
+    let input = CreateCollectionInput {
+        game_id,
+        name,
+        is_safe: is_safe,
+    };
+
+    let result = collection_service::create_collection(pool.inner(), input).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_collection(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    op_lock: State<'_, OperationLock>,
+    game_id: String,
+    collection_id: String,
+    ignore_missing: Option<bool>,
+) -> Result<ApplyResult, AppError> {
+    let _guard = op_lock
+        .inner()
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e))?;
+    let settings = config.get_settings();
+    let is_safe = settings.safe_mode.enabled;
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| {
+            AppError::Corridor(crate::domain::errors::CorridorError::GameNotFound {
+                game_id: game_id.clone(),
+            })
+        })?;
+    let mods_path = game.mod_path.clone();
+
+    let result = collection_service::apply_collection(
+        pool.inner(),
+        &game_id,
+        &collection_id,
+        is_safe,
+        mods_path,
+        watcher_state.suppressor.clone(),
+        ignore_missing.unwrap_or(false),
+        settings,
+    )
+    .await?;
+
+    // Sync in-game overlay artifacts (Req-43)
+    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        pool.inner(),
+        config.inner(),
+        watcher_state.suppressor.clone(),
+    )
+    .await;
+
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_collection(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    op_lock: State<'_, OperationLock>,
+    game_id: String,
+) -> Result<ApplyResult, AppError> {
+    let _guard = op_lock
+        .inner()
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e))?;
+    let settings = config.get_settings();
+    let is_safe = settings.safe_mode.enabled;
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| {
+            AppError::Corridor(crate::domain::errors::CorridorError::GameNotFound {
+                game_id: game_id.clone(),
+            })
+        })?;
+    let mods_path = game.mod_path.clone();
+
+    let result = collection_service::undo_collection(
+        pool.inner(),
+        &game_id,
+        is_safe,
+        mods_path,
+        watcher_state.suppressor.clone(),
+        settings,
+    )
+    .await?;
+
+    // Sync in-game overlay artifacts (Req-43)
+    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        pool.inner(),
+        config.inner(),
+        watcher_state.suppressor.clone(),
+    )
+    .await;
+
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn update_collection(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    game_id: String,
+    id: String,
+    name: Option<String>,
+) -> Result<CollectionSummary, AppError> {
+    let input = UpdateCollectionInput { id, game_id, name };
+    let result = collection_service::update_collection(pool.inner(), input).await?;
+    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        pool.inner(),
+        config.inner(),
+        watcher_state.suppressor.clone(),
+    )
+    .await;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_collection(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    _game_id: String,
+    id: String,
+) -> Result<(), AppError> {
+    collection_service::delete_collection(pool.inner(), &id).await?;
+    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        pool.inner(),
+        config.inner(),
+        watcher_state.suppressor.clone(),
+    )
+    .await;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn handle_dirty_state(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    game_id: String,
+) -> Result<CollectionSummary, AppError> {
+    let settings = config.get_settings();
+    let is_safe = settings.safe_mode.enabled;
+
+    let result = collection_service::handle_dirty_state(pool.inner(), &game_id, is_safe).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_collection_preview(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    collection_id: String,
+    game_id: String,
+) -> Result<CollectionPreview, AppError> {
+    let settings = config.get_settings();
+    let mods_path = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .map(|g| g.mod_path.to_string_lossy().to_string());
+
+    let result = collection_service::get_collection_preview(
+        pool.inner(),
+        &collection_id,
+        mods_path.as_deref(),
+    )
+    .await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_apply_collection(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    game_id: String,
+    collection_id: String,
+    is_safe: bool,
+) -> Result<ApplyPreview, AppError> {
+    let settings = config.get_settings();
+    let mods_path = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .map(|g| g.mod_path.to_string_lossy().to_string());
+
+    let result = collection_service::preview_apply(
+        pool.inner(),
+        &game_id,
+        &collection_id,
+        is_safe,
+        mods_path.as_deref(),
+    )
+    .await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn handle_mod_moved_or_renamed(
+    pool: State<'_, SqlitePool>,
+    old_path_key: String,
+    new_path_key: String,
+    new_object_id: Option<String>,
+) -> Result<u64, AppError> {
+    let result = collection_service::handle_mod_moved_or_renamed(
+        pool.inner(),
+        &old_path_key,
+        &new_path_key,
+        new_object_id.as_deref(),
+    )
+    .await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn check_pending_tasks(
+    pool: State<'_, SqlitePool>,
+    game_id: String,
+) -> Result<Vec<crate::domain::task::PipelineTask>, AppError> {
+    let tasks = crate::repo::task_repo::get_pending_tasks(pool.inner(), &game_id).await?;
+    Ok(tasks)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn app_startup_check(
+    pool: State<'_, SqlitePool>,
+) -> Result<Vec<crate::domain::task::PipelineTask>, AppError> {
+    let tasks = crate::repo::task_repo::get_all_pending_tasks_global(pool.inner()).await?;
+    Ok(tasks)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn check_boot_security(
+    pool: State<'_, SqlitePool>,
+    is_safe_mode: bool,
+) -> Result<bool, AppError> {
+    let result = pin_service::check_boot_security(pool.inner(), is_safe_mode).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_pending_tasks(pool: State<'_, SqlitePool>) -> Result<(), AppError> {
+    let tasks = crate::repo::task_repo::get_all_pending_tasks_global(pool.inner()).await?;
+    for task in tasks {
+        crate::repo::task_repo::update_status(
+            pool.inner(),
+            &task.id,
+            crate::domain::task::TaskStatus::Failed,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn resolve_recovery_task(
+    pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
+    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    task_id: String,
+    action: String, // "CLEANUP", "RETRY", "IGNORE"
+) -> Result<(), AppError> {
+    log::info!("Resolving recovery task {} with action {}", task_id, action);
+
+    if action == "RETRY" {
+        let task = crate::repo::task_repo::get_task_by_id(pool.inner(), &task_id)
+            .await?
+            .ok_or_else(|| AppError::Validation(format!("Task {} not found", task_id)))?;
+
+        let settings = config.get_settings();
+        let game = settings
+            .games
+            .iter()
+            .find(|g| g.id == task.game_id)
+            .ok_or_else(|| AppError::Validation(format!("Game {} not found", task.game_id)))?;
+
+        match task.task_type.as_str() {
+            "apply_collection" => {
+                if let Some(collection_id) = task.target_id {
+                    let collection =
+                        crate::repo::collection_repo::get_by_id(pool.inner(), &collection_id)
+                            .await?
+                            .ok_or_else(|| {
+                                AppError::Validation(format!(
+                                    "Collection {} not found",
+                                    collection_id
+                                ))
+                            })?;
+
+                    crate::services::collection_service::apply_collection(
+                        pool.inner(),
+                        &task.game_id,
+                        &collection_id,
+                        collection.is_safe,
+                        game.mod_path.clone(),
+                        watcher_state.suppressor.clone(),
+                        true, // ignore_missing during recovery
+                        settings,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            }
+            "switch_corridor" => {
+                if let Some(target_safe_str) = task.target_id {
+                    let target_safe = target_safe_str == "true";
+                    crate::services::corridor_service::switch_corridor(
+                        pool.inner(),
+                        &task.game_id,
+                        target_safe,
+                        game.mod_path.clone(),
+                        watcher_state.suppressor.clone(),
+                        &watcher_state,
+                        settings,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            }
+            _ => {
+                log::warn!("Unsupported task type for retry: {}", task.task_type);
+            }
+        }
+    }
+
+    // Default: mark as failed
+    crate::repo::task_repo::update_status(
+        pool.inner(),
+        &task_id,
+        crate::domain::task::TaskStatus::Failed,
+    )
+    .await?;
+    Ok(())
+}
+
+// ============================================================================
+// PIN Commands
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub async fn has_pin(pool: State<'_, SqlitePool>) -> Result<bool, AppError> {
+    let result = pin_service::has_pin(pool.inner()).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_pin(
+    pool: State<'_, SqlitePool>,
+    pin: String,
+    recovery_code: Option<String>,
+) -> Result<(), AppError> {
+    pin_service::set_pin(pool.inner(), &pin, recovery_code.as_deref()).await?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn verify_pin(pool: State<'_, SqlitePool>, pin: String) -> Result<bool, AppError> {
+    let result = pin_service::verify_pin(pool.inner(), &pin).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_pin(pool: State<'_, SqlitePool>) -> Result<(), AppError> {
+    pin_service::clear_pin(pool.inner()).await?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_pin_status(pool: State<'_, SqlitePool>) -> Result<PinStatus, AppError> {
+    let result = pin_service::get_status(pool.inner()).await?;
+    Ok(result)
+}

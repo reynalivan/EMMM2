@@ -25,9 +25,10 @@ As a user, I want to enable or disable a mod with one click on a toggle, so that
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-20.1.1 | ✅ Positive | Given `DISABLED MyMod` (disabled), when I click the toggle to enable, then the folder is renamed to `MyMod` on disk and the card shows "enabled" within ≤ 16ms (optimistic)                                                                                  |
 | AC-20.1.2 | ✅ Positive | Given `MyMod` (enabled), when I click the toggle to disable, then the folder is renamed to `DISABLED MyMod` and the card shows "disabled" within ≤ 16ms (optimistic)                                                                                         |
-| AC-20.1.3 | ✅ Positive | Given a successful toggle, then the object's `enabled_count` in the objectlist badge updates within ≤ 50ms via the same optimistic batch update                                                                                                                 |
+| AC-20.1.3 | ✅ Positive | Given a successful toggle, then the object's `enabled_count` in the objectlist badge updates within ≤ 50ms via the same optimistic batch update                                                                                                              |
 | AC-20.1.4 | ❌ Negative | Given `OperationLock` is already held by another operation (in-flight rename or bulk toggle), when the toggle fires, then it awaits the lock with a timeout of 3s; if not acquired, returns "Operation in progress" toast and reverts the optimistic UI      |
-| AC-20.1.5 | ⚠️ Edge     | Given rapid toggle spam (≥ 5 clicks in < 1s), then IPC calls are debounced on the frontend (the last click's target state is the intended state); the backend serializes via `OperationLock` — no intermediate state leaves a partially-prefixed folder name |
+| AC-20.1.5 | ❌ Negative | Given a folder is locked by parent (`ancestor_disabled_by` is present), then clicking the toggle does NOT execute `toggle_mod` directly — instead, it opens the `EnableParentDialog` to resolve the root cause.     |
+| AC-20.1.6 | ⚠️ Edge     | Given rapid toggle spam (≥ 5 clicks in < 1s), then IPC calls are debounced on the frontend (the last click's target state is the intended state); the backend serializes via `OperationLock` — no intermediate state leaves a partially-prefixed folder name |
 
 ---
 
@@ -72,13 +73,13 @@ toggle_mod(id, enable):
 
 ### Integration Points
 
-| Component           | Detail                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| Command             | `mod_core_cmds.rs::toggle_mod` delegating to `core_ops.rs::toggle_mod_inner`                     |
-| Path Logic          | `path_utils::is_path_safe` ensures operations stay within the mod directory.                   |
-| DB Sync             | `update_mod_path_and_status` handles cross-platform path separators (win vs nix).                |
-| Recursive Update    | `update_child_paths` ensures nested mods remain linked after a parent rename.                   |
-| Optimistic Update   | `useFolderGridActions.ts` patches the cache before DB confirmation.                             |
+| Component         | Detail                                                                            |
+| ----------------- | --------------------------------------------------------------------------------- |
+| Command           | `mod_core_cmds.rs::toggle_mod` delegating to `core_ops.rs::toggle_mod_inner`      |
+| Path Logic        | `path_utils::is_path_safe` ensures operations stay within the mod directory.      |
+| DB Sync           | `update_mod_path_and_status` handles cross-platform path separators (win vs nix). |
+| Recursive Update  | `update_child_paths` ensures nested mods remain linked after a parent rename.     |
+| Optimistic Update | `useFolderGridActions.ts` patches the cache before DB confirmation.               |
 
 ### Security & Privacy
 

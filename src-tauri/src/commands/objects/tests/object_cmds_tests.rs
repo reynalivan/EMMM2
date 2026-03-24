@@ -13,12 +13,16 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
     let mods_path = tmp.path().join("Mods");
     fs::create_dir(&mods_path).unwrap();
 
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, mod_path, path) VALUES (?, 'Test Game', 'GIMI', ?, '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: &game_id,
+            name: "Test Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path.to_string_lossy()),
+        },
     )
-    .bind(&game_id)
-    .bind(mods_path.to_string_lossy().to_string())
-    .execute(&pool)
     .await
     .unwrap();
 
@@ -61,9 +65,14 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
     };
 
     // Sync filesystem -> DB first so the DISABLED-prefixed folder is indexed
-    crate::services::scanner::object_sync::sync_objects_for_game(&pool, &game_id, &[])
-        .await
-        .expect("sync_objects_for_game failed");
+    crate::services::scanner::object_sync::sync_objects_for_game(
+        &pool,
+        &game_id,
+        "Mods",                           // This is mods_path_str
+        &Vec::<String>::new().as_slice(), // This is safe_mode_keywords (4th arg)
+    )
+    .await
+    .expect("sync_objects_for_game failed");
 
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
 
@@ -168,8 +177,11 @@ async fn test_create_object_cmd() -> CommandResult<()> {
         folder_path: Some("New Hero Folder".to_string()),
         object_type: "Weapon".to_string(),
         sub_category: None,
+        status: None,
         metadata: Some(serde_json::json!({})),
         thumbnail_url: None,
+        hash_db: None,
+        custom_skins: None,
     };
 
     let obj_id_result = create_object_cmd_inner(payload, &pool, None).await?;
@@ -229,10 +241,14 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         name: Some("NewName".to_string()),
         object_type: Some("Character".to_string()),
         sub_category: None,
+        status: None,
         metadata: Some(serde_json::json!({"test":true})),
         thumbnail_path: None,
         is_auto_sync: None,
+        is_pinned: None,
         tags: Some(vec!["Pyro".to_string()]),
+        hash_db: None,
+        custom_skins: None,
     };
 
     let _updated = update_object_cmd_inner(obj_id.to_string(), &payload, &pool).await?;
@@ -304,10 +320,10 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
             object_id: Some(full_obj_id),
             actual_name: "ModName",
             folder_path: "Path",
-            status: "DISABLED",
+            status: crate::database::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Weapon"),
-            mods_path: None,
+            mods_path: Some("C:\\Mods".into()),
         },
     )
     .await
@@ -317,6 +333,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     let res_empty = crate::services::objects::mutate::delete_object(
         &pool,
         empty_obj_id,
+        false,
         &trash_dir,
         &watcher_state,
         &op_lock,
@@ -331,6 +348,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     let res_full = crate::services::objects::mutate::delete_object(
         &pool,
         full_obj_id,
+        true,
         &trash_dir,
         &watcher_state,
         &op_lock,

@@ -1,3 +1,4 @@
+use crate::database::models::GameType;
 use crate::services::objects::query::{
     gc_lost_objects, get_category_counts_service, get_object_by_id_service,
 };
@@ -18,9 +19,9 @@ async fn test_get_object_by_id_service() {
         &TestGameFixture {
             id: "g_get_obj",
             name: "Genshin",
-            game_type: "type",
+            game_type: GameType::GIMI,
             path: "/game_get_obj",
-            mod_path: None,
+            mods_path: Some("C:\\Mods".into()),
         },
     )
     .await
@@ -59,9 +60,9 @@ async fn test_get_category_counts_service() {
         &TestGameFixture {
             id: "g_cat_counts",
             name: "StarRail",
-            game_type: "type",
+            game_type: GameType::GIMI,
             path: "/game_cat_counts",
-            mod_path: None,
+            mods_path: Some("C:\\Mods".into()),
         },
     )
     .await
@@ -126,9 +127,9 @@ async fn test_gc_lost_objects_removes_missing() {
         &TestGameFixture {
             id: "g_gc_lost",
             name: "ZZZ",
-            game_type: "type",
+            game_type: GameType::GIMI,
             path: "/game_gc_lost",
-            mod_path: Some(mod_path.to_str().unwrap()),
+            mods_path: Some(mod_path.to_str().unwrap()),
         },
     )
     .await
@@ -190,9 +191,9 @@ async fn test_gc_lost_objects_keeps_unicode_folder_with_ascii_case_variants() {
         &TestGameFixture {
             id: "g_gc_unicode",
             name: "ZZZ",
-            game_type: "type",
+            game_type: GameType::GIMI,
             path: "/game_gc_unicode",
-            mod_path: Some(mod_path.to_str().unwrap()),
+            mods_path: Some(mod_path.to_str().unwrap()),
         },
     )
     .await

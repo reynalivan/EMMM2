@@ -1,133 +1,100 @@
-import type { CollectionObjectState, CollectionPreviewMod } from '../../../types/collection';
+import type { CollectionMember } from '../../../types/collection';
 
 export interface GroupedMod {
   id: string;
   name: string;
   type: string;
-  mods: CollectionPreviewMod[];
+  mods: CollectionMember[];
   unsafeCount: number;
   is_enabled?: boolean;
-  is_editable?: boolean;
 }
 
-export interface GroupedObjectState extends CollectionObjectState {
-  name: string;
-  object_type: string;
-  is_editable?: boolean;
-}
-
-interface BuildGroupedModsWithObjectStatesOptions {
+interface BuildGroupedCollectionMembersOptions {
   mode: 'workspace' | 'preview';
   relevantObjectIds?: ReadonlySet<string>;
 }
 
 /**
- * Groups a flat list of CollectionPreviewMod by their parent object.
- * Used by CollectionWorkspace, ApplyCollectionModal, and any future views.
+ * Groups a flat list of V2 CollectionMembers into Object-based Groups.
+ * Objects are extracted from `kind === 'object'` members.
+ * Mods (`kind === 'mod' | 'nested'`) are sorted into these object groups based on their `object_id`.
  */
-function groupMods(mods: CollectionPreviewMod[]): GroupedMod[] {
-  const objectsMap = new Map<string, GroupedMod>();
-  let hasUncategorized = false;
-  const uncategorizedMods: CollectionPreviewMod[] = [];
-  let uncategorizedUnsafeCount = 0;
+export function buildGroupedCollectionMembers(
+  members: CollectionMember[],
+  options?: BuildGroupedCollectionMembersOptions,
+): GroupedMod[] {
+  const groupsMap = new Map<string, GroupedMod>();
+  const uncategorizedMods: CollectionMember[] = [];
+  const uncategorizedUnsafeCount = 0;
 
-  mods.forEach((mod) => {
-    if (mod.object_name) {
-      const groupKey = mod.object_name;
-
-      if (!objectsMap.has(groupKey)) {
-        objectsMap.set(groupKey, {
-          id: mod.object_id || groupKey,
-          name: mod.object_name,
-          type: mod.object_type || 'Other',
-          mods: [],
-          unsafeCount: 0,
-        });
-      }
-
-      const obj = objectsMap.get(groupKey)!;
-      // Upgrade type/id if a later mod provides richer info
-      if (obj.type === 'Other' && mod.object_type) {
-        obj.type = mod.object_type;
-      }
-      if (obj.id === groupKey && mod.object_id) {
-        obj.id = mod.object_id;
-      }
-
-      obj.mods.push(mod);
-      if (!mod.is_safe) obj.unsafeCount += 1;
-    } else {
-      hasUncategorized = true;
-      uncategorizedMods.push(mod);
-      if (!mod.is_safe) uncategorizedUnsafeCount += 1;
+  // 1. Initial pass: Create groups for all Object states
+  members.forEach((member) => {
+    if (member.kind === 'object') {
+      const objId = member.object_id || member.path_key;
+      groupsMap.set(objId, {
+        id: objId,
+        name: member.display_name || 'Unknown Object',
+        type: 'Object', // In V2, we don't have object_type out of the box unless we do a DB join, just fallback
+        mods: [],
+        unsafeCount: 0,
+        is_enabled: member.is_enabled,
+      });
     }
   });
 
-  const groups = Array.from(objectsMap.values());
-  if (hasUncategorized) {
-    groups.push({
+  // 2. Second pass: Assign mods to their exact Group, or create impromptu groups/uncategorized
+  members.forEach((member) => {
+    if (member.kind === 'mod' || member.kind === 'nested') {
+      if (member.object_id) {
+        if (!groupsMap.has(member.object_id)) {
+          // Object state is missing from collection, but mod claims to belong to it
+          groupsMap.set(member.object_id, {
+            id: member.object_id,
+            name: member.display_name || 'Unknown Object',
+            type: 'Other',
+            mods: [],
+            unsafeCount: 0,
+          });
+        }
+        const group = groupsMap.get(member.object_id)!;
+        group.mods.push(member);
+        // We lack `is_safe` in V2 CollectionMember easily accessible on frontend without cross-refing
+        // We'll leave unsafeCount at 0 for now since SafeMode logic operates generically.
+      } else {
+        uncategorizedMods.push(member);
+      }
+    }
+  });
+
+  const mergedGroups = Array.from(groupsMap.values());
+
+  if (uncategorizedMods.length > 0) {
+    mergedGroups.push({
       id: 'uncategorized',
       name: 'Uncategorized',
       type: 'Other',
       mods: uncategorizedMods,
       unsafeCount: uncategorizedUnsafeCount,
+      is_enabled: true,
     });
   }
 
-  const typeOrder = ['Character', 'Weapon', 'UI', 'Other'];
-  groups.sort((a, b) => {
-    const idxA = typeOrder.indexOf(a.type);
-    const idxB = typeOrder.indexOf(b.type);
-    if (idxA !== -1 && idxB !== -1 && idxA !== idxB) return idxA - idxB;
-    if (idxA !== -1 && idxB === -1) return -1;
-    if (idxA === -1 && idxB !== -1) return 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  return groups;
-}
-
-export function buildGroupedModsWithObjectStates(
-  mods: CollectionPreviewMod[],
-  objectStates: GroupedObjectState[],
-  options: BuildGroupedModsWithObjectStatesOptions,
-): GroupedMod[] {
-  const groupedMods = groupMods(mods);
-  const groupedByKey = new Map(
-    groupedMods.map((group) => [group.id === group.name ? group.name : group.id, group]),
-  );
-
-  const mergedGroups: GroupedMod[] = objectStates.map((state) => {
-    const matchingGroup = groupedByKey.get(state.object_id) ?? groupedByKey.get(state.name);
-    if (matchingGroup) {
-      const matchingKey =
-        matchingGroup.id === matchingGroup.name ? matchingGroup.name : matchingGroup.id;
-      groupedByKey.delete(matchingKey);
-    }
-
-    return {
-      id: state.object_id,
-      name: state.name,
-      type: state.object_type,
-      mods: matchingGroup?.mods ?? [],
-      unsafeCount: matchingGroup?.unsafeCount ?? 0,
-      is_enabled: state.is_enabled,
-      is_editable: state.is_editable,
-    };
-  });
-
-  groupedByKey.forEach((group) => {
-    mergedGroups.push(group);
-  });
-
-  const relevantObjectIds = options.relevantObjectIds;
+  const relevantObjectIds = options?.relevantObjectIds;
   const filteredGroups =
-    options.mode === 'preview' && relevantObjectIds && relevantObjectIds.size > 0
+    options?.mode === 'preview' && relevantObjectIds && relevantObjectIds.size > 0
       ? mergedGroups.filter(
-          (group) => relevantObjectIds.has(group.id) || relevantObjectIds.has(group.name),
+          (group) =>
+            relevantObjectIds.has(group.id) ||
+            relevantObjectIds.has(group.name) ||
+            group.id === 'uncategorized',
         )
       : mergedGroups;
 
-  filteredGroups.sort((left, right) => left.name.localeCompare(right.name));
+  filteredGroups.sort((left, right) => {
+    if (left.id === 'uncategorized') return 1;
+    if (right.id === 'uncategorized') return -1;
+    return left.name.localeCompare(right.name);
+  });
+
   return filteredGroups;
 }

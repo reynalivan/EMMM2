@@ -1,7 +1,7 @@
 use tauri::Manager;
 use uuid::Uuid;
 
-use crate::database::object_repo::{CreateObjectInput, UpdateObjectInput};
+use crate::repo::object_repo::{CreateObjectInput, UpdateObjectInput};
 use crate::types::errors::CommandError;
 
 pub async fn create_object_cmd_inner(
@@ -22,15 +22,17 @@ pub async fn create_object_cmd_inner(
     let mut pending_thumbnail_copy = None;
     let mut pending_folder_creation = None;
 
+    use sqlx::Row;
     // Lookup the game path (this is the mods root)
-    let game_row = sqlx::query!("SELECT mod_path FROM games WHERE id = ?", input.game_id)
+    let game_row = sqlx::query("SELECT mods_path FROM games WHERE id = ?")
+        .bind(&input.game_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| CommandError::Database(e.to_string()))?;
 
     if let Some(game) = game_row {
-        if let Some(mod_path) = game.mod_path {
-            let target_dir = std::path::Path::new(&mod_path).join(&folder_path);
+        if let Some(mods_path) = game.get::<Option<String>, _>("mods_path") {
+            let target_dir = std::path::Path::new(&mods_path).join(&folder_path);
 
             pending_folder_creation = Some(target_dir.clone());
 
@@ -54,7 +56,7 @@ pub async fn create_object_cmd_inner(
     // 1. Insert to database FIRST to prevent race condition with filesystem watcher.
     // If the watcher triggers immediately after folder creation, it will find the DB record
     // and won't insert an "Other" category default placeholder.
-    let res = crate::database::object_repo::create_object(
+    let res = crate::repo::object_repo::create_object(
         pool,
         &id,
         &input.game_id,
@@ -62,8 +64,11 @@ pub async fn create_object_cmd_inner(
         &folder_path,
         &input.object_type,
         input.sub_category.as_ref(),
+        input.status,
         &metadata_str,
         thumbnail_abs_path.as_ref(),
+        None,
+        None,
     )
     .await;
 
@@ -99,7 +104,7 @@ pub async fn create_object_cmd_inner(
 
 /// Toggle the pinned state of an object.
 pub async fn toggle_pin_object(pool: &sqlx::SqlitePool, id: &str, pin: bool) -> Result<(), String> {
-    crate::database::object_repo::set_is_pinned(pool, id, pin)
+    crate::repo::object_repo::set_is_pinned(pool, id, pin)
         .await
         .map_err(|e| e.to_string())
 }
@@ -110,7 +115,7 @@ pub async fn update_object(
     id: &str,
     updates: &UpdateObjectInput,
 ) -> Result<(), CommandError> {
-    match crate::database::object_repo::update_object(pool, id, updates).await {
+    match crate::repo::object_repo::update_object(pool, id, updates).await {
         Ok(_) => Ok(()),
         Err(e) => {
             let msg = e.to_string().to_lowercase();
@@ -128,6 +133,7 @@ pub async fn update_object(
 pub async fn delete_object(
     pool: &sqlx::SqlitePool,
     id: &str,
+    force: bool,
     trash_dir: &std::path::Path,
     watcher_state: &crate::services::scanner::watcher::WatcherState,
     op_lock: &crate::services::fs_utils::operation_lock::OperationLock,
@@ -137,27 +143,37 @@ pub async fn delete_object(
     let _guard =
         crate::services::scanner::watcher::SuppressionGuard::new(&watcher_state.suppressor);
     // 1. Fetch object from DB to get game_id and folder_path
-    let row = sqlx::query!("SELECT game_id, folder_path FROM objects WHERE id = ?", id)
+    use sqlx::Row;
+    let row = sqlx::query("SELECT game_id, folder_path FROM objects WHERE id = ?")
+        .bind(id)
         .fetch_optional(pool)
         .await
         .map_err(|e| CommandError::Database(e.to_string()))?;
 
-    let obj = row.ok_or_else(|| CommandError::NotFound(format!("Object not found: {}", id)))?;
+    let obj_row = row.ok_or_else(|| CommandError::NotFound(format!("Object not found: {}", id)))?;
+    let obj_game_id: String = obj_row.get("game_id");
+    let obj_folder_path: Option<String> = obj_row.get("folder_path");
 
     let mut target_dir_opt: Option<std::path::PathBuf> = None;
-    let game_id = obj.game_id.clone();
 
-    let game_row = sqlx::query!("SELECT mod_path FROM games WHERE id = ?", obj.game_id)
+    let game_row = sqlx::query("SELECT mods_path FROM games WHERE id = ?")
+        .bind(&obj_game_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| CommandError::Database(e.to_string()))?;
 
     if let Some(game) = game_row {
-        if let Some(mod_path) = game.mod_path {
-            if let Some(ref folder_path) = obj.folder_path {
-                target_dir_opt = Some(std::path::Path::new(&mod_path).join(folder_path));
+        if let Some(mods_path) = game.get::<Option<String>, _>("mods_path") {
+            if let Some(ref folder_path) = obj_folder_path {
+                target_dir_opt = Some(std::path::Path::new(&mods_path).join(folder_path));
             }
         }
+    }
+
+    // 1.5. Safety Guard: Check if the object has any mods
+    let count = crate::repo::object_repo::get_mod_count_for_object(pool, id).await?;
+    if count > 0 && !force {
+        return Err(CommandError::ObjectHasMods(count));
     }
 
     // 2. Move folder to trash (if it exists on disk)
@@ -167,7 +183,7 @@ pub async fn delete_object(
             crate::services::mods::trash::move_to_trash(
                 &target_dir,
                 trash_dir,
-                Some(game_id.clone()),
+                Some(obj_game_id.clone()),
             )
             .map_err(|e| {
                 log::error!("delete_object: trash move failed: {}", e);
@@ -192,7 +208,7 @@ pub async fn delete_object(
     }
 
     // 3. Cascade-delete child mod rows from DB
-    let deleted_mods = crate::database::object_repo::delete_mods_for_object(pool, id).await?;
+    let deleted_mods = crate::repo::object_repo::delete_mods_for_object(pool, id).await?;
     if deleted_mods > 0 {
         log::info!(
             "delete_object: cascade-deleted {} mod rows for object id={}",
@@ -202,7 +218,7 @@ pub async fn delete_object(
     }
 
     // 4. Delete the object record itself
-    crate::database::object_repo::delete_object(pool, id).await?;
+    crate::repo::object_repo::delete_object(pool, id).await?;
     log::info!("delete_object: removed object id={} from DB", id);
     Ok(())
 }

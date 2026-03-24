@@ -139,7 +139,7 @@ pub struct SuppressionGuard {
 
 impl SuppressionGuard {
     pub fn new(suppressor: &Arc<AtomicBool>) -> Self {
-        suppressor.store(true, Ordering::Relaxed);
+        suppressor.store(true, Ordering::Release);
         Self {
             suppressor: suppressor.clone(),
         }
@@ -148,7 +148,7 @@ impl SuppressionGuard {
 
 impl Drop for SuppressionGuard {
     fn drop(&mut self) {
-        self.suppressor.store(false, Ordering::Relaxed);
+        self.suppressor.store(false, Ordering::Release);
     }
 }
 
@@ -245,7 +245,7 @@ pub fn watch_mod_directory(
         move |result: Result<Event, notify::Error>| match result {
             Ok(mut event) => {
                 // Check suppression flag
-                if suppressed_clone.load(Ordering::Relaxed) {
+                if suppressed_clone.load(Ordering::Acquire) {
                     return;
                 }
 

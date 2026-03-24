@@ -6,9 +6,7 @@ import { useSettings } from '../../../hooks/useSettings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useToastStore } from '../../../stores/useToastStore';
 import { scanService } from '../../../lib/services/scanService';
-import { reconcileActiveCollection } from '../../collections/utils/reconcileActiveCollection';
 
-// Mock dependencies
 vi.mock('../../../hooks/useSettings', () => ({
   useSettings: vi.fn(),
 }));
@@ -25,10 +23,6 @@ vi.mock('../../../lib/services/scanService', () => ({
   scanService: {
     syncDatabase: vi.fn(),
   },
-}));
-
-vi.mock('../../collections/utils/reconcileActiveCollection', () => ({
-  reconcileActiveCollection: vi.fn(),
 }));
 
 // Mock the GameFormModal so we don't need to mount it fully for simple tests
@@ -230,7 +224,6 @@ describe('GamesTab (TC-02)', () => {
       new_mods: 1,
       updated_mods: 2,
     });
-    (reconcileActiveCollection as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
     render(<GamesTab />);
 
@@ -239,7 +232,6 @@ describe('GamesTab (TC-02)', () => {
 
     await waitFor(() => {
       expect(scanService.syncDatabase).toHaveBeenCalled();
-      expect(reconcileActiveCollection).toHaveBeenCalledWith({ gameId: 'g1' });
     });
   });
 });

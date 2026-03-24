@@ -15,11 +15,11 @@ export interface DemoMod {
 }
 
 export const DEMO_MODS: DemoMod[] = [
-  { id: 'mod-1', name: 'Character Mod - Dress', typeTag: 'Character', enabled: true },
-  { id: 'mod-2', name: 'Weapon Mod - Glowing', typeTag: 'Weapon', enabled: true },
-  { id: 'mod-3', name: 'UI Mod - Transparent', typeTag: 'UI', enabled: true },
-  { id: 'mod-4', name: 'Character Mod - Snow', typeTag: 'Character', enabled: false },
-  { id: 'mod-5', name: 'Weapon Mod - Dark', typeTag: 'Weapon', enabled: false },
+  { id: 'mod-1', name: 'demo.mod_character_dress', typeTag: 'Character', enabled: true },
+  { id: 'mod-2', name: 'demo.mod_weapon_glowing', typeTag: 'Weapon', enabled: true },
+  { id: 'mod-3', name: 'demo.mod_ui_transparent', typeTag: 'UI', enabled: true },
+  { id: 'mod-4', name: 'demo.mod_character_snow', typeTag: 'Character', enabled: false },
+  { id: 'mod-5', name: 'demo.mod_weapon_dark', typeTag: 'Weapon', enabled: false },
 ];
 
 export interface DemoKeybind {
@@ -28,9 +28,9 @@ export interface DemoKeybind {
 }
 
 export const DEMO_KEYBINDS: DemoKeybind[] = [
-  { keys: '?', action: 'Show Keybinds' },
-  { keys: 'Space', action: 'Toggle Preview' },
-  { keys: 'Ctrl+K', action: 'Quick Search' },
+  { keys: '?', action: 'demo.action_show_keybinds' },
+  { keys: 'Space', action: 'demo.action_toggle_preview' },
+  { keys: 'Ctrl+K', action: 'demo.action_quick_search' },
 ];
 
 export const SCENE_DURATION_MS = {

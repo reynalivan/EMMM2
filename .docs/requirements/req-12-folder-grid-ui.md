@@ -37,9 +37,9 @@ As a user, I want double-clicking a folder to do the right thing depending on wh
 | ID        | Type        | Criteria                                                                                                                                                                                                     |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-12.2.1 | ✅ Positive | Given a `ContainerFolder`, when I double-click it, then `currentSubPath` updates to include that folder and the breadcrumb advances — grid refreshes with children                                           |
-| AC-12.2.2 | ✅ Positive | Given a `ModPackRoot`, when I double-click it, then no navigation occurs (user manages via context menu or preview panel).                                                     |
-| AC-12.2.3 | ✅ Positive | Given a `VariantContainer`, when I double-click it, then no folder navigation occurs.                                                     |
-| AC-12.2.4 | ✅ Positive | Given an `InternalAssets` folder (only visible in Advanced mode), when I double-click it, then no action is taken.                                                           |
+| AC-12.2.2 | ✅ Positive | Given a `ModPackRoot`, when I double-click it, then no navigation occurs (user manages via context menu or preview panel).                                                                                   |
+| AC-12.2.3 | ✅ Positive | Given a `VariantContainer`, when I double-click it, then no folder navigation occurs.                                                                                                                        |
+| AC-12.2.4 | ✅ Positive | Given an `InternalAssets` folder (only visible in Advanced mode), when I double-click it, then no action is taken.                                                                                           |
 | AC-12.2.5 | ⚠️ Edge     | Given a `ContainerFolder` that has no navigable children (all children are `InternalAssets`), then the grid shows an empty state "This folder contains only internal mod assets" — not a generic empty state |
 
 ---
@@ -106,13 +106,18 @@ As a user, I want the context menu to show only relevant actions for each folder
 
 As a user, I want folder cards to visually communicate their type so I know at a glance which ones I can browse and which are complete mod packs.
 
-| ID        | Type        | Criteria                                                                                                                                                                    |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-12.7.1 | ✅ Positive | Given a `ContainerFolder`, its card shows a standard folder icon and no type badge — it looks like a normal navigable directory                                             |
-| AC-12.7.2 | ✅ Positive | Given a `ModPackRoot`, its card shows a package/box icon and a `MOD PACK` badge in the card's top-right corner                                                              |
-| AC-12.7.3 | ✅ Positive | Given a `VariantContainer`, its card shows a package icon and a `VARIANTS` badge                                                                                            |
-| AC-12.7.4 | ✅ Positive | Given an `InternalAssets` folder visible in Advanced mode, its card is visually dimmed (opacity 0.6) with an `INTERNAL` badge                                               |
-| AC-12.7.5 | ⚠️ Edge     | Given hovering over a card badge, a tooltip renders the `classification_reasons[]` strings from the `FolderEntry` — e.g., "Classified as Mod Pack: has-mod-ini, has-assets" |
+| ID        | Type        | Criteria                                                                                                                                                                        |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-12.7.1 | ✅ Positive | Given a `ContainerFolder`, its card shows a standard folder icon and no type badge — it looks like a normal navigable directory                                                 |
+| AC-33.1.2 | ✅ Positive | Given `duplicate_waste_bytes > 0` (Epic 32 dedup scan ran), then an interactive banner indicating wasted size appears on the Dashboard; clicking navigates to the Dedup Scanner |
+| AC-33.1.3 | ✅ Positive | Given any theme, then all `StatCard` components use the design system's semantic tokens — ensuring zero hardcoded literals and consistent contrast                              |
+| AC-12.7.2 | ✅ Positive | Given a `ModPackRoot`, its card shows a package/box icon and a `MOD PACK` badge in the card's top-right corner                                                                  |
+| AC-12.7.3 | ✅ Positive | Given a `VariantContainer`, its card shows a package icon and a `VARIANTS` badge                                                                                                |
+| AC-12.7.4 | ✅ Positive | Given an `InternalAssets` folder visible in Advanced mode, its card is visually dimmed (opacity 0.6) with an `INTERNAL` badge                                                   |
+| AC-12.7.5 | ✅ Positive | Given an item is hovered or any items are selected, a checkbox appears in the **top-right corner** of the card for multi-selection                                              |
+| AC-12.7.6 | ✅ Positive | Given a folder is locked by a parent (`ancestor_disabled_by` is present), its card shows a `LOCKED` badge and the enable/disable toggle is warning-colored.                     |
+| AC-12.7.7 | ✅ Positive | Given a folder has classification warnings (e.g., 0KB INI), its card shows an error-colored `CORRUPT` badge in the bottom-left corner with a descriptive tooltip.               |
+| AC-12.7.8 | ⚠️ Edge     | Given hovering over a card badge, a tooltip renders the `classification_reasons[]` or `warnings[]` strings from the `FolderEntry`.                                              |
 
 ---
 
@@ -134,7 +139,8 @@ As a user, I want clear visual feedback when a folder has no mods or no search r
 - No infinite scroll pagination; virtualization handles rendering performance.
 - No columns customization in the List view.
 - "Open content mods (Advanced)" is a focused browsing mode.
-- Lasso selection and intra-app DnD are NOT implemented; use Shift-click and "Move to Object" dialog instead.
+- Lasso selection and intra-app DnD are NOT implemented; use Shift-click, Ctrl+A, or the Bulk Action UI instead.
+- Keyboard Shortcuts: `Escape` clears selection, `Delete` triggers bulk move to trash, `Ctrl+A` selects all visible items in the current view.
 
 ---
 
@@ -147,13 +153,22 @@ FolderGrid (React)
   ├── Toolbar
   │   ├── ViewToggle → localStorage['gridViewMode']
   │   ├── SortSelect + DirectionToggle → client-side sort in useMemo (within-group)
-  │   └── Breadcrumbs → currentSubPath segments + optional [ADVANCED] badge
+  │   ├── Breadcrumbs → currentSubPath segments + optional [ADVANCED] badge
+  │   └── ParentDisabledNotice (Compact Banner)
+  │       - Appears only if `ancestor_disabled_by` is present.
+  │       - Uses context-aware labeling ("Object Mods" vs "Directory" based on depth).
+  │       - Buttons: [Preview Impact] [Enable Parent].
+  ├── Banners
+  │   ├── FlatModRootBanner: Only shown if `isFlatModRoot` is true AND `is_enabled` is FALSE.
+  │   └── ConflictNoticeBanner: Shown if naming conflicts exist.
   ├── VirtualizedGrid / VirtualizedList (@tanstack/react-virtual)
   │   ├── Group: "Folders" (ContainerFolder entries)
   │   └── Group: "Mod Packs" (ModPackRoot + VariantContainer entries)
   │       └── ModCard / ModRow → node_type determines icon + badge + click handler
   ├── VariantPickerModal (shown on VariantContainer double-click)
-  │   └── lists FolderEntry.variants[] → invoke('toggle_variant', { group_id, chosen_path })
+  │   └── lists FolderEntry.variants[] → commands.toggleVariant({ group_id, chosen_path })
+  ├── EnableParentDialog (standalone confirmation)
+  │   - Shows impact preview: which folders will activate vs stay disabled.
   └── EmptyState (3 variants: folder-empty | filter-no-results | internal-assets-only)
 
 FolderCard click handlers (by node_type):
@@ -178,12 +193,12 @@ toggle_variant(game_id, variant_group_id, chosen_folder_path) → ():
 
 | Component      | Detail                                                                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Data Source    | `invoke('list_folders', { gameId, subPath })` (Epic 11) — provides `node_type`, `variants[]`, `is_navigable`, `classification_reasons[]`                                              |
+| Data Source    | `commands.listFolders({ gameId, subPath })` (Epic 11) — provides `node_type`, `variants[]`, `is_navigable`, `classification_reasons[]`                                                |
 | Virtualization | `@tanstack/react-virtual` — `useVirtualizer` with `estimateSize` = 220px (grid) / 48px (list)                                                                                         |
 | Sort           | `Array.prototype.sort()` within each group separately — `localeCompare` (name) or numeric diff (timestamp)                                                                            |
 | Path State     | `currentSubPath` in Zustand — updated on ContainerFolder double-click or breadcrumb click                                                                                             |
 | Advanced Mode  | `isAdvancedMode: bool` in Zustand — set when "Open content mods (Advanced)" is triggered; breadcrumb shows `[ADVANCED]` badge; `list_folders` receives `include_internals: true` flag |
-| Variant Picker | `VariantPickerModal` → `invoke('toggle_variant', ...)` under OperationLock + WatcherSuppression                                                                                       |
+| Variant Picker | `VariantPickerModal` → `commands.toggleVariant(...)` under OperationLock + WatcherSuppression                                                                                         |
 | View Persist   | `localStorage['gridViewMode']` = `'grid'                                                                                                                                              | 'list'` |
 | Thumbnail      | `convertFileSrc(thumbnailPath)` from `@tauri-apps/api` — renders inside `<img>` with fallback icon                                                                                    |
 

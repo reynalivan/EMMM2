@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Info, X, FolderOpen, FileArchive, FolderPlus } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
@@ -13,6 +13,7 @@ import { useActiveGame } from '../../hooks/useActiveGame';
 import { usePreviewPanelState } from './hooks/usePreviewPanelState';
 import { usePreviewPanelActions } from './hooks/usePreviewPanelActions';
 import PreviewPanelModals from './components/PreviewPanelModals';
+import { commands } from '../../lib/bindings';
 import PreviewPanelContextMenu from './components/PreviewPanelContextMenu';
 
 function toErrorMessage(error: unknown): string {
@@ -20,6 +21,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 export default function PreviewPanel() {
+  const { t } = useTranslation(['preview', 'common']);
   const setMobilePane = useAppStore((state) => state.setMobilePane);
   const setSelectedObjectFolderPath = useAppStore((state) => state.setSelectedObjectFolderPath);
 
@@ -81,12 +83,12 @@ export default function PreviewPanel() {
 
   const pasteThumbnailFromClipboard = useCallback(async () => {
     if (!activePath) {
-      toast.warning('Select a mod folder first.');
+      toast.warning(t('preview:empty.no_mod_selected'));
       return;
     }
 
     if (!navigator.clipboard?.read) {
-      toast.error('Clipboard image paste is not supported in this environment.');
+      toast.error(t('common:errors.clipboard_not_supported'));
       return;
     }
 
@@ -103,7 +105,7 @@ export default function PreviewPanel() {
       }
 
       if (!imageBlob) {
-        toast.warning('Clipboard does not contain an image.');
+        toast.warning(t('preview:gallery.menu.no_image_in_clipboard'));
         return;
       }
 
@@ -115,11 +117,11 @@ export default function PreviewPanel() {
       });
       await previewImagesQuery.refetch();
       setCurrentImageIndex(0);
-      toast.success('Thumbnail pasted.');
+      toast.success(t('preview:gallery.menu.thumbnail_pasted'));
     } catch (error) {
-      toast.error(`Cannot paste image: ${toErrorMessage(error)}`);
+      toast.error(t('preview:gallery.menu.paste_error', { error: toErrorMessage(error) }));
     }
-  }, [activePath, savePreviewImage, selectedFolder, previewImagesQuery, setCurrentImageIndex]);
+  }, [activePath, savePreviewImage, selectedFolder, previewImagesQuery, setCurrentImageIndex, t]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -149,11 +151,13 @@ export default function PreviewPanel() {
 
   if (!activePath) {
     return (
-      <div className="mx-auto flex h-full w-full max-w-140 flex-col items-center justify-center p-6 text-center border-l border-white/5 bg-base-100/30 backdrop-blur-md">
+      <div className="mx-auto flex h-full w-full max-w-140 flex-col items-center justify-center p-6 text-center border-l border-base-content/5 bg-base-100/30 backdrop-blur-md">
         <div className="mb-6 text-base-content/50">
           <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-          <p className="text-xl font-bold text-white mb-2">No mod selected</p>
-          <p className="text-sm">Select a folder to show detail and preview.</p>
+          <p className="text-xl font-bold text-base-content mb-2">
+            {t('preview:empty.no_mod_selected')}
+          </p>
+          <p className="text-sm">{t('preview:empty.select_folder')}</p>
         </div>
         <div className="flex w-full max-w-xs flex-col gap-3">
           <button
@@ -171,7 +175,7 @@ export default function PreviewPanel() {
             }}
           >
             <FileArchive size={18} />
-            Import Archives
+            {t('preview:actions.import_archives')}
           </button>
           <button
             className="btn btn-outline btn-primary gap-2"
@@ -188,7 +192,7 @@ export default function PreviewPanel() {
             }}
           >
             <FolderPlus size={18} />
-            Import Folders
+            {t('preview:actions.import_folders')}
           </button>
         </div>
       </div>
@@ -197,7 +201,7 @@ export default function PreviewPanel() {
 
   return (
     <div
-      className="mx-auto flex h-full w-full max-w-140 flex-col overflow-y-auto border-l border-white/5 bg-base-100/30 px-6 pb-6 pt-0 backdrop-blur-md"
+      className="mx-auto flex h-full w-full max-w-140 flex-col overflow-y-auto border-l border-base-content/5 bg-base-100/30 px-6 pb-6 pt-0 backdrop-blur-md"
       onScroll={handleScroll}
     >
       <input
@@ -222,19 +226,19 @@ export default function PreviewPanel() {
             });
             await previewImagesQuery.refetch();
             setCurrentImageIndex(0);
-            toast.success('Thumbnail imported.');
+            toast.success(t('preview:gallery.menu.thumbnail_imported'));
           } catch (error) {
-            toast.error(`Cannot import thumbnail: ${toErrorMessage(error)}`);
+            toast.error(t('preview:gallery.menu.import_error', { error: toErrorMessage(error) }));
           }
         }}
       />
 
       <ConfirmDialog
         open={confirmRemoveOpen}
-        title="Remove Thumbnail"
-        message="This will permanently remove the currently selected thumbnail image."
-        confirmLabel="Remove"
-        cancelLabel="Cancel"
+        title={t('preview:gallery.menu.remove_current')}
+        message={t('preview:gallery.remove_confirm_message')}
+        confirmLabel={t('common:actions.remove')}
+        cancelLabel={t('common:actions.cancel')}
         danger
         onCancel={() => setConfirmRemoveOpen(false)}
         onConfirm={async () => {
@@ -249,19 +253,19 @@ export default function PreviewPanel() {
             });
             await previewImagesQuery.refetch();
             setCurrentImageIndex((prev) => Math.max(0, prev - 1));
-            toast.success('Thumbnail removed.');
+            toast.success(t('preview:gallery.menu.thumbnail_removed'));
           } catch (error) {
-            toast.error(`Cannot remove thumbnail: ${toErrorMessage(error)}`);
+            toast.error(t('preview:gallery.menu.remove_error', { error: toErrorMessage(error) }));
           }
         }}
       />
 
       <ConfirmDialog
         open={confirmClearOpen}
-        title="Clear All Thumbnails"
-        message="This will permanently remove all discovered thumbnails in this mod folder."
-        confirmLabel="Clear All"
-        cancelLabel="Cancel"
+        title={t('preview:gallery.menu.clear_all')}
+        message={t('preview:gallery.clear_all_confirm_message')}
+        confirmLabel={t('preview:gallery.menu.clear_all')}
+        cancelLabel={t('common:actions.cancel')}
         danger
         onCancel={() => setConfirmClearOpen(false)}
         onConfirm={async () => {
@@ -273,9 +277,11 @@ export default function PreviewPanel() {
             await clearPreviewImages.mutateAsync({ folderPath: activePath });
             await previewImagesQuery.refetch();
             setCurrentImageIndex(0);
-            toast.success('All thumbnails cleared.');
+            toast.success(t('preview:gallery.menu.all_thumbnails_cleared'));
           } catch (error) {
-            toast.error(`Cannot clear thumbnails: ${toErrorMessage(error)}`);
+            toast.error(
+              t('preview:gallery.menu.clear_all_error', { error: toErrorMessage(error) }),
+            );
           }
         }}
       />
@@ -320,18 +326,18 @@ export default function PreviewPanel() {
             <div className={`flex items-center gap-2 transition-all duration-200 mb-0`}>
               <button
                 onClick={() => setMobilePane('grid')}
-                aria-label="Back to grid"
-                className={`btn btn-circle btn-ghost text-white/50 hover:text-white md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+                aria-label={t('preview:actions.back_to_grid')}
+                className={`btn btn-circle btn-ghost text-base-content/50 hover:text-base-content md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
               >
                 <ChevronRight className="rotate-180" size={isScrolled ? 14 : 16} />
               </button>
               <input
                 type="text"
-                className={`bg-transparent p-0 m-0 border-none outline-none focus:ring-1 focus:ring-primary focus:bg-base-200/50 rounded px-1 -ml-1 truncate tracking-tight text-white transition-all duration-200 origin-left hover:bg-white/5 ${
+                className={`bg-transparent p-0 m-0 border-none outline-none focus:ring-1 focus:ring-primary focus:bg-base-200/50 rounded px-1 -ml-1 truncate tracking-tight text-base-content transition-all duration-200 origin-left hover:bg-base-content/5 ${
                   isScrolled ? 'text-sm font-semibold' : 'text-xl font-bold'
                 }`}
                 value={titleDraft || ''}
-                placeholder={selectedFolder?.name || 'No mod selected'}
+                placeholder={selectedFolder?.name || t('preview:empty.no_mod_selected')}
                 onChange={(e) => setTitleDraft(e.target.value)}
                 disabled={!activePath}
               />
@@ -341,8 +347,8 @@ export default function PreviewPanel() {
             >
               <input
                 type="checkbox"
-                aria-label="Toggle mod enabled status"
-                className={`toggle border-white/10 bg-base-300 checked:border-primary checked:bg-primary transition-all duration-200 ${
+                aria-label={t('preview:actions.toggle_enabled')}
+                className={`toggle border-base-content/10 bg-base-300 checked:border-primary checked:bg-primary transition-all duration-200 ${
                   isScrolled ? 'toggle-xs' : 'toggle-sm'
                 }`}
                 checked={selectedFolder?.is_enabled ?? false}
@@ -357,13 +363,13 @@ export default function PreviewPanel() {
                 }}
               />
               <span
-                className={`font-medium text-white/60 transition-all duration-200 ${isScrolled ? 'text-[10px]' : 'text-sm'}`}
+                className={`font-medium text-base-content/60 transition-all duration-200 ${isScrolled ? 'text-[10px]' : 'text-sm'}`}
               >
                 {selectedFolder
                   ? selectedFolder.is_enabled
-                    ? 'Enabled'
-                    : 'Disabled'
-                  : 'No active mod'}
+                    ? t('common:status.enabled')
+                    : t('common:status.disabled')
+                  : t('preview:empty.no_mod_selected')}
               </span>
             </label>
           </div>
@@ -383,16 +389,16 @@ export default function PreviewPanel() {
             )}
             <button
               onClick={() => setSelectedObjectFolderPath(null)}
-              aria-label="Unselect mod"
-              className={`btn btn-circle btn-ghost hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
-              title="Close Preview"
+              aria-label={t('preview:actions.unselect_mod')}
+              className={`btn btn-circle btn-ghost hidden text-base-content/30 hover:bg-base-content/5 hover:text-base-content md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+              title={t('preview:actions.close')}
             >
               <X size={isScrolled ? 16 : 18} />
             </button>
             <button
               onClick={() => setMobilePane('grid')}
-              aria-label="Close details pane"
-              className={`btn btn-circle btn-ghost text-white/30 hover:text-white md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+              aria-label={t('preview:actions.close')}
+              className={`btn btn-circle btn-ghost text-base-content/30 hover:text-base-content md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
             >
               <X size={isScrolled ? 16 : 18} />
             </button>
@@ -416,21 +422,21 @@ export default function PreviewPanel() {
         }}
         onImport={() => {
           if (!activePath) {
-            toast.warning('Select a mod folder first.');
+            toast.warning(t('preview:empty.no_mod_selected'));
             return;
           }
           importInputRef.current?.click();
         }}
         onRequestRemoveCurrent={() => {
           if (!currentImagePath) {
-            toast.warning('No thumbnail selected to remove.');
+            toast.warning(t('preview:gallery.no_thumbnail_selected'));
             return;
           }
           setConfirmRemoveOpen(true);
         }}
         onRequestClearAll={() => {
           if (images.length === 0) {
-            toast.warning('No thumbnails to clear.');
+            toast.warning(t('preview:gallery.no_thumbnails_to_clear'));
             return;
           }
           setConfirmClearOpen(true);
@@ -480,7 +486,9 @@ export default function PreviewPanel() {
             }
 
             try {
-              await invoke('open_in_explorer', { path: activePath });
+              if (activeGame?.id) {
+                await commands.openInExplorer({ gameId: activeGame.id, path: activePath });
+              }
             } catch (error) {
               toast.error(`Cannot open folder location: ${toErrorMessage(error)}`);
             }
@@ -488,11 +496,29 @@ export default function PreviewPanel() {
           disabled={!activePath}
         >
           <Info size={16} />
-          View File Location
+          {t('preview:actions.view_location')}
         </button>
       </div>
 
-      <PreviewPanelModals {...actions} />
+      <PreviewPanelModals
+        moveDialog={actions.moveDialog}
+        closeMoveDialog={actions.closeMoveDialog}
+        handleMoveToObject={actions.handleMoveToObject}
+        objectId={selectedFolder?.id ?? undefined}
+        deleteConfirm={actions.deleteConfirm}
+        setDeleteConfirm={actions.setDeleteConfirm}
+        handleDeleteConfirm={actions.handleDeleteConfirm}
+        renameDialog={actions.renameDialog}
+        handleRenameCancel={actions.handleRenameCancel}
+        handleRenameSubmit={actions.handleRenameSubmit}
+        duplicateWarning={actions.duplicateWarning}
+        handleDuplicateForceEnable={actions.handleDuplicateForceEnable}
+        handleDuplicateEnableOnly={actions.handleDuplicateEnableOnly}
+        handleDuplicateCancel={actions.handleDuplicateCancel}
+        pinSafeDialog={actions.pinSafeDialog}
+        handleToggleSafeCancel={actions.handleToggleSafeCancel}
+        handleToggleSafeSubmit={actions.handleToggleSafeSubmit}
+      />
     </div>
   );
 }

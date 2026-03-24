@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 // ─── Action Types ────────────────────────────────────────────────────────────
 
 /// All actions that can be triggered by a global hotkey.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 pub enum HotkeyAction {
     /// Toggle Safe Mode on/off (default: F5).
     ToggleSafeMode,
@@ -32,71 +32,57 @@ pub enum HotkeyAction {
     NextPreset,
     /// Switch to previous Collection preset (default: Shift+F6).
     PrevPreset,
-    /// Switch to next variant folder (default: F8).
-    NextVariantFolder,
-    /// Switch to previous variant folder (default: Shift+F8).
-    PrevVariantFolder,
     /// Toggle KeyViewer overlay visibility (default: F7).
     ToggleOverlay,
+    /// Switch to next Variant Folder (default: F8).
+    NextVariantFolder,
+    /// Switch to previous Variant Folder (default: Shift+F8).
+    PrevVariantFolder,
 }
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 /// Hotkey configuration — persisted in AppSettings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct HotkeyConfig {
     /// Whether hotkeys are globally enabled.
     pub enabled: bool,
-    /// Only trigger hotkeys when the game window is focused.
-    pub game_focus_only: bool,
     /// Cooldown between successive hotkey triggers (milliseconds).
     pub cooldown_ms: u64,
     /// Key binding strings (e.g. "F5", "Shift+F6").
     pub toggle_safe_mode: String,
     pub next_preset: String,
     pub prev_preset: String,
+    pub toggle_overlay: String,
     pub next_variant: String,
     pub prev_variant: String,
-    pub toggle_overlay: String,
 }
 
 impl Default for HotkeyConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            game_focus_only: true,
             cooldown_ms: 500,
             toggle_safe_mode: "F5".to_string(),
             next_preset: "F6".to_string(),
             prev_preset: "Shift+F6".to_string(),
+            toggle_overlay: "F7".to_string(),
             next_variant: "F8".to_string(),
             prev_variant: "Shift+F8".to_string(),
-            toggle_overlay: "F7".to_string(),
         }
     }
 }
 
 /// KeyViewer-specific configuration — persisted in AppSettings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct KeyViewerConfig {
     /// Whether KeyViewer generation is enabled.
     pub enabled: bool,
-    /// Status banner TTL in seconds.
-    pub status_ttl_seconds: f32,
-    /// Toggle key for in-game overlay (written to KeyViewer.ini).
-    pub overlay_toggle_key: String,
-    /// Relative path from game mod root for keybind text files.
-    pub keybinds_dir: String,
 }
 
 impl Default for KeyViewerConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            status_ttl_seconds: 3.0,
-            overlay_toggle_key: "F7".to_string(),
-            keybinds_dir: "EMM2/keybinds/active".to_string(),
-        }
+        Self { enabled: true }
     }
 }
 
@@ -177,9 +163,10 @@ pub fn get_key_string(config: &HotkeyConfig, action: HotkeyAction) -> &str {
         HotkeyAction::ToggleSafeMode => &config.toggle_safe_mode,
         HotkeyAction::NextPreset => &config.next_preset,
         HotkeyAction::PrevPreset => &config.prev_preset,
+
+        HotkeyAction::ToggleOverlay => &config.toggle_overlay,
         HotkeyAction::NextVariantFolder => &config.next_variant,
         HotkeyAction::PrevVariantFolder => &config.prev_variant,
-        HotkeyAction::ToggleOverlay => &config.toggle_overlay,
     }
 }
 
@@ -192,9 +179,9 @@ pub fn list_bindings(config: &HotkeyConfig) -> Vec<(HotkeyAction, String)> {
         ),
         (HotkeyAction::NextPreset, config.next_preset.clone()),
         (HotkeyAction::PrevPreset, config.prev_preset.clone()),
+        (HotkeyAction::ToggleOverlay, config.toggle_overlay.clone()),
         (HotkeyAction::NextVariantFolder, config.next_variant.clone()),
         (HotkeyAction::PrevVariantFolder, config.prev_variant.clone()),
-        (HotkeyAction::ToggleOverlay, config.toggle_overlay.clone()),
     ]
 }
 

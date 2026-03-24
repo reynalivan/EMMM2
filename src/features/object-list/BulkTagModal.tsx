@@ -52,7 +52,7 @@ export default function BulkTagModal({
   };
 
   return (
-    <dialog className="modal modal-open" onClick={onClose}>
+    <dialog className="modal modal-open bg-overlay-mask backdrop-blur-sm" onClick={onClose}>
       <div className="modal-box max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg flex items-center gap-2">

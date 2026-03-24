@@ -10,6 +10,7 @@ use crate::services::browser::{
 /// Open a new in-app browser tab (creates a new Webview).
 /// Returns the webview label so the frontend can track the tab.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_open_tab(
     url: String,
     session_id: Option<String>,
@@ -22,30 +23,42 @@ pub async fn browser_open_tab(
 
 /// Navigate an existing browser tab to a new URL.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_navigate(label: String, url: String, app: AppHandle) -> Result<(), String> {
     browser_service::navigate(app, &label, url).await
 }
 
 /// Reload an existing browser tab.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_reload_tab(label: String, app: AppHandle) -> Result<(), String> {
     browser_service::reload_tab(app, &label).await
 }
 
+/// Close a browser tab and clean up its resources.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_close_tab(label: String, app: AppHandle) -> Result<(), String> {
+    browser_service::close_webview(app, &label).await
+}
+
 /// Clear cookies and cache for a specific browser tab.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_clear_data(label: String, app: AppHandle) -> Result<(), String> {
     browser_service::clear_data(app, &label).await
 }
 
 /// Get the configured browser homepage URL.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_get_homepage(db: State<'_, SqlitePool>) -> Result<String, String> {
     Ok(browser_service::get_homepage(db.inner()).await)
 }
 
 /// Set a new browser homepage URL. Validates http/https scheme.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_set_homepage(url: String, db: State<'_, SqlitePool>) -> Result<(), String> {
     browser_service::set_homepage(db.inner(), &url).await
 }
@@ -54,6 +67,7 @@ pub async fn browser_set_homepage(url: String, db: State<'_, SqlitePool>) -> Res
 
 /// Return all browser downloads ordered by most recent first.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_list_downloads(
     db: State<'_, SqlitePool>,
 ) -> Result<Vec<download_service::BrowserDownloadDto>, String> {
@@ -62,6 +76,7 @@ pub async fn browser_list_downloads(
 
 /// Cancel (and optionally delete the file for) a specific download.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_cancel_download(
     id: String,
     delete_file: Option<bool>,
@@ -76,6 +91,7 @@ pub async fn browser_cancel_download(
 
 /// Delete a download record (and optionally the file on disk).
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_delete_download(
     id: String,
     delete_file: bool,
@@ -86,12 +102,14 @@ pub async fn browser_delete_download(
 
 /// Remove all downloads with status `imported`.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_clear_imported(db: State<'_, SqlitePool>) -> Result<u64, String> {
     download_service::clear_imported(db.inner()).await
 }
 
 /// Remove old downloads that exceed the configured retention period.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_clear_old_downloads(db: State<'_, SqlitePool>) -> Result<u64, String> {
     download_service::clear_old_downloads(db.inner()).await
 }
@@ -101,6 +119,7 @@ pub async fn browser_clear_old_downloads(db: State<'_, SqlitePool>) -> Result<u6
 /// Queue multiple import jobs for a set of finished download IDs with a chosen game.
 /// Called by the Download Manager "Import Selected" bulk action after Game Picker confirms.
 #[tauri::command]
+#[specta::specta]
 pub async fn browser_import_selected(
     ids: Vec<String>,
     game_id: String,
@@ -112,7 +131,8 @@ pub async fn browser_import_selected(
 
 /// Return all pending/active import jobs.
 #[tauri::command]
-pub async fn import_get_queue(
+#[specta::specta]
+pub async fn browser_list_import_queue(
     db: State<'_, SqlitePool>,
 ) -> Result<Vec<import_service::ImportJobDto>, String> {
     import_service::list_jobs(db.inner()).await
@@ -120,7 +140,8 @@ pub async fn import_get_queue(
 
 /// Confirm a `needs_review` import job — provide game, category, and optional object.
 #[tauri::command]
-pub async fn import_confirm_review(
+#[specta::specta]
+pub async fn browser_confirm_import(
     job_id: String,
     game_id: String,
     category: String,
@@ -141,7 +162,11 @@ pub async fn import_confirm_review(
 
 /// Skip / cancel a specific import job and remove its staging folder.
 #[tauri::command]
-pub async fn import_skip(job_id: String, db: State<'_, SqlitePool>) -> Result<(), String> {
+#[specta::specta]
+pub async fn browser_cancel_import(
+    job_id: String,
+    db: State<'_, SqlitePool>,
+) -> Result<(), String> {
     import_service::cancel_job(db.inner(), &job_id).await
 }
 
@@ -149,6 +174,7 @@ pub async fn import_skip(job_id: String, db: State<'_, SqlitePool>) -> Result<()
 
 /// Create a Download Session for a Discover Hub (e.g., GameBanana) mod download.
 #[tauri::command]
+#[specta::specta]
 pub async fn create_download_session(
     source: String,
     submission_id: Option<String>,

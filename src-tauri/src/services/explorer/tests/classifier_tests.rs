@@ -5,9 +5,10 @@ use tempfile::TempDir;
 #[test]
 fn empty_dir_is_container() {
     let tmp = TempDir::new().unwrap();
-    let (node_type, _) = classify_folder(tmp.path());
+    let (node_type, _, _) = classify_folder(tmp.path());
     assert_eq!(node_type, NodeType::ContainerFolder);
 }
+
 
 #[test]
 fn unicode_folder_names_are_classified_without_dropping_children() {
@@ -20,8 +21,9 @@ fn unicode_folder_names_are_classified_without_dropping_children() {
     )
     .unwrap();
 
-    let (node_type, reasons) = classify_folder(&variant_root);
+    let (node_type, reasons, _) = classify_folder(&variant_root);
 
     assert_eq!(node_type, NodeType::FlatModRoot);
     assert!(reasons.iter().any(|reason| reason.contains("内部")));
 }
+

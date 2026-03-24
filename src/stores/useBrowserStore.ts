@@ -114,7 +114,7 @@ export const useBrowserStore = create<BrowserStore>()(
       setDownloadsRoot: (path) => set({ downloadsRoot: path }),
     }),
     {
-      name: 'emmm2-browser-store',
+      name: 'emmm-browser-store',
       partialize: (state) => ({
         autoImport: state.autoImport,
         skipGamePicker: state.skipGamePicker,

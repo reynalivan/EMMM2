@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
 import type { GameConfig } from '../../../types/game';
 
 interface Props {
@@ -12,11 +13,12 @@ interface Props {
 }
 
 export function GamePickerModal({ downloadIds, open, onClose, onConfirm }: Props) {
+  const { t } = useTranslation(['browser']);
   const [selectedGameId, setSelectedGameId] = useState<string>('');
 
-  const gamesQuery = useQuery({
+  const gamesQuery = useQuery<GameConfig[]>({
     queryKey: ['games'],
-    queryFn: () => invoke<GameConfig[]>('get_games'),
+    queryFn: () => commands.getGames(),
     enabled: open,
   });
 
@@ -38,11 +40,11 @@ export function GamePickerModal({ downloadIds, open, onClose, onConfirm }: Props
       }}
     >
       <div className="modal-box max-w-sm">
-        <h3 className="font-bold text-lg mb-1">Select Target Game</h3>
+        <h3 className="font-bold text-lg mb-1">{t('picker.title')}</h3>
         <p className="text-sm text-base-content/60 mb-4">
-          Choose which game to import{' '}
-          <span className="badge badge-neutral badge-sm">{downloadIds.length}</span> file
-          {downloadIds.length !== 1 ? 's' : ''} into.
+          {t('picker.description')}{' '}
+          <span className="badge badge-neutral badge-sm">{downloadIds.length}</span>{' '}
+          {t('picker.files', { count: downloadIds.length })}.
         </p>
 
         {gamesQuery.isLoading && (
@@ -53,7 +55,7 @@ export function GamePickerModal({ downloadIds, open, onClose, onConfirm }: Props
 
         {!gamesQuery.isLoading && games.length === 0 && (
           <div className="alert alert-warning">
-            <span>No games configured. Add a game in Settings first.</span>
+            <span>{t('picker.no_games')}</span>
           </div>
         )}
 
@@ -82,9 +84,7 @@ export function GamePickerModal({ downloadIds, open, onClose, onConfirm }: Props
                 />
                 <div>
                   <p className="text-sm font-medium">{g.name}</p>
-                  <p className="text-xs text-base-content/50 truncate max-w-[220px]">
-                    {g.mod_path}
-                  </p>
+                  <p className="text-xs text-base-content/50 truncate max-w-55">{g.mod_path}</p>
                 </div>
               </label>
             ))}
@@ -93,7 +93,7 @@ export function GamePickerModal({ downloadIds, open, onClose, onConfirm }: Props
 
         <div className="modal-action mt-2">
           <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            Cancel
+            {t('picker.cancel')}
           </button>
           <button
             id="game-picker-confirm-btn"
@@ -101,7 +101,7 @@ export function GamePickerModal({ downloadIds, open, onClose, onConfirm }: Props
             disabled={!selectedGameId}
             onClick={handleConfirm}
           >
-            Import Now
+            {t('picker.confirm')}
           </button>
         </div>
       </div>

@@ -5,34 +5,43 @@
  * enable only this, rename, delete, move to object, toggle safe.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { commands } from '../../../lib/bindings';
+import { join } from '@tauri-apps/api/path';
+import { toast } from '../../../stores/useToastStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useSettings } from '../../../hooks/useSettings';
 import {
   useToggleMod,
   useRenameMod,
   useDeleteMod,
   useEnableOnlyThis,
-  useCheckDuplicate,
   useToggleModSafe,
   useBulkFavorite,
   updateFolderCache,
   ModFolder,
   folderKeys,
+  useCheckDuplicate,
 } from '../../../hooks/useFolders';
-import type { DuplicateInfo } from '../../../types/mod';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useSettings } from '../../../hooks/useSettings';
+import type { DuplicateInfo } from '../../../types/mod';
+import type { ObjectSummary } from '../../../types/object';
+import type { MatchedDbEntry } from '../../object-list/SyncConfirmModal';
 
 interface FolderGridActionsOptions {
   sortedFolders: ModFolder[];
+  objects: ObjectSummary[];
   clearGridSelection: () => void;
 }
 
 export function useFolderGridActions({
   sortedFolders,
+  objects,
   clearGridSelection,
 }: FolderGridActionsOptions) {
+  const { t } = useTranslation(['grid', 'objects', 'common']);
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
   const { settings } = useSettings();
@@ -40,9 +49,9 @@ export function useFolderGridActions({
   const renameMod = useRenameMod();
   const deleteMod = useDeleteMod();
   const enableOnlyThis = useEnableOnlyThis();
-  const checkDuplicate = useCheckDuplicate();
   const toggleModSafe = useToggleModSafe();
   const bulkFavorite = useBulkFavorite();
+  const checkDuplicate = useCheckDuplicate();
 
   // Move To Object dialog state
   const [moveDialog, setMoveDialog] = useState<{ open: boolean; folder: ModFolder | null }>({
@@ -75,12 +84,31 @@ export function useFolderGridActions({
     folder: ModFolder | null;
   }>({ open: false, folder: null });
 
-  // Duplicate warning state
   const [duplicateWarning, setDuplicateWarning] = useState<{
     open: boolean;
     folder: ModFolder | null;
     duplicates: DuplicateInfo[];
   }>({ open: false, folder: null, duplicates: [] });
+
+  // Sync with DB confirm state
+  const [syncConfirm, setSyncConfirm] = useState<{
+    open: boolean;
+    folder: ModFolder | null;
+    match: MatchedDbEntry | null;
+    isLoading: boolean;
+    currentData: {
+      name: string;
+      object_type: string;
+      metadata: Record<string, unknown> | null;
+      thumbnail_path: string | null;
+    } | null;
+  }>({
+    open: false,
+    folder: null,
+    match: null,
+    isLoading: false,
+    currentData: null,
+  });
 
   const handleToggleEnabled = useCallback(
     async (folder: ModFolder) => {
@@ -102,19 +130,19 @@ export function useFolderGridActions({
           return;
         }
       } catch {
-        // Duplicate check failed — proceed with enable anyway
+        // Proceed if duplicate check fails
       }
 
       toggleMod.mutate({ path: folder.path, enable: true, gameId: activeGame.id });
     },
-    [toggleMod, activeGame, checkDuplicate],
+    [toggleMod, activeGame?.id, checkDuplicate],
   );
 
   const handleDuplicateForceEnable = useCallback(() => {
     if (!duplicateWarning.folder || !activeGame?.id) return;
     toggleMod.mutate({ path: duplicateWarning.folder.path, enable: true, gameId: activeGame.id });
     setDuplicateWarning({ open: false, folder: null, duplicates: [] });
-  }, [duplicateWarning.folder, toggleMod, activeGame]);
+  }, [duplicateWarning.folder, toggleMod, activeGame?.id]);
 
   const handleDuplicateEnableOnly = useCallback(() => {
     if (!duplicateWarning.folder || !activeGame?.id) return;
@@ -123,7 +151,7 @@ export function useFolderGridActions({
       gameId: activeGame.id,
     });
     setDuplicateWarning({ open: false, folder: null, duplicates: [] });
-  }, [duplicateWarning.folder, activeGame, enableOnlyThis]);
+  }, [duplicateWarning.folder, activeGame?.id, enableOnlyThis]);
 
   const handleDuplicateCancel = useCallback(() => {
     setDuplicateWarning({ open: false, folder: null, duplicates: [] });
@@ -159,6 +187,14 @@ export function useFolderGridActions({
       const folder = sortedFolders.find((f) => f.path === renamingId);
       if (!folder) return;
 
+      // AC-13.2.2: Pre-flight check for Windows-illegal characters.
+      // Backend also validates, but this avoids the IPC roundtrip and gives instant feedback.
+      const ILLEGAL_CHARS = /[\\/:*?"<>|]/;
+      if (ILLEGAL_CHARS.test(newName)) {
+        toast.error(t('objects:edit_modal.validation.path_invalid'));
+        return;
+      }
+
       try {
         await renameMod.mutateAsync({ folderPath: folder.path, newName, gameId: activeGame.id });
         setRenamingId(null);
@@ -167,14 +203,14 @@ export function useFolderGridActions({
         console.error('Rename failed', err);
       }
     },
-    [renamingId, renameMod, sortedFolders, clearGridSelection, activeGame?.id],
+    [renamingId, renameMod, sortedFolders, clearGridSelection, activeGame?.id, t],
   );
 
   const handleRenameCancel = useCallback(() => {
     setRenamingId(null);
   }, []);
 
-  const handleDeleteRequest = useCallback((folder: ModFolder) => {
+  const handleDeleteRequest = useCallback(async (folder: ModFolder) => {
     setDeleteConfirm({ open: true, folder });
   }, []);
 
@@ -196,6 +232,146 @@ export function useFolderGridActions({
   const closeMoveDialog = useCallback(() => {
     setMoveDialog({ open: false, folder: null });
   }, []);
+  const isTogglingObjectRef = useRef(false);
+
+  const toggleObjectMods = useCallback(
+    async (objectId: string, enable: boolean) => {
+      if (!activeGame || isTogglingObjectRef.current) return;
+
+      const obj = objects.find((o) => o.id === objectId);
+      if (!obj) return;
+
+      isTogglingObjectRef.current = true;
+      try {
+        const targetPath = await join(activeGame.mod_path, obj.folder_path);
+        await toggleMod.mutateAsync({
+          path: targetPath,
+          enable,
+          gameId: activeGame.id,
+        });
+        queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      } catch (err) {
+        console.error('Failed to toggle object mods:', err);
+      } finally {
+        isTogglingObjectRef.current = false;
+      }
+    },
+    [activeGame, objects, queryClient, toggleMod],
+  );
+
+  const handleRevealInExplorer = useCallback(
+    async (objectId: string) => {
+      if (!activeGame) return;
+      const obj = objects.find((o) => o.id === objectId);
+      try {
+        await commands.revealObjectInExplorer({
+          gameId: activeGame.id,
+          objectId,
+          objectName: obj?.folder_path ?? objectId,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(msg);
+        queryClient.invalidateQueries({ queryKey: folderKeys.all });
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      }
+    },
+    [activeGame, objects, queryClient],
+  );
+
+  // ── Sync with DB ────────────────────────────────────────────────
+  const handleSyncWithDb = useCallback(
+    async (folder: ModFolder) => {
+      if (!activeGame?.id) return;
+      setSyncConfirm({
+        open: true,
+        folder,
+        match: null,
+        isLoading: true,
+        currentData: {
+          name: folder.name,
+          object_type: folder.category ?? '',
+          metadata: folder.metadata ?? null,
+          thumbnail_path: folder.thumbnail_path,
+        },
+      });
+      try {
+        const match = await commands.matchObjectWithDb({
+          gameType: activeGame.game_type,
+          objectName: folder.name,
+        });
+        setSyncConfirm((prev) => ({ ...prev, match: match as MatchedDbEntry, isLoading: false }));
+      } catch (e) {
+        console.error('matchObjectWithDb failed:', e);
+        setSyncConfirm((prev) => ({ ...prev, isLoading: false }));
+      }
+    },
+    [activeGame?.id, activeGame?.game_type],
+  );
+
+  const handleCloseSyncConfirm = useCallback(() => {
+    setSyncConfirm({ open: false, folder: null, match: null, isLoading: false, currentData: null });
+  }, []);
+
+  const handleApplySyncMatch = useCallback(
+    async (match: MatchedDbEntry) => {
+      const { folder } = syncConfirm;
+      if (!folder || !activeGame?.id) return;
+      try {
+        let currentPath = folder.path;
+        // Rename if name changed
+        if (match.name && match.name !== folder.name) {
+          const result = await commands.renameModFolder({
+            folderPath: folder.path,
+            newName: match.name,
+            gameId: activeGame.id,
+          });
+          currentPath = result.new_path;
+        }
+        // Apply category if changed
+        if (match.object_type) {
+          await commands.setModCategory({
+            gameId: activeGame.id,
+            folderPath: currentPath,
+            category: match.object_type,
+          });
+        }
+        // Apply metadata if present
+        if (match.metadata) {
+          const metaStrings: Record<string, string> = {};
+          Object.entries(match.metadata).forEach(([k, v]) => {
+            if (v !== undefined && v !== null) metaStrings[k] = String(v);
+          });
+          await commands.updateModInfo({
+            folderPath: currentPath,
+            update: { metadata: metaStrings },
+          });
+        }
+        // Apply thumbnail if present
+        if (match.thumbnail_path) {
+          await commands.updateModThumbnail({
+            folderPath: currentPath,
+            sourcePath: match.thumbnail_path,
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: folderKeys.all });
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        toast.success(t('objects:edit_modal.success_message', { name: folder.name }));
+        setSyncConfirm({
+          open: false,
+          folder: null,
+          match: null,
+          isLoading: false,
+          currentData: null,
+        });
+      } catch (e) {
+        console.error('Apply sync match failed:', e);
+        toast.error(t('objects:edit_modal.error_message', { error: String(e) }));
+      }
+    },
+    [syncConfirm, activeGame?.id, queryClient, t],
+  );
 
   const handleMoveToObject = useCallback(
     async (
@@ -205,8 +381,7 @@ export function useFolderGridActions({
     ) => {
       if (!activeGame?.id) return;
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('move_mod_to_object', {
+        await commands.moveModToObject({
           gameId: activeGame.id,
           folderPath: folder.path,
           targetObjectId,
@@ -273,10 +448,9 @@ export function useFolderGridActions({
 
     try {
       setActiveContextDialog((prev) => ({ ...prev, isProcessing: true }));
-      const { invoke } = await import('@tauri-apps/api/core');
 
       // 1. Disable the active mod
-      const newPath = await invoke<string>('toggle_mod', {
+      const newPath = await commands.toggleMod({
         path: folder.path,
         enable: false,
         gameId: activeGame.id,
@@ -305,7 +479,7 @@ export function useFolderGridActions({
       }
 
       // 3. Perform the privacy context switch directly (no PIN needed)
-      await invoke<void>('toggle_mod_safe', {
+      await commands.toggleModSafe({
         gameId: activeGame.id,
         folderPath: newPath,
         safe: targetSafeStatus,
@@ -318,13 +492,13 @@ export function useFolderGridActions({
         appStore.clearGridSelection();
       }
 
-      import('../../../stores/useToastStore').then(({ toast }) => {
-        toast.success(`Mod disabled and moved to ${targetSafeStatus ? 'Safe' : 'Unsafe'} context.`);
-      });
+      toast.success(
+        t('objects:toasts.mark_safe_context', {
+          context: targetSafeStatus ? t('common:contexts.safe') : t('common:contexts.unsafe'),
+        }),
+      );
     } catch (err) {
-      import('../../../stores/useToastStore').then(({ toast }) => {
-        toast.error(`Failed to switch context: ${String(err)}`);
-      });
+      toast.error(t('objects:create_modal.error_message', { error: String(err) }));
     } finally {
       setActiveContextDialog({ open: false, folder: null, isProcessing: false });
 
@@ -332,16 +506,12 @@ export function useFolderGridActions({
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'active' });
     }
-  }, [activeContextDialog.folder, activeGame?.id, queryClient, settings]);
+  }, [activeContextDialog.folder, activeGame?.id, queryClient, settings, t]);
 
   return {
     handleToggleEnabled,
     handleToggleFavorite,
     handleEnableOnlyThis,
-    duplicateWarning,
-    handleDuplicateForceEnable,
-    handleDuplicateEnableOnly,
-    handleDuplicateCancel,
     renamingId,
     handleRenameRequest,
     handleRenameSubmit,
@@ -361,6 +531,17 @@ export function useFolderGridActions({
     activeContextDialog,
     handleActiveContextCancel,
     handleActiveContextSubmit,
+    duplicateWarning,
+    handleDuplicateForceEnable,
+    handleDuplicateEnableOnly,
+    handleDuplicateCancel,
+    toggleObjectMods,
+    handleRevealInExplorer,
+    /** Sync with DB */
+    syncConfirm,
+    handleSyncWithDb,
+    handleCloseSyncConfirm,
+    handleApplySyncMatch,
     /** true when a PIN has been configured in settings */
     hasPin: !!settings?.safe_mode?.pin_hash,
   };

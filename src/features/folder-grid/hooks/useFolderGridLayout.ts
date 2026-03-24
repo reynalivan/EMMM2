@@ -4,7 +4,9 @@
  * Extracted from useFolderGrid to keep the orchestrator under 350 lines.
  */
 
-import { useState, useEffect } from 'react';
+'use no memo';
+
+import { useState, useEffect, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 // Grid layout constants
@@ -56,6 +58,12 @@ export function useFolderGridLayout({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Virtualizer ───────────────────────────────────────────────────────────
+  /**
+   * TanStack Virtual's useVirtualizer is technically incompatible with React Compiler
+   * because it returns an object with methods that break auto-memoization.
+   * We isolate it here and return a stable, pure API to the orchestrator.
+   */
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
@@ -64,10 +72,24 @@ export function useFolderGridLayout({
     initialOffset: explorerScrollOffset,
   });
 
+  const scrollToIndex = useCallback(
+    (index: number, options?: { align?: 'start' | 'center' | 'end' | 'auto' }) => {
+      rowVirtualizer.scrollToIndex(index, options);
+    },
+    [rowVirtualizer],
+  );
+
+  const scrollToOffset = useCallback(
+    (offset: number, options?: { align?: 'start' | 'center' | 'end' | 'auto' }) => {
+      rowVirtualizer.scrollToOffset(offset, options);
+    },
+    [rowVirtualizer],
+  );
+
   // Reset scroll on sub-path change
   useEffect(() => {
-    rowVirtualizer.scrollToOffset(0);
-  }, [explorerSubPath]); // eslint-disable-line react-hooks/exhaustive-deps
+    scrollToOffset(0);
+  }, [explorerSubPath, scrollToOffset]);
 
   // Persist scroll offset
   useEffect(() => {
@@ -83,7 +105,14 @@ export function useFolderGridLayout({
       el.removeEventListener('scroll', handleScroll);
       cancelAnimationFrame(rafId);
     };
-  }, [setExplorerScrollOffset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [parentRef, setExplorerScrollOffset]);
 
-  return { rowVirtualizer, columnCount, cardWidth };
+  return {
+    virtualItems: rowVirtualizer.getVirtualItems(),
+    totalSize: rowVirtualizer.getTotalSize(),
+    scrollToIndex,
+    scrollToOffset,
+    columnCount,
+    cardWidth,
+  };
 }

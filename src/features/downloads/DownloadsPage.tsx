@@ -2,18 +2,16 @@ import { useState } from 'react';
 import { useDownloads } from '../browser/hooks/useDownloads';
 import { Download, PlayCircle, Trash2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { GamePickerModal } from '../browser/components/GamePickerModal';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
+import type { BrowserDownloadItem } from '../browser/types';
+import { formatBytes } from '../../utils/formatters';
+import { useTranslation } from 'react-i18next';
 
 export default function DownloadsPage() {
+  const { t } = useTranslation('browser');
   const { downloads, deleteDownload, cancelDownload, clearImported } = useDownloads();
   const [importIds, setImportIds] = useState<string[]>([]);
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
-
-  const formatBytes = (n: number) => {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  };
 
   const handleImport = (id: string) => {
     setImportIds([id]);
@@ -22,7 +20,7 @@ export default function DownloadsPage() {
 
   const handleGameConfirm = async (gameId: string) => {
     try {
-      await invoke('browser_import_downloads', { downloadIds: importIds, gameId });
+      await commands.browserImportSelected({ ids: importIds, gameId });
     } catch (err) {
       console.error('Failed to import:', err);
     } finally {
@@ -36,27 +34,27 @@ export default function DownloadsPage() {
       case 'in_progress':
         return (
           <span className="badge badge-info gap-1">
-            <RefreshCw size={12} className="animate-spin" /> Downloading
+            <RefreshCw size={12} className="animate-spin" /> {t('downloads.status.downloading')}
           </span>
         );
       case 'finished':
         return (
           <span className="badge badge-success gap-1">
-            <CheckCircle2 size={12} /> Ready
+            <CheckCircle2 size={12} /> {t('downloads.status.ready')}
           </span>
         );
       case 'failed':
         return (
           <span className="badge badge-error gap-1">
-            <AlertCircle size={12} /> Failed
+            <AlertCircle size={12} /> {t('downloads.status.failed')}
           </span>
         );
       case 'canceled':
-        return <span className="badge badge-warning gap-1">Canceled</span>;
+        return <span className="badge badge-warning gap-1">{t('downloads.status.canceled')}</span>;
       case 'imported':
-        return <span className="badge badge-ghost gap-1">Imported</span>;
+        return <span className="badge badge-ghost gap-1">{t('downloads.status.imported')}</span>;
       default:
-        return <span className="badge badge-neutral gap-1">Queued</span>;
+        return <span className="badge badge-neutral gap-1">{t('downloads.status.queued')}</span>;
     }
   };
 
@@ -68,15 +66,13 @@ export default function DownloadsPage() {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Download size={32} className="text-primary" />
-              Downloads Manager
+              {t('downloads.title')}
             </h1>
-            <p className="text-base-content/60 mt-1">
-              Manage your intercepted mod downloads and import them to your games.
-            </p>
+            <p className="text-base-content/75 mt-1">{t('welcome.description')}</p>
           </div>
           <div>
             <button className="btn btn-outline btn-sm gap-2" onClick={() => clearImported()}>
-              <Trash2 size={16} /> Clear Imported
+              <Trash2 size={16} /> {t('downloads.clear_imported')}
             </button>
           </div>
         </div>
@@ -86,24 +82,26 @@ export default function DownloadsPage() {
       <div className="flex-1 overflow-y-auto w-full p-6">
         <div className="max-w-7xl mx-auto space-y-4">
           {downloads.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-20 text-center opacity-50">
+            <div className="flex flex-col items-center justify-center p-20 text-center opacity-70">
               <Download size={64} className="mb-4" />
-              <h2 className="text-xl font-semibold">No downloads found</h2>
-              <p>Browse the web inside EMMM2 to intercept and download mods.</p>
+              <h2 className="text-xl font-semibold">{t('downloads.empty')}</h2>
+              <p>{t('welcome.description')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto bg-base-200/50 rounded-2xl border border-base-300">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>File Name</th>
-                    <th>Status</th>
-                    <th>Progress</th>
-                    <th className="text-right">Actions</th>
+                    <th>{t('downloads.table_filename', { defaultValue: 'File Name' })}</th>
+                    <th>{t('downloads.table_status', { defaultValue: 'Status' })}</th>
+                    <th>{t('downloads.table_progress', { defaultValue: 'Progress' })}</th>
+                    <th className="text-right">
+                      {t('downloads.table_actions', { defaultValue: 'Actions' })}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {downloads.map((item) => {
+                  {downloads.map((item: BrowserDownloadItem) => {
                     const progress = item.bytes_total
                       ? Math.round((item.bytes_received / item.bytes_total) * 100)
                       : 0;
@@ -112,7 +110,7 @@ export default function DownloadsPage() {
                       <tr key={item.id} className="hover">
                         <td className="w-1/3">
                           <p
-                            className="font-semibold text-base-content truncate max-w-[300px]"
+                            className="font-semibold text-base-content truncate max-w-75"
                             title={item.filename}
                           >
                             {item.filename}
@@ -122,7 +120,7 @@ export default function DownloadsPage() {
                           {renderStatus(item.status)}
                           {item.error_msg && (
                             <p
-                              className="text-xs text-error mt-1 truncate max-w-[150px]"
+                              className="text-xs text-error mt-1 truncate max-w-37.5"
                               title={item.error_msg}
                             >
                               {item.error_msg}
@@ -137,17 +135,17 @@ export default function DownloadsPage() {
                                 value={progress}
                                 max="100"
                               />
-                              <div className="flex justify-between text-xs mt-1 text-base-content/60">
+                              <div className="flex justify-between text-xs mt-1 text-base-content/75">
                                 <span>{formatBytes(item.bytes_received)}</span>
                                 <span>
                                   {item.bytes_total
                                     ? formatBytes(item.bytes_total)
-                                    : 'Unknown size'}
+                                    : t('downloads.unknown_size', { defaultValue: 'Unknown size' })}
                                 </span>
                               </div>
                             </div>
                           ) : (
-                            <span className="text-sm text-base-content/60">
+                            <span className="text-sm text-base-content/75">
                               {item.bytes_total
                                 ? formatBytes(item.bytes_total)
                                 : formatBytes(item.bytes_received)}
@@ -161,7 +159,7 @@ export default function DownloadsPage() {
                                 className="btn btn-sm btn-primary gap-2"
                                 onClick={() => handleImport(item.id)}
                               >
-                                <PlayCircle size={16} /> Import
+                                <PlayCircle size={16} /> {t('downloads.import')}
                               </button>
                             )}
                             {item.status === 'in_progress' && (
@@ -169,13 +167,13 @@ export default function DownloadsPage() {
                                 className="btn btn-sm btn-warning"
                                 onClick={() => cancelDownload(item.id)}
                               >
-                                Cancel
+                                {t('common:action.cancel')}
                               </button>
                             )}
                             <button
                               className="btn btn-sm btn-ghost text-error"
                               onClick={() => deleteDownload({ id: item.id, deleteFile: false })}
-                              title="Remove from list"
+                              title={t('downloads.delete_title')}
                             >
                               <Trash2 size={16} />
                             </button>

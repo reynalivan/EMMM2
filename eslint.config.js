@@ -7,7 +7,18 @@ import prettier from 'eslint-plugin-prettier';
 import prettierConfig from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['dist', 'src-tauri', 'coverage', '.agent', '.history', '.vscode', '.opencode'] },
+  {
+    ignores: [
+      'dist',
+      'src-tauri',
+      'coverage',
+      '.agent',
+      '.history',
+      '.vscode',
+      '.opencode',
+      '.codebuddy',
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended, prettierConfig],
     files: ['**/*.{ts,tsx}'],
@@ -22,6 +33,7 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      'react-hooks/set-state-in-effect': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'prettier/prettier': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

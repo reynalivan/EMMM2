@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Webview } from '@tauri-apps/api/webview';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
@@ -10,8 +9,11 @@ import { DownloadManagerPanel } from './DownloadManagerPanel';
 import { GamePickerModal } from './GamePickerModal';
 import { ImportQueuePanel } from './ImportQueuePanel';
 import { Globe, Download, Plus, X, RotateCcw, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { commands } from '../../../lib/bindings';
 
 export function BrowserPage() {
+  const { t } = useTranslation(['browser']);
   const [urlInput, setUrlInput] = useState('');
   const [isNavigating, setIsNavigating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -47,18 +49,17 @@ export function BrowserPage() {
       setIsNavigating(true);
       try {
         if (asNewTab || tabs.length === 0) {
-          const label = await invoke<string>('browser_open_tab', {
+          const label = await commands.browserOpenTab({
             url: normalized,
-            sessionId: null,
           });
 
           addTab({
             id: label,
-            title: 'Loading...',
+            title: t('tabs.loading'),
             url: normalized,
           });
         } else if (activeTabId) {
-          await invoke('browser_navigate', {
+          await commands.browserNavigate({
             label: activeTabId,
             url: normalized,
           });
@@ -70,7 +71,7 @@ export function BrowserPage() {
         setIsNavigating(false);
       }
     },
-    [tabs.length, activeTabId, addTab],
+    [tabs.length, activeTabId, addTab, t],
   );
 
   // Synchronize URL input with active tab
@@ -203,7 +204,7 @@ export function BrowserPage() {
     if (!activeTabId) return;
     setIsRefreshing(true);
     try {
-      await invoke('browser_reload_tab', { label: activeTabId });
+      await commands.browserReloadTab({ label: activeTabId });
     } catch (err) {
       console.error('Failed to reload:', err);
     } finally {
@@ -213,13 +214,11 @@ export function BrowserPage() {
 
   const handleClearData = async () => {
     if (!activeTabId) return;
-    const confirmed = await window.confirm(
-      'Clear all browsing data (cookies, cache, etc.) for this session?',
-    );
+    const confirmed = await window.confirm(t('tabs.clear_data_confirm'));
     if (!confirmed) return;
 
     try {
-      await invoke('browser_clear_data', { label: activeTabId });
+      await commands.browserClearData({ label: activeTabId });
       // Reload to apply changes
       handleReload();
     } catch (err) {
@@ -255,7 +254,7 @@ export function BrowserPage() {
 
   const handleGameConfirm = async (gameId: string) => {
     try {
-      await invoke('browser_import_selected', {
+      await commands.browserImportSelected({
         ids: importIds,
         gameId,
       });
@@ -293,7 +292,7 @@ export function BrowserPage() {
                 ? tab.title
                 : tab.url
                   ? new URL(tab.url).hostname
-                  : 'New Tab'}
+                  : t('tabs.new_tab')}
             </span>
             <div
               className="w-5 h-5 rounded-md hover:bg-base-300 grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -306,7 +305,7 @@ export function BrowserPage() {
         <button
           onClick={() => handleNavigate('https://www.google.com', true)}
           className="btn btn-sm btn-ghost btn-square rounded-full mb-1 ml-1"
-          title="New Tab"
+          title={t('tabs.new_tab')}
         >
           <Plus size={16} />
         </button>
@@ -318,7 +317,7 @@ export function BrowserPage() {
         <div className="flex items-center gap-1">
           <button
             className="btn btn-ghost btn-xs btn-square"
-            title="Refresh"
+            title={t('tabs.refresh')}
             onClick={handleReload}
             disabled={!activeTabId || isRefreshing}
           >
@@ -330,11 +329,11 @@ export function BrowserPage() {
         <button
           id="browser-gamebanana-btn"
           className="btn btn-ghost btn-sm gap-2"
-          title="Open GameBanana"
+          title={t('tabs.open_gamebanana')}
           onClick={() => handleNavigate('https://gamebanana.com', true)}
         >
-          <Globe size={16} className="text-cyan-500" />
-          Discover
+          <Globe size={16} className="text-info" />
+          {t('tabs.discover')}
         </button>
 
         {/* URL bar */}
@@ -343,7 +342,7 @@ export function BrowserPage() {
             id="browser-url-input"
             type="text"
             className="input input-sm input-bordered flex-1 font-mono text-sm bg-base-200 focus:bg-base-100 transition-colors"
-            placeholder="Enter URL to open..."
+            placeholder={t('tabs.url_placeholder')}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
           />
@@ -353,7 +352,7 @@ export function BrowserPage() {
             className="btn btn-sm btn-primary"
             disabled={isNavigating}
           >
-            {isNavigating ? <span className="loading loading-spinner loading-xs" /> : 'Go'}
+            {isNavigating ? <span className="loading loading-spinner loading-xs" /> : t('tabs.go')}
           </button>
         </form>
 
@@ -362,7 +361,7 @@ export function BrowserPage() {
           <button
             className="btn btn-sm btn-ghost text-error"
             onClick={handleClearData}
-            title="Clear cookies & cache"
+            title={t('tabs.clear_data')}
             disabled={!activeTabId}
           >
             <Trash2 size={18} />
@@ -372,7 +371,7 @@ export function BrowserPage() {
             id="browser-downloads-btn"
             className="btn btn-sm btn-ghost relative"
             onClick={openDownloadPanel}
-            title="Open Downloads panel"
+            title={t('tabs.open_downloads')}
           >
             <Download size={18} />
             {finishedCount > 0 && (
@@ -390,28 +389,25 @@ export function BrowserPage() {
       <div ref={containerRef} className="flex-1 w-full bg-base-100 relative">
         {/* Placeholder UI shown when the container is empty or webview is loading */}
         {tabs.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-overlay-mask backdrop-blur-sm pointer-events-none">
             <div className="flex flex-col items-center gap-6 text-center p-8 max-w-md">
               <Globe size={64} className="text-base-300" />
               <div>
-                <h2 className="text-xl font-bold text-base-content">In-App Browser</h2>
-                <p className="text-sm text-base-content/60 mt-2">
-                  Browse and download mods directly. Downloads are intercepted automatically and
-                  queued for Smart Import.
-                </p>
+                <h2 className="text-xl font-bold text-base-content">{t('welcome.title')}</h2>
+                <p className="text-sm text-base-content/60 mt-2">{t('welcome.description')}</p>
               </div>
               <div className="flex flex-wrap gap-2 justify-center pointer-events-auto">
                 <button
                   className="btn btn-primary btn-sm gap-2"
                   onClick={() => handleNavigate('https://gamebanana.com', true)}
                 >
-                  Browse GameBanana
+                  {t('welcome.browse_gb')}
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => handleNavigate('https://www.google.com', true)}
                 >
-                  Google
+                  {t('welcome.google')}
                 </button>
               </div>
             </div>
@@ -424,7 +420,7 @@ export function BrowserPage() {
         <>
           {/* Download Manager Panel Backdrop (slide-in) */}
           <div
-            className={`fixed inset-0 bg-black/40 z-9998 transition-opacity duration-300 ${
+            className={`fixed inset-0 bg-overlay-mask backdrop-blur-sm z-9998 transition-opacity duration-300 ${
               isDownloadPanelOpen
                 ? 'opacity-100 pointer-events-auto'
                 : 'opacity-0 pointer-events-none'

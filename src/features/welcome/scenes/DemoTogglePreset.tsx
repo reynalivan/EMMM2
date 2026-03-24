@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Power } from 'lucide-react';
 import { DEMO_MODS, usePrefersReducedMotion } from '../demoTypes';
 
 export default function DemoTogglePreset({ onComplete }: { onComplete?: () => void }) {
+  const { t } = useTranslation();
   const prefersReduced = usePrefersReducedMotion();
   const [isOn, setIsOn] = useState(() => prefersReduced);
 
@@ -40,8 +42,8 @@ export default function DemoTogglePreset({ onComplete }: { onComplete?: () => vo
         transition={{ delay: 0.1, duration: 0.4 }}
         className="absolute top-6 left-0 right-0 text-center z-20"
       >
-        <h3 className="text-lg font-bold">One-click Presets</h3>
-        <p className="text-sm text-base-content/60">Applied instantly</p>
+        <h3 className="text-lg font-bold">{t('welcome.demo.one_click_presets')}</h3>
+        <p className="text-sm text-base-content/60">{t('welcome.demo.applied_instantly')}</p>
       </motion.div>
 
       <div className="flex w-full max-w-lg items-center justify-between gap-8 mt-12">
@@ -61,7 +63,7 @@ export default function DemoTogglePreset({ onComplete }: { onComplete?: () => vo
             <Power className="w-8 h-8" />
           </motion.div>
           <span className="font-semibold text-xs tracking-wider uppercase opacity-70">
-            {isOn ? 'Preset ON' : 'Preset OFF'}
+            {isOn ? t('welcome.demo.preset_on') : t('welcome.demo.preset_off')}
           </span>
         </div>
 
@@ -97,7 +99,7 @@ export default function DemoTogglePreset({ onComplete }: { onComplete?: () => vo
                   className={`w-5 h-5 rounded shrink-0 transition-colors duration-300
                   ${isOn ? 'bg-primary' : 'bg-base-300'}`}
                 />
-                <span className="truncate text-xs font-medium">{mod.name}</span>
+                <span className="truncate text-xs font-medium">{t(mod.name)}</span>
               </motion.div>
             );
           })}

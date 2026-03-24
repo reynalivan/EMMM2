@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import ManualSetupForm from './ManualSetupForm';
+import { ManualSetupForm } from './ManualSetupForm';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
@@ -30,7 +30,7 @@ describe('ManualSetupForm (TC-03)', () => {
   });
 
   it('shows validation errors for empty submits', async () => {
-    render(<ManualSetupForm onBack={mockOnBack} onComplete={mockOnComplete} />);
+    render(<ManualSetupForm onBack={mockOnBack} onSuccess={mockOnComplete} />);
 
     // Submit an empty form
     fireEvent.submit(screen.getByRole('button', { name: /Add Game/i }));
@@ -47,7 +47,7 @@ describe('ManualSetupForm (TC-03)', () => {
 
   it('allows browsing for a folder', async () => {
     (open as ReturnType<typeof vi.fn>).mockResolvedValue('C:\\Mocked\\Path');
-    render(<ManualSetupForm onBack={mockOnBack} onComplete={mockOnComplete} />);
+    render(<ManualSetupForm onBack={mockOnBack} onSuccess={mockOnComplete} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Browse/i }));
 
@@ -63,7 +63,7 @@ describe('ManualSetupForm (TC-03)', () => {
       () => new Promise((resolve) => setTimeout(() => resolve({ id: 'dummy' }), 100)),
     );
 
-    render(<ManualSetupForm onBack={mockOnBack} onComplete={mockOnComplete} />);
+    render(<ManualSetupForm onBack={mockOnBack} onSuccess={mockOnComplete} />);
 
     // Set form values
     const select = screen.getByRole('combobox');
@@ -93,7 +93,7 @@ describe('ManualSetupForm (TC-03)', () => {
   it('displays server errors when invoke fails', async () => {
     (invoke as ReturnType<typeof vi.fn>).mockRejectedValue('Fake backend error');
 
-    render(<ManualSetupForm onBack={mockOnBack} onComplete={mockOnComplete} />);
+    render(<ManualSetupForm onBack={mockOnBack} onSuccess={mockOnComplete} />);
 
     // Set form values
     const select = screen.getByRole('combobox');

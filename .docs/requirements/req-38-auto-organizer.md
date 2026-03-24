@@ -65,7 +65,7 @@ auto_organize_mods(game_id, folder_paths: Vec<PathBuf>) → BulkResult:
   5. Return BulkResult
 
 Frontend:
-  → invoke('auto_organize_mods', { game_id, folder_paths })
+  → commands.autoOrganizeMods({ game_id, folder_paths })
   → on success: queryClient.invalidateQueries(['folders', gameId])
                + toast summary
 ```
@@ -78,7 +78,7 @@ Frontend:
 | DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename` |
 | Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)           |
 | Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched                       |
-| Frontend                           | Context menu "Auto-Organize" on bulk selection → `invoke('auto_organize_mods')`            |
+| Frontend                           | Context menu "Auto-Organize" on bulk selection → `commands.autoOrganizeMods()`             |
 
 ### Security & Privacy
 

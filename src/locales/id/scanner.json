@@ -1,0 +1,219 @@
+{
+  "title": "Pemindai Mod",
+  "description": "Mendeteksi mod baru, arsip, dan memperbarui catatan yang ada.",
+  "start_button": "Mulai Pindai",
+  "scanning_title": "Memindai Mod...",
+  "cancel_button": "Batal Pindai",
+  "matched": "Cocok",
+  "unmatched": "Tidak Cocok",
+  "no_mods": "Tidak ada mod yang ditemukan. Coba pindai lagi.",
+  "extract": {
+    "title": "Arsip Terdeteksi",
+    "failed": "Gagal mendeteksi arsip",
+    "extraction_failed": "Ekstraksi gagal",
+    "import_to": "Mengimpor ke: {{name}}",
+    "compatibility_check": "Arsip akan diperiksa kompatibilitasnya setelah diekstraksi.",
+    "found_count": "Ditemukan {{count}} arsip siap untuk diimpor.",
+    "no_password": "Tidak Perlu Kata Sandi ({{count}})",
+    "password_protected": "Dilindungi Kata Sandi ({{count}})",
+    "no_mod_files": "Arsip tidak mengandung file mod",
+    "nested_tooltip": "Berisi zip/rar di dalamnya. Akan dibuka jika Buka-otomatis dicentang.",
+    "nested_label": "Bersarang",
+    "password_placeholder": "Kunci",
+    "rename_tooltip": "Klik untuk mengubah nama",
+    "duplicate_name": "Nama folder duplikat",
+    "duplicate_name_action": "Nama duplikat — akan diubah nama otomatis atau ditimpa",
+    "password_required": "Memerlukan kata sandi untuk mengekstrak",
+    "option_auto_rename": "Ubah nama folder otomatis jika ada konflik nama",
+    "option_overwrite": "Timpa folder yang sudah ada",
+    "option_overwrite_desc": "File asli akan ditimpa secara permanen",
+    "not_recommended": "Tidak Disarankan",
+    "option_disabled": "Setel sebagai nonaktif setelah ekstraksi",
+    "option_unpack_nested": "Buka-otomatis arsip bersarang (Modpacks)",
+    "option_unpack_nested_tooltip": "Buka file zip/rar yang tersembunyi di dalam arsip utama secara rekursif",
+    "progress_archive": "Mengekstrak arsip {{current}} dari {{total}}...",
+    "progress_extracting": "Mengekstrak...",
+    "progress_files": "{{current}}/{{total}} file",
+    "action_skip": "Lewati Ekstraksi",
+    "selected_count": "{{count}} terpilih",
+    "action_stop": "Berhenti",
+    "action_extract": "Ekstrak yang Dipilih",
+    "stop_confirm_title": "Berhenti Ekstraksi?",
+    "stop_confirm_desc": "Apakah Anda yakin ingin berhenti? Arsip yang sedang diekstraksi akan dikembalikan, tetapi arsip yang sudah diekstraksi akan tetap ada.",
+    "action_cancel": "Batal",
+    "action_yes_stop": "Ya, Berhenti",
+    "action_close": "Tutup",
+    "search_placeholder": "Cari...",
+    "overwrite_confirm_title": "Timpa Folder yang Sudah Ada?",
+    "overwrite_confirm_desc": "{{count}} folder berikut sudah ada dan akan diganti secara permanen:",
+    "action_yes_overwrite": "Ya, Timpa",
+    "password_retry": "Kata sandi salah. Silakan coba lagi.",
+    "pick_folder_error": "Gagal memilih folder",
+    "pick_file_error": "Gagal memilih file",
+    "validation": {
+      "empty": "Nama tidak boleh kosong",
+      "illegal": "Mengandung karakter ilegal",
+      "reserved": "Nama Windows yang dilindungi"
+    },
+    "tree": {
+      "contents": "Isi ({{count}} file)",
+      "contents_singular": "Isi ({{count}} file)",
+      "folder_files": "({{count}} file)",
+      "folder_files_singular": "({{count}} file)",
+      "loose_files": "{{count}} file terpisah",
+      "loose_files_singular": "{{count}} file terpisah",
+      "more_folders": "…dan {{count}} folder lainnya",
+      "showing_entries": "Menampilkan {{current}} dari {{total}} entri"
+    }
+  },
+  "optimizer": {
+    "title": "Pengoptimal Penyimpanan",
+    "description": "Reklamasi ruang disk dengan mengidentifikasi dan menghapus file mod yang berlebihan. EMMM menganalisis pustaka Anda dengan aman untuk menemukan duplikat yang identik.",
+    "start_button": "Mulai Pindai",
+    "stop_button": "Berhenti Pindai",
+    "ignored_button": "Diabaikan ({{count}})",
+    "filter_label": "Filter berdasarkan Keyakinan Kecocokan",
+    "tabs": {
+      "all": "Semua",
+      "high": "Tinggi",
+      "medium": "Sedang",
+      "low": "Rendah"
+    }
+  },
+  "report": {
+    "title": "Hasil Pemindaian Duplikat",
+    "loading": "Memuat laporan duplikat...",
+    "error_title": "Gagal memuat laporan duplikat",
+    "no_results": "Tidak ada hasil pemindaian yang tersedia",
+    "no_results_desc": "Jalankan pemindaian duplikat untuk melihat hasil di sini.",
+    "clean_title": "Tidak ada duplikat yang ditemukan",
+    "clean_desc": "Pustaka mod Anda bersih!",
+    "stats_summary": "Ditemukan {{totalGroups}} grup duplikat dengan total {{totalMembers}} anggota",
+    "reveal_unsafe": "Tampilkan Tidak Aman",
+    "apply_actions": "Terapkan {{count}} Tindakan",
+    "apply_actions_plural": "Terapkan {{count}} Tindakan",
+    "applying": "Menerapkan...",
+    "unsafe_revealed": "Duplikat tidak aman ditampilkan",
+    "pin_title": "Tampilkan Duplikat Tidak Aman",
+    "pin_desc": "Masukkan PIN keamanan Anda untuk melihat duplikat yang ditandai sebagai tidak aman."
+  },
+  "table": {
+    "header": {
+      "group": "Grup",
+      "members": "Anggota Duplikat",
+      "reason": "Alasan & Keyakinan",
+      "action": "Tindakan"
+    },
+    "empty": "Tidak ada duplikat yang ditemukan dalam kategori ini",
+    "empty_desc": "Coba ganti tab atau sesuaikan pengaturan pemindaian Anda.",
+    "confidence": "Keyakinan",
+    "unsafe": "Tidak Aman",
+    "select_action": "Pilih Tindakan...",
+    "keep_one": "Simpan Satu (Hapus Lainnya)",
+    "keep_label": "Simpan {{id}}: {{name}}",
+    "general": "Umum",
+    "ignore": "Abaikan / Daftar Putih",
+    "will_delete": "Akan menghapus {{count}} item",
+    "delete_confirm": "Apakah Anda yakin ingin menghapus {{count}} mod?",
+    "rename_tooltip": "Klik dua kali untuk mengubah nama",
+    "open_folder": "Buka Folder",
+    "columns": {
+      "preview": "Pratinjau",
+      "name": "Nama Mod",
+      "category": "Kategori",
+      "skin": "Skin",
+      "status": "Status",
+      "enabled": "Aktif",
+      "disabled": "Nonaktif"
+    }
+  },
+  "resolution": {
+    "title": "Konfirmasi Resolusi",
+    "summary": "Anda akan menyelesaikan {{count}} grup duplikat. Ini akan mengakibatkan penghapusan {{deleted}} file dan penambahan {{ignored}} ke daftar putih.",
+    "keep_specific": "Simpan Spesifik",
+    "whitelist": "Daftar Putih",
+    "keep_label": "SIMPAN:",
+    "delete_others": "Hapus {{count}} item identik lainnya",
+    "ignore_label": "ABAIKAN:",
+    "ignore_desc": "Masukkan semua {{count}} anggota ke daftar putih",
+    "confirm_button": "Konfirmasi & Selesaikan",
+    "processing": "Memproses..."
+  },
+  "ignored_pairs": {
+    "title": "{{primary}} Pasangan Duplikat",
+    "title_primary": "Diabaikan",
+    "description": "Pasangan yang telah Anda masukkan ke daftar putih untuk mencegahnya muncul di pemindaian mendatang.",
+    "loading": "Memuat pasangan yang diabaikan...",
+    "no_results": "Tidak ada pasangan yang diabaikan ditemukan",
+    "no_results_desc": "Item yang Anda masukkan ke daftar putih akan muncul di sini untuk dipulihkan.",
+    "table": {
+      "mod_a": "Mod A",
+      "mod_b": "Mod B",
+      "reason": "Alasan",
+      "ignored_at": "Diabaikan Pada",
+      "action": "Tindakan"
+    },
+    "action_recover": "Pulihkan",
+    "action_close": "Tutup"
+  },
+  "conflict_toast": {
+    "title": "Konflik Shader Terdeteksi!",
+    "count": "{{count}} konflik terdeteksi."
+  },
+  "overlay": {
+    "title": "Memindai Mod...",
+    "matched": "Cocok",
+    "unmatched": "Tidak Cocok",
+    "cancel": "Batal Pindai"
+  },
+  "review": {
+    "title": "Tinjau Pemindaian",
+    "selected": "{{count}} terpilih",
+    "empty": "Tidak ada item untuk ditinjau.",
+    "no_folders": "Tidak ada folder mod yang ditemukan.",
+    "rename_hint": "Klik dua kali untuk mengubah nama",
+    "open_folder": "Buka Folder",
+    "bulk_skip_label": "Lewati yang Dipilih",
+    "bulk_skip_tip": "Tandai item yang dipilih sebagai dilewati",
+    "filter_label": "Filter",
+    "search_placeholder": "Cari...",
+    "committing_state": "Sedang menyimpan...",
+    "confirm_button_label": "Konfirmasi {{count}} Item",
+    "select_deselect_all_tip": "Pilih / Batal Pilih Semua",
+    "headers": {
+      "folder_name": "Nama Folder",
+      "target_detected": "Target Terdeteksi",
+      "type": "Tipe",
+      "percentage": "% Kecocokan",
+      "action": "Tindakan"
+    },
+    "actions": {
+      "enable": "Aktifkan",
+      "disable": "Nonaktifkan",
+      "organize": "Atur Otomatis",
+      "delete": "Hapus"
+    },
+    "status": {
+      "enabled": "Aktif",
+      "disabled": "Nonaktif"
+    },
+    "toast": {
+      "db_load_failed": "Gagal memuat DB untuk pengaturan otomatis: {{error}}"
+    }
+  },
+  "dedup": {
+    "analyzing": "Menganalisis Library Mod...",
+    "progress": "{{scanned}} / {{total}} folder",
+    "current": "Saat ini: {{folder}}",
+    "toast": {
+      "recover_success": "Berhasil memulihkan pasangan",
+      "recover_failed": "Gagal memulihkan pasangan: {{error}}",
+      "scan_failed": "Pemindaian gagal: {{error}}",
+      "scan_cancelled": "Pemindaian dibatalkan",
+      "cancel_failed": "Gagal membatalkan: {{error}}",
+      "resolve_success": "Berhasil menyelesaikan {{successful}}/{{total}} duplikat",
+      "resolve_warning": "Selesai {{successful}}/{{total}} duplikat ({{failed}} gagal)",
+      "resolve_failed": "Gagal menyelesaikan: {{error}}"
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "pin_entry": {
+    "title": "Enter PIN",
+    "desc": "A PIN is required to disable Safe Mode.",
+    "placeholder": "••••••",
+    "error": {
+      "length": "PIN must be 6 digits",
+      "locked": "Too many failed attempts. Locked for {{seconds}}s",
+      "invalid": "Invalid PIN. {{count}} attempts remaining."
+    },
+    "lockout": "Try again in {{seconds}} seconds",
+    "forgot": "Forgot PIN? Use Recovery Code",
+    "verify": "Verify",
+    "unlock": "Unlock",
+    "set_pin": "Set PIN",
+    "pin": "PIN",
+    "new_pin": "New PIN",
+    "confirm_new_pin": "Confirm New PIN"
+  },
+  "recovery": {
+    "title": "PIN Recovery",
+    "desc_format": "Enter your Recovery Code (format: EMMM-XXXX-XXXX-XXXX). This will remove your PIN so you can set a new one.",
+    "placeholder": "EMMM-XXXX-XXXX-XXXX",
+    "error": {
+      "empty": "Please enter your recovery code.",
+      "invalid": "Invalid recovery code. Please check and try again."
+    },
+    "reset": "Reset PIN",
+    "success": {
+      "title": "PIN Removed Successfully",
+      "desc": "Your PIN has been cleared. Go to Settings → Privacy → Set PIN to create a new one."
+    },
+    "error_match": "PINs do not match",
+    "removed": "PIN Removed: Safe Mode is now unprotected.",
+    "remove_failed": "Failed to remove PIN: {{error}}"
+  },
+  "settings": {
+    "title": "Safe Mode",
+    "desc": "When enabled, mods tagged with sensitive keywords are hidden from the library. Disabling this mode may require authentication if a PIN is set.",
+    "toggle": "Toggle safe mode",
+    "keywords": {
+      "title": "Filtered Keywords",
+      "placeholder": "Add keyword (e.g. nsfw)",
+      "add": "Add",
+      "remove": "Remove {{keyword}}",
+      "empty": "No filtered keywords configured.",
+      "exists": "Keyword already exists.",
+      "update_failed": "Keyword update failed: {{error}}"
+    },
+    "protection": {
+      "title": "Extra Keyword Protection",
+      "desc": "When this is ON, mods that match filtered keywords are hidden even if they are marked as safe.",
+      "update_failed": "Safe Mode filter update failed: {{error}}"
+    },
+    "security": {
+      "title": "Security PIN",
+      "status_set": "A PIN is currently set. It is required to disable Safe Mode.",
+      "status_none": "No PIN set. Anyone can toggle Safe Mode freely.",
+      "recovery_configured": "Recovery code is configured",
+      "remove": "Remove PIN",
+      "change": "Change PIN",
+      "set": "Set PIN",
+      "modal_set_title": "Set Security PIN",
+      "modal_unlock_title": "Unlock Settings",
+      "modal_set_desc": "Create a secure PIN to protect Safe Mode settings.",
+      "modal_unlock_desc": "Enter your current PIN to proceed."
+    }
+  },
+  "switch": {
+    "title_safe": "Switch to SAFE Mode",
+    "title_unsafe": "Switch to UNSAFE Mode",
+    "desc": "Review the changes to your active loadout before switching corridors.",
+    "loading": "Loading preview...",
+    "leaving": "Current {{mode}} State",
+    "target": "Destination {{mode}} State",
+    "snapshot": "Snapshot",
+    "restore": "Restore",
+    "active_mods": "Current Active Mods",
+    "empty": "{{name}} is empty (All Disabled).",
+    "target_desc": {
+      "active": "Last Active Collection",
+      "none": "No remembered active collection"
+    },
+    "missing_target": "No saved target state. All mods will remain disabled."
+  },
+  "recovery_modal": {
+    "title": "Save Your Recovery Code",
+    "desc": "This code is shown only once. Store it in a safe place — it's the only way to reset your PIN if you forget it.",
+    "copy": "Copy Recovery Code",
+    "copied": "Copied!",
+    "warning": "If you lose this code and forget your PIN, you will need to manually reset the app database to clear it.",
+    "confirm_close": "I've saved it, close"
+  },
+  "labels": {
+    "safe": "SAFE",
+    "unsafe": "UNSAFE"
+  }
+}

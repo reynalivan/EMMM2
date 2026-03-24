@@ -1,0 +1,35 @@
+{
+  "title": "欢迎来到 EMMM",
+  "subtitle": "3DMigoto 的终极模组管理器",
+  "get_started": "立即开始",
+  "features": {
+    "auto_organize": "智能自动整理",
+    "auto_organize_desc": "自动分组和管理您的 3DMigoto 模组，无需费力。",
+    "toggle_presets": "快速切换",
+    "toggle_presets_desc": "一键在不同的模组变体 or 预设之间切换。",
+    "keybind_spotlight": "智能热键",
+    "keybind_spotlight_desc": "使用您最喜欢的快捷键控制一切，完全可定制。",
+    "auto_organized": "已自动整理"
+  },
+  "demo": {
+    "mod_character_dress": "角色模组 - 连衣裙",
+    "mod_weapon_glowing": "武器模组 - 发光",
+    "mod_ui_transparent": "UI 模组 - 透明",
+    "mod_character_snow": "角色模组 - 雪景",
+    "mod_weapon_dark": "武器模组 - 黑暗",
+    "action_show_keybinds": "显示快捷键",
+    "action_toggle_preview": "切换预览",
+    "action_quick_search": "快速搜索",
+    "tag_character": "角色",
+    "tag_weapon": "武器",
+    "tag_ui": "UI",
+    "aria_label": "智能功能演示",
+    "aria_go_to_scene": "前往第 {{count}} 个场景",
+    "one_click_presets": "一键预设",
+    "applied_instantly": "立即应用",
+    "preset_on": "预设 开启",
+    "preset_off": "预设 关闭",
+    "keybinds_instantly": "快如捷径",
+    "press_help": "按 ? 查看快捷键"
+  }
+}

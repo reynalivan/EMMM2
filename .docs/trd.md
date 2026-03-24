@@ -1,4 +1,4 @@
-# Technical Requirements Document (TRD): EMMM2 Mod Manager
+# Technical Requirements Document (TRD): EMMM Mod Manager
 
 **Version:** 1.0.0-Stable **Target Platform:** Windows (Primary) **Architecture:** Rust (Backend) + React (Frontend)
 
@@ -38,7 +38,7 @@ This application uses a _hybrid_ architecture that combines _native_ execution s
 - **Database:** **`sqlx`** (Async SQLite with compile-time query verification).
 - **Async Runtime:** **`tokio`** (For non-blocking I/O operations).
 - **File Watcher:** **`notify`** v7 (Real-time file monitoring with `RecommendedWatcher`).
-- **Archive:** **`zip`** v2, **`sevenz-rust`** v0.6, **`rar`** v0.4. password-protected archives supported.
+- **Archive:** Pure Rust implementation using **`zip`** v2, **`sevenz-rust`** v0.6, and **`rar`** v0.4. Supports magic byte detection and password-protected archives. No C-dependencies.
 - **Image Proc:** **`image`** (Resize & Convert to WebP thumbnails).
 - **Hashing:** **`blake3`** (Super-fast content hashing for deduplication).
 - **System Ops:** Custom soft-delete to `./app_data/trash/` (Safe Trash System).
@@ -49,7 +49,7 @@ This application uses a _hybrid_ architecture that combines _native_ execution s
 
 ## 2. Global Architectural Principles
 
-EMMM2 is governed by **42 detailed Requirement Specifications** (`req-*.md`). All development must adhere to the following absolute truths:
+EMMM is governed by **42 detailed Requirement Specifications** (`req-*.md`). All development must adhere to the following absolute truths:
 
 ### 2.1 The Filesystem is the Source of Truth
 
@@ -108,16 +108,24 @@ The "Brain" logic of the application running asynchronously:
 1. **Hash & Strict Alias:** Checks 3DMigoto `.ini` hashes and exact folder names against MasterDB.
 2. **Deep Content Scan:** Tokenizes subfolders, file stems, and INI strings for substring matching.
 3. **AI & Mechanical Reranks:** Uses GameBanana API and optional LLM context for ambiguous cases.
-4. **Gates:** Strict thresholds prevent false-positive auto-matching. Ambiguous items require UI Review.
+   | AC-26.4.4 | ⚠️ Edge | Strict thresholds prevent false-positive auto-matching. Ambiguous items require UI Review. |
+   | AC-26.4.5 | ✅ Positive | **Storage Optimizer (`req-32`):** A parallel BLAKE3 scanner identified duplicate assets across mod folders, allowing resolution via NTFS Hardlinks or Trash with a persistent whitelist. |
 
 ### 4.2 Custom INI Parser (`req-18`)
 
-Standard INI parser crates cannot be used because 3DMigoto syntax is unique (duplicate sections, naked global variables, inline comments). EMMM2 uses a custom Line-Based parser for **Lossless Editing**.
+Standard INI parser crates cannot be used because 3DMigoto syntax is unique (duplicate sections, naked global variables, inline comments). EMMM uses a custom Line-Based parser for **Lossless Editing**.
 
 ### 4.3 Safe Mode Filter (`req-30`)
 
 - **Frontend Guard:** When `Zustand: safeMode = ON`, UI actively filters `is_safe: false` data.
 - **Backend Guard:** Rust SQL queries dynamically append `AND is_safe = 1` preventing data leakage at the source. Requires OS Keychain verification to disable.
+
+### 4.4 Modern Archive Extraction (`req-37`)
+
+- **Pure Rust Architecture**: Completely eliminated C-dependent libraries (libarchive/compress-tools) to ensure lightning-fast, zero-bottleneck compilation.
+- **Robust Format Detection**: Uses Magic Byte (file signature) detection (ZIP, 7z, RAR4, RAR5) with file extension fallback for 100% reliable identification.
+- **Atomic Cleanup (RAII)**: Implements `TempDirGuard` to ensure `.temp_extract/` subfolders are automatically wiped on any error, cancellation, or panic.
+- **IPC Performance**: Throttled progress streaming (250ms interval) prevents frontend IPC flooding while maintaining smooth progress bars.
 
 ---
 
@@ -131,10 +139,10 @@ Standard INI parser crates cannot be used because 3DMigoto syntax is unique (dup
 
 ## 6. Project Structure
 
-**Root Project:** `EMMM2NEW/`
+**Root Project:** `EMMMNEW/`
 
 ```text
-EMMM2NEW/
+EMMMNEW/
 ├── .docs/                       # Documentation & Requirements
 │   ├── requirements/            # req-01 to req-43 (The absolute source of truth)
 │   ├── workflows/               # Automation standards
@@ -177,7 +185,7 @@ EMMM2NEW/
 
 ## 7. Quality Assurance & Automation
 
-To ensure EMMM2 maintains stability across its hybrid architecture, the following testing layers are enforced:
+To ensure EMMM maintains stability across its hybrid architecture, the following testing layers are enforced:
 
 ### 7.1 Backend Unit & Integration Tests (Rust)
 
@@ -189,12 +197,12 @@ To ensure EMMM2 maintains stability across its hybrid architecture, the followin
 
 - Framework: `vitest` + `@testing-library/react`
 - Scope: React component rendering, Zustand store logic, TanStack Query caching, and UI focus management (e.g., Virtualizer arrow navigation).
-- Mocks: Full mocking of `window.__TAURI_INTERNALS__` for IPC endpoints.
+- Mocks: `vi.mock('../../lib/bindings')` to mock the typed `commands` object (Specta-generated from `bindings.ts`). Raw `window.__TAURI_INTERNALS__` mocking is prohibited.
 
 ### 7.3 End-to-End (E2E) Testing
 
 - Framework: **WebdriverIO** with **Tauri WebDriver** native integration.
-- Scope: High-level user journeys crossing the IPC bridge (e.g., clicking 'Enable' in the React UI and verifying the actual folder rename on the host OS).
+- Scope: High-level user journeys crossing the typed IPC bridge (e.g., clicking 'Enable' in the React UI and verifying the actual folder rename on the host OS).
 - CI/CD: Automated native build tests via GitHub Actions.
 
 > **Note:** For granular implementation details on any specific feature, always consult the corresponding `req-*.md` file.

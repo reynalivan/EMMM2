@@ -1,11 +1,14 @@
 import { RefreshCw, Download, CheckCircle, AlertTriangle, Database } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppUpdater } from '../hooks/useAppUpdater';
 import { useMetadataSyncMutation } from '../hooks/useMetadataSync';
 import { useToastStore } from '../../../stores/useToastStore';
 import { getVersion } from '@tauri-apps/api/app';
 import { useEffect, useState } from 'react';
+import { formatBytes } from '../../../utils/formatters';
 
 export default function UpdateTab() {
+  const { t } = useTranslation(['settings', 'common']);
   const { addToast } = useToastStore();
   const [appVersion, setAppVersion] = useState('...');
   const {
@@ -35,24 +38,19 @@ export default function UpdateTab() {
     metadataSync.mutate(undefined, {
       onSuccess: (data) => {
         if (data.updated) {
-          addToast('success', `Metadata updated to version ${data.version}`);
+          addToast('success', t('settings:update.sync_success', { version: data.version }));
         } else {
-          addToast('info', 'Metadata already up-to-date.');
+          addToast('info', t('settings:update.sync_up_to_date'));
         }
       },
       onError: (err) => {
-        addToast('error', `Metadata sync failed: ${String(err)}`);
+        addToast('error', t('settings:update.sync_failed', { error: String(err) }));
       },
     });
   };
 
   const progressPercent =
     progress && progress.total ? Math.round((progress.downloaded / progress.total) * 100) : null;
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
 
   return (
     <div className="space-y-6">
@@ -61,10 +59,10 @@ export default function UpdateTab() {
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
             <RefreshCw className="text-primary" size={20} />
-            Application Updates
+            {t('settings:update.title')}
           </h3>
           <p className="text-sm opacity-70">
-            Current version: <span className="font-mono font-bold">v{appVersion}</span>
+            {t('settings:update.current_version', { version: appVersion })}
           </p>
 
           {/* Update Available Card */}
@@ -72,7 +70,9 @@ export default function UpdateTab() {
             <div className="alert alert-info mt-4">
               <Download size={18} />
               <div className="flex-1">
-                <p className="font-semibold">Update Available: v{update.version}</p>
+                <p className="font-semibold">
+                  {t('settings:update.available', { version: update.version })}
+                </p>
                 {update.body && (
                   <p className="text-sm opacity-80 mt-1 whitespace-pre-wrap">{update.body}</p>
                 )}
@@ -85,8 +85,10 @@ export default function UpdateTab() {
             <div className="mt-4">
               <div className="flex justify-between text-sm mb-1">
                 <span>
-                  Downloading... {formatBytes(progress.downloaded)}
-                  {progress.total ? ` / ${formatBytes(progress.total)}` : ''}
+                  {t('settings:update.downloading', {
+                    downloaded: formatBytes(progress.downloaded),
+                    total: progress.total ? formatBytes(progress.total) : '?',
+                  })}
                 </span>
                 {progressPercent !== null && <span>{progressPercent}%</span>}
               </div>
@@ -104,7 +106,7 @@ export default function UpdateTab() {
               <AlertTriangle size={18} />
               <span>{updateError}</span>
               <button className="btn btn-ghost btn-xs" onClick={dismiss}>
-                Dismiss
+                {t('common:action.dismiss')}
               </button>
             </div>
           )}
@@ -113,14 +115,14 @@ export default function UpdateTab() {
           {!update && !isChecking && !updateError && !progress && (
             <div className="flex items-center gap-2 text-sm text-success mt-2">
               <CheckCircle size={16} />
-              <span>You are on the latest version.</span>
+              <span>{t('settings:update.latest')}</span>
             </div>
           )}
 
           <div className="card-actions justify-end mt-4">
             {update && !isInstalling && (
               <button className="btn btn-primary gap-2" onClick={() => void downloadAndInstall()}>
-                <Download size={18} /> Install & Restart
+                <Download size={18} /> {t('settings:update.install_btn')}
               </button>
             )}
             <button
@@ -129,7 +131,7 @@ export default function UpdateTab() {
               disabled={isChecking || isInstalling}
             >
               <RefreshCw size={18} className={isChecking ? 'animate-spin' : ''} />
-              {isChecking ? 'Checking...' : 'Check for Updates'}
+              {isChecking ? t('settings:update.checking') : t('settings:update.check_btn')}
             </button>
           </div>
         </div>
@@ -140,12 +142,9 @@ export default function UpdateTab() {
         <div className="card-body">
           <h3 className="card-title text-lg flex items-center gap-2">
             <Database className="text-secondary" size={20} />
-            Metadata Sync
+            {t('settings:update.metadata_title')}
           </h3>
-          <p className="text-sm opacity-70">
-            Synchronize character and weapon databases from the remote server. This happens
-            automatically on startup but can also be triggered manually.
-          </p>
+          <p className="text-sm opacity-70">{t('settings:update.metadata_desc')}</p>
 
           <div className="card-actions justify-end mt-4">
             <button
@@ -154,7 +153,9 @@ export default function UpdateTab() {
               disabled={metadataSync.isPending}
             >
               <RefreshCw size={18} className={metadataSync.isPending ? 'animate-spin' : ''} />
-              {metadataSync.isPending ? 'Syncing...' : 'Sync Now'}
+              {metadataSync.isPending
+                ? t('settings:update.syncing')
+                : t('settings:update.sync_btn')}
             </button>
           </div>
         </div>

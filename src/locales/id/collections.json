@@ -1,0 +1,128 @@
+{
+  "page": {
+    "title": "Koleksi",
+    "desc": "Simpan mod dan varian yang saat ini diaktifkan sebagai koleksi bernama. Terapkan koleksi secara atomik untuk mengganti seluruh loadout game Anda secara instan.",
+    "no_active_game": {
+      "title": "Tidak Ada Game Aktif",
+      "desc": "Pilih game terlebih dahulu, lalu buka Koleksi."
+    },
+    "actions": {
+      "undo": "Batalkan Penerapan",
+      "undo_title": "Mengembalikan koleksi terakhir yang diterapkan",
+      "save_current": "Simpan Status Saat Ini"
+    }
+  },
+  "tab": {
+    "safe": "AMAN",
+    "unsafe": "TIDAK AMAN"
+  },
+  "list": {
+    "empty": "Tidak ada koleksi {{mode}} ditemukan",
+    "empty_desc": "Buat koleksi {{mode}} pertama Anda dengan mengeklik \"Simpan Status Saat Ini\" di kanan atas.",
+    "table": {
+      "name": "Nama",
+      "mods": "Mod",
+      "actions": "Aksi"
+    },
+    "item": {
+      "active": "Aktif",
+      "undo": "Undo",
+      "rename": "Ubah Nama",
+      "apply": "Terapkan",
+      "delete": "Hapus koleksi",
+      "mod_count": "{{count}} mod"
+    }
+  },
+  "preview": {
+    "title": "Pratinjau Koleksi",
+    "no_selection": "Pilih koleksi untuk melihat isinya.",
+    "empty": "Koleksi ini kosong.",
+    "stats": {
+      "mods": "Mod",
+      "objects": "Karakter",
+      "variants": "Varian"
+    }
+  },
+  "apply": {
+    "title_loading": "Terapkan Koleksi: ...",
+    "title": "Terapkan Koleksi: {{name}}",
+    "desc": "Anda akan mengganti loadout aktif Anda. Tinjau status target sebelum melanjutkan.",
+    "failed": {
+      "title": "Pratinjau Gagal",
+      "close": "Tutup"
+    },
+    "missing": {
+      "title": "Mod Hilang Terdeteksi",
+      "desc": "Mod berikut dirujuk oleh koleksi ini tetapi tidak dapat ditemukan di disk. Mod tersebut mungkin telah dihapus atau dipindahkan.",
+      "anyway_q": "Apakah Anda ingin tetap menerapkan koleksi ini?",
+      "back": "Kembali ke Pratinjau",
+      "confirm": "Tetap Terapkan (Lewati yang Hilang)",
+      "applying": "Menerapkan..."
+    },
+    "panels": {
+      "before": "Aktif Saat Ini (Sebelumnya)",
+      "after": "Koleksi Target (Sesudahnya)",
+      "mod_count": "{{count}} mod",
+      "empty_before": "Tidak ada mod yang aktif saat ini.",
+      "empty_after": "Koleksi kosong."
+    },
+    "actions": {
+      "cancel": "Batal",
+      "confirm": "Konfirmasi Terapkan",
+      "loading": "Memuat pratinjau..."
+    }
+  },
+  "save": {
+    "title": "Simpan sebagai Koleksi Baru",
+    "desc": "Membuat koleksi baru dari loadout mod Anda saat ini.",
+    "label": "Nama Koleksi",
+    "placeholder": "misal: Abyss Run 1",
+    "error": {
+      "empty": "Harap masukkan nama untuk koleksi.",
+      "failed": "Gagal menyimpan koleksi: {{error}}"
+    },
+    "actions": {
+      "cancel": "Batal",
+      "save": "Simpan Koleksi",
+      "saving": "Menyimpan..."
+    },
+    "default_name": "Preset {{date}}"
+  },
+  "recovery": {
+    "title": "Tugas Terinterupsi Terdeteksi",
+    "desc": "EMMM mendeteksi bahwa operasi kritis sebelumnya (seperti menerapkan koleksi atau berpindah Mode Aman) terhenti sebelum selesai.",
+    "pending": "Tugas Tertunda ({{count}})",
+    "important": "Penting",
+    "warning": "Menghapus tugas-tugas ini akan memungkinkan Anda mengakses aplikasi kembali. Anda harus mencoba kembali secara manual penerapan koleksi atau perpindahan mode yang terhenti untuk memastikan file game Anda dalam status yang benar.",
+    "actions": {
+      "clear": "Gugurkan & Hapus",
+      "clearing": "Menghapus...",
+      "resume": "Lanjutkan Tugas",
+      "resuming": "Melanjutkan..."
+    },
+    "toast": {
+      "cleared": "Tugas yang terinterupsi telah dihapus. Anda dapat mengulangi aksi terakhir Anda.",
+      "resumed": "Operasi yang terinterupsi berhasil dilanjutkan dan diselesaikan.",
+      "resume_failed": "Gagal melanjutkan: {{error}}"
+    }
+  },
+  "randomizer": {
+    "title": "Smart Randomizer",
+    "desc": "Merekomendasikan 1 mod yang dinonaktifkan secara acak untuk setiap Karakter yang aktif. Tinjau dan terapkan.",
+    "safe_mode": "Mode Aman",
+    "no_eligible": "Tidak ditemukan mod karakter yang memenuhi syarat (periksa filter atau pastikan Anda memiliki mod yang dinonaktifkan).",
+    "consulting": "Berkonsultasi dengan Dewa RNG...",
+    "reroll": "Acak Ulang Semua",
+    "roll": "Coba Keberuntungan",
+    "apply": "Terapkan ({{count}})",
+    "applying": "Menerapkan...",
+    "select_all": "Pilih Semua",
+    "deselect_all": "Batal Pilih Semua",
+    "selection_status": "{{selected}} dari {{total}} terpilih",
+    "empty_desc": "Klik 'Coba Keberuntungan' untuk menghasilkan rekomendasi."
+  },
+  "mod_row": {
+    "unknown": "Mod Tidak Diketahui",
+    "nested": "Mod bersarang"
+  }
+}

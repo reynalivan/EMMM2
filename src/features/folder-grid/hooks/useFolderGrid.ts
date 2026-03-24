@@ -7,6 +7,7 @@
  */
 
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
+import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useResponsive } from '../../../hooks/useResponsive';
@@ -22,7 +23,6 @@ import { useFolderGridImport } from './useFolderGridImport';
 import { syncExplorerAfterRename } from '../../object-list/objHandlersHelpers';
 
 export function useFolderGrid() {
-  'use no memo';
   const {
     currentPath,
     setCurrentPath,
@@ -70,6 +70,13 @@ export function useFolderGrid() {
   const selfIsEnabled = rawResponse?.self_is_enabled ?? false;
   const selfReasons = rawResponse?.self_classification_reasons || [];
   const conflicts = rawResponse?.conflicts || [];
+  // Display name of the nearest disabled ancestor in the current sub_path.
+  // Null means the current location is not locked by any parent.
+  const ancestorDisabledBy = rawResponse?.ancestor_disabled_by ?? null;
+  const ancestorDisabledPath = rawResponse?.ancestor_disabled_path ?? null;
+
+  // Dialog state — "Enable Parent" confirmation
+  const [enableParentDialogOpen, setEnableParentDialogOpen] = useState(false);
 
   const { data: objects = [] } = useObjects();
 
@@ -109,7 +116,7 @@ export function useFolderGrid() {
   // ── Layout & Virtualization (extracted) ───────────────────────────────────
   const isGridView = viewMode === 'grid' && !isMobile;
 
-  const { rowVirtualizer, columnCount, cardWidth } = useFolderGridLayout({
+  const { virtualItems, totalSize, scrollToIndex, columnCount, cardWidth } = useFolderGridLayout({
     parentRef,
     explorerSubPath,
     explorerScrollOffset,
@@ -134,13 +141,12 @@ export function useFolderGrid() {
     setSortOrder,
   });
 
-  const actions = useFolderGridActions({ sortedFolders, clearGridSelection });
+  const actions = useFolderGridActions({ sortedFolders, objects, clearGridSelection });
 
   const toggleMod = useToggleMod();
   const handleToggleSelf = useCallback(
     async (enable: boolean) => {
       if (!activeGame?.id || !activeGame?.mod_path || !explorerSubPath) return;
-      const { join } = await import('@tauri-apps/api/path');
       const targetPath = await join(activeGame.mod_path, explorerSubPath);
       toggleMod.mutate(
         { path: targetPath, enable, gameId: activeGame.id },
@@ -154,7 +160,40 @@ export function useFolderGrid() {
         },
       );
     },
-    [activeGame?.id, activeGame?.mod_path, explorerSubPath, toggleMod, queryClient],
+    [activeGame, explorerSubPath, toggleMod, queryClient],
+  );
+
+  // Enable the immediate parent folder (one path segment up from explorerSubPath).
+  // Called from the sticky notice bar "Enable Parent" button (direct action, no dialog).
+  // Enable the specific ancestor folder that is locking this view.
+  const handleEnableParent = useCallback(async () => {
+    if (!activeGame?.id || !activeGame?.mod_path || !ancestorDisabledPath) return;
+
+    // Toggle the specific ancestor path that was identified by the backend as the locker
+    toggleMod.mutate(
+      { path: ancestorDisabledPath, enable: true, gameId: activeGame.id },
+      {
+        onSuccess: (newPath) => {
+          if (!activeGame.mod_path) return;
+          syncExplorerAfterRename(activeGame.mod_path, ancestorDisabledPath, newPath);
+          queryClient.invalidateQueries({ queryKey: ['objects'] });
+          queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+          setEnableParentDialogOpen(false);
+        },
+      },
+    );
+  }, [activeGame, ancestorDisabledPath, toggleMod, queryClient]);
+
+  // Guarded toggle: if current directory is locked by a parent, show dialog instead
+  const handleToggleEnabledGuarded = useCallback(
+    (folder: ModFolder) => {
+      if (ancestorDisabledBy) {
+        setEnableParentDialogOpen(true);
+        return;
+      }
+      actions.handleToggleEnabled(folder);
+    },
+    [ancestorDisabledBy, actions],
   );
 
   const bulk = useFolderGridBulk({
@@ -200,7 +239,7 @@ export function useFolderGrid() {
     onNavigate: (item: ModFolder) => nav.handleNavigate(item.folder_name),
     onSelectionChange: (item: ModFolder, multi: boolean, isShift?: boolean) =>
       handleToggleSelection(item.path, multi, isShift),
-    onSelectAll: () => sortedFolders.forEach((f) => handleToggleSelection(f.path, true)),
+    onSelectAll: () => setGridSelection(new Set(sortedFolders.map((f) => f.path))),
     onDelete: (items: ModFolder[]) => {
       if (items.length > 0) actions.handleDeleteRequest(items[0]);
     },
@@ -212,7 +251,7 @@ export function useFolderGrid() {
       const idx = sortedFolders.findIndex((f) => f.path === nextId);
       if (idx !== -1) {
         const rowIndex = isGridView ? Math.floor(idx / columnCount) : idx;
-        rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' });
+        scrollToIndex(rowIndex, { align: 'auto' });
       }
     },
   });
@@ -237,6 +276,12 @@ export function useFolderGrid() {
     selfIsEnabled,
     selfReasons,
     conflicts,
+    // Parent-disabled lock state
+    ancestorDisabledBy,
+    enableParentDialogOpen,
+    setEnableParentDialogOpen,
+    handleEnableParent,
+    handleToggleEnabledGuarded,
     isGridView,
     isMobile,
     selectedObject: null, // Legacy, unused
@@ -249,7 +294,9 @@ export function useFolderGrid() {
 
     // Virtualization
     parentRef,
-    rowVirtualizer,
+    virtualItems,
+    totalSize,
+    scrollToIndex,
     columnCount,
     cardWidth,
 
@@ -273,6 +320,12 @@ export function useFolderGrid() {
     // Actions (single-item)
     ...actions,
     handleToggleSelf,
+
+    // Duplicate Warning
+    duplicateWarning: actions.duplicateWarning,
+    handleDuplicateForceEnable: actions.handleDuplicateForceEnable,
+    handleDuplicateEnableOnly: actions.handleDuplicateEnableOnly,
+    handleDuplicateCancel: actions.handleDuplicateCancel,
 
     // Bulk actions
     ...bulk,

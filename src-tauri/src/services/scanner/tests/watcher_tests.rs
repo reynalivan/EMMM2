@@ -65,7 +65,7 @@ async fn test_watcher_suppression() {
     );
 
     // Now Unsuppress
-    suppressed.store(false, Ordering::Relaxed);
+    suppressed.store(false, Ordering::Release);
 
     // Create another file
     fs::write(dir.path().join("detected_mod.ini"), "content").unwrap();

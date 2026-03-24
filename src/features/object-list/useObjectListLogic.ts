@@ -1,5 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
-
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useObjects, useGameSchema } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -8,9 +7,21 @@ import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
 import { useSearchWorker } from './hooks/useSearchWorker';
-
 import type { FilterDef } from '../../types/object';
 
+/**
+ * useObjectListLogic — Top-level logic for the ObjectList component.
+ * Composes filtering, sorting, virtualization, and action handlers.
+ *
+ * Return value is namespaced into semantic groups to keep consumers clean:
+ *   - state: data + loading
+ *   - filters: filter/sort controls
+ *   - nav: selection/search
+ *   - virtualizer: scroll/list state
+ *   - modals: dialog open/close state
+ *   - handlers: all event handlers
+ *   - bulkSelect: bulk selection instance
+ */
 export function useObjectListLogic() {
   const { isMobile } = useResponsive();
   const { activeGame } = useActiveGame();
@@ -23,18 +34,14 @@ export function useObjectListLogic() {
     sidebarSearchQuery,
     setSidebarSearch,
     safeMode,
-    setSafeMode,
   } = useAppStore();
 
-  // Active filters state (schema-driven)
   const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'rarity'>('name');
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
 
-  // US-3.6: Web Worker search
   const { filteredIds, search: workerSearch } = useSearchWorker();
 
-  // Data hooks — dual source (SQL search delegated to worker)
   const {
     data: allObjects = [],
     isLoading: objectsLoading,
@@ -47,16 +54,17 @@ export function useObjectListLogic() {
     localSearch: true,
   });
 
-  // US-3.6: Trigger worker search when query or data changes (debounced)
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const items = allObjects.map((o) => ({ id: o.id, name: o.name }));
-      workerSearch(items, sidebarSearchQuery);
-    }, 150);
-    return () => clearTimeout(timeout);
-  }, [allObjects, sidebarSearchQuery, workerSearch]);
+  // Fix 2: Memoize search items outside the effect to avoid redundant array creation.
+  const searchItems = useMemo(
+    () => allObjects.map((o) => ({ id: o.id, name: o.name })),
+    [allObjects],
+  );
 
-  // Apply worker search filter
+  useEffect(() => {
+    const t = setTimeout(() => workerSearch(searchItems, sidebarSearchQuery), 150);
+    return () => clearTimeout(t);
+  }, [searchItems, sidebarSearchQuery, workerSearch]);
+
   const objects = useMemo(() => {
     if (!filteredIds) return allObjects;
     return allObjects.filter((o) => filteredIds.has(o.id));
@@ -64,15 +72,12 @@ export function useObjectListLogic() {
 
   const { data: schema } = useGameSchema();
 
-  // Per-category filter adaptation: show only relevant filters for the selected category.
-  // If no category selected, merge unique filters from all categories.
   const categoryFilters: FilterDef[] = useMemo(() => {
     if (!schema) return [];
     if (selectedObjectType) {
       const cat = schema.categories.find((c) => c.name === selectedObjectType);
       return cat?.filters ?? [];
     }
-    // No specific category — union all category-level filters (deduplicate by key)
     const seen = new Map<string, FilterDef>();
     for (const cat of schema.categories) {
       for (const f of cat.filters ?? []) {
@@ -82,10 +87,23 @@ export function useObjectListLogic() {
     return [...seen.values()];
   }, [schema, selectedObjectType]);
 
+  // Fix 1: Replace render-during-render setState with proper useEffect.
+  // This eliminates the double-render caused by the previous `prevCategoryFilters` pattern.
+  useEffect(() => {
+    const validKeys = new Set(categoryFilters.map((f) => f.key));
+    setActiveFilters((prev) => {
+      const next: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (validKeys.has(k)) next[k] = v;
+      }
+      // Return same reference if nothing changed — avoids unnecessary re-renders.
+      return Object.keys(next).length !== Object.keys(prev).length ? next : prev;
+    });
+  }, [categoryFilters]);
+
   const isLoading = objectsLoading;
   const isError = objectsError;
 
-  // --- Delegated: Virtualizer & Object Mode shaping ---
   const {
     parentRef,
     rowVirtualizer,
@@ -103,145 +121,173 @@ export function useObjectListLogic() {
 
   const [mismatchConfirm, setMismatchConfirm] = useState<string[] | null>(null);
 
-  // --- Delegated: Handlers (use allObjects for reliable ID lookups) ---
+  // Create bulkSelect first as it's needed by handlers
+  const bulkSelect = useObjectBulkSelect(flatObjectItems);
+
   const handlers = useObjectListHandlers({
     objects: allObjects,
     schema,
     mismatchConfirm,
     setMismatchConfirm,
+    bulkSelect,
   });
 
-  const handleFilterChange = (key: string, values: string[]) => {
+  const handleFilterChange = useCallback((key: string, values: string[]) => {
     setActiveFilters((prev) => ({ ...prev, [key]: values }));
-  };
+  }, []);
 
-  // Clear stale filter keys when category changes (e.g., "element" doesn't apply to Weapon)
-  const [prevCategoryFilters, setPrevCategoryFilters] = useState(categoryFilters);
-  if (categoryFilters !== prevCategoryFilters) {
-    setPrevCategoryFilters(categoryFilters);
-    const validKeys = new Set(categoryFilters.map((f) => f.key));
-    const next: Record<string, string[]> = {};
-    for (const [k, v] of Object.entries(activeFilters)) {
-      if (validKeys.has(k)) next[k] = v;
-    }
-    if (Object.keys(next).length !== Object.keys(activeFilters).length) {
-      setActiveFilters(next);
-    }
-  }
-
-  const handleClearFilters = () => {
+  const handleClearFilters = useCallback(() => {
     setActiveFilters({});
-  };
+  }, []);
 
-  // Bulk selection
-  const bulkSelect = useObjectBulkSelect(flatObjectItems);
+  // ── Namespaced Return Value ─────────────────────────────────────────
+  // Fix 4: Group into semantic namespaces instead of a flat 40+ property object.
+  // Consumers should destructure the namespace they need (e.g. `state`, `handlers`).
 
-  return {
-    // Refs
+  const state = useMemo(
+    () => ({
+      objects,
+      isLoading,
+      isError,
+      objectsErrorInfo: isError ? objectsErrorInfo : null,
+      safeMode,
+      activeGame,
+      isMobile,
+      isSyncing: handlers.isSyncing,
+    }),
+    [
+      objects,
+      isLoading,
+      isError,
+      objectsErrorInfo,
+      safeMode,
+      activeGame,
+      isMobile,
+      handlers.isSyncing,
+    ],
+  );
+
+  const filters = useMemo(
+    () => ({
+      activeFilters,
+      categoryFilters,
+      schema,
+      sortBy,
+      setSortBy,
+      statusFilter,
+      setStatusFilter,
+      handleFilterChange,
+      handleClearFilters,
+    }),
+    [
+      activeFilters,
+      categoryFilters,
+      schema,
+      sortBy,
+      setSortBy,
+      statusFilter,
+      setStatusFilter,
+      handleFilterChange,
+      handleClearFilters,
+    ],
+  );
+
+  const nav = useMemo(
+    () => ({
+      selectedObjectFolderPath,
+      setSelectedObjectFolderPath,
+      selectedObjectType,
+      setSelectedObjectType,
+      sidebarSearchQuery,
+      setSidebarSearch,
+    }),
+    [
+      selectedObjectFolderPath,
+      setSelectedObjectFolderPath,
+      selectedObjectType,
+      setSelectedObjectType,
+      sidebarSearchQuery,
+      setSidebarSearch,
+    ],
+  );
+
+  // parentRef is a stable useRef — no need to memo the whole virtualizer object.
+  // The values inside are already memoized by useObjectListVirtualizer itself.
+  const virtualizer = {
     parentRef,
-
-    // State
-    isMobile,
-    activeGame,
-    selectedObjectFolderPath,
-    setSelectedObjectFolderPath,
-    selectedObjectType,
-    setSelectedObjectType,
-    sidebarSearchQuery,
-    setSidebarSearch,
-    deleteDialog: handlers.deleteDialog,
-    setDeleteDialog: handlers.setDeleteDialog,
-    activeFilters,
-    sortBy,
-    setSortBy,
-    statusFilter,
-    setStatusFilter,
-
-    // Data
-    objects,
-    schema,
-    categoryFilters,
-    isLoading,
-    isError,
-    objectsErrorInfo: objectsError ? objectsErrorInfo : null,
-
-    // Virtualizer API
     rowVirtualizer,
     flatObjectItems,
     totalItems,
-
-    // Sticky
     stickyPosition,
     selectedIndex,
     scrollToSelected,
-
-    // Handlers
-    handleToggle: handlers.handleToggle,
-    handleOpen: handlers.handleOpen,
-    handleDelete: handlers.handleDelete,
-    confirmDelete: handlers.confirmDelete,
-    handleDeleteObject: handlers.handleDeleteObject,
-    deleteObjectDialog: handlers.deleteObjectDialog,
-    setDeleteObjectDialog: handlers.setDeleteObjectDialog,
-    confirmDeleteObject: handlers.confirmDeleteObject,
-    handleFilterChange,
-    handleClearFilters,
-
-    // Edit API
-    editObject: handlers.editObject,
-    setEditObject: handlers.setEditObject,
-    handleEdit: handlers.handleEdit,
-
-    safeMode,
-    setSafeMode,
-
-    // Sync
-    handleSync: handlers.handleSync,
-    handleBackgroundSync: handlers.handleBackgroundSync,
-    isSyncing: handlers.isSyncing,
-    handleSyncWithDb: handlers.handleSyncWithDb,
-    handleApplySyncMatch: handlers.handleApplySyncMatch,
-    syncConfirm: handlers.syncConfirm,
-    setSyncConfirm: handlers.setSyncConfirm,
-    scanReview: handlers.scanReview,
-    handleCommitScan: handlers.handleCommitScan,
-    handleCloseScanReview: handlers.handleCloseScanReview,
-
-    // Pin & Category
-    handlePin: handlers.handlePin,
-    handleFavorite: handlers.handleFavorite,
-    handleMoveCategory: handlers.handleMoveCategory,
-    handleRevealInExplorer: handlers.handleRevealInExplorer,
-    handleEnableObject: handlers.handleEnableObject,
-    handleDisableObject: handlers.handleDisableObject,
-    categoryNames: handlers.categoryNames,
-    handleDrop: handlers.handleDropOnItem, // legacy compat
-    handleDropOnItem: handlers.handleDropOnItem,
-    handleDropAutoOrganize: handlers.handleDropAutoOrganize,
-    handleDropNewObject: handlers.handleDropNewObject,
-    handleDropOnNewObjectSubmit: handlers.handleDropOnNewObjectSubmit,
-
-    // Archive Modal
-    archiveModal: handlers.archiveModal,
-    handleArchivesInteractively: handlers.handleArchivesInteractively,
-    handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,
-    handleArchiveExtractSkip: handlers.handleArchiveExtractSkip,
-    handleStopExtraction: handlers.handleStopExtraction,
-
-    // Bulk Select
-    bulkSelect,
-
-    // Mismatch Confirmation
-    mismatchConfirm,
-    setMismatchConfirm,
-    bulkTagModal: handlers.bulkTagModal,
-    setBulkTagModal: handlers.setBulkTagModal,
-    handleBulkDelete: handlers.handleBulkDelete,
-    handleBulkPin: handlers.handleBulkPin,
-    handleBulkEnable: handlers.handleBulkEnable,
-    handleBulkDisable: handlers.handleBulkDisable,
-    handleBulkAddTags: handlers.handleBulkAddTags,
-    handleBulkRemoveTags: handlers.handleBulkRemoveTags,
-    handleBulkAutoOrganize: handlers.handleBulkAutoOrganize,
   };
+
+  const modals = useMemo(
+    () => ({
+      deleteDialog: handlers.deleteDialog,
+      setDeleteDialog: handlers.setDeleteDialog,
+      deleteObjectDialog: handlers.deleteObjectDialog,
+      setDeleteObjectDialog: handlers.setDeleteObjectDialog,
+      forceDeleteObjectDialog: handlers.forceDeleteObjectDialog,
+      setForceDeleteObjectDialog: handlers.setForceDeleteObjectDialog,
+      editObject: handlers.editObject,
+      setEditObject: handlers.setEditObject,
+      syncConfirm: handlers.syncConfirm,
+      setSyncConfirm: handlers.setSyncConfirm,
+      scanReview: handlers.scanReview,
+      archiveModal: handlers.archiveModal,
+      bulkTagModal: handlers.bulkTagModal,
+      setBulkTagModal: handlers.setBulkTagModal,
+      mismatchConfirm,
+      setMismatchConfirm,
+    }),
+    [handlers, mismatchConfirm],
+  );
+
+  const handlerMap = useMemo(
+    () => ({
+      handleToggle: handlers.handleToggle,
+      handleOpen: handlers.handleOpen,
+      handleDelete: handlers.handleDelete,
+      confirmDelete: handlers.confirmDelete,
+      handleDeleteObject: handlers.handleDeleteObject,
+      confirmDeleteObject: handlers.confirmDeleteObject,
+      confirmForceDeleteObject: handlers.confirmForceDeleteObject,
+      handleEdit: handlers.handleEdit,
+      handlePin: handlers.handlePin,
+      handleFavorite: handlers.handleFavorite,
+      handleMoveCategory: handlers.handleMoveCategory,
+      handleRevealInExplorer: handlers.handleRevealInExplorer,
+      handleEnableObject: handlers.handleEnableObject,
+      handleDisableObject: handlers.handleDisableObject,
+      categoryNames: handlers.categoryNames,
+      handleSync: handlers.handleSync,
+      handleBackgroundSync: handlers.handleBackgroundSync,
+      handleSyncWithDb: handlers.handleSyncWithDb,
+      handleApplySyncMatch: handlers.handleApplySyncMatch,
+      handleCommitScan: handlers.handleCommitScan,
+      handleCloseScanReview: handlers.handleCloseScanReview,
+      handleDropOnItem: handlers.handleDropOnItem,
+      handleDropAutoOrganize: handlers.handleDropAutoOrganize,
+      handleDropNewObject: handlers.handleDropNewObject,
+      handleDropOnNewObjectSubmit: handlers.handleDropOnNewObjectSubmit,
+      handleArchivesInteractively: handlers.handleArchivesInteractively,
+      handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,
+      handleArchiveExtractSkip: handlers.handleArchiveExtractSkip,
+      handleStopExtraction: handlers.handleStopExtraction,
+      handleBulkDelete: handlers.handleBulkDelete,
+      handleBulkPin: handlers.handleBulkPin,
+      handleBulkEnable: handlers.handleBulkEnable,
+      handleBulkDisable: handlers.handleBulkDisable,
+      handleBulkAddTags: handlers.handleBulkAddTags,
+      handleBulkRemoveTags: handlers.handleBulkRemoveTags,
+      handleBulkAutoOrganize: handlers.handleBulkAutoOrganize,
+      handleBulkFavorite: handlers.handleBulkFavorite,
+      handleBulkSafe: handlers.handleBulkSafe,
+    }),
+    [handlers],
+  );
+
+  return { state, filters, nav, virtualizer, modals, handlers: handlerMap, bulkSelect };
 }

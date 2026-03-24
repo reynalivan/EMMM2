@@ -10,4 +10,4 @@ description: Core Context & Zero Tolerance - Essential constraints for intellige
 - MCPs: context7 (Docs), daisyui (UI), narsil-mcp (Flow/Security). Trace logic FIRST.
 - Memory: Search supermemory for past decisions before asking.
 - Safe Edit: No placeholders/skips (//...). Output full file or valid UD.
-- Check: Verify: no assumptions, used MCPs, no unused code, match context.
+- Check: Verify: no assumptions, used MCPs, no unused code, match context, **theme-aware?**

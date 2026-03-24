@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolutionRequest {
     pub group_id: String,
@@ -17,24 +17,28 @@ pub struct ResolutionRequest {
     pub folder_b: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ResolutionAction {
     KeepA,
     KeepB,
     Ignore,
+    Hardlink,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolutionSummary {
+    #[specta(type = f64)]
     pub total: usize,
+    #[specta(type = f64)]
     pub successful: usize,
+    #[specta(type = f64)]
     pub failed: usize,
     pub errors: Vec<ResolutionError>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolutionError {
     pub group_id: String,
@@ -42,10 +46,12 @@ pub struct ResolutionError {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolutionProgress {
+    #[specta(type = f64)]
     pub current: usize,
+    #[specta(type = f64)]
     pub total: usize,
     pub group_id: String,
     pub action: ResolutionAction,
@@ -144,12 +150,83 @@ async fn resolve_one(
             set_group_status(db, &request.group_id, "ignored").await?;
             Ok(())
         }
+        ResolutionAction::Hardlink => {
+            apply_hardlinks(&request.folder_a, &request.folder_b)?;
+            set_group_status(db, &request.group_id, "resolved").await?;
+            Ok(())
+        }
     }
+}
+
+fn apply_hardlinks(keep_folder: &str, target_folder: &str) -> Result<(), String> {
+    let keep_path = Path::new(keep_folder);
+    let target_path = Path::new(target_folder);
+
+    if !keep_path.exists() || !target_path.exists() {
+        return Err("One or both folders do not exist for hardlinking".to_string());
+    }
+
+    let mut success_count = 0;
+    let walker = walkdir::WalkDir::new(target_path).into_iter();
+
+    for entry in walker.filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let rel_path = match entry.path().strip_prefix(target_path) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let src_file = keep_path.join(rel_path);
+
+        if src_file.exists() && src_file.is_file() {
+            let src_meta = match fs::metadata(&src_file) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let tgt_meta = match fs::metadata(entry.path()) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            // Only hardlink if file sizes match (basic safeguard)
+            if src_meta.len() == tgt_meta.len() {
+                if let Err(e) = fs::remove_file(entry.path()) {
+                    log::warn!("Failed to remove target file for hardlinking: {}", e);
+                    continue;
+                }
+
+                if let Err(e) = fs::hard_link(&src_file, entry.path()) {
+                    log::warn!(
+                        "Failed to create hardlink from {:?} to {:?}: {}",
+                        src_file,
+                        entry.path(),
+                        e
+                    );
+                    continue;
+                }
+
+                success_count += 1;
+            }
+        }
+    }
+
+    log::info!(
+        "Created {} hardlinks from {} to {}",
+        success_count,
+        keep_folder,
+        target_folder
+    );
+    Ok(())
 }
 
 fn move_folder_to_trash(folder_path: &str, game_id: &str, trash_dir: &Path) -> Result<(), String> {
     let source_path = Path::new(folder_path);
-    trash::move_to_trash(source_path, trash_dir, Some(game_id.to_string())).map(|_| ())
+    trash::move_to_trash(source_path, trash_dir, Some(game_id.to_string()))
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 async fn persist_whitelist_pair(
@@ -167,7 +244,7 @@ async fn persist_whitelist_pair(
 
     let (canonical_a, canonical_b) = canonicalize_pair(&folder_a_id, &folder_b_id);
 
-    crate::database::dedup_repo::insert_whitelist_pair(db, game_id, canonical_a, canonical_b)
+    crate::repo::dedup_repo::insert_whitelist_pair(db, game_id, canonical_a, canonical_b)
         .await
         .map_err(|error| format!("Failed to persist duplicate whitelist pair: {error}"))?;
 
@@ -176,7 +253,7 @@ async fn persist_whitelist_pair(
 
 async fn fetch_mod_id(db: &SqlitePool, game_id: &str, folder_path: &str) -> Result<String, String> {
     let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    crate::database::mod_repo::get_mod_id_and_status_by_path(&mut conn, folder_path, game_id)
+    crate::repo::mod_repo::get_mod_id_and_status_by_path(&mut conn, folder_path, game_id)
         .await
         .map_err(|error| format!("Failed to resolve mod id for '{folder_path}': {error}"))?
         .map(|(id, _, _)| id)
@@ -188,7 +265,7 @@ async fn fetch_mod_id(db: &SqlitePool, game_id: &str, folder_path: &str) -> Resu
 async fn set_group_status(db: &SqlitePool, group_id: &str, status: &str) -> Result<(), String> {
     let set_resolved_at = status == "resolved" || status == "ignored";
     let rows_affected =
-        crate::database::dedup_repo::update_group_status(db, group_id, status, set_resolved_at)
+        crate::repo::dedup_repo::update_group_status(db, group_id, status, set_resolved_at)
             .await
             .map_err(|error| {
                 format!("Failed to update resolution status for group '{group_id}': {error}")

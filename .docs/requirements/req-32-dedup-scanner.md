@@ -8,8 +8,9 @@
   - Scanning 1,000 files (avg 10MB) completes in ≤ 15s using `rayon` multi-threading (CPU scales to 80-90%).
   - Multi-Signal matching uses 1KB + 1KB partial sampling for files > 5MB, achieving a 100x speed increase for massive textures.
   - Partial scans can be safely cancelled within ≤ 1s.
-  - Resolving via NTFS hardlink decreases duplicate bytes used by ≥ 95% on identical volumes without breaking folder integrity.
-  - DB table `duplicate_reports` caches results, eliminating re-scan requirements across UI navigations.
+  - Variant-Awareness: The scanner automatically excludes comparisons between sibling mods in the same `VariantContainer` or `ModPackRoot`.
+  - Persistent Whitelist: Ignored pairs are stored in the database and can be recovered via the UI.
+  - Dedicated UI: A full-screen management interface at `/storage-optimizer`.
 
 ---
 
@@ -35,12 +36,13 @@ As a user, I want the system to aggressively identify actual duplicates through 
 
 As a user, I want to review duplicates side-by-side and choose bulk resolutions, so that clearing space is rapid and safe.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                     |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-32.2.1 | ✅ Positive | Given the scan completes, metrics reflect grouped pairs in `duplicate_reports` DB table: Side-by-side folder paths, size MB/GB wasted, and match justification (e.g., "Hash 100% Match")                     |
-| AC-32.2.2 | ✅ Positive | Given bulk action radio buttons (Keep Original, Replace, Ignore/Whitelist), when I select resolutions and hit "Apply All Changes", the instructions process sequentially locked under `OperationLock`        |
-| AC-32.2.3 | ✅ Positive | Given standard identical folders (e.g., "Albedo" and "DISABLED Albedo"), the system natively groups these regardless of the `DISABLED ` physical toggle prefix                                               |
-| AC-32.2.4 | ❌ Negative | Given identical files across different physical drives, choosing "Hardlink" will cleanly fallback with a "Requires Delete Strategy - Cross-Drive Link Unsupported" warning, safely preserving both originals |
+| ID        | Type        | Criteria                                                                                                                                                                                              |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-32.2.1 | ✅ Positive | Given the scan completes, metrics reflect grouped members in `duplicate_reports` DB table: Dropdown selection for "Targeted Keep" (keep one, delete N-1), size MB/GB wasted, and match justification. |
+| AC-32.2.2 | ✅ Positive | Given bulk action buttons (Ignore, Trash, Keep), when I select resolutions, the instructions process sequentially locked under `OperationLock`.                                                       |
+| AC-32.2.3 | ✅ Positive | Given an "Ignored" button in the header, clicking it opens an `IgnoredPairsModal` to view and recover (remove from ignore list) whitelisted pairs                                                     |
+| AC-32.2.4 | ✅ Positive | The UI at `/storage-optimizer` provides a full-width experience with confidence filtering (All, High, Medium, Low) and a detailed Match Reason signal badge list per group                            |
+| AC-32.2.5 | ✅ Positive | Recovered pairs (removed from ignore list) are immediately available for re-scanning and resolution in the next scan run                                                                              |
 
 ---
 
@@ -85,26 +87,28 @@ fn calculate_folder_signature(folder_path: &Path) -> Vec<FileSignature> {
     }).collect()
 }
 
-// Database Schema (Caches results for UI persistence)
-CREATE TABLE duplicate_reports (
-    id INTEGER PRIMARY KEY,
-    group_id TEXT NOT NULL,
-    mod_a_id TEXT NOT NULL,
-    mod_b_id TEXT NOT NULL,
-    confidence_score INTEGER,
-    match_reason TEXT,
-    resolution TEXT DEFAULT 'PENDING' // KEEP_A, KEEP_B, IGNORE
+// Database Schema (Whitelist / Ignore Management)
+CREATE TABLE duplicate_whitelist (
+    id TEXT PRIMARY KEY,
+    game_id TEXT NOT NULL,
+    folder_a_path TEXT NOT NULL,
+    folder_b_path TEXT NOT NULL,
+    folder_a_name TEXT NOT NULL,
+    folder_b_name TEXT NOT NULL,
+    reason TEXT,
+    ignored_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ### Integration Points
 
-| Component     | Detail                                                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------- |
-| Parallelism   | Uses `rayon::prelude::*` for heavy IO/CPU workload scaling out to all logic cores.                |
-| Hardlinks     | `fs::hard_link(keep_path, target_path)`. Fails safely on `EXDEV` (cross-device).                  |
-| Trash Service | Epic 22 Trash Service handles standard deletions safely to `/app_data/trash/`.                    |
-| Report DB     | UI pulls paginated tables off SQLite `duplicate_reports` ensuring heavy scans remain dismissible. |
+| Component     | Detail                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| Parallelism   | Uses `rayon::prelude::*` for heavy IO/CPU workload scaling out to all logic cores.                  |
+| Hardlinks     | `fs::hard_link(keep_path, target_path)`. Fails safely on `EXDEV` (cross-device).                    |
+| Trash Service | Epic 22 Trash Service handles standard deletions safely to `/app_data/trash/`.                      |
+| Whitelist IR  | `get_ignored_pairs` and `remove_ignored_pair` commands provide recovery for whitelisted duplicates. |
+| Report DB     | UI pulls paginated tables off SQLite `duplicate_reports` ensuring heavy scans remain dismissible.   |
 
 ### Security & Privacy
 

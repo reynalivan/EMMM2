@@ -1,0 +1,219 @@
+{
+  "title": "模组扫描器",
+  "description": "检测新模组、压缩包并更新现有记录。",
+  "start_button": "开始扫描",
+  "scanning_title": "正在扫描模组...",
+  "cancel_button": "取消扫描",
+  "matched": "已匹配",
+  "unmatched": "未匹配",
+  "no_mods": "未发现模组。请尝试重新扫描。",
+  "extract": {
+    "title": "检测到压缩包",
+    "failed": "检测压缩包失败",
+    "extraction_failed": "提取失败",
+    "import_to": "导入至：{{name}}",
+    "compatibility_check": "提取后将检查压缩包的兼容性。",
+    "found_count": "发现 {{count}} 个压缩包准备导入。",
+    "no_password": "无需密码 ({{count}})",
+    "password_protected": "受密码保护 ({{count}})",
+    "no_mod_files": "压缩包不包含模组文件",
+    "nested_tooltip": "包含嵌套的 zip/rar。如果勾选自动解压，将进行解压。",
+    "nested_label": "嵌套",
+    "password_placeholder": "密钥",
+    "rename_tooltip": "点击重命名",
+    "duplicate_name": "文件夹名称重复",
+    "duplicate_name_action": "名称重复 — 将自动重命名或覆盖",
+    "password_required": "提取需要密码",
+    "option_auto_rename": "名称冲突时自动重命名文件夹",
+    "option_overwrite": "覆盖现有文件夹",
+    "option_overwrite_desc": "原始文件将被永久覆盖",
+    "not_recommended": "不推荐",
+    "option_disabled": "提取后设为禁用",
+    "option_unpack_nested": "自动解压嵌套压缩包 (Modpacks)",
+    "option_unpack_nested_tooltip": "递归解压隐藏在主压缩包内的 zip/rar 文件",
+    "progress_archive": "正在提取第 {{current}}/{{total}} 个压缩包...",
+    "progress_extracting": "正在提取...",
+    "progress_files": "{{current}}/{{total}} 个文件",
+    "action_skip": "跳过提取",
+    "selected_count": "已选择 {{count}} 个",
+    "action_stop": "停止",
+    "action_extract": "提取所选",
+    "stop_confirm_title": "停止提取？",
+    "stop_confirm_desc": "确定要停止吗？当前正在提取的压缩包将还原，但已提取的压缩包将保留。",
+    "action_cancel": "取消",
+    "action_yes_stop": "是的，停止",
+    "action_close": "关闭",
+    "search_placeholder": "搜索...",
+    "overwrite_confirm_title": "覆盖现有文件夹？",
+    "overwrite_confirm_desc": "以下 {{count}} 个文件夹已存在，将被永久替换：",
+    "action_yes_overwrite": "是的，覆盖",
+    "password_retry": "密码错误。请再试一次。",
+    "pick_folder_error": "选择文件夹失败",
+    "pick_file_error": "选择文件失败",
+    "validation": {
+      "empty": "名称不能为空",
+      "illegal": "包含非法字符",
+      "reserved": "Windows 保留名称"
+    },
+    "tree": {
+      "contents": "内容 ({{count}} 个文件)",
+      "contents_singular": "内容 ({{count}} 个文件)",
+      "folder_files": "({{count}} 个文件)",
+      "folder_files_singular": "({{count}} 个文件)",
+      "loose_files": "{{count}} 个散文件",
+      "loose_files_singular": "{{count}} 个散文件",
+      "more_folders": "…以及另外 {{count}} 个文件夹",
+      "showing_entries": "显示 {{total}} 个条目中的前 {{current}} 个"
+    }
+  },
+  "optimizer": {
+    "title": "存储优化器",
+    "description": "通过识别和删除冗余模组文件来回收磁盘空间。EMMM 会安全地分析您的库以查找完全相同的重复项。",
+    "start_button": "开始扫描",
+    "stop_button": "停止扫描",
+    "ignored_button": "已忽略 ({{count}})",
+    "filter_label": "按匹配置信度过滤",
+    "tabs": {
+      "all": "全部",
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    }
+  },
+  "report": {
+    "title": "重复项扫描结果",
+    "loading": "正在加载重复项报告...",
+    "error_title": "加载重复项报告失败",
+    "no_results": "无可用扫描结果",
+    "no_results_desc": "在此运行重复项扫描以查看结果。",
+    "clean_title": "未发现重复项",
+    "clean_desc": "您的模组库很整洁！",
+    "stats_summary": "发现 {{totalGroups}} 个重复组，共有 {{totalMembers}} 个成员",
+    "reveal_unsafe": "显示不安全项",
+    "apply_actions": "应用 {{count}} 个操作",
+    "apply_actions_plural": "应用 {{count}} 个操作",
+    "applying": "正在应用...",
+    "unsafe_revealed": "已显示不安全的重复项",
+    "pin_title": "显示不安全的重复项",
+    "pin_desc": "输入您的安全 PIN 码以查看标记为不安全的重复项。"
+  },
+  "table": {
+    "header": {
+      "group": "组",
+      "members": "重复成员",
+      "reason": "原因与置信度",
+      "action": "操作"
+    },
+    "empty": "在此类别中未发现重复项",
+    "empty_desc": "请尝试切换标签或调整扫描设置。",
+    "confidence": "置信度",
+    "unsafe": "不安全",
+    "select_action": "选择操作...",
+    "keep_one": "保留一个（删除其他）",
+    "keep_label": "保留 {{id}}: {{name}}",
+    "general": "常规",
+    "ignore": "忽略 / 白名单",
+    "will_delete": "将删除 {{count}} 个项目",
+    "delete_confirm": "您确定要删除 {{count}} 个模组吗？",
+    "rename_tooltip": "双击重命名",
+    "open_folder": "打开文件夹",
+    "columns": {
+      "preview": "预览",
+      "name": "模组名称",
+      "category": "类别",
+      "skin": "皮肤",
+      "status": "状态",
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    }
+  },
+  "resolution": {
+    "title": "确认解决",
+    "summary": "您即将解决 {{count}} 个重复组。这将导致 {{deleted}} 个文件删除和 {{ignored}} 个白名单添加。",
+    "keep_specific": "保留特定项",
+    "whitelist": "白名单",
+    "keep_label": "保留：",
+    "delete_others": "删除其他 {{count}} 个相同项目",
+    "ignore_label": "忽略：",
+    "ignore_desc": "将所有 {{count}} 个成员加入白名单",
+    "confirm_button": "确认并解决",
+    "processing": "正在处理..."
+  },
+  "ignored_pairs": {
+    "title": "{{primary}} 重复项对",
+    "title_primary": "已忽略",
+    "description": "这些是对您已加入白名单的重复项，以防止它们在未来的扫描中出现。",
+    "loading": "正在加载已忽略的重复项对...",
+    "no_results": "未发现已忽略的重复项对",
+    "no_results_desc": "您加入白名单的项目将显示在此处以便恢复。",
+    "table": {
+      "mod_a": "模组 A",
+      "mod_b": "模组 B",
+      "reason": "原因",
+      "ignored_at": "忽略于",
+      "action": "操作"
+    },
+    "action_recover": "恢复",
+    "action_close": "关闭"
+  },
+  "conflict_toast": {
+    "title": "检测到 Shader 冲突！",
+    "count": "检测到 {{count}} 个冲突。"
+  },
+  "overlay": {
+    "title": "正在扫描模组...",
+    "matched": "已匹配",
+    "unmatched": "未匹配",
+    "cancel": "取消扫描"
+  },
+  "review": {
+    "title": "扫描审核",
+    "selected": "已选择 {{count}} 个",
+    "empty": "没有项需要审核。",
+    "no_folders": "未发现模组文件夹。",
+    "rename_hint": "双击重命名",
+    "open_folder": "打开文件夹",
+    "bulk_skip_label": "跳过所选",
+    "bulk_skip_tip": "将所选项目标记为跳过",
+    "filter_label": "过滤",
+    "search_placeholder": "搜索...",
+    "committing_state": "提交中...",
+    "confirm_button_label": "确认 {{count}} 个项目",
+    "select_deselect_all_tip": "全选 / 取消全选",
+    "headers": {
+      "folder_name": "文件夹名称",
+      "target_detected": "检测到目标",
+      "type": "类型",
+      "percentage": "匹配度 %",
+      "action": "操作"
+    },
+    "actions": {
+      "enable": "启用",
+      "disable": "禁用",
+      "organize": "自动整理",
+      "delete": "删除"
+    },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "toast": {
+      "db_load_failed": "无法加载自动整理的数据库: {{error}}"
+    }
+  },
+  "dedup": {
+    "analyzing": "正在分析模组库...",
+    "progress": "{{scanned}} / {{total}} 个文件夹",
+    "current": "当前: {{folder}}",
+    "toast": {
+      "recover_success": "对成功恢复",
+      "recover_failed": "恢复失败: {{error}}",
+      "scan_failed": "扫描失败: {{error}}",
+      "scan_cancelled": "扫描已取消",
+      "cancel_failed": "取消失败: {{error}}",
+      "resolve_success": "已解决 {{successful}}/{{total}} 个重复项",
+      "resolve_warning": "已解决 {{successful}}/{{total}} 个重复项 ({{failed}} 个失败)",
+      "resolve_failed": "解决失败: {{error}}"
+    }
+  }
+}

@@ -9,7 +9,13 @@ import {
   X,
   MoreHorizontal,
   Sparkles,
+  Star,
+  StarOff,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../stores/useAppStore';
 
 interface ObjectBulkActionBarProps {
   count: number;
@@ -20,6 +26,8 @@ interface ObjectBulkActionBarProps {
   onAddTags: () => void;
   onRemoveTags: () => void;
   onAutoOrganize: () => void;
+  onFavorite: (fav: boolean) => void;
+  onMarkSafe: (safe: boolean) => void;
   onClear: () => void;
 }
 
@@ -32,8 +40,13 @@ export default function ObjectBulkActionBar({
   onAddTags,
   onRemoveTags,
   onAutoOrganize,
+  onFavorite,
+  onMarkSafe,
   onClear,
 }: ObjectBulkActionBarProps) {
+  const { t } = useTranslation(['objects']);
+  const safeMode = useAppStore((state) => state.safeMode);
+
   if (count === 0) return null;
 
   return (
@@ -43,11 +56,13 @@ export default function ObjectBulkActionBar({
         <button
           className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={onClear}
-          title="Clear selection"
+          title={t('bulk.clear_selection')}
         >
           <X size={15} />
         </button>
-        <span className="text-xs font-semibold tabular-nums">{count} selected</span>
+        <span className="text-xs font-semibold tabular-nums">
+          {t('bulk.selected_count', { count })}
+        </span>
       </div>
 
       {/* Right: Primary actions + More dropdown */}
@@ -55,7 +70,7 @@ export default function ObjectBulkActionBar({
         <button
           className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={onDelete}
-          title="Delete selected"
+          title={t('bulk.delete_selected')}
         >
           <Trash2 size={15} />
         </button>
@@ -63,10 +78,37 @@ export default function ObjectBulkActionBar({
         <button
           className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={() => onPin(true)}
-          title="Pin selected"
+          title={t('bulk.pin_selected')}
         >
           <Pin size={15} />
         </button>
+
+        <button
+          className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
+          onClick={() => onFavorite(true)}
+          title={t('bulk.favorite')}
+        >
+          <Star size={15} />
+        </button>
+
+        {/* Adaptive Safety Toggle */}
+        {safeMode ? (
+          <button
+            className="btn btn-xs btn-ghost btn-circle text-warning hover:bg-primary-content/20"
+            onClick={() => onMarkSafe(false)}
+            title={t('bulk.mark_unsafe')}
+          >
+            <ShieldAlert size={15} />
+          </button>
+        ) : (
+          <button
+            className="btn btn-xs btn-ghost btn-circle text-success hover:bg-primary-content/20"
+            onClick={() => onMarkSafe(true)}
+            title={t('bulk.mark_safe')}
+          >
+            <ShieldCheck size={15} />
+          </button>
+        )}
 
         {/* Dropdown for secondary actions */}
         <div className="dropdown dropdown-end">
@@ -74,7 +116,7 @@ export default function ObjectBulkActionBar({
             tabIndex={0}
             role="button"
             className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
-            title="More actions"
+            title={t('bulk.more_actions')}
           >
             <MoreHorizontal size={15} />
           </div>
@@ -88,7 +130,7 @@ export default function ObjectBulkActionBar({
                 onClick={() => onPin(false)}
               >
                 <PinOff size={14} className="opacity-70" />
-                Unpin
+                {t('bulk.unpin')}
               </button>
             </li>
             <div className="divider my-0.5"></div>
@@ -98,7 +140,7 @@ export default function ObjectBulkActionBar({
                 onClick={onEnable}
               >
                 <Power size={14} className="opacity-70" />
-                Enable
+                {t('bulk.enable')}
               </button>
             </li>
             <li>
@@ -107,7 +149,7 @@ export default function ObjectBulkActionBar({
                 onClick={onDisable}
               >
                 <PowerOff size={14} className="opacity-70" />
-                Disable
+                {t('bulk.disable')}
               </button>
             </li>
             <div className="divider my-0.5"></div>
@@ -117,14 +159,23 @@ export default function ObjectBulkActionBar({
                 onClick={onAutoOrganize}
               >
                 <Sparkles size={14} className="opacity-70" />
-                Auto Organize
+                {t('bulk.auto_organize')}
+              </button>
+            </li>
+            <li>
+              <button
+                className="flex items-center gap-2 text-xs py-1.5"
+                onClick={() => onFavorite(false)}
+              >
+                <StarOff size={14} className="opacity-70" />
+                {t('bulk.unfavorite')}
               </button>
             </li>
             <div className="divider my-0.5"></div>
             <li>
               <button className="flex items-center gap-2 text-xs py-1.5" onClick={onAddTags}>
                 <TagIcon size={14} className="opacity-70" />
-                Add Tags
+                {t('bulk.add_tags')}
               </button>
             </li>
             <li>
@@ -133,7 +184,7 @@ export default function ObjectBulkActionBar({
                 onClick={onRemoveTags}
               >
                 <Tags size={14} className="opacity-70" />
-                Remove Tags
+                {t('bulk.remove_tags')}
               </button>
             </li>
           </ul>

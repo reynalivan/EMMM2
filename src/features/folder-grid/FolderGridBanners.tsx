@@ -1,4 +1,5 @@
-import { FolderOpen, AlertTriangle } from 'lucide-react';
+import { FolderOpen, AlertTriangle, Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/useAppStore';
 import type { ConflictGroup } from '../../types/mod';
 
@@ -11,9 +12,14 @@ export interface FolderGridBannersProps {
   selfReasons: string[];
   isMobile: boolean;
   isPreviewOpen: boolean;
+  currentPath: string[];
   setMobilePane: (pane: 'sidebar' | 'grid' | 'details') => void;
   togglePreview: () => void;
   handleToggleSelf: (enabled: boolean) => void;
+  /** Display name of nearest disabled ancestor — null when not locked */
+  ancestorDisabledBy: string | null;
+  /** Open the EnableParent confirmation dialog with impact preview */
+  onOpenEnableParentDialog: () => void;
 }
 
 export default function FolderGridBanners({
@@ -25,23 +31,51 @@ export default function FolderGridBanners({
   selfReasons,
   isMobile,
   isPreviewOpen,
+  currentPath,
   setMobilePane,
   togglePreview,
   handleToggleSelf,
+  ancestorDisabledBy,
+  onOpenEnableParentDialog,
 }: FolderGridBannersProps) {
+  const { t } = useTranslation(['grid']);
+
   if (isLoading || isError) {
     return null;
   }
 
+  const isObjectLevel = currentPath.length === 1;
+
   return (
     <>
-      {/* Naming Conflict Banner */}
+      {/* ── Parent-Disabled Notice (compact, topmost) ─────────────────────── */}
+      {ancestorDisabledBy && (
+        <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 bg-warning/10 border-b border-warning/20 px-3 py-1.5 -mx-4 -mt-4 shadow-sm backdrop-blur-md">
+          <Lock size={12} className="text-warning shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold text-warning/90 leading-none truncate uppercase tracking-wider">
+              {isObjectLevel
+                ? t('banners.parent_disabled_object_title')
+                : t('banners.parent_disabled_title', { name: ancestorDisabledBy })}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              className="btn btn-sm btn-warning text-[10px] px-4 font-bold shadow-sm"
+              onClick={onOpenEnableParentDialog}
+            >
+              {t('banners.enable_parent_btn')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Naming Conflict Banner ─────────────────────────────────────────── */}
       {nameConflicts.length > 0 && (
         <div className="mb-3 flex items-center gap-2 bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
           <AlertTriangle size={16} className="text-warning shrink-0" />
           <span className="text-xs text-warning flex-1">
-            {nameConflicts.length} name conflict{nameConflicts.length > 1 ? 's' : ''} detected —
-            both enabled and disabled versions exist
+            {t('banners.conflict_detected', { count: nameConflicts.length })}
           </span>
           <button
             className="btn btn-xs btn-warning btn-outline"
@@ -61,30 +95,24 @@ export default function FolderGridBanners({
               }
             }}
           >
-            Resolve…
+            {t('banners.resolve_btn')}
           </button>
         </div>
       )}
 
-      {/* Flat Mod Root Banner */}
-      {isFlatModRoot && (
+      {/* ── Flat Mod Root Banner (ONLY when disabled) ─────────────────────── */}
+      {isFlatModRoot && !selfIsEnabled && (
         <div className="mb-4 bg-base-200 border border-base-content/10 rounded-xl p-6 flex flex-col md:flex-row items-start md:items-center gap-4 mx-4 shadow-sm relative overflow-hidden">
           {/* Decorative left accent */}
-          <div
-            className={`absolute left-0 top-0 bottom-0 w-1 ${selfIsEnabled ? 'bg-success' : 'bg-base-content/20'}`}
-          />
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-base-content/20" />
 
           <div className="flex-1 pl-2">
             <h3 className="text-lg font-bold flex items-center gap-2">
-              <FolderOpen
-                className={selfIsEnabled ? 'text-success' : 'text-base-content/40'}
-                size={20}
-              />
-              This Folder is a Mod
+              <FolderOpen className="text-base-content/40" size={20} />
+              {t('banners.flat_mod_title')}
             </h3>
             <p className="text-sm text-base-content/60 mt-1 max-w-2xl">
-              This directory contains mod wrapper files directly in its root. EMMM2 manages this
-              folder as a single mod rather than a container of sub-mods.
+              {t('banners.flat_mod_desc')}
             </p>
             {selfReasons.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
@@ -101,16 +129,12 @@ export default function FolderGridBanners({
           </div>
 
           <div className="flex items-center gap-2 mt-4 md:mt-0 whitespace-nowrap">
-            <button
-              className={`btn btn-sm ${selfIsEnabled ? 'btn-outline text-error hover:bg-error hover:text-error-content hover:border-error' : 'btn-success'}`}
-              onClick={() => handleToggleSelf(!selfIsEnabled)}
-            >
-              {selfIsEnabled ? 'Disable Mod' : 'Enable Mod'}
+            <button className="btn btn-sm btn-success" onClick={() => handleToggleSelf(true)}>
+              {t('banners.enable_mod')}
             </button>
             <button
               className="btn btn-sm btn-outline btn-ghost"
               onClick={() => {
-                // Only needed for mobile viewing, otherwise Details pane is always visible on desktop
                 if (isMobile) {
                   setMobilePane('details');
                 } else if (!isPreviewOpen) {
@@ -118,7 +142,7 @@ export default function FolderGridBanners({
                 }
               }}
             >
-              View Details
+              {t('banners.view_details')}
             </button>
           </div>
         </div>

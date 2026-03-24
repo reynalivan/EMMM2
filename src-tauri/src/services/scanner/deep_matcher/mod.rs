@@ -1,4 +1,4 @@
-//! Deep Matcher Pipeline — The "Brain" of EMMM2.
+//! Deep Matcher Pipeline — The "Brain" of EMMM.
 //!
 //! Identifies mod categories by running a staged Quick → FullScoring pipeline
 //! with evidence-based scoring, acceptance gates, and optional AI reranking.

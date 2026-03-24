@@ -1,4 +1,5 @@
 pub mod archive_cmds;
+pub mod collision_cmds;
 pub mod conflict_cmds;
 pub mod organize_cmds;
 pub mod scan_cmds;

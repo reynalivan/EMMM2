@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
 import { Eye, EyeOff } from 'lucide-react';
 import { useToastStore } from '../../../stores/useToastStore';
 
 export default function AITab() {
+  const { t } = useTranslation(['settings', 'common']);
   const { settings, updateAiConfig, isLoading } = useSettings();
   const { addToast } = useToastStore();
   const [showKey, setShowKey] = useState(false);
@@ -21,18 +23,23 @@ export default function AITab() {
   }, [settings]);
 
   if (isLoading || !settings) {
-    return <div className="p-4">Loading AI config...</div>;
+    return <div className="p-4">{t('settings:ai.status.loading')}</div>;
   }
 
   const handleToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked;
     try {
       await updateAiConfig.mutateAsync({ enabled });
-      addToast('success', `AI Reranking ${enabled ? 'enabled' : 'disabled'}`);
+      addToast(
+        'success',
+        enabled ? t('settings:ai.status.enabled') : t('settings:ai.status.disabled'),
+      );
     } catch (err) {
       addToast(
         'error',
-        `Failed to update toggle: ${err instanceof Error ? err.message : String(err)}`,
+        t('settings:ai.status.update_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        }),
       );
     }
   };
@@ -40,11 +47,13 @@ export default function AITab() {
   const handleSave = async () => {
     try {
       await updateAiConfig.mutateAsync({ api_key: apiKey, base_url: baseUrl });
-      addToast('success', 'AI configuration saved');
+      addToast('success', t('settings:ai.status.saved'));
     } catch (err) {
       addToast(
         'error',
-        `Failed to save AI config: ${err instanceof Error ? err.message : String(err)}`,
+        t('settings:ai.status.save_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        }),
       );
     }
   };
@@ -54,14 +63,9 @@ export default function AITab() {
       <div className="card bg-base-200 shadow-sm border border-base-300">
         <div className="card-body">
           <h2 className="card-title text-xl text-primary flex items-center gap-2">
-            AI Intelligent Reranking
+            {t('settings:ai.title')}
           </h2>
-          <p className="text-sm text-base-content/70">
-            When enabled, EMMM2 will use an LLM via the provided OpenAI-compatible endpoint to
-            attempt recovery of mod folders that were marked as "Needs Review" by the local scoring
-            pipeline. This provides significantly better accuracy for misnamed folders at the cost
-            of some additional latency and external API requests.
-          </p>
+          <p className="mt-1 text-sm opacity-70">{t('settings:ai.desc')}</p>
 
           <div className="divider my-2"></div>
 
@@ -73,20 +77,22 @@ export default function AITab() {
                 checked={settings.ai.enabled}
                 onChange={handleToggle}
               />
-              <span className="label-text text-lg font-semibold">Enable AI Reranking</span>
+              <span className="label-text text-lg font-semibold">{t('settings:ai.enable')}</span>
             </label>
           </div>
 
           <div className="form-control w-full max-w-xl mb-4">
             <label className="label">
-              <span className="label-text">API Provider Base URL</span>
+              <span className="label-text">{t('settings:ai.base_url')}</span>
               <span className="label-text-alt text-base-content/50">
-                (Must be an OpenAI-compatible /v1/chat/completions endpoint)
+                {t('settings:ai.base_url_desc')}
               </span>
             </label>
             <input
               type="text"
-              placeholder="https://api.openai.com/v1/chat/completions"
+              placeholder={
+                t('settings:ai.placeholder_url') || 'https://api.openai.com/v1/chat/completions'
+              }
               className="input input-bordered w-full"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
@@ -95,12 +101,12 @@ export default function AITab() {
 
           <div className="form-control w-full max-w-xl mb-6">
             <label className="label">
-              <span className="label-text">AI API Key</span>
+              <span className="label-text">{t('settings:ai.api_key')}</span>
             </label>
             <div className="join w-full">
               <input
                 type={showKey ? 'text' : 'password'}
-                placeholder="sk-..."
+                placeholder={t('settings:ai.placeholder_key') || 'sk-...'}
                 className="input input-bordered join-item w-full"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
@@ -108,21 +114,21 @@ export default function AITab() {
               <button
                 className="btn btn-square join-item"
                 onClick={() => setShowKey(!showKey)}
-                title={showKey ? 'Hide Key' : 'Show Key'}
+                title={showKey ? t('settings:ai.hide_key') : t('settings:ai.show_key')}
               >
                 {showKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
             <label className="label">
               <span className="label-text-alt text-base-content/50">
-                This key is stored locally and sent only to the configured base URL.
+                {t('settings:ai.api_key_desc')}
               </span>
             </label>
           </div>
 
           <div className="card-actions justify-end">
             <button className="btn btn-primary" onClick={handleSave}>
-              Save Config
+              {t('settings:ai.save')}
             </button>
           </div>
         </div>

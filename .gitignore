@@ -40,7 +40,7 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 app_data/
-emmm2.db*
+emmm.db*
 
 # Environment Variables
 .env
@@ -57,15 +57,15 @@ emmm2.db*
 
 # Project Specific
 .history/
-.agent/
-.docs/
+#.agent/
+#.docs/
 .codebuddy
-.vscode/
+#.vscode/
 .opencode/
-.github/
+#.github/
 .sisyphus/
 .trunk/
-.emmm2_temp/
+.emmm_temp/
 .serena/
 .codex/
 

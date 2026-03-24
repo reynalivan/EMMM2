@@ -6,7 +6,8 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { commands } from '../../lib/bindings';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -22,38 +23,13 @@ import {
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
 
+import type { ConflictDetails, FolderDetail } from '../../types/scanner';
+import { formatBytes } from '../../utils/formatters';
+
 type Strategy = 'keep_enabled' | 'keep_disabled' | 'separate';
 
-interface FileEntry {
-  name: string;
-  size: number;
-  is_ini: boolean;
-}
-
-interface FolderDetail {
-  path: string;
-  folder_name: string;
-  is_enabled: boolean;
-  total_size: number;
-  file_count: number;
-  files: FileEntry[];
-  thumbnail_path: string | null;
-}
-
-interface ConflictDetails {
-  enabled: FolderDetail;
-  disabled: FolderDetail;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(i > 0 ? 1 : 0)} ${sizes[i]}`;
-}
-
 export default function ConflictResolveDialog() {
+  const { t } = useTranslation(['folder_grid', 'common']);
   const { conflictDialog, closeConflictDialog } = useAppStore();
   const queryClient = useQueryClient();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -69,7 +45,7 @@ export default function ConflictResolveDialog() {
     setDetailsLoading(true);
     setDetails(null);
     try {
-      const result = await invoke<ConflictDetails>('get_conflict_details', {
+      const result = await commands.getConflictDetails({
         enabledPath: conflict.attempted_target,
         disabledPath: conflict.existing_path,
       });
@@ -102,7 +78,7 @@ export default function ConflictResolveDialog() {
       const duplicatePath =
         strategy === 'keep_disabled' ? conflict.attempted_target : conflict.existing_path;
 
-      await invoke('resolve_conflict', {
+      await commands.resolveConflict({
         keepPath,
         duplicatePath,
         strategy,
@@ -111,10 +87,10 @@ export default function ConflictResolveDialog() {
       await queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       await queryClient.invalidateQueries({ queryKey: ['objects'] });
 
-      toast.success('Conflict resolved');
+      toast.success(t('folder_grid:conflicts.toast.resolved'));
       closeConflictDialog();
     } catch (err) {
-      toast.error(`Failed to resolve conflict: ${err}`);
+      toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
     } finally {
       setLoading(false);
     }
@@ -135,7 +111,9 @@ export default function ConflictResolveDialog() {
             <AlertTriangle size={20} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-base text-base-content">Name Conflict Detected</h3>
+            <h3 className="font-semibold text-base text-base-content">
+              {t('folder_grid:resolution.title')}
+            </h3>
             <p className="text-sm text-base-content/60 mt-1 leading-relaxed">
               Both an enabled and disabled version of <strong>{baseName}</strong> exist in the same
               directory. Compare and choose which to keep:
@@ -147,21 +125,23 @@ export default function ConflictResolveDialog() {
         {detailsLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 size={20} className="animate-spin text-base-content/30" />
-            <span className="text-sm text-base-content/40 ml-2">Loading folder details…</span>
+            <span className="text-sm text-base-content/40 ml-2">
+              {t('folder_grid:resolution.loading')}
+            </span>
           </div>
         ) : details ? (
           <div className="grid grid-cols-2 gap-3 mb-4">
             {/* Enabled side */}
             <FolderColumn
               detail={details.enabled}
-              label="Enabled Version"
+              label={t('folder_grid:resolution.enabled_label')}
               accentClass="text-success"
               borderClass="border-success/30"
             />
             {/* Disabled side */}
             <FolderColumn
               detail={details.disabled}
-              label="Disabled Version"
+              label={t('folder_grid:resolution.disabled_label')}
               accentClass="text-error"
               borderClass="border-error/30"
             />
@@ -177,7 +157,7 @@ export default function ConflictResolveDialog() {
           >
             <CheckCircle size={16} />
             <span className="flex-1 text-left">
-              Keep Enabled
+              {t('common:actions.keep_enabled')}
               {details && (
                 <span className="text-[10px] opacity-60 ml-1">
                   ({formatBytes(details.enabled.total_size)}, {details.enabled.file_count} files)
@@ -193,7 +173,7 @@ export default function ConflictResolveDialog() {
           >
             <XCircle size={16} />
             <span className="flex-1 text-left">
-              Keep Disabled
+              {t('common:actions.keep_disabled')}
               {details && (
                 <span className="text-[10px] opacity-60 ml-1">
                   ({formatBytes(details.disabled.total_size)}, {details.disabled.file_count} files)
@@ -208,21 +188,21 @@ export default function ConflictResolveDialog() {
             onClick={() => handleResolve('separate')}
           >
             <Copy size={16} />
-            Treat as Two Separate Mods
+            {t('common:actions.separate')}
           </button>
         </div>
 
         {/* Cancel */}
         <div className="modal-action mt-4">
           <button className="btn btn-sm btn-ghost" onClick={closeConflictDialog} disabled={loading}>
-            Cancel
+            {t('common:actions.cancel')}
           </button>
         </div>
       </div>
 
       {/* Backdrop */}
-      <form method="dialog" className="modal-backdrop">
-        <button onClick={closeConflictDialog}>close</button>
+      <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-sm">
+        <button onClick={closeConflictDialog}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

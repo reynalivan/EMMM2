@@ -1,0 +1,53 @@
+{
+  "settings": {
+    "general": {
+      "language": "Bahasa Antarmuka",
+      "language_hint": "Saat ini hanya mendukung Bahasa Inggris.",
+      "select_language": "Pilih Bahasa",
+      "save_success": "Pengaturan berhasil disimpan",
+      "save_error": "Gagal menyimpan pengaturan"
+    }
+  },
+  "date": {
+    "unknown": "Tidak Diketahui",
+    "just_now": "Baru saja",
+    "mins_ago": "{{count}}m yang lalu",
+    "hours_ago": "{{count}}j yang lalu",
+    "days_ago": "{{count}}h yang lalu"
+  },
+  "action": {
+    "back": "Kembali",
+    "cancel": "Batal",
+    "confirm": "Konfirmasi",
+    "save": "Simpan",
+    "delete": "Hapus",
+    "close": "Tutup"
+  },
+  "actions": {
+    "back": "Kembali",
+    "cancel": "Batal",
+    "confirm": "Konfirmasi",
+    "save": "Simpan",
+    "delete": "Hapus",
+    "close": "Tutup",
+    "reload_app": "Muat Ulang Aplikasi",
+    "remove": "Hapus {{item}}",
+    "save_changes": "Simpan Perubahan",
+    "retry": "Coba Lagi"
+  },
+  "errors": {
+    "no_active_game": "Tidak ada game aktif yang dipilih",
+    "scan_failed": "Pemindaian gagal",
+    "unknown": "Terjadi kesalahan yang tidak diketahui",
+    "unexpected": "Terjadi kesalahan yang tidak terduga.",
+    "boundary_title": "Terjadi kesalahan",
+    "validation": {
+      "required": "Bidang ini wajib diisi",
+      "invalid": "Masukan tidak valid"
+    }
+  },
+  "status": {
+    "none": "Tidak ada",
+    "no_subfolders": "Tidak ada subfolder yang ditemukan"
+  }
+}

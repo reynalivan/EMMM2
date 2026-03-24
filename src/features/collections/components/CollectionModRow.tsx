@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { Folder, FolderTree, ShieldAlert } from 'lucide-react';
-import { getPreviewModDisplayName } from '../utils/previewModDisplayName';
-import type { CollectionPreviewMod } from '../../../types/collection';
+
+import { commands } from '../../../lib/bindings';
+import { useAppStore } from '../../../stores/useAppStore';
+import { Folder, FolderTree } from 'lucide-react';
+import type { CollectionMember } from '../../../types/collection';
 
 interface CollectionModRowProps {
-  mod: CollectionPreviewMod;
+  mod: CollectionMember;
 }
 
 export function CollectionModRow({ mod }: CollectionModRowProps) {
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState<boolean>(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -36,29 +38,30 @@ export function CollectionModRow({ mod }: CollectionModRowProps) {
     return () => {
       observer.disconnect();
     };
-  }, [mod.folder_path]);
+  }, [mod.path_key]);
 
   useEffect(() => {
-    if (!isVisible) {
+    if (!isVisible || !mod.path_key || !activeGameId) {
       return;
     }
     setThumbnailUrl(null);
-    invoke<string | null>('get_mod_thumbnail', { folderPath: mod.folder_path })
-      .then((path) => {
+    commands
+      .getModThumbnail({ gameId: activeGameId, folderPath: mod.path_key })
+      .then((path: string | null) => {
         if (path) {
-          setThumbnailUrl(convertFileSrc(path));
+          setThumbnailUrl(path);
         }
       })
       .catch((error: unknown) => {
         console.warn('Failed to load mod thumbnail', error);
       });
-  }, [isVisible, mod.folder_path]);
+  }, [isVisible, mod.path_key, activeGameId]);
 
   return (
     <div
       ref={rowRef}
       className="flex items-center gap-3 px-3 py-1.5 hover:bg-base-300/30 transition-colors rounded-md group"
-      title={mod.folder_path}
+      title={mod.path_key ?? undefined}
     >
       <div className="w-7 h-7 rounded-md bg-base-300 overflow-hidden shrink-0 flex items-center justify-center border border-base-content/5">
         {thumbnailUrl ? (
@@ -69,18 +72,13 @@ export function CollectionModRow({ mod }: CollectionModRowProps) {
       </div>
 
       <span className="text-xs font-medium truncate flex-1 text-base-content/80 group-hover:text-base-content transition-colors">
-        {getPreviewModDisplayName(mod)}
+        {mod.display_name || (mod.path_key ? mod.path_key.split('/').pop() : 'Unknown Mod')}
       </span>
 
       <div className="flex items-center gap-1 shrink-0">
-        {mod.id.startsWith('nested_') && (
+        {mod.kind === 'nested' && (
           <span title="Nested mod" className="flex shrink-0">
             <FolderTree size={11} className="text-info/60" />
-          </span>
-        )}
-        {!mod.is_safe && (
-          <span title="Unsafe" className="flex shrink-0">
-            <ShieldAlert size={11} className="text-error/60" />
           </span>
         )}
       </div>

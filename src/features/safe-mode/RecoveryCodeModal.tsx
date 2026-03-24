@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KeyRound, Copy, CheckCheck, ShieldAlert, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface RecoveryCodeModalProps {
   open: boolean;
@@ -8,6 +9,7 @@ interface RecoveryCodeModalProps {
 }
 
 export default function RecoveryCodeModal({ open, recoveryCode, onClose }: RecoveryCodeModalProps) {
+  const { t } = useTranslation(['safe_mode', 'common']);
   const [copied, setCopied] = useState(false);
 
   if (!open) return null;
@@ -25,7 +27,7 @@ export default function RecoveryCodeModal({ open, recoveryCode, onClose }: Recov
         <button
           onClick={onClose}
           className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-          aria-label="Close"
+          aria-label={t('common:actions.close')}
         >
           <X size={18} />
         </button>
@@ -37,10 +39,9 @@ export default function RecoveryCodeModal({ open, recoveryCode, onClose }: Recov
           </div>
 
           <div>
-            <h3 className="font-bold text-lg">Save Your Recovery Code</h3>
+            <h3 className="font-bold text-lg">{t('safe_mode:recovery_modal.title')}</h3>
             <p className="text-sm text-base-content/60 mt-1">
-              This code is shown <strong className="text-warning">only once</strong>. Store it in a
-              safe place — it's the only way to reset your PIN if you forget it.
+              {t('safe_mode:recovery_modal.desc')}
             </p>
           </div>
 
@@ -61,12 +62,12 @@ export default function RecoveryCodeModal({ open, recoveryCode, onClose }: Recov
             {copied ? (
               <>
                 <CheckCheck size={18} />
-                Copied!
+                {t('safe_mode:recovery_modal.copied')}
               </>
             ) : (
               <>
                 <Copy size={18} />
-                Copy Recovery Code
+                {t('safe_mode:recovery_modal.copy')}
               </>
             )}
           </button>
@@ -74,14 +75,11 @@ export default function RecoveryCodeModal({ open, recoveryCode, onClose }: Recov
           {/* Warning */}
           <div className="alert alert-warning text-xs py-2 text-left gap-2">
             <ShieldAlert size={16} className="shrink-0" />
-            <span>
-              If you lose this code and forget your PIN, you will need to manually reset the app
-              database to clear it.
-            </span>
+            <span>{t('safe_mode:recovery_modal.warning')}</span>
           </div>
 
           <button className="btn btn-ghost btn-sm w-full" onClick={onClose}>
-            I've saved it, close
+            {t('safe_mode:recovery_modal.confirm_close')}
           </button>
         </div>
       </div>

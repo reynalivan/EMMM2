@@ -243,7 +243,7 @@ function StickyRow({
       className={`absolute left-0 right-0 z-10 px-2 cursor-pointer ${
         isTop
           ? '-top-1 pt-1 border-b border-base-300/30'
-          : '-bottom-1 pb-1 border-t border-base-300/30 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]'
+          : '-bottom-1 pb-1 border-t border-base-300/30 shadow-[0_-4px_12px_var(--color-border-muted)]'
       }`}
       onClick={scrollToSelected}
     >

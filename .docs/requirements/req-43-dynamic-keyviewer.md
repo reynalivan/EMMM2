@@ -3,14 +3,12 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users who have tens of mods enabled across multiple characters have no in-game reference for which keybinds control which mod — displaying all keybinds at once clutters the screen; showing nothing requires memorization.
-- **Proposed Solution**: A two-layer, hash-gated system: (1) an **offline EMM2 pipeline** that harvests hashes from active mod `.ini` files, scores them against a Resource Pack (`gimi.json`, `srmi.json`, etc.), selects per-object sentinel hashes, generates per-object keybind text files and a `KeyViewer.ini`, and writes all artifacts atomically; (2) a **3DMigoto runtime state machine** that reacts to sentinel hash hits on rendered frames, applies 5-step priority arbitration with hysteresis, and conditionally draws the relevant keybind text overlay via PrintText adapter.
+- **Proposed Solution**: A background generator in EMMM that monitors active mod sets and character hashes, producing a set of keybind text files in `Mods/.emmm_data/keybinds/active/`. A `KeyViewer.ini` system mod manages a 3DMigoto-level arbitration tree using a unified toggle (`$kv_active`). It uses the `help.ini` pipeline (`ResourceNotification` + `FormatText`) to render text persistently. Character detection is handled via `$kv_active_code` and a `$kv_last_seen` timestamp logic with a 1.5s threshold to prevent flickering during scene transitions or animation breaks.
 - **Success Criteria**:
-  - `generate_keyviewer_ini` runs in ≤ 500ms for ≤ 200 enabled mods.
-  - All generated artifacts (`KeyViewer.ini`, `<code_hash>.txt`) are written atomically — `*.tmp` → rename swap — preventing the game from reading a partial file.
-  - Hash harvest completes in ≤ 2s for 200 enabled mods (incremental: only files whose `{size, mtime, fast_hash}` changed are re-parsed).
-  - Anti-flipflop holds `MIN_HOLD_SECONDS = 0.20s` — prevents `$kv_active_code` switches faster than 5 Hz.
-  - Runtime sentinel hit work is O(1) — no per-frame scanning; only a TTL check + one resource read + one draw call in `[Present]`.
-  - Overlay is fully toggled off within ≤ 1 frame of pressing the toggle key.
+  - KeyViewer displays only when the unified toggle (`F7` by default) is ON.
+  - Character detection is stable — text remains on screen as long as the hash was seen in the last 1.5 seconds.
+  - No "if-chain" performance hit — uses resource mapping via `$kv_active_code`.
+  - Content matches the Arlecchino mockup (Name, Dash-Underline, Key, Back, Toggle, Footer).
 
 ---
 
@@ -28,7 +26,7 @@ As a system, I want to scan enabled mods for their `.ini` hashes and link them t
 | AC-43.1.2 | ✅ Positive | Given extracted hashes, each is scored against Resource Pack objects: `score = Σ weight(hash)` where `weight = base(10) + log(1 + occurrence_count) + rarity_bonus + hint_bonus`; the object with highest score wins if `score >= threshold`                                                                                                                         |
 | AC-43.1.3 | ✅ Positive | Given a harvested hash not present in any Resource Pack object, it is stored as a **learned hash** in the `mod_hash_index` cache — available for future matching and optional suggestion to add to the Resource Pack                                                                                                                                                 |
 | AC-43.1.4 | ❌ Negative | Given an enabled mod has no `.ini` or no hashes in the required section types, then it is excluded from hash harvest — no `[TextureOverride]` sentinel is generated for it                                                                                                                                                                                           |
-| AC-43.1.5 | ❌ Negative | Given two different enabled mods hash to the same Object (same character, two skins both enabled), then only one sentinel set is generated for that Object — duplicate hash sources are merged under that `code_hash`                                                                                                                                                |
+| AC-43.1.5 | ✅ Positive | Given two different enabled mods hash to the same Object (same character, two skins both enabled), then keybinds are **grouped by mod name** with `[Mod: Name]` headers — no confusion between multiple mod sources.                                                                                                                                                 |
 | AC-43.1.6 | ⚠️ Edge     | Given a hash appears in `known_hashes` of ≥ 3 different Resource Pack objects OR it appears in active-mod hashes across ≥ 2 different `code_hash` candidates with score margin < 15%, then it is marked `blacklisted_for_sentinel = true` — never used as a sentinel hash for any object                                                                             |
 | AC-43.1.7 | ⚠️ Edge     | Given a file's `{size, mtime, fast_hash}` has not changed since the last harvest run, then that file is skipped — only changed files are re-parsed (incremental scan)                                                                                                                                                                                                |
 
@@ -51,14 +49,15 @@ As a system, I want to select the best sentinel hashes per object using scoring 
 
 As a user, I want the on-screen overlay to show only the keybinds for the character currently on screen, so that the overlay is always relevant and uncluttered.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-43.3.1 | ✅ Positive | Given hash harvest produces N object mappings, `generate_keyviewer_ini` outputs: (1) `Mods/.EMMM2_System/KeyViewer.ini` with 5 runtime globals, one `[TextureOverride]` sentinel section per object (1–3 hashes each), and one `[Present]` block per object gated by `if $kv_on == 1 && has_active && $kv_active_code == {code_hash}`; (2) `EMM2/keybinds/active/{code_hash}.txt` per object (grouped: Variants / FX / UI / Debug); (3) `EMM2/keybinds/active/_fallback.txt` |
-| AC-43.3.2 | ✅ Positive | Given a keybind text file would exceed 8 KB or 60 lines (configurable), then content is safely truncated and `"..."` is appended — or paging is used if enabled (PageDown/PageUp cycle pages; page state resets on object change)                                                                                                                                                                                                                                            |
-| AC-43.3.3 | ✅ Positive | Given the user swaps characters in-game, the game engine hits the new character's sentinel hash, `$kv_active_code` updates per the arbitration rules, and the `[Present]` overlay redraws the new character's keybind text within ≤ 1 frame                                                                                                                                                                                                                                  |
-| AC-43.3.4 | ✅ Positive | Given Safe Mode is active, the generated `{code_hash}.txt` files exclude keybind entries from mods with `is_safe = false` — NSFW keybinds are never shown in the overlay                                                                                                                                                                                                                                                                                                     |
-| AC-43.3.5 | ❌ Negative | Given the primary PrintText pipeline (GIMI/SRMI renderer) is unavailable, `KeyViewer.ini` falls back to the legacy notification-style renderer — if both fail, `_fallback.txt` is shown with "KeyViewer renderer not available" and no error spam                                                                                                                                                                                                                            |
-| AC-43.3.6 | ⚠️ Edge     | Given an Object has no associated keybinds in any enabled mod, its `{code_hash}.txt` is still generated as empty — the overlay shows nothing for that object; no missing-file error                                                                                                                                                                                                                                                                                          |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                          |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-43.3.1 | ✅ Positive | Given hash harvest: (1) Artifact directories are **cleared** (`Zero-Leak Policy`); (2) `KeyViewer.ini` is generated; (3) `{code_hash}.txt` written per object; (4) `_fallback.txt` generated.                                                     |
+| AC-43.3.2 | ✅ Positive | Given a keybind text file would exceed 8 KB or 60 lines (configurable), then content is safely truncated and `"..."` is appended — or paging is used if enabled.                                                                                  |
+| AC-43.3.3 | ✅ Positive | Given multiple mods control the same character, the overlay displays a header for each mod followed by its specific keybinds, ensuring clarity on which mod owns which hotkey.                                                                    |
+| AC-43.3.4 | ✅ Positive | Given the user swaps characters in-game, the game engine hits the new character's sentinel hash, `$kv_active_code` updates per the arbitration rules, and the `[Present]` overlay redraws the new character's keybind text within ≤ 1 frame       |
+| AC-43.3.5 | ✅ Positive | Given Safe Mode is active, the generated `{code_hash}.txt` files exclude keybind entries from mods with `is_safe = false` — NSFW keybinds are never shown in the overlay.                                                                         |
+| AC-43.3.6 | ❌ Negative | Given the primary PrintText pipeline (GIMI/SRMI renderer) is unavailable, `KeyViewer.ini` falls back to the legacy notification-style renderer — if both fail, `_fallback.txt` is shown with "KeyViewer renderer not available" and no error spam |
+| AC-43.3.7 | ⚠️ Edge     | Given an Object has no associated keybinds in any enabled mod, its `{code_hash}.txt` is still generated as empty — the overlay shows nothing for that object; no missing-file error                                                               |
 
 ---
 
@@ -81,114 +80,128 @@ As a user, I want the overlay to respond precisely to which character is on scre
 
 As a system, I want KeyViewer artifacts to be regenerated on any relevant state change and written atomically, so that the game never reads a partial file.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                                               |
-| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-43.5.1 | ✅ Positive | Given any of these events: (1) apply/switch preset, (2) enable/disable mod, (3) update mod files, (4) change keybind overrides/remaps, (5) update Resource Pack entries, (6) Safe Mode toggle — then `generate_keyviewer_ini` is triggered within ≤ 1s if KeyViewer feature is enabled |
-| AC-43.5.2 | ✅ Positive | Given any generated file write (`KeyViewer.ini` or `*.txt`), it is written to `*.tmp` then atomically renamed — the game engine never reads a partially-written file                                                                                                                   |
-| AC-43.5.3 | ⚠️ Edge     | Given `KeyViewer.ini` is regenerated while 3DMigoto is actively reading it (mid-frame), the atomic rename guarantees the game reads either the old or the new complete file — never a partial state                                                                                    |
+| ID        | Type        | Criteria                                                                                                                                                                                            |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-43.5.1 | ✅ Positive | Given any relevant event: (1) Collection apply, (2) Toggle/Rename/Delete mod, (3) Explorer change (FS Watcher), (4) Safe Mode toggle — then artifacts are regenerated automatically.                |
+| AC-43.5.2 | ✅ Positive | Given any generated file write (`KeyViewer.ini` or `*.txt`), it is written to `*.tmp` then atomically renamed — the game engine never reads a partially-written file                                |
+| AC-43.5.3 | ⚠️ Edge     | Given `KeyViewer.ini` is regenerated while 3DMigoto is actively reading it (mid-frame), the atomic rename guarantees the game reads either the old or the new complete file — never a partial state |
 
 ---
 
 ### Non-Goals
 
-- No real-time rendering by EMMM2 — all overlay rendering is delegated to 3DMigoto's `[Present]` block.
+- No real-time rendering by EMMM — all overlay rendering is delegated to 3DMigoto's `[Present]` block.
 - No manual editing of the generated `KeyViewer.ini` — it is always machine-generated and overwritten on mod state changes.
-- No per-frame hash scanning by EMMM2 — all runtime hash detection is done by 3DMigoto sentinel sections.
+- No per-frame hash scanning by EMMM — all runtime hash detection is done by 3DMigoto sentinel sections.
 - No support for non-3DMigoto games.
 - Paging (PageDown/PageUp) is optional — if not enabled, content is truncated at 8KB/60 lines with `"..."` appended.
 
 ---
 
-## 3. Technical Specifications
+---
 
-### Architecture Overview
+## 3. Architecture & Pipeline (The Big Picture)
 
-```
-Resource Pack (per game):
-  {game_id}/gimi.json → [{ name, object_type, code_hash (uint32/hex), priority,
-                            known_hashes[], hash_hints[{hash, kind, role, weight}],
-                            tags[], thumbnail_path? }]
+### 🔁 The Big Picture
 
-EMM2 Cache (SQLite):
-  mod_hash_index: { hash → {mod_id, file, section, occurrence_count, source_mod_ids[]} }
-  object_sentinel_cache: { code_hash → {sentinel_hashes[], confidence, last_updated, sources[]} }
-  keybinds: { mod_id, code_hash, key_label, back_key, action_description }
+The EMMM Overlay System is a **hybrid architecture** where EMMM handles the complex data harvesting and artifact generation, while 3DMigoto handles high-performance, frame-accurate rendering using the `help.ini` pipeline.
 
-Offline pipeline (triggered by any of 6 events):
+1. **EMMM (The Brain)**: Scans `.ini` files, harvests character hashes, extracts keybinds, and generates static text assets + a logic-bridge (`KeyViewer.ini`).
+2. **3DMigoto (The Muscle)**: Hooks the game's rendering pipeline. On every frame, it checks for "Sentinel Hashes". If a hash hits, it swaps the active text resource and renders it.
 
-Step A: harvest_hashes(enabled_mods) → HashMap<hash, HarvestEntry>
-  for each enabled *.ini (skip if {size, mtime, fast_hash} unchanged):
-    scan only [TextureOverride*], [ShaderOverride*] sections
-    extract hash = XXXXXXXX lines
-    update mod_hash_index
+### 🚀 End-to-End Pipeline
 
-Step B: match_to_objects() → Vec<ObjectMatch { code_hash, score, sentinel_hashes[] }>
-  for each Resource Pack object:
-    I = active_mod_hashes ∩ known_hashes(object)
-    score = Σ (10 + log(1 + occurrence_count) + rarity_bonus + hint_bonus) for hash in I
-    if score >= threshold: candidate
-  sort by (score DESC, priority DESC, stable)
-
-Step C: select_sentinels(object_match) → Vec<hash> (1–3)
-  from I: pick by (rarity DESC, occurrence_count DESC, role=ib|position priority)
-  skip hashes with blacklisted_for_sentinel = true
-  high-collision check: if hash in known_hashes of ≥3 objects → blacklist
-
-Step D: generate_keybind_texts(code_hashes[]) → Vec<(code_hash, text)>
-  for each code_hash: group keybinds from enabled mods by code_hash
-  content rules: max 8KB, max 60 lines; truncate + "..." or page (PageDown/PageUp)
-  write atomically: EMM2/keybinds/active/{code_hash}.tmp → rename
-  write _fallback.txt atomically
-
-Step E: generate_keyviewer_ini(sentinels_map) → ()
-  header:
-    global $kv_on = 0
-    global $kv_active_code = 0
-    global $kv_active_priority = 0
-    global $kv_active_last_seen_time = 0
-    global $kv_active_since_time = 0
-    TTL_SECONDS = 0.35
-    MIN_HOLD_SECONDS = 0.20
-
-  for each (code_hash, sentinel_hashes, priority):
-    [TextureOverrideKV_{code_hash}_S{i}]
-    hash = {sentinel}
-    → 5-step arbitration logic (sets globals)
-
-  [Present]:
-    for each code_hash:
-      if $kv_on == 1 && has_active && $kv_active_code == {code_hash}:
-        draw EMM2/keybinds/active/{code_hash}.txt
-    if debug_mode: draw footer ($kv_active_code, age_ms)
-
-  write atomically: Mods/.EMMM2_System/KeyViewer.ini.tmp → rename
-
-Step F: reload_handshake()
-  read d3dx.ini → find reload_fixes binding (fallback: F10)
-  emit CTA in UI: "Reload in-game (F10)" or auto-send via enigo if enabled
-```
-
-### Integration Points
-
-| Component      | Detail                                                                                                                                    |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Resource Pack  | `src-tauri/resources/databases/{game_id}.json` — bundled, updated via Epic 34 dynamic asset sync                                          |
-| Hash Extractor | Shared with Epic 26 (Deep Matcher) — same `extract_hashes_from_ini_text` function                                                         |
-| File Signature | `{size_bytes, mtime, blake3_fast_hash}` — incremental scan key stored in `mod_hash_index`                                                 |
-| Atomic Write   | `.tmp` → `rename` — identical pattern to Epic 42 `runtime_status.txt`                                                                     |
-| Trigger Events | `toggle_mod_enabled`, `apply_collection`, file watcher events, Safe Mode toggle, keybind override change                                  |
-| Paging         | `PageDown`/`PageUp` bound in `KeyViewer.ini` `[KeyPageDown]`/`[KeyPageUp]` sections; page index global resets on `$kv_active_code` change |
-
-### Security & Privacy
-
-- **`KeyViewer.ini` and `*.txt` paths scoped to `mods_path/.EMMM2_System/` and `EMM2/keybinds/active/`** — validated with `starts_with(mods_path)`.
-- **Atomic write** prevents partial file reads by 3DMigoto mid-frame.
-- **Safe Mode filter applied at Step D** — `is_safe = false` mod keybinds are never written to `{code_hash}.txt` files.
-- **High-collision blacklist** prevents ambiguous hashes from poisoning the sentinel detection — stored in `mod_hash_index` with reason + counters.
+| Step  | Component             | Action                                                                                                       | Result                                        |
+| :---- | :-------------------- | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------------- |
+| **1** | **EMMM Backend**      | **Scan & Map**: Scans enabled mods for character hashes and extracts `[Key*]` sections.                      | `HashMap<Hash, Keybinds>`                     |
+| **2** | **EMMM Generator**    | **Artifact Write**: Generates files into `Mods/.emmm_data/`.                                                 | `KeyViewer.ini`, `*.txt`                      |
+| **3** | **EMMM App**          | **Reload Sync**: Sends the `reload_fixes` key to 3DMigoto.                                                   | Game reloads all `.ini` files.                |
+| **4** | **3DMigoto Engine**   | **Hash Hit**: Game renders a character; `TextureOverride` triggers in `KeyViewer.ini`.                       | `$kv_has_active = 1`, `$kv_last_seen = time`. |
+| **5** | **3DMigoto Present**  | **Arbitration**: `[Present]` block checks the 1.5s threshold and `$kv_active` toggle.                        | Correct `CommandList` is selected.            |
+| **6** | **help.ini Pipeline** | **Render**: `FormatText` prints to a single `Notification` slot in `help.ini` for both KeyViewer and Status. | **Overlay Visible!**                          |
 
 ---
 
-## 4. Dependencies
+## 4. Technical Specifications
 
-- **Blocked by**: Epic 09 (Object Schema/Resource Pack — `code_hash` identity), Epic 18 (INI Parser — hash extraction), Epic 26 (Deep Matcher — shared `extract_hashes_from_ini_text`), Epic 30 (Safe Mode — `is_safe` filter for keybind text generation), Epic 42 (In-Game Hotkeys — toggle key + `runtime_status.txt` write convention).
+### Detection Logic (Persistence & Thresholds)
+
+- **1.5s Threshold**: To prevent flickering during camera movements or animation breaks, the system maintains the active character state for **1.5 seconds** after the last sentinel hash hit.
+- **Unified Toggle**: A single global variable `$kv_active` (toggled via `F7`) gates all rendering.
+- **Priority Stack**: Rendering uses a single `Notification` slot in `help.ini`. If a character is detected (`$kv_has_active`), the character-specific keybinds are shown. Otherwise, if `$kv_active` is ON, the global "Status" banner is shown. This prevents overlay overlap.
+
+---
+
+## 5. File Specimens
+
+### 📄 `Mods/.emmm_data/KeyViewer.ini` (Bridge Logic)
+
+```ini
+[Constants]
+global $kv_active = 0           ; Master toggle (F7)
+global $kv_has_active = 0       ; Reset every frame
+global $kv_active_code = 0      ; Active character hash
+global $kv_last_seen = 0        ; Persistence timestamp
+
+[KeyEMMM_Toggle]
+key = f7
+type = cycle
+$kv_active = 0, 1
+
+[TextureOverride_EMM_Arlecchino_S0]
+hash = a1b2c3d4
+$kv_has_active = 1
+$kv_active_code = 0xa1b2c3d4
+$kv_last_seen = time
+
+[Present]
+post $kv_has_active = 0
+if time - $kv_last_seen > 1.5
+    $kv_active_code = 0
+endif
+run = CommandList_EMM_Render
+
+[CommandList_EMM_Render]
+[CommandList_EMM_Render]
+if $kv_active == 1
+    if $kv_has_active == 1
+        ; KeyViewer has priority
+        if $kv_active_code == 0xa1b2c3d4
+            pre Resource\ShaderFixes\help.ini\Notification = ref ResourceKeyViewer_a1b2c3d4
+        endif
+    else
+        ; Fallback to global status banner if no character detected
+        pre Resource\ShaderFixes\help.ini\Notification = ref ResourceStatus
+    endif
+    pre Resource\ShaderFixes\help.ini\NotificationParams = ref ResourceBox
+    run = CustomShader\ShaderFixes\help.ini\FormatText
+endif
+```
+
+### 📄 `Mods/.emmm_data/keybinds/active/a1b2c3d4.txt` (Character Keybinds)
+
+```text
+Arlecchino
+-----------
+[Mod: Arlecchino_Base]
+Key: CTRL+[
+Back: NO_CTRL+ALT+]
+
+[Mod: Arlecchino_FX]
+Toggle: N
+
+[F7] Toggle Overlay
+```
+
+### 📄 `Mods/.emmm_data/status/runtime_status.txt` (Global Banner)
+
+```text
+[EMM2] Safe: On | Collection: Maid Pack | Toggle: [F7]
+```
+
+---
+
+## 6. Dependencies
+
+- **Blocked by**: Epic 09, Epic 18, Epic 26, Epic 30, Epic 42.
 - **Blocks**: Nothing — terminal advanced feature.

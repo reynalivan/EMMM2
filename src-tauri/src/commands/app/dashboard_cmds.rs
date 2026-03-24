@@ -3,6 +3,7 @@ use crate::services::app::dashboard::{self, ActiveKeyBinding, DashboardPayload};
 /// Fetch all dashboard data in a single command for minimal IPC overhead.
 ///
 /// `safe_mode`: when true, dashboard stats/charts exclude mods with `is_safe = 0`.
+#[specta::specta]
 #[tauri::command]
 pub async fn get_dashboard_stats(
     pool: tauri::State<'_, sqlx::SqlitePool>,
@@ -15,6 +16,7 @@ pub async fn get_dashboard_stats(
 ///
 /// This is a filesystem-heavy operation (reads INI files from disk),
 /// so it's a separate command from the main dashboard payload.
+#[specta::specta]
 #[tauri::command]
 pub async fn get_active_keybindings(
     pool: tauri::State<'_, sqlx::SqlitePool>,

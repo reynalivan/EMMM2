@@ -74,14 +74,14 @@ rename_mod_folder_inner(old_path, new_name):
 
 ### Integration Points
 
-| Component           | Detail                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| Metadata Sync       | `info_json.rs::update_info_json` patches `actual_name` field while preserving other metadata.    |
-| Recursive DB Update | `mod_repo::update_child_paths` handles bulk string replacement for nested mod paths.             |
-| Object Linking      | `object_repo::update_object_folder_path` ensures the game object stays pinned to the new folder. |
-| Path Traversal Guard| `path_utils::is_path_safe` prevents renaming outside the designated mods directory.             |
-| Optimistic Rename   | Frontend updates the card label and path instantly before backend confirmation.                   |
-| Conflict Dialog    | `ConflictResolveDialog.tsx` — shown when `CommandError::Conflict` returned                  |
+| Component            | Detail                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| Metadata Sync        | `info_json.rs::update_info_json` patches `actual_name` field while preserving other metadata.    |
+| Recursive DB Update  | `mod_repo::update_child_paths` handles bulk string replacement for nested mod paths.             |
+| Object Linking       | `object_repo::update_object_folder_path` ensures the game object stays pinned to the new folder. |
+| Path Traversal Guard | `path_utils::is_path_safe` prevents renaming outside the designated mods directory.              |
+| Optimistic Rename    | Frontend updates the card label and path instantly before backend confirmation.                  |
+| Conflict Dialog      | `ConflictResolveDialog.tsx` — shown when `CommandError::Conflict` returned                       |
 
 ### Security & Privacy
 

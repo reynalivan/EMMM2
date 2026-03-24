@@ -1,20 +1,22 @@
 import { useImportQueue } from '../hooks/useImportQueue';
 import { NeedsReviewModal } from './NeedsReviewModal';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ImportJobItem, ImportJobStatus } from '../types';
 
-const STATUS_BADGE: Record<ImportJobStatus, { label: string; cls: string }> = {
-  queued: { label: 'Queued', cls: 'badge-neutral' },
-  extracting: { label: 'Extracting', cls: 'badge-info' },
-  matching: { label: 'Matching', cls: 'badge-info' },
-  needs_review: { label: 'Review', cls: 'badge-warning' },
-  placing: { label: 'Placing', cls: 'badge-info' },
-  done: { label: 'Done', cls: 'badge-success' },
-  failed: { label: 'Failed', cls: 'badge-error' },
-  canceled: { label: 'Canceled', cls: 'badge-ghost' },
+const STATUS_BADGE: Record<ImportJobStatus, { labelKey: string; cls: string }> = {
+  queued: { labelKey: 'import.status.queued', cls: 'badge-neutral' },
+  extracting: { labelKey: 'import.status.extracting', cls: 'badge-info' },
+  matching: { labelKey: 'import.status.matching', cls: 'badge-info' },
+  needs_review: { labelKey: 'import.status.review', cls: 'badge-warning' },
+  placing: { labelKey: 'import.status.placing', cls: 'badge-info' },
+  done: { labelKey: 'import.status.done', cls: 'badge-success' },
+  failed: { labelKey: 'import.status.failed', cls: 'badge-error' },
+  canceled: { labelKey: 'import.status.canceled', cls: 'badge-ghost' },
 };
 
 export function ImportQueuePanel() {
+  const { t } = useTranslation(['browser']);
   const { jobs, confirmJob, skipJob } = useImportQueue();
   const [reviewingJob, setReviewingJob] = useState<ImportJobItem | null>(null);
 
@@ -32,7 +34,7 @@ export function ImportQueuePanel() {
         <div className="px-4 py-3 border-b border-base-300 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-base-content flex items-center gap-2">
             <span className="loading loading-spinner loading-xs text-primary" />
-            Import Queue
+            {t('import.title')}
             <span className="badge badge-primary badge-sm">{activeJobs.length}</span>
           </h3>
         </div>
@@ -78,6 +80,7 @@ function ImportJobRow({
   onReview: () => void;
   onSkip: () => void;
 }) {
+  const { t } = useTranslation(['browser']);
   const badge = STATUS_BADGE[job.status];
   const name = job.archive_path.split(/[/\\]/).pop() ?? job.archive_path;
 
@@ -95,7 +98,7 @@ function ImportJobRow({
 
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-base-content truncate">{name}</p>
-        <span className={`badge badge-xs ${badge.cls}`}>{badge.label}</span>
+        <span className={`badge badge-xs ${badge.cls}`}>{t(badge.labelKey)}</span>
         {job.status === 'failed' && job.error_msg && (
           <p className="text-xs text-error truncate mt-0.5">{job.error_msg}</p>
         )}
@@ -104,12 +107,12 @@ function ImportJobRow({
       <div className="flex gap-1 shrink-0">
         {job.status === 'needs_review' && (
           <button className="btn btn-warning btn-xs" onClick={onReview}>
-            Review
+            {t('import.review')}
           </button>
         )}
         {(job.status === 'needs_review' || job.status === 'failed') && (
           <button className="btn btn-ghost btn-xs" onClick={onSkip}>
-            Skip
+            {t('import.skip')}
           </button>
         )}
       </div>

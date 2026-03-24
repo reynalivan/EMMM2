@@ -1,18 +1,11 @@
-/**
- * Service layer for Epic 9: Duplicate Scanner.
- * Follows the same pattern as scanService.ts:
- * - Channel-based streaming for progress events
- * - invoke() for request-response commands
- * - No business logic, pure wrapper around Tauri commands
- */
-
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
+import { commands } from '../bindings';
 import type {
   DupScanEvent,
   DupScanReport,
   ResolutionRequest,
   ResolutionSummary,
-} from '../../types/dedup';
+} from '../../types/scanner';
 
 /**
  * Service object exposing duplicate scanner commands.
@@ -44,11 +37,7 @@ export const dedupService = {
       onEvent(message);
     };
 
-    return invoke('dup_scan_start', {
-      gameId,
-      modsRoot,
-      onEvent: channel,
-    });
+    return commands.dupScanStart({ gameId, modsRoot, onEvent: channel });
   },
 
   /**
@@ -58,7 +47,7 @@ export const dedupService = {
    * @throws On command execution error
    */
   async cancelDedupScan(): Promise<void> {
-    return invoke('dup_scan_cancel');
+    return commands.dupScanCancel();
   },
 
   /**
@@ -67,8 +56,8 @@ export const dedupService = {
    *
    * @returns Last report or null if none exists
    */
-  async getReport(): Promise<DupScanReport | null> {
-    return invoke<DupScanReport | null>('dup_scan_get_report');
+  async getReport(pin?: string): Promise<DupScanReport | null> {
+    return commands.dupScanGetReport({ pin });
   },
 
   /**
@@ -85,9 +74,20 @@ export const dedupService = {
    * @returns Summary of resolution outcomes
    */
   async resolveBatch(requests: ResolutionRequest[], gameId: string): Promise<ResolutionSummary> {
-    return invoke<ResolutionSummary>('dup_resolve_batch', {
-      requests,
-      gameId,
-    });
+    return commands.dupResolveBatch({ requests, gameId });
+  },
+
+  /**
+   * Fetch all ignored (whitelisted) duplicate pairs for a game.
+   */
+  async getIgnoredPairs(gameId: string) {
+    return commands.getIgnoredPairs({ gameId });
+  },
+
+  /**
+   * Remove a specific pair from the whitelist.
+   */
+  async removeIgnoredPair(entryId: string) {
+    return commands.removeIgnoredPair({ entryId });
   },
 };

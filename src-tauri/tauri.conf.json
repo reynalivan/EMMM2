@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "EMMM2",
+  "productName": "EMMM",
   "version": "0.1.0",
-  "identifier": "com.emmm2.app",
+  "identifier": "com.reynalivan.emmm",
   "plugins": {
     "updater": {
-      "endpoints": ["https://github.com/reynalivan/EMMM2/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/reynalivan/EMMM/releases/latest/download/latest.json"],
       "pubkey": "REPLACE_WITH_ED25519_PUBLIC_KEY"
     }
   },
@@ -20,7 +20,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "EMMM2",
+        "title": "EMMM",
         "url": "index.html",
         "width": 800,
         "height": 600

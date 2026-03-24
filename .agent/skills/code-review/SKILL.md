@@ -5,7 +5,7 @@ description: Automated code review for pull requests using specialized review pa
 
 # Code Review Skill
 
-Standardized audit process for EMMM2.
+Standardized audit process for EMMM.
 
 ## 1. Review Process
 

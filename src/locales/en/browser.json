@@ -1,0 +1,77 @@
+{
+  "tabs": {
+    "loading": "Loading...",
+    "new_tab": "New Tab",
+    "clear_data_confirm": "Clear all browsing data (cookies, cache, etc.) for this session?",
+    "refresh": "Refresh",
+    "discover": "Discover",
+    "open_gamebanana": "Open GameBanana",
+    "url_placeholder": "Enter URL to open...",
+    "go": "Go",
+    "clear_data": "Clear cookies & cache",
+    "open_downloads": "Open Downloads panel"
+  },
+  "welcome": {
+    "title": "In-App Browser",
+    "description": "Browse and download mods directly. Downloads are intercepted automatically and queued for Smart Import.",
+    "browse_gb": "Browse GameBanana",
+    "google": "Google"
+  },
+  "downloads": {
+    "title": "Downloads",
+    "view_detail": "View detail",
+    "close": "Close download panel",
+    "select_all": "Select all finished",
+    "deselect_all": "Deselect all",
+    "selected": "{{count}} selected",
+    "select_finished": "Select finished",
+    "import_selected": "Import Selected",
+    "clear_imported": "Clear Imported",
+    "empty": "No downloads yet",
+    "import": "Import",
+    "import_title": "Import this file",
+    "cancel_title": "Cancel download",
+    "delete_title": "Remove from list",
+    "delete": "Delete",
+    "status": {
+      "queued": "Queued",
+      "downloading": "Downloading",
+      "ready": "Ready",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "imported": "Imported"
+    }
+  },
+  "import": {
+    "title": "Import Queue",
+    "review": "Review",
+    "skip": "Skip",
+    "status": {
+      "queued": "Queued",
+      "extracting": "Extracting",
+      "matching": "Matching",
+      "review": "Review",
+      "placing": "Placing",
+      "done": "Done",
+      "failed": "Failed",
+      "canceled": "Canceled"
+    }
+  },
+  "review": {
+    "title": "Manual Review Required",
+    "archive": "Archive",
+    "duplicate": "Duplicate",
+    "target_game": "Target Game",
+    "select_game": "— Select game —",
+    "mod_category": "Mod Category",
+    "confirm": "Confirm & Import",
+    "cancel": "Cancel"
+  },
+  "picker": {
+    "title": "Select Target Game",
+    "description": "Choose which game to import {{count}} file into.",
+    "description_plural": "Choose which game to import {{count}} files into.",
+    "no_games": "No games configured. Add a game in Settings first.",
+    "import_now": "Import Now"
+  }
+}

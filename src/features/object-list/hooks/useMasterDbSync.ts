@@ -1,22 +1,9 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
+import type { DbEntry } from '../../../types/object';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 
-/** Single entry from the flat-array Master DB (Rust canonical format). */
-export interface DbEntry {
-  name: string;
-  tags?: string[];
-  object_type: string;
-  custom_skins?: {
-    name: string;
-    aliases?: string[];
-    thumbnail_skin_path?: string;
-    rarity?: string;
-  }[];
-  thumbnail_path?: string;
-  metadata?: Record<string, unknown>;
-}
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 /** Full DB entry for UI consumption — includes metadata for auto-fill. */
 export interface DbEntryFull {
@@ -24,34 +11,48 @@ export interface DbEntryFull {
   aliases?: string[];
   tags?: string[];
   object_type: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
   thumbnail_path?: string;
   custom_skins?: {
     name: string;
     aliases?: string[];
-    thumbnail_skin_path?: string;
-    rarity?: string;
+    thumbnail_skin_path?: string | null;
+    rarity?: string | null;
   }[];
 }
 
 /**
  * Transform flat DbEntry[] → DbEntryFull[]
-
  * Maps `tags` → `aliases` for UI compatibility. Preserves full metadata + thumbnail.
  */
 function mapToUiFormat(entries: DbEntry[]): DbEntryFull[] {
   return entries.map((entry) => ({
     name: entry.name,
-    aliases: entry.tags,
-    tags: entry.tags, // Added for UI consumption
+    aliases: entry.tags || [],
+    tags: entry.tags || [],
     object_type: entry.object_type,
     metadata: entry.metadata,
-    thumbnail_path: entry.thumbnail_path,
-    custom_skins: entry.custom_skins, // Added for UI consumption
+    thumbnail_path: entry.thumbnail_path || undefined,
+    custom_skins: entry.custom_skins || [],
   }));
 }
 
-export function useMasterDbSync(objectType: string | undefined, originalName?: string) {
+export function useMasterDbSync(
+  objectType: string | undefined,
+  originalName?: string,
+): {
+  isSyncMode: boolean;
+  setIsSyncMode: (mode: boolean) => void;
+  dbSearch: string;
+  setDbSearch: (search: string) => void;
+  isDbOpen: boolean;
+  setIsDbOpen: (open: boolean) => void;
+  dbOptions: DbEntryFull[];
+  suggestions: (DbEntryFull & { score: number })[];
+  masterDb: null;
+  isLoading: boolean;
+  error: Error | null;
+} {
   const { activeGame } = useActiveGame();
 
   const [isSyncMode, setIsSyncMode] = useState(false);
@@ -66,10 +67,10 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
     queryFn: async () => {
       if (!activeGame || !originalName) return [];
       try {
-        const res = await invoke<{ item: DbEntry; score: number }[]>('search_master_db', {
+        const res = await commands.searchMasterDb({
           gameType: activeGame.game_type,
           query: originalName,
-          objectType: null,
+          objectType: undefined,
         });
 
         // Take top 4 that meet a threshold
@@ -91,7 +92,7 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
   });
   // Normalise: global test mock returns data:null, which bypasses `= []` default.
   // `?? []` handles both null and undefined safely.
-  const suggestions = rawSuggestions ?? [];
+  const suggestions = (rawSuggestions as (DbEntryFull & { score: number })[] | null) ?? [];
 
   // Filter DB options using Rust backend for exact and fuzzy matching
   const {
@@ -103,10 +104,10 @@ export function useMasterDbSync(objectType: string | undefined, originalName?: s
     queryFn: async () => {
       if (!activeGame) return [];
       try {
-        const res = await invoke<{ item: DbEntry; score: number }[]>('search_master_db', {
+        const res = await commands.searchMasterDb({
           gameType: activeGame.game_type,
           query: dbSearch.trim(),
-          objectType: objectType || null,
+          objectType: objectType || undefined,
         });
         return mapToUiFormat(res.map((r) => r.item));
       } catch (e) {

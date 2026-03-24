@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
+import { type GameType } from '../../types/game';
+import { useAppStore } from '../../stores/useAppStore';
 import { Play, ScanSearch } from 'lucide-react';
 import { useScannerStore } from '../../stores/useScannerStore';
 import { scanService } from '../../lib/services/scanService';
 import { useActiveGame } from '../../hooks/useActiveGame';
+import { useTranslation } from 'react-i18next';
 import {
   useBulkToggle,
   useBulkDelete,
@@ -19,6 +22,7 @@ import ScanOverlay from './components/ScanOverlay';
 import ReviewTable from './components/ReviewTable';
 
 export default function ScannerFeature() {
+  const { t } = useTranslation(['scanner', 'common']);
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
 
@@ -53,7 +57,8 @@ export default function ScannerFeature() {
         handleStartScan();
       }
     },
-    onError: (err: unknown) => toast.error(`Failed to detect archives: ${err}`),
+    onError: (err: unknown) =>
+      toast.error(`${t('scanner:extract.failed')}: ${err instanceof Error ? err.message : err}`),
   });
 
   // #5: Track password errors for inline retry
@@ -77,10 +82,10 @@ export default function ScannerFeature() {
         unpackNested?: boolean;
       };
     }) => {
-      if (!activeGame) throw new Error('No active game config');
+      if (!activeGame) throw new Error(t('common:errors.no_active_game'));
 
       // B3: Suppress watcher for the entire batch
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppressionCmd({ suppressed: true });
 
       try {
         setPasswordError(null);
@@ -100,13 +105,11 @@ export default function ScannerFeature() {
           }
           throw new Error(result.error);
         }
-        // aborted is handled gracefully — no throw
       } finally {
         // B3: Always unsuppress + W2: scaled cooldown
-        const { useAppStore } = await import('../../stores/useAppStore');
         const cooldown = Math.min(1000 + paths.length * 500, 5000);
         useAppStore.getState().setWatcherCooldown(Date.now() + cooldown);
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     },
     onSuccess: () => {
@@ -114,12 +117,15 @@ export default function ScannerFeature() {
       setShowArchiveModal(false);
       handleStartScan();
     },
-    onError: (err: unknown) => toast.error(`Extraction failed: ${err}`),
+    onError: (err: unknown) =>
+      toast.error(
+        `${t('scanner:extract.extraction_failed')}: ${err instanceof Error ? err.message : err}`,
+      ),
   });
 
   // 3. Scan Mutation
   const scanMutation = useMutation({
-    mutationFn: async ({ gameType, modsPath }: { gameType: string; modsPath: string }) => {
+    mutationFn: async ({ gameType, modsPath }: { gameType: GameType; modsPath: string }) => {
       resetScanner();
       setIsScanning(true);
 
@@ -141,7 +147,7 @@ export default function ScannerFeature() {
     },
     onError: (err: unknown) => {
       console.error('Scan failed', err);
-      toast.error(`Scan failed: ${err}`);
+      toast.error(`${t('common:errors.scan_failed')}: ${err instanceof Error ? err.message : err}`);
     },
     onSettled: async () => {
       setIsScanning(false);
@@ -152,7 +158,7 @@ export default function ScannerFeature() {
 
   const onScanClick = async () => {
     if (!activeGame) {
-      toast.error('No active game selected');
+      toast.error(t('common:errors.no_active_game'));
       return;
     }
     detectMutation.mutate(activeGame.mod_path);
@@ -165,7 +171,7 @@ export default function ScannerFeature() {
     setScanResults([]);
 
     const { mod_path, game_type } = activeGame;
-    scanMutation.mutate({ gameType: game_type, modsPath: mod_path });
+    scanMutation.mutate({ gameType: game_type as unknown as GameType, modsPath: mod_path });
   };
 
   const handleExtract = async (
@@ -187,11 +193,9 @@ export default function ScannerFeature() {
           <div>
             <h2 className="card-title flex items-center gap-2">
               <ScanSearch className="w-5 h-5 text-primary" />
-              Mod Scanner
+              {t('scanner:title')}
             </h2>
-            <p className="text-xs text-base-content/60">
-              Detects new mods, archives, and updates existing records.
-            </p>
+            <p className="text-xs text-base-content/60">{t('scanner:description')}</p>
           </div>
           <button
             className="btn btn-primary btn-sm"
@@ -203,7 +207,7 @@ export default function ScannerFeature() {
             ) : (
               <Play className="w-4 h-4 ml-1" />
             )}
-            Start Scan
+            {t('scanner:start_button')}
           </button>
         </div>
 
@@ -223,8 +227,7 @@ export default function ScannerFeature() {
           passwordError={passwordError}
           onStop={async () => {
             try {
-              const { invoke } = await import('@tauri-apps/api/core');
-              await invoke('abort_extraction_cmd');
+              await commands.abortExtractionCmd();
             } catch (e) {
               console.error('Failed to abort scan extraction', e);
             }
@@ -248,9 +251,10 @@ export default function ScannerFeature() {
             <ReviewTable
               data={scanResults}
               onOpenFolder={(path) => {
-                invoke('open_in_explorer', { path }).catch((e) =>
-                  console.error('Failed to open folder:', e),
-                );
+                if (!activeGame?.id) return;
+                commands
+                  .openInExplorer({ gameId: activeGame.id, path })
+                  .catch((e) => console.error('Failed to open folder:', e));
               }}
               onRename={(path, newName) => {
                 // Determine folderName from path for display, but hook expects full path?
@@ -259,10 +263,14 @@ export default function ScannerFeature() {
                   renameMod.mutate({ folderPath: path, newName, gameId: activeGame.id });
                 }
               }}
-              onBulkEnable={(paths) => bulkToggle.mutate({ paths, enable: true })}
-              onBulkDisable={(paths) => bulkToggle.mutate({ paths, enable: false })}
+              onBulkEnable={(paths) =>
+                bulkToggle.mutate({ paths, enable: true, gameId: activeGame?.id || '' })
+              }
+              onBulkDisable={(paths) =>
+                bulkToggle.mutate({ paths, enable: false, gameId: activeGame?.id || '' })
+              }
               onBulkDelete={(paths) => {
-                if (confirm(`Are you sure you want to delete ${paths.length} mods?`)) {
+                if (confirm(t('scanner:table.delete_confirm', { count: paths.length }))) {
                   bulkDelete.mutate({ paths, gameId: activeGame?.id });
                 }
               }}
@@ -276,7 +284,7 @@ export default function ScannerFeature() {
                     dbJson,
                   });
                 } catch (e) {
-                  toast.error(`Failed to load DB for auto-organize: ${e}`);
+                  toast.error(t('scanner:review.toast.db_load_failed', { error: String(e) }));
                 }
               }}
             />

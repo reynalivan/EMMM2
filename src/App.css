@@ -1,42 +1,121 @@
 @import 'tailwindcss';
 @plugin "daisyui";
 
-/* Discord-like Theme Configuration */
-@theme onyx {
-  --color-base-100: #313338; /* Discord Main Chat BG */
-  --color-base-200: #2b2d31; /* Discord Sidebar BG */
-  --color-base-300: #1e1f22; /* Discord Darker Areas */
-  --color-base-content: #dbdee1; /* Discord Text */
+/* --- Theme Definitions (DaisyUI 5 Mechanism) --- */
+/* src/App.css */
 
-  --color-primary: #5865f2; /* Discord Blurple */
+@plugin "daisyui/theme" {
+  name: 'onyx';
+  default: true;
+  prefersdark: true;
+  color-scheme: 'dark';
+
+  /* 1. Background Hierarchy (Darker, neutral cool grays) */
+  --color-base-100: #16171d; /* Main Content (Darker, less purple) */
+  --color-base-200: #1e1f26; /* Cards / Sidebar (Slightly lighter to stand out) */
+  --color-base-300: #0d0e12; /* Deepest Background (Almost black) */
+  --color-base-content: #e2e8f0; /* Crisp light gray text */
+
+  /* 2. Brand Colors (Solid bases for DaisyUI components) */
+  --color-primary: #3b82f6; /* Bright Blue */
   --color-primary-content: #ffffff;
-
-  --color-secondary: #23a559; /* Discord Green */
+  --color-secondary: #8b5cf6; /* Vibrant Purple */
   --color-secondary-content: #ffffff;
+  --color-accent: #b15eff; /* Neon Pink/Rose */
+  --color-neutral: #111218;
 
-  --color-accent: #f0f1f2;
-  --color-neutral: #111214;
-  --color-info: #00b0f4;
-  --color-success: #23a559;
-  --color-warning: #fee75c;
-  --color-error: #da373c;
+  /* 3. Status Colors */
+  --color-info: #0ea5e9;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* 4. UI Elements & Radius */
+  --radius-box: 1.25rem; /* Bubbly, rounded corners like the image */
+  --glass-bg: rgba(22, 23, 29, 0.7); /* Adjusted to match neutral dark */
+  --glass-border: rgba(255, 255, 255, 0.06);
+
+  /* 5. Scrollbar */
+  --scrollbar-thumb: #2d2e38; /* Neutral dark gray thumb */
+  --scrollbar-track: #0d0e12;
+
+  /* 6. Effects */
+  --aurora-blend: screen;
+  --aurora-opacity: 0.3;
+  --glow-opacity: 50%;
+  --glow-size: 15px;
+  --mask-opacity: 65%;
+}
+/* Modern Light Mode (Slate-based, Classy) */
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: false;
+  color-scheme: 'light';
+
+  --color-base-100: #ffffff;
+  --color-base-200: #f1f5f9;
+  --color-base-300: #e2e8f0;
+  --color-base-content: #0f172a;
+
+  --color-primary: #5865f2;
+  --color-primary-content: #ffffff;
+  --color-secondary: #16a34a;
+  --color-accent: #1e293b;
+  --color-neutral: #cbd5e1;
+
+  --color-info: #0ea5e9;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --color-error: #ef4444;
 
   --radius-box: 0.5rem;
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-track: #f1f5f9;
+  --aurora-blend: multiply;
+  --aurora-opacity: 0.12;
+  --glow-opacity: 90%;
+  --glow-size: 5px;
+  --mask-opacity: 30%;
+}
+
+/* Shared Design Tokens mapped to Tailwind utility values */
+@theme {
+  --color-primary: var(--p);
+  --color-secondary: var(--s);
+  --color-accent: var(--a);
+  --color-neutral: var(--n);
+  --color-base-100: var(--b1);
+  --color-base-200: var(--b2);
+  --color-base-300: var(--b3);
+  --color-base-content: var(--bc);
+
+  --radius-box: 0.5rem;
+  --glass-bg: var(--g-bg);
+  --glass-border: var(--g-border);
+  --aurora-blend: var(--au-blend);
+  --aurora-opacity: var(--au-opacity);
+
+  --glow-color: color-mix(in srgb, var(--color-primary), transparent var(--glow-opacity));
+  --glow-blur: var(--glow-size);
+
+  /* Semantic Migration Tokens */
+  --color-border-subtle: color-mix(in srgb, var(--color-base-content) 5%, transparent);
+  --color-border-muted: color-mix(in srgb, var(--color-base-content) 10%, transparent);
+  --color-overlay-mask: color-mix(in srgb, var(--color-base-300) var(--mask-opacity), transparent);
 }
 
 /* Global Styles */
-:root {
-  --glass-border: rgba(255, 255, 255, 0.05);
-  --glass-bg: rgba(30, 31, 34, 0.6);
-}
-
 body {
-  @apply bg-base-100 text-base-content antialiased selection:bg-primary/30 selection:text-white;
+  @apply bg-base-100 text-base-content antialiased selection:bg-primary/30 selection:text-base-content;
 }
 
-/* Utility Classes */
+/* Theme-Aware Utility Classes */
 .glass-surface {
-  @apply bg-base-200/80 backdrop-blur-md border border-white/5;
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
 }
 
 .glow-active {
@@ -44,52 +123,60 @@ body {
 }
 
 .glow-text {
-  text-shadow: 0 0 10px var(--color-primary);
+  text-shadow: 0 0 var(--glow-blur) var(--glow-color);
 }
 
-/* Scrollbar Styling (Discord Style: Dark & Rounded) */
+.bg-github-gradient {
+  background: linear-gradient(
+    135deg,
+    oklch(var(--p)) 0%,
+    oklch(var(--s)) 50%,
+    oklch(var(--a)) 100%
+  );
+}
+
+/* Scrollbar Styling (Theme Aware) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
-  background-color: #2b2d31;
+  background-color: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-track {
-  background-color: #2b2d31;
+  background-color: var(--scrollbar-track);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #1a1b1e;
+  background-color: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #111214;
+  background-color: color-mix(in srgb, var(--scrollbar-thumb), black 10%);
 }
 
 /* Card Hover Effect */
 .card-hover-effect {
-  @apply transition-all duration-200 hover:scale-[1.01] hover:shadow-md hover:bg-base-300;
+  @apply transition-all duration-200 hover:scale-[1.01] hover:shadow-md hover:bg-base-200;
 }
 
-/* Custom Scrollbar (Auto-hiding, Dark) */
+/* Custom Scrollbar (Auto-hiding, Theme Aware) */
 .custom-scrollbar {
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: transparent transparent; /* Firefox hidden by default */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.3s ease;
 }
 
-/* Show scrollbar on hover */
 .custom-scrollbar:hover {
-  scrollbar-color: rgba(119, 119, 119, 0.5) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* WebKit (Chrome/Edge/Tauri) */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px; /* Width */
+  width: 6px;
   height: 6px;
-  background-color: transparent; /* Transparent track */
+  background-color: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -98,18 +185,14 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: transparent; /* Hidden by default */
+  background-color: transparent;
   border-radius: 3px;
-  border: 1px solid transparent; /* Padding around thumb */
+  border: 1px solid transparent;
   background-clip: content-box;
 }
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(20, 20, 20, 0.6); /* Dark thumb on hover */
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(20, 20, 20, 0.8); /* Darker on grab */
+  background-color: var(--scrollbar-thumb);
 }
 
 /* DnD Drop Zone Animations */

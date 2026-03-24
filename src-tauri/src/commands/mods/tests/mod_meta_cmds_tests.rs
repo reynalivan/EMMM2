@@ -4,6 +4,7 @@ use crate::test_utils::{
     TestObjectFixture,
 };
 use std::fs;
+use std::str::FromStr;
 use tempfile::TempDir;
 
 async fn setup_test_db() -> sqlx::SqlitePool {
@@ -21,9 +22,9 @@ async fn test_pin_mod_updates_db() {
         &TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: "type",
+            game_type: crate::database::models::GameType::GIMI,
             path: "/Mods",
-            mod_path: Some("/Mods"),
+            mods_path: Some("/Mods"),
         },
     )
     .await
@@ -36,7 +37,7 @@ async fn test_pin_mod_updates_db() {
             object_id: None,
             actual_name: "TestMod",
             folder_path: "/Mods/TestMod",
-            status: "DISABLED",
+            status: crate::database::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Other"),
             mods_path: Some("/Mods"),
@@ -141,9 +142,9 @@ async fn test_suggest_random_mods() {
         &TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: "type",
+            game_type: crate::database::models::GameType::GIMI,
             path: "/Mods",
-            mod_path: Some("/Mods"),
+            mods_path: Some("/Mods"),
         },
     )
     .await
@@ -228,7 +229,7 @@ async fn test_suggest_random_mods() {
                 object_id,
                 actual_name,
                 folder_path,
-                status,
+                status: crate::database::models::ItemStatus::from_str(status).unwrap(),
                 is_safe,
                 object_type: Some("Other"),
                 mods_path: Some("/Mods"),

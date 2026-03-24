@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Streaming event contract for Epic 9 duplicate scan progress.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum DupScanEvent {
     /// Emitted once when a scan session starts.
@@ -20,13 +20,16 @@ pub enum DupScanEvent {
     Started {
         scan_id: String,
         game_id: String,
+        #[specta(type = f64)]
         total_folders: usize,
     },
     /// Emitted after each processed folder.
     #[serde(rename_all = "camelCase")]
     Progress {
         scan_id: String,
+        #[specta(type = f64)]
         processed_folders: usize,
+        #[specta(type = f64)]
         total_folders: usize,
         current_folder: String,
         percent: u8,
@@ -41,14 +44,18 @@ pub enum DupScanEvent {
     #[serde(rename_all = "camelCase")]
     Finished {
         scan_id: String,
+        #[specta(type = f64)]
         total_groups: usize,
+        #[specta(type = f64)]
         total_members: usize,
     },
     /// Emitted when a scan session is cancelled.
     #[serde(rename_all = "camelCase")]
     Cancelled {
         scan_id: String,
+        #[specta(type = f64)]
         processed_folders: usize,
+        #[specta(type = f64)]
         total_folders: usize,
     },
 }
@@ -57,43 +64,51 @@ pub enum DupScanEvent {
 ///
 /// Group-based by design: one report contains many groups,
 /// and each group contains many members.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DupScanReport {
     pub scan_id: String,
     pub game_id: String,
     pub root_path: String,
+    #[specta(type = f64)]
     pub total_groups: usize,
+    #[specta(type = f64)]
     pub total_members: usize,
     pub groups: Vec<DupScanGroup>,
 }
 
 /// A cluster of potential duplicates with 2..N members.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DupScanGroup {
     pub group_id: String,
     pub confidence_score: u8,
     pub match_reason: String,
+    pub is_unsafe: bool,
     pub signals: Vec<DupScanSignal>,
     pub members: Vec<DupScanMember>,
 }
 
 /// One mod folder inside a duplicate group.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DupScanMember {
     pub mod_id: Option<String>,
+    #[specta(type = f64)]
+    pub version: Option<u64>,
     pub folder_path: String,
     pub display_name: String,
+    #[specta(type = f64)]
     pub total_size_bytes: u64,
+    #[specta(type = f64)]
     pub file_count: u64,
+    pub is_safe: bool,
     pub confidence_score: u8,
     pub signals: Vec<DupScanSignal>,
 }
 
 /// Normalized evidence signal used in both group and member scopes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DupScanSignal {
     pub key: String,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface PinModalProps {
   isOpen: boolean;
@@ -14,14 +15,24 @@ export default function PinModal({
   isOpen,
   onClose,
   onSuccess,
-  title = 'Enter PIN',
-  description = 'Please enter your PIN to continue.',
+  title,
+  description,
   isSettingNew = false,
 }: PinModalProps) {
+  const { t } = useTranslation(['safe_mode', 'common']);
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      dialogRef.current?.showModal();
+    } else {
+      dialogRef.current?.close();
+    }
+  }, [isOpen]);
 
   // Reset state when modal opens
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
@@ -45,12 +56,12 @@ export default function PinModal({
     setError('');
 
     if (pin.length !== 6) {
-      setError('PIN must be exactly 6 digits');
+      setError(t('safe_mode:pin_entry.error.length'));
       return;
     }
 
     if (isSettingNew && pin !== confirmPin) {
-      setError('PINs do not match');
+      setError(t('safe_mode:recovery.error_match'));
       return;
     }
 
@@ -59,15 +70,14 @@ export default function PinModal({
     // onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <dialog ref={dialogRef} className="modal bg-overlay-mask backdrop-blur-sm" onClose={onClose}>
       <div className="bg-base-100 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-base-300 transform transition-all scale-100">
         <div className="flex items-center justify-between p-4 border-b border-base-300 bg-base-200/50">
           <h3 className="font-bold text-lg flex items-center gap-2">
             <Lock size={18} className="text-primary" />
-            {title}
+            {title ||
+              (isSettingNew ? t('safe_mode:pin_entry.set_pin') : t('safe_mode:pin_entry.title'))}
           </h3>
           <button onClick={onClose} className="btn btn-ghost btn-sm btn-square">
             <X size={20} />
@@ -75,11 +85,15 @@ export default function PinModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <p className="text-sm opacity-70">{description}</p>
+          <p className="text-sm opacity-70">
+            {description || (isSettingNew ? '' : t('safe_mode:pin_entry.desc'))}
+          </p>
 
           <div className="form-control">
             <label className="label py-1">
-              <span className="label-text font-medium">{isSettingNew ? 'New PIN' : 'PIN'}</span>
+              <span className="label-text font-medium">
+                {isSettingNew ? t('safe_mode:pin_entry.new_pin') : t('safe_mode:pin_entry.pin')}
+              </span>
             </label>
             <input
               ref={inputRef}
@@ -96,7 +110,9 @@ export default function PinModal({
           {isSettingNew && (
             <div className="form-control">
               <label className="label py-1">
-                <span className="label-text font-medium">Confirm New PIN</span>
+                <span className="label-text font-medium">
+                  {t('safe_mode:pin_entry.confirm_new_pin')}
+                </span>
               </label>
               <input
                 type="password"
@@ -118,11 +134,11 @@ export default function PinModal({
 
           <div className="modal-action justify-center mt-6">
             <button type="submit" className="btn btn-primary w-full">
-              {isSettingNew ? 'Set PIN' : 'Unlock'}
+              {isSettingNew ? t('safe_mode:pin_entry.set_pin') : t('safe_mode:pin_entry.unlock')}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   );
 }

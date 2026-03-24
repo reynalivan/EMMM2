@@ -1,5 +1,4 @@
 use super::{scan_duplicates, DedupScanStatus};
-use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashSet;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,30 +6,19 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 async fn setup_scan_db() -> sqlx::SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-
-    sqlx::query(
-        "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, folder_path TEXT NOT NULL)",
+    let pool = crate::test_utils::init_test_db().await.pool;
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "game-1",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/game/path",
+            mods_path: Some("/game/path/mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-    sqlx::query(
-        "CREATE TABLE duplicate_whitelist (
-            id TEXT PRIMARY KEY,
-            game_id TEXT NOT NULL,
-            folder_a_id TEXT NOT NULL,
-            folder_b_id TEXT NOT NULL
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
     pool
 }
 
@@ -41,8 +29,8 @@ async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
     let game_id = "game-1";
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path();
-    let first = mods_root.join("Albedo");
-    let second = mods_root.join("DISABLED Albedo");
+    let first = mods_root.join("Albedo_A");
+    let second = mods_root.join("Albedo_B");
 
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
@@ -51,20 +39,39 @@ async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
     fs::write(first.join("texture.dds"), b"same-content").unwrap();
     fs::write(second.join("texture.dds"), b"same-content").unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(first.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(second.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "Albedo_A",
+            folder_path: &first.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "Albedo_B",
+            folder_path: &second.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -90,8 +97,8 @@ async fn test_ec_9_02_same_name_different_content_stays_below_80() {
     let game_id = "game-1";
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path();
-    let first = mods_root.join("Raiden");
-    let second = mods_root.join("DISABLED Raiden");
+    let first = mods_root.join("Raiden_Mod");
+    let second = mods_root.join("Raiden_Skin");
 
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
@@ -100,20 +107,39 @@ async fn test_ec_9_02_same_name_different_content_stays_below_80() {
     fs::write(first.join("texture.dds"), b"alpha-0000").unwrap();
     fs::write(second.join("texture.dds"), b"beta-9999").unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(first.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(second.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "Raiden_Mod",
+            folder_path: &first.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "Raiden_Skin",
+            folder_path: &second.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -135,8 +161,8 @@ async fn test_di_9_01_whitelist_pair_is_filtered_out() {
     let game_id = "game-1";
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path();
-    let first = mods_root.join("Kazuha");
-    let second = mods_root.join("DISABLED Kazuha");
+    let first = mods_root.join("Kazuha_A");
+    let second = mods_root.join("Kazuha_B");
 
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
@@ -145,20 +171,40 @@ async fn test_di_9_01_whitelist_pair_is_filtered_out() {
     fs::write(first.join("texture.dds"), b"same-content").unwrap();
     fs::write(second.join("texture.dds"), b"same-content").unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(first.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(second.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "Kazuha_A",
+            folder_path: &first.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "Kazuha_B",
+            folder_path: &second.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
     sqlx::query(
         "INSERT INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id) VALUES (?, ?, ?, ?)",
     )
@@ -203,20 +249,39 @@ async fn test_tc_9_1_02_structure_match_confidence_70_to_90() {
     fs::write(folder_a.join("Config/settings.ini"), ";config\n$var=1\n").unwrap();
     fs::write(folder_b.join("Config/options.ini"), ";config\n$var=2\n").unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(folder_a.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(folder_b.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "CharA",
+            folder_path: &folder_a.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "CharB",
+            folder_path: &folder_b.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -246,8 +311,8 @@ async fn test_tc_9_1_03_name_size_match_disabled_prefix_normalization() {
     let game_id = "game-1";
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path();
-    let folder_a = mods_root.join("Nahida");
-    let folder_b = mods_root.join("DISABLED Nahida");
+    let folder_a = mods_root.join("Nahida_Mod");
+    let folder_b = mods_root.join("Nahida_Skin");
 
     fs::create_dir_all(&folder_a).unwrap();
     fs::create_dir_all(&folder_b).unwrap();
@@ -258,20 +323,39 @@ async fn test_tc_9_1_03_name_size_match_disabled_prefix_normalization() {
     fs::write(folder_a.join("texture.dds"), b"content-alpha-001").unwrap();
     fs::write(folder_b.join("texture.dds"), b"content-beta__002").unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(folder_a.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(folder_b.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "Nahida_Mod",
+            folder_path: &folder_a.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "Nahida_Skin",
+            folder_path: &folder_b.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -310,13 +394,22 @@ async fn test_tc_9_3_02_cancel_scan_leaves_db_unchanged() {
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("mod.ini"), format!(";mod {}\n$var={}\n", i, i)).unwrap();
 
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-{}", i))
-            .bind(game_id)
-            .bind(folder.to_string_lossy().to_string())
-            .execute(&pool)
-            .await
-            .unwrap();
+        crate::test_utils::insert_test_mod(
+            &pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-{}", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("Mod{}", i),
+                folder_path: &folder.to_string_lossy().to_string(),
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
     }
 
     // Set cancel flag immediately
@@ -351,13 +444,22 @@ async fn test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group() {
         fs::write(folder.join("mod.ini"), ";identical\n$swapvar=999\n").unwrap();
         fs::write(folder.join("texture.dds"), b"identical-content").unwrap();
 
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-{}", i))
-            .bind(game_id)
-            .bind(folder.to_string_lossy().to_string())
-            .execute(&pool)
-            .await
-            .unwrap();
+        crate::test_utils::insert_test_mod(
+            &pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-{}", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("YaeMiko{}", i),
+                folder_path: &folder.to_string_lossy().to_string(),
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
     }
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
@@ -408,13 +510,22 @@ async fn test_ec_9_05_cancel_mid_hash_stops_cleanly() {
         fs::write(folder.join("mod.ini"), format!(";mod {}\n", i).repeat(100)).unwrap();
         fs::write(folder.join("large.dds"), vec![i as u8; 1024 * 100]).unwrap(); // 100KB file
 
-        sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-            .bind(format!("mod-{}", i))
-            .bind(game_id)
-            .bind(folder.to_string_lossy().to_string())
-            .execute(&pool)
-            .await
-            .unwrap();
+        crate::test_utils::insert_test_mod(
+            &pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod-{}", i),
+                game_id,
+                object_id: None,
+                actual_name: &format!("BigMod{}", i),
+                folder_path: &folder.to_string_lossy().to_string(),
+                status: crate::database::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
     }
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -472,21 +583,39 @@ filename = VariantB/tex.dds
     fs::write(variant_a.join("texture.dds"), b"identical-content").unwrap();
     fs::write(variant_b.join("texture.dds"), b"identical-content").unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-variant-a")
-        .bind(game_id)
-        .bind(variant_a.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-variant-a",
+            game_id,
+            object_id: None,
+            actual_name: "VariantA",
+            folder_path: &variant_a.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-variant-b")
-        .bind(game_id)
-        .bind(variant_b.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-variant-b",
+            game_id,
+            object_id: None,
+            actual_name: "VariantB",
+            folder_path: &variant_b.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -524,20 +653,39 @@ async fn test_di_9_02_blake3_hash_algorithm_is_used() {
     fs::write(folder_a.join("data.bin"), content).unwrap();
     fs::write(folder_b.join("data.bin"), content).unwrap();
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-a")
-        .bind(game_id)
-        .bind(folder_a.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-b")
-        .bind(game_id)
-        .bind(folder_b.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-a",
+            game_id,
+            object_id: None,
+            actual_name: "TestA",
+            folder_path: &folder_a.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-b",
+            game_id,
+            object_id: None,
+            actual_name: "TestB",
+            folder_path: &folder_b.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -601,13 +749,22 @@ async fn test_deduper_ignores_symlinks() {
         return;
     }
 
-    sqlx::query("INSERT INTO mods (id, game_id, folder_path) VALUES (?, ?, ?)")
-        .bind("mod-base")
-        .bind(game_id)
-        .bind(first_mod.to_string_lossy().to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-base",
+            game_id,
+            object_id: None,
+            actual_name: "BaseMod",
+            folder_path: &first_mod.to_string_lossy().to_string(),
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
 
     let outcome = scan_duplicates(&mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await

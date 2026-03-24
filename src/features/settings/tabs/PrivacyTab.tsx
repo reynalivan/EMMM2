@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Shield, ShieldAlert, KeyRound, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
 import PinModal from '../modals/PinModal';
 import { useToastStore } from '../../../stores/useToastStore';
-import { useSafeModeToggle } from '../../../hooks/useSafeModeToggle';
+import { useSafeModeToggle as useSafeModeToggle } from '../../collections/hooks';
 import ModeSwitchConfirmModal from '../../safe-mode/ModeSwitchConfirmModal';
+import { commands } from '../../../lib/bindings';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
 import RecoveryCodeModal from '../../safe-mode/RecoveryCodeModal';
 
@@ -34,6 +36,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 export default function PrivacyTab() {
+  const { t } = useTranslation(['settings', 'safe_mode', 'common']);
   const { settings, saveSettingsAsync, setPinWithRecoveryAsync, verifyPin } = useSettings();
   const {
     toggleSafeMode,
@@ -53,7 +56,7 @@ export default function PrivacyTab() {
   const [keywordInput, setKeywordInput] = useState('');
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
 
-  if (!settings) return <div>Loading...</div>;
+  if (!settings) return <div>{t('common:status.loading')}</div>;
 
   const hasPin = !!settings.safe_mode.pin_hash;
   const effectiveKeywords = normalizeKeywordList(settings.safe_mode.keywords);
@@ -98,8 +101,8 @@ export default function PrivacyTab() {
   const handleModalSuccess = async (pin: string) => {
     if (modalMode === 'unlock') {
       try {
-        const result = await verifyPin(pin);
-        if (result.valid) {
+        const isValid = await verifyPin(pin);
+        if (isValid) {
           setIsModalOpen(false);
           if (pendingAction) {
             await pendingAction();
@@ -108,18 +111,24 @@ export default function PrivacyTab() {
           return;
         }
 
-        if (result.locked_seconds_remaining > 0) {
-          addToast('error', `PIN locked. Try again in ${result.locked_seconds_remaining}s.`);
+        const status = await commands.getPinStatus();
+        if (status.is_locked) {
+          addToast(
+            'error',
+            t('safe_mode:pin_entry.error.lockout', { seconds: status.lockout_seconds_remaining }),
+          );
         } else {
-          addToast('error', `Incorrect PIN. ${result.attempts_remaining} attempt(s) remaining.`);
+          addToast(
+            'error',
+            t('safe_mode:pin_entry.error.invalid', { count: status.attempts_remaining }),
+          );
         }
       } catch (e) {
         console.error(e);
-        addToast('error', 'Verification Failed: System error.');
+        addToast('error', t('safe_mode:pin_entry.error.system'));
       }
     } else {
       try {
-        // Use recovery-enabled variant: shows code after successful set
         const code = await setPinWithRecoveryAsync(pin);
         setIsModalOpen(false);
         setRecoveryCode(code);
@@ -135,7 +144,7 @@ export default function PrivacyTab() {
       return;
     }
     if (effectiveKeywords.includes(nextKeyword)) {
-      addToast('warning', 'Keyword already exists.');
+      addToast('warning', t('settings:privacy.keywords_exists'));
       return;
     }
 
@@ -145,7 +154,10 @@ export default function PrivacyTab() {
       await persistSafeModeSettings({ keywords: nextKeywords });
     } catch (error) {
       console.error(error);
-      addToast('error', `Keyword update failed: ${toErrorMessage(error)}`);
+      addToast(
+        'error',
+        t('settings:privacy.keywords_update_failed', { error: toErrorMessage(error) }),
+      );
     }
   };
 
@@ -155,7 +167,10 @@ export default function PrivacyTab() {
       await persistSafeModeSettings({ keywords: nextKeywords });
     } catch (error) {
       console.error(error);
-      addToast('error', `Keyword update failed: ${toErrorMessage(error)}`);
+      addToast(
+        'error',
+        t('settings:privacy.keywords_update_failed', { error: toErrorMessage(error) }),
+      );
     }
   };
 
@@ -166,7 +181,10 @@ export default function PrivacyTab() {
       });
     } catch (error) {
       console.error(error);
-      addToast('error', `Safe Mode filter update failed: ${toErrorMessage(error)}`);
+      addToast(
+        'error',
+        t('settings:privacy.protection_update_failed', { error: toErrorMessage(error) }),
+      );
     }
   };
 
@@ -183,11 +201,8 @@ export default function PrivacyTab() {
                 {settings.safe_mode.enabled ? <Shield size={24} /> : <ShieldAlert size={24} />}
               </div>
               <div>
-                <h3 className="card-title text-lg">Safe Mode</h3>
-                <p className="text-sm opacity-70 max-w-md mt-1">
-                  When enabled, mods tagged with sensitive keywords are hidden from the library.
-                  Disabling this mode may require authentication if a PIN is set.
-                </p>
+                <h3 className="card-title text-lg">{t('settings:privacy.title')}</h3>
+                <p className="text-sm opacity-70 max-w-md mt-1">{t('settings:privacy.desc')}</p>
               </div>
             </div>
             <input
@@ -195,19 +210,19 @@ export default function PrivacyTab() {
               className="toggle toggle-success toggle-lg"
               checked={settings.safe_mode.enabled}
               onChange={handleToggleSafeMode}
-              aria-label="Toggle safe mode"
+              aria-label={t('safe_mode:settings.toggle')}
             />
           </div>
 
           <div className="mt-6 pt-6 border-t border-base-300">
             <h4 className="text-sm font-bold uppercase tracking-wider opacity-50 mb-3">
-              Filtered Keywords
+              {t('settings:privacy.keywords_title')}
             </h4>
             <div className="flex items-center gap-2 mb-3">
               <input
                 type="text"
                 className="input input-sm input-bordered flex-1"
-                placeholder="Add keyword (e.g. nsfw)"
+                placeholder={t('settings:privacy.keywords_placeholder')}
                 value={keywordInput}
                 onChange={(event) => setKeywordInput(event.target.value)}
                 onKeyDown={(event) => {
@@ -222,7 +237,7 @@ export default function PrivacyTab() {
                 className="btn btn-sm btn-primary"
                 onClick={() => void handleAddKeyword()}
               >
-                Add
+                {t('settings:privacy.keywords_add')}
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -232,7 +247,7 @@ export default function PrivacyTab() {
                   <button
                     type="button"
                     className="btn btn-ghost btn-xs btn-circle"
-                    aria-label={`Remove ${keyword}`}
+                    aria-label={t('safe_mode:settings.keywords.remove', { keyword })}
                     onClick={() => void handleRemoveKeyword(keyword)}
                   >
                     <X size={12} />
@@ -240,7 +255,7 @@ export default function PrivacyTab() {
                 </span>
               ))}
               {effectiveKeywords.length === 0 && (
-                <span className="text-xs opacity-60">No filtered keywords configured.</span>
+                <span className="text-xs opacity-60">{t('settings:privacy.keywords_empty')}</span>
               )}
             </div>
 
@@ -249,15 +264,14 @@ export default function PrivacyTab() {
                 <input
                   type="checkbox"
                   className="toggle toggle-sm"
-                  checked={settings.safe_mode.force_exclusive_mode}
+                  checked={!!settings.safe_mode.force_exclusive_mode}
                   onChange={() => void handleToggleForceExclusive()}
                 />
-                <span className="label-text font-medium">Extra Keyword Protection</span>
+                <span className="label-text font-medium">
+                  {t('settings:privacy.protection_title')}
+                </span>
               </label>
-              <p className="text-xs opacity-70 pl-12">
-                When this is ON, mods that match filtered keywords are hidden even if they are
-                marked as safe.
-              </p>
+              <p className="text-xs opacity-70 pl-12">{t('settings:privacy.protection_desc')}</p>
             </div>
           </div>
         </div>
@@ -272,14 +286,16 @@ export default function PrivacyTab() {
                 <KeyRound size={24} />
               </div>
               <div>
-                <h3 className="card-title text-lg">Security PIN</h3>
+                <h3 className="card-title text-lg">{t('settings:privacy.security_title')}</h3>
                 <p className="text-sm opacity-70">
                   {hasPin
-                    ? 'A PIN is currently set. It is required to disable Safe Mode.'
-                    : 'No PIN set. Anyone can toggle Safe Mode freely.'}
+                    ? t('settings:privacy.security_status_set')
+                    : t('settings:privacy.security_status_none')}
                 </p>
                 {hasPin && !!settings.safe_mode.recovery_code_hash && (
-                  <p className="text-xs text-success/70 mt-0.5">✓ Recovery code is configured</p>
+                  <p className="text-xs text-success/70 mt-0.5">
+                    ✓ {t('settings:privacy.security_recovery_configured')}
+                  </p>
                 )}
               </div>
             </div>
@@ -297,17 +313,22 @@ export default function PrivacyTab() {
                           recovery_code_hash: null,
                         },
                       });
-                      addToast('success', 'PIN Removed: Safe Mode is now unprotected.');
+                      addToast('success', t('safe_mode:recovery.removed'));
                     } catch (e) {
-                      addToast('error', `Failed to remove PIN: ${String(e)}`);
+                      addToast(
+                        'error',
+                        t('safe_mode:recovery.remove_failed', { error: String(e) }),
+                      );
                     }
                   }}
                 >
-                  Remove PIN
+                  {t('settings:privacy.security_remove')}
                 </button>
               )}
               <button className="btn btn-neutral" onClick={handleChangePin}>
-                {hasPin ? 'Change PIN' : 'Set PIN'}
+                {hasPin
+                  ? t('settings:privacy.security_change')
+                  : t('settings:privacy.security_set')}
               </button>
             </div>
           </div>
@@ -319,11 +340,15 @@ export default function PrivacyTab() {
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleModalSuccess}
         isSettingNew={modalMode === 'set_new'}
-        title={modalMode === 'set_new' ? 'Set Security PIN' : 'Unlock Settings'}
+        title={
+          modalMode === 'set_new'
+            ? t('settings:privacy.security_modal_set_title')
+            : t('settings:privacy.security_modal_unlock_title')
+        }
         description={
           modalMode === 'set_new'
-            ? 'Create a secure PIN to protect Safe Mode settings.'
-            : 'Enter your current PIN to proceed.'
+            ? t('settings:privacy.security_modal_set_desc')
+            : t('settings:privacy.security_modal_unlock_desc')
         }
       />
 

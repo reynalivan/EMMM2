@@ -13,7 +13,7 @@ use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationCo
 use crate::services::scanner::deep_matcher::{self, DbEntry, MasterDb, StagedMatchResult};
 
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
-pub fn load_master_db_json(resource_dir: &Path, game_type: &str) -> Result<String, String> {
+pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String, String> {
     let canonical = schema_loader::normalize_game_type(game_type);
     let db_path = resource_dir
         .join("databases")
@@ -77,7 +77,7 @@ pub fn resolve_entry_thumbnails(entries: &mut [Value], resource_dir: &Path) {
 }
 
 /// Matched DB entry returned to frontend with resolved absolute thumbnail path.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct MatchedDbEntry {
     pub name: String,
     pub object_type: String,
@@ -150,7 +150,7 @@ pub fn build_matched_db_entry_from_staged(
 
 pub fn match_object_with_db_service(
     resource_dir: &Path,
-    game_type: &str,
+    game_type: i32,
     object_name: &str,
 ) -> Result<Option<MatchedDbEntry>, String> {
     let canonical = schema_loader::normalize_game_type(game_type);
@@ -175,7 +175,7 @@ pub fn match_object_with_db_service(
     ))
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct SearchResultEntry {
     pub item: DbEntry,
     pub score: f32,

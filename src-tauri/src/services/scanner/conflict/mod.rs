@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 pub mod detect;
 
 /// Information about a shader/buffer hash conflict.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ConflictInfo {
     /// The conflicting hash value.
     pub hash: String,
@@ -21,6 +21,8 @@ pub struct ConflictInfo {
     pub section_name: String,
     /// Paths of the mods that conflict.
     pub mod_paths: Vec<String>,
+    /// Whether at least two conflicting mods are currently enabled.
+    pub is_active: bool,
 }
 
 /// Entry tracking a single hash occurrence.
@@ -74,7 +76,23 @@ pub fn detect_conflicts(ini_files: &[(PathBuf, PathBuf)]) -> Vec<ConflictInfo> {
             Some(ConflictInfo {
                 hash,
                 section_name,
-                mod_paths: unique_paths,
+                mod_paths: unique_paths.clone(),
+                // Determine if active: 2+ mods must be enabled.
+                // Note: We need a way to check status. In this pure-FS service,
+                // we check if folder name doesn't start with "DISABLED ".
+                is_active: unique_paths
+                    .iter()
+                    .filter(|p| {
+                        !crate::services::scanner::core::normalizer::is_disabled_folder(
+                            Path::new(p)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_str()
+                                .unwrap_or(""),
+                        )
+                    })
+                    .count()
+                    >= 2,
             })
         })
         .collect()
@@ -107,9 +125,11 @@ fn parse_ini_hashes(ini_path: &Path, mod_root: &Path) -> Vec<HashEntry> {
         // Section header
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             current_section = trimmed[1..trimmed.len() - 1].to_string();
-            in_texture_override = current_section
-                .to_lowercase()
-                .starts_with("textureoverride");
+            let section_lower = current_section.to_lowercase();
+            in_texture_override = section_lower.starts_with("textureoverride")
+                || section_lower.starts_with("shaderoverride")
+                || section_lower.starts_with("resource")
+                || section_lower.starts_with("customshader");
             continue;
         }
 
@@ -157,25 +177,23 @@ fn parse_hash_line(line: &str) -> Option<String> {
 #[path = "tests/conflict_tests.rs"]
 mod tests;
 
-/// Info about an enabled duplicate/conflicting mod for a given object.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DuplicateModInfo {
-    pub mod_id: String,
-    pub folder_path: String,
-    pub actual_name: String,
-}
+use crate::domain::errors::AppError;
 
 /// Find all enabled mods in the same object as `folder_path` (i.e. duplicates/conflicts).
 pub async fn get_duplicates_for_mod_service(
     pool: &sqlx::SqlitePool,
     folder_path: &str,
     game_id: &str,
-) -> Result<Vec<DuplicateModInfo>, String> {
+) -> Result<Vec<crate::domain::mods::DuplicateModInfo>, AppError> {
+    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .unwrap_or_default();
+
     // Resolve the object_id for the given folder
     let object_id =
-        crate::database::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id)
+        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id)
             .await
-            .map_err(|e| format!("DB query failed: {e}"))?;
+            .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
 
     let object_id = match object_id {
         Some(id) => id,
@@ -183,18 +201,72 @@ pub async fn get_duplicates_for_mod_service(
     };
 
     let duplicates =
-        crate::database::mod_repo::get_enabled_duplicates(pool, &object_id, game_id, folder_path)
+        crate::repo::mod_repo::get_enabled_duplicates(pool, &object_id, game_id, folder_path)
             .await
-            .map_err(|e| format!("DB duplicate query failed: {e}"))?;
+            .map_err(|e| AppError::Io(format!("DB duplicate query failed: {e}")))?;
 
-    Ok(duplicates
-        .into_iter()
-        .map(|(mod_id, path, name)| DuplicateModInfo {
-            mod_id,
+    let mut result = Vec::new();
+    let mut relevant_mod_ids: Vec<String> = Vec::new();
+
+    for (mod_id, path, name) in duplicates {
+        // Variant Detection (Epic 11 Alignment)
+        let mut is_variant = false;
+        let mut parent_path = String::new();
+
+        if let (Some(target_parent), Some(dup_parent)) =
+            (Path::new(folder_path).parent(), Path::new(&path).parent())
+        {
+            if target_parent == dup_parent {
+                let (node_type, _, _) =
+                    crate::services::explorer::classifier::classify_folder(
+                        &Path::new(&mods_path).join(target_parent),
+                    );
+                if node_type == crate::services::explorer::classifier::NodeType::VariantContainer {
+                    is_variant = true;
+                    parent_path = target_parent.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        result.push(crate::domain::mods::DuplicateModInfo {
+            mod_id: mod_id.clone(),
+            object_id: object_id.clone(),
             folder_path: path,
             actual_name: name,
-        })
-        .collect())
+            is_variant,
+            parent_path,
+        });
+        relevant_mod_ids.push(mod_id);
+    }
+
+    // Include the target mod ID in the set to check for ignores
+    let target_mod_id_search: Result<Option<(String, Option<String>, i64)>, sqlx::Error> =
+        crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, folder_path, game_id).await;
+
+    let target_mod_id = match target_mod_id_search {
+        Ok(Some((id, _, _))) => id,
+        _ => String::new(),
+    };
+
+    if !target_mod_id.is_empty() {
+        relevant_mod_ids.push(target_mod_id);
+    }
+
+    // Check if this specific combination is ignored
+    let ignored = crate::repo::conflict_repo::is_conflict_ignored(
+        pool,
+        game_id,
+        &object_id,
+        &relevant_mod_ids,
+    )
+    .await
+    .unwrap_or(false);
+
+    if ignored {
+        return Ok(vec![]);
+    }
+
+    Ok(result)
 }
 
 /// Enable a specific mod and disable all other enabled siblings for the same object.
@@ -204,60 +276,122 @@ pub async fn enable_only_this_service(
     state: &tauri::State<'_, crate::services::scanner::watcher::WatcherState>,
     target_path: String,
     game_id: &str,
-) -> Result<crate::services::mods::bulk::BulkResult, String> {
+) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
     use crate::services::mods::bulk::{BulkActionError, BulkResult};
     use crate::services::mods::core_ops::toggle_mod_inner;
+    use std::path::Path;
+
+    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Game not found or has no mods path".to_string()))?;
+
+    let target_rel = Path::new(&target_path)
+        .strip_prefix(&mods_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| target_path.clone());
 
     let mut success = Vec::new();
     let mut failures = Vec::new();
+    let mut db_updates = Vec::new();
 
-    // 1. Find the target mod's object_id from DB
     let target_object_id =
-        crate::database::mod_repo::get_object_id_by_folder_and_game(pool, &target_path, game_id)
+        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &target_rel, game_id)
             .await
-            .map_err(|e| format!("DB query failed: {e}"))?;
+            .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
 
-    let object_id = match target_object_id {
-        Some(id) => id,
-        None => {
-            // No object_id — just enable the target without disabling siblings
-            let new_path = toggle_mod_inner(state, target_path, true).await?;
-            return Ok(BulkResult {
-                success: vec![new_path],
-                failures: vec![],
-            });
-        }
-    };
+    if let Some(object_id) = target_object_id {
+        let sibling_paths = crate::repo::mod_repo::get_enabled_siblings_paths(
+            pool,
+            &object_id,
+            game_id,
+            &target_rel,
+        )
+        .await
+        .map_err(|e| AppError::Io(format!("DB sibling query failed: {e}")))?;
 
-    // 2. Find all other ENABLED mods with the same object_id (siblings)
-    let sibling_paths = crate::database::mod_repo::get_enabled_siblings_paths(
-        pool,
-        &object_id,
-        game_id,
-        &target_path,
-    )
-    .await
-    .map_err(|e| format!("DB sibling query failed: {e}"))?;
+        for sibling_rel in sibling_paths {
+            let sibling_abs = Path::new(&mods_path)
+                .join(&sibling_rel)
+                .to_string_lossy()
+                .to_string();
+            match toggle_mod_inner(state, sibling_abs.clone(), false).await {
+                Ok(new_abs_path) => {
+                    let new_rel = Path::new(&new_abs_path)
+                        .strip_prefix(&mods_path)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| new_abs_path.clone());
 
-    // 3. Disable all siblings
-    for sibling_path in sibling_paths {
-        match toggle_mod_inner(state, sibling_path.clone(), false).await {
-            Ok(new_path) => success.push(new_path),
-            Err(e) => failures.push(BulkActionError {
-                path: sibling_path,
-                error: e,
-            }),
+                    db_updates.push((
+                        sibling_rel.clone(),
+                        new_rel.clone(),
+                        crate::database::models::ItemStatus::Disabled,
+                    ));
+                    success.push(new_abs_path);
+
+                    if sibling_rel != new_rel {
+                        let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
+                            pool,
+                            &sibling_rel,
+                            &new_rel,
+                            None,
+                        )
+                        .await;
+                    }
+                }
+                Err(e) => failures.push(BulkActionError {
+                    path: sibling_abs,
+                    error: e,
+                }),
+            }
         }
     }
 
-    // 4. Enable the target
     match toggle_mod_inner(state, target_path.clone(), true).await {
-        Ok(new_path) => success.push(new_path),
+        Ok(new_abs_path) => {
+            let new_rel = Path::new(&new_abs_path)
+                .strip_prefix(&mods_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| new_abs_path.clone());
+
+            db_updates.push((
+                target_rel.clone(),
+                new_rel.clone(),
+                crate::database::models::ItemStatus::Enabled,
+            ));
+            success.push(new_abs_path);
+
+            if target_rel != new_rel {
+                let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
+                    pool,
+                    &target_rel,
+                    &new_rel,
+                    None,
+                )
+                .await;
+            }
+        }
         Err(e) => failures.push(BulkActionError {
             path: target_path,
             error: e,
         }),
     }
+
+    if !db_updates.is_empty() {
+        if let Err(e) = crate::repo::mod_repo::batch_update_path_and_status(pool, &db_updates).await
+        {
+            log::error!(
+                "Failed batch updating mod paths after enable-only-this: {}",
+                e
+            );
+        }
+    }
+
+    let _ = crate::services::corridor_service::recompute_signature(pool, game_id, true).await;
+    let _ = crate::services::corridor_service::recompute_signature(pool, game_id, false).await;
+
+    // Phase 2: Gap Closure - Trigger Dirty State (Unsaved Collection) transition
+    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, true).await;
+    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, false).await;
 
     Ok(BulkResult { success, failures })
 }

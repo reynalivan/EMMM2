@@ -1,0 +1,63 @@
+{
+  "empty": {
+    "title": "欢迎来到 EMMM",
+    "subtitle": "通过添加您的第一个游戏来开始管理模组。",
+    "add_game": "添加您的第一个游戏"
+  },
+  "error": {
+    "message": "无法加载仪表板数据。",
+    "retry": "重试"
+  },
+  "header": {
+    "title": "仪表板",
+    "subtitle": "您的模组生态系统概览",
+    "refresh": "刷新"
+  },
+  "actions": {
+    "quick_play": "快速开始",
+    "mods_manager": "模组管理器",
+    "storage_optimizer": "存储优化器",
+    "collections": "收藏集",
+    "settings": "设置",
+    "discover": "发现",
+    "downloads": "下载"
+  },
+  "stats": {
+    "total_mods": "模组总数",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "games": "游戏",
+    "configured": "已配置",
+    "storage": "存储",
+    "total_size_desc": "模组总大小",
+    "collections": "收藏集",
+    "presets_desc": "已保存预设"
+  },
+  "waste": {
+    "title": "检测到重复浪费",
+    "subtitle": "重复模组浪费了 {{size}} 空间。运行优化器进行清理。"
+  },
+  "charts": {
+    "category_title": "类别分布",
+    "no_mod_data": "尚无模组数据",
+    "game_title": "每款游戏的模组数",
+    "no_game_data": "尚无游戏数据"
+  },
+  "activity": {
+    "recent_title": "最近添加",
+    "category": "类别: {{category}}",
+    "uncategorized": "未分类",
+    "no_mods": "尚未索引模组",
+    "last_selected": "最后选择的游戏",
+    "launch": "启动",
+    "no_game": "未选择游戏"
+  },
+  "keys": {
+    "title": "活跃按键映射",
+    "table_mod": "模组",
+    "table_section": "部分",
+    "table_key": "按键",
+    "table_back": "返回",
+    "no_bindings": "在已启用的模组中未找到按键绑定"
+  }
+}

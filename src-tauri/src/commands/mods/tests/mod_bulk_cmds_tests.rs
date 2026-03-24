@@ -1,4 +1,3 @@
-use super::*;
 use crate::services::scanner::watcher::WatcherState;
 use std::fs;
 use tempfile::TempDir;
@@ -20,7 +19,9 @@ fn test_bulk_toggle_partial_failure() {
         mod2_dir.to_string_lossy().to_string(),
     ];
 
-    let result = rt.block_on(bulk_toggle_mods_inner(&state, paths, false));
+    let result = rt.block_on(crate::services::mods::bulk::bulk_toggle_inner(
+        &state, paths, false,
+    ));
 
     assert!(result.is_ok());
     let bulk_res = result.unwrap();
@@ -52,7 +53,9 @@ fn test_bulk_delete_moves_to_trash() {
         mod2_dir.to_string_lossy().to_string(),
     ];
 
-    let result = rt.block_on(bulk_delete_mods_inner(&state, &trash_dir, paths, None));
+    let result = rt.block_on(crate::services::mods::bulk::bulk_delete_inner(
+        &state, &trash_dir, paths, None,
+    ));
 
     assert!(result.is_ok());
     let bulk_res = result.unwrap();

@@ -5,7 +5,7 @@ description: Writing effective code documentation - API docs, README files, inli
 
 # Code Documentation Skill
 
-Standards for documenting the **EMMM2** codebase.
+Standards for documenting the **EMMM** codebase.
 
 ## 1. Rust Documentation (Backend)
 

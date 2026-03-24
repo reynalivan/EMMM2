@@ -1,28 +1,25 @@
 import { useBrowserStore } from '../../../stores/useBrowserStore';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useDownloads } from '../hooks/useDownloads';
+import { useTranslation } from 'react-i18next';
 import type { BrowserDownloadItem, DownloadStatus } from '../types';
+import { formatBytes } from '../../../utils/formatters';
 
-const STATUS_BADGE: Record<DownloadStatus, { label: string; cls: string }> = {
-  requested: { label: 'Queued', cls: 'badge-neutral' },
-  in_progress: { label: 'Downloading', cls: 'badge-info' },
-  finished: { label: 'Ready', cls: 'badge-success' },
-  failed: { label: 'Failed', cls: 'badge-error' },
-  canceled: { label: 'Canceled', cls: 'badge-warning' },
-  imported: { label: 'Imported', cls: 'badge-ghost' },
+const STATUS_BADGE: Record<DownloadStatus, { labelKey: string; cls: string }> = {
+  requested: { labelKey: 'downloads.status.queued', cls: 'badge-neutral' },
+  in_progress: { labelKey: 'downloads.status.downloading', cls: 'badge-info' },
+  finished: { labelKey: 'downloads.status.ready', cls: 'badge-success' },
+  failed: { labelKey: 'downloads.status.failed', cls: 'badge-error' },
+  canceled: { labelKey: 'downloads.status.canceled', cls: 'badge-warning' },
+  imported: { labelKey: 'downloads.status.imported', cls: 'badge-ghost' },
 };
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 interface Props {
   onImportSelected: (ids: string[], gameId: string) => void;
 }
 
 export function DownloadManagerPanel({ onImportSelected }: Props) {
+  const { t } = useTranslation(['browser']);
   const {
     isDownloadPanelOpen,
     closeDownloadPanel,
@@ -62,7 +59,7 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
     <div
       id="download-manager-panel"
       className={`
-        fixed top-0 right-0 h-full w-[400px] z-60 bg-base-200 shadow-2xl
+        fixed top-0 right-0 h-full w-100 z-60 bg-base-200 shadow-2xl
         transition-transform duration-300 ease-in-out flex flex-col
         ${isDownloadPanelOpen ? 'translate-x-0' : 'translate-x-full'}
       `}
@@ -85,7 +82,7 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
             />
           </svg>
           <h2 className="font-semibold text-base-content">
-            Downloads
+            {t('downloads.title')}
             {downloads.length > 0 && (
               <span className="ml-2 badge badge-primary badge-sm">{downloads.length}</span>
             )}
@@ -98,15 +95,15 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
               useAppStore.getState().setWorkspaceView('downloads');
               closeDownloadPanel();
             }}
-            title="View full page"
+            title={t('downloads.view_detail')}
           >
-            View detail
+            {t('downloads.view_detail')}
           </button>
           <button
             id="download-panel-close-btn"
             className="btn btn-ghost btn-sm btn-circle"
             onClick={closeDownloadPanel}
-            aria-label="Close download panel"
+            aria-label={t('downloads.close')}
           >
             ✕
           </button>
@@ -122,12 +119,12 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
             className="checkbox checkbox-sm checkbox-primary"
             checked={allFinishedSelected}
             onChange={handleSelectAll}
-            title={allFinishedSelected ? 'Deselect all' : 'Select all finished'}
+            title={allFinishedSelected ? t('downloads.deselect_all') : t('downloads.select_all')}
           />
           <span className="text-xs text-base-content/60">
             {selectedDownloadIds.size > 0
-              ? `${selectedDownloadIds.size} selected`
-              : 'Select finished'}
+              ? t('downloads.selected', { count: selectedDownloadIds.size })
+              : t('downloads.select_finished')}
           </span>
 
           <div className="ml-auto flex gap-2">
@@ -137,7 +134,7 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
                 className="btn btn-primary btn-xs"
                 onClick={handleImport}
               >
-                Import Selected
+                {t('downloads.import_selected')}
               </button>
             )}
             <button
@@ -145,7 +142,7 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
               className="btn btn-ghost btn-xs"
               onClick={() => clearImported()}
             >
-              Clear Imported
+              {t('downloads.clear_imported')}
             </button>
           </div>
         </div>
@@ -169,7 +166,7 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
                 d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
               />
             </svg>
-            <p className="text-sm">No downloads yet</p>
+            <p className="text-sm">{t('downloads.empty')}</p>
           </div>
         ) : (
           downloads.map((item) => (
@@ -199,6 +196,7 @@ interface RowProps {
 }
 
 function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }: RowProps) {
+  const { t } = useTranslation(['browser']);
   const badge = STATUS_BADGE[item.status];
   const progress =
     item.bytes_total && item.bytes_total > 0
@@ -228,10 +226,8 @@ function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }:
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-base-content truncate max-w-[200px]">
-            {item.filename}
-          </p>
-          <span className={`badge badge-sm ${badge.cls}`}>{badge.label}</span>
+          <p className="text-sm font-medium text-base-content truncate max-w-50">{item.filename}</p>
+          <span className={`badge badge-sm ${badge.cls}`}>{t(badge.labelKey)}</span>
         </div>
 
         {/* Progress bar */}
@@ -257,16 +253,16 @@ function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }:
           <button
             className="btn btn-ghost btn-xs text-success"
             onClick={onImport}
-            title="Import this file"
+            title={t('downloads.import_title')}
           >
-            Import
+            {t('downloads.import')}
           </button>
         )}
         {item.status === 'in_progress' && (
           <button
             className="btn btn-ghost btn-xs text-warning"
             onClick={onCancel}
-            title="Cancel download"
+            title={t('downloads.cancel_title')}
           >
             ✕
           </button>
@@ -278,9 +274,9 @@ function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }:
           <button
             className="btn btn-ghost btn-xs text-error"
             onClick={() => onDelete(false)}
-            title="Remove from list"
+            title={t('downloads.delete_title')}
           >
-            Delete
+            {t('downloads.delete')}
           </button>
         )}
       </div>

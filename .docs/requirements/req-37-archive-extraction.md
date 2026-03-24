@@ -5,8 +5,11 @@
 - **Problem Statement**: Mod creators package releases as ZIP, RAR, or 7Z archives with wildly varying internal structures — single wrapper folders, deeply nested author/game/character hierarchies, multi-mod packs, variant containers, and loose readme/image files mixed with mod assets. Ad-hoc extraction produces unusable nested folder structures (`MyMod/MyMod/MyMod/mesh.ib`), invalid mod imports, and orphaned archive files.
 - **Proposed Solution**: A staged extraction pipeline that: (1) extracts to `{mods_dir}/.temp_extract/<uuid>`, (2) uses recursive `find_mod_roots` to discover the shallowest valid `.ini` folders, (3) classifies and routes based on Epic 11 folder types, (4) collects loose files, (5) moves to final destination with conflict resolution, and (6) backs up the source archive to `{source_dir}/.extracted/`.
 - **Success Criteria**:
-  - `analyze_archive_cmd` completes in ≤ 500ms for archives of any size (header-only read).
-  - Smart extraction correctly identifies mod roots in ≥ 95% of test cases across all 9 documented scenarios.
+  - **Pure Rust Architecture**: 100% C-dependency free (no libarchive/cmake) for stable cross-platform builds.
+  - `analyze_archive_cmd` completes in ≤ 500ms for archives of any size (header-only read via magic bytes).
+  - Smart extraction correctly identifies mod roots in ≥ 95% of test cases.
+  - Atomic Cleanup: All temp files removed automatically on failure via RAII `TempDirGuard`.
+  - Throttled UI: Smooth progress bars with ≤ 4 IPC events per second (250ms throttle).
   - Password prompt appears within ≤ 200ms of detecting `is_encrypted = true`.
   - Failed extraction (bad password, corruption, invalid content) cleans up all temp files within ≤ 500ms.
   - No `.ini` or asset files are left in `.temp_extract/` after any extraction (success or failure).
@@ -92,25 +95,28 @@ analyze_archive_cmd(archive_path) → ArchiveAnalysis:
 
 extract_archive_cmd(archive_path, mods_dir, password?) → ExtractionResult:
   1. Acquire WatcherSuppression
-  2. Disk space check (uncompressed_size + 50MB buffer)
-  3. Extract to temp = {mods_dir}/.temp_extract/{uuid}
-  4. On extraction error → delete_all(temp), return Err
-  5. find_mod_roots(temp, max_depth=5):
+  2. Robust Detection: Magic Byte signature check (ZIP, 7z, RAR)
+  3. Disk space check (uncompressed_size + 50MB buffer)
+  4. **RAII Staging**: Initialize `TempDirGuard` for {mods_dir}/.temp_extract/{uuid}
+  5. Extract to temp via pure Rust crates (`zip`, `sevenz-rust`, `rar`)
+  6. **Throttled Progress**: Emit per-file events with 250ms interval suppression
+  7. On extraction error/abort → `TempDirGuard` auto-deletes temp folder on drop
+  8. find_mod_roots(temp, max_depth=5):
      - Recurse into subfolders until valid .ini found
      - Valid .ini = has [TextureOverride*], [ShaderOverride*], or [Resource*] sections
      - Once found, STOP recursing deeper (subfolders are internal assets/variants)
-  6. Classification & routing:
+  9. Classification & routing:
      ┌─ 0 mod roots → INVALID: delete temp, return Err("no valid .ini")
      ├─ 1 mod root == temp_root → FLAT MOD: wrap in {ArchiveName}/, move to mods_dir
      ├─ 1 mod root != temp_root → NESTED MOD: move mod root to mods_dir/{name}/
      │   └─ Collect loose files (txt/png/jpg) from wrapper layers → copy into mod folder
      └─ N mod roots → MULTI-MOD PACK: move each independently to mods_dir/{name}/
          └─ Loose files → copy into first mod folder
-  7. Conflict resolution: if dest exists → append counter suffix "ModName (2)"
-  8. Cleanup: delete remaining temp dir
-  9. Source backup: move archive → {source_dir}/.extracted/{filename}
-  10. Release WatcherSuppression
-  11. Return ExtractionResult { dest_path, dest_paths, mod_count, files_extracted }
+  10. Success: `guard.commit()` skips auto-deletion
+  11. Conflict resolution: if dest exists → append counter suffix "ModName (2)"
+  12. Source backup: move archive → {source_dir}/.extracted/{filename}
+  13. Release WatcherSuppression
+  14. Return ExtractionResult { dest_path, dest_paths, mod_count, files_extracted }
 ```
 
 ### Classification Logic (aligned with Epic 11)
@@ -135,9 +141,10 @@ extract_archive_cmd(archive_path, mods_dir, password?) → ExtractionResult:
 
 | Component          | Detail                                                                                                                    |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Archive Libraries  | `zip` crate (ZIP), `sevenz-rust` (7Z), `rar` crate (RAR)                                                                  |
-| Temp Dir           | `{mods_dir}/.temp_extract/{uuid}` — cleaned up on success AND failure                                                     |
+| Archive Libraries  | **Pure Rust**: `zip` crate, `sevenz-rust`, `rar` crate (No libarchive/C)                                                  |
+| Temp Dir           | `{mods_dir}/.temp_extract/{uuid}` — managed by RAII `TempDirGuard`                                                        |
 | Classify Module    | `services::mods::archive::classify` — `find_mod_roots`, `has_valid_mod_ini`, `collect_loose_files`, `resolve_unique_dest` |
+| Progress Feedback  | **Throttled**: Events suppressed to 250ms interval to prevent IPC bridge flooding                                         |
 | WatcherSuppression | Acquired before extraction starts; released after move complete                                                           |
 | Scanner Exclusion  | `scan_mod_folders` skips all entries starting with `.` (dot-folder filter)                                                |
 | Frontend           | `ArchiveModal` → `analyze_archive_cmd` → optional `PasswordInputModal` → `extract_archive_cmd`                            |

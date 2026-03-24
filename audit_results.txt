@@ -1,0 +1,136 @@
+src\App.css:  --color-base-100: #313338; /* Discord Main Chat BG */
+src\App.css:  --color-base-200: #2b2d31; /* Discord Sidebar BG */
+src\App.css:  --color-base-300: #1e1f22; /* Discord Darker Areas */
+src\App.css:  --color-base-content: #dbdee1; /* Discord Text */
+src\App.css:  --color-primary: #5865f2; /* Discord Blurple */
+src\App.css:  --color-primary-content: #ffffff;
+src\App.css:  --color-secondary: #23a559; /* Discord Green */
+src\App.css:  --color-secondary-content: #ffffff;
+src\App.css:  --color-accent: #f0f1f2;
+src\App.css:  --color-neutral: #111214;
+src\App.css:  --color-info: #00b0f4;
+src\App.css:  --color-success: #23a559;
+src\App.css:  --color-warning: #fee75c;
+src\App.css:  --color-error: #da373c;
+src\App.css:  --scrollbar-thumb: #1a1b1e;
+src\App.css:  --scrollbar-track: #2b2d31;
+src\App.css:  --color-base-100: #ffffff;
+src\App.css:  --color-base-200: #f8fafc;
+src\App.css:  --color-base-300: #f1f5f9;
+src\App.css:  --color-base-content: #0f172a;
+src\App.css:  --color-primary: #5865f2; /* Keep Brand Color */
+src\App.css:  --color-primary-content: #ffffff;
+src\App.css:  --color-secondary: #16a34a;
+src\App.css:  --color-secondary-content: #ffffff;
+src\App.css:  --color-accent: #334155;
+src\App.css:  --color-neutral: #e2e8f0;
+src\App.css:  --color-info: #0ea5e9;
+src\App.css:  --color-success: #22c55e;
+src\App.css:  --color-warning: #eab308;
+src\App.css:  --color-error: #ef4444;
+src\App.css:  --scrollbar-thumb: #cbd5e1;
+src\App.css:  --scrollbar-track: #f1f5f9;
+src\App.css:  background-color: color-mix(in srgb, var(--scrollbar-thumb), black 10%);
+src\hooks\useFileDrop.test.tsx:  it('TC-23-004: File Type Whitelisting (Unsupported files rejected entirely)', async () => {
+src\lib\bindings.ts:  WhitelistEntry,
+src\lib\bindings.ts:    invoke<WhitelistEntry[]>('get_ignored_pairs', params),
+src\types\scanner.ts:export type WhitelistEntry = {
+src\lib\services\dedupService.ts:   * - Ignore: Whitelist pair (prevent re-detection)
+src\lib\services\dedupService.ts:   * Fetch all ignored (whitelisted) duplicate pairs for a game.
+src\lib\services\dedupService.ts:   * Remove a specific pair from the whitelist.
+src\lib\services\objectService.test.ts:  it('rejects whitespace-only', () => {
+src\lib\services\objectService.test.ts:  // Edge: trims whitespace
+src\lib\services\objectService.test.ts:  it('trims whitespace before validation', () => {
+src\components\ui\ErrorBoundary.tsx:            <pre className="text-xs font-mono whitespace-pre-wrap text-base-content/80">
+src\features\browser\components\BrowserPage.tsx:            className={`fixed inset-0 bg-black/40 z-9998 transition-opacity duration-300 ${
+src\features\welcome\scenes\DemoKeybindSpotlight.tsx:  const maskImage = useMotionTemplate`radial-gradient(120px circle at ${spotX}% ${spotY}%, transparent 10%, black 80%)`;
+src\features\scanner\StorageOptimizerPage.tsx:                <h1 className="text-2xl font-black tracking-tight text-base-content uppercase">
+src\features\scanner\StorageOptimizerPage.tsx:                <span className="text-sm font-black uppercase tracking-wider">
+src\features\scanner\StorageOptimizerPage.tsx:                <span className="text-sm font-black uppercase tracking-wider">
+src\features\scanner\StorageOptimizerPage.tsx:                <span className="text-sm font-black uppercase tracking-wider">
+src\features\dashboard\Dashboard.tsx:                      <span className="text-xs text-base-content/40 whitespace-nowrap ml-3">
+src\features\folder-grid\BulkActionBar.tsx:          className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-white/20 transition-colors"
+src\features\folder-grid\BulkActionBar.tsx:      <div className="h-6 w-px bg-white/20 mx-4" />
+src\features\folder-grid\BulkActionBar.tsx:          <div className="join bg-white/10 rounded-full p-0.5">
+src\features\folder-grid\BulkActionBar.tsx:            <div className="w-px h-4 bg-white/10 self-center" />
+src\features\folder-grid\BulkActionBar.tsx:          className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-white/20"
+src\features\folder-grid\BulkActionBar.tsx:          className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-white/20"
+src\features\folder-grid\BulkActionBar.tsx:      <div className="h-6 w-px bg-white/20 mx-4" />
+src\features\folder-grid\BulkActionBar.tsx:            className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-white/20"
+src\features\folder-grid\BulkTagModal.tsx:      <form method="dialog" className="modal-backdrop backdrop-blur-sm bg-black/50">
+src\features\welcome\AnimatedLogo.tsx:                initial: { stopColor: '#64B3E4' },
+src\features\welcome\AnimatedLogo.tsx:                  stopColor: prefersReduced ? '#64B3E4' : ['#64B3E4', '#A390E4', '#64B3E4'],
+src\features\welcome\AnimatedLogo.tsx:                initial: { stopColor: '#5B8AFF' },
+src\features\welcome\AnimatedLogo.tsx:                  stopColor: prefersReduced ? '#5B8AFF' : ['#5B8AFF', '#8F75F0', '#5B8AFF'],
+src\features\preview\PreviewPanel.tsx:      <div className="mx-auto flex h-full w-full max-w-140 flex-col items-center justify-center p-6 text-center border-l border-white/5 bg-base-100/30 backdrop-blur-md">
+src\features\preview\PreviewPanel.tsx:          <p className="text-xl font-bold text-white mb-2">No mod selected</p>
+src\features\preview\PreviewPanel.tsx:      className="mx-auto flex h-full w-full max-w-140 flex-col overflow-y-auto border-l border-white/5 bg-base-100/30 px-6 pb-6 pt-0 backdrop-blur-md"
+src\features\preview\PreviewPanel.tsx:                className={`btn btn-circle btn-ghost text-white/50 hover:text-white md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+src\features\preview\PreviewPanel.tsx:                className={`bg-transparent p-0 m-0 border-none outline-none focus:ring-1 focus:ring-primary focus:bg-base-200/50 rounded px-1 -ml-1 truncate tracking-tight text-white transition-all duration-200 origin-left hover:bg-white/5 ${
+src\features\preview\PreviewPanel.tsx:                className={`toggle border-white/10 bg-base-300 checked:border-primary checked:bg-primary transition-all duration-200 ${
+src\features\preview\PreviewPanel.tsx:                className={`font-medium text-white/60 transition-all duration-200 ${isScrolled ? 'text-[10px]' : 'text-sm'}`}
+src\features\preview\PreviewPanel.tsx:              className={`btn btn-circle btn-ghost hidden text-white/30 hover:bg-white/5 hover:text-white md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+src\features\preview\PreviewPanel.tsx:              className={`btn btn-circle btn-ghost text-white/30 hover:text-white md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+src\features\scanner\hooks\useDedup.ts: * Fetch detailed list of ignored (whitelisted) duplicate pairs.
+src\features\scanner\hooks\useDedup.ts: * Remove a pair from the duplicate whitelist (recover it).
+src\features\scanner\hooks\useDedup.ts: * Executes delete/keep/whitelist operations and updates folder/trash caches.
+src\features\folder-grid\FolderCard.tsx:            <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 pointer-events-none">
+src\features\folder-grid\FolderCard.tsx:              <PowerOff size={24} className="text-white/75 drop-shadow" />
+src\features\scanner\components\ResolutionModal.tsx:                      <ShieldCheck size={12} /> {t('scanner:resolution.whitelist')}
+src\features\folder-grid\FolderGridBanners.tsx:          <div className="flex items-center gap-2 mt-4 md:mt-0 whitespace-nowrap">
+src\features\object-list\FilterPanel.tsx:                    <div className="absolute top-full left-0 mt-1 z-50 p-1.5 rounded-lg bg-base-100/95 backdrop-blur-xl border border-white/10 shadow-xl min-w-40 max-h-52 overflow-y-auto">
+src\features\collections\components\SaveCollectionModal.tsx:    <div className="fixed inset-0 z-1000 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+src\features\collections\components\SaveCollectionModal.tsx:      <div className="card bg-base-200 border border-white/10 shadow-2xl w-full max-w-sm my-auto animate-in fade-in zoom-in-95 duration-200">
+src\features\object-list\EditObjectModal.tsx:                  <div className="badge badge-sm badge-success text-white">Active</div>
+src\features\object-list\ScanReviewModal.tsx:            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 z-150 [&_th]:bg-black/40 [&_th]:backdrop-blur-md">
+src\features\object-list\ScanReviewModal.tsx:                <th className="text-center border-l border-white/5">Action</th>
+src\features\object-list\EditObjectTabManual.tsx:              className={`btn btn-sm flex-1 gap-2 ${status === ItemStatus.Enabled ? 'btn-success text-white' : 'btn-ghost border-base-300'}`}
+src\features\object-list\EditObjectTabManual.tsx:              className={`btn btn-sm flex-1 gap-2 ${status === ItemStatus.Disabled ? 'btn-error text-white' : 'btn-ghost border-base-300'}`}
+src\features\object-list\ObjectList.tsx:              <span className="text-xs font-semibold whitespace-nowrap">
+src\features\settings\tabs\UpdateTab.tsx:                  <p className="text-sm opacity-80 mt-1 whitespace-pre-wrap">{update.body}</p>
+src\features\preview\keybindingValidator.ts:  // Split by whitespace
+src\features\scanner\components\IgnoredPairsModal.tsx:      <div className="modal-backdrop bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+src\features\object-list\ObjectRowItem.tsx:              className="absolute inset-0 flex items-center justify-center bg-black/45 rounded-xl pointer-events-none"
+src\features\object-list\ObjectRowItem.tsx:              <PowerOff size={isMobile ? 18 : 15} className="text-white/75 drop-shadow" />
+src\features\collections\components\ModGroupList.tsx:      <div className="text-center p-4 text-sm text-base-content/40 border border-white/5 border-dashed rounded-lg bg-base-100/10">
+src\features\collections\components\ModGroupList.tsx:            className="border border-white/5 rounded-lg overflow-hidden bg-base-100/30"
+src\features\collections\components\ModGroupList.tsx:              <div className="border-t border-white/5 py-1 px-1">
+src\features\preview\keybindingValidator.test.ts:    it('handles extra whitespace gracefully', () => {
+src\features\scanner\components\DuplicateTable.tsx:                          className="badge badge-sm badge-ghost text-[10px] whitespace-nowrap"
+src\features\collections\components\CollectionPreviewPanel.tsx:      <div className="h-14 bg-base-300/50 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-4 shrink-0 z-10">
+src\features\settings\tabs\LogsTab.tsx:                    className="whitespace-pre-wrap break-all"
+src\features\collections\components\CollectionList.tsx:      <thead className="sticky top-0 bg-base-200/95 backdrop-blur z-10 border-b border-white/5 shadow-sm">
+src\features\collections\components\CollectionList.tsx:              className={`hover border-white/5 transition-colors group cursor-pointer ${
+src\features\collections\components\CollectionList.tsx:                      className="btn btn-xs btn-square btn-success text-white shrink-0"
+src\features\collections\components\CollectionList.tsx:                      className="btn btn-xs btn-square btn-ghost opacity-0 group-hover:opacity-100 transition-opacity text-base-content/40 hover:text-white shrink-0"
+src\features\collections\components\ApplyCollectionModal.tsx:      <div className="modal-box bg-base-200 border border-white/10 shadow-2xl max-w-6xl w-11/12 flex flex-col max-h-[85vh] p-0">
+src\features\collections\components\ApplyCollectionModal.tsx:        <div className="p-6 border-b border-white/5 shrink-0 bg-base-300 flex items-center justify-between">
+src\features\collections\components\ApplyCollectionModal.tsx:            <div className="flex w-full divide-x divide-white/5">
+src\features\collections\components\ApplyCollectionModal.tsx:                <div className="p-4 bg-base-300/30 border-b border-white/5 shrink-0 flex items-center justify-between">
+src\features\collections\components\ApplyCollectionModal.tsx:                <div className="w-8 h-8 rounded-full bg-base-300 border border-white/10 flex items-center justify-center shadow-lg text-base-content/50">
+src\features\collections\components\ApplyCollectionModal.tsx:                <div className="p-4 bg-base-300/30 border-b border-white/5 shrink-0 flex items-center justify-between">
+src\features\collections\components\ApplyCollectionModal.tsx:        <div className="p-4 border-t border-white/5 bg-base-300 shrink-0 flex justify-end gap-2">
+src\features\collections\CollectionsPage.tsx:          <div className="card bg-base-200/30 border border-white/5 shadow-lg flex-1 flex flex-col transition-all duration-300 overflow-hidden">
+src\features\collections\CollectionsPage.tsx:        <div className="lg:col-span-4 flex flex-col min-h-0 bg-base-200/30 rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+src\features\settings\modals\GameFormModal.tsx:    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+src\features\settings\modals\PinModal.tsx:    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+src\features\safe-mode\PinEntryModal.tsx:      <div className="modal-box bg-base-300 border border-white/10 shadow-2xl safe-mode-modal relative">
+src\features\safe-mode\PinEntryModal.tsx:                    : 'border-white/10 focus:border-primary'
+src\features\safe-mode\PinEntryModal.tsx:                    className="btn btn-ghost hover:bg-white/5 flex-1"
+src\features\safe-mode\PinEntryModal.tsx:                        : 'border-white/10 focus:border-warning'
+src\features\safe-mode\PinEntryModal.tsx:                      className="btn btn-ghost hover:bg-white/5 flex-1"
+src\features\safe-mode\PinEntryModal.tsx:      <form method="dialog" className="modal-backdrop bg-black/40 backdrop-blur-[2px]">
+src\features\preview\components\AdvancedKeybindModal.tsx:              <kbd className="kbd bg-base-100 text-white shadow-sm border-base-content/30 px-4">
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:      <div className="modal-box bg-base-200 border border-white/10 shadow-2xl max-w-5xl flex flex-col max-h-[85vh] p-0 overflow-hidden">
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:        <div className="p-6 pb-4 border-b border-white/5 shrink-0 bg-base-300/30">
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:              <div className="flex-1 border-r border-white/5 flex flex-col min-h-0 sm:max-w-[50%]">
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:                  className={`p-4 border-b border-white/5 ${targetSafeMode ? 'bg-error/5' : 'bg-success/5'} shrink-0`}
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:                <div className="bg-base-200 rounded-full p-1 border border-white/10">
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:                  className={`p-4 border-b border-white/5 ${targetSafeMode ? 'bg-success/5' : 'bg-error/5'} shrink-0`}
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:        <div className="p-4 border-t border-white/5 shrink-0 bg-base-300/30">
+src\features\safe-mode\ModeSwitchConfirmModal.tsx:              className="btn btn-ghost hover:bg-white/5"
+src\features\preview\components\IniEditorSection.tsx:                                  className={`text-xs font-mono w-12 text-left select-none ${isPrimary ? 'text-white font-bold' : 'text-base-content/50'}`}
+src\features\preview\components\IniEditorSection.tsx:                                    className={`kbd kbd-sm min-h-6 h-auto py-1 px-3 whitespace-normal break-all text-left leading-tight bg-base-100 shadow-sm ${
+src\features\preview\components\MetadataSection.tsx:          className="flex-1 cursor-pointer rounded-lg hover:bg-white/5 p-2 -mx-2 transition-colors group"
+src\features\preview\components\MetadataSection.tsx:            <p className="text-sm text-base-content/80 whitespace-pre-wrap leading-relaxed">
+src\features\preview\components\PreviewPanelContextMenu.tsx:        className="dropdown-content z-100 menu p-2 shadow-xl bg-base-100/95 backdrop-blur-xl rounded-box w-56 border border-white/10 mt-2"

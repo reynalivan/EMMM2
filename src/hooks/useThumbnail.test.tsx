@@ -2,12 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useThumbnail, thumbnailKeys } from './useThumbnail';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../lib/bindings';
 
 vi.unmock('@tanstack/react-query');
 
+vi.mock('../lib/bindings', () => ({
+  commands: {
+    getModThumbnail: vi.fn(),
+  },
+}));
+
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+  convertFileSrc: vi.fn((path) => `asset://localhost/${path}`),
 }));
 
 describe('useThumbnail (TC-41)', () => {
@@ -24,24 +30,30 @@ describe('useThumbnail (TC-41)', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  it('TC-41-001: returns thumbnail URL when backend provides one', async () => {
-    const fakeUrl = 'asset://localhost/mods/TestMod/preview.webp';
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(fakeUrl);
+  it('TC-41-001: returns converted asset URL when backend provides absolute path', async () => {
+    const fakePath = 'C:\\AppData\\cache\\thumbnails\\abc123hash.webp';
+    const expectedUrl = `asset://localhost/${fakePath}`;
+    vi.mocked(commands.getModThumbnail).mockResolvedValueOnce(fakePath);
 
-    const { result } = renderHook(() => useThumbnail('C:\\Mods\\TestMod'), { wrapper });
+    const { result } = renderHook(() => useThumbnail('mock-game-id', 'C:\\Mods\\TestMod'), {
+      wrapper,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(result.current.data).toBe(fakeUrl);
-    expect(invoke).toHaveBeenCalledWith('get_mod_thumbnail', {
+    expect(result.current.data).toBe(expectedUrl);
+    expect(commands.getModThumbnail).toHaveBeenCalledWith({
+      gameId: 'mock-game-id',
       folderPath: 'C:\\Mods\\TestMod',
     });
   });
 
   it('TC-41-002: returns null when backend has no thumbnail (fallback)', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    vi.mocked(commands.getModThumbnail).mockResolvedValueOnce(null);
 
-    const { result } = renderHook(() => useThumbnail('C:\\Mods\\NoThumb'), { wrapper });
+    const { result } = renderHook(() => useThumbnail('mock-game-id', 'C:\\Mods\\NoThumb'), {
+      wrapper,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -49,10 +61,12 @@ describe('useThumbnail (TC-41)', () => {
   });
 
   it('TC-41-003: does not fetch when enabled=false', () => {
-    const { result } = renderHook(() => useThumbnail('C:\\Mods\\TestMod', false), { wrapper });
+    const { result } = renderHook(() => useThumbnail('mock-game-id', 'C:\\Mods\\TestMod', false), {
+      wrapper,
+    });
 
     expect(result.current.isLoading).toBe(false);
-    expect(invoke).not.toHaveBeenCalled();
+    expect(commands.getModThumbnail).not.toHaveBeenCalled();
   });
 
   it('TC-41-004: uses correct query key factory', () => {
@@ -60,15 +74,17 @@ describe('useThumbnail (TC-41)', () => {
     expect(key).toEqual(['thumbnails', 'C:\\Mods\\TestMod']);
   });
 
-  it('TC-41-005: returns empty string when backend returns empty string (falsy, not null)', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce('');
+  it('TC-41-005: returns null when backend returns empty string (falsy)', async () => {
+    vi.mocked(commands.getModThumbnail).mockResolvedValueOnce('');
 
-    const { result } = renderHook(() => useThumbnail('C:\\Mods\\TestMod'), { wrapper });
+    const { result } = renderHook(() => useThumbnail('mock-game-id', 'C:\\Mods\\TestMod'), {
+      wrapper,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    // Hook uses `res ?? null` which only coalesces null/undefined, not empty string.
-    // Callers are responsible for treating falsy values as "no thumbnail".
-    expect(result.current.data).toBe('');
+    // Hook now coalesces falsy values (including empty string) to null for safety
+    // when using convertFileSrc.
+    expect(result.current.data).toBeNull();
   });
 });

@@ -1,11 +1,15 @@
+mod common;
+
 #[cfg(test)]
 mod tests {
-    use emmm2_lib::commands::mods::mod_bulk_cmds;
-    use emmm2_lib::services::mods::info_json;
+    use super::common::init_test_db;
+    use emmm_lib::services::mods::bulk;
+    use emmm_lib::services::mods::info_json;
+    use emmm_lib::services::config::ConfigService;
     use std::fs;
     use tempfile::TempDir;
 
-    use emmm2_lib::services::scanner::watcher::WatcherState;
+    use emmm_lib::services::scanner::watcher::WatcherState;
 
     #[tokio::test]
     async fn test_bulk_toggle_mods() {
@@ -29,7 +33,7 @@ mod tests {
             mod2.to_string_lossy().to_string(),
         ];
 
-        let result = mod_bulk_cmds::bulk_toggle_mods_inner(&state, paths, false)
+        let result = bulk::bulk_toggle_inner(&state, paths, false)
             .await
             .expect("Bulk disable should succeed");
 
@@ -45,7 +49,7 @@ mod tests {
             mod3.to_string_lossy().to_string(),
         ];
 
-        let result_enable = mod_bulk_cmds::bulk_toggle_mods_inner(&state, paths_enable, true)
+        let result_enable = bulk::bulk_toggle_inner(&state, paths_enable, true)
             .await
             .expect("Bulk enable should succeed");
 
@@ -56,6 +60,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_update_info() {
+        let ctx = init_test_db().await;
+        let config = ConfigService::new_for_test(ctx.pool.clone());
+        let game_id = "test_game";
+
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
 
@@ -76,7 +84,7 @@ mod tests {
             ..info_json::ModInfoUpdate::default()
         };
 
-        let result = mod_bulk_cmds::bulk_update_info(paths, update)
+        let result = bulk::bulk_update_info(&config, game_id, paths, update)
             .await
             .expect("Bulk update should succeed");
 

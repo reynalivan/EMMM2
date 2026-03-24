@@ -1,0 +1,128 @@
+{
+  "page": {
+    "title": "收藏集",
+    "desc": "将当前启用的 Mod 和变体保存为命名的收藏集。原子化应用收藏集以立即切换整个游戏的加载项。",
+    "no_active_game": {
+      "title": "无活动游戏",
+      "desc": "请先选择一个游戏，然后打开收藏集。"
+    },
+    "actions": {
+      "undo": "撤销应用",
+      "undo_title": "还原上次应用的收藏集",
+      "save_current": "保存当前状态"
+    }
+  },
+  "tab": {
+    "safe": "安全",
+    "unsafe": "非安全"
+  },
+  "list": {
+    "empty": "未找到 {{mode}} 收藏集",
+    "empty_desc": "点击右上角的“保存当前状态”来创建您的第一个 {{mode}} 收藏集。",
+    "table": {
+      "name": "名称",
+      "mods": "Mod",
+      "actions": "操作"
+    },
+    "item": {
+      "active": "活动",
+      "undo": "撤销",
+      "rename": "重命名",
+      "apply": "应用",
+      "delete": "删除收藏集",
+      "mod_count": "{{count}} 个 Mod"
+    }
+  },
+  "preview": {
+    "title": "收藏集预览",
+    "no_selection": "选择一个收藏集以查看其内容。",
+    "empty": "此收藏集为空。",
+    "stats": {
+      "mods": "Mod",
+      "objects": "角色",
+      "variants": "变体"
+    }
+  },
+  "apply": {
+    "title_loading": "应用收藏集: ...",
+    "title": "应用收藏集: {{name}}",
+    "desc": "您即将切换活动的加载项。在继续之前，请查看目标状态。",
+    "failed": {
+      "title": "预览失败",
+      "close": "关闭"
+    },
+    "missing": {
+      "title": "检测到缺失的 Mod",
+      "desc": "以下 Mod 被此收藏集引用，但在磁盘上找不到。它们可能已被删除或移动。",
+      "anyway_q": "您是否仍要应用此收藏集？",
+      "back": "返回预览",
+      "confirm": "仍然应用（跳过缺失项）",
+      "applying": "正在应用..."
+    },
+    "panels": {
+      "before": "当前活动（之前）",
+      "after": "目标收藏集（之后）",
+      "mod_count": "{{count}} 个 Mod",
+      "empty_before": "当前没有活动的 Mod。",
+      "empty_after": "收藏集为空。"
+    },
+    "actions": {
+      "cancel": "取消",
+      "confirm": "确认应用",
+      "loading": "正在加载预览..."
+    }
+  },
+  "save": {
+    "title": "保存为新收藏集",
+    "desc": "由于当前 Mod 加载项创建一个新的收藏集。",
+    "label": "收藏集名称",
+    "placeholder": "例如：深渊挑战 1",
+    "error": {
+      "empty": "请输入收藏集名称。",
+      "failed": "保存收藏集失败：{{error}}"
+    },
+    "actions": {
+      "cancel": "取消",
+      "save": "保存收藏集",
+      "saving": "正在保存..."
+    },
+    "default_name": "预设 {{date}}"
+  },
+  "recovery": {
+    "title": "检测到中断的任务",
+    "desc": "EMMM 检测到之前的关键操作（例如应用收藏集或切换安全模式）在完成前被中断。",
+    "pending": "待处理任务 ({{count}})",
+    "important": "重要",
+    "warning": "清除这些任务将允许您再次访问应用。您应该手动重试中断的收藏集应用或模式切换，以确保您的游戏文件处于正确状态。",
+    "actions": {
+      "clear": "中止并清除",
+      "clearing": "正在清除...",
+      "resume": "恢复任务",
+      "resuming": "正在恢复..."
+    },
+    "toast": {
+      "cleared": "中断的任务已清除。您可以重试上次操作。",
+      "resumed": "中断的操作已成功恢复并完成。",
+      "resume_failed": "恢复失败：{{error}}"
+    }
+  },
+  "randomizer": {
+    "title": "智能随机生成器",
+    "desc": "为每个活动角色推荐 1 个随机禁用的 Mod。查看并应用。",
+    "safe_mode": "安全模式",
+    "no_eligible": "未找到符合条件的角色 Mod（请检查过滤器或确保您有禁用的 Mod）。",
+    "consulting": "正在咨询 RNG 大神...",
+    "reroll": "全部重抽",
+    "roll": "碰碰运气",
+    "apply": "应用 ({{count}})",
+    "applying": "正在应用...",
+    "select_all": "全选",
+    "deselect_all": "全不选",
+    "selection_status": "已选 {{selected}} / {{total}}",
+    "empty_desc": "点击“碰碰运气”生成推荐。"
+  },
+  "mod_row": {
+    "unknown": "未知 Mod",
+    "nested": "嵌套 Mod"
+  }
+}

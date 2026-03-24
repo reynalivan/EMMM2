@@ -1,7 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, serde::Deserialize, specta::Type)]
 pub enum CommandError {
     #[error("Database error: {0}")]
     Database(String),
@@ -13,20 +13,13 @@ pub enum CommandError {
     Internal(String),
     #[error("App error: {0}")]
     App(String),
+    #[error("Object has {0} mods")]
+    ObjectHasMods(i64),
 }
 
 impl From<sqlx::Error> for CommandError {
     fn from(error: sqlx::Error) -> Self {
         CommandError::Database(error.to_string())
-    }
-}
-
-impl Serialize for CommandError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.to_string().as_ref())
     }
 }
 

@@ -6,6 +6,7 @@ use crate::services::scanner::watcher::WatcherState;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn dup_resolve_batch(
     app: AppHandle,
     requests: Vec<ResolutionRequest>,

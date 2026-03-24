@@ -52,6 +52,8 @@ vi.mock('../../hooks/useActiveGame', () => ({
       game_exe: 'E:/Game/Genshin.exe',
       loader_exe: null,
       launch_args: null,
+      category: null,
+      warnings: [],
     },
   }),
 }));
@@ -70,21 +72,34 @@ const mockFullStats = {
   },
   duplicate_waste_bytes: 0,
   category_distribution: [
-    { category: 'Character', count: 25 },
-    { category: 'Weapon', count: 10 },
-    { category: 'UI', count: 7 },
+    { name: 'Character', value: 25 },
+    { name: 'Weapon', value: 10 },
+    { name: 'UI', value: 7 },
   ],
   game_distribution: [
-    { game_id: 'g-1', game_name: 'Genshin Impact', count: 30 },
-    { game_id: 'g-2', game_name: 'HSR', count: 12 },
+    { name: 'Genshin Impact', value: 30 },
+    { name: 'HSR', value: 12 },
   ],
   recent_mods: [
     {
       id: 'mod-1',
       name: 'Hu Tao Quantum Mod',
-      game_name: 'Genshin Impact',
-      object_name: 'HuTao',
-      indexed_at: new Date().toISOString(),
+      folder_name: 'Hu Tao Quantum Mod',
+      path: 'E:/Mods/HuTao/Quantum',
+      is_enabled: true,
+      is_directory: true,
+      thumbnail_path: null,
+      modified_at: Date.now(),
+      size_bytes: 1024,
+      has_info_json: false,
+      is_favorite: false,
+      is_misplaced: false,
+      is_safe: true,
+      metadata: null,
+      category: 'Character',
+      node_type: 'mod',
+      classification_reasons: [],
+      warnings: [],
     },
   ],
 };
@@ -166,7 +181,7 @@ describe('Dashboard - TC-33', () => {
 
       render(<Dashboard />);
 
-      expect(screen.getByText(/Welcome to EMMM2/i)).toBeInTheDocument();
+      expect(screen.getByText(/Welcome to EMMM/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Add Your First Game/i })).toBeInTheDocument();
     });
   });
@@ -392,7 +407,7 @@ describe('Dashboard - TC-33', () => {
 
       render(<Dashboard />);
 
-      expect(screen.getByText('Mods per Game')).toBeInTheDocument();
+      expect(screen.getByText(/dashboard\.mods_per_game/i)).toBeInTheDocument();
       expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
     });
   });

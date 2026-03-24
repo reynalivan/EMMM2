@@ -16,26 +16,26 @@ static VARIABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
 static KEY_BACK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*(key|back)\s*=\s*([^;#\r\n]+)").expect("valid key regex"));
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum IniReadMode {
     Structured,
     RawFallback,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum NewlineStyle {
     Lf,
     CrLf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct IniVariable {
     pub name: String,
     pub value: String,
     pub line_idx: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeyBinding {
     pub section_name: String,
     pub key: Option<String>,
@@ -44,9 +44,9 @@ pub struct KeyBinding {
     pub back_line_idx: Option<usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct IniDocument {
-    pub file_path: PathBuf,
+    pub file_path: std::path::PathBuf,
     pub raw_lines: Vec<String>,
     pub variables: Vec<IniVariable>,
     pub key_bindings: Vec<KeyBinding>,

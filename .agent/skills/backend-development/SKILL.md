@@ -5,7 +5,7 @@ description: Guide for Backend API design, database architecture, and Rust servi
 
 # Backend Development Skill
 
-Rules for the Rust "Engine" of EMMM2.
+Rules for the Rust "Engine" of EMMM.
 
 ## 1. Core Architecture (The 3-Layer Standard)
 

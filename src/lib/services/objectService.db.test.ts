@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ItemStatus } from '../../types/object';
 import { getObjects } from './objectService';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -15,14 +16,13 @@ describe('objectService API tests', () => {
   it('passes the correct payload to get_objects_cmd', async () => {
     // Arrange
     const filter = {
-      game_id: 'genshin',
-      safe_mode: true,
-      meta_filters: {
-        Element: ['Pyro', 'Hydro'],
-        Rarity: ['5-Star'],
-      },
+      game_id: 'gimi_1',
+      safe_mode: false,
+      meta_filters: { Element: ['Electro'], Rarity: ['5'] },
       sort_by: 'date' as const,
-      status_filter: 'enabled' as const,
+      status_filter: ItemStatus.Enabled,
+      search_query: '',
+      object_type: null,
     };
 
     vi.mocked(invoke).mockResolvedValue({ objects: [], lost_objects: [] });

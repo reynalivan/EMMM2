@@ -3,13 +3,15 @@ import { useState, useEffect } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useActiveConflicts } from '../../hooks/useFolders';
 import { useAppStore } from '../../stores/useAppStore';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
 import { exit } from '@tauri-apps/plugin-process';
 import RandomizerModal from '../randomizer/RandomizerModal';
 import ConflictModal from '../conflict-report/ConflictModal';
 import ConflictToast from '../scanner/components/ConflictToast';
+import { useTranslation } from 'react-i18next';
 
 export default function LaunchBar() {
+  const { t } = useTranslation(['layout']);
   const { activeGame } = useActiveGame();
   const { autoCloseLauncher } = useAppStore();
   const [isLaunching, setIsLaunching] = useState(false);
@@ -32,7 +34,7 @@ export default function LaunchBar() {
     setError(null);
 
     try {
-      await invoke('launch_game', { gameId: activeGame.id });
+      await commands.launchGame({ gameId: activeGame.id });
 
       if (autoCloseLauncher) {
         await exit(0);
@@ -59,7 +61,7 @@ export default function LaunchBar() {
         <button
           className="btn btn-neutral btn-sm px-3"
           onClick={() => setRandomizerOpen(true)}
-          title="Randomizer (Gacha)"
+          title={t('layout:launch_bar.randomizer')}
         >
           <Shuffle size={12} />
         </button>
@@ -72,10 +74,10 @@ export default function LaunchBar() {
                 setConflictOpen(true);
                 setShowToast(false);
               }}
-              title={`${conflicts.length} Shader Conflicts Detected`}
+              title={t('layout:launch_bar.conflict_toast', { count: conflicts.length })}
             >
               <AlertTriangle size={16} />
-              <span className="hidden sm:inline">Conflicts</span>
+              <span className="hidden sm:inline">{t('layout:launch_bar.conflicts')}</span>
             </button>
             {showToast && (
               <ConflictToast conflicts={conflicts} onDismiss={() => setShowToast(false)} />
@@ -93,7 +95,7 @@ export default function LaunchBar() {
           ) : (
             <Play size={12} fill="currentColor" />
           )}
-          {isLaunching ? 'Launching...' : 'Play'}
+          {isLaunching ? t('layout:launch_bar.launching') : t('layout:launch_bar.play')}
         </button>
       </div>
 

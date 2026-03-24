@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import type { ModInfo, ModInfoUpdate } from '../../../types/mod';
+import type { ModInfoUpdate } from '../../../types/mod';
 import { folderKeys } from '../../../hooks/useFolders';
 import { useAppStore } from '../../../stores/useAppStore';
+import { commands } from '../../../lib/bindings';
 
 export interface IniFileEntry {
   filename: string;
@@ -100,7 +100,7 @@ export function useModInfo(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.modInfo(normalizedPath ?? ''),
-    queryFn: () => invoke<ModInfo | null>('read_mod_info', { folderPath: normalizedPath }),
+    queryFn: () => commands.readModInfo({ folderPath: normalizedPath ?? '' }),
     enabled: !!normalizedPath,
     staleTime: 10_000,
   });
@@ -111,7 +111,7 @@ export function useModIniFiles(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.iniFiles(normalizedPath ?? ''),
-    queryFn: () => invoke<IniFileEntry[]>('list_mod_ini_files', { folderPath: normalizedPath }),
+    queryFn: () => commands.listModIniFiles({ folderPath: normalizedPath ?? '' }),
     enabled: !!normalizedPath,
     staleTime: 10_000,
   });
@@ -124,9 +124,9 @@ export function useModIniDocument(folderPath?: string | null, fileName?: string 
   return useQuery({
     queryKey: detailsKeys.iniDocument(normalizedPath ?? '', normalizedName ?? ''),
     queryFn: () =>
-      invoke<IniDocument>('read_mod_ini', {
-        folderPath: normalizedPath,
-        fileName: normalizedName,
+      commands.readModIni({
+        folderPath: normalizedPath ?? '',
+        fileName: normalizedName ?? '',
       }),
     enabled: !!normalizedPath && !!normalizedName,
     staleTime: 0,
@@ -141,8 +141,8 @@ export function useAllModIniDocuments(folderPath?: string | null, files?: IniFil
     queries: safeFiles.map((file) => ({
       queryKey: detailsKeys.iniDocument(normalizedPath ?? '', file.filename),
       queryFn: () =>
-        invoke<IniDocument>('read_mod_ini', {
-          folderPath: normalizedPath,
+        commands.readModIni({
+          folderPath: normalizedPath ?? '',
           fileName: file.filename,
         }),
       enabled: !!normalizedPath,
@@ -156,7 +156,7 @@ export function usePreviewImages(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.previewImages(normalizedPath ?? ''),
-    queryFn: () => invoke<string[]>('list_mod_preview_images', { folderPath: normalizedPath }),
+    queryFn: () => commands.listModPreviewImages({ folderPath: normalizedPath ?? '' }),
     enabled: !!normalizedPath,
     staleTime: 10_000,
   });
@@ -166,7 +166,7 @@ export function useWriteModIni() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: WriteModIniInput) => invoke<void>('write_mod_ini', { ...input }),
+    mutationFn: (input: WriteModIniInput) => commands.writeModIni({ ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: detailsKeys.iniDocument(variables.folderPath, variables.fileName),
@@ -180,7 +180,7 @@ export function usePastePreviewImage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: PastePreviewImageInput) => invoke<string>('paste_thumbnail', { ...input }),
+    mutationFn: (input: PastePreviewImageInput) => commands.pasteThumbnail({ ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
@@ -192,8 +192,7 @@ export function useSavePreviewImage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: SavePreviewImageInput) =>
-      invoke<string>('save_mod_preview_image', { ...input }),
+    mutationFn: (input: SavePreviewImageInput) => commands.saveModPreviewImage({ ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
@@ -205,8 +204,7 @@ export function useRemovePreviewImage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: RemovePreviewImageInput) =>
-      invoke<void>('remove_mod_preview_image', { ...input }),
+    mutationFn: (input: RemovePreviewImageInput) => commands.removeModPreviewImage({ ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
@@ -218,8 +216,7 @@ export function useClearPreviewImages() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: ClearPreviewImagesInput) =>
-      invoke<string[]>('clear_mod_preview_images', { ...input }),
+    mutationFn: (input: ClearPreviewImagesInput) => commands.clearModPreviewImages({ ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
@@ -231,7 +228,7 @@ export function useUpdateModInfoDetails() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: UpdateModInfoInput) => invoke<ModInfo>('update_mod_info', { ...input }),
+    mutationFn: (input: UpdateModInfoInput) => commands.updateModInfo({ ...input }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: detailsKeys.modInfo(variables.folderPath) });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });

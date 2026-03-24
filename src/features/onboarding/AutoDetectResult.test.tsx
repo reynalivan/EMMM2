@@ -1,11 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '../../testing/test-utils';
 import { describe, it, expect, vi } from 'vitest';
-import AutoDetectResult from './AutoDetectResult';
+import { AutoDetectResult } from './AutoDetectResult';
 import type { GameConfig } from '../../types/game';
 
 describe('AutoDetectResult (TC-03)', () => {
   const mockOnContinue = vi.fn();
-  const mockOnAddMore = vi.fn();
   const mockOnRemoveGame = vi.fn();
   const mockOnGoBack = vi.fn();
 
@@ -18,32 +17,31 @@ describe('AutoDetectResult (TC-03)', () => {
     render(
       <AutoDetectResult
         games={games}
-        onContinue={mockOnContinue}
-        onAddMore={mockOnAddMore}
+        onConfirm={mockOnContinue}
         onRemoveGame={mockOnRemoveGame}
-        onGoBack={mockOnGoBack}
+        onBack={mockOnGoBack}
       />,
     );
 
-    expect(screen.getByText('2 Games Found!')).toBeInTheDocument();
+    // Using flexible regex since i18next might return raw keys in test
+    expect(screen.getByText(/result\.title/i)).toBeInTheDocument();
     expect(screen.getByText('Game 1')).toBeInTheDocument();
     expect(screen.getByText('Game 2')).toBeInTheDocument();
-    expect(screen.getByText('GIMI')).toBeInTheDocument();
-    expect(screen.getByText('SRMI')).toBeInTheDocument();
+    // Check for the new big checkmark icon (and the one in the button)
+    expect(screen.getAllByTestId('icon-check')).toHaveLength(2);
   });
 
   it('handles empty state properly', () => {
     render(
       <AutoDetectResult
         games={[]}
-        onContinue={mockOnContinue}
-        onAddMore={mockOnAddMore}
+        onConfirm={mockOnContinue}
         onRemoveGame={mockOnRemoveGame}
-        onGoBack={mockOnGoBack}
+        onBack={mockOnGoBack}
       />,
     );
 
-    expect(screen.getByText('0 Games Found!')).toBeInTheDocument();
+    expect(screen.getByText(/result\.title/i)).toBeInTheDocument();
   });
 
   it('triggers callbacks', () => {
@@ -53,21 +51,25 @@ describe('AutoDetectResult (TC-03)', () => {
     render(
       <AutoDetectResult
         games={games}
-        onContinue={mockOnContinue}
-        onAddMore={mockOnAddMore}
+        onConfirm={mockOnContinue}
         onRemoveGame={mockOnRemoveGame}
-        onGoBack={mockOnGoBack}
+        onBack={mockOnGoBack}
       />,
     );
 
-    fireEvent.click(screen.getByText(/Add Another/i));
-    expect(mockOnAddMore).toHaveBeenCalled();
+    // Testing back to welcome button
+    fireEvent.click(screen.getByText(/result\.back_to_welcome/i));
+    expect(mockOnGoBack).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText(/Confirm/i));
+    // Testing bottom buttons
+    fireEvent.click(screen.getByText(/result\.add_another/i));
+    expect(mockOnGoBack).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByText(/result\.confirm/i));
     expect(mockOnContinue).toHaveBeenCalled();
 
     // Clicking trash icon
-    const removeBtn = screen.getByTitle('Remove from detection');
+    const removeBtn = screen.getByTitle(/result\.remove_tip/i);
     fireEvent.click(removeBtn);
     expect(mockOnRemoveGame).toHaveBeenCalledWith('g1');
   });

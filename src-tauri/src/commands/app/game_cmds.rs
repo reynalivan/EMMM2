@@ -11,6 +11,7 @@ fn canonical_game_path_key(path: &str) -> String {
 
 /// Auto-detect games by scanning an XXMI root folder.
 /// Validates each subfolder, saves valid games to ConfigService.
+#[specta::specta]
 #[tauri::command]
 pub async fn auto_detect_games(
     state: tauri::State<'_, ConfigService>,
@@ -41,7 +42,7 @@ pub async fn auto_detect_games_inner(
         let game = GameConfig {
             id,
             name: display_name.to_string(),
-            game_type: game_type_str.to_string(),
+            game_type: game_type_str.parse().unwrap_or(GameType::GIMI),
             mod_path: PathBuf::from(&info.mods_path),
             game_exe: PathBuf::from(&info.path),
             loader_exe: Some(PathBuf::from(&info.launcher_path)),
@@ -71,6 +72,7 @@ pub async fn auto_detect_games_inner(
 
 /// Manually add a single game by path and type.
 /// Validates the folder, checks for duplicates, saves to ConfigService.
+#[specta::specta]
 #[tauri::command]
 pub async fn add_game_manual(
     state: tauri::State<'_, ConfigService>,
@@ -110,7 +112,7 @@ pub async fn add_game_manual_inner(
     let game = GameConfig {
         id,
         name: gt.display_name().to_string(),
-        game_type: gt.to_string(),
+        game_type: gt,
         mod_path: PathBuf::from(&info.mods_path),
         game_exe: PathBuf::from(&info.path),
         loader_exe: Some(PathBuf::from(&info.launcher_path)),
@@ -133,6 +135,7 @@ pub async fn add_game_manual_inner(
 }
 
 /// Save confirmed games from onboarding into the database/settings
+#[specta::specta]
 #[tauri::command]
 pub async fn save_onboarding_games(
     state: tauri::State<'_, ConfigService>,
@@ -171,6 +174,7 @@ pub async fn save_onboarding_games_inner(
 
 /// Remove a game from the database.
 /// Used during onboarding if a user wants to discard an auto-detected game.
+#[specta::specta]
 #[tauri::command]
 pub async fn remove_game(
     state: tauri::State<'_, ConfigService>,
@@ -180,6 +184,7 @@ pub async fn remove_game(
 }
 
 /// Get all configured games.
+#[specta::specta]
 #[tauri::command]
 pub async fn get_games(state: tauri::State<'_, ConfigService>) -> Result<Vec<GameConfig>, String> {
     Ok(state.get_settings().games)
@@ -187,6 +192,7 @@ pub async fn get_games(state: tauri::State<'_, ConfigService>) -> Result<Vec<Gam
 
 /// Launch the 3DMigoto Loader (if not running) and then the Game.
 /// Covers: US-10.1, TC-10.1-01
+#[specta::specta]
 #[tauri::command]
 pub async fn launch_game(
     state: tauri::State<'_, ConfigService>,

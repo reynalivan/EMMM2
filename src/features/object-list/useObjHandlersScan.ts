@@ -1,22 +1,15 @@
-/**
- * useObjHandlersScan — Scan preview, commit, and single-object DB sync.
- * Extracted from useObjectListHandlers for SRP.
- */
-
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import { exists, remove } from '@tauri-apps/plugin-fs';
+import { commands } from '../../lib/bindings';
+import type { ScanPreviewItem, ConfirmedScanItem } from '../../types/scanner';
+
+import { scanService } from '../../lib/services/scanService';
 import { useUpdateObject } from '../../hooks/useObjects';
-import { useActiveGame } from '../../hooks/useActiveGame';
-import {
-  scanService,
-  type ScanPreviewItem,
-  type ConfirmedScanItem,
-} from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
-import { reconcileActiveCollection } from '../collections/utils/reconcileActiveCollection';
+import { corridorKeys } from '../collections/queryKeys';
 import { parseMasterDb } from './objHandlersHelpers';
+import { useTranslation } from 'react-i18next';
+import { useActiveGame } from '../../hooks/useActiveGame';
 import type { ObjectSummary } from '../../types/object';
 import type { ModFolder } from '../../hooks/useFolders';
 import type { MatchedDbEntry } from './SyncConfirmModal';
@@ -28,12 +21,14 @@ interface ScanDeps {
 }
 
 export function useObjHandlersScan({ objects, folders }: ScanDeps) {
+  const { t } = useTranslation(['objects', 'common', 'scanner']);
   const { activeGame } = useActiveGame();
   const queryClient = useQueryClient();
   const updateObject = useUpdateObject();
 
   // ── State ────────────────────────────────────────────────────────
   const [isSyncing, setIsSyncing] = useState(false);
+  const isSyncingRef = useRef(false);
 
   const [scanReview, setScanReview] = useState<{
     open: boolean;
@@ -69,7 +64,8 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
 
   // ── Full scan preview ────────────────────────────────────────────
   const handleSync = useCallback(async () => {
-    if (!activeGame || isSyncing) return;
+    if (!activeGame || isSyncingRef.current) return;
+    isSyncingRef.current = true;
     setIsSyncing(true);
     try {
       const previewItems = await scanService.scanPreview(
@@ -88,15 +84,17 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
       });
     } catch (e) {
       console.error('Scan preview failed:', e);
-      toast.error(`Scan failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(t('scanner:scan_failed', { error: e instanceof Error ? e.message : String(e) }));
     } finally {
+      isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [activeGame, isSyncing]);
+  }, [activeGame, t]);
 
   // ── Background Indexing ──────────────────────────────────────────
   const handleBackgroundSync = useCallback(async () => {
-    if (!activeGame || isSyncing) return;
+    if (!activeGame || isSyncingRef.current) return;
+    isSyncingRef.current = true;
     setIsSyncing(true);
     try {
       await scanService.quickImport(
@@ -108,13 +106,14 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      await reconcileActiveCollection({ gameId: activeGame.id });
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
     } catch (e) {
       console.error('Background sync failed:', e);
     } finally {
+      isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [activeGame, isSyncing, queryClient]);
+  }, [activeGame, queryClient]);
 
   // ── Commit scan results ──────────────────────────────────────────
   const handleCommitScan = useCallback(
@@ -132,9 +131,13 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
         queryClient.invalidateQueries({ queryKey: ['objects'] });
         queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
         queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-        await reconcileActiveCollection({ gameId: activeGame.id });
+        queryClient.invalidateQueries({ queryKey: corridorKeys.all });
         toast.success(
-          `Sync complete: ${result.total_scanned} scanned, ${result.new_mods} new, ${result.new_objects} objects`,
+          t('objects:sync.toast.complete', {
+            scanned: result.total_scanned,
+            newMods: result.new_mods,
+            newObjects: result.new_objects,
+          }),
         );
         setScanReview({ open: false, items: [], masterDbEntries: [], isCommitting: false });
       } catch (e) {
@@ -142,30 +145,20 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
         const errMsg = e instanceof Error ? e.message : String(e);
         if (errMsg.includes('DUPLICATE|')) {
           const dest = errMsg.split('DUPLICATE|')[1] || '';
-          toast.error(`Destination exists: ${dest}. Please rename the folder or skip it.`);
+          toast.error(t('objects:sync.toast.destination_exists', { dest }));
         } else {
-          toast.error(`Commit failed: ${errMsg}`);
+          toast.error(t('objects:sync.toast.commit_failed', { error: errMsg }));
         }
         setScanReview((prev) => ({ ...prev, isCommitting: false }));
       }
     },
-    [activeGame, queryClient],
+    [activeGame, queryClient, t],
   );
 
   const handleCloseScanReview = useCallback(async () => {
     if (scanReview.isCommitting) return;
-    if (activeGame) {
-      const tempPath = `${activeGame.mod_path}\\.emmm2_temp`;
-      try {
-        if (await exists(tempPath)) {
-          await remove(tempPath, { recursive: true });
-        }
-      } catch (e) {
-        console.error('Failed to cleanup temp folder:', e);
-      }
-    }
     setScanReview({ open: false, items: [], masterDbEntries: [], isCommitting: false });
-  }, [scanReview.isCommitting, activeGame]);
+  }, [scanReview.isCommitting]);
 
   // ── Single-object DB sync ────────────────────────────────────────
   const handleSyncWithDb = useCallback(
@@ -205,11 +198,12 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
         currentData,
       });
       try {
-        const match = await invoke<MatchedDbEntry | null>('match_object_with_db', {
+        const match = await commands.matchObjectWithDb({
           gameType: activeGame.game_type,
           objectName: name,
         });
-        setSyncConfirm((prev) => ({ ...prev, match, isLoading: false }));
+
+        setSyncConfirm((prev) => ({ ...prev, match: match as MatchedDbEntry, isLoading: false }));
       } catch (e) {
         console.error('Match failed:', e);
         setSyncConfirm((prev) => ({ ...prev, isLoading: false }));
@@ -237,14 +231,15 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
           let currentPath = objectId;
           const folder = folders.find((f) => f.path === objectId);
           if (folder && match.name !== folder.name) {
-            const result = await invoke<{ new_path: string }>('rename_mod_folder', {
+            const result = await commands.renameModFolder({
               folderPath: objectId,
               newName: match.name,
+              gameId: activeGame?.id ?? '',
             });
             currentPath = result.new_path;
           }
           if (activeGame && match.object_type) {
-            await invoke('set_mod_category', {
+            await commands.setModCategory({
               gameId: activeGame.id,
               folderPath: currentPath,
               category: match.object_type,
@@ -255,13 +250,13 @@ export function useObjHandlersScan({ objects, folders }: ScanDeps) {
             Object.entries(match.metadata).forEach(([k, v]) => {
               if (v !== undefined && v !== null) metaStrings[k] = String(v);
             });
-            await invoke('update_mod_info', {
+            await commands.updateModInfo({
               folderPath: currentPath,
               update: { metadata: metaStrings },
             });
           }
           if (match.thumbnail_path) {
-            await invoke('paste_thumbnail', {
+            await commands.updateModThumbnail({
               folderPath: currentPath,
               sourcePath: match.thumbnail_path,
             });

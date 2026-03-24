@@ -1,5 +1,6 @@
 import { KeyboardEvent, useState } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface TagInputProps {
   tags: string[];
@@ -9,6 +10,7 @@ interface TagInputProps {
 }
 
 export function TagInput({ tags = [], onChange, placeholder, className = '' }: TagInputProps) {
+  const { t } = useTranslation(['common']);
   const [inputValue, setInputValue] = useState('');
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -39,7 +41,7 @@ export function TagInput({ tags = [], onChange, placeholder, className = '' }: T
             type="button"
             onClick={() => removeTag(tag)}
             className="hover:bg-primary-focus rounded-full p-0.5"
-            aria-label={`Remove ${tag}`}
+            aria-label={t('actions.remove', { item: tag })}
           >
             <X size={12} />
           </button>
@@ -47,7 +49,7 @@ export function TagInput({ tags = [], onChange, placeholder, className = '' }: T
       ))}
       <input
         type="text"
-        className="flex-1 min-w-[120px] bg-transparent outline-none px-2 py-1 text-sm text-base-content"
+        className="flex-1 min-w-30 bg-transparent outline-none px-2 py-1 text-sm text-base-content"
         placeholder={tags.length === 0 ? placeholder : ''}
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}

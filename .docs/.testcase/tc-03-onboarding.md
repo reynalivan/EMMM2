@@ -22,19 +22,19 @@
 
 ## C. Test Cases
 
-| TC ID | Scenario | Type | Priority | Preconditions | Test Data | Steps | Expected Result | Coverage |
-| -------- | -------------------------------------- | -------- | -------- | --------------------- | --------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------- |
-| TC-03-01 | Fresh Boot pushes to Welcome | Positive | High | Cleared DB, no games | N/A | 1. Launch EMMM2 | Router defaults to`/welcome`. Dashboard is hidden. | AC-03.1.1, AC-03.1.2 |
-| TC-03-02 | Language & Theme Preference | Positive | Med | On`/welcome` |`ja-JP`,`dark` | 1. Select 'Japanese'<br>2. Select 'Dark' | UI translates instantly via i18next. Theme updates. Setting saved to schema instantly. | AC-03.1.3, AC-03.1.4 |
-| TC-03-03 | Auto-Detect FTUE populates list | Positive | High | Games found on C: | N/A | 1. Click 'Scan Entire PC' | Progress bar shows. Games appear in list. Proceed button unlocks. | AC-03.2.1, AC-03.2.2 |
-| TC-03-04 | Auto-Detect finds nothing | Negative | Med | No games on system | N/A | 1. Click 'Scan Entire PC' | Progress finishes. UI says "No games found". Proceed button stays disabled. | AC-03.2.3 |
-| TC-03-05 | Manual Add overrides lock | Positive | High | Valid path copied | Valid Game | 1. Click 'Add Manually'<br>2. Paste path<br>3. Submit | Game appears in list. Proceed button unlocks. | AC-03.3.1, AC-03.3.2 |
-| TC-03-06 | Manual Add invalid shows inline error | Negative | High | Invalid directory | N/A | 1. Click 'Add Manually'<br>2. Select Desktop<br>3. Submit | Input turns red stating`Executable not found`. Proceed stays locked. | AC-03.3.3 |
-| TC-03-07 | Proceed requires >= 1 game | Negative | High | db count == 0 | N/A | 1. Inspect 'Get Started' button | Button is strictly disabled and unclickable. | AC-03.4.1 |
-| TC-03-08 | Finishing Setup transitions app | Positive | High | 1 game in list | N/A | 1. Click 'Get Started' | Router animates`/welcome` out, mounts`/dashboard`. DB`onboarding_complete` set. | AC-03.4.2 |
-| TC-03-09 | Welcome Screen inaccessible post-setup | Positive | High | db count >= 1 | N/A | 1. Open app normally | App skips`/welcome` entirely, routing straight to`/dashboard`. | AC-03.5.1 |
-| TC-03-10 | Force URL Navigation block | Edge | Med | db count >= 1 | URL`/welcome` | 1. Force inject router memory to Push(`/welcome`) | Router explicitly redirects back to`/dashboard` instantly. | AC-03.5.1 |
-| TC-03-11 | Auto-Detect cancel aborts IO | Edge | Med | In-progress deep scan | N/A | 1. Click 'Scan'<br>2. Immediately click 'Cancel' | Rust thread kills watcher. UI resets. | AC-03.2.2 |
+| TC ID    | Scenario                               | Type     | Priority | Preconditions         | Test Data      | Steps                                                     | Expected Result                                                                        | Coverage             |
+| -------- | -------------------------------------- | -------- | -------- | --------------------- | -------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------- |
+| TC-03-01 | Fresh Boot pushes to Welcome           | Positive | High     | Cleared DB, no games  | N/A            | 1. Launch EMMM                                            | Router defaults to`/welcome`. Dashboard is hidden.                                     | AC-03.1.1, AC-03.1.2 |
+| TC-03-02 | Language & Theme Preference            | Positive | Med      | On`/welcome`          | `ja-JP`,`dark` | 1. Select 'Japanese'<br>2. Select 'Dark'                  | UI translates instantly via i18next. Theme updates. Setting saved to schema instantly. | AC-03.1.3, AC-03.1.4 |
+| TC-03-03 | Auto-Detect FTUE populates list        | Positive | High     | Games found on C:     | N/A            | 1. Click 'Scan Entire PC'                                 | Progress bar shows. Games appear in list. Proceed button unlocks.                      | AC-03.2.1, AC-03.2.2 |
+| TC-03-04 | Auto-Detect finds nothing              | Negative | Med      | No games on system    | N/A            | 1. Click 'Scan Entire PC'                                 | Progress finishes. UI says "No games found". Proceed button stays disabled.            | AC-03.2.3            |
+| TC-03-05 | Manual Add overrides lock              | Positive | High     | Valid path copied     | Valid Game     | 1. Click 'Add Manually'<br>2. Paste path<br>3. Submit     | Game appears in list. Proceed button unlocks.                                          | AC-03.3.1, AC-03.3.2 |
+| TC-03-06 | Manual Add invalid shows inline error  | Negative | High     | Invalid directory     | N/A            | 1. Click 'Add Manually'<br>2. Select Desktop<br>3. Submit | Input turns red stating`Executable not found`. Proceed stays locked.                   | AC-03.3.3            |
+| TC-03-07 | Proceed requires >= 1 game             | Negative | High     | db count == 0         | N/A            | 1. Inspect 'Get Started' button                           | Button is strictly disabled and unclickable.                                           | AC-03.4.1            |
+| TC-03-08 | Finishing Setup transitions app        | Positive | High     | 1 game in list        | N/A            | 1. Click 'Get Started'                                    | Router animates`/welcome` out, mounts`/dashboard`. DB`onboarding_complete` set.        | AC-03.4.2            |
+| TC-03-09 | Welcome Screen inaccessible post-setup | Positive | High     | db count >= 1         | N/A            | 1. Open app normally                                      | App skips`/welcome` entirely, routing straight to`/dashboard`.                         | AC-03.5.1            |
+| TC-03-10 | Force URL Navigation block             | Edge     | Med      | db count >= 1         | URL`/welcome`  | 1. Force inject router memory to Push(`/welcome`)         | Router explicitly redirects back to`/dashboard` instantly.                             | AC-03.5.1            |
+| TC-03-11 | Auto-Detect cancel aborts IO           | Edge     | Med      | In-progress deep scan | N/A            | 1. Click 'Scan'<br>2. Immediately click 'Cancel'          | Rust thread kills watcher. UI resets.                                                  | AC-03.2.2            |
 
 ## D. Missing / Implied Test Areas
 

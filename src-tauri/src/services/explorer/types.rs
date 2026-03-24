@@ -28,7 +28,7 @@ impl Default for InfoAnalysis {
 // ── Public types ──────────────────────────────────────────────────────────────
 
 /// Represents a single mod folder entry from the filesystem.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ModFolder {
     /// Classification: "ContainerFolder" | "ModPackRoot" | "VariantContainer" | "InternalAssets"
     pub node_type: String,
@@ -49,8 +49,10 @@ pub struct ModFolder {
     /// Discovered thumbnail image path (if any)
     pub thumbnail_path: Option<String>,
     /// Last modified time (epoch seconds)
+    #[specta(type = f64)]
     pub modified_at: u64,
     /// Total size in bytes (shallow for directories)
+    #[specta(type = f64)]
     pub size_bytes: u64,
     /// Whether the folder contains an info.json file
     pub has_info_json: bool,
@@ -68,10 +70,12 @@ pub struct ModFolder {
     pub conflict_group_id: Option<String>,
     /// Conflict state: "EnabledDisabledBothPresent" when both X and DISABLED X exist
     pub conflict_state: Option<String>,
+    /// Diagnostic warnings (e.g. 0KB corrupt INI files)
+    pub warnings: Vec<String>,
 }
 
 /// A single member of a conflict group (for the Resolve dialog).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ConflictMember {
     /// Full absolute path
     pub path: String,
@@ -80,14 +84,16 @@ pub struct ConflictMember {
     /// Whether the folder is enabled
     pub is_enabled: bool,
     /// Last modified time (epoch seconds)
+    #[specta(type = f64)]
     pub modified_at: u64,
     /// Total size in bytes
+    #[specta(type = f64)]
     pub size_bytes: u64,
 }
 
 /// A group of folders sharing the same base name in the same parent directory.
 /// Created when both "X" and "DISABLED X" exist on disk.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ConflictGroup {
     /// Stable identifier: hash(parent_dir + base_name)
     pub group_id: String,
@@ -99,7 +105,7 @@ pub struct ConflictGroup {
 
 /// Response payload for `FolderGrid` navigation. Includes both
 /// the children folders and data about the navigated folder itself.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct FolderGridResponse {
     pub self_node_type: Option<String>,
     pub self_is_mod: bool,
@@ -108,4 +114,8 @@ pub struct FolderGridResponse {
     pub children: Vec<ModFolder>,
     /// Conflict groups detected in children (empty if none)
     pub conflicts: Vec<ConflictGroup>,
+    /// Display name of the nearest disabled ancestor in the current sub_path.
+    pub ancestor_disabled_by: Option<String>,
+    /// Absolute path of the nearest disabled ancestor (for toggling).
+    pub ancestor_disabled_path: Option<String>,
 }

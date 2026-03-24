@@ -1,0 +1,291 @@
+{
+  "page": {
+    "title": "设置",
+    "back": "返回"
+  },
+  "tabs": {
+    "general": "常规",
+    "games": "游戏",
+    "browser": "浏览器与导入",
+    "privacy": "隐私与安全模式",
+    "hotkeys": "热键与按键查看器",
+    "ai": "AI 配置",
+    "maintenance": "维护",
+    "updates": "更新",
+    "logs": "日志"
+  },
+  "general": {
+    "appearance": {
+      "title": "外观",
+      "import": "导入主题",
+      "theme_select": "主题选择",
+      "groups": {
+        "builtin": "内置",
+        "custom": "自定义主题"
+      },
+      "custom_active": "自定义主题已激活",
+      "export": "导出",
+      "remove": "移除",
+      "info": {
+        "title": "主题信息",
+        "system": "系统默认将匹配您的操作系统首选项。",
+        "builtin": "内置：针对最大对比度进行了优化。",
+        "custom": "自定义：从应用程序数据文件夹中的 .json 文件加载。"
+      },
+      "import_success": "主题 \"{{name}}\" 导入成功。",
+      "import_failed": "导入失败：{{error}}",
+      "export_success": "主题已导出至 {{name}}",
+      "export_failed": "导出失败：{{error}}",
+      "delete_confirm": "您确定要删除此主题吗？",
+      "delete_success": "主题已删除。",
+      "delete_failed": "删除失败：{{error}}",
+      "themes": {
+        "system": "系统默认",
+        "onyx": "深色 (Onyx)",
+        "light": "浅色"
+      }
+    },
+    "language": {
+      "title": "语言",
+      "label": "选择语言",
+      "options": {
+        "en": "English (US)",
+        "id": "Bahasa Indonesia",
+        "zh": "中文 (简体)"
+      }
+    },
+    "behavior": {
+      "title": "应用行为",
+      "auto_close": "启动时自动关闭",
+      "auto_close_desc": "成功启动游戏后自动完全关闭 EMMM。"
+    },
+    "system": {
+      "title": "系统信息",
+      "app_version": "应用版本",
+      "tauri_version": "Tauri 版本",
+      "database": "数据库",
+      "engine": "引擎",
+      "db_val": "SQLite (SQLx)",
+      "engine_val": "Vite + React"
+    }
+  },
+  "games": {
+    "title": "游戏库",
+    "desc": "管理您的安装位置和游戏配置。",
+    "add": "添加游戏",
+    "empty": "尚未配置游戏。点击“添加游戏”开始。",
+    "active": "激活",
+    "actions": {
+      "set_active": "设为激活",
+      "rescan": "重新扫描库",
+      "edit": "编辑游戏",
+      "remove": "移除游戏",
+      "scanning": "正在扫描 {{name}} 的库...",
+      "scan_success": "扫描完成！找到 {{new}} 个新 mod 和 {{updated}} 个更新。",
+      "scan_failed": "扫描失败：{{error}}"
+    },
+    "delete_confirm": "您确定要移除此游戏配置吗？",
+    "types": {
+      "gimi": "原神",
+      "srmi": "崩坏：星穹铁道",
+      "zzmi": "绝区零",
+      "wwmi": "鸣潮",
+      "efmi": "明日方舟：终末地"
+    },
+    "form": {
+      "title_add": "添加新游戏",
+      "title_edit": "编辑游戏",
+      "name_label": "显示名称",
+      "name_placeholder": "例如：Genshin Impact",
+      "type_label": "游戏类型",
+      "path_label": "Mod 文件夹路径",
+      "path_placeholder": "C:/Games/Genshin Impact/Mods",
+      "path_help": "选择存储 Mod 的文件夹。",
+      "exe_label": "游戏可执行文件 (.exe)",
+      "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
+      "advanced_title": "高级选项",
+      "loader_label": "3DMigoto 加载器 (可选)",
+      "loader_placeholder": "3DMigoto Loader.exe",
+      "args_label": "启动参数",
+      "args_placeholder": "-popupwindow",
+      "path_label_short": "模组",
+      "exe_label_short": "运行程序",
+      "browse": "浏览",
+      "save": "保存更改",
+      "add_btn": "添加游戏",
+      "validation": {
+        "name_required": "名称是必填项",
+        "path_required": "Mod 路径是必填项",
+        "path_invalid": "路径包含无效字符",
+        "path_duplicate": "已注册",
+        "exe_required": "游戏可执行文件是必填项",
+        "pick_folder_error": "选择文件夹失败",
+        "pick_file_error": "选择文件失败",
+        "pick_folder_title": "选择 Mod 文件夹",
+        "pick_exe_title": "选择游戏可执行文件",
+        "pick_loader_title": "选择加载器可执行文件"
+      }
+    }
+  },
+  "ai": {
+    "title": "AI 智能重新排序",
+    "desc": "启用后，EMMM 将通过提供的 OpenAI 兼容端点使用 LLM，尝试恢复被本地评分系统标记为“需要审核”的模组文件夹。",
+    "enable": "启用 AI 重新排序",
+    "base_url": "接口提供商 Base URL",
+    "base_url_desc": "(必须是兼容 OpenAI 的 /v1/chat/completions 接口)",
+    "api_key": "AI API 密钥",
+    "api_key_desc": "此密钥存储在本地，且仅发送到配置的 Base URL。",
+    "show_key": "显示密钥",
+    "hide_key": "隐藏密钥",
+    "save": "保存配置",
+    "status": {
+      "loading": "正在加载 AI 配置...",
+      "enabled": "AI 重新排序已启用",
+      "disabled": "AI 重新排序已禁用",
+      "saved": "AI 配置已保存",
+      "save_failed": "保存 AI 配置失败：{{error}}",
+      "update_failed": "更新状态失败：{{error}}",
+      "placeholder_url": "https://api.openai.com/v1/chat/completions",
+      "placeholder_key": "sk-..."
+    }
+  },
+  "browser": {
+    "title": "发现与浏览器",
+    "homepage": "首页 URL",
+    "homepage_desc": "点击“发现”时默认打开的页面（必须以 http/https 开头）。",
+    "reset": "重置",
+    "import_title": "智能导入行为",
+    "auto_analysis": "启用自动分析",
+    "auto_analysis_desc": "模组下载完成后，自动解压并进行深度匹配。如果禁用，则必须手动开始导入。",
+    "skip_picker": "跳过游戏选择器 (单游戏)",
+    "skip_picker_desc": "如果您只配置了一个游戏，则跳过游戏选择器弹窗并立即导入。",
+    "extensions": "允许的扩展名",
+    "extensions_desc": "允许浏览器下载的以逗号分隔的扩展名列表。",
+    "storage_title": "存储与保留",
+    "custom_dir": "自定义下载目录",
+    "custom_dir_desc": "保持为空以使用默认应用程序数据位置。更改后需要重启。",
+    "retention": "保留天数",
+    "retention_desc": "下载的存档在自动清理前保留多长时间。",
+    "clear_downloads": "立即清理旧下载",
+    "clearing": "正在清理...",
+    "clear_success": "已清理 {{count}} 个旧下载。",
+    "clear_failed": "清理下载失败：{{error}}",
+    "homepage_success": "首页更新成功",
+    "homepage_failed": "更新首页失败：{{error}}",
+    "placeholder_extensions": ".zip, .7z, .rar",
+    "placeholder_dir": "默认：AppData/EMMM/BrowserDownloads",
+    "days": "天"
+  },
+  "hotkeys": {
+    "title": "全局热键",
+    "enabled": "已启用",
+    "desc": "在游戏进行时快速操作的系统级键盘快捷键。这些快捷键在游戏窗口激活时被拦截。",
+    "cooldown": "操作冷却",
+    "cooldown_desc": "防止意外的双重触发",
+    "conflicts_title": "检测到按键冲突",
+    "labels": {
+      "safe_mode": "安全模式 (紧急按键)",
+      "next_preset": "切换到下一个预设",
+      "prev_preset": "切换到上一个预设",
+      "toggle_overlay": "切换显示层 (横幅 + 按键查看器)"
+    },
+    "viewer_title": "按键查看器显示层",
+    "auto_reload": "自动重载",
+    "viewer_desc": "根据通过 3DMigoto 哈希检测到的当前角色/对象，自动生成并管理游戏内按键列表。使用 {{key}} 与状态横幅一同切换。",
+    "infrastructure_title": "运行时基础设施",
+    "infrastructure_desc": "构件在 .emmm_data/ 中管理。部署无需用户配置。",
+    "reset": "全部重置为默认值",
+    "reset_success": "热键设置已重置为默认值。",
+    "save_failed": "保存热键设置失败：{{error}}",
+    "viewer_save_failed": "保存按键查看器设置失败：{{error}}",
+    "reset_tip": "重置为默认值",
+    "conflicts": {
+      "share_key": "共用按键",
+      "and": "和",
+      "message": "{{label1}} 和 {{label2}} 共用按键 \"{{key}}\""
+    }
+  },
+  "maintenance": {
+    "open_optimizer": "打开优化器",
+    "retention_title": "存储保留",
+    "trash_title": "回收站管理",
+    "trash_desc": "永久移除已删除的模组以释放磁盘空间。",
+    "empty_trash": "清空回收站",
+    "trash_confirm": "您确定要永久删除回收站中的所有项目吗？",
+    "trash_success": "回收站已清空：所有项目已删除。",
+    "system_title": "系统维护",
+    "system_desc": "运行自动清理任务、验证数据库完整性并清理孤立元数据。",
+    "run_maintenance": "运行维护",
+    "cache_title": "清理图像缓存",
+    "cache_desc": "移除旧的生成缩略图（超过 30 天）以节省空间。它们将根据需要重新生成。",
+    "clear_cache": "清理旧缓存",
+    "clear_failed": "清理缓存失败：{{error}}",
+    "danger_title": "重置应用程序设置",
+    "danger_desc": "从数据库中清除所有游戏注册、模组元数据和设置。应用程序将返回初始设置屏幕。数据库备份将保存到回收站文件夹。",
+    "danger_info": "磁盘上的模组文件和文件夹不会被删除。",
+    "reset_btn": "重置并重新设置",
+    "modal_title": "您确定吗？",
+    "modal_body": "这将从数据库中清除所有游戏注册、模组元数据、收藏和设置。清除前备份将保存到回收站文件夹。",
+    "modal_error": "您将需要重新设置应用程序。",
+    "confirm_reset": "是的，重置一切",
+    "reset_success": "数据库已重置。正在重定向到设置...",
+    "reset_failed": "重置失败：{{error}}"
+  },
+  "update": {
+    "title": "应用程序更新",
+    "current_version": "当前版本：v{{version}}",
+    "available": "有可用更新：v{{version}}",
+    "latest": "您已是最新版本。",
+    "checking": "正在检查...",
+    "check_btn": "检查更新",
+    "install_btn": "安装并重启",
+    "downloading": "正在下载... {{downloaded}} / {{total}}",
+    "metadata_title": "元数据同步",
+    "metadata_desc": "从远程服务器同步角色和武器数据库。这在启动时自动发生，也可以手动触发。",
+    "sync_btn": "立即同步",
+    "syncing": "正在同步...",
+    "sync_success": "元数据已更新至版本 {{version}}",
+    "sync_up_to_date": "元数据已是最新。",
+    "sync_failed": "元数据同步失败：{{error}}"
+  },
+  "privacy": {
+    "title": "走廊与安全模式",
+    "desc": "安全模式 (Corridor) 从界面中隐藏敏感模组。如果已配置，退出安全模式需要进行 PIN 检查。",
+    "keywords_title": "隐藏关键字",
+    "keywords_placeholder": "例如：skin, lewd, bikini",
+    "keywords_add": "添加关键字",
+    "keywords_empty": "尚未配置隐藏关键字。",
+    "keywords_exists": "关键字已存在",
+    "keywords_update_failed": "更新关键字失败：{{error}}",
+    "protection_title": "强制独占模式",
+    "protection_desc": "启用后，启动时将强制禁用不匹配当前走廊白名单的模组。",
+    "protection_update_failed": "更新保护失败：{{error}}",
+    "security_title": "PIN 与恢复",
+    "security_status_set": "PIN 保护已激活。",
+    "security_status_none": "未设置 PIN。切换不受保护。",
+    "security_recovery_configured": "恢复码已配置",
+    "security_remove": "移除 PIN",
+    "security_change": "更改 PIN",
+    "security_set": "设置 PIN",
+    "security_modal_set_title": "设置安全 PIN",
+    "security_modal_unlock_title": "解锁 PIN 保护",
+    "security_modal_set_desc": "创建 PIN 将保护切换和敏感设置。",
+    "security_modal_unlock_desc": "输入当前的 PIN 以继续。"
+  },
+  "logs": {
+    "title": "系统日志",
+    "desc": "用于故障排除的最近应用程序日志。",
+    "filter_label": "按级别过滤日志",
+    "levels": {
+      "all": "全部",
+      "info": "信息",
+      "warn": "警告",
+      "error": "错误"
+    },
+    "refresh": "刷新",
+    "open_folder": "打开文件夹",
+    "empty": "没有匹配所选级别的日志条目。",
+    "load_failed": "加载日志失败：{{error}}",
+    "folder_failed": "打开日志文件夹失败：{{error}}"
+  }
+}

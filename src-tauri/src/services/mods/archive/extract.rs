@@ -1,12 +1,74 @@
-use super::classify::{collect_loose_files_recursive, find_mod_roots, resolve_unique_dest};
+use super::classify::{collect_loose_files_recursive, find_mod_roots};
 use super::types::{ArchiveFormat, ExtractionEvent, ExtractionResult};
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::ipc::Channel;
+
+// ── TempDirGuard ──────────────────────────────────────────────────────────────
+/// RAII guard that automatically removes a temp directory on drop unless committed.
+/// Replaces all manual `fs::remove_dir_all` + `cleanup_temp_extract_parent` calls.
+struct TempDirGuard {
+    path: PathBuf,
+    committed: bool,
+}
+
+impl TempDirGuard {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            committed: false,
+        }
+    }
+
+    /// Mark the temp directory as successfully consumed — skip cleanup on drop.
+    fn commit(&mut self) {
+        self.committed = true;
+    }
+
+    /// The guarded path.
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            fs::remove_dir_all(&self.path).ok();
+            cleanup_temp_extract_parent(&self.path);
+        }
+    }
+}
+
+// ── Throttled Progress Helper ─────────────────────────────────────────────────
+/// Minimum interval between progress IPC emissions (250ms).
+const PROGRESS_THROTTLE_MS: u128 = 250;
+
+/// Emit a progress event only if enough time has elapsed since `last_emit`.
+/// Always emits the final event (when `file_index == total_files` and total > 0).
+#[inline]
+fn emit_throttled_progress(
+    channel: &Channel<ExtractionEvent>,
+    last_emit: &mut Instant,
+    file_name: String,
+    file_index: usize,
+    total_files: usize,
+) {
+    let is_final = total_files > 0 && file_index >= total_files;
+    if is_final || last_emit.elapsed().as_millis() >= PROGRESS_THROTTLE_MS {
+        let _ = channel.send(ExtractionEvent::FileProgress {
+            file_name,
+            file_index,
+            total_files,
+        });
+        *last_emit = Instant::now();
+    }
+}
 
 /// Extract any supported archive with smart mod root detection.
 ///
@@ -32,7 +94,7 @@ pub fn extract_archive(
     unpack_nested: bool,
     on_progress: Option<&Channel<ExtractionEvent>>,
 ) -> Result<ExtractionResult, String> {
-    let format = ArchiveFormat::from_path(archive_path)
+    let format = ArchiveFormat::detect(archive_path)
         .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
 
     let archive_name = custom_name.map(|s| s.to_string()).unwrap_or_else(|| {
@@ -47,14 +109,15 @@ pub fn extract_archive(
     let required_space = analysis.uncompressed_size + (50 * 1024 * 1024);
     check_disk_space(mods_dir, required_space)?;
 
-    // Phase 1: Extract to temp staging
+    // Phase 1: Extract to temp staging (RAII guard auto-cleans on error/panic)
     let uuid = uuid::Uuid::new_v4().to_string();
-    let temp_dir = mods_dir.join(".temp_extract").join(&uuid);
-    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let temp_path = mods_dir.join(".temp_extract").join(&uuid);
+    fs::create_dir_all(&temp_path).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let mut guard = TempDirGuard::new(temp_path.clone());
 
     let mut files_extracted = match extract_to_dir(
         archive_path,
-        &temp_dir,
+        guard.path(),
         password,
         format,
         cancel_token.clone(),
@@ -62,10 +125,7 @@ pub fn extract_archive(
     ) {
         Ok(count) => count,
         Err(e) => {
-            fs::remove_dir_all(&temp_dir).ok();
-            cleanup_temp_extract_parent(&temp_dir);
-
-            // Special path: if aborted during extraction, return polite result
+            // guard drops here → auto-cleanup
             if e == "ABORTED" {
                 return Ok(ExtractionResult {
                     archive_name,
@@ -75,9 +135,9 @@ pub fn extract_archive(
                     success: false,
                     error: None,
                     aborted: true,
+                    collisions: Vec::new(),
                 });
             }
-
             return Err(e);
         }
     };
@@ -85,8 +145,7 @@ pub fn extract_archive(
     // Phase 1.5: Cancel Check Mid-Flight
     if let Some(token) = &cancel_token {
         if token.load(Ordering::SeqCst) {
-            fs::remove_dir_all(&temp_dir).ok();
-            cleanup_temp_extract_parent(&temp_dir);
+            // guard drops here → auto-cleanup
             return Ok(ExtractionResult {
                 archive_name,
                 dest_paths: Vec::new(),
@@ -95,40 +154,56 @@ pub fn extract_archive(
                 success: false,
                 error: None,
                 aborted: true,
+                collisions: Vec::new(),
             });
         }
     }
 
     // Phase 1.6: Unpack Nested Archives
     if unpack_nested {
-        let nested_extracted = unpack_nested_archives(&temp_dir, 0, 2, &cancel_token);
+        let nested_extracted = unpack_nested_archives(guard.path(), 0, 2, &cancel_token);
         files_extracted += nested_extracted;
     }
 
     // Phase 2: Find mod roots
-    let mod_roots = find_mod_roots(&temp_dir, 5);
+    let mod_roots = find_mod_roots(guard.path(), 5);
 
     if mod_roots.is_empty() {
-        fs::remove_dir_all(&temp_dir).ok();
+        // guard drops here → auto-cleanup
         return Err("Not a valid 3DMigoto mod archive (no valid .ini found)".into());
     }
 
     // Phase 3: Collect loose files from wrapper layers above mod roots
-    let loose_files = collect_loose_files_recursive(&temp_dir, &mod_roots);
+    let loose_files = collect_loose_files_recursive(guard.path(), &mod_roots);
 
     // Phase 4: Route based on classification
     let mut dest_paths = Vec::new();
+    let mut collisions = Vec::new();
 
-    if mod_roots.len() == 1 && mod_roots[0] == temp_dir {
+    if mod_roots.len() == 1 && mod_roots[0] == temp_path {
         // Case 1: Mod at temp root (already flat) → wrap in archive name
-        let dest = resolve_dest(mods_dir, &archive_name, overwrite);
-        if overwrite && dest.exists() {
-            fs::remove_dir_all(&dest).ok();
+        let dest = parent_dir_join(mods_dir, &archive_name);
+        if dest.exists() && !overwrite {
+            collisions.push(crate::services::scanner::core::types::CollisionInfo {
+                id: crate::services::scanner::sync::helpers::generate_stable_id(
+                    "archive",
+                    &dest.to_string_lossy(),
+                ),
+                source_path: archive_path.to_string_lossy().into_owned(),
+                target_path: dest.to_string_lossy().into_owned(),
+                object_name: archive_name.clone(),
+                existing_mod_id: None,
+            });
+        } else {
+            if overwrite && dest.exists() {
+                fs::remove_dir_all(&dest).ok();
+            }
+            rename_cross_drive_fallback(guard.path(), &dest)
+                .map_err(|e| format!("Failed to move mod to destination: {e}"))?;
+            guard.commit(); // moved successfully, don't cleanup
+            dest_paths.push(dest.to_string_lossy().to_string());
         }
-        rename_cross_drive_fallback(&temp_dir, &dest)
-            .map_err(|e| format!("Failed to move mod to destination: {e}"))?;
-        dest_paths.push(dest.to_string_lossy().to_string());
-        cleanup_temp_extract_parent(&temp_dir);
+        cleanup_temp_extract_parent(&temp_path);
     } else {
         // Cases 2-6: Move each mod root independently
         for (i, root) in mod_roots.iter().enumerate() {
@@ -136,9 +211,22 @@ pub fn extract_archive(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| archive_name.clone());
-            let dest = resolve_dest(mods_dir, &name, overwrite);
+            let dest = parent_dir_join(mods_dir, &name);
+            if dest.exists() && !overwrite {
+                collisions.push(crate::services::scanner::core::types::CollisionInfo {
+                    id: crate::services::scanner::sync::helpers::generate_stable_id(
+                        "archive",
+                        &dest.to_string_lossy(),
+                    ),
+                    source_path: root.to_string_lossy().into_owned(),
+                    target_path: dest.to_string_lossy().into_owned(),
+                    object_name: name.clone(),
+                    existing_mod_id: None,
+                });
+                continue;
+            }
+
             if overwrite && dest.exists() {
-                // E3: Log warning if overwriting an active mod (has valid .ini)
                 if super::classify::has_valid_mod_ini(&dest) {
                     log::warn!(
                         "Overwriting active mod folder '{}' with archive contents",
@@ -165,9 +253,7 @@ pub fn extract_archive(
             dest_paths.push(dest.to_string_lossy().to_string());
         }
 
-        // Clean remaining temp junk (wrapper dirs, loose files already copied)
-        fs::remove_dir_all(&temp_dir).ok();
-        cleanup_temp_extract_parent(&temp_dir);
+        // Remaining temp junk cleaned by guard drop
     }
 
     // Phase 5: Apply DISABLED prefix if requested
@@ -210,7 +296,12 @@ pub fn extract_archive(
         success: true,
         error: None,
         aborted: false,
+        collisions,
     })
+}
+
+fn parent_dir_join(parent: &Path, name: &str) -> PathBuf {
+    parent.join(name)
 }
 
 /// Extract archive contents to a destination directory.
@@ -274,7 +365,7 @@ fn unpack_nested_archives(
 
         let path = entry.path();
         if path.is_file() {
-            if let Some(format) = ArchiveFormat::from_path(&path) {
+            if let Some(format) = ArchiveFormat::detect(&path) {
                 // Determine a safe subfolder name based on the archive name
                 let stem = path
                     .file_stem()
@@ -342,6 +433,7 @@ fn extract_zip_inner(
 
     let total_entries = archive.len();
     let mut count: usize = 0;
+    let mut last_progress = Instant::now();
     for i in 0..archive.len() {
         if let Some(token) = &cancel_token {
             if token.load(Ordering::SeqCst) {
@@ -391,17 +483,13 @@ fn extract_zip_inner(
             io::copy(&mut entry, &mut outfile).map_err(|e| format!("Failed to write file: {e}"))?;
             count += 1;
 
-            // Emit per-file progress
+            // Emit throttled progress (250ms interval)
             if let Some(ch) = on_progress {
                 let name = entry_path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                let _ = ch.send(ExtractionEvent::FileProgress {
-                    file_name: name,
-                    file_index: count,
-                    total_files: total_entries,
-                });
+                emit_throttled_progress(ch, &mut last_progress, name, count, total_entries);
             }
         }
     }
@@ -423,6 +511,7 @@ fn extract_7z_inner(
 
     // 7z decompression uses FnMut callback — use AtomicUsize for thread-safe counter
     let file_counter = Arc::new(AtomicUsize::new(0));
+    let mut last_7z_progress = Instant::now();
 
     let extract_result = match password {
         Some(pw) => {
@@ -446,11 +535,13 @@ fn extract_7z_inner(
                     }
                     let idx = counter_clone.fetch_add(1, Ordering::Relaxed) + 1;
                     if let Some(ch) = on_progress {
-                        let _ = ch.send(ExtractionEvent::FileProgress {
-                            file_name: entry.name().to_string(),
-                            file_index: idx,
-                            total_files: 0, // total unknown for 7z streaming
-                        });
+                        emit_throttled_progress(
+                            ch,
+                            &mut last_7z_progress,
+                            entry.name().to_string(),
+                            idx,
+                            0, // total unknown for 7z streaming
+                        );
                     }
                     sevenz_rust::default_entry_extract_fn(entry, reader, dest)
                 },
@@ -474,11 +565,13 @@ fn extract_7z_inner(
                     }
                     let idx = counter_clone.fetch_add(1, Ordering::Relaxed) + 1;
                     if let Some(ch) = on_progress {
-                        let _ = ch.send(ExtractionEvent::FileProgress {
-                            file_name: entry.name().to_string(),
-                            file_index: idx,
-                            total_files: 0,
-                        });
+                        emit_throttled_progress(
+                            ch,
+                            &mut last_7z_progress,
+                            entry.name().to_string(),
+                            idx,
+                            0,
+                        );
                     }
                     sevenz_rust::default_entry_extract_fn(entry, reader, dest)
                 },
@@ -595,16 +688,6 @@ fn move_to_extracted_dir(archive_path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to move archive to .extracted: {e}"))?;
 
     Ok(())
-}
-
-/// If `overwrite` is true, use the exact name (caller will remove existing).
-/// Otherwise, auto-rename with `(2)`, `(3)`, etc. via `resolve_unique_dest`.
-fn resolve_dest(parent_dir: &Path, name: &str, overwrite: bool) -> std::path::PathBuf {
-    if overwrite {
-        parent_dir.join(name)
-    } else {
-        resolve_unique_dest(parent_dir, name)
-    }
 }
 
 /// Remove the `.temp_extract` parent directory if it is now empty.

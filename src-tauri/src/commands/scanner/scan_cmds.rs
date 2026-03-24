@@ -59,6 +59,7 @@ impl ScanState {
 
 /// Cancel the currently running scan.
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_scan_cmd(state: State<'_, ScanState>) -> Result<(), String> {
     state.cancel();
     Ok(())
@@ -86,6 +87,7 @@ fn get_ai_provider(app_handle: &AppHandle) -> Option<HttpAiRerankProvider> {
 ///
 /// # Covers: TC-2.3-01, TC-2.2-01, TC-2.2-02, TC-2.2-03, TC-2.3-02
 #[tauri::command]
+#[specta::specta]
 pub async fn start_scan(
     mods_path: String,
     db_json: String,
@@ -197,13 +199,16 @@ fn process_candidate_and_notify(
         0
     };
 
-    let _ = on_progress.send(ScanEvent::Progress {
-        current: idx + 1,
-        total,
-        folder_name: candidate.display_name.clone(),
-        elapsed_ms: elapsed,
-        eta_ms: eta,
-    });
+    // AC-25.1.2: Throttled progress emission (every 5 folders or final item)
+    if (idx + 1) % 5 == 0 || (idx + 1) == total {
+        let _ = on_progress.send(ScanEvent::Progress {
+            current: idx + 1,
+            total,
+            folder_name: candidate.display_name.clone(),
+            elapsed_ms: elapsed,
+            eta_ms: eta,
+        });
+    }
 
     let (detected_skin, skin_folder_name) =
         deep_matcher::detect_skin_for_staged(&match_result, &candidate.display_name, db);
@@ -221,6 +226,7 @@ fn process_candidate_and_notify(
 ///
 /// Same logic as `start_scan` but returns results synchronously.
 #[tauri::command]
+#[specta::specta]
 pub async fn get_scan_result(
     mods_path: String,
     db_json: String,

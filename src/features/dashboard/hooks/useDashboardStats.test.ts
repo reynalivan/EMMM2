@@ -4,6 +4,7 @@ import { useDashboardStats } from './useDashboardStats';
 import { useAppStore } from '../../../stores/useAppStore';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../testing/test-utils';
+import type { DashboardPayload } from '../../../types/dashboard';
 
 // Restore real @tanstack/react-query — the global setupTests stub
 // replaces useQuery with a no-op, which prevents queryFn from running.
@@ -27,7 +28,20 @@ describe('useDashboardStats', () => {
       const fn = selector as (state: { safeMode: boolean }) => unknown;
       return fn({ safeMode: false });
     }) as unknown as typeof useAppStore);
-    const mockPayload = { games: 2, storage: 100 };
+    const mockPayload: DashboardPayload = {
+      stats: {
+        total_mods: 2,
+        enabled_mods: 2,
+        disabled_mods: 0,
+        total_size_bytes: 100,
+        total_games: 1,
+        total_collections: 0,
+      },
+      duplicate_waste_bytes: 0,
+      category_distribution: [],
+      game_distribution: [],
+      recent_mods: [],
+    };
     vi.mocked(invoke).mockResolvedValue(mockPayload);
 
     const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper });
@@ -45,7 +59,20 @@ describe('useDashboardStats', () => {
       const fn = selector as (state: { safeMode: boolean }) => unknown;
       return fn({ safeMode: true });
     }) as unknown as typeof useAppStore);
-    const mockPayload = { games: 1, storage: 50 };
+    const mockPayload: DashboardPayload = {
+      stats: {
+        total_mods: 1,
+        enabled_mods: 1,
+        disabled_mods: 0,
+        total_size_bytes: 50,
+        total_games: 1,
+        total_collections: 0,
+      },
+      duplicate_waste_bytes: 0,
+      category_distribution: [],
+      game_distribution: [],
+      recent_mods: [],
+    };
     vi.mocked(invoke).mockResolvedValue(mockPayload);
 
     const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper });

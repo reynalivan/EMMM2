@@ -1,130 +1,170 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Search, Check, MoveRight } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { commands } from '../../lib/bindings';
+import { useAppStore } from '../../stores/useAppStore';
+import { folderKeys } from '../../hooks/useFolders';
+import { toast } from '../../stores/useToastStore';
 import type { ObjectSummary } from '../../types/object';
 
+export type ModStatus = 'ENABLED' | 'DISABLED';
+
 interface MoveToObjectDialogProps {
-  open: boolean;
+  isOpen: boolean;
   onClose: () => void;
-  objects: ObjectSummary[];
+  objects?: ObjectSummary[]; // Optional fallback
   currentObjectId?: string;
-  currentStatus: boolean; // true = enabled, false = disabled
-  onSubmit: (targetObjectId: string, status: 'disabled' | 'only-enable' | 'keep') => void;
+  targetModPaths: string[];
+  currentStatus?: boolean; // For compatibility
+  onSubmit?: (targetId: string, status: 'disabled' | 'keep' | 'only-enable') => void; // For compatibility
 }
 
-const STATUS_OPTIONS = [
-  { value: 'disabled', label: 'Set Disabled (Default)' },
-  { value: 'only-enable', label: 'Only Enable This' },
-  { value: 'keep', label: 'Keep Status (*)' },
-];
-
 export default function MoveToObjectDialog({
-  open,
+  isOpen,
   onClose,
-  objects,
   currentObjectId,
-  currentStatus,
-  onSubmit,
+  targetModPaths,
 }: MoveToObjectDialogProps) {
-  const [search, setSearch] = useState('');
-  const [selectedObject, setSelectedObject] = useState<string | undefined>(undefined);
-  const [status, setStatus] = useState<'disabled' | 'only-enable' | 'keep'>('disabled');
+  const { t } = useTranslation(['folder_grid', 'common']);
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedObjectId, setSelectedObjectId] = useState('');
+  const [targetStatus, setTargetStatus] = useState<ModStatus>('DISABLED');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const activeGameId = useAppStore((state) => state.activeGameId);
 
-  const filteredObjects = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? objects.filter((o) => o.name.toLowerCase().includes(q)) : objects;
-  }, [objects, search]);
+  const { data: objectsData } = useQuery({
+    queryKey: ['move-to-objects-search', searchTerm, activeGameId],
+    queryFn: async () => {
+      if (!activeGameId) return [];
+      const resp = await commands.getObjects({ gameId: activeGameId, safeMode: false });
+      return resp.objects.filter((o) => o.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    },
+    enabled: isOpen && !!activeGameId,
+  });
+  const objects = objectsData || [];
 
-  // Status label with current state
-  const statusOptions = useMemo(() => {
-    return STATUS_OPTIONS.map((opt) => {
-      let label = opt.label;
-      if (opt.value === 'keep') {
-        label = `Keep Status (${currentStatus ? 'Enabled' : 'Disabled'})`;
+  const handleMove = async () => {
+    if (!selectedObjectId || targetModPaths.length === 0 || !activeGameId) return;
+
+    setIsSubmitting(true);
+    try {
+      for (const path of targetModPaths) {
+        await commands.moveModToObject({
+          gameId: activeGameId,
+          folderPath: path,
+          targetObjectId: selectedObjectId,
+          status: targetStatus,
+        });
       }
-      return { ...opt, label };
-    });
-  }, [currentStatus]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedObject) return;
-    onSubmit(selectedObject, status);
+      const movedTo = objects.find((o) => o.id === selectedObjectId);
+      toast.success(
+        t('folder_grid:move.toast.success', { name: movedTo?.name || selectedObjectId }),
+      );
+
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      onClose();
+    } catch (error) {
+      console.error(error);
+      toast.error(t('folder_grid:move.toast.failed', { error: String(error) }));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <dialog open={open} className="modal modal-bottom sm:modal-middle">
-      <form
-        method="dialog"
-        className="modal-box bg-base-100 border border-base-content/10 shadow-2xl max-w-md"
-        onSubmit={handleSubmit}
-      >
-        <h3 className="font-bold text-lg mb-2">Move to Object</h3>
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Object</label>
-          <input
-            type="text"
-            className="input input-bordered input-sm w-full mb-2"
-            placeholder="Search objects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            autoFocus
-          />
-          <div className="max-h-40 overflow-y-auto rounded border border-base-content/10 bg-base-200">
-            {filteredObjects.length === 0 && (
-              <div className="p-2 text-xs text-base-content/40">No objects found</div>
+    <dialog open={isOpen} className="modal modal-bottom sm:modal-middle" onClose={onClose}>
+      <div className="modal-box bg-base-100 border border-base-content/10 shadow-xl max-w-sm">
+        <h3 className="font-bold text-lg mb-2">{t('folder_grid:move.title')}</h3>
+
+        <div className="form-control w-full mb-4">
+          <label className="block text-sm font-medium mb-1">{t('folder_grid:move.label')}</label>
+          <div className="relative">
+            <input
+              type="text"
+              className="input input-sm input-bordered w-full pr-10"
+              placeholder={t('folder_grid:move.placeholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <div className="absolute right-3 top-2 opacity-40">
+              <Search size={14} />
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-col gap-1 max-h-48 overflow-y-auto scrollbar-thin border border-base-300 rounded-lg p-1">
+            {objects.length === 0 && (
+              <div className="p-2 text-xs text-base-content/40">
+                {t('folder_grid:move.no_results')}
+              </div>
             )}
-            {filteredObjects.map((obj) => (
+            {objects.map((obj) => (
               <button
-                type="button"
                 key={obj.id}
-                className={`block w-full text-left px-3 py-2 text-sm rounded transition-all ${
-                  selectedObject === obj.id
-                    ? 'bg-primary/20 text-primary font-semibold'
-                    : 'hover:bg-base-300'
+                className={`flex items-center justify-between text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  selectedObjectId === obj.id
+                    ? 'bg-primary text-primary-content font-semibold'
+                    : 'hover:bg-base-200'
                 }`}
-                onClick={() => setSelectedObject(obj.id)}
-                disabled={obj.id === currentObjectId}
+                onClick={() => setSelectedObjectId(obj.id)}
               >
-                {obj.name}
-                {obj.id === currentObjectId && (
-                  <span className="ml-2 text-xs text-base-content/40">(Current)</span>
-                )}
+                <div className="flex-1 truncate pr-2">
+                  {obj.name}
+                  {obj.id === currentObjectId && (
+                    <span className="ml-2 text-xs text-base-content/40">
+                      {t('folder_grid:move.current_marker')}
+                    </span>
+                  )}
+                </div>
+                {selectedObjectId === obj.id && <Check size={14} />}
               </button>
             ))}
           </div>
         </div>
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Set Status</label>
-          <div className="flex flex-col gap-1">
-            {statusOptions.map((opt) => (
-              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="status"
-                  value={opt.value}
-                  checked={status === opt.value}
-                  onChange={() => setStatus(opt.value as 'disabled' | 'only-enable' | 'keep')}
-                  className="radio radio-xs"
-                />
-                <span className="text-sm">{opt.label}</span>
-              </label>
+
+        <div className="form-control w-full mb-6">
+          <label className="block text-sm font-medium mb-1">
+            {t('folder_grid:move.status_label')}
+          </label>
+          <div className="flex gap-1 bg-base-200 p-1 rounded-lg">
+            {(['ENABLED', 'DISABLED'] as ModStatus[]).map((status) => (
+              <button
+                key={status}
+                className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${
+                  targetStatus === status
+                    ? 'bg-base-100 shadow-sm text-primary'
+                    : 'text-base-content/40 hover:text-base-content/70'
+                }`}
+                onClick={() => setTargetStatus(status)}
+              >
+                {status}
+              </button>
             ))}
           </div>
         </div>
-        <div className="modal-action mt-4 flex gap-2">
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
-            Cancel
+
+        <div className="modal-action">
+          <button className="btn btn-ghost btn-sm px-6" onClick={onClose}>
+            {t('common:actions.cancel')}
           </button>
           <button
-            type="submit"
-            className="btn btn-sm btn-primary"
-            disabled={!selectedObject || selectedObject === currentObjectId}
+            className="btn btn-primary btn-sm px-6 gap-2"
+            disabled={!selectedObjectId || isSubmitting}
+            onClick={handleMove}
           >
-            Move
+            {isSubmitting ? (
+              <span className="loading loading-spinner loading-xs"></span>
+            ) : (
+              <MoveRight size={14} />
+            )}
+            {t('common:actions.move')}
           </button>
         </div>
-      </form>
-      <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>close</button>
+      </div>
+      <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-sm">
+        <button onClick={onClose}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

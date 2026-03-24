@@ -5,7 +5,7 @@ import FolderListRow from './FolderListRow';
 import type { ModFolder } from '../../types/mod';
 
 vi.mock('../../hooks/useThumbnail', () => ({
-  useThumbnail: vi.fn(() => ({ data: null, isLoading: false })),
+  useThumbnail: vi.fn((_gameId: string, _path: string) => ({ data: null, isLoading: false })),
 }));
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: vi.fn(),

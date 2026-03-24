@@ -1,5 +1,6 @@
 import { Edit2, ExternalLink, Keyboard, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-shell';
 import type { KeyBindSectionGroup } from '../previewPanelUtils';
 import { AdvancedKeybindModal } from './AdvancedKeybindModal';
@@ -36,6 +37,7 @@ export default function IniEditorSection({
   onSave,
   onDiscard,
 }: IniEditorSectionProps) {
+  const { t } = useTranslation(['preview']);
   const [isEditing, setIsEditing] = useState(false);
   const [advancedKeybindFieldId, setAdvancedKeybindFieldId] = useState<string | null>(null);
 
@@ -44,24 +46,26 @@ export default function IniEditorSection({
   return (
     <div className="mb-6 relative">
       <div className="sticky top-17 z-10 -mx-6 mb-2 flex items-center justify-between bg-base-100/95 px-6 py-2 backdrop-blur-sm border-b border-base-content/10">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">INI Editor</h3>
+        <h3 className="text-xs font-bold uppercase tracking-widest text-base-content/40">
+          {t('preview:ini_editor.title')}
+        </h3>
         <div className="flex items-center gap-2">
           {!isEditing ? (
             <button
               className="btn btn-ghost btn-xs"
               onClick={() => setIsEditing(true)}
-              title="Edit keybinds"
+              title={t('preview:ini_editor.edit_keybinds')}
             >
               <Edit2 size={13} />
-              Edit
+              {t('preview:actions.edit')}
             </button>
           ) : !editorDirty && !isSaving ? (
             <button
               className="btn btn-ghost btn-xs text-base-content/70"
               onClick={() => setIsEditing(false)}
-              title="Close edit mode"
+              title={t('preview:ini_editor.close_edit')}
             >
-              Close
+              {t('preview:actions.close')}
             </button>
           ) : (
             <>
@@ -72,9 +76,9 @@ export default function IniEditorSection({
                   onDiscard();
                   setIsEditing(false);
                 }}
-                title="Discard INI changes"
+                title={t('preview:ini_editor.revert_changes')}
               >
-                Revert
+                {t('preview:actions.revert')}
               </button>
               <button
                 className="btn btn-primary btn-xs"
@@ -83,9 +87,9 @@ export default function IniEditorSection({
                   await onSave();
                   setIsEditing(false);
                 }}
-                title="Save INI changes"
+                title={t('preview:ini_editor.save_changes')}
               >
-                Save
+                {t('preview:actions.save')}
               </button>
             </>
           )}
@@ -94,7 +98,7 @@ export default function IniEditorSection({
 
       <div className="space-y-4" onDoubleClick={() => setIsEditing(true)}>
         {sections.length === 0 && (
-          <div className="text-xs text-base-content/50">No key binding sections detected.</div>
+          <div className="text-xs text-base-content/50">{t('preview:ini_editor.no_sections')}</div>
         )}
 
         {sections.map((fileGroup) => {
@@ -115,7 +119,7 @@ export default function IniEditorSection({
                     </span>
                     <button
                       className="btn btn-ghost btn-xs px-1 hover:bg-base-content/10"
-                      title="Open in default editor"
+                      title={t('preview:ini_editor.open_in_editor')}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (activePath) open(`${activePath}\\${fileGroup.fileName}`);
@@ -161,7 +165,7 @@ export default function IniEditorSection({
                                   title={fieldErrors[field.id]}
                                 >
                                   <span
-                                    className={`text-xs font-mono w-12 text-left select-none ${isPrimary ? 'text-white font-bold' : 'text-base-content/60'}`}
+                                    className={`text-xs font-mono w-12 text-left select-none ${isPrimary ? 'text-primary font-bold' : 'text-base-content/60'}`}
                                   >
                                     {field.label}
                                   </span>
@@ -170,28 +174,30 @@ export default function IniEditorSection({
                                       type="text"
                                       className={`input input-xs w-full h-7 px-3 font-mono uppercase ${
                                         isPrimary
-                                          ? 'input-primary bg-base-100/90 font-bold shadow-inner text-white'
+                                          ? 'input-primary bg-base-100/90 font-bold shadow-inner text-base-content'
                                           : 'input-bordered bg-base-100/50'
                                       } ${fieldErrors[field.id] ? 'input-error bg-error/10' : ''}`}
                                       value={currentValue}
                                       onChange={(e) =>
                                         onFieldChange(field.id, e.target.value.toUpperCase())
                                       }
-                                      placeholder={`Enter ${field.label}...`}
+                                      placeholder={t('preview:ini_editor.enter_field', {
+                                        label: field.label,
+                                      })}
                                     />
                                     {isPrimary &&
                                       conflictingKeys.has(currentValue.trim().toUpperCase()) && (
                                         <div
                                           className="tooltip tooltip-left"
-                                          data-tip="Warning: This key is used in multiple sections."
+                                          data-tip={t('preview:ini_editor.conflict_warning')}
                                         >
                                           <TriangleAlert size={14} className="text-warning ml-1" />
                                         </div>
                                       )}
                                     <button
                                       type="button"
-                                      className={`btn btn-xs btn-square ${isPrimary ? 'btn-ghost text-white hover:bg-white/20' : 'btn-ghost text-base-content/50 hover:text-primary hover:bg-primary/10'}`}
-                                      title="Auto Detect Key Combination"
+                                      className={`btn btn-xs btn-square ${isPrimary ? 'btn-ghost text-primary hover:bg-primary/20' : 'btn-ghost text-base-content/50 hover:text-primary hover:bg-primary/10'}`}
+                                      title={t('preview:ini_editor.auto_detect')}
                                       onClick={() => setAdvancedKeybindFieldId(field.id)}
                                     >
                                       <Keyboard size={14} />
@@ -212,7 +218,7 @@ export default function IniEditorSection({
                                 }`}
                               >
                                 <span
-                                  className={`text-xs font-mono w-12 text-left select-none ${isPrimary ? 'text-white font-bold' : 'text-base-content/50'}`}
+                                  className={`text-xs font-mono w-12 text-left select-none ${isPrimary ? 'text-primary font-bold' : 'text-base-content/50'}`}
                                 >
                                   {field.label}
                                 </span>
@@ -222,7 +228,7 @@ export default function IniEditorSection({
                                       isPrimary
                                         ? conflictingKeys.has(currentValue.trim().toUpperCase())
                                           ? 'border-warning/50 text-warning font-bold'
-                                          : 'border-base-content/15 text-white'
+                                          : 'border-base-content/15 text-base-content'
                                         : 'border-base-content/15 text-base-content'
                                     }`}
                                   >
@@ -232,7 +238,7 @@ export default function IniEditorSection({
                                     conflictingKeys.has(currentValue.trim().toUpperCase()) && (
                                       <div
                                         className="tooltip tooltip-left"
-                                        data-tip="Key Conflict! Used in multiple sections."
+                                        data-tip={t('preview:ini_editor.conflict_tooltip')}
                                       >
                                         <TriangleAlert
                                           size={14}

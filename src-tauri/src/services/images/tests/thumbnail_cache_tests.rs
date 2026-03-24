@@ -29,12 +29,12 @@ fn test_get_thumbnail_generates_webp() {
     create_dummy_image(&src_img);
 
     // Call get_thumbnail
-    let result = ThumbnailCache::get_thumbnail(&src_img);
+    let result = ThumbnailCache::get_thumbnail("game1", &src_img);
     assert!(result.is_ok());
 
-    let thumb_path = result.unwrap();
-    assert!(thumb_path.exists());
-    assert_eq!(thumb_path.extension().unwrap(), "webp");
+    let path_str = result.unwrap();
+    assert!(std::path::Path::new(&path_str).is_absolute());
+    assert!(path_str.ends_with(".webp"));
 }
 
 // Covers: TC-41-002 (8K Source handled via spawn_blocking without panic)
@@ -60,10 +60,13 @@ async fn test_resolve_large_8k_image_without_blocking() {
 
     // Call resolve (async)
     let folder_str = mod_dir.to_string_lossy().to_string();
-    let result = ThumbnailCache::resolve(&folder_str).await;
+    let result = ThumbnailCache::resolve("game1", &folder_str).await;
     assert!(result.is_ok());
     let thumb_opt = result.unwrap();
     assert!(thumb_opt.is_some());
+    let path_str = thumb_opt.unwrap();
+    assert!(std::path::Path::new(&path_str).is_absolute());
+    assert!(path_str.ends_with(".webp"));
 }
 
 // Covers: TC-41-001 (Cache key handling for DISABLED vs enabled states)
@@ -83,10 +86,12 @@ async fn test_cache_hits_for_toggled_disabled_state() {
     create_dummy_image(&src_img);
 
     let folder_str = enabled_dir.to_string_lossy().to_string();
-    let res1 = ThumbnailCache::resolve(&folder_str).await.unwrap().unwrap();
+    let res1 = ThumbnailCache::resolve("game1", &folder_str)
+        .await
+        .unwrap()
+        .unwrap();
 
-    // In current implementation, renaming mod invalidates paths.
-    // Here we just ensure we can resolve both and it generates a valid WebP path.
-    // If the cache key was separated, subsequent resolves wouldn't trigger `resolve_cold`.
+    // Here we just ensure we can resolve both and it generates a valid absolute path.
+    assert!(std::path::Path::new(&res1).is_absolute());
     assert!(res1.ends_with(".webp"));
 }

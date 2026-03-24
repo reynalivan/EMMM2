@@ -9,7 +9,8 @@ import {
   ExternalLink,
   FolderOpen,
 } from 'lucide-react';
-import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   ContextMenu,
   ContextMenuItem,
@@ -18,12 +19,8 @@ import {
 import FolderTooltip from './FolderTooltip';
 import { scanService, type ScanPreviewItem } from '../../lib/services/scanService';
 import type { GameConfig } from '../../types/game';
-import {
-  type MasterDbEntry,
-  getConfidenceColor,
-  getConfidenceIcon,
-  matchLevelLabel,
-} from './scanReviewHelpers';
+import { type MasterDbEntry, getConfidenceColor, getConfidenceIcon } from './scanReviewHelpers';
+import { commands } from '../../lib/bindings';
 
 /** Single row in the review table. */
 export default function ScanReviewRow({
@@ -51,6 +48,7 @@ export default function ScanReviewRow({
   onRename: (newName: string | null) => void;
   activeGame: GameConfig | null;
 }) {
+  const { t } = useTranslation(['objects', 'common']);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(30);
@@ -86,7 +84,7 @@ export default function ScanReviewRow({
     const fetchDynamicScores = async () => {
       // Find entries that are not already scored
       const candidatesToScore = masterDbEntries
-        .filter((e) => !item.scoredCandidates.some((sc) => sc.name === e.name))
+        .filter((e) => !Object.keys(item.scoredCandidates || {}).includes(e.name))
         .map((e) => e.name);
 
       if (candidatesToScore.length === 0) return;
@@ -181,13 +179,13 @@ export default function ScanReviewRow({
 
   const displayMatch = override?.name ?? item.matchedObject;
   const displayType = override?.object_type ?? item.objectType;
-  const confidence = override ? 'Manual' : item.confidence;
-
   // Build a score map from item.scoredCandidates for O(1) lookup
   const scoreMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const sc of item.scoredCandidates) {
-      map.set(sc.name, sc.scorePct);
+    if (item.scoredCandidates) {
+      for (const cand of item.scoredCandidates) {
+        map.set(cand.name, cand.scorePct);
+      }
     }
     return map;
   }, [item.scoredCandidates]);
@@ -231,7 +229,9 @@ export default function ScanReviewRow({
     );
 
     // Sort candidates by score desc, others by score desc then alphabetically
-    candidates.sort((a, b) => b.scorePct! - a.scorePct! || a.name.localeCompare(b.name));
+    candidates.sort(
+      (a, b) => (b.scorePct ?? 0) - (a.scorePct ?? 0) || a.name.localeCompare(b.name),
+    );
     others.sort((a, b) => {
       const scoreA = a.scorePct ?? -1;
       const scoreB = b.scorePct ?? -1;
@@ -247,9 +247,15 @@ export default function ScanReviewRow({
     <>
       <ContextMenuItem
         icon={ExternalLink}
-        onClick={() => invoke('open_in_explorer', { path: item.folderPath }).catch(console.error)}
+        onClick={() => {
+          if (activeGame?.id) {
+            commands
+              .openInExplorer({ gameId: activeGame.id, path: item.folderPath })
+              .catch(console.error);
+          }
+        }}
       >
-        Reveal Source Folder
+        {t('context.reveal_source')}
       </ContextMenuItem>
       <ContextMenuItem
         icon={FolderOpen}
@@ -266,26 +272,30 @@ export default function ScanReviewRow({
             entry.metadata &&
             typeof entry.metadata.id === 'string'
           ) {
-            invoke('reveal_object_in_explorer', {
-              objectId: entry.metadata.id,
-              modsPath: activeGame.mod_path,
-              objectName: objName,
-            }).catch(console.error);
+            commands
+              .revealObjectInExplorer({
+                gameId: activeGame.id,
+                objectId: entry.metadata.id,
+                objectName: objName,
+              })
+              .catch(console.error);
           } else if (objName && activeGame) {
             // fallback
-            invoke('reveal_object_in_explorer', {
-              objectId: objName,
-              modsPath: activeGame.mod_path,
-              objectName: objName,
-            }).catch(console.error);
+            commands
+              .revealObjectInExplorer({
+                gameId: activeGame.id,
+                objectId: objName,
+                objectName: objName,
+              })
+              .catch(console.error);
           }
         }}
       >
-        Reveal Destination Folder
+        {t('context.reveal_dest')}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem icon={Pencil} onClick={startRename}>
-        Rename Folder
+        {t('context.rename_folder')}
       </ContextMenuItem>
     </>
   );
@@ -342,7 +352,7 @@ export default function ScanReviewRow({
                       e.preventDefault();
                       commitRename();
                     }}
-                    title="Confirm Rename"
+                    title={t('context.confirm_rename')}
                   >
                     <Check size={14} />
                   </button>
@@ -353,7 +363,7 @@ export default function ScanReviewRow({
                       e.preventDefault();
                       cancelRename();
                     }}
-                    title="Cancel Rename"
+                    title={t('context.cancel_rename')}
                   >
                     <X size={14} />
                   </button>
@@ -366,13 +376,10 @@ export default function ScanReviewRow({
                   {displayFolderName}
                   {renamedName && <Pencil size={10} className="inline ml-1.5 text-info/60" />}
                   {item.alreadyMatched && (
-                    <span className="badge badge-xs badge-ghost ml-2 opacity-60">Existing</span>
+                    <span className="badge badge-xs badge-ghost ml-2 opacity-60">
+                      {t('objects:item.badge_existing')}
+                    </span>
                   )}
-                </span>
-              )}
-              {item.matchDetail && (
-                <span className="text-[10px] text-base-content/50 truncate mt-0.5">
-                  {item.matchDetail}
                 </span>
               )}
             </div>
@@ -386,7 +393,7 @@ export default function ScanReviewRow({
             }`}
             onClick={handleToggleDropdown}
             disabled={isSkipped}
-            title={displayMatch ?? 'No match — click to assign'}
+            title={displayMatch ?? t('context.click_to_assign')}
           >
             {displayThumb ? (
               <div className="avatar">
@@ -399,7 +406,9 @@ export default function ScanReviewRow({
             )}
             <span className="truncate flex-1 text-left font-medium text-sm">
               {displayMatch ?? (
-                <span className="text-base-content/30 italic font-normal">Unmatched</span>
+                <span className="text-base-content/30 italic font-normal">
+                  {t('objects:item.status_unmatched')}
+                </span>
               )}
             </span>
             <ChevronDown size={14} className="opacity-50 shrink-0" />
@@ -420,7 +429,7 @@ export default function ScanReviewRow({
                   <input
                     type="text"
                     className="input input-sm w-full pl-8 bg-base-100/60 border-base-300/30 placeholder:text-base-content/30"
-                    placeholder="Search characters, weapons..."
+                    placeholder={t('context.sync.search_placeholder')}
                     value={searchQuery}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     autoFocus
@@ -437,7 +446,7 @@ export default function ScanReviewRow({
                       setSearchQuery('');
                     }}
                   >
-                    <X size={14} /> Clear override
+                    <X size={14} /> {t('objects:scan_review.tabs.clear_override')}
                   </button>
                 )}
 
@@ -445,7 +454,7 @@ export default function ScanReviewRow({
                 {candidateEntries.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-base-content/40 font-semibold bg-base-300/20 border-b border-base-300/20 sticky top-0 z-10 backdrop-blur-sm">
-                      Candidates ({candidateEntries.length})
+                      {t('objects:scan_review.tabs.candidates')} ({candidateEntries.length})
                     </div>
                     {candidateEntries.slice(0, visibleCount).map((entry) => (
                       <button
@@ -508,7 +517,7 @@ export default function ScanReviewRow({
                 {otherEntries.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-base-content/40 font-semibold bg-base-300/20 border-b border-base-300/20 sticky top-0 z-10 backdrop-blur-sm">
-                      Other ({otherEntries.length})
+                      {t('objects:scan_review.tabs.other')} ({otherEntries.length})
                     </div>
                     {otherEntries
                       .slice(0, Math.max(0, visibleCount - candidateEntries.length))
@@ -558,13 +567,13 @@ export default function ScanReviewRow({
                     ref={sentinelRef}
                     className="p-2 text-center text-[10px] text-base-content/30"
                   >
-                    Loading more...
+                    {t('common:states.loading_more')}
                   </div>
                 )}
 
                 {candidateEntries.length === 0 && otherEntries.length === 0 && (
                   <div className="p-4 text-center text-xs text-base-content/40">
-                    No results found
+                    {t('objects:scan_review.tabs.no_results')}
                   </div>
                 )}
               </div>
@@ -578,17 +587,21 @@ export default function ScanReviewRow({
               {displayType}
             </span>
           ) : (
-            <span className="text-xs text-base-content/30 italic">Unknown</span>
+            <span className="text-xs text-base-content/30 italic">
+              {t('objects:item.status_unknown')}
+            </span>
           )}
         </td>
 
         <td className="w-28 text-center">
-          {!override && confidence !== 'None' ? (
+          {!override && item.confidenceScore > 0 ? (
             <div
-              className={`badge badge-sm badge-outline gap-1 ${getConfidenceColor(confidence)}`}
-              title={`${confidence} Confidence - ${matchLevelLabel(item.matchLevel)}`}
+              className={`badge badge-sm badge-outline gap-1 ${getConfidenceColor(
+                item.confidence as 'High' | 'Medium' | 'Low' | 'None' | 'Manual',
+              )}`}
+              title={`${item.confidence} Confidence`}
             >
-              {getConfidenceIcon(confidence)}
+              {getConfidenceIcon(item.confidence as 'High' | 'Medium' | 'Low' | 'None' | 'Manual')}
               <span className="font-medium">{item.confidenceScore}%</span>
             </div>
           ) : (
@@ -600,7 +613,7 @@ export default function ScanReviewRow({
           <button
             className={`btn btn-xs btn-square ${isSkipped ? 'btn-warning bg-warning/20' : 'btn-ghost text-base-content/30 hover:text-warning'}`}
             onClick={onToggleSkip}
-            title={isSkipped ? 'Include this mod' : 'Skip this mod'}
+            title={isSkipped ? t('context.include_mod') : t('context.skip_mod')}
           >
             <SkipForward size={14} />
           </button>

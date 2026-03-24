@@ -51,12 +51,12 @@ As a user, I want to rename a mod folder and have the display name update, so th
 
 As a user, I want to delete a mod by moving it to the OS Trash, so that I can recover it if I change my mind — without permanent data loss.
 
-| ID | Type | Criteria |
-|---|---|---|
-| AC-13.3.1 | ✅ Positive | Given I select "Delete" from the context menu and confirm in the dialog, then the mod folder is moved to the Internal App Trash (`app_data/trash/{uuid}/`) within ≤ 500ms. |
-| AC-13.3.2 | ✅ Positive | Given a successful delete of an enabled mod, then the parent object's `enabled_count` decrements optimistically in the objectlist and the card disappears from the grid in ≤ 100ms. |
+| ID        | Type        | Criteria                                                                                                                                                                                                        |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-13.3.1 | ✅ Positive | Given I select "Delete" from the context menu and confirm in the dialog, then the mod folder is moved to the Internal App Trash (`app_data/trash/{uuid}/`) within ≤ 500ms.                                      |
+| AC-13.3.2 | ✅ Positive | Given a successful delete of an enabled mod, then the parent object's `enabled_count` decrements optimistically in the objectlist and the card disappears from the grid in ≤ 100ms.                             |
 | AC-13.3.3 | ❌ Negative | Given a folder where some nested files are locked by permissions, when delete is attempted, then the backend returns a `PartialDeleteError` listing affected paths — the original folder is NOT moved to Trash. |
-| AC-13.3.4 | ✅ Positive | Given I initiate a delete, the system runs `pre_delete_check` to report folder item count; if >0, a confirmation dialog warns "Folder contains N items. Delete to trash?" before proceeding. |
+| AC-13.3.4 | ✅ Positive | Given I initiate a delete, the system runs `pre_delete_check` to report folder item count; if >0, a confirmation dialog warns "Folder contains N items. Delete to trash?" before proceeding.                    |
 
 ---
 
@@ -80,7 +80,7 @@ toggle_mod(path, enable):
   1. Acquire OperationLock(game_id).
   2. Compute `new_path` (toggle "DISABLED " prefix).
   3. Execute `fs::rename`.
-  4. DB Maintenance: 
+  4. DB Maintenance:
      - Update path and status in `mods` table (absolute or relative fallback).
      - If top-level, update `objects` folder_path and all child `mods` paths.
 
@@ -100,13 +100,13 @@ delete_mod(path):
 
 ### Integration Points
 
-| Component         | Detail                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| `OperationLock`   | Shared mutex per game workspace; serializes all filesystem mutations.                                        |
-| `Trash Service`   | App-level soft delete; supports `restore_from_trash` with context parity checks.                             |
-| `Watcher Guard`   | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                       |
-| `Info.json`       | Lifecycle managed via `info_json.rs`; fields merge-updated (not overwritten) on rename or toggle.            |
-| `Bulk Progress`   | Batch operations in `bulk.rs` emit `bulk-progress` events with throttled IPC updates.                        |
+| Component       | Detail                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `OperationLock` | Shared mutex per game workspace; serializes all filesystem mutations.                             |
+| `Trash Service` | App-level soft delete; supports `restore_from_trash` with context parity checks.                  |
+| `Watcher Guard` | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                            |
+| `Info.json`     | Lifecycle managed via `info_json.rs`; fields merge-updated (not overwritten) on rename or toggle. |
+| `Bulk Progress` | Batch operations in `bulk.rs` emit `bulk-progress` events with throttled IPC updates.             |
 
 ### Security & Privacy
 

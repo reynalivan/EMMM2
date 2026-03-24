@@ -3,7 +3,7 @@ pub mod pin_guard;
 
 pub use models::*;
 
-use crate::database::{game_repo, settings_repo};
+use crate::repo::{game_repo, settings_repo};
 use pin_guard::{validate_pin_format, PinGuardState, PinVerifyStatus};
 use sqlx::SqlitePool;
 use std::sync::Mutex;
@@ -105,7 +105,7 @@ impl ConfigService {
             "ALTER TABLE games ADD COLUMN mod_path TEXT;",
             "ALTER TABLE games ADD COLUMN game_exe TEXT;",
             "ALTER TABLE games ADD COLUMN loader_exe TEXT;",
-            "ALTER TABLE collections ADD COLUMN is_safe_context BOOLEAN DEFAULT 0;",
+            "ALTER TABLE collections ADD COLUMN is_safe BOOLEAN DEFAULT 0;",
             "ALTER TABLE collections ADD COLUMN is_favorite BOOLEAN DEFAULT 0;",
             "ALTER TABLE objects ADD COLUMN is_pinned BOOLEAN DEFAULT 0;",
             "ALTER TABLE objects ADD COLUMN is_auto_sync BOOLEAN NOT NULL DEFAULT 0;",
@@ -288,6 +288,52 @@ impl ConfigService {
     }
 
     pub fn verify_pin_status(&self, pin: &str) -> PinVerifyStatus {
+        use std::time::{Duration, SystemTime};
+
+        // === PHASE 1: Check DB for lockout status (source of truth) ===
+        let db_lockout_ts = {
+            let settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            settings.safe_mode.lockout_until_ts
+        };
+
+        let now = SystemTime::now();
+        if let Some(lockout_ts) = db_lockout_ts {
+            let lockout_time = SystemTime::UNIX_EPOCH + Duration::from_secs(lockout_ts);
+            if now < lockout_time {
+                // Lockout is still active in DB - return locked immediately
+                let remaining = lockout_time
+                    .duration_since(now)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs()
+                    .max(1);
+                return PinVerifyStatus {
+                    valid: false,
+                    attempts_remaining: 0,
+                    locked_seconds_remaining: remaining,
+                };
+            } else {
+                // Lockout expired in DB - clear it
+                let mut updated_settings = self
+                    .settings
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone();
+                updated_settings.safe_mode.lockout_until_ts = None;
+                updated_settings.safe_mode.failed_attempts = None;
+                let _ = self.save_settings(updated_settings.clone());
+
+                // Reset in-memory guard state
+                self.pin_guard
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .reset();
+            }
+        }
+
+        // === PHASE 2: Check PIN ===
         let (pin_hash, original_snapshot) = {
             let settings = self
                 .settings
@@ -309,6 +355,35 @@ impl ConfigService {
             guard.verify(pin, pin_hash.as_deref())
         };
 
+        // === PHASE 3: Persist lockout immediately if triggered ===
+        // Check if we just entered lockout state (attempts_remaining == 0 && !valid)
+        if !new_status.valid
+            && new_status.attempts_remaining == 0
+            && new_status.locked_seconds_remaining > 0
+        {
+            // 5 failed attempts reached - lockout triggered
+            // Persist immediately to DB to ensure it survives app crash
+            let mut updated_settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+
+            let lockout_until =
+                SystemTime::now() + Duration::from_secs(new_status.locked_seconds_remaining);
+            let lockout_ts = lockout_until
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs();
+
+            updated_settings.safe_mode.lockout_until_ts = Some(lockout_ts);
+            updated_settings.safe_mode.failed_attempts = Some(0); // Reset in DB once lockout is set
+            let _ = self.save_settings(updated_settings);
+
+            return new_status;
+        }
+
+        // === PHASE 4: Sync other state changes to DB ===
         let current_snapshot = self
             .pin_guard
             .lock()

@@ -1,0 +1,128 @@
+{
+  "page": {
+    "title": "Collections",
+    "desc": "Save your currently enabled mods and variants as a named collection. Apply collections atomically to instantly switch your entire game loadout.",
+    "no_active_game": {
+      "title": "No Active Game",
+      "desc": "Select a game first, then open Collections."
+    },
+    "actions": {
+      "undo": "Undo Apply",
+      "undo_title": "Reverts the last applied collection",
+      "save_current": "Save Current State"
+    }
+  },
+  "tab": {
+    "safe": "SAFE",
+    "unsafe": "UNSAFE"
+  },
+  "list": {
+    "empty": "No {{mode}} collections found",
+    "empty_desc": "Create your first {{mode}} collection by clicking \"Save Current State\" at the top right.",
+    "table": {
+      "name": "Name",
+      "mods": "Mods",
+      "actions": "Actions"
+    },
+    "item": {
+      "active": "Active",
+      "undo": "Undo",
+      "rename": "Rename",
+      "apply": "Apply",
+      "delete": "Delete collection",
+      "mod_count": "{{count}} mods"
+    }
+  },
+  "preview": {
+    "title": "Collection Preview",
+    "no_selection": "Select a collection to see its contents.",
+    "empty": "This collection is empty.",
+    "stats": {
+      "mods": "Mods",
+      "objects": "Characters",
+      "variants": "Variants"
+    }
+  },
+  "apply": {
+    "title_loading": "Apply Collection: ...",
+    "title": "Apply Collection: {{name}}",
+    "desc": "You are about to switch your active loadout. Review the target state before proceeding.",
+    "failed": {
+      "title": "Preview Failed",
+      "close": "Close"
+    },
+    "missing": {
+      "title": "Missing Mods Detected",
+      "desc": "The following mods are referenced by this collection but cannot be found on disk. They may have been deleted or moved.",
+      "anyway_q": "Do you want to apply the collection anyway?",
+      "back": "Back to Preview",
+      "confirm": "Apply Anyway (Skip Missing)",
+      "applying": "Applying..."
+    },
+    "panels": {
+      "before": "Currently Active (Before)",
+      "after": "Target Collection (After)",
+      "mod_count": "{{count}} mods",
+      "empty_before": "No mods currently active.",
+      "empty_after": "Collection is empty."
+    },
+    "actions": {
+      "cancel": "Cancel",
+      "confirm": "Confirm Apply",
+      "loading": "Loading preview..."
+    }
+  },
+  "save": {
+    "title": "Save as New Collection",
+    "desc": "Creates a new collection from your current mod loadout.",
+    "label": "Collection Name",
+    "placeholder": "e.g. Abyss Run 1",
+    "error": {
+      "empty": "Please enter a name for the collection.",
+      "failed": "Failed to save collection: {{error}}"
+    },
+    "actions": {
+      "cancel": "Cancel",
+      "save": "Save Collection",
+      "saving": "Saving..."
+    },
+    "default_name": "Preset {{date}}"
+  },
+  "recovery": {
+    "title": "Interrupted Task Detected",
+    "desc": "EMMM detected that a previous critical operation (like applying a collection or switching Safe Mode) was interrupted before finishing.",
+    "pending": "Pending Tasks ({{count}})",
+    "important": "Important",
+    "warning": "Clearing these tasks will allow you to access the app again. You should manually retry the collection apply or mode switch that was interrupted to ensure your game files are in the correct state.",
+    "actions": {
+      "clear": "Abort & Clear",
+      "clearing": "Clearing...",
+      "resume": "Resume Task",
+      "resuming": "Resuming..."
+    },
+    "toast": {
+      "cleared": "Interrupted tasks have been cleared. You may retry your last action.",
+      "resumed": "Interrupted operation successfully resumed and completed.",
+      "resume_failed": "Failed to resume: {{error}}"
+    }
+  },
+  "randomizer": {
+    "title": "Smart Randomizer",
+    "desc": "Recommends 1 random disabled mod for every active Character. Review and apply.",
+    "safe_mode": "Safe Mode",
+    "no_eligible": "No eligible character mods found (check filters or ensure you have disabled mods).",
+    "consulting": "Consulting the RNG Gods...",
+    "reroll": "Reroll All",
+    "roll": "Roll Luck",
+    "apply": "Apply ({{count}})",
+    "applying": "Applying...",
+    "select_all": "Select All",
+    "deselect_all": "Deselect All",
+    "selection_status": "{{selected}} of {{total}} selected",
+    "empty_desc": "Click 'Roll Luck' to generate recommendations."
+  },
+  "mod_row": {
+    "unknown": "Unknown Mod",
+    "nested": "Nested mod"
+  }
+}

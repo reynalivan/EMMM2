@@ -20,7 +20,7 @@ export const config = {
     {
       browserName: 'webview2',
       'tauri:options': {
-        application: 'e:/Dev/EMMM2NEW/src-tauri/target/debug/emmm2.exe',
+        application: 'e:/Dev/EMMMNEW/src-tauri/target/debug/emmm.exe',
       },
     },
   ],
@@ -33,7 +33,7 @@ export const config = {
   // ensure the rust project is built since we expect this binary to exist for the webdriver sessions
   // we use debug build because devtools (required for webdriver) is enabled by default in debug
   onPrepare: () => {
-    const binPath = path.resolve(__dirname, 'src-tauri/target/debug/emmm2.exe');
+    const binPath = path.resolve(__dirname, 'src-tauri/target/debug/emmm.exe');
     if (fs.existsSync(binPath)) {
       console.log('Binary already exists, skipping build...');
       return;
@@ -46,7 +46,7 @@ export const config = {
   beforeSession: async () => {
     // Purge any ghost processes before starting
     try {
-      spawnSync('taskkill', ['/F', '/IM', 'emmm2.exe', '/T'], { shell: true });
+      spawnSync('taskkill', ['/F', '/IM', 'emmm.exe', '/T'], { shell: true });
       spawnSync('taskkill', ['/F', '/IM', 'msedgedriver.exe', '/T'], { shell: true });
       spawnSync('taskkill', ['/F', '/IM', 'tauri-driver.exe', '/T'], { shell: true });
     } catch {

@@ -1,114 +1,100 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../lib/bindings';
+import type { AppSettings, AiConfig, PinVerifyStatus } from '../types/settings';
+import type { GameConfig } from '../types/game';
 import { useToastStore } from '../stores/useToastStore';
 import { normalizeThemeSetting, type ThemeSetting } from '../features/settings/theme/themeOptions';
-
-import type { GameConfig } from '../types/game';
+import i18n from '../lib/i18n';
+import { useTranslation } from 'react-i18next';
 
 // Re-export for consumers
-export type { GameConfig };
-
-export interface SafeModeConfig {
-  enabled: boolean;
-  pin_hash: string | null;
-  recovery_code_hash: string | null;
-  keywords: string[];
-  force_exclusive_mode: boolean;
-}
-
-export interface PinVerifyStatus {
-  valid: boolean;
-  attempts_remaining: number;
-  locked_seconds_remaining: number;
-}
-
-export interface AiConfig {
-  enabled: boolean;
-  api_key: string | null;
-  base_url: string | null;
-}
-
-export interface HotkeyConfig {
-  enabled: boolean;
-  game_focus_only: boolean;
-  cooldown_ms: number;
-  toggle_safe_mode: string;
-  next_preset: string;
-  prev_preset: string;
-  next_variant: string;
-  prev_variant: string;
-  toggle_overlay: string;
-}
-
-export interface KeyViewerConfig {
-  enabled: boolean;
-  status_ttl_seconds: number;
-  overlay_toggle_key: string;
-  keybinds_dir: string;
-}
-
-export interface AppSettings {
-  theme: string;
-  language: string;
-  games: GameConfig[];
-  active_game_id: string | null;
-  safe_mode: SafeModeConfig;
-  ai: AiConfig;
-  hotkeys: HotkeyConfig;
-  keyviewer: KeyViewerConfig;
-}
+export type { GameConfig, AppSettings, AiConfig, PinVerifyStatus };
 
 export const settingsKeys = {
   all: ['settings'] as const,
 };
 
 export function useSettings() {
+  const { t } = useTranslation(['settings', 'common', 'layout']);
   const queryClient = useQueryClient();
   const { addToast } = useToastStore();
 
   const settingsQuery = useQuery<AppSettings>({
     queryKey: settingsKeys.all,
-    queryFn: () => invoke<AppSettings>('get_settings'),
+    queryFn: () => commands.getSettings(),
     staleTime: Infinity, // Settings don't change often from outside
   });
 
   const saveSettingsMutation = useMutation({
-    mutationFn: (newSettings: AppSettings) => invoke('save_settings', { settings: newSettings }),
+    mutationFn: (newSettings: AppSettings) => commands.saveSettings({ settings: newSettings }),
     onSuccess: (_, newSettings) => {
       queryClient.setQueryData(settingsKeys.all, newSettings);
-      addToast('success', 'Settings Saved: Configuration updated successfully.');
+      addToast(
+        'success',
+        t('settings:toast.save_success', {
+          defaultValue: 'Settings Saved: Configuration updated successfully.',
+        }),
+      );
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', `Save Failed: ${String(err)}`);
+      addToast(
+        'error',
+        t('settings:toast.save_failed', {
+          error: String(err),
+          defaultValue: `Save Failed: ${String(err)}`,
+        }),
+      );
     },
   });
 
   const setPinMutation = useMutation({
-    mutationFn: (pin: string) => invoke('set_safe_mode_pin', { pin }),
+    mutationFn: (pin: string) => commands.setPin({ pin, recoveryCode: undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: settingsKeys.all });
-      addToast('success', 'PIN Updated: Safe Mode PIN has been set securely.');
+      addToast(
+        'success',
+        t('settings:toast.pin_success', {
+          defaultValue: 'PIN Updated: Safe Mode PIN has been set securely.',
+        }),
+      );
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', `PIN Update Failed: ${String(err)}`);
+      addToast(
+        'error',
+        t('settings:toast.pin_failed', {
+          error: String(err),
+          defaultValue: `PIN Update Failed: ${String(err)}`,
+        }),
+      );
     },
   });
 
   const setPinWithRecoveryMutation = useMutation({
-    mutationFn: (pin: string) => invoke<string>('set_safe_mode_pin_with_recovery', { pin }),
+    mutationFn: async (pin: string) => {
+      // Generate a recovery code client-side, pass to backend for hashing
+      const code = `EMMM-${crypto.randomUUID().slice(0, 4).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+      await commands.setPin({ pin, recoveryCode: code });
+      return code;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: settingsKeys.all });
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', `PIN Update Failed: ${String(err)}`);
+      addToast(
+        'error',
+        t('settings:toast.pin_failed', {
+          error: String(err),
+          defaultValue: `PIN Update Failed: ${String(err)}`,
+        }),
+      );
     },
   });
 
   const resetPinWithRecoveryMutation = useMutation({
-    mutationFn: (code: string) => invoke<boolean>('reset_pin_with_recovery_code', { code }),
+    mutationFn: (code: string) => commands.resetPinWithRecoveryCode({ code }),
     onSuccess: (valid) => {
       if (valid) queryClient.invalidateQueries({ queryKey: settingsKeys.all });
     },
@@ -118,16 +104,31 @@ export function useSettings() {
   });
 
   const verifyPinMutation = useMutation({
-    mutationFn: (pin: string) => invoke<PinVerifyStatus>('verify_pin', { pin }),
+    mutationFn: (pin: string) => commands.verifyPin({ pin }),
   });
 
   const maintenanceMutation = useMutation({
-    mutationFn: () => invoke<string>('run_maintenance'),
-    onSuccess: (message) => {
-      addToast('success', message);
+    mutationFn: () => commands.runMaintenance({}),
+    onSuccess: (data) => {
+      // data is [pruned, purged]
+      const [pruned, purged] = data;
+      addToast(
+        'success',
+        t('layout:maintenance.success', {
+          pruned,
+          purged,
+          defaultValue: `Maintenance complete. Pruned ${pruned} thumbnails. Purged ${purged} old empty trash entries.`,
+        }),
+      );
     },
     onError: (err) => {
-      addToast('error', `Maintenance Failed: ${String(err)}`);
+      addToast(
+        'error',
+        t('layout:maintenance.failed', {
+          error: String(err),
+          defaultValue: `Maintenance Failed: ${String(err)}`,
+        }),
+      );
     },
   });
 
@@ -138,14 +139,20 @@ export function useSettings() {
         ...settingsQuery.data,
         ai: { ...settingsQuery.data.ai, ...newAiConfig },
       };
-      return invoke('save_settings', { settings: newSettings });
+      return commands.saveSettings({ settings: newSettings });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: settingsKeys.all });
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', `Failed to update AI config: ${String(err)}`);
+      addToast(
+        'error',
+        t('settings:toast.ai_failed', {
+          error: String(err),
+          defaultValue: `Failed to update AI config: ${String(err)}`,
+        }),
+      );
     },
   });
 
@@ -158,15 +165,26 @@ export function useSettings() {
         theme: normalizeThemeSetting(theme),
       };
 
-      return invoke('save_settings', { settings: newSettings });
+      return commands.saveSettings({ settings: newSettings });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: settingsKeys.all });
-      addToast('success', 'Theme Updated: Appearance updated successfully.');
+      addToast(
+        'success',
+        t('settings:toast.theme_success', {
+          defaultValue: 'Theme Updated: Appearance updated successfully.',
+        }),
+      );
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', `Theme Update Failed: ${String(err)}`);
+      addToast(
+        'error',
+        t('settings:toast.theme_failed', {
+          error: String(err),
+          defaultValue: `Theme Update Failed: ${String(err)}`,
+        }),
+      );
     },
   });
 
@@ -186,5 +204,36 @@ export function useSettings() {
     runMaintenance: maintenanceMutation.mutate,
     updateAiConfig: aiConfigMutation,
     updateTheme: updateThemeMutation,
+    updateLanguage: useMutation({
+      mutationFn: async (language: string) => {
+        if (!settingsQuery.data) throw new Error('Settings not loaded');
+        const newSettings = {
+          ...settingsQuery.data,
+          language,
+        };
+        await commands.saveSettings({ settings: newSettings });
+        await i18n.changeLanguage(language);
+        return newSettings;
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+        addToast(
+          'success',
+          t('settings:toast.lang_success', {
+            defaultValue: 'Language Updated: Interface language changed.',
+          }),
+        );
+      },
+      onError: (err) => {
+        console.error(err);
+        addToast(
+          'error',
+          t('settings:toast.lang_failed', {
+            error: String(err),
+            defaultValue: `Language Update Failed: ${String(err)}`,
+          }),
+        );
+      },
+    }),
   };
 }

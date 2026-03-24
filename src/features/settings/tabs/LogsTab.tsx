@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { commands } from '../../../lib/bindings';
 import { ExternalLink, RefreshCcw } from 'lucide-react';
 import { useToastStore } from '../../../stores/useToastStore';
 
@@ -20,6 +21,7 @@ function detectLevel(line: string): Exclude<LogLevel, 'ALL'> | null {
 }
 
 export default function LogsTab() {
+  const { t } = useTranslation(['settings', 'common']);
   const { addToast } = useToastStore();
   const [isLoading, setIsLoading] = useState(false);
   const [level, setLevel] = useState<LogLevel>('ALL');
@@ -28,22 +30,22 @@ export default function LogsTab() {
   const loadLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const next = await invoke<string[]>('get_log_lines', { lines: 300 });
+      const next = await commands.getLogLines({ limit: 300 });
       setLines(next);
     } catch (error) {
       console.error(error);
-      addToast('error', `Failed to load logs: ${String(error)}`);
+      addToast('error', t('settings:logs.load_failed', { error: String(error) }));
     } finally {
       setIsLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, t]);
 
   const openLogFolder = async () => {
     try {
-      await invoke('open_log_folder');
+      await commands.openLogFolder();
     } catch (error) {
       console.error(error);
-      addToast('error', `Failed to open log folder: ${String(error)}`);
+      addToast('error', t('settings:logs.folder_failed', { error: String(error) }));
     }
   };
 
@@ -64,20 +66,20 @@ export default function LogsTab() {
         <div className="card-body">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="card-title text-lg">Logs</h3>
-              <p className="text-sm text-base-content/70">Recent app logs from tauri-plugin-log.</p>
+              <h3 className="card-title text-lg">{t('settings:logs.title')}</h3>
+              <p className="text-sm text-base-content/70">{t('settings:logs.desc')}</p>
             </div>
             <div className="flex items-center gap-2">
               <select
                 className="select select-bordered select-sm"
                 value={level}
                 onChange={(event) => setLevel(event.target.value as LogLevel)}
-                aria-label="Filter logs by level"
+                aria-label={t('settings:logs.filter_label')}
               >
-                <option value="ALL">All</option>
-                <option value="INFO">Info</option>
-                <option value="WARN">Warn</option>
-                <option value="ERROR">Error</option>
+                <option value="ALL">{t('settings:logs.levels.all')}</option>
+                <option value="INFO">{t('settings:logs.levels.info')}</option>
+                <option value="WARN">{t('settings:logs.levels.warn')}</option>
+                <option value="ERROR">{t('settings:logs.levels.error')}</option>
               </select>
 
               <button
@@ -87,7 +89,7 @@ export default function LogsTab() {
                 disabled={isLoading}
               >
                 <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} />
-                Refresh
+                {t('settings:logs.refresh')}
               </button>
 
               <button
@@ -96,7 +98,7 @@ export default function LogsTab() {
                 onClick={() => void openLogFolder()}
               >
                 <ExternalLink size={14} />
-                Open Folder
+                {t('settings:logs.open_folder')}
               </button>
             </div>
           </div>
@@ -104,7 +106,7 @@ export default function LogsTab() {
           <div className="mt-4 rounded-lg border border-base-300 bg-base-100 p-3">
             <div className="max-h-112 overflow-auto font-mono text-xs leading-5">
               {visibleLines.length === 0 ? (
-                <p className="text-base-content/60">No log entries match the selected level.</p>
+                <p className="text-base-content/60">{t('settings:logs.empty')}</p>
               ) : (
                 visibleLines.map((line, index) => (
                   <div

@@ -1,117 +1,146 @@
+use crate::domain::errors::AppError;
+use crate::repo::game_repo;
+use crate::services::config::ConfigService;
+use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::bulk;
 use crate::services::mods::info_json;
 use crate::services::scanner::watcher::WatcherState;
-use std::path::Path;
 use tauri::{AppHandle, State};
 
+#[specta::specta]
 #[tauri::command]
 pub async fn bulk_toggle_mods(
     app: AppHandle,
+    config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
+    game_id: String,
     paths: Vec<String>,
     enable: bool,
-) -> Result<bulk::BulkResult, String> {
-    let _lock = op_lock.acquire().await?;
-    bulk::bulk_toggle(&app, &pool, &state, paths, enable).await
+) -> Result<bulk::BulkResult, AppError> {
+    let mods_path = game_repo::get_mod_path(pool.inner(), &game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Game not found or has no mods path".to_string()))?;
+
+    // Security validation for all paths
+    for p in &paths {
+        PathGuard::validate_path(&config, &game_id, p).map_err(AppError::Security)?;
+    }
+
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let result = bulk::bulk_toggle(
+        &app,
+        pool.inner(),
+        &state,
+        &mods_path,
+        &game_id,
+        paths,
+        enable,
+    )
+    .await?;
+
+    let post_ctx = crate::services::app::post_apply::PostApplyContext {
+        game_id,
+        pool: pool.inner().clone(),
+        is_safe: config.get_settings().safe_mode.enabled,
+        mods_path: mods_path.into(),
+        suppressor: state.suppressor.clone(),
+        settings: config.get_settings(),
+        status_fields: None,
+    };
+    let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
+
+    Ok(result)
 }
 
-pub async fn bulk_toggle_mods_inner(
-    state: &WatcherState,
-    paths: Vec<String>,
-    enable: bool,
-) -> Result<bulk::BulkResult, String> {
-    bulk::bulk_toggle_inner(state, paths, enable).await
-}
-
+#[specta::specta]
 #[tauri::command]
 pub async fn bulk_delete_mods(
     app: AppHandle,
+    config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
-    paths: Vec<String>,
     game_id: Option<String>,
-) -> Result<bulk::BulkResult, String> {
-    let _lock = op_lock.acquire().await?;
-    bulk::bulk_delete(&app, &pool, &state, paths, game_id).await
+    paths: Vec<String>,
+) -> Result<bulk::BulkResult, AppError> {
+    if let Some(ref gid) = game_id {
+        for p in &paths {
+            PathGuard::validate_path(&config, gid, p).map_err(AppError::Security)?;
+        }
+    }
+
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let result = bulk::bulk_delete(&app, pool.inner(), &state, paths, game_id.clone()).await?;
+
+    if let Some(gid) = game_id {
+        if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &gid).await? {
+            let post_ctx = crate::services::app::post_apply::PostApplyContext {
+                game_id: gid,
+                pool: pool.inner().clone(),
+                is_safe: config.get_settings().safe_mode.enabled,
+                mods_path: mods_path.into(),
+                suppressor: state.suppressor.clone(),
+                settings: config.get_settings(),
+                status_fields: None,
+            };
+            let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
+        }
+    }
+
+    Ok(result)
 }
 
-pub async fn bulk_delete_mods_inner(
-    state: &WatcherState,
-    trash_dir: &Path,
-    paths: Vec<String>,
-    game_id: Option<String>,
-) -> Result<bulk::BulkResult, String> {
-    bulk::bulk_delete_inner(state, trash_dir, paths, game_id).await
-}
-
+#[specta::specta]
 #[tauri::command]
 pub async fn bulk_update_info(
+    config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    state: State<'_, WatcherState>,
+    game_id: String,
     paths: Vec<String>,
     update: info_json::ModInfoUpdate,
-) -> Result<bulk::BulkResult, String> {
-    bulk::bulk_update_info(paths, update).await
+) -> Result<bulk::BulkResult, AppError> {
+    let result = bulk::bulk_update_info(&config, &game_id, paths, update).await?;
+
+    if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &game_id).await? {
+        let post_ctx = crate::services::app::post_apply::PostApplyContext {
+            game_id: game_id.clone(),
+            pool: pool.inner().clone(),
+            is_safe: config.get_settings().safe_mode.enabled,
+            mods_path: mods_path.into(),
+            suppressor: state.suppressor.clone(),
+            settings: config.get_settings(),
+            status_fields: None,
+        };
+        let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
+    }
+
+    Ok(result)
 }
 
+#[specta::specta]
 #[tauri::command]
 pub async fn bulk_toggle_favorite(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     game_id: String,
     folder_paths: Vec<String>,
     favorite: bool,
-) -> Result<bulk::BulkResult, String> {
+) -> Result<bulk::BulkResult, AppError> {
     bulk::bulk_toggle_favorite(&pool, game_id, folder_paths, favorite).await
 }
 
+#[specta::specta]
 #[tauri::command]
 pub async fn bulk_pin_mods(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     game_id: String,
     folder_paths: Vec<String>,
     pin: bool,
-) -> Result<bulk::BulkResult, String> {
+) -> Result<bulk::BulkResult, AppError> {
     bulk::bulk_pin(&pool, game_id, folder_paths, pin).await
-}
-
-#[tauri::command]
-pub async fn bulk_toggle_mods_by_ids(
-    app: AppHandle,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    state: tauri::State<'_, WatcherState>,
-    op_lock: State<'_, OperationLock>,
-    mod_ids: Vec<String>,
-    enable: bool,
-    game_id: String,
-) -> Result<bulk::BulkResult, String> {
-    let _lock = op_lock.acquire().await?;
-
-    // Resolve absolute paths from mod IDs
-    let mods_path: Option<String> = crate::database::game_repo::get_mod_path(&pool, &game_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let base = mods_path.ok_or("Game mod path not found")?;
-
-    let id_path_map = crate::database::collection_repo::get_mod_paths_for_ids_pool(&pool, &mod_ids)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let abs_paths: Vec<String> = mod_ids
-        .iter()
-        .filter_map(|id| {
-            id_path_map.get(id).map(|rel| {
-                std::path::Path::new(&base)
-                    .join(rel)
-                    .to_string_lossy()
-                    .to_string()
-            })
-        })
-        .collect();
-
-    bulk::bulk_toggle(&app, &pool, &state, abs_paths, enable).await
 }
 
 #[cfg(test)]

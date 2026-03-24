@@ -1,279 +1,233 @@
-import { invoke } from '@tauri-apps/api/core';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+/**
+ * v2 Collection hooks — Query + Mutation hooks for the greenfield collection system.
+ *
+ * Replaces: useCollections, useCollectionRuntimePreview, useCreateCollection,
+ *           useSaveCurrentAsCollection, useSaveSnapshotCollectionAsNamed,
+ *           useUpdateCollection, useDeleteCollection, useApplyCollection, useUndoCollection.
+ *
+ * Key simplification: Backend now handles corridor filtering, so list queries
+ * don't need isSafe — the backend reads it from config.
+ */
+
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from '../../../stores/useToastStore';
+import { collectionKeys, corridorKeys } from '../queryKeys';
+import { commands } from '../../../lib/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
-import {
-  applyProgressKeys,
-  collectionKeys,
-  corridorRuntimeKeys,
-} from '../queryKeys';
-import { invalidateCorridorRuntime } from '../utils/invalidateCorridorRuntime';
-import { invalidateCollectionRuntime } from '../utils/invalidateCollectionRuntime';
-import { refetchCollectionRuntime } from '../utils/refetchCollectionRuntime';
 import type {
-  ApplyCollectionProgress,
-  ApplyCollectionResult,
-  Collection,
-  CollectionDetails,
-  CollectionRuntimePreview,
-  CorridorRuntimeSnapshot,
-  CreateCollectionInput,
-  UpdateCollectionInput,
+  CollectionSummary,
+  CollectionPreview,
+  ApplyPreview,
+  ApplyResult,
 } from '../../../types/collection';
 
-function upsertCollectionListEntry(
-  queryClient: ReturnType<typeof useQueryClient>,
-  collection: Collection,
-) {
-  queryClient.setQueryData<Collection[]>(collectionKeys.list(collection.game_id), (current) => {
-    if (!current) {
-      return [collection];
-    }
+// ── Query Hooks ────────────────────────────────────────────────────────────
 
-    const withoutCollection = current.filter((item) => item.id !== collection.id);
-    return [...withoutCollection, collection];
-  });
-}
-
-export function useCollections(gameId?: string | null) {
-  return useQuery<Collection[]>({
-    queryKey: collectionKeys.list(gameId ?? ''),
-    queryFn: () => invoke<Collection[]>('list_collections', { gameId }),
+/** List all collections for the current game + corridor. */
+export function useCollections(gameId: string | null, isSafe: boolean) {
+  return useQuery<CollectionSummary[]>({
+    queryKey: collectionKeys.list(gameId ?? '', isSafe),
+    queryFn: () => commands.listCollections({ gameId: gameId ?? '' }),
     enabled: !!gameId,
+    placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
 }
 
-export function useCollectionRuntimePreview(collectionId: string | null, gameId: string | null) {
-  return useQuery<CollectionRuntimePreview>({
-    queryKey: collectionKeys.runtimePreview(collectionId ?? ''),
+/** Get detailed preview for a specific collection. */
+export function useCollectionPreview(collectionId: string | null, gameId: string | null) {
+  return useQuery<CollectionPreview>({
+    queryKey: [...collectionKeys.preview(collectionId ?? ''), gameId],
     queryFn: () =>
-      invoke<CollectionRuntimePreview>('get_collection_runtime_preview', { collectionId, gameId }),
+      commands.getCollectionPreview({
+        collectionId: collectionId ?? '',
+        gameId: gameId ?? '',
+      }),
     enabled: !!collectionId && !!gameId,
     staleTime: 30_000,
   });
 }
 
-export function useCorridorRuntimeSnapshot(gameId: string | null, safeMode: boolean) {
-  return useQuery<CorridorRuntimeSnapshot>({
-    queryKey: corridorRuntimeKeys.snapshot(gameId ?? '', safeMode),
+/** Get before/after preview for applying a collection. */
+export function useApplyCollectionPreview(
+  gameId: string | null,
+  collectionId: string | null,
+  isSafe: boolean,
+) {
+  return useQuery<ApplyPreview>({
+    queryKey: [...collectionKeys.previewApply(collectionId ?? ''), isSafe],
     queryFn: () =>
-      invoke<CorridorRuntimeSnapshot>('get_corridor_runtime_snapshot', {
-        gameId,
-        isSafe: safeMode,
+      commands.previewApplyCollection({
+        gameId: gameId ?? '',
+        collectionId: collectionId ?? '',
+        isSafe,
       }),
-    enabled: !!gameId,
-    placeholderData: (previousData) => previousData,
-    staleTime: 5000,
-  });
-}
-
-export function useApplyProgress(gameId: string | null, enabled: boolean) {
-  return useQuery<ApplyCollectionProgress>({
-    queryKey: applyProgressKeys.detail(gameId ?? ''),
-    queryFn: () => invoke<ApplyCollectionProgress>('get_apply_progress', { gameId }),
-    enabled: enabled && !!gameId,
-    refetchInterval: enabled ? 200 : false,
+    enabled: !!gameId && !!collectionId,
+    // Don't cache this long, we want fresh disk state when viewing the modal
     staleTime: 0,
   });
 }
 
+// ── Mutation Hooks ─────────────────────────────────────────────────────────
+
+/** Create a new named collection. */
 export function useCreateCollection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreateCollectionInput) =>
-      invoke<CollectionDetails>('create_collection', { input }),
-    onSuccess: async (result) => {
+    mutationFn: ({ gameId, name }: { gameId: string; name: string }) =>
+      commands.createCollection({ gameId, name }),
+
+    onSuccess: (result: CollectionSummary) => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      await invalidateCorridorRuntime(queryClient);
-      toast.success(`Created collection: ${result.collection.name}`);
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+      toast.success(`Created collection: ${result.name}`);
     },
-    onError: (err) => {
+
+    onError: (err: unknown) => {
       toast.error(String(err));
     },
   });
 }
 
-export function useSaveCurrentAsCollection() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: Omit<CreateCollectionInput, 'mod_ids' | 'auto_snapshot'>) =>
-      invoke<CollectionDetails>('create_collection', {
-        input: { ...input, mod_ids: [], auto_snapshot: true },
-      }),
-    onSuccess: async (result, input) => {
-      upsertCollectionListEntry(queryClient, result.collection);
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      await invalidateCorridorRuntime(queryClient);
-      await refetchCollectionRuntime(queryClient, {
-        gameId: input.game_id,
-        isSafe: input.is_safe_context,
-        collectionId: result.collection.id,
-      });
-      toast.success(`Saved current state as: ${result.collection.name}`);
-    },
-    onError: (err) => {
-      toast.error(String(err));
-    },
-  });
-}
-
-interface SaveSnapshotCollectionInput {
-  source_collection_id: string;
-  game_id: string;
-  name: string;
-}
-
-export function useSaveSnapshotCollectionAsNamed() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: SaveSnapshotCollectionInput) =>
-      invoke<CollectionDetails>('save_snapshot_collection_as_named', {
-        sourceCollectionId: input.source_collection_id,
-        gameId: input.game_id,
-        name: input.name,
-      }),
-    onSuccess: async (result) => {
-      upsertCollectionListEntry(queryClient, result.collection);
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      queryClient.invalidateQueries({
-        queryKey: collectionKeys.runtimePreview(result.collection.id),
-      });
-      await invalidateCorridorRuntime(queryClient);
-      await refetchCollectionRuntime(queryClient, {
-        gameId: result.collection.game_id,
-        isSafe: result.collection.is_safe_context,
-        collectionId: result.collection.id,
-      });
-      toast.success(`Saved snapshot as: ${result.collection.name}`);
-    },
-    onError: (err) => {
-      toast.error(String(err));
-    },
-  });
-}
-
+/** Update an existing collection (rename). */
 export function useUpdateCollection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: UpdateCollectionInput) =>
-      invoke<CollectionDetails>('update_collection', { input }),
-    onSuccess: async (result) => {
+    mutationFn: ({ gameId, id, name }: { gameId: string; id: string; name?: string }) =>
+      commands.updateCollection({
+        gameId,
+        id,
+        name,
+      }),
+
+    onSuccess: (result: CollectionSummary) => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      await invalidateCorridorRuntime(queryClient);
-      await refetchCollectionRuntime(queryClient, {
-        gameId: result.collection.game_id,
-        isSafe: result.collection.is_safe_context,
-        collectionId: result.collection.id,
-      });
-      toast.success(`Updated collection: ${result.collection.name}`);
+      toast.success(`Updated collection: ${result.name}`);
     },
-    onError: (err) => {
+
+    onError: (err: unknown) => {
       toast.error(String(err));
     },
   });
 }
 
+/** Delete a collection. */
 export function useDeleteCollection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, gameId }: { id: string; gameId: string }) =>
-      invoke<void>('delete_collection', { id, gameId }),
-    onSuccess: async () => {
+    mutationFn: ({ gameId, id }: { gameId: string; id: string }) =>
+      commands.deleteCollection({ gameId, id }),
+
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      await invalidateCorridorRuntime(queryClient);
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
       toast.success('Collection deleted');
     },
-    onError: (err) => {
+
+    onError: (err: unknown) => {
       toast.error(String(err));
     },
   });
 }
 
+/** Apply a collection (enable/disable mods to match the snapshot). */
+export function useApplyCollection() {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: ({
+
+      gameId,
+      collectionId,
+      ignoreMissing,
+    }: {
+      gameId: string;
+      collectionId: string;
+      ignoreMissing?: boolean;
+    }) =>
+      commands.applyCollection({
+        gameId,
+        collectionId,
+        ignoreMissing: ignoreMissing ?? false,
+      }),
+
+    onSuccess: (result: ApplyResult) => {
+      // Invalidate everything that might have changed
+      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+
+      const total = result.mods_enabled + result.mods_disabled;
+      toast.success(`Applied collection (${total} changes)`);
+    },
+
+    onError: (err: unknown, variables) => {
+      const errStr = String(err);
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+          return;
+        } catch {
+          /* parse failed */
+        }
+      }
+      toast.error(errStr);
+    },
+  });
+
+  return mutation;
+}
+
+
+/** Undo the last collection application. */
 export function useUndoCollection() {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: ({ gameId }: { gameId: string }) =>
-      invoke<ApplyCollectionResult>('undo_collection', { gameId }),
-    onSuccess: async (result, variables) => {
-      await invalidateCollectionRuntime(queryClient, { includeMods: true });
-      const { activeGameId, safeMode } = useAppStore.getState();
-      const nextGameId = variables.gameId || activeGameId;
-      if (nextGameId) {
-        await refetchCollectionRuntime(queryClient, {
-          gameId: nextGameId,
-          isSafe: safeMode,
-        });
-      }
-      toast.success(`Undid collection application (${result.changed_count} changes reverted)`);
+  const mutation = useMutation({
+    mutationFn: ({ gameId }: { gameId: string }) => commands.undoCollection({ gameId }),
+
+
+    onSuccess: (result: ApplyResult) => {
+      // Invalidate everything
+      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+
+      const total = result.mods_enabled + result.mods_disabled;
+      toast.success(`Undid collection application (${total} changes reverted)`);
     },
-    onError: (err) => {
-      toast.error(String(err));
+
+    onError: (err: unknown, variables) => {
+      const errStr = String(err);
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+          return;
+        } catch {
+          /* parse failed */
+        }
+      }
+      toast.error(errStr);
     },
   });
-}
-export function useApplyCollection() {
-  const queryClient = useQueryClient();
-  const undoCollection = useUndoCollection();
 
-  return useMutation({
-    mutationFn: ({
-      collectionId,
-      gameId,
-      safeMode,
-    }: {
-      collectionId: string;
-      gameId: string;
-      safeMode: boolean;
-      targetPreview?: CollectionRuntimePreview | null;
-    }) =>
-      invoke<ApplyCollectionResult>('apply_collection', { collectionId, gameId }),
-    onSuccess: async (result, variables) => {
-      if (variables.targetPreview && !variables.targetPreview.collection.is_last_unsaved) {
-        queryClient.setQueryData<CorridorRuntimeSnapshot>(
-          corridorRuntimeKeys.snapshot(variables.gameId, variables.safeMode),
-          {
-            game_id: variables.gameId,
-            is_safe: variables.safeMode,
-            active_collection_id: variables.collectionId,
-            state_name: variables.targetPreview.collection.name,
-            state_kind: 'named',
-            roots: variables.targetPreview.roots,
-            object_states: variables.targetPreview.object_states,
-            signature: variables.targetPreview.signature,
-            snapshot_source: 'apply_result',
-            reconciled_count: 0,
-          },
-        );
-      }
-
-      await invalidateCollectionRuntime(queryClient, { includeMods: true });
-      void refetchCollectionRuntime(queryClient, {
-        gameId: variables.gameId,
-        isSafe: variables.safeMode,
-        collectionId: variables.collectionId,
-      });
-
-      toast.withAction(
-        'success',
-        `Applied collection (${result.changed_count} changes)`,
-        {
-          label: 'Undo',
-          onClick: () => {
-            undoCollection.mutate({ gameId: variables.gameId });
-          },
-        },
-        7000,
-      );
-    },
-    onError: (err) => {
-      toast.error(String(err));
-    },
-  });
+  return mutation;
 }

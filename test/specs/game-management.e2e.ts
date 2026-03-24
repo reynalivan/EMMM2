@@ -11,7 +11,7 @@ describe('Game Management (req-02)', () => {
   before(async () => {
     // Create mock game folder to safely test file operations
     const tempDir = os.tmpdir();
-    mockGamePath = path.join(tempDir, `EMMM2_Mock_Game_${Date.now()}`);
+    mockGamePath = path.join(tempDir, `EMMM_Mock_Game_${Date.now()}`);
     mockModPath = path.join(mockGamePath, 'Mods');
     mockExePath = path.join(mockGamePath, 'Fake_Game_Loader.exe'); // use 'loader' in name as hint for validator
 
@@ -33,7 +33,7 @@ describe('Game Management (req-02)', () => {
     await browser.url('http://tauri.localhost/');
     await browser.pause(2000);
 
-    // Bypass welcome screen if EMMM2 is freshly started without DB configs
+    // Bypass welcome screen if EMMM is freshly started without DB configs
     const welcomeLogo = await $('[data-testid="logo"]');
     if (await welcomeLogo.isExisting()) {
       console.log('[E2E] On Welcome Screen, bypassing via IPC for Game Management test...');

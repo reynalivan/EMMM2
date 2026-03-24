@@ -1,8 +1,8 @@
 import { browser, $ } from '@wdio/globals';
 
-describe('EMMM2 Initial Load', () => {
+describe('EMMM Initial Load', () => {
   it('should launch the application and verify safe initialization', async () => {
-    // EMMM2 is a React SPA running inside Tauri Webview
+    // EMMM is a React SPA running inside Tauri Webview
 
     // 1. Give the React app some time to construct the DOM
     await browser.pause(2000);
@@ -14,9 +14,9 @@ describe('EMMM2 Initial Load', () => {
 
     // Example assertion: Check if the application title is correct
     const title = await browser.getTitle();
-    // It depends on index.html: it usually defaults to "EMMM2" or similar
+    // It depends on index.html: it usually defaults to "EMMM" or similar
     console.log(`[E2E] Window Title Loaded: ${title}`);
-    expect(title).toBe('emmm2'); // adjust to the actual window title defined in tauri.conf.json / index.html
+    expect(title).toBe('emmm'); // adjust to the actual window title defined in tauri.conf.json / index.html
 
     // 3. (Optional) In real tests, we would check for elements like:
     // const settingsBtn = await $('[data-testid="settings-btn"]')

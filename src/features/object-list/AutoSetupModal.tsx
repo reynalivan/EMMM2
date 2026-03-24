@@ -10,7 +10,8 @@ import { useMasterDb, useCreateObject } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { folderKeys } from '../../hooks/useFolders';
 import { toast } from '../../stores/useToastStore';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
 
 interface DbEntryFull {
   name: string;
@@ -18,6 +19,7 @@ interface DbEntryFull {
   object_type: string;
   metadata?: Record<string, unknown>;
   thumbnail_path?: string;
+  folder_path?: string;
   custom_skins?: unknown[];
 }
 
@@ -106,7 +108,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     let failCount = 0;
 
     try {
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppressionCmd({ suppressed: true });
 
       for (let i = 0; i < entriesToCreate.length; i++) {
         const entry = entriesToCreate[i];
@@ -114,10 +116,12 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
           await createObject.mutateAsync({
             game_id: activeGame.id,
             name: entry.name,
+            folder_path: entry.folder_path ?? null,
             object_type: entry.object_type,
             sub_category: null,
+            status: 1,
             metadata: entry.metadata,
-            thumbnail_url: entry.thumbnail_path,
+            thumbnail_url: (entry.thumbnail_path as string | null) ?? null,
           });
           successCount++;
         } catch (err) {
@@ -141,7 +145,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     } finally {
       // Delay disabling suppression to allow backend file watcher debounce (500ms) to clear
       setTimeout(async () => {
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppressionCmd({ suppressed: false });
         queryClient.invalidateQueries({ queryKey: folderKeys.all });
       }, 1000);
       setIsCreating(false);

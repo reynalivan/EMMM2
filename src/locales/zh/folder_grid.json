@@ -1,0 +1,50 @@
+{
+  "conflicts": {
+    "title": "模组冲突",
+    "desc": "同一个对象的多个模组已启用。",
+    "resolution_desc": "选择您想保持激活状态的模组，或忽略警告以允许此特定组合。",
+    "incoming": "传入",
+    "keep_selected": "仅启用选中的项",
+    "ignore_warning": "忽略警告",
+    "toast": {
+      "resolved": "冲突已解决：仅启用了选定的模组。",
+      "ignored": "已对此组合忽略冲突。",
+      "resolve_failed": "解决失败：{{error}}",
+      "ignore_failed": "忽略失败：{{error}}"
+    }
+  },
+  "move": {
+    "title": "移动到对象",
+    "label": "对象",
+    "placeholder": "搜索对象...",
+    "no_results": "未找到对象",
+    "current_marker": "(当前)",
+    "status_label": "设置状态",
+    "toast": {
+      "success": "已移动到 {{name}}",
+      "failed": "移动失败：{{error}}"
+    }
+  },
+  "tags": {
+    "title": "批量标签",
+    "placeholder": "输入标签并按回车...",
+    "empty": "尚未添加标签",
+    "toast": {
+      "success": "已更新 {{count}} 个模组的标签",
+      "failed": "更新标签失败：{{error}}"
+    }
+  },
+  "resolution": {
+    "title": "检测到名称冲突",
+    "loading": "正在加载文件夹详情...",
+    "enabled_label": "已启用版本",
+    "disabled_label": "已禁用版本"
+  },
+  "breadcrumbs": {
+    "root": "根目录"
+  },
+  "context": {
+    "switching": "正在切换上下文...",
+    "active_warning": "然而，此模组当前处于<strong>激活（启用）</strong>状态。激活的模组无法直接修改。"
+  }
+}

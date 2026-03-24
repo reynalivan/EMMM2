@@ -40,6 +40,7 @@ impl ExtractionState {
 ///
 /// # Covers: US-2.1
 #[tauri::command]
+#[specta::specta]
 pub async fn detect_archives_cmd(mods_path: String) -> Result<Vec<ArchiveInfo>, String> {
     let path = Path::new(&mods_path);
     walker::detect_archives(path)
@@ -50,6 +51,7 @@ pub async fn detect_archives_cmd(mods_path: String) -> Result<Vec<ArchiveInfo>, 
 ///
 /// # Covers: TC-2.1-01, TC-2.1-04, TC-2.1-05, EC-2.06
 #[tauri::command]
+#[specta::specta]
 pub async fn extract_archive_cmd(
     archive_path: String,
     mods_dir: String,
@@ -90,6 +92,7 @@ pub async fn extract_archive_cmd(
 
 /// Abort an ongoing extraction operation.
 #[tauri::command]
+#[specta::specta]
 pub async fn abort_extraction_cmd(ext_state: State<'_, ExtractionState>) -> Result<(), String> {
     ext_state.is_cancelled.store(true, Ordering::SeqCst);
     Ok(())
@@ -99,12 +102,13 @@ pub async fn abort_extraction_cmd(ext_state: State<'_, ExtractionState>) -> Resu
 ///
 /// # Covers: US-2.1 Pre-Extraction Analysis
 #[tauri::command]
+#[specta::specta]
 pub async fn analyze_archive_cmd(archive_path: String) -> Result<ArchiveAnalysis, String> {
     let path = Path::new(&archive_path);
     archive::analyze_archive(path)
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchCheckResult {
     pub matched_name: Option<String>,
@@ -119,6 +123,7 @@ pub struct MatchCheckResult {
 ///
 /// # Covers: Req-38 (Auto-organizer Match Detection)
 #[tauri::command]
+#[specta::specta]
 pub async fn match_check_folder_cmd(
     folder_path: String,
     target_object_name: String,

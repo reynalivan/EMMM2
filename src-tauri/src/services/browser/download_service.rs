@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::services::browser::import_service;
 
 /// DTO for the frontend download list.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
 pub struct BrowserDownloadDto {
     pub id: String,
     pub session_id: Option<String>,
@@ -14,7 +14,9 @@ pub struct BrowserDownloadDto {
     pub file_path: Option<String>,
     pub source_url: Option<String>,
     pub status: String,
+    #[specta(type = Option<f64>)]
     pub bytes_total: Option<i64>,
+    #[specta(type = f64)]
     pub bytes_received: i64,
     pub error_msg: Option<String>,
     pub started_at: String,

@@ -1,0 +1,63 @@
+{
+  "empty": {
+    "title": "Selamat Datang di EMMM",
+    "subtitle": "Mulai dengan menambahkan game pertama Anda untuk mengelola mod.",
+    "add_game": "Tambah Game Pertama Anda"
+  },
+  "error": {
+    "message": "Gagal memuat data dasbor.",
+    "retry": "Coba Lagi"
+  },
+  "header": {
+    "title": "Dasbor",
+    "subtitle": "Ikhtisar ekosistem mod Anda",
+    "refresh": "Segarkan"
+  },
+  "actions": {
+    "quick_play": "Main Cepat",
+    "mods_manager": "Manajer Mod",
+    "storage_optimizer": "Pengoptimal Penyimpanan",
+    "collections": "Koleksi",
+    "settings": "Pengaturan",
+    "discover": "Temukan",
+    "downloads": "Unduhan"
+  },
+  "stats": {
+    "total_mods": "Total Mod",
+    "enabled": "aktif",
+    "disabled": "nonaktif",
+    "games": "Game",
+    "configured": "Terkonfigurasi",
+    "storage": "Penyimpanan",
+    "total_size_desc": "Total ukuran mod",
+    "collections": "Koleksi",
+    "presets_desc": "Preset tersimpan"
+  },
+  "waste": {
+    "title": "Sampah Duplikat Terdeteksi",
+    "subtitle": "{{size}} terbuang pada mod duplikat. Jalankan Pengoptimal untuk membersihkan."
+  },
+  "charts": {
+    "category_title": "Distribusi Kategori",
+    "no_mod_data": "Belum ada data mod",
+    "game_title": "Mod per Game",
+    "no_game_data": "Belum ada data game"
+  },
+  "activity": {
+    "recent_title": "Baru Saja Ditambahkan",
+    "category": "Kategori: {{category}}",
+    "uncategorized": "Tanpa Kategori",
+    "no_mods": "Belum ada mod yang diindeks",
+    "last_selected": "Game terakhir dipilih",
+    "launch": "Luncurkan",
+    "no_game": "Tidak ada game terpilih"
+  },
+  "keys": {
+    "title": "Pemetaan Tombol Aktif",
+    "table_mod": "Mod",
+    "table_section": "Bagian",
+    "table_key": "Tombol",
+    "table_back": "Kembali",
+    "no_bindings": "Tidak ada pemetaan tombol ditemukan pada mod aktif"
+  }
+}

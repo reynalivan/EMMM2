@@ -1,28 +1,24 @@
 import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { Keyboard, Eye, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import { commands } from '../../../lib/bindings';
+import type { HotkeyConfig, KeyViewerConfig } from '../../../types/settings';
 import { useSettings } from '../../../hooks/useSettings';
-import type { HotkeyConfig, KeyViewerConfig } from '../../../hooks/useSettings';
 import { useToastStore } from '../../../stores/useToastStore';
 
-/** Default hotkey config values for comparison / reset. */
+/** Default hotkey config values — unified overlay toggle F7. */
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
-  game_focus_only: true,
   cooldown_ms: 500,
   toggle_safe_mode: 'F5',
   next_preset: 'F6',
   prev_preset: 'Shift+F6',
-  next_variant: 'F8',
-  prev_variant: 'Shift+F8',
   toggle_overlay: 'F7',
 };
 
 const DEFAULT_KEYVIEWER: KeyViewerConfig = {
   enabled: true,
-  status_ttl_seconds: 3.0,
-  overlay_toggle_key: 'F7',
-  keybinds_dir: 'EMM2/keybinds/active',
 };
 
 interface KeyBindingRowProps {
@@ -33,8 +29,9 @@ interface KeyBindingRowProps {
 }
 
 function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowProps) {
+  const { t } = useTranslation(['settings', 'common']);
   return (
-    <div className="flex items-center justify-between py-2">
+    <div className="flex items-center justify-between py-2 border-b border-base-content/5 last:border-0">
       <span className="text-sm font-medium">{label}</span>
       <div className="flex items-center gap-2">
         <input
@@ -46,9 +43,9 @@ function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowPr
         />
         {value !== defaultValue && (
           <button
-            className="btn btn-ghost btn-xs"
+            className="btn btn-ghost btn-xs text-base-content/40 hover:text-primary"
             onClick={() => onChange(defaultValue)}
-            title="Reset to default"
+            title={t('settings:hotkeys.reset_tip')}
           >
             ↺
           </button>
@@ -59,21 +56,26 @@ function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowPr
 }
 
 /** Detect conflicts: same key string used for multiple actions. */
-function detectConflicts(config: HotkeyConfig): string[] {
+function detectConflicts(config: HotkeyConfig, t: TFunction): string[] {
   const bindings: [string, string][] = [
-    ['Safe Mode Toggle', config.toggle_safe_mode],
-    ['Next Preset', config.next_preset],
-    ['Prev Preset', config.prev_preset],
-    ['Next Variant', config.next_variant],
-    ['Prev Variant', config.prev_variant],
-    ['Toggle Overlay', config.toggle_overlay],
+    [t('settings:hotkeys.labels.safe_mode'), config.toggle_safe_mode],
+    [t('settings:hotkeys.labels.next_preset'), config.next_preset],
+    [t('settings:hotkeys.labels.prev_preset'), config.prev_preset],
+    [t('settings:hotkeys.labels.toggle_overlay'), config.toggle_overlay],
   ];
 
   const conflicts: string[] = [];
   for (let i = 0; i < bindings.length; i++) {
     for (let j = i + 1; j < bindings.length; j++) {
       if (bindings[i][1].toLowerCase() === bindings[j][1].toLowerCase()) {
-        conflicts.push(`${bindings[i][0]} and ${bindings[j][0]} share key "${bindings[i][1]}"`);
+        conflicts.push(
+          t('settings:hotkeys.conflicts.message', {
+            label1: bindings[i][0],
+            label2: bindings[j][0],
+            key: bindings[i][1],
+            defaultValue: `${bindings[i][0]} ${t('settings:hotkeys.conflicts.and')} ${bindings[j][0]} ${t('settings:hotkeys.conflicts.share_key')} "${bindings[i][1]}"`,
+          }),
+        );
       }
     }
   }
@@ -81,16 +83,16 @@ function detectConflicts(config: HotkeyConfig): string[] {
 }
 
 export default function HotkeyTab() {
+  const { t } = useTranslation(['settings', 'common']);
   const { settings, saveSettingsAsync } = useSettings();
   const { addToast } = useToastStore();
   const [isSaving, setIsSaving] = useState(false);
 
   if (!settings) return null;
 
-  const hotkeys = settings.hotkeys ?? DEFAULT_HOTKEYS;
-  const keyviewer = settings.keyviewer ?? DEFAULT_KEYVIEWER;
-
-  const conflicts = detectConflicts(hotkeys);
+  const hotkeys: HotkeyConfig = (settings.hotkeys ?? DEFAULT_HOTKEYS) as HotkeyConfig;
+  const keyviewer: KeyViewerConfig = (settings.keyviewer ?? DEFAULT_KEYVIEWER) as KeyViewerConfig;
+  const conflicts = detectConflicts(hotkeys, t);
 
   const persistHotkeys = async (patch: Partial<HotkeyConfig>) => {
     if (!settings) return;
@@ -100,9 +102,9 @@ export default function HotkeyTab() {
         ...settings,
         hotkeys: { ...hotkeys, ...patch },
       });
-      await invoke('update_hotkey_config');
+      await commands.updateHotkeyConfig({});
     } catch (err) {
-      addToast('error', `Failed to save hotkey settings: ${String(err)}`);
+      addToast('error', t('settings:hotkeys.save_failed', { error: String(err) }));
     } finally {
       setIsSaving(false);
     }
@@ -117,7 +119,7 @@ export default function HotkeyTab() {
         keyviewer: { ...keyviewer, ...patch },
       });
     } catch (err) {
-      addToast('error', `Failed to save KeyViewer settings: ${String(err)}`);
+      addToast('error', t('settings:hotkeys.viewer_save_failed', { error: String(err) }));
     } finally {
       setIsSaving(false);
     }
@@ -132,10 +134,10 @@ export default function HotkeyTab() {
           hotkeys: { ...DEFAULT_HOTKEYS },
           keyviewer: { ...DEFAULT_KEYVIEWER },
         });
-        await invoke('update_hotkey_config');
-        addToast('success', 'Hotkey settings reset to defaults.');
+        await commands.updateHotkeyConfig({});
+        addToast('success', t('settings:hotkeys.reset_success'));
       } catch (err) {
-        addToast('error', `Failed to reset hotkey settings: ${String(err)}`);
+        addToast('error', t('settings:hotkeys.save_failed', { error: String(err) }));
       }
     })();
   };
@@ -143,188 +145,96 @@ export default function HotkeyTab() {
   return (
     <div className="space-y-6">
       {/* ─── Hotkeys Section ─── */}
-      <div className="card bg-base-200">
-        <div className="card-body">
-          <h3 className="card-title text-lg gap-2">
-            <Keyboard className="w-5 h-5" />
-            Global Hotkeys
-          </h3>
-          <p className="text-sm text-base-content/60">
-            System-wide keyboard shortcuts for quick actions while gaming.
-          </p>
-
-          {/* Master toggle */}
-          <div className="form-control">
-            <label className="label cursor-pointer justify-start gap-3">
-              <input
-                type="checkbox"
-                className="toggle toggle-primary"
-                checked={hotkeys.enabled}
-                onChange={() => persistHotkeys({ enabled: !hotkeys.enabled })}
-                disabled={isSaving}
-              />
-              <span className="label-text font-medium">Enable Global Hotkeys</span>
-            </label>
-          </div>
-
-          {hotkeys.enabled && (
-            <>
-              {/* Game focus only */}
-              <div className="form-control">
-                <label className="label cursor-pointer justify-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="toggle toggle-sm"
-                    checked={hotkeys.game_focus_only}
-                    onChange={() => persistHotkeys({ game_focus_only: !hotkeys.game_focus_only })}
-                    disabled={isSaving}
-                  />
-                  <span className="label-text text-sm">
-                    Only trigger when game window is focused
-                  </span>
-                </label>
-              </div>
-
-              {/* Cooldown */}
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm font-medium">Cooldown (ms)</span>
+      <div className="card bg-base-200 shadow-sm border border-base-content/5">
+        <div className="card-body gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="card-title text-lg gap-2">
+              <Keyboard className="w-5 h-5 text-primary" />
+              {t('settings:hotkeys.title')}
+            </h3>
+            <div className="form-control">
+              <label className="label cursor-pointer gap-3">
+                <span className="label-text font-medium">{t('settings:hotkeys.enabled')}</span>
                 <input
-                  type="number"
-                  className="input input-bordered input-sm w-24 text-center"
-                  value={hotkeys.cooldown_ms}
-                  min={100}
-                  max={5000}
-                  step={100}
-                  onChange={(e) => persistHotkeys({ cooldown_ms: parseInt(e.target.value) || 500 })}
+                  type="checkbox"
+                  className="toggle toggle-primary toggle-sm"
+                  checked={hotkeys.enabled}
+                  onChange={() => persistHotkeys({ enabled: !hotkeys.enabled })}
                   disabled={isSaving}
                 />
-              </div>
+              </label>
+            </div>
+          </div>
 
-              <div className="divider my-1 text-xs text-base-content/40">Key Bindings</div>
+          <p className="text-sm text-base-content/60 leading-relaxed">
+            {t('settings:hotkeys.desc')}
+          </p>
+
+          {hotkeys.enabled && (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between p-3 bg-base-300/50 rounded-lg">
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold">{t('settings:hotkeys.cooldown')}</span>
+                  <span className="text-xs text-base-content/40">
+                    {t('settings:hotkeys.cooldown_desc')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm w-24 text-center font-mono"
+                    value={hotkeys.cooldown_ms}
+                    min={100}
+                    max={5000}
+                    step={100}
+                    onChange={(e) =>
+                      persistHotkeys({ cooldown_ms: parseInt(e.target.value) || 500 })
+                    }
+                    disabled={isSaving}
+                  />
+                  <span className="text-xs font-medium text-base-content/40 w-6">ms</span>
+                </div>
+              </div>
 
               {/* Conflict warning */}
               {conflicts.length > 0 && (
-                <div className="alert alert-warning text-sm">
-                  <AlertTriangle className="w-4 h-4" />
+                <div className="alert alert-warning text-sm py-2 px-3 border-none bg-warning/10 text-warning-content">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
                   <div>
-                    <p className="font-semibold">Key Conflicts Detected</p>
+                    <p className="font-bold">{t('settings:hotkeys.conflicts_title')}</p>
                     {conflicts.map((c, i) => (
-                      <p key={i}>{c}</p>
+                      <p key={i} className="opacity-80">
+                        {c}
+                      </p>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Key bindings */}
-              <div className="space-y-1">
+              <div className="space-y-0 bg-base-300/30 rounded-lg p-3">
                 <KeyBindingRow
-                  label="Toggle Safe Mode"
+                  label={t('settings:hotkeys.labels.safe_mode')}
                   value={hotkeys.toggle_safe_mode}
                   defaultValue={DEFAULT_HOTKEYS.toggle_safe_mode}
                   onChange={(v) => persistHotkeys({ toggle_safe_mode: v })}
                 />
                 <KeyBindingRow
-                  label="Next Preset"
+                  label={t('settings:hotkeys.labels.next_preset')}
                   value={hotkeys.next_preset}
                   defaultValue={DEFAULT_HOTKEYS.next_preset}
                   onChange={(v) => persistHotkeys({ next_preset: v })}
                 />
                 <KeyBindingRow
-                  label="Previous Preset"
+                  label={t('settings:hotkeys.labels.prev_preset')}
                   value={hotkeys.prev_preset}
                   defaultValue={DEFAULT_HOTKEYS.prev_preset}
                   onChange={(v) => persistHotkeys({ prev_preset: v })}
                 />
                 <KeyBindingRow
-                  label="Next Variant Folder"
-                  value={hotkeys.next_variant}
-                  defaultValue={DEFAULT_HOTKEYS.next_variant}
-                  onChange={(v) => persistHotkeys({ next_variant: v })}
-                />
-                <KeyBindingRow
-                  label="Previous Variant Folder"
-                  value={hotkeys.prev_variant}
-                  defaultValue={DEFAULT_HOTKEYS.prev_variant}
-                  onChange={(v) => persistHotkeys({ prev_variant: v })}
-                />
-                <KeyBindingRow
-                  label="Toggle KeyViewer Overlay"
+                  label={t('settings:hotkeys.labels.toggle_overlay')}
                   value={hotkeys.toggle_overlay}
                   defaultValue={DEFAULT_HOTKEYS.toggle_overlay}
                   onChange={(v) => persistHotkeys({ toggle_overlay: v })}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ─── KeyViewer Section ─── */}
-      <div className="card bg-base-200">
-        <div className="card-body">
-          <h3 className="card-title text-lg gap-2">
-            <Eye className="w-5 h-5" />
-            KeyViewer Overlay
-          </h3>
-          <p className="text-sm text-base-content/60">
-            In-game overlay showing keybinds for the detected character.
-          </p>
-
-          {/* Master toggle */}
-          <div className="form-control">
-            <label className="label cursor-pointer justify-start gap-3">
-              <input
-                type="checkbox"
-                className="toggle toggle-primary"
-                checked={keyviewer.enabled}
-                onChange={() => persistKeyViewer({ enabled: !keyviewer.enabled })}
-                disabled={isSaving}
-              />
-              <span className="label-text font-medium">Enable KeyViewer</span>
-            </label>
-          </div>
-
-          {keyviewer.enabled && (
-            <div className="space-y-3">
-              {/* Status TTL */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Status Banner Duration (seconds)</span>
-                <input
-                  type="number"
-                  className="input input-bordered input-sm w-20 text-center"
-                  value={keyviewer.status_ttl_seconds}
-                  min={1}
-                  max={30}
-                  step={0.5}
-                  onChange={(e) =>
-                    persistKeyViewer({ status_ttl_seconds: parseFloat(e.target.value) || 3.0 })
-                  }
-                  disabled={isSaving}
-                />
-              </div>
-
-              {/* Overlay toggle key */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Overlay Toggle Key</span>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm w-20 text-center font-mono"
-                  value={keyviewer.overlay_toggle_key}
-                  onChange={(e) => persistKeyViewer({ overlay_toggle_key: e.target.value })}
-                  placeholder="F7"
-                  disabled={isSaving}
-                />
-              </div>
-
-              {/* Keybinds directory */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Keybinds Directory</span>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm w-56 font-mono text-xs"
-                  value={keyviewer.keybinds_dir}
-                  onChange={(e) => persistKeyViewer({ keybinds_dir: e.target.value })}
-                  disabled={isSaving}
                 />
               </div>
             </div>
@@ -332,10 +242,49 @@ export default function HotkeyTab() {
         </div>
       </div>
 
+      {/* ─── KeyViewer Section ─── */}
+      <div className="card bg-base-200 shadow-sm border border-base-content/5">
+        <div className="card-body gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="card-title text-lg gap-2">
+              <Eye className="w-5 h-5 text-secondary" />
+              {t('settings:hotkeys.viewer_title')}
+            </h3>
+            <div className="form-control">
+              <label className="label cursor-pointer gap-3">
+                <span className="label-text font-medium">{t('settings:hotkeys.auto_reload')}</span>
+                <input
+                  type="checkbox"
+                  className="toggle toggle-secondary toggle-sm"
+                  checked={keyviewer.enabled}
+                  onChange={() => persistKeyViewer({ enabled: !keyviewer.enabled })}
+                  disabled={isSaving}
+                />
+              </label>
+            </div>
+          </div>
+
+          <p className="text-sm text-base-content/60 leading-relaxed">
+            {t('settings:hotkeys.viewer_desc', { key: hotkeys.toggle_overlay })}
+          </p>
+
+          <div className="alert text-xs bg-info/10 border-none text-info-content">
+            <div className="flex flex-col gap-1">
+              <p className="font-bold">{t('settings:hotkeys.infrastructure_title')}</p>
+              <p className="opacity-80">{t('settings:hotkeys.infrastructure_desc')}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ─── Reset ─── */}
-      <div className="flex justify-end">
-        <button className="btn btn-outline btn-sm" onClick={handleResetAll} disabled={isSaving}>
-          Reset All to Defaults
+      <div className="flex justify-end pt-2">
+        <button
+          className="btn btn-ghost btn-sm text-base-content/40 hover:text-error"
+          onClick={handleResetAll}
+          disabled={isSaving}
+        >
+          {t('settings:hotkeys.reset')}
         </button>
       </div>
     </div>

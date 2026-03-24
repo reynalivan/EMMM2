@@ -2,15 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { SortField, SortOrder, ViewMode } from '../types/mod';
-import { invalidateCollectionRuntime } from '../features/collections/utils/invalidateCollectionRuntime';
-import { corridorRuntimeKeys } from '../features/collections/queryKeys';
-import { refetchCollectionRuntime } from '../features/collections/utils/refetchCollectionRuntime';
-import {
-  buildCorridorSelectionKey,
-  normalizePersistedWorkspaceSelections,
-  type CollectionWorkspaceSource,
-  type CorridorSelectionMap,
-} from '../lib/corridorSelection';
+import { corridorKeys } from '../features/collections/queryKeys';
+
+import { commands } from '../lib/bindings';
+import { queryClient } from '../lib/queryClient';
+
+import type { ModFolder } from '../types/mod';
+import type { DuplicateInfo } from '../types/scanner';
 
 /** Structured error returned by toggle_mod when target path already exists. */
 export interface RenameConflictError {
@@ -20,23 +18,25 @@ export interface RenameConflictError {
   base_name: string;
 }
 
-/** Result returned by set_safe_mode_enabled after corridor handoff. */
-export interface CorridorSwitchResult {
-  disabled_count: number;
-  restored_count: number;
-  warnings: string[];
+export interface DuplicateConflictError {
+  type: 'DuplicateConflict';
+  content: DuplicateInfo[];
 }
-
-interface BackendSettings {
-  active_game_id: string | null;
-  safe_mode: {
-    enabled: boolean;
-  };
-  auto_close_launcher?: boolean;
-}
-
-type WorkspaceView = 'dashboard' | 'mods' | 'collections' | 'settings' | 'browser' | 'downloads';
+type WorkspaceView =
+  | 'dashboard'
+  | 'mods'
+  | 'collections'
+  | 'settings'
+  | 'browser'
+  | 'downloads'
+  | 'storage-optimizer';
 type MobilePane = 'sidebar' | 'grid' | 'details';
+
+/** Centralized safe mode toggle flow state — prevents race conditions from multiple hook instances. */
+export type SafeModeFlowState =
+  | { kind: 'idle' }
+  | { kind: 'pin' }
+  | { kind: 'confirm'; targetSafe: boolean };
 
 interface AppState {
   // Global Settings (Persisted in config.json)
@@ -44,6 +44,7 @@ interface AppState {
   safeMode: boolean;
   autoCloseLauncher: boolean;
   isStoreInitialized: boolean;
+  theme: 'onyx' | 'light';
 
   // Navigation State
   workspaceView: WorkspaceView;
@@ -58,7 +59,6 @@ interface AppState {
   // Selection State
   selectedObjectFolderPath: string | null;
   gridSelection: Set<string>;
-  workspaceSelectionByCorridor: CorridorSelectionMap;
 
   // Epic 3: Sidebar State
   selectedObjectType: string | null;
@@ -82,6 +82,24 @@ interface AppState {
   openConflictDialog: (conflict: RenameConflictError) => void;
   closeConflictDialog: () => void;
 
+  duplicateConflictDialog: {
+    open: boolean;
+    folder: ModFolder | null;
+    duplicates: DuplicateInfo[];
+  };
+  openDuplicateConflictDialog: (folder: ModFolder, duplicates: DuplicateInfo[]) => void;
+  closeDuplicateConflictDialog: () => void;
+
+  fileInUseDialog: {
+    open: boolean;
+    path: string | null;
+    processes: string[];
+    onRetry?: () => void;
+  };
+  openFileInUseDialog: (path: string, processes: string[], onRetry?: () => void) => void;
+  closeFileInUseDialog: () => void;
+
+
   // Watcher cooldown: skip external change events during active mutations
   watcherCooldownUntil: number;
   setWatcherCooldown: (until: number) => void;
@@ -90,21 +108,24 @@ interface AppState {
   activePane: 'objectList' | 'folderGrid';
   setActivePane: (pane: 'objectList' | 'folderGrid') => void;
 
+  // Safe Mode Flow (centralized to prevent concurrent-instance race conditions)
+  safeModeFlow: SafeModeFlowState;
+  setSafeModeFlow: (flow: SafeModeFlowState) => void;
+
+  // Ignore Management State
+  isIgnoreManagementOpen: boolean;
+  setIgnoreManagementOpen: (open: boolean) => void;
+
   // Actions
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
-  setSafeMode: (enabled: boolean) => Promise<CorridorSwitchResult>;
+
   setAutoCloseLauncher: (enabled: boolean) => Promise<void>;
 
   setWorkspaceView: (view: WorkspaceView) => void;
   setCurrentPath: (path: string[]) => void;
   setSelectedObjectFolderPath: (folderPath: string | null) => void;
-  setWorkspaceSelectionForCorridor: (
-    gameId: string,
-    isSafe: boolean,
-    selection: CollectionWorkspaceSource,
-  ) => void;
-  clearWorkspaceSelectionForCorridor: (gameId: string, isSafe: boolean) => void;
+
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
   setGridSelection: (selection: Set<string>) => void;
@@ -127,6 +148,8 @@ interface AppState {
   setExplorerSubPath: (subPath: string | undefined) => void;
   setExplorerSearch: (query: string) => void;
   setExplorerScrollOffset: (offset: number) => void;
+  setTheme: (theme: 'onyx' | 'light') => void;
+  correctExplorerPath: (oldPath: string, newPath: string) => void;
 }
 
 import { createJSONStorage } from 'zustand/middleware';
@@ -158,11 +181,12 @@ export const useAppStore = create<AppState>()(
       safeMode: true,
       autoCloseLauncher: false,
       isStoreInitialized: false,
+      theme: 'onyx',
       workspaceView: 'dashboard',
       currentPath: [],
       selectedObjectFolderPath: null,
       gridSelection: new Set(),
-      workspaceSelectionByCorridor: {},
+
       leftPanelWidth: 260,
       rightPanelWidth: 320,
 
@@ -183,10 +207,31 @@ export const useAppStore = create<AppState>()(
       explorerSearchQuery: '',
       explorerScrollOffset: 0,
 
+      // Safe Mode Flow
+      safeModeFlow: { kind: 'idle' } as SafeModeFlowState,
+      setSafeModeFlow: (flow) => set({ safeModeFlow: flow }),
+
+      // Ignore Management
+      isIgnoreManagementOpen: false,
+      setIgnoreManagementOpen: (open) => set({ isIgnoreManagementOpen: open }),
+
       // Conflict Resolution State
       conflictDialog: { open: false, conflict: null },
       openConflictDialog: (conflict) => set({ conflictDialog: { open: true, conflict } }),
       closeConflictDialog: () => set({ conflictDialog: { open: false, conflict: null } }),
+
+      duplicateConflictDialog: { open: false, folder: null, duplicates: [] },
+      openDuplicateConflictDialog: (folder, duplicates) =>
+        set({ duplicateConflictDialog: { open: true, folder, duplicates } }),
+      closeDuplicateConflictDialog: () =>
+        set({ duplicateConflictDialog: { open: false, folder: null, duplicates: [] } }),
+
+      fileInUseDialog: { open: false, path: null, processes: [] },
+      openFileInUseDialog: (path, processes, onRetry) =>
+        set({ fileInUseDialog: { open: true, path, processes, onRetry } }),
+      closeFileInUseDialog: () =>
+        set({ fileInUseDialog: { open: false, path: null, processes: [], onRetry: undefined } }),
+
 
       // Watcher cooldown
       watcherCooldownUntil: 0,
@@ -199,27 +244,25 @@ export const useAppStore = create<AppState>()(
       // Store Initialization
       initStore: async () => {
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const settings = await invoke<BackendSettings>('get_settings');
+          const settings = await commands.getSettings();
 
           set({
             activeGameId: settings.active_game_id,
-            safeMode: settings.safe_mode.enabled,
+            safeMode: settings.safe_mode.enabled ?? false,
             autoCloseLauncher: settings.auto_close_launcher ?? false,
             isStoreInitialized: true,
           });
 
           if (settings.active_game_id) {
-            const { queryClient } = await import('../lib/queryClient');
             await queryClient.prefetchQuery({
-              queryKey: corridorRuntimeKeys.snapshot(
+              queryKey: corridorKeys.state(
                 settings.active_game_id,
-                settings.safe_mode.enabled,
+                settings.safe_mode.enabled ?? false,
               ),
               queryFn: () =>
-                invoke('get_corridor_runtime_snapshot', {
-                  gameId: settings.active_game_id,
-                  isSafe: settings.safe_mode.enabled,
+                commands.getCorridorState({
+                  gameId: settings.active_game_id as string,
+                  isSafe: settings.safe_mode.enabled ?? false,
                 }),
             });
           }
@@ -231,7 +274,6 @@ export const useAppStore = create<AppState>()(
 
       // Actions
       setActiveGameId: async (id) => {
-        const { invoke } = await import('@tauri-apps/api/core');
         set({
           activeGameId: id,
           // Reset explorer state to prevent stale paths from previous game
@@ -247,12 +289,15 @@ export const useAppStore = create<AppState>()(
         });
 
         try {
-          await invoke('set_active_game', { gameId: id });
+          await commands.setActiveGame({ gameId: id });
           if (id) {
-            const { queryClient } = await import('../lib/queryClient');
-            await refetchCollectionRuntime(queryClient, {
-              gameId: id,
-              isSafe: get().safeMode,
+            await queryClient.prefetchQuery({
+              queryKey: corridorKeys.state(id, get().safeMode),
+              queryFn: () =>
+                commands.getCorridorState({
+                  gameId: id as string,
+                  isSafe: get().safeMode,
+                }),
             });
           }
         } catch (e) {
@@ -260,45 +305,13 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      setSafeMode: async (enabled) => {
-        const { invoke } = await import('@tauri-apps/api/core');
-        try {
-          const result = await invoke<CorridorSwitchResult>('set_safe_mode_enabled', {
-            enabled,
-          });
-          // Clear grid selection: FolderGrid items may change with safe mode.
-          // ObjectList handles filtering via TanStack query keys (auto-refetch).
-          set({
-            safeMode: enabled,
-            gridSelection: new Set(),
-            selectedObjectFolderPath: null,
-          });
-          // Invalidate caches: mod-folders don't include safe_mode in query keys.
-          // Objects auto-refetch via key change (safe_mode is in the ObjectFilter key).
-          const { queryClient } = await import('../lib/queryClient');
-          await invalidateCollectionRuntime(queryClient);
-          const activeGameId = get().activeGameId;
-          if (activeGameId) {
-            await refetchCollectionRuntime(queryClient, {
-              gameId: activeGameId,
-              isSafe: enabled,
-            });
-          }
-          return result;
-        } catch (e) {
-          console.error('Failed to sync safe mode to backend', e);
-          throw e;
-        }
-      },
-
       setAutoCloseLauncher: async (enabled) => {
-        const { invoke } = await import('@tauri-apps/api/core');
         set({ autoCloseLauncher: enabled });
         try {
           // This saves the entire AppSettings backend representation since we don't have a
           // dedicated command for just autoCloseLauncher. It's safe to use `update_settings`
           // but if that command doesn't exist, we fallback.
-          await invoke('set_auto_close_launcher', { enabled });
+          await commands.setAutoCloseLauncher({ enabled });
         } catch (e) {
           console.error('Failed to sync auto close launcher to backend', e);
         }
@@ -312,26 +325,6 @@ export const useAppStore = create<AppState>()(
           selectedObjectFolderPath: folderPath,
           // Auto-navigate to grid on mobile when object selected
           mobileActivePane: folderPath ? 'grid' : 'sidebar',
-        }),
-
-      setWorkspaceSelectionForCorridor: (gameId, isSafe, selection) =>
-        set((state) => ({
-          workspaceSelectionByCorridor: {
-            ...state.workspaceSelectionByCorridor,
-            [buildCorridorSelectionKey(gameId, isSafe)]: selection,
-          },
-        })),
-
-      clearWorkspaceSelectionForCorridor: (gameId, isSafe) =>
-        set((state) => {
-          const key = buildCorridorSelectionKey(gameId, isSafe);
-          if (!(key in state.workspaceSelectionByCorridor)) {
-            return state;
-          }
-
-          const nextSelections = { ...state.workspaceSelectionByCorridor };
-          delete nextSelections[key];
-          return { workspaceSelectionByCorridor: nextSelections };
         }),
 
       toggleGridSelection: (id, multi = false) =>
@@ -396,6 +389,50 @@ export const useAppStore = create<AppState>()(
       setExplorerSubPath: (subPath) => set({ explorerSubPath: subPath }),
       setExplorerSearch: (query) => set({ explorerSearchQuery: query }),
       setExplorerScrollOffset: (offset) => set({ explorerScrollOffset: offset }),
+      setTheme: (theme) => set({ theme }),
+      correctExplorerPath: (oldPath, newPath) => {
+        const oldName = oldPath.split(/[/\\]/).pop() || '';
+        const newName = newPath.split(/[/\\]/).pop() || '';
+
+        set((state) => {
+          const normalize = (p: string) => p.replace(/\\/g, '/');
+          const normOldName = normalize(oldName);
+          const normNewName = normalize(newName);
+
+          let nextSubPath = state.explorerSubPath;
+          if (state.explorerSubPath) {
+            const normSub = normalize(state.explorerSubPath);
+            // Case 1: subPath is exactly the renamed folder
+            if (normSub === normOldName) {
+              nextSubPath = normNewName;
+            }
+            // Case 2: subPath is a descendant of the renamed folder
+            else if (normSub.startsWith(normOldName + '/')) {
+              nextSubPath = normNewName + normSub.substring(normOldName.length);
+            }
+          }
+
+          // Update breadcrumbs (array of names)
+          const nextCurrentPath = state.currentPath.map((p) => (p === oldName ? newName : p));
+
+          // Update selection (absolute path)
+          let nextSelectedFolder = state.selectedObjectFolderPath;
+          if (state.selectedObjectFolderPath === oldPath) {
+            nextSelectedFolder = newPath;
+          } else if (
+            state.selectedObjectFolderPath?.startsWith(oldPath + '/') ||
+            state.selectedObjectFolderPath?.startsWith(oldPath + '\\')
+          ) {
+            nextSelectedFolder = state.selectedObjectFolderPath.replace(oldPath, newPath);
+          }
+
+          return {
+            explorerSubPath: nextSubPath,
+            currentPath: nextCurrentPath,
+            selectedObjectFolderPath: nextSelectedFolder,
+          };
+        });
+      },
     }),
     {
       name: 'vibecode-storage',
@@ -411,12 +448,14 @@ export const useAppStore = create<AppState>()(
         currentPath: state.currentPath,
         explorerSubPath: state.explorerSubPath,
         explorerScrollOffset: state.explorerScrollOffset,
-        workspaceSelectionByCorridor: state.workspaceSelectionByCorridor,
+        theme: state.theme,
+
         // Epic 3: Persist collapsed categories (serializable array)
         collapsedCategories: Array.from(state.collapsedCategories),
       }),
       merge: (persistedState: unknown, currentState) => {
         const pState = persistedState as Partial<AppState>;
+
         return {
           ...currentState,
           leftPanelWidth: pState.leftPanelWidth ?? currentState.leftPanelWidth,
@@ -428,9 +467,7 @@ export const useAppStore = create<AppState>()(
           currentPath: pState.currentPath ?? currentState.currentPath,
           explorerSubPath: pState.explorerSubPath ?? currentState.explorerSubPath,
           explorerScrollOffset: pState.explorerScrollOffset ?? currentState.explorerScrollOffset,
-          workspaceSelectionByCorridor: normalizePersistedWorkspaceSelections(
-            (pState as { workspaceSelectionByCorridor?: unknown }).workspaceSelectionByCorridor,
-          ),
+          theme: pState.theme ?? currentState.theme,
           // Deserialize array back to Set when loading
           collapsedCategories: pState?.collapsedCategories
             ? new Set(pState.collapsedCategories)

@@ -7,7 +7,7 @@ description: Guide for writing Rust (Backend) and React (Frontend) unit tests al
 
 ## Overview
 
-This skill provides the standard templates and rules for writing tests in EMMM2.
+This skill provides the standard templates and rules for writing tests in EMMM.
 **Goal:** Ensure stability at every layer (Rust Core, Database, React Components).
 
 ## The Iron Laws of Testing

@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import i18n from '../../lib/i18n';
 
 interface Props {
   children?: ReactNode;
@@ -35,9 +36,9 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="flex flex-col items-center justify-center p-8 h-full bg-base-100 text-error overflow-auto">
           <AlertTriangle size={48} className="mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Something went wrong</h2>
+          <h2 className="text-2xl font-bold mb-2">{i18n.t('common:errors.boundary_title')}</h2>
           <p className="text-base-content/70 mb-4">
-            {this.state.error?.message || 'An unexpected error occurred.'}
+            {this.state.error?.message || i18n.t('common:errors.unexpected')}
           </p>
           <div className="bg-base-300 p-4 rounded-lg w-full max-w-2xl overflow-x-auto text-left">
             <pre className="text-xs font-mono whitespace-pre-wrap text-base-content/80">
@@ -45,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </pre>
           </div>
           <button className="btn btn-primary mt-6" onClick={() => window.location.reload()}>
-            Reload Application
+            {i18n.t('common:actions.reload_app')}
           </button>
         </div>
       );

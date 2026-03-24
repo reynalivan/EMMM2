@@ -36,7 +36,7 @@ As a system, I want the local SQLite database to be created and migrated on star
 
 | ID        | Type        | Criteria                                                                                                                                                                                |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-01.2.1 | ✅ Positive | Given a fresh install (no DB file), when the app starts, then the file is created in `app_data_dir/emmm2.db` with WAL mode enabled and all migration tables applied in ≤ 500ms          |
+| AC-01.2.1 | ✅ Positive | Given a fresh install (no DB file), when the app starts, then the file is created in `app_data_dir/emmm.db` with WAL mode enabled and all migration tables applied in ≤ 500ms           |
 | AC-01.2.2 | ✅ Positive | Given an existing database at an older schema version, when the app starts, then all pending SQLx migrations are applied incrementally without data loss                                |
 | AC-01.2.3 | ❌ Negative | Given a migration failure (e.g., locked DB or corrupted schema), when the app starts, then the process displays a clear native error dialog and exits cleanly — no partial boot state   |
 | AC-01.2.4 | ❌ Negative | Given the `app_data_dir` does not exist, when the app starts, then it is created automatically before the DB connection attempt — not after a crash                                     |
@@ -112,7 +112,7 @@ main.rs
 
 Frontend App.tsx
   ├── mount: init log interceptor
-  ├── invoke('check_config_status') → FreshInstall | HasConfig
+  ├── commands.checkConfigStatus() → FreshInstall | HasConfig
   ├── route → /welcome  (FreshInstall)
   │       → /dashboard (HasConfig)
   └── background: useAppUpdater.check()
@@ -133,7 +133,7 @@ Frontend App.tsx
 
 ### Security & Privacy
 
-- **DB path is always `app_data_dir/emmm2.db`** — no user-supplied override accepted. `app_data_dir` is resolved by Tauri's OS-native API (never from environment variables or user input).
+- **DB path is always `app_data_dir/emmm.db`** — no user-supplied override accepted. `app_data_dir` is resolved by Tauri's OS-native API (never from environment variables or user input).
 - **Single-instance IPC socket** is OS-managed (named pipe on Windows) and does not expose any network port.
 - **No data leaves the machine** during bootstrap; the background updater only performs a read-only HTTP GET to the configured GitHub Releases endpoint.
 - **Log files** must not contain user file paths or mod folder names — only structured operational messages.

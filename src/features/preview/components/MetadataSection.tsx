@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface MetadataSectionProps {
   activePath: string | null;
@@ -24,42 +25,59 @@ export default function MetadataSection({
   onDescriptionChange,
   onDiscard,
 }: MetadataSectionProps) {
+  const { t } = useTranslation(['preview']);
+  const [showSavedStatus, setShowSavedStatus] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const prevDirty = useRef(metadataDirty);
 
   useEffect(() => {
-    if (prevDirty.current && !metadataDirty) {
-      setTimeout(() => setIsEditing(false), 0);
+    let timer: number;
+    if (metadataDirty) {
+      setShowSavedStatus(false);
+    } else if (!metadataDirty && prevDirty.current) {
+      setShowSavedStatus(true);
+      timer = window.setTimeout(() => setShowSavedStatus(false), 2000);
     }
     prevDirty.current = metadataDirty;
+    return () => clearTimeout(timer);
   }, [metadataDirty]);
 
   if (!isEditing) {
     return (
       <div className="mb-6 flex flex-col">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Metadata</h3>
-          <button
-            className="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content"
-            onClick={() => setIsEditing(true)}
-            title="Edit Metadata"
-            disabled={!activePath}
-          >
-            <Pencil size={14} /> Edit
-          </button>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-base-content/40">
+            {t('preview:metadata.title')}
+          </h3>
+          <div className="flex items-center gap-2">
+            {showSavedStatus && (
+              <span className="text-[10px] font-normal text-success/70 bg-success/5 px-1.5 py-0.5 rounded border border-success/10 flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-success/50" />
+                {t('preview:metadata.done_label')}
+              </span>
+            )}
+            <button
+              className="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content"
+              onClick={() => setIsEditing(true)}
+              title={t('preview:metadata.edit_title')}
+              disabled={!activePath}
+            >
+              <Pencil size={14} /> {t('preview:actions.edit')}
+            </button>
+          </div>
         </div>
 
         <div
-          className="flex-1 cursor-pointer rounded-lg hover:bg-white/5 p-2 -mx-2 transition-colors group"
+          className="flex-1 cursor-pointer rounded-lg hover:bg-base-content/5 p-2 -mx-2 transition-colors group"
           onDoubleClick={() => {
             if (activePath) setIsEditing(true);
           }}
-          title={activePath ? 'Double click to edit' : undefined}
+          title={activePath ? t('preview:metadata.double_click_edit') : undefined}
         >
           <div className="flex items-center gap-2 text-xs text-base-content/60 mb-3">
-            <span>{authorDraft || 'Unknown Author'}</span>
+            <span>{authorDraft || t('preview:metadata.unknown_author')}</span>
             <span className="w-1 h-1 rounded-full bg-base-content/30" />
-            <span>v{versionDraft || '1.0'}</span>
+            <span>v{versionDraft || t('preview:metadata.version_default')}</span>
           </div>
 
           {descriptionDraft ? (
@@ -67,7 +85,9 @@ export default function MetadataSection({
               {descriptionDraft}
             </p>
           ) : (
-            <p className="text-sm text-base-content/40 italic">No description available.</p>
+            <p className="text-sm text-base-content/40 italic">
+              {t('preview:metadata.no_description')}
+            </p>
           )}
         </div>
       </div>
@@ -77,25 +97,35 @@ export default function MetadataSection({
   return (
     <div className="mb-6 flex flex-col">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Metadata</h3>
+        <h3 className="font-bold text-sm tracking-tight flex items-center gap-2">
+          {t('preview:metadata.title')}
+          {metadataDirty && ( // Use metadataDirty for auto-saving status
+            <span className="text-[10px] font-normal text-primary/70 animate-pulse bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
+              {t('preview:metadata.auto_saving_label')}
+            </span>
+          )}
+          {showSavedStatus && (
+            <span className="text-[10px] font-normal text-success/70 bg-success/5 px-1.5 py-0.5 rounded border border-success/10 flex items-center gap-1">
+              <span className="w-1 h-1 rounded-full bg-success/50" />
+              {t('preview:metadata.done_label')}
+            </span>
+          )}
+        </h3>
         <div className="flex items-center gap-2">
           {metadataDirty ? (
-            <>
-              <span className="text-[10px] text-base-content/40 italic">auto-saving…</span>
-              <button
-                className="btn btn-ghost btn-xs text-warning"
-                onClick={onDiscard}
-                title="Revert metadata changes and cancel auto-save"
-              >
-                Revert
-              </button>
-            </>
+            <button
+              className="btn btn-ghost btn-xs text-warning"
+              onClick={onDiscard}
+              title={t('preview:metadata.revert_title')}
+            >
+              {t('preview:actions.revert')}
+            </button>
           ) : (
             <button
               className="btn btn-ghost btn-xs text-primary"
               onClick={() => setIsEditing(false)}
             >
-              Done
+              {t('preview:actions.done')}
             </button>
           )}
         </div>
@@ -105,14 +135,14 @@ export default function MetadataSection({
         <div className="mb-2 grid grid-cols-2 gap-2">
           <div>
             <label className="label py-1" htmlFor="metadata-author-input">
-              <span className="label-text text-xs">Author</span>
+              <span className="label-text text-xs">{t('preview:metadata.author')}</span>
             </label>
             <input
               id="metadata-author-input"
-              aria-label="Mod author"
+              aria-label={t('preview:metadata.author')}
               type="text"
               className="input input-bordered w-full bg-transparent text-sm"
-              placeholder="Unknown"
+              placeholder={t('preview:metadata.author_placeholder')}
               value={authorDraft}
               disabled={!activePath}
               onChange={(event) => onAuthorChange(event.target.value)}
@@ -120,14 +150,14 @@ export default function MetadataSection({
           </div>
           <div>
             <label className="label py-1" htmlFor="metadata-version-input">
-              <span className="label-text text-xs">Version</span>
+              <span className="label-text text-xs">{t('preview:metadata.version')}</span>
             </label>
             <input
               id="metadata-version-input"
-              aria-label="Mod version"
+              aria-label={t('preview:metadata.version_aria')}
               type="text"
               className="input input-bordered w-full bg-transparent text-sm"
-              placeholder="1.0"
+              placeholder={t('preview:metadata.version_placeholder')}
               value={versionDraft}
               disabled={!activePath}
               onChange={(event) => onVersionChange(event.target.value)}
@@ -136,13 +166,13 @@ export default function MetadataSection({
         </div>
 
         <label className="label py-1" htmlFor="metadata-description-input">
-          <span className="label-text text-xs">Description</span>
+          <span className="label-text text-xs">{t('preview:metadata.description')}</span>
         </label>
         <textarea
           id="metadata-description-input"
-          aria-label="Mod description"
+          aria-label={t('preview:metadata.description')}
           className="textarea textarea-bordered h-24 w-full resize-none bg-transparent text-sm"
-          placeholder="No description available."
+          placeholder={t('preview:metadata.description_placeholder')}
           value={descriptionDraft}
           disabled={!activePath}
           onChange={(event) => onDescriptionChange(event.target.value)}

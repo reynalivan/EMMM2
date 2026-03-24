@@ -10,16 +10,19 @@ use std::sync::Arc;
 
 use super::signals::{aggregate_signals, collect_snapshot, hash_snapshot, ModSnapshot};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub enum DedupScanStatus {
     Completed,
     Cancelled,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct DedupScanOutcome {
     pub status: DedupScanStatus,
     pub groups: Vec<DupScanGroup>,
+    #[specta(type = f64)]
     pub total_folders: usize,
 }
 
@@ -61,7 +64,7 @@ fn run_pipeline_blocking(
     candidates: Vec<ModCandidate>,
     cancel_flag: Arc<AtomicBool>,
     total_folders: usize,
-    path_to_mod_id: HashMap<String, String>,
+    path_to_mod_id: HashMap<String, (String, bool)>,
     whitelist_pairs: HashSet<(String, String)>,
 ) -> DedupScanOutcome {
     let snapshots: Vec<ModSnapshot> = candidates
@@ -111,7 +114,7 @@ fn run_pipeline_blocking(
 
     DedupScanOutcome {
         status: DedupScanStatus::Completed,
-        groups: build_groups(&snapshots, &scored_pairs),
+        groups: build_groups(&snapshots, &scored_pairs, &path_to_mod_id),
         total_folders,
     }
 }
@@ -140,7 +143,7 @@ fn apply_modpack_filter(
                     let is_variant_container = *variant_container_cache
                         .entry(parent_path.clone())
                         .or_insert_with(|| {
-                            let (node_type, _) =
+                            let (node_type, _, _) =
                                 crate::commands::folder_grid::classifier::classify_folder(
                                     &parent_path,
                                 );
@@ -167,7 +170,7 @@ fn apply_modpack_filter(
 fn apply_whitelist_filter(
     candidate_pairs: Vec<(usize, usize)>,
     snapshots: &[ModSnapshot],
-    path_to_mod_id: &HashMap<String, String>,
+    path_to_mod_id: &HashMap<String, (String, bool)>,
     whitelist_pairs: &HashSet<(String, String)>,
 ) -> Vec<(usize, usize)> {
     candidate_pairs
@@ -184,10 +187,10 @@ fn apply_whitelist_filter(
                 .to_string_lossy()
                 .to_string();
 
-            let Some(left_id) = path_to_mod_id.get(&left_path) else {
+            let Some((left_id, _)) = path_to_mod_id.get(&left_path) else {
                 return true;
             };
-            let Some(right_id) = path_to_mod_id.get(&right_path) else {
+            let Some((right_id, _)) = path_to_mod_id.get(&right_path) else {
                 return true;
             };
 
@@ -200,15 +203,15 @@ fn apply_whitelist_filter(
 async fn fetch_mod_id_map(
     db: &SqlitePool,
     game_id: &str,
-) -> Result<HashMap<String, String>, String> {
+) -> Result<HashMap<String, (String, bool)>, String> {
     let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
+    let rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
         .await
         .map_err(|error| format!("Failed to fetch mod mapping for duplicate scan: {error}"))?;
 
     let mut mapping = HashMap::new();
-    for (id, folder_path) in rows {
-        mapping.insert(folder_path, id);
+    for (id, folder_path, is_safe) in rows {
+        mapping.insert(folder_path, (id, is_safe));
     }
 
     Ok(mapping)
@@ -220,15 +223,18 @@ async fn fetch_candidates_from_db(
     mods_root: &Path,
 ) -> Result<Vec<ModCandidate>, String> {
     let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    let rows = crate::database::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
+    let rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
         .await
         .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
 
-    let paths: Vec<String> = rows.into_iter().map(|(_, path)| path).collect();
+    let paths: Vec<(String, bool)> = rows
+        .into_iter()
+        .map(|(_, path, is_safe)| (path, is_safe))
+        .collect();
 
     let mut candidates = Vec::new();
 
-    for folder_path in paths {
+    for (folder_path, _is_safe) in paths {
         let path = Path::new(&folder_path);
 
         // Skip paths that no longer physically exist
@@ -265,7 +271,7 @@ async fn fetch_whitelist_pairs(
     db: &SqlitePool,
     game_id: &str,
 ) -> Result<HashSet<(String, String)>, String> {
-    let rows = crate::database::dedup_repo::get_duplicate_whitelist_pairs(db, game_id)
+    let rows = crate::repo::dedup_repo::get_duplicate_whitelist_pairs(db, game_id)
         .await
         .map_err(|error| format!("Failed to fetch duplicate whitelist pairs: {error}"))?;
 
@@ -306,7 +312,11 @@ fn phase1_candidate_filtering(snapshots: &[ModSnapshot]) -> Vec<(usize, usize)> 
     pairs
 }
 
-fn build_groups(snapshots: &[ModSnapshot], pairs: &[ScoredPair]) -> Vec<DupScanGroup> {
+fn build_groups(
+    snapshots: &[ModSnapshot],
+    pairs: &[ScoredPair],
+    path_to_mod_id: &HashMap<String, (String, bool)>,
+) -> Vec<DupScanGroup> {
     let mut parent: Vec<usize> = (0..snapshots.len()).collect();
     for (left, right, _, _, _) in pairs {
         union(&mut parent, *left, *right);
@@ -353,26 +363,37 @@ fn build_groups(snapshots: &[ModSnapshot], pairs: &[ScoredPair]) -> Vec<DupScanG
             }
             let signals: Vec<DupScanSignal> = signal_map.into_values().collect();
 
-            let members = members
+            let members: Vec<DupScanMember> = members
                 .iter()
                 .map(|member_idx| {
                     let snapshot = &snapshots[*member_idx];
+                    let folder_path = snapshot.candidate.path.to_string_lossy().to_string();
+                    let (mod_id, is_safe) = path_to_mod_id
+                        .get(&folder_path)
+                        .map(|(id, safe)| (Some(id.clone()), *safe))
+                        .unwrap_or((None, true));
+
                     DupScanMember {
-                        mod_id: None,
-                        folder_path: snapshot.candidate.path.to_string_lossy().to_string(),
+                        mod_id,
+                        version: None,
+                        folder_path,
                         display_name: snapshot.candidate.display_name.clone(),
                         total_size_bytes: snapshot.total_size_bytes,
                         file_count: snapshot.files.len() as u64,
+                        is_safe,
                         confidence_score: confidence,
                         signals: signals.clone(),
                     }
                 })
                 .collect();
 
+            let is_unsafe = members.iter().any(|m: &DupScanMember| !m.is_safe);
+
             DupScanGroup {
                 group_id: format!("dup-group-{}", group_index + 1),
                 confidence_score: confidence,
                 match_reason: reason,
+                is_unsafe,
                 signals,
                 members,
             }

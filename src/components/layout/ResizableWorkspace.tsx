@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useResponsive } from '../../hooks/useResponsive';

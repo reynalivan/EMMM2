@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
 import { listen } from '@tauri-apps/api/event';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -12,7 +12,7 @@ export function useImportQueue() {
 
   const query = useQuery({
     queryKey: IMPORT_QUEUE_KEY,
-    queryFn: () => invoke<ImportJobItem[]>('import_get_queue'),
+    queryFn: () => commands.browserListImportQueue(),
     refetchOnWindowFocus: false,
   });
 
@@ -54,22 +54,22 @@ export function useImportQueue() {
       category: string;
       objectId?: string | null;
     }) =>
-      invoke('import_confirm_review', {
+      commands.browserConfirmImport({
         jobId,
         gameId,
         category,
-        objectId: objectId ?? null,
+        objectId: objectId ?? undefined,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: IMPORT_QUEUE_KEY }),
   });
 
   const skipMutation = useMutation({
-    mutationFn: (jobId: string) => invoke('import_skip', { jobId }),
+    mutationFn: (jobId: string) => commands.browserCancelImport({ jobId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: IMPORT_QUEUE_KEY }),
   });
 
   // Jobs pending user decision
-  const needsReview = (query.data ?? []).filter((j) => j.status === 'needs_review');
+  const needsReview = (query.data ?? []).filter((j: ImportJobItem) => j.status === 'needs_review');
 
   return {
     jobs: query.data ?? [],

@@ -1,46 +1,37 @@
-# EMMM2 AI Agent Axioms (AGENT.md)
+# EMMM AI Agent Guide (AGENT.md)
 
-EMMM2: Premium Mod Orchestrator (3DMigoto Ecosystem: Genshin, HSR, ZZZ, WuWa, Endfield).
+EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 
-## 1. Core Principles (Axioms)
+## 1. Core Axioms
 
-1. FS Truth: SQLite is a cache. Folder prefix `DISABLED ` is the ONLY source of truth for mod state.
-2. Atomics: Bulk operations MUST be transactional (all-or-nothing). Guard heavy I/O with `OperationLock`.
-3. Soft Delete: Never hard delete. Move to `./app_data/trash/`. Detect collisions before move.
-4. Scale First: Virtualize all grids/lists > 50 items (@tanstack/react-virtual). 10k+ capacity.
-5. Rust Compute: Offload logic (scanning, hashing, parsing) to Rust `tauri::command`. Keep FE UI thread free.
-6. Post-log: after every completed implementation session, execute `.agent/rules/post_log.md`.
+- **FS Truth**: Folder prefix `DISABLED ` is SSoT; SQLite is a cache.
+- **Atomics**: Bulk operations MUST be transactional + `OperationLock` guarded.
+- **Soft Delete**: Move to `./app_data/trash/`; never hard delete.
+- **Scale**: Virtualize grids/lists > 50 items (@tanstack/react-virtual); 10k+ capacity.
+- **Compute**: Heavy logic (SQL/Hashing/Parsing) -> Rust `tauri::command`.
 
-## 2. Tech Stack Consistency
+## 2. Compliance (Zero-Tolerance)
 
-- Backend: Tauri v2, Rust (tokio, sqlx, notify v7), SQLite.
-- Frontend: React 19, TS 5, Zustand, TanStack Query, daisyUI 5, Tailwind 4.
+- **Zero-Literal**: Frontend MUST use semantic tokens (no hex/Tailwind color scales).
+- **Zero-Hardcode**: 100% i18n (EN/ID/ZH) via `react-i18next`. No literals in JSX/TSX.
+- **No Truncation**: Full file outputs only; NO placeholders (`//...`).
+- **Post-Implementation**: Run `.agent/rules/post_log.md` after every session.
 
-## 3. Agent Execution Trajectory (Plan-Act-Reflect)
+## 4. Architecture Standards
 
-For all non-trivial tasks, force the following sequence:
+- **Backend**: `src-tauri/src/` (Tauri v2, Rust, SQLite). Mandatory DAL separation.
+- **Frontend**: `src/features/` (domain slices), `src/components/` (atoms).
+- **Limit**: 350 lines per file. Single Source of Truth; no logic duplication.
 
-- PLAN: Research context first. Create implementation_plan.md. Get User Approval. No guessing.
-- ACT: Execute via ./.agent/workflows/ using ./.agent/skills/. No logic truncation (Zero-Truncation Policy).
-- REFLECT: Verify via /verify-quality. Then execute the post-log rule at `.agent/rules/post_log.md`.
+## 5. Decision Guard
 
-## 4. Directory Standards
+- **Check**: Simplest? Side-effects? DRY? No duplication? State-consistent? All code used?
+- **Tools**: Use `context7`, `fetch`, `deepwiki`, `exa` for research, `narsil-mcp`, `sequential-thinking` before coding.
+- **i18n**: Namespace modularity + descriptive keys Include tooltips/aria.
 
-- Backend: ./src-tauri/src/ (commands, database, services). Repositories/DAL separation mandatory.
-- Frontend: ./src/features/ (domain slices), ./src/components/ (atomic elements).
-- Standards: 350 line limit per file. SSoT only. No duplicate logic across layers.
+## 3. Workflow
 
-## 5. Zero Nonsense Policy
-
-- Directive Mode: Concise technical sentences. No fluff, no conversational fillers.
-- Tooling: Use narsil-mcp (Trace flow/security) and exa (Docs) before implementation.
-- Safety: Full file outputs or valid unified diffs only. No placeholders (// ...).
-
-## 6. Final Check
-
-- Simplest solution?
-- Side effects handled?
-- No duplication?
-- All code used?
-- State consistent?
-- Post-log rule executed: `.agent/rules/post_log.md`.
+1. **PLAN**: Research context -> `implementation_plan.md` -> User Approval. No guessing.
+2. **ACT**: Execute via `./.agent/workflows/` + `./.agent/skills/`.
+3. **REFLECT**: Verify quality, eslint, build check, run test.
+4. **Post-Implementation**: Run `.agent/rules/post_log.md` after every session.

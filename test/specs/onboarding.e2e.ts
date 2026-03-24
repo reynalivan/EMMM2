@@ -9,7 +9,7 @@ describe('Onboarding & Welcome Screen (req-03)', () => {
   before(async () => {
     // Create mock game folder for FTUE manual setup
     const tempDir = os.tmpdir();
-    mockGamePath = path.join(tempDir, `EMMM2_FTUE_Game_${Date.now()}`);
+    mockGamePath = path.join(tempDir, `EMMM_FTUE_Game_${Date.now()}`);
     await fs.mkdir(mockGamePath, { recursive: true });
     await fs.mkdir(path.join(mockGamePath, 'Mods'), { recursive: true });
 

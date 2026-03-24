@@ -21,11 +21,11 @@
 
 As a user, I want to pin my most-used Objects to the top of the objectlist, so that I don't scroll to find them every session.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                        |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Type        | Criteria                                                                                                                                                                                                           |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-40.1.1 | ✅ Positive | Given the Object List, when I click the pin icon on any Object, then `UPDATE objects SET is_pinned = true WHERE id = ?` runs; the Object moves to the "Pinned" section at the top of the objectlist within ≤ 150ms |
-| AC-40.1.2 | ✅ Positive | Given an Object is already pinned, when I click the pin icon again, then `is_pinned = false` and the Object returns to its default sort position                                                                |
-| AC-40.1.3 | ⚠️ Edge     | Given all Objects are pinned, then the "Pinned" section contains all items and the main list is empty — layout doesn't break                                                                                    |
+| AC-40.1.2 | ✅ Positive | Given an Object is already pinned, when I click the pin icon again, then `is_pinned = false` and the Object returns to its default sort position                                                                   |
+| AC-40.1.3 | ⚠️ Edge     | Given all Objects are pinned, then the "Pinned" section contains all items and the main list is empty — layout doesn't break                                                                                       |
 
 ---
 
@@ -93,13 +93,13 @@ move_mod_to_object(game_id, folder_path, target_object_id) → ():
 
 ### Integration Points
 
-| Component                                | Detail                                                                           |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| Pin/Favorite                             | Pure SQLite updates; React Query `['objects']` / `['folders']` invalidation      |
-| Move: OperationLock + WatcherSuppression | Same scope as rename/toggle ops                                                  |
-| info.json Update                         | Uses `mod_files/metadata.rs` JSON patch — same as Metadata Editor (Epic 17)      |
-| Collision Check                          | `target_path.exists()` checked before any operation — feeds Epic 39 if needed    |
-| Frontend                                 | Context menu "Move to..." → Object picker modal → `invoke('move_mod_to_object')` |
+| Component                                | Detail                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| Pin/Favorite                             | Pure SQLite updates; React Query `['objects']` / `['folders']` invalidation    |
+| Move: OperationLock + WatcherSuppression | Same scope as rename/toggle ops                                                |
+| info.json Update                         | Uses `mod_files/metadata.rs` JSON patch — same as Metadata Editor (Epic 17)    |
+| Collision Check                          | `target_path.exists()` checked before any operation — feeds Epic 39 if needed  |
+| Frontend                                 | Context menu "Move to..." → Object picker modal → `commands.moveModToObject()` |
 
 ### Security & Privacy
 

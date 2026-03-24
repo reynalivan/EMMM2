@@ -13,7 +13,7 @@ import {
   useResolveDuplicates,
 } from './useDedup';
 import * as dedupService from '../../../lib/services/dedupService';
-import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../../types/dedup';
+import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../../types/scanner';
 import { createWrapper } from '../../../testing/test-utils';
 
 vi.unmock('@tanstack/react-query');
@@ -56,6 +56,7 @@ describe('useDedup hooks', () => {
             groupId: 'group-1',
             confidenceScore: 95,
             matchReason: 'Hash match',
+            isUnsafe: false,
             signals: [{ key: 'hash', detail: 'BLAKE3 collision', score: 100 }],
             members: [
               {
@@ -63,16 +64,20 @@ describe('useDedup hooks', () => {
                 displayName: 'Mod A',
                 totalSizeBytes: 1024,
                 fileCount: 5,
+                isSafe: true,
                 confidenceScore: 95,
                 signals: [],
+                modId: null,
               },
               {
                 folderPath: '/path/mod-b',
                 displayName: 'Mod B',
                 totalSizeBytes: 1024,
                 fileCount: 5,
+                isSafe: true,
                 confidenceScore: 95,
                 signals: [],
+                modId: null,
               },
             ],
           },
@@ -151,7 +156,7 @@ describe('useDedup hooks', () => {
 
     it('emits progress events during scan', async () => {
       const mockEvent: DupScanEvent = {
-        event: 'Progress',
+        event: 'progress',
         data: {
           scanId: 'scan-1',
           processedFolders: 50,
@@ -242,9 +247,9 @@ describe('useDedup hooks', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'KeepA' as const,
-          folderA: '/path/mod-a',
-          folderB: '/path/mod-b',
+          action: 'Keep' as const,
+          targetPath: '/path/mod-a',
+          allMembers: ['/path/mod-a', '/path/mod-b'],
         },
       ];
 
@@ -282,7 +287,7 @@ describe('useDedup hooks', () => {
         total: 3,
         successful: 2,
         failed: 1,
-        errors: [{ groupId: 'group-1', message: 'Permission denied' }],
+        errors: [{ groupId: 'group-1', message: '', action: { type: 'Ignore' } }],
       };
 
       vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);

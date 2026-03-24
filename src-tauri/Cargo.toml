@@ -1,9 +1,10 @@
 [package]
-name = "emmm2"
+name = "emmm"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+default-run = "emmm"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,7 +15,7 @@ debug_matcher = []
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "emmm2_lib"
+name = "emmm_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -23,10 +24,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "devtools", "unstable"] }
 tauri-plugin-opener = "2"
+tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_repr = "0.1.19"
 tauri-plugin-log = "2"
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "json"] }
 sqlx-macros = { version = "0.8", default-features = false, features = ["sqlite"] }
 tokio = { version = "1", features = ["full"] }
 tauri-plugin-dialog = "2"
@@ -35,7 +38,10 @@ thiserror = "2.0.18"
 anyhow = "1.0.101"
 log = "0.4.29"
 chrono = "0.4"
-tauri-plugin-fs = "2"
+specta = { version = "=2.0.0-rc.22", features = ["serde_json"] }
+specta-typescript = "=0.0.9"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
+
 
 # Epic 2: Scanner Core
 walkdir = "2"
@@ -68,6 +74,7 @@ encoding_rs = "0.8.35"
 tauri-plugin-global-shortcut = "2"
 futures-util = "0.3.32"
 enigo = "0.6"
+mime_guess = "2.0.4"
 
 [dev-dependencies]
 env_logger = "0.11.9"
@@ -76,10 +83,11 @@ filetime = "0.2.27"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
 
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-native-tls", "sqlite", "migrate", "macros"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-native-tls", "sqlite", "migrate", "macros", "json"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_System_RestartManager"] }
+
 
 [patch.crates-io]
 # Patches removed as they were ignored due to version incompatibility with transitive consumers.

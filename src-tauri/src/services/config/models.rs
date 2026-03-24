@@ -1,13 +1,13 @@
-use crate::database::game_repo;
+use crate::repo::game_repo;
 use crate::services::hotkeys::{HotkeyConfig, KeyViewerConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
 pub struct GameConfig {
     pub id: String,
     pub name: String,
-    pub game_type: String, // "Genshin", "StarRail", "ZZZ", "Wuthering"
+    pub game_type: crate::database::models::GameType,
     pub mod_path: PathBuf,
     pub game_exe: PathBuf,
     pub loader_exe: Option<PathBuf>,
@@ -17,7 +17,7 @@ pub struct GameConfig {
     pub warnings: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
 pub struct SafeModeConfig {
     pub enabled: bool,
     pub pin_hash: Option<String>,
@@ -25,6 +25,7 @@ pub struct SafeModeConfig {
     pub keywords: Vec<String>,
     pub force_exclusive_mode: bool,
     pub failed_attempts: Option<u8>,
+    #[specta(type = Option<f64>)]
     pub lockout_until_ts: Option<u64>,
 }
 
@@ -42,14 +43,14 @@ impl Default for SafeModeConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, specta::Type)]
 pub struct AiConfig {
     pub enabled: bool,
     pub api_key: Option<String>,
     pub base_url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
 pub struct AppSettings {
     pub theme: String, // "dark", "light", "system"
     pub language: String,
@@ -63,6 +64,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub keyviewer: KeyViewerConfig,
     #[serde(default)]
+    #[specta(type = std::collections::HashMap<String, f64>)]
     pub sync_timestamps: std::collections::HashMap<String, u64>,
 }
 
@@ -88,7 +90,7 @@ pub fn game_row_to_config(row: game_repo::GameRow) -> GameConfig {
         id: row.id,
         name: row.name,
         game_type: row.game_type,
-        mod_path: PathBuf::from(row.mod_path.unwrap_or_else(|| row.path.clone())),
+        mod_path: PathBuf::from(row.mods_path.unwrap_or_else(|| row.path.clone())),
         game_exe: PathBuf::from(row.game_exe.unwrap_or(row.path)),
         loader_exe: row.loader_exe.or(row.launcher_path).map(PathBuf::from),
         launch_args: row.launch_args,
@@ -102,7 +104,7 @@ pub fn config_to_game_row(config: &GameConfig) -> game_repo::GameRow {
         name: config.name.clone(),
         game_type: config.game_type.clone(),
         path: config.game_exe.to_string_lossy().to_string(),
-        mod_path: Some(config.mod_path.to_string_lossy().to_string()),
+        mods_path: Some(config.mod_path.to_string_lossy().to_string()),
         game_exe: Some(config.game_exe.to_string_lossy().to_string()),
         launcher_path: config
             .loader_exe

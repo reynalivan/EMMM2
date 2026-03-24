@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Game schema defines available categories and filter fields per game type.
 /// Loaded from bundled JSON resources, with fallback to defaults.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct GameSchema {
     pub categories: Vec<CategoryDef>,
     pub filters: Vec<FilterDef>,
@@ -20,7 +20,7 @@ pub struct GameSchema {
     pub ini_key_whitelist: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CategoryDef {
     pub name: String,
     /// Display label for the category. Falls back to `name` if absent.
@@ -33,7 +33,7 @@ pub struct CategoryDef {
     pub filters: Option<Vec<FilterDef>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct FilterDef {
     pub key: String,
     pub label: String,
@@ -85,14 +85,14 @@ pub fn default_schema() -> GameSchema {
 /// Normalize legacy game_type values to canonical XXMI codes.
 /// Maps alternative names (e.g. "StarRail" → "srmi", "Genshin" → "gimi") so that
 /// resource lookups (schemas, databases, thumbnails) resolve correctly.
-pub fn normalize_game_type(raw: &str) -> String {
-    match raw.to_lowercase().as_str() {
-        "genshin" | "genshinimpact" | "genshin_impact" | "gimi" => "gimi".to_string(),
-        "starrail" | "star_rail" | "honkaistarrail" | "hsr" | "srmi" => "srmi".to_string(),
-        "zzz" | "zenless" | "zenlesszonezero" | "zzmi" => "zzmi".to_string(),
-        "wuthering" | "wutheringwaves" | "wuwa" | "wwmi" => "wwmi".to_string(),
-        "endfield" | "arknightendfield" | "arknight" | "efmi" => "efmi".to_string(),
-        other => other.to_string(),
+pub fn normalize_game_type(raw: i32) -> String {
+    match raw {
+        1 => "gimi".to_string(),
+        2 => "srmi".to_string(),
+        3 => "zzmi".to_string(),
+        4 => "wwmi".to_string(),
+        5 => "efmi".to_string(),
+        _ => "gimi".to_string(),
     }
 }
 
@@ -102,7 +102,7 @@ pub fn normalize_game_type(raw: &str) -> String {
 /// # Arguments
 /// * `resource_dir` - Base path to the app's resources directory
 /// * `game_type` - Game type string (e.g., "GIMI", "SRMI", or legacy "StarRail")
-pub fn load_schema(resource_dir: &std::path::Path, game_type: &str) -> GameSchema {
+pub fn load_schema(resource_dir: &std::path::Path, game_type: i32) -> GameSchema {
     let canonical = normalize_game_type(game_type);
     let schema_path = resource_dir
         .join("schemas")

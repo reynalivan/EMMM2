@@ -5,22 +5,19 @@
  */
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../lib/bindings';
+import type { ModInfo } from '../types/object';
 import { toast } from '../stores/useToastStore';
 import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
-import { reconcileActiveCollection } from '../features/collections/utils/reconcileActiveCollection';
-import { invalidateCorridorRuntime } from '../features/collections/utils/invalidateCorridorRuntime';
-import { refetchCurrentCorridorRuntime } from '../features/collections/utils/refetchCurrentCorridorRuntime';
+import { corridorKeys } from '../features/collections/queryKeys';
 import type {
   ModFolder,
   FolderGridResponse,
-  RenameResult,
   SortField,
   SortOrder,
-  ModInfo,
-  ConflictInfo,
+  DuplicateInfo,
 } from '../types/mod';
 
 // Re-export for consumers that import from here
@@ -29,8 +26,8 @@ export type { ModFolder, FolderGridResponse, ModInfo };
 /** Query key factory for folder cache management */
 export const folderKeys = {
   all: ['mod-folders'] as const,
-  list: (modsPath: string, subPath?: string) =>
-    [...folderKeys.all, modsPath, subPath ?? ''] as const,
+  list: (modsPath: string, subPath?: string, safeMode?: boolean) =>
+    [...folderKeys.all, modsPath, subPath ?? '', safeMode ?? null] as const,
 };
 
 /**
@@ -69,18 +66,22 @@ export function updateFolderCache(
  * Fetch mod folders from the active game's mods_path directory.
  * Supports sub_path for deep navigation and objectId for DB-level filtering by object.
  */
-export function useModFolders(subPath?: string) {
+export function useModFolders(subPath?: string, objectId?: string | null) {
   const { activeGame } = useActiveGame();
+  const { safeMode } = useAppStore();
   const modsPath = activeGame?.mod_path;
+  const gameId = activeGame?.id;
 
   return useQuery<FolderGridResponse>({
-    queryKey: folderKeys.list(modsPath ?? '', subPath),
+    queryKey: [...folderKeys.list(modsPath ?? '', subPath, safeMode), objectId],
     queryFn: () =>
-      invoke<FolderGridResponse>('list_mod_folders', {
+      commands.listModFolders({
+        gameId: gameId!,
         modsPath: modsPath!,
-        subPath: subPath || null,
+        subPath: subPath || undefined,
+        objectId: objectId || null,
       }),
-    enabled: !!modsPath,
+    enabled: !!modsPath && !!gameId,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     retry: 2,
@@ -88,37 +89,51 @@ export function useModFolders(subPath?: string) {
   });
 }
 
-/** Sort folders client-side by field and direction. */
+/** Sort folders client-side by field and direction.
+ * AC-12.3.2: Sort is applied *within* each visual group:
+ *   Group 1 — ContainerFolders (navigable directories)
+ *   Group 2 — ModPackRoot / VariantContainer / FlatModRoot (mod entries)
+ */
 export function sortFolders(folders: ModFolder[], field: SortField, order: SortOrder): ModFolder[] {
-  const sorted = [...folders].sort((a, b) => {
-    // Favorites always on top
-    if (a.is_favorite !== b.is_favorite) {
-      return a.is_favorite ? -1 : 1;
-    }
+  const sortGroup = (group: ModFolder[]): ModFolder[] => {
+    const sorted = [...group].sort((a, b) => {
+      // Favorites always on top within their group
+      if (a.is_favorite !== b.is_favorite) {
+        return a.is_favorite ? -1 : 1;
+      }
 
-    switch (field) {
-      case 'name':
-        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-      case 'modified_at':
-        return a.modified_at - b.modified_at;
-      case 'size_bytes':
-        return a.size_bytes - b.size_bytes;
-      default:
-        return 0;
-    }
-  });
-  return order === 'desc' ? sorted.reverse() : sorted;
+      const cmp = (() => {
+        switch (field) {
+          case 'name':
+            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+          case 'modified_at':
+            return a.modified_at - b.modified_at;
+          case 'size_bytes':
+            return a.size_bytes - b.size_bytes;
+          default:
+            return 0;
+        }
+      })();
+
+      // Secondary sort by name to ensure stable, deterministic order (AC-12.3.5)
+      return cmp !== 0 ? cmp : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    return order === 'desc' ? sorted.reverse() : sorted;
+  };
+
+  const containers = folders.filter((f) => f.node_type === 'ContainerFolder');
+  const packs = folders.filter((f) => f.node_type !== 'ContainerFolder');
+
+  return [...sortGroup(containers), ...sortGroup(packs)];
 }
 
 /** Helper to trigger full GC + Sync fallback when a file operation fails due to missing files */
 async function fallbackSync(queryClient: ReturnType<typeof useQueryClient>, gameId: string | null) {
   if (!gameId) return;
-  const { invoke } = await import('@tauri-apps/api/core');
-
   toast.info('Syncing changes from disk...', 3000);
   try {
-    await invoke('gc_lost_objects_cmd', { gameId });
-    await invoke('sync_objects_cmd', { gameId });
+    await commands.gcLostObjects({ gameId });
+    await commands.syncObjects({ gameId });
     toast.success('Sync complete', 2000);
   } catch (err) {
     console.error('Fallback sync failed:', err);
@@ -127,9 +142,7 @@ async function fallbackSync(queryClient: ReturnType<typeof useQueryClient>, game
     queryClient.invalidateQueries({ queryKey: folderKeys.all });
     queryClient.invalidateQueries({ queryKey: ['objects'] });
     queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-    await invalidateCorridorRuntime(queryClient);
-    await refetchCurrentCorridorRuntime(queryClient, gameId);
-    await reconcileActiveCollection({ gameId });
+    queryClient.invalidateQueries({ queryKey: corridorKeys.all });
   }
 }
 
@@ -141,18 +154,19 @@ async function fallbackSync(queryClient: ReturnType<typeof useQueryClient>, game
 export function useToggleMod() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (params: {
       path: string;
       enable: boolean;
       gameId: string;
       suppressToast?: boolean;
     }) =>
-      invoke<string>('toggle_mod', {
+      commands.toggleMod({
         path: params.path,
         enable: params.enable,
         gameId: params.gameId,
       }),
+
 
     // Optimistic UI: flip is_enabled instantly in cache
     onMutate: async (variables) => {
@@ -184,7 +198,7 @@ export function useToggleMod() {
 
     onSuccess: async (newPath, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) }); // Invalidate old thumbnail URI
-      await invalidateCorridorRuntime(queryClient);
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
 
       const action = variables.enable ? 'Enabled' : 'Disabled';
       let modName = variables.path.split(/[/\\]/).pop() || 'mod';
@@ -214,37 +228,39 @@ export function useToggleMod() {
       }));
 
       // Opt-Z2: Update grid selection to reflect new path instantly
-      useAppStore.getState().replaceGridSelection(variables.path, newPath);
+      const store = useAppStore.getState();
+      store.replaceGridSelection(variables.path, newPath);
+      store.correctExplorerPath(variables.path, newPath);
 
       if (!variables.suppressToast) {
         toast.withAction('success', `${action} ${modName}`, {
           label: 'Undo',
           onClick: () => {
             useAppStore.getState().setWatcherCooldown(Date.now() + 500);
-            invoke<string>('toggle_mod', {
-              path: newPath,
-              enable: !variables.enable,
-              gameId: variables.gameId,
-            }).then(() => {
-              queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
-              queryClient.invalidateQueries({ queryKey: folderKeys.all });
-              queryClient.invalidateQueries({ queryKey: ['objects'] });
-              void refetchCurrentCorridorRuntime(queryClient, variables.gameId);
-            });
+            commands
+              .toggleMod({
+                path: newPath,
+                enable: !variables.enable,
+                gameId: variables.gameId,
+              })
+              .then(() => {
+                queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
+                queryClient.invalidateQueries({ queryKey: folderKeys.all });
+                queryClient.invalidateQueries({ queryKey: ['objects'] });
+                queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+              });
           },
         });
       }
 
-      // After enabling: check for shader conflicts (non-blocking)
       if (variables.enable) {
-        invoke<ConflictInfo[]>('check_shader_conflicts', { folderPath: newPath })
+        commands
+          .checkShaderConflicts({ folderPath: newPath })
           .then(() => queryClient.invalidateQueries({ queryKey: ['conflicts'] }))
           .catch(() => {
             /* non-critical — silently ignore */
           });
       }
-
-      await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
     },
 
     onError: (error, variables, context) => {
@@ -275,7 +291,45 @@ export function useToggleMod() {
           /* parse failed, fall through to generic toast */
         }
       }
-      toast.error(errStr);
+
+      // Detect structured DuplicateConflict error → open Resolve dialog
+      if (errStr.includes('"type":"DuplicateConflict"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const duplicates = body.content as DuplicateInfo[];
+          const folder = queryClient
+            .getQueriesData<FolderGridResponse>({ queryKey: folderKeys.all })
+            .flatMap(([, data]) => data?.children || [])
+            .find((f) => f.path === variables.path);
+
+          if (folder) {
+            useAppStore.getState().openDuplicateConflictDialog(folder, duplicates);
+            return;
+          }
+        } catch {
+          /* parse failed */
+        }
+      }
+      // Detect structured FileInUse error → open FileInUse dialog
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+
+          return;
+        } catch {
+          /* parse failed */
+        }
+      }
+
+      const fallbackErrStr = typeof error === 'object' ? JSON.stringify(error) : String(error);
+      toast.error(fallbackErrStr);
+
     },
 
     // Mark data as stale — don't force immediate refetch.
@@ -283,7 +337,7 @@ export function useToggleMod() {
     onSettled: () => {
       // Suppress leaked watcher events for 500ms after mutation settles
       useAppStore.getState().setWatcherCooldown(Date.now() + 500);
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['conflicts'], refetchType: 'none' });
     },
@@ -294,13 +348,14 @@ export function useToggleMod() {
 export function useRenameMod() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (params: { folderPath: string; newName: string; gameId: string }) =>
-      invoke<RenameResult>('rename_mod_folder', {
-        folder_path: params.folderPath,
-        new_name: params.newName,
-        game_id: params.gameId,
+      commands.renameModFolder({
+        folderPath: params.folderPath,
+        newName: params.newName,
+        gameId: params.gameId,
       }),
+
     onSuccess: async (result, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
 
@@ -313,22 +368,43 @@ export function useRenameMod() {
       }));
 
       // Update grid selection to reflect new path instantly
-      useAppStore.getState().replaceGridSelection(variables.folderPath, result.new_path);
+      const store = useAppStore.getState();
+      store.replaceGridSelection(variables.folderPath, result.new_path);
+      store.correctExplorerPath(variables.folderPath, result.new_path);
 
       // Path changed — mark stale, refetch deferred until next user interaction
       // Suppress leaked watcher events for 500ms after rename settles
       useAppStore.getState().setWatcherCooldown(Date.now() + 500);
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['objects'], refetchType: 'none' });
-      await invalidateCorridorRuntime(queryClient, { refetchType: 'none' });
-      await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
+      queryClient.invalidateQueries({ queryKey: ['conflicts'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all, refetchType: 'none' });
     },
     onError: (error, variables) => {
       const errStr = String(error);
+
+      // Detect structured FileInUse error → open FileInUse dialog
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+
+          return;
+        } catch {
+          /* parse failed */
+        }
+      }
+
       if (
         errStr.toLowerCase().includes('not found') ||
         errStr.toLowerCase().includes('os error 2')
       ) {
+
         fallbackSync(queryClient, variables.gameId);
       } else {
         toast.error(`Rename failed: ${errStr}`);
@@ -341,24 +417,39 @@ export function useRenameMod() {
 export function useDeleteMod() {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (params: { path: string; gameId?: string }) => invoke<void>('delete_mod', params),
+  const mutation = useMutation({
+    mutationFn: (params: { path: string; gameId?: string }) => commands.deleteMod(params),
     onSuccess: async (_, variables) => {
       queryClient.removeQueries({ queryKey: thumbnailKeys.folder(variables.path) });
       // Targeted: remove deleted folder from cache instead of full re-listing
       updateFolderCache(queryClient, [variables.path], undefined, true);
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      await invalidateCorridorRuntime(queryClient);
-      if (variables.gameId) {
-        await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
-      }
+      queryClient.invalidateQueries({ queryKey: ['conflicts'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
     },
     onError: (error, variables) => {
       const errStr = String(error);
+
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+          return;
+        } catch {
+          /* parse failed */
+        }
+      }
+
       if (
         errStr.toLowerCase().includes('not found') ||
         errStr.toLowerCase().includes('os error 2')
       ) {
+
         fallbackSync(queryClient, variables.gameId ?? null);
       } else {
         toast.error(`Delete failed: ${errStr}`);
@@ -371,21 +462,42 @@ export function useDeleteMod() {
 export function useRestoreMod() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (params: { trashId: string; gameId?: string }) =>
-      invoke<string>('restore_mod', { trashId: params.trashId, gameId: params.gameId }),
-    onSuccess: async (_, variables) => {
+      commands.restoreMod({ trashId: params.trashId, gameId: params.gameId }),
+
+    onSuccess: async () => {
       // New folder appears on disk — active refetch needed (no optimistic data)
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['trash'] });
-      await invalidateCorridorRuntime(queryClient);
-      if (variables.gameId) {
-        await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+    },
+    onError: (error, variables) => {
+      const errStr = String(error);
+
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+          return;
+        } catch {
+          /* parse failed */
+        }
       }
+
+      toast.error(`Restore failed: ${errStr}`);
     },
   });
+
+  return mutation;
 }
+
 
 // ── Barrel re-exports ──────────────────────────────────────────
 // Consumers keep importing from './useFolders' — zero migration needed.

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, useMotionValue, useMotionTemplate, animate, AnimatePresence } from 'motion/react';
 import { Search, Power, HelpCircle } from 'lucide-react';
 import { DEMO_KEYBINDS, usePrefersReducedMotion } from '../demoTypes';
 
 export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () => void }) {
+  const { t } = useTranslation();
   const prefersReduced = usePrefersReducedMotion();
 
   // X, Y coordinates as motion values (0-100% of container)
@@ -78,8 +80,8 @@ export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () =
         transition={{ delay: 0.1, duration: 0.4 }}
         className="absolute top-6 left-0 right-0 text-center z-20"
       >
-        <h3 className="text-lg font-bold">Keybinds, instantly</h3>
-        <p className="text-sm text-base-content/60">Press ? to view keybinds</p>
+        <h3 className="text-lg font-bold">{t('welcome.demo.keybinds_instantly')}</h3>
+        <p className="text-sm text-base-content/60">{t('welcome.demo.press_help')}</p>
       </motion.div>
 
       {/* Dim overlay with spotlight cutout */}
@@ -132,7 +134,7 @@ export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () =
                     {kb.keys}
                   </kbd>
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-base-content/70 bg-base-100/80 px-1 rounded">
-                    {kb.action}
+                    {t(kb.action)}
                   </span>
                 </motion.div>
               ))}

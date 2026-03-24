@@ -5,6 +5,7 @@
 
 import { useRef, useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -21,12 +22,13 @@ export default function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation(['common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -61,20 +63,20 @@ export default function ConfirmDialog({
         {/* Actions */}
         <div className="modal-action mt-4">
           <button className="btn btn-sm btn-ghost" onClick={onCancel}>
-            {cancelLabel}
+            {cancelLabel || t('actions.cancel')}
           </button>
           <button
             className={`btn btn-sm ${danger ? 'btn-error' : 'btn-warning'}`}
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {confirmLabel || t('actions.confirm')}
           </button>
         </div>
       </div>
 
       {/* Backdrop closes on click */}
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onCancel}>close</button>
+        <button onClick={onCancel}>{t('actions.close')}</button>
       </form>
     </dialog>
   );

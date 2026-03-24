@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
   Copy,
@@ -8,49 +9,57 @@ import {
   PlayCircle,
   Settings,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useActiveGame } from '../../../hooks/useActiveGame';
+import { commands } from '../../../lib/bindings';
 import GameSelector from './GameSelector';
 import ContextControls from './ContextControls';
 import GlobalActions from './GlobalActions';
 
-const NAV_ITEMS = [
-  {
-    id: 'dashboard' as const,
-    icon: LayoutGrid,
-    label: 'Dashboard',
-    color: 'text-primary',
-    bg: 'bg-primary/15',
-  },
-  {
-    id: 'mods' as const,
-    icon: FolderOpen,
-    label: 'Mods Manager',
-    color: 'text-info',
-    bg: 'bg-info/15',
-  },
-  {
-    id: 'collections' as const,
-    icon: Layers,
-    label: 'Collections',
-    color: 'text-secondary',
-    bg: 'bg-secondary/15',
-  },
-  {
-    id: 'settings' as const,
-    icon: Settings,
-    label: 'Settings',
-    color: 'text-accent',
-    bg: 'bg-accent/15',
-  },
-];
-
 export default function TopBar() {
+  const { t } = useTranslation('layout');
   const { workspaceView, setWorkspaceView } = useAppStore();
   const { activeGame } = useActiveGame();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const NAV_ITEMS = [
+    {
+      id: 'dashboard' as const,
+      icon: LayoutGrid,
+      label: t('nav.dashboard'),
+      color: 'text-primary',
+      bg: 'bg-primary/15',
+    },
+    {
+      id: 'mods' as const,
+      icon: FolderOpen,
+      label: t('nav.mods_manager'),
+      color: 'text-info',
+      bg: 'bg-info/15',
+    },
+    {
+      id: 'collections' as const,
+      icon: Layers,
+      label: t('nav.collections'),
+      color: 'text-secondary',
+      bg: 'bg-secondary/15',
+    },
+    {
+      id: 'settings' as const,
+      icon: Settings,
+      label: t('nav.settings'),
+      color: 'text-accent',
+      bg: 'bg-accent/15',
+    },
+    {
+      id: 'storage-optimizer' as const,
+      icon: Copy,
+      label: t('nav.storage_optimizer'),
+      color: 'text-warning',
+      bg: 'bg-warning/15',
+    },
+  ];
 
   // Close on click outside
   useEffect(() => {
@@ -77,7 +86,7 @@ export default function TopBar() {
                 ? 'bg-primary/20 text-primary border-primary/30 shadow-[0_0_15px_-5px_var(--color-primary)]'
                 : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/15 shadow-[0_0_15px_-5px_var(--color-primary)]'
             }`}
-            title="App Menu"
+            title={t('nav.app_menu_tip')}
           >
             <LayoutGrid size={20} />
           </button>
@@ -89,7 +98,7 @@ export default function TopBar() {
               <button
                 onClick={() => {
                   if (activeGame)
-                    invoke('launch_game', { gameId: activeGame.id }).catch(console.error);
+                    commands.launchGame({ gameId: activeGame.id }).catch(console.error);
                   setMenuOpen(false);
                 }}
                 disabled={!activeGame}
@@ -100,10 +109,10 @@ export default function TopBar() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-base-content/90 group-hover:text-success transition-colors">
-                    Quick Play
+                    {t('nav.quick_play')}
                   </p>
                   <p className="text-[10px] text-base-content/40 truncate">
-                    {activeGame ? activeGame.name : 'No game selected'}
+                    {activeGame ? activeGame.name : t('nav.no_game_selected')}
                   </p>
                 </div>
               </button>
@@ -139,24 +148,6 @@ export default function TopBar() {
                   </button>
                 );
               })}
-
-              <div className="h-px bg-base-300 my-1.5 mx-2" />
-
-              {/* Dedup Scanner (shortcut) */}
-              <button
-                onClick={() => {
-                  setWorkspaceView('settings');
-                  setMenuOpen(false);
-                }}
-                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left hover:bg-warning/10 transition-colors group"
-              >
-                <div className="w-8 h-8 rounded-lg bg-warning/15 flex items-center justify-center shrink-0">
-                  <Copy size={16} className="text-warning" />
-                </div>
-                <span className="text-sm font-medium text-base-content/80 group-hover:text-warning transition-colors">
-                  Dedup Scanner
-                </span>
-              </button>
             </div>
           )}
         </div>
@@ -165,23 +156,23 @@ export default function TopBar() {
         {workspaceView !== 'dashboard' && (
           <button
             onClick={() => setWorkspaceView('dashboard')}
-            className="btn btn-ghost btn-sm btn-square text-white/70 hover:text-primary hover:bg-white/5"
-            title="Back to Dashboard"
+            className="btn btn-ghost btn-sm btn-square text-base-content/70 hover:text-primary hover:bg-base-content/5"
+            title={t('nav.back_to_dashboard')}
           >
             <ChevronLeft size={20} />
           </button>
         )}
 
-        <div className="flex flex-col">
-          <span className="font-bold text-lg md:text-xl leading-none tracking-tight text-white glow-text">
-            EMMM2
+        <div className="flex flex-col gap-0.5">
+          <span className="font-bold text-lg md:text-xl leading-none tracking-tight text-base-content glow-text">
+            EMMM
           </span>
-          <span className="text-[9px] md:text-[10px] uppercase tracking-[0.2em] opacity-50 font-semibold hidden sm:inline-block text-accent">
-            Mod Manager
+          <span className="text-[9px] md:text-[10px] uppercase tracking-[0.2em] opacity-70 font-semibold hidden sm:inline-block text-accent">
+            Version 2.0.0
           </span>
         </div>
 
-        <div className="h-8 w-px bg-white/5 mx-1 md:mx-2 hidden xs:block" />
+        <div className="h-8 w-px bg-base-content/5 mx-1 md:mx-2 hidden xs:block" />
 
         {/* Game Selector Cartridge */}
         <GameSelector />

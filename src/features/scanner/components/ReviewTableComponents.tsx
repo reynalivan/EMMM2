@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, HTMLProps } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function IndeterminateCheckbox({
   isIndeterminate,
@@ -27,6 +28,7 @@ export function EditableCell({
   path: string;
   onRename: (path: string, newName: string) => void;
 }) {
+  const { t } = useTranslation(['scanner']);
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(initialValue);
 
@@ -68,10 +70,10 @@ export function EditableCell({
     <div
       className="flex flex-col cursor-text hover:bg-base-200 p-1 rounded"
       onDoubleClick={() => setIsEditing(true)}
-      title="Double-click to rename"
+      title={t('scanner:review.rename_hint')}
     >
       <span className="font-bold text-sm">{value}</span>
-      <span className="text-[10px] text-base-content/40 font-mono truncate max-w-[200px]">
+      <span className="text-[10px] text-base-content/40 font-mono truncate max-w-50">
         {rawName}
       </span>
     </div>

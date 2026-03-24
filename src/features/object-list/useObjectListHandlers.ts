@@ -1,16 +1,11 @@
 /**
  * useObjectListHandlers — Orchestrator that composes all sub-hooks.
  *
- * Delegates to:
- *   - useObjHandlersCrud   (CRUD, pin/fav, object toggle)
- *   - useObjHandlersScan   (scan preview, commit, sync with DB)
- *   - useObjHandlersArchive (archive modal, extraction)
- *   - useObjHandlersDrop   (DnD zones)
- *   - useObjHandlersBulk   (bulk operations)
- *
- * Public API is unchanged — consumers see the same return shape.
+ * This file acts as the primary connector between individual feature hooks
+ * (CRUD, Scan, Archive, Drop, Bulk) and the main ObjectList UI.
  */
 
+import React from 'react';
 import type { ModFolder } from '../../hooks/useFolders';
 import type { ObjectSummary, GameSchema } from '../../types/object';
 import { useObjHandlersCrud } from './useObjHandlersCrud';
@@ -25,90 +20,104 @@ interface HandlerDeps {
   schema: GameSchema | undefined;
   mismatchConfirm: string[] | null;
   setMismatchConfirm: React.Dispatch<React.SetStateAction<string[] | null>>;
+  bulkSelect: {
+    selectedIds: Set<string>;
+    clearSelection: () => void;
+  };
 }
 
 export function useObjectListHandlers({
   objects,
   folders = [],
   schema,
+  mismatchConfirm,
   setMismatchConfirm,
 }: HandlerDeps) {
-  // ── CRUD, misc, and object toggle ──────────────────────────────
+  // ── 1. Feature Hooks ───────────────────────────────────────────
   const crud = useObjHandlersCrud({ objects, folders, schema });
-
-  // ── Scan & sync ────────────────────────────────────────────────
   const scan = useObjHandlersScan({ objects, folders });
 
-  // ── Archive modal & extraction ─────────────────────────────────
+  // Archive depends on scan review state to resume flows
   const archive = useObjHandlersArchive({
     objects,
     setScanReview: scan.setScanReview,
     setIsSyncing: scan.setIsSyncing,
-    setMismatchConfirm,
+    setMismatchConfirm: (paths) => setMismatchConfirm(paths),
   });
 
-  // ── DnD drop zones ─────────────────────────────────────────────
   const drop = useObjHandlersDrop({
     objects,
     handleArchivesInteractively: archive.handleArchivesInteractively,
+    setMismatchConfirm: (paths) => setMismatchConfirm(paths),
     setScanReview: scan.setScanReview,
     setIsSyncing: scan.setIsSyncing,
-    setMismatchConfirm,
   });
 
-  // ── Bulk operations ────────────────────────────────────────────
   const bulk = useObjHandlersBulk({
     objects,
     toggleObjectMods: crud.toggleObjectMods,
   });
 
+  // ── 2. Mapping to Unified Interface ────────────────────────────
   return {
-    // Dialog state
+    // Dialog & Modal States
     deleteDialog: crud.deleteDialog,
     setDeleteDialog: crud.setDeleteDialog,
     editObject: crud.editObject,
     setEditObject: crud.setEditObject,
+    deleteObjectDialog: crud.deleteObjectDialog,
+    setDeleteObjectDialog: crud.setDeleteObjectDialog,
+    forceDeleteObjectDialog: crud.forceDeleteObjectDialog,
+    setForceDeleteObjectDialog: crud.setForceDeleteObjectDialog,
+    bulkTagModal: bulk.bulkTagModal,
+    setBulkTagModal: bulk.setBulkTagModal,
+    mismatchConfirm,
+    setMismatchConfirm,
     isSyncing: scan.isSyncing,
     syncConfirm: scan.syncConfirm,
     setSyncConfirm: scan.setSyncConfirm,
     scanReview: scan.scanReview,
     handleCommitScan: scan.handleCommitScan,
     handleCloseScanReview: scan.handleCloseScanReview,
+    archiveModal: archive.archiveModal,
 
-    // Handlers
+    // CRUD Handlers
     handleToggle: crud.handleToggle,
     handleOpen: crud.handleOpen,
     handleDelete: crud.handleDelete,
     confirmDelete: crud.confirmDelete,
     handleDeleteObject: crud.handleDeleteObject,
-    deleteObjectDialog: crud.deleteObjectDialog,
-    setDeleteObjectDialog: crud.setDeleteObjectDialog,
     confirmDeleteObject: crud.confirmDeleteObject,
+    confirmForceDeleteObject: crud.confirmForceDeleteObject,
     handleEdit: crud.handleEdit,
-    handleSync: scan.handleSync,
-    handleBackgroundSync: scan.handleBackgroundSync,
-    handleSyncWithDb: scan.handleSyncWithDb,
-    handleApplySyncMatch: scan.handleApplySyncMatch,
     handlePin: crud.handlePin,
     handleFavorite: crud.handleFavorite,
     handleMoveCategory: crud.handleMoveCategory,
+    handleToggleObjectMods: crud.toggleObjectMods,
     handleRevealInExplorer: crud.handleRevealInExplorer,
     handleEnableObject: crud.handleEnableObject,
     handleDisableObject: crud.handleDisableObject,
     categoryNames: crud.categoryNames,
+
+    // Scanning & Sync Handlers
+    handleSync: scan.handleSync,
+    handleBackgroundSync: scan.handleBackgroundSync,
+    handleSyncWithDb: scan.handleSyncWithDb,
+    handleApplySyncMatch: scan.handleApplySyncMatch,
+
+    // Drop & Ingest Handlers
     handleDropOnItem: drop.handleDropOnItem,
     handleDropAutoOrganize: drop.handleDropAutoOrganize,
     handleDropNewObject: drop.handleDropNewObject,
     handleDropOnNewObjectSubmit: drop.handleDropOnNewObjectSubmit,
-    archiveModal: archive.archiveModal,
+
+    // Archive Handlers
     handleArchivesInteractively: archive.handleArchivesInteractively,
     handleArchiveExtractSubmit: archive.handleArchiveExtractSubmit,
     handleArchiveExtractSkip: archive.handleArchiveExtractSkip,
     handleStopExtraction: archive.handleStopExtraction,
 
-    // Bulk action handlers
-    bulkTagModal: bulk.bulkTagModal,
-    setBulkTagModal: bulk.setBulkTagModal,
+    // Bulk Action Handlers
     handleBulkDelete: bulk.handleBulkDelete,
     handleBulkPin: bulk.handleBulkPin,
     handleBulkEnable: bulk.handleBulkEnable,
@@ -116,5 +125,7 @@ export function useObjectListHandlers({
     handleBulkAddTags: bulk.handleBulkAddTags,
     handleBulkRemoveTags: bulk.handleBulkRemoveTags,
     handleBulkAutoOrganize: bulk.handleBulkAutoOrganize,
+    handleBulkFavorite: bulk.handleBulkFavorite,
+    handleBulkSafe: bulk.handleBulkSafe,
   };
 }

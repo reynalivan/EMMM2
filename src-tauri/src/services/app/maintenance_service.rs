@@ -8,17 +8,20 @@ use std::time::{Duration, SystemTime};
 
 use sqlx::SqlitePool;
 
-/// Run all maintenance tasks and return a human-readable summary string.
-pub async fn run_maintenance(pool: &SqlitePool, app_data_dir: &Path) -> Result<String, String> {
+/// Run all maintenance tasks and return counts of pruned/purged items.
+pub async fn run_maintenance_counts(
+    pool: &SqlitePool,
+    app_data_dir: &Path,
+) -> Result<(u64, u64), String> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
 
     // 1. Vacuum DB
-    crate::database::settings_repo::vacuum_database(pool)
+    crate::repo::settings_repo::vacuum_database(pool)
         .await
         .map_err(|e| format!("VACUUM failed: {}", e))?;
 
     // 2. Prune orphaned thumbnails
-    let valid_paths = crate::database::settings_repo::get_all_thumbnail_paths(pool)
+    let valid_paths = crate::repo::settings_repo::get_all_thumbnail_paths(pool)
         .await
         .map_err(|e| format!("Failed to fetch thumbnails: {}", e))?;
 
@@ -27,12 +30,12 @@ pub async fn run_maintenance(pool: &SqlitePool, app_data_dir: &Path) -> Result<S
 
     // 3. Purge empty trash entries older than 30 days
     let trash_dir = app_data_dir.join("trash");
-    let purged_trash_count = cleanup_old_empty_trash_entries(&trash_dir)?;
+    let purged_trash_count = cleanup_old_empty_trash_entries(&trash_dir).unwrap_or_else(|e| {
+        log::warn!("Trash cleanup failed: {}", e);
+        0
+    });
 
-    Ok(format!(
-        "Maintenance complete. Database optimized. Pruned {} thumbnails. Purged {} old empty trash entries.",
-        pruned_count, purged_trash_count
-    ))
+    Ok((pruned_count as u64, purged_trash_count))
 }
 
 pub fn cleanup_old_empty_trash_entries(trash_dir: &Path) -> Result<u64, String> {

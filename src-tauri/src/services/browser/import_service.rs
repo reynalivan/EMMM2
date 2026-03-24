@@ -10,7 +10,7 @@ use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationCo
 use crate::services::scanner::deep_matcher::{match_folder_phased, MasterDb};
 
 /// DTO returned to the frontend for import queue display.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct ImportJobDto {
     pub id: String,
     pub download_id: Option<String>,
@@ -735,7 +735,7 @@ mod tests {
         let pool = setup_db().await;
 
         // Insert a dummy download record
-        sqlx::query!("INSERT INTO browser_downloads (id, filename, started_at) VALUES ('dl-1', 'test.zip', '2025-01-01T00:00:00')")
+        sqlx::query!("INSERT INTO browser_downloads (id, filename, status, started_at) VALUES ('dl-1', 'test.zip', 'finished', '2025-01-01T00:00:00')")
             .execute(&pool).await.unwrap();
 
         let job_id = "job-1";
@@ -778,7 +778,7 @@ mod tests {
     async fn test_import_job_dedup_hash() {
         let pool = setup_db().await;
 
-        sqlx::query!("INSERT INTO browser_downloads (id, filename, started_at) VALUES ('dl-1', 'done.zip', '2025'), ('dl-2', 'new.zip', '2025')")
+        sqlx::query!("INSERT INTO browser_downloads (id, filename, status, started_at) VALUES ('dl-1', 'done.zip', 'finished', '2025'), ('dl-2', 'new.zip', 'finished', '2025')")
             .execute(&pool).await.unwrap();
 
         // Done job with hash

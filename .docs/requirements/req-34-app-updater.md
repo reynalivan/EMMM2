@@ -2,8 +2,8 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: EMMM2 must stay current on two separate tracks — app binary updates (bug fixes, new features) and dynamic schema/data assets (new game characters, resource pack databases) — without forcing users to re-download the full binary for data-only changes.
-- **Proposed Solution**: Two update pipelines: (1) `tauri-plugin-updater` v2 for binary app updates via GitHub Releases, with Ed25519 signature verification, a streamed progress modal, and user-confirmed install; (2) a dynamic asset sync that lazily fetches `schema.json`, `master_db.json`, and Resource Pack files per game from the EMMM2-Assets CDN using `reqwest` with `If-Modified-Since`/`ETag` caching headers, exponential backoff on failure, and atomic cache overwrites. Debug builds (`v0.0.0`) are ignored by update logic to protect developer environments.
+- **Problem Statement**: EMMM must stay current on two separate tracks — app binary updates (bug fixes, new features) and dynamic schema/data assets (new game characters, resource pack databases) — without forcing users to re-download the full binary for data-only changes.
+- **Proposed Solution**: Two update pipelines: (1) `tauri-plugin-updater` v2 for binary app updates via GitHub Releases, with Ed25519 signature verification, a streamed progress modal, and user-confirmed install; (2) a dynamic asset sync that lazily fetches `schema.json`, `master_db.json`, and Resource Pack files per game from the EMMM-Assets CDN using `reqwest` with `If-Modified-Since`/`ETag` caching headers, exponential backoff on failure, and atomic cache overwrites. Debug builds (`v0.0.0`) are ignored by update logic to protect developer environments.
 - **Success Criteria**:
   - Background update check completes within ≤ 5s of app start (non-blocking, `tokio` async task).
   - Metadata check adds ≤ 500ms to startup time.
@@ -40,16 +40,16 @@ As a user, I want the app to notify me when a new version is available and insta
 
 As a system, I want to lazily fetch game schemas and entity databases from CDN, so that the app binary stays small and new characters/games are supported without a binary update.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                   |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------ |
-| AC-34.2.1 | ✅ Positive | Given the app starts, it checks `manifest.json` on GitHub CDN using `If-Modified-Since`/`ETag` headers; only downloads if the remote version is newer — adds ≤ 500ms to startup                                                                            |
-| AC-34.2.2 | ✅ Positive | Given a user switches to a game whose `schema.json` is missing locally, then the app fetches it from `https://raw.githubusercontent.com/reynalivan/EMMM2-Assets/main/{game_id}/schema.json` in ≤ 3s; cached to `app_data_dir/assets/{game_id}/schema.json` |
-| AC-34.2.3 | ✅ Positive | Given the remote DB version is newer than local, then the new data is downloaded, parsed, and upserted into the SQLite `metadata` table — a "New Data Available" notification appears                                                                      |
-| AC-34.2.4 | ✅ Positive | Given Settings > Maintenance has a "Sync Assets" button, when clicked, then all schemas and resource packs for configured games are re-fetched in parallel (`rayon` per game_id) — results show `{ game_id, status: Ok                                     | Cached | Failed }` per game |
-| AC-34.2.5 | ❌ Negative | Given the GitHub API rate limit is hit (HTTP 429), then the request is retried with exponential backoff (1s → 2s → 4s, max 3 retries) — if all 3 retries fail, the cached version is used and a toast shows "Rate limited — using cached data"             |
-| AC-34.2.6 | ❌ Negative | Given the app is offline when fetching a schema, then the last cached version is used if present — if no cache exists, a bundled fallback schema is used and a warning banner shows "Could not fetch latest data — using bundled fallback"                 |
-| AC-34.2.7 | ⚠️ Edge     | Given the fetched `schema.json` fails JSON validation (malformed), then the previous cached version is kept intact — no overwrite of a valid cache with bad data; a toast shows "Asset sync failed: invalid schema format"                                 |
-| AC-34.2.8 | ⚠️ Edge     | Given the app is killed mid-download of a schema, then on next launch, the incomplete `.tmp` file is detected and deleted before fetching again — no stale partial JSON used as cache                                                                      |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                  |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------ |
+| AC-34.2.1 | ✅ Positive | Given the app starts, it checks `manifest.json` on GitHub CDN using `If-Modified-Since`/`ETag` headers; only downloads if the remote version is newer — adds ≤ 500ms to startup                                                                           |
+| AC-34.2.2 | ✅ Positive | Given a user switches to a game whose `schema.json` is missing locally, then the app fetches it from `https://raw.githubusercontent.com/reynalivan/EMMM-Assets/main/{game_id}/schema.json` in ≤ 3s; cached to `app_data_dir/assets/{game_id}/schema.json` |
+| AC-34.2.3 | ✅ Positive | Given the remote DB version is newer than local, then the new data is downloaded, parsed, and upserted into the SQLite `metadata` table — a "New Data Available" notification appears                                                                     |
+| AC-34.2.4 | ✅ Positive | Given Settings > Maintenance has a "Sync Assets" button, when clicked, then all schemas and resource packs for configured games are re-fetched in parallel (`rayon` per game_id) — results show `{ game_id, status: Ok                                    | Cached | Failed }` per game |
+| AC-34.2.5 | ❌ Negative | Given the GitHub API rate limit is hit (HTTP 429), then the request is retried with exponential backoff (1s → 2s → 4s, max 3 retries) — if all 3 retries fail, the cached version is used and a toast shows "Rate limited — using cached data"            |
+| AC-34.2.6 | ❌ Negative | Given the app is offline when fetching a schema, then the last cached version is used if present — if no cache exists, a bundled fallback schema is used and a warning banner shows "Could not fetch latest data — using bundled fallback"                |
+| AC-34.2.7 | ⚠️ Edge     | Given the fetched `schema.json` fails JSON validation (malformed), then the previous cached version is kept intact — no overwrite of a valid cache with bad data; a toast shows "Asset sync failed: invalid schema format"                                |
+| AC-34.2.8 | ⚠️ Edge     | Given the app is killed mid-download of a schema, then on next launch, the incomplete `.tmp` file is detected and deleted before fetching again — no stale partial JSON used as cache                                                                     |
 
 ---
 
@@ -70,7 +70,7 @@ As a user, I want missing game icons or UI assets to be fetched automatically wh
 - No downgrade / rollback of the binary — forward updates only.
 - No delta patching — full file replacement only.
 - No auto-install without user confirmation — always "Download and Install" button-gated.
-- Dynamic asset sync does not update game engine files (3DMigoto DLLs) — only EMMM2 data files.
+- Dynamic asset sync does not update game engine files (3DMigoto DLLs) — only EMMM data files.
 - No per-game binary updater — the single app binary serves all games.
 
 ---
@@ -101,7 +101,7 @@ Dynamic Asset Sync:
     for_each_game: fetch_game_schema(game_id) lazily
 
   fetch_game_schema(game_id) → Result<GameSchema>:
-    url = "https://raw.githubusercontent.com/reynalivan/EMMM2-Assets/main/{game_id}/schema.json"
+    url = "https://raw.githubusercontent.com/reynalivan/EMMM-Assets/main/{game_id}/schema.json"
     result = retry_with_backoff(max_retries=3, initial_delay=1s, factor=2x):
       reqwest::get(url).timeout(3s)
     if HTTP 429: exponential backoff

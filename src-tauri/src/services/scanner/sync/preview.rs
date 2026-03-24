@@ -52,7 +52,7 @@ pub async fn scan_preview(
 
         let folder_path_str = candidate.path.to_string_lossy().to_string();
 
-        let existing = crate::database::mod_repo::get_mod_id_and_object_id_by_path(
+        let existing = crate::repo::mod_repo::get_mod_id_and_object_id_by_path(
             pool,
             &folder_path_str,
             game_id,
@@ -84,12 +84,17 @@ pub async fn scan_preview(
             .as_ref()
             .and_then(|name| master_db.entries.iter().find(|e| &e.name == name));
 
-        let db_thumbnail = resolve_thumbnail(db_entry, None, resource_dir);
+        let raw_thumbnail = db_entry.and_then(|e| e.thumbnail_path.clone());
+        let db_thumbnail = resolve_thumbnail(game_id, mods_path, db_entry, None, resource_dir);
         let tags_json =
             db_entry.map(|e| serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".to_string()));
         let metadata_json = db_entry
             .and_then(|e| e.metadata.as_ref())
             .map(|m| serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()));
+        let hash_db_json = db_entry
+            .map(|e| serde_json::to_string(&e.hash_db).unwrap_or_else(|_| "{}".to_string()));
+        let custom_skins_json = db_entry
+            .map(|e| serde_json::to_string(&e.custom_skins).unwrap_or_else(|_| "[]".to_string()));
 
         if let Some(channel) = &on_progress {
             if let Some(ref matched) = matched_object {
@@ -126,6 +131,9 @@ pub async fn scan_preview(
             thumbnail_path: db_thumbnail,
             tags_json,
             metadata_json,
+            hash_db_json,
+            custom_skins_json,
+            db_thumbnail: raw_thumbnail,
             already_in_db,
             already_matched,
             scored_candidates,
@@ -157,7 +165,7 @@ async fn check_already_matched(
         return Ok(false);
     };
 
-    let obj_name = crate::database::object_repo::get_object_name_by_id(pool, id)
+    let obj_name = crate::repo::object_repo::get_object_name_by_id(pool, id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -172,6 +180,8 @@ async fn check_already_matched(
 }
 
 fn resolve_thumbnail(
+    _game_id: &str,
+    mods_path: &Path,
     db_entry: Option<&types::DbEntry>,
     detected_skin: Option<&String>,
     resource_dir: Option<&Path>,
@@ -200,7 +210,13 @@ fn resolve_thumbnail(
             None
         }
     } else {
-        Some(r)
+        // No resource_dir: use mods_path as fallback base for absolute path resolution.
+        let abs = mods_path.join(r);
+        if abs.exists() {
+            Some(abs.to_string_lossy().to_string())
+        } else {
+            None
+        }
     }
 }
 

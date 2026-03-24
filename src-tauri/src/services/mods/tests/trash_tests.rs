@@ -63,7 +63,10 @@ fn test_move_to_trash_nonexistent() {
     let (_tmp, _mods, trash) = setup_trash();
     let result = move_to_trash(Path::new("/nonexistent"), &trash, None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Source does not exist"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Source does not exist"));
 }
 
 #[test]
@@ -111,7 +114,7 @@ fn test_restore_conflict() {
 
     let result = restore_from_trash(&meta.id, &trash, None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already exists"));
+    assert!(result.unwrap_err().to_string().contains("already exists"));
 }
 
 #[test]
@@ -126,5 +129,5 @@ fn test_restore_context_mismatch() {
 
     let result = restore_from_trash(&meta.id, &trash, Some(&game2));
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Context mismatch"));
+    assert!(result.unwrap_err().to_string().contains("Context mismatch"));
 }

@@ -1,4 +1,4 @@
-import { type Ref, useMemo, useRef, useState } from 'react';
+import { memo, type Ref, useMemo, useRef, useState } from 'react';
 import {
   Component,
   Flame,
@@ -15,11 +15,11 @@ import {
   PowerOff,
   AlertTriangle,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ObjectSummary } from '../../types/object';
 import { cn, getFileUrl } from '../../lib/utils';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useThumbnail } from '../../hooks/useThumbnail';
-import { convertFileSrc } from '@tauri-apps/api/core';
 
 /** Element icon map for metadata display */
 const ELEMENT_ICONS: Record<string, typeof Flame> = {
@@ -62,7 +62,7 @@ interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
 }
 
-export default function ObjectRowItem({
+function ObjectRowItemInner({
   obj,
   isSelected,
   isMobile,
@@ -74,16 +74,21 @@ export default function ObjectRowItem({
   onToggleBulkSelect,
   ...rest
 }: ObjectRowItemProps) {
+  const { t } = useTranslation(['objects']);
   const { activeGame } = useActiveGame();
 
   // Dynamic thumbnail: resolve from physical folder (same as FolderGrid)
   const absFolderPath =
-    activeGame?.mod_path && obj.folder_path ? `${activeGame.mod_path}\\${obj.folder_path}` : null;
-  const { data: dynamicThumb } = useThumbnail(absFolderPath ?? '', !!absFolderPath);
+    activeGame?.mod_path && obj.folder_path ? `${activeGame.mod_path}/${obj.folder_path}` : null;
+  const { data: dynamicThumb } = useThumbnail(
+    activeGame?.id || '',
+    absFolderPath ?? '',
+    !!absFolderPath,
+  );
 
   // Fallback chain: dynamic folder scan → DB thumbnail_path (MasterDB) → null
   const thumbnailUrl = dynamicThumb
-    ? convertFileSrc(dynamicThumb)
+    ? dynamicThumb
     : obj.thumbnail_path
       ? getFileUrl(obj.thumbnail_path)
       : null;
@@ -171,16 +176,16 @@ export default function ObjectRowItem({
           {isDisabled && (
             <div
               data-testid="power-off-overlay"
-              className="absolute inset-0 flex items-center justify-center bg-black/45 rounded-xl pointer-events-none"
+              className="absolute inset-0 flex items-center justify-center bg-overlay-mask rounded-xl pointer-events-none"
             >
-              <PowerOff size={isMobile ? 18 : 15} className="text-white/75 drop-shadow" />
+              <PowerOff size={isMobile ? 18 : 15} className="text-base-content/75 drop-shadow" />
             </div>
           )}
           {/* Naming Conflict overlay (both X and DISABLED X exist) */}
           {obj.has_naming_conflict && (
             <div
               className="absolute inset-0 flex items-center justify-center bg-warning/20 rounded-xl pointer-events-none"
-              title="Naming conflict: both enabled and disabled versions exist"
+              title={t('item.conflict_tooltip')}
             >
               <AlertTriangle size={isMobile ? 16 : 13} className="text-warning drop-shadow" />
             </div>
@@ -245,7 +250,7 @@ export default function ObjectRowItem({
           {isDisabled && (
             <div className="absolute inset-y-0 left-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 pointer-events-none">
               <span className="font-bold text-[10px] text-error flex items-center gap-1 drop-shadow-sm uppercase tracking-wider">
-                <PowerOff size={10} /> Disabled
+                <PowerOff size={10} /> {t('item.disabled_overlay')}
               </span>
             </div>
           )}
@@ -267,7 +272,7 @@ export default function ObjectRowItem({
               <span className="truncate text-[11px]">{meta.path}</span>
             )}
             {meta.rarity ? (
-              <span className="flex items-center gap-0.5 text-amber-400/70">
+              <span className="flex items-center gap-0.5 text-warning/70">
                 <Star size={10} className="fill-current" />
                 <span className="text-[10px] tabular-nums">{meta.rarity}</span>
               </span>
@@ -278,14 +283,6 @@ export default function ObjectRowItem({
                 <span className="text-[10px]">{meta.gender}</span>
               </span>
             )}
-            {/* Fallback: mod count when no meaningful metadata */}
-            {!meta.element &&
-              !meta.weapon_type &&
-              !meta.rarity &&
-              !meta.path &&
-              (obj.mod_count > 0 ? (
-                <span className="text-[11px]">{obj.mod_count} mods</span>
-              ) : null)}
           </div>
         </div>
       </div>
@@ -297,3 +294,24 @@ export default function ObjectRowItem({
     </div>
   );
 }
+
+/**
+ * Fix 2: React.memo with custom comparator.
+ * Without this, toggling one item causes ALL rows to re-render.
+ * We compare only fields that affect visual output.
+ */
+export default memo(
+  ObjectRowItemInner,
+  (prev, next) =>
+    prev.obj.id === next.obj.id &&
+    prev.obj.status === next.obj.status &&
+    prev.obj.mod_count === next.obj.mod_count &&
+    prev.obj.enabled_count === next.obj.enabled_count &&
+    prev.obj.is_pinned === next.obj.is_pinned &&
+    prev.obj.has_naming_conflict === next.obj.has_naming_conflict &&
+    prev.obj.thumbnail_path === next.obj.thumbnail_path &&
+    prev.obj.metadata === next.obj.metadata &&
+    prev.isSelected === next.isSelected &&
+    prev.isDropTarget === next.isDropTarget &&
+    prev.isBulkSelected === next.isBulkSelected,
+);

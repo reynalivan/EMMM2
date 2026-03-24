@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { commands } from '../../lib/bindings';
 import { RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
 
 interface RandomizerModalProps {
@@ -13,11 +14,12 @@ interface RandomModProposal {
   object_name: string;
   mod_id: string;
   name: string;
-  thumbnail_path?: string;
+  thumbnail_path?: string | null;
   folder_path: string;
 }
 
 export default function RandomizerModal({ open, onClose, gameId }: RandomizerModalProps) {
+  const { t } = useTranslation('collections');
   const [proposals, setProposals] = useState<RandomModProposal[]>([]);
   const [selectedModIds, setSelectedModIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -32,7 +34,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     setError(null);
 
     try {
-      const res = await invoke<RandomModProposal[]>('suggest_random_mods', {
+      const res = await commands.suggestRandomMods({
         gameId,
         isSafe: safe,
       });
@@ -43,16 +45,14 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
         setSelectedModIds(new Set(res.map((r) => r.mod_id)));
       } else {
         setProposals([]);
-        setError(
-          'No eligible character mods found (check filters or ensure you have disabled mods).',
-        );
+        setError(t('randomizer.no_eligible'));
       }
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, [gameId, safe]);
+  }, [gameId, safe, t]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -96,11 +96,11 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
       const toApply = proposals.filter((p) => selectedModIds.has(p.mod_id));
 
       // We apply logic by calling enable_only_this sequentially.
-      // EMMM2's enable_only_this operates on object_id to disable siblings.
+      // EMMM's enable_only_this operates on object_id to disable siblings.
       for (const proposal of toApply) {
-        await invoke('enable_only_this', {
+        await commands.enableOnlyThis({
           gameId: gameId,
-          folderPath: proposal.folder_path,
+          targetPath: proposal.folder_path,
         });
       }
 
@@ -116,7 +116,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   const allSelected = proposals.length > 0 && selectedModIds.size === proposals.length;
 
   return (
-    <dialog ref={dialogRef} className="modal" onClose={onClose}>
+    <dialog ref={dialogRef} className="modal bg-overlay-mask backdrop-blur-sm" onClose={onClose}>
       <div className="modal-box w-11/12 max-w-2xl relative border border-base-300 overflow-hidden flex flex-col max-h-[90vh]">
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2 z-10"
@@ -127,9 +127,9 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
         </button>
 
         <div className="flex justify-between items-center mb-4 pr-8">
-          <h3 className="font-bold text-xl">Smart Randomizer</h3>
+          <h3 className="font-bold text-xl">{t('randomizer.title')}</h3>
           <label className="label cursor-pointer gap-2 py-0">
-            <span className="label-text text-sm">Safe Mode</span>
+            <span className="label-text text-sm">{t('randomizer.safe_mode')}</span>
             <input
               type="checkbox"
               className="toggle toggle-success toggle-sm"
@@ -140,28 +140,29 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
           </label>
         </div>
 
-        <p className="text-sm opacity-70 mb-4">
-          Recommends 1 random disabled mod for every active Character. Review and apply.
-        </p>
+        <p className="text-sm opacity-70 mb-4">{t('randomizer.desc')}</p>
 
         {error && <div className="alert alert-error text-sm py-2 mb-4">{error}</div>}
 
         {/* Proposals List */}
-        <div className="flex-1 overflow-y-auto bg-base-200/50 rounded-xl border border-base-300 p-2 min-h-[300px]">
+        <div className="flex-1 overflow-y-auto bg-base-200/50 rounded-xl border border-base-300 p-2 min-h-75">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 opacity-70">
               <span className="loading loading-spinner loading-lg text-primary"></span>
-              <p>Consulting the RNG Gods...</p>
+              <p>{t('randomizer.consulting')}</p>
             </div>
           ) : proposals.length > 0 ? (
             <div className="space-y-2">
               <div className="flex justify-between items-center px-2 py-1 bg-base-300/30 rounded-lg mb-2">
                 <button className="btn btn-xs btn-ghost gap-2" onClick={toggleAll}>
                   {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
-                  {allSelected ? 'Deselect All' : 'Select All'}
+                  {allSelected ? t('randomizer.deselect_all') : t('randomizer.select_all')}
                 </button>
                 <span className="text-xs opacity-60">
-                  {selectedModIds.size} of {proposals.length} selected
+                  {t('randomizer.selection_status', {
+                    selected: selectedModIds.size,
+                    total: proposals.length,
+                  })}
                 </span>
               </div>
 
@@ -196,7 +197,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-4 opacity-50">
               <RefreshCw size={48} className="opacity-20" />
-              <p className="text-sm">Click 'Roll Luck' to generate recommendations.</p>
+              <p className="text-sm">{t('randomizer.empty_desc')}</p>
             </div>
           )}
         </div>
@@ -209,7 +210,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
             disabled={loading || applying}
           >
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-            {proposals.length > 0 ? 'Reroll All' : 'Roll Luck'}
+            {proposals.length > 0 ? t('randomizer.reroll') : t('randomizer.roll')}
           </button>
 
           <button
@@ -218,7 +219,9 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
             disabled={!hasSelections || loading || applying}
           >
             {!applying && <Check size={18} />}
-            {applying ? 'Applying...' : `Apply (${selectedModIds.size})`}
+            {applying
+              ? t('randomizer.applying')
+              : t('randomizer.apply', { count: selectedModIds.size })}
           </button>
         </div>
       </div>

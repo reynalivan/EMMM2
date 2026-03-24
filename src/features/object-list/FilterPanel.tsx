@@ -6,6 +6,7 @@
 
 import { X } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FilterDef, CategoryDef } from '../../types/object';
 
 interface FilterPanelProps {
@@ -26,12 +27,6 @@ interface FilterPanelProps {
   onSortChange: (val: 'name' | 'date' | 'rarity') => void;
 }
 
-const SORT_OPTIONS: { value: 'name' | 'date' | 'rarity'; label: string }[] = [
-  { value: 'name', label: 'A–Z' },
-  { value: 'date', label: 'New' },
-  { value: 'rarity', label: '★' },
-];
-
 export default function FilterPanel({
   filters,
   activeFilters,
@@ -45,8 +40,18 @@ export default function FilterPanel({
   sortBy,
   onSortChange,
 }: FilterPanelProps) {
+  const { t } = useTranslation(['objects']);
   const [expandedFilter, setExpandedFilter] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const SORT_OPTIONS: { value: 'name' | 'date' | 'rarity'; label: string }[] = useMemo(
+    () => [
+      { value: 'name', label: t('filter.sort_az') },
+      { value: 'date', label: t('filter.sort_new') },
+      { value: 'rarity', label: t('filter.sort_rarity') },
+    ],
+    [t],
+  );
 
   const activeMetaCount = useMemo(
     () => Object.values(activeFilters).reduce((sum, arr) => sum + arr.length, 0),
@@ -72,7 +77,7 @@ export default function FilterPanel({
       {/* Section 1: Sort */}
       <div className="flex items-center gap-2">
         <span className="text-[10px] uppercase font-bold text-base-content/30 tracking-wider">
-          Sort
+          {t('filter.sort_label')}
         </span>
         <div className="flex items-center gap-1">
           {SORT_OPTIONS.map((opt) => (
@@ -81,7 +86,7 @@ export default function FilterPanel({
               className={`btn btn-xs rounded-md transition-all duration-150 ${
                 sortBy === opt.value
                   ? 'btn-accent text-accent-content'
-                  : 'btn-ghost border border-base-300/20 opacity-50 hover:opacity-100'
+                  : 'btn-ghost border border-base-content/10 opacity-50 hover:opacity-100'
               }`}
               onClick={() => onSortChange(opt.value)}
             >
@@ -95,7 +100,7 @@ export default function FilterPanel({
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] uppercase font-bold text-base-content/30 tracking-wider">
-            Filter
+            {t('filter.filter_label')}
           </span>
 
           {/* Status chips */}
@@ -114,7 +119,11 @@ export default function FilterPanel({
                 }`}
                 onClick={() => onStatusFilterChange(status)}
               >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {status === 'all'
+                  ? t('filter.status_all')
+                  : status === 'enabled'
+                    ? t('filter.status_active')
+                    : t('filter.status_disabled')}
               </button>
             ))}
           </div>
@@ -127,11 +136,11 @@ export default function FilterPanel({
               className={`btn btn-xs rounded-full transition-all duration-150 ${
                 !selectedCategory
                   ? 'btn-primary'
-                  : 'btn-ghost border border-base-300/20 opacity-60 hover:opacity-100'
+                  : 'btn-ghost border border-base-content/10 opacity-60 hover:opacity-100'
               }`}
               onClick={() => onSelectCategory(null)}
             >
-              All Types
+              {t('filter.all_types')}
             </button>
             {categories.map((cat) => (
               <button
@@ -139,7 +148,7 @@ export default function FilterPanel({
                 className={`btn btn-xs rounded-full transition-all duration-150 ${
                   selectedCategory === cat.name
                     ? 'btn-primary'
-                    : 'btn-ghost border border-base-300/20 opacity-60 hover:opacity-100'
+                    : 'btn-ghost border border-base-content/10 opacity-60 hover:opacity-100'
                 }`}
                 onClick={() => onSelectCategory(selectedCategory === cat.name ? null : cat.name)}
               >
@@ -176,14 +185,14 @@ export default function FilterPanel({
 
                   {/* Dropdown options */}
                   {isExpanded && (
-                    <div className="absolute top-full left-0 mt-1 z-50 p-1.5 rounded-lg bg-base-100/95 backdrop-blur-xl border border-white/10 shadow-xl min-w-40 max-h-52 overflow-y-auto">
+                    <div className="absolute top-full left-0 mt-1 z-50 p-1.5 rounded-lg bg-base-100/95 backdrop-blur-xl border border-base-content/10 shadow-xl min-w-40 max-h-52 overflow-y-auto">
                       {selected.length > 0 && (
                         <button
                           className="w-full text-left text-[10px] text-error/70 hover:text-error px-2 py-1 mb-0.5 transition-colors flex items-center gap-1"
                           onClick={() => onFilterChange(filter.key, [])}
                         >
                           <X size={10} />
-                          Clear {filter.label}
+                          {t('filter.clear_filter', { label: filter.label })}
                         </button>
                       )}
                       {filter.options.map((option) => {
@@ -225,7 +234,7 @@ export default function FilterPanel({
                 onClick={onClearAll}
               >
                 <X size={10} />
-                <span className="text-[11px]">Clear</span>
+                <span className="text-[11px]">{t('filter.clear_meta')}</span>
               </button>
             )}
           </div>

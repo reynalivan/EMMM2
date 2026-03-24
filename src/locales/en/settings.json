@@ -1,0 +1,291 @@
+{
+  "page": {
+    "title": "Settings",
+    "back": "Back"
+  },
+  "tabs": {
+    "general": "General",
+    "games": "Games",
+    "browser": "Browser & Import",
+    "privacy": "Privacy & Safe Mode",
+    "hotkeys": "Hotkeys & KeyViewer",
+    "ai": "AI Configuration",
+    "maintenance": "Maintenance",
+    "updates": "Updates",
+    "logs": "Logs"
+  },
+  "general": {
+    "appearance": {
+      "title": "Appearance",
+      "import": "Import Theme",
+      "theme_select": "Theme Selection",
+      "groups": {
+        "builtin": "Built-in",
+        "custom": "Custom Themes"
+      },
+      "custom_active": "Custom Theme Active",
+      "export": "Export",
+      "remove": "Remove",
+      "info": {
+        "title": "Theme Info",
+        "system": "System default will match your OS preference.",
+        "builtin": "Built-in: Optimized for maximum contrast.",
+        "custom": "Custom: Loaded from .json files in your app data folder."
+      },
+      "import_success": "Theme \"{{name}}\" imported successfully.",
+      "import_failed": "Import Failed: {{error}}",
+      "export_success": "Theme exported to {{name}}",
+      "export_failed": "Export Failed: {{error}}",
+      "delete_confirm": "Are you sure you want to delete this theme?",
+      "delete_success": "Theme deleted.",
+      "delete_failed": "Delete Failed: {{error}}",
+      "themes": {
+        "system": "System Default",
+        "onyx": "Dark (Onyx)",
+        "light": "Light"
+      }
+    },
+    "language": {
+      "title": "Language",
+      "label": "Select Language",
+      "options": {
+        "en": "English (US)",
+        "id": "Bahasa Indonesia",
+        "zh": "Chinese (Simplified)"
+      }
+    },
+    "behavior": {
+      "title": "App Behavior",
+      "auto_close": "Auto-Close on Launch",
+      "auto_close_desc": "Automatically close EMMM completely when you successfully launch a game."
+    },
+    "system": {
+      "title": "System Information",
+      "app_version": "App Version",
+      "tauri_version": "Tauri Version",
+      "database": "Database",
+      "engine": "Engine",
+      "db_val": "SQLite (SQLx)",
+      "engine_val": "Vite + React"
+    }
+  },
+  "games": {
+    "title": "Games Library",
+    "desc": "Manage your install locations and game configurations.",
+    "add": "Add Game",
+    "empty": "No games configured. Click \"Add Game\" to get started.",
+    "active": "ACTIVE",
+    "actions": {
+      "set_active": "Set as Active",
+      "rescan": "Rescan Library",
+      "edit": "Edit Game",
+      "remove": "Remove Game",
+      "scanning": "Scanning library for {{name}}...",
+      "scan_success": "Scan complete! Found {{new}} new mods and {{updated}} updates.",
+      "scan_failed": "Scan failed: {{error}}"
+    },
+    "delete_confirm": "Are you sure you want to remove this game configuration?",
+    "types": {
+      "gimi": "Genshin Impact",
+      "srmi": "Star Rail",
+      "zzmi": "ZZZ",
+      "wwmi": "Wuthering Waves",
+      "efmi": "Arknight Endfield"
+    },
+    "form": {
+      "title_add": "Add New Game",
+      "title_edit": "Edit Game",
+      "name_label": "Display Name",
+      "name_placeholder": "e.g. Genshin Impact",
+      "type_label": "Game Type",
+      "path_label": "Mods Folder Path",
+      "path_placeholder": "C:/Games/Genshin Impact/Mods",
+      "path_help": "Select the folder where you store your Mods.",
+      "exe_label": "Game Executable (.exe)",
+      "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
+      "advanced_title": "Advanced Options",
+      "loader_label": "3DMigoto Loader (Optional)",
+      "loader_placeholder": "3DMigoto Loader.exe",
+      "args_label": "Launch Arguments",
+      "args_placeholder": "-popupwindow",
+      "path_label_short": "Mods",
+      "exe_label_short": "Exe",
+      "browse": "Browse",
+      "save": "Save Changes",
+      "add_btn": "Add Game",
+      "validation": {
+        "name_required": "Name is required",
+        "path_required": "Mod path is required",
+        "path_invalid": "Path contains invalid characters",
+        "path_duplicate": "Already registered",
+        "exe_required": "Game executable is required",
+        "pick_folder_error": "Failed to pick folder",
+        "pick_file_error": "Failed to pick file",
+        "pick_folder_title": "Select Mod Folder",
+        "pick_exe_title": "Select Game Executable",
+        "pick_loader_title": "Select Loader Executable"
+      }
+    }
+  },
+  "ai": {
+    "title": "AI Intelligent Reranking",
+    "desc": "When enabled, EMMM will use an LLM via the provided OpenAI-compatible endpoint to attempt recovery of mod folders that were marked as \"Needs Review\" by the local scoring pipeline.",
+    "enable": "Enable AI Reranking",
+    "base_url": "API Provider Base URL",
+    "base_url_desc": "(Must be an OpenAI-compatible /v1/chat/completions endpoint)",
+    "api_key": "AI API Key",
+    "api_key_desc": "This key is stored locally and sent only to the configured base URL.",
+    "show_key": "Show Key",
+    "hide_key": "Hide Key",
+    "save": "Save Config",
+    "status": {
+      "loading": "Loading AI config...",
+      "enabled": "AI Reranking enabled",
+      "disabled": "AI Reranking disabled",
+      "saved": "AI configuration saved",
+      "save_failed": "Failed to save AI config: {{error}}",
+      "update_failed": "Failed to update toggle: {{error}}",
+      "placeholder_url": "https://api.openai.com/v1/chat/completions",
+      "placeholder_key": "sk-..."
+    }
+  },
+  "browser": {
+    "title": "Discover & Browser",
+    "homepage": "Homepage URL",
+    "homepage_desc": "The default page opened when you click Discover (must start with http/https).",
+    "reset": "Reset",
+    "import_title": "Smart Import Behavior",
+    "auto_analysis": "Enable Automatic Analysis",
+    "auto_analysis_desc": "When a mod finishes downloading, automatically extract and deep-match it. If disabled, imports must be started manually.",
+    "skip_picker": "Skip Game Picker (Single Game)",
+    "skip_picker_desc": "If you only have one game configured, skip the Game Picker modal and import instantly.",
+    "extensions": "Allowed Extensions",
+    "extensions_desc": "Comma-separated list of extensions the browser is allowed to download.",
+    "storage_title": "Storage & Retention",
+    "custom_dir": "Custom Downloads Directory",
+    "custom_dir_desc": "Leave empty to use the default app data location. Restart required if changed.",
+    "retention": "Retention Days",
+    "retention_desc": "How long to keep downloaded archives before automatic cleanup.",
+    "clear_downloads": "Clear Old Downloads Now",
+    "clearing": "Clearing...",
+    "clear_success": "Cleared {{count}} old downloads.",
+    "clear_failed": "Failed to clear downloads: {{error}}",
+    "homepage_success": "Homepage updated successfully",
+    "homepage_failed": "Failed to update homepage: {{error}}",
+    "placeholder_extensions": ".zip, .7z, .rar",
+    "placeholder_dir": "Default: AppData/EMMM/BrowserDownloads",
+    "days": "days"
+  },
+  "hotkeys": {
+    "title": "Global Hotkeys",
+    "enabled": "Enabled",
+    "desc": "System-wide keyboard shortcuts for quick actions while gaming. These shortcuts are intercepted when the game window is active.",
+    "cooldown": "Action Cooldown",
+    "cooldown_desc": "Prevent accidental double-trigger",
+    "conflicts_title": "Key Conflicts Detected",
+    "labels": {
+      "safe_mode": "Safe Mode (Panic Key)",
+      "next_preset": "Switch to Next Preset",
+      "prev_preset": "Switch to Previous Preset",
+      "toggle_overlay": "Toggle Overlay (Banner + KeyViewer)"
+    },
+    "viewer_title": "KeyViewer Overlay",
+    "auto_reload": "Auto-Reload",
+    "viewer_desc": "Automatically generates and manages in-game keybind lists based on the character/object currently detected via 3DMigoto hashes. Toggled along with the Status Banner using {{key}}.",
+    "infrastructure_title": "Runtime Infrastructure",
+    "infrastructure_desc": "Artifacts are managed in .emmm_data/. No user configuration required for deployment.",
+    "reset": "Reset All to Defaults",
+    "reset_success": "Hotkey settings reset to defaults.",
+    "save_failed": "Failed to save hotkey settings: {{error}}",
+    "viewer_save_failed": "Failed to save KeyViewer settings: {{error}}",
+    "reset_tip": "Reset to default",
+    "conflicts": {
+      "share_key": "share key",
+      "and": "and",
+      "message": "{{label1}} and {{label2}} share key \"{{key}}\""
+    }
+  },
+  "maintenance": {
+    "open_optimizer": "Open Optimizer",
+    "retention_title": "Storage Retention",
+    "trash_title": "Trash Management",
+    "trash_desc": "Permanently remove deleted mods to free up disk space.",
+    "empty_trash": "Empty Trash",
+    "trash_confirm": "Are you sure you want to permanently delete all items in the Trash?",
+    "trash_success": "Trash Emptied: All items deleted.",
+    "system_title": "System Maintenance",
+    "system_desc": "Run automated cleanup tasks, verify database integrity, and prune orphaned metadata.",
+    "run_maintenance": "Run Maintenance",
+    "cache_title": "Clear Image Cache",
+    "cache_desc": "Remove old generated thumbnails (older than 30 days) to save space. They will be regenerated as needed.",
+    "clear_cache": "Clear Old Cache",
+    "clear_failed": "Failed to clear cache: {{error}}",
+    "danger_title": "Reset Application Setup",
+    "danger_desc": "Clear all game registrations, mod metadata, and settings from the database. The application will return to the initial setup screen. A backup of the database will be saved to the trash folder.",
+    "danger_info": "Your mod files and folders on disk will not be deleted.",
+    "reset_btn": "Reset & Re-Setup",
+    "modal_title": "Are you sure?",
+    "modal_body": "This will clear all game registrations, mod metadata, collections, and settings from the database. A backup will be saved to the trash folder before clearing.",
+    "modal_error": "You will need to set up the application again.",
+    "confirm_reset": "Yes, Reset Everything",
+    "reset_success": "Database reset. Redirecting to setup...",
+    "reset_failed": "Reset Failed: {{error}}"
+  },
+  "update": {
+    "title": "Application Updates",
+    "current_version": "Current version: v{{version}}",
+    "available": "Update Available: v{{version}}",
+    "latest": "You are on the latest version.",
+    "checking": "Checking...",
+    "check_btn": "Check for Updates",
+    "install_btn": "Install & Restart",
+    "downloading": "Downloading... {{downloaded}} / {{total}}",
+    "metadata_title": "Metadata Sync",
+    "metadata_desc": "Synchronize character and weapon databases from the remote server. This happens automatically on startup but can also be triggered manually.",
+    "sync_btn": "Sync Now",
+    "syncing": "Syncing...",
+    "sync_success": "Metadata updated to version {{version}}",
+    "sync_up_to_date": "Metadata already up-to-date.",
+    "sync_failed": "Metadata sync failed: {{error}}"
+  },
+  "privacy": {
+    "title": "Corridor & Safe Mode",
+    "desc": "Safe Mode (Corridor) hides sensitive mods from the UI. Transitioning out of Safe Mode requires a PIN check if configured.",
+    "keywords_title": "Hidden Keywords",
+    "keywords_placeholder": "e.g. skin, lewd, bikini",
+    "keywords_add": "Add Keyword",
+    "keywords_empty": "No hidden keywords configured.",
+    "keywords_exists": "Keyword already exists",
+    "keywords_update_failed": "Failed to update keywords: {{error}}",
+    "protection_title": "Force Exclusive Mode",
+    "protection_desc": "When enabled, mods not matching the current corridor's whitelist will be forcefully disabled on launch.",
+    "protection_update_failed": "Failed to update protection: {{error}}",
+    "security_title": "PIN & Recovery",
+    "security_status_set": "PIN protection is ACTIVE.",
+    "security_status_none": "No PIN set. Transitioning is unprotected.",
+    "security_recovery_configured": "Recovery Code Configured",
+    "security_remove": "Remove PIN",
+    "security_change": "Change PIN",
+    "security_set": "Set PIN",
+    "security_modal_set_title": "Set Security PIN",
+    "security_modal_unlock_title": "Unlock PIN Protection",
+    "security_modal_set_desc": "Creating a PIN will protect transitions and sensitive settings.",
+    "security_modal_unlock_desc": "Enter your current PIN to continue."
+  },
+  "logs": {
+    "title": "System Logs",
+    "desc": "Recent application logs for troubleshooting.",
+    "filter_label": "Filter logs by level",
+    "levels": {
+      "all": "All",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
+    "refresh": "Refresh",
+    "open_folder": "Open Folder",
+    "empty": "No log entries match the selected level.",
+    "load_failed": "Failed to load logs: {{error}}",
+    "folder_failed": "Failed to open log folder: {{error}}"
+  }
+}

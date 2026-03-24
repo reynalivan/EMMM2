@@ -1,0 +1,49 @@
+{
+  "settings": {
+    "general": {
+      "language": "界面语言",
+      "language_hint": "目前仅支持英文。",
+      "select_language": "选择语言",
+      "save_success": "设置保存成功",
+      "save_error": "保存设置失败"
+    }
+  },
+  "date": {
+    "unknown": "未知",
+    "just_now": "刚刚",
+    "mins_ago": "{{count}}分钟前",
+    "hours_ago": "{{count}}小时前",
+    "days_ago": "{{count}}天前"
+  },
+  "actions": {
+    "back": "返回",
+    "cancel": "取消",
+    "confirm": "确认",
+    "save": "保存",
+    "delete": "删除",
+    "close": "关闭",
+    "reload_app": "重新加载应用程序",
+    "remove": "移除 {{item}}",
+    "save_changes": "保存更改",
+    "retry": "重试"
+  },
+  "action": {
+    "back": "返回",
+    "cancel": "取消",
+    "confirm": "确认",
+    "save": "保存",
+    "delete": "删除",
+    "close": "关闭"
+  },
+  "errors": {
+    "no_active_game": "未选择活动游戏",
+    "scan_failed": "扫描失败",
+    "unknown": "发生了未知错误",
+    "unexpected": "发生了意外错误。",
+    "boundary_title": "出错了",
+    "validation": {
+      "required": "此字段必填",
+      "invalid": "无效输入"
+    }
+  }
+}

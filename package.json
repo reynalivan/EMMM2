@@ -1,5 +1,5 @@
 {
-  "name": "emmm2",
+  "name": "emmm",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -33,11 +33,15 @@
     "@tauri-apps/plugin-updater": "^2.10.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
+    "i18next": "^25.10.5",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "i18next-resources-to-backend": "^1.2.1",
     "lucide-react": "^0.564.0",
     "motion": "^12.34.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.71.1",
+    "react-i18next": "^16.6.3",
     "react-router-dom": "^7.13.0",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.4.1",
@@ -83,6 +87,7 @@
   },
   "pnpm": {
     "overrides": {
+      "lightningcss": "^1.32.0",
       "rollup": ">=4.59.0",
       "minimatch": ">=10.2.3",
       "serialize-javascript": ">=7.0.3"

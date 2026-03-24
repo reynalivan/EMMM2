@@ -9,6 +9,7 @@ import SyncConfirmModal from './SyncConfirmModal';
 import CreateObjectModal from './CreateObjectModal';
 import ScanReviewModal from './ScanReviewModal';
 import AutoSetupModal from './AutoSetupModal';
+import { useTranslation } from 'react-i18next';
 import type { ObjectSummary } from '../../types/object';
 import type { MatchedDbEntry } from './SyncConfirmModal';
 import type { ScanPreviewItem, ConfirmedScanItem } from '../../lib/services/scanService';
@@ -75,6 +76,10 @@ interface ModalsProps {
   deleteObjectDialog: { open: boolean; id: string; name: string };
   onConfirmDeleteObject: () => void;
   onCancelDeleteObject: () => void;
+  /* Force Delete Object dialog */
+  forceDeleteObjectDialog: { open: boolean; id: string; name: string; count: number };
+  onConfirmForceDeleteObject: () => void;
+  onCancelForceDeleteObject: () => void;
   /* Mismatch Auto-Organize confirm */
   mismatchConfirm: string[] | null;
   onConfirmMismatchHandler: () => void;
@@ -104,19 +109,28 @@ export default function ObjectListModals({
   deleteObjectDialog,
   onConfirmDeleteObject,
   onCancelDeleteObject,
+  forceDeleteObjectDialog,
+  onConfirmForceDeleteObject,
+  onCancelForceDeleteObject,
   mismatchConfirm,
   onConfirmMismatchHandler,
   onCancelMismatchHandler,
 }: ModalsProps) {
+  const { t } = useTranslation(['objects', 'common']);
+
   return (
     <>
       {/* NC-3.3-02: Delete confirmation dialog */}
       <ConfirmDialog
         open={deleteDialog.open}
-        title="Delete Folder?"
-        message={`"${deleteDialog.name}" contains ${deleteDialog.itemCount} item${deleteDialog.itemCount !== 1 ? 's' : ''}. This will move everything to trash.`}
-        confirmLabel="Move to Trash"
-        cancelLabel="Cancel"
+        title={t('delete_dialog.title_folder')}
+        message={t('delete_dialog.message_folder', {
+          name: deleteDialog.name,
+          count: deleteDialog.itemCount,
+          suffix: deleteDialog.itemCount === 1 ? '' : 's',
+        })}
+        confirmLabel={t('delete_dialog.confirm')}
+        cancelLabel={t('common:actions.cancel')}
         danger
         onConfirm={onConfirmDelete}
         onCancel={onCancelDelete}
@@ -162,22 +176,41 @@ export default function ObjectListModals({
       {/* Delete Object confirmation dialog */}
       <ConfirmDialog
         open={deleteObjectDialog.open}
-        title="Delete Object?"
-        message={`Delete "${deleteObjectDialog.name}"? The folder and its contents will be moved to trash.`}
-        confirmLabel="Move to Trash"
-        cancelLabel="Cancel"
+        title={t('delete_dialog.title_object')}
+        message={t('delete_dialog.message_object', { name: deleteObjectDialog.name })}
+        confirmLabel={t('delete_dialog.confirm')}
+        cancelLabel={t('common:actions.cancel')}
         danger
         onConfirm={onConfirmDeleteObject}
         onCancel={onCancelDeleteObject}
       />
 
+      {/* Secondary confirmation dialog when object contains mods */}
+      <ConfirmDialog
+        open={forceDeleteObjectDialog.open}
+        title={t('delete_dialog.title_mods')}
+        message={t('delete_dialog.message_mods', {
+          name: forceDeleteObjectDialog.name,
+          count: forceDeleteObjectDialog.count,
+          suffix: forceDeleteObjectDialog.count === 1 ? '' : 's',
+        })}
+        confirmLabel={t('delete_dialog.confirm_mods', {
+          count: forceDeleteObjectDialog.count,
+          suffix: forceDeleteObjectDialog.count === 1 ? '' : 's',
+        })}
+        cancelLabel={t('common:actions.cancel')}
+        danger
+        onConfirm={onConfirmForceDeleteObject}
+        onCancel={onCancelForceDeleteObject}
+      />
+
       {/* Mismatch Auto-Organize confirmation dialog */}
       <ConfirmDialog
         open={!!mismatchConfirm}
-        title="Auto-Organize Mismatches?"
-        message={`Are you sure you want to let the system auto-organize ${mismatchConfirm?.length || 0} folder(s)? This will move them to their best matched Object.`}
-        confirmLabel="Auto-Organize"
-        cancelLabel="Cancel"
+        title={t('auto_organize.dialog_title')}
+        message={t('auto_organize.dialog_message', { count: mismatchConfirm?.length || 0 })}
+        confirmLabel={t('auto_organize.confirm')}
+        cancelLabel={t('common:actions.cancel')}
         onConfirm={onConfirmMismatchHandler}
         onCancel={onCancelMismatchHandler}
       />

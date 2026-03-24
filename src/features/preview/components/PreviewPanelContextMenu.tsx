@@ -47,7 +47,7 @@ export default function PreviewPanelContextMenu({
       </div>
       <ul
         tabIndex={0}
-        className="dropdown-content z-100 menu p-2 shadow-xl bg-base-100/95 backdrop-blur-xl rounded-box w-56 border border-white/10 mt-2"
+        className="dropdown-content z-100 menu p-2 shadow-xl bg-base-100/95 backdrop-blur-xl rounded-box w-56 border border-base-content/10 mt-2"
       >
         {items.map((item) => {
           if (item.hidden) return null;

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '../../../testing/test-utils';
 import DuplicateTable from './DuplicateTable';
-import type { DupScanGroup } from '../../../types/dedup';
+import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
 
 describe('DuplicateTable', () => {
   const mockGroups: DupScanGroup[] = [
@@ -16,6 +16,7 @@ describe('DuplicateTable', () => {
       confidenceScore: 95,
       matchReason: 'Perfect hash match',
       signals: [{ key: 'hash', detail: 'BLAKE3 collision', score: 100 }],
+      isUnsafe: false,
       members: [
         {
           folderPath: '/path/mod-a',
@@ -24,6 +25,8 @@ describe('DuplicateTable', () => {
           fileCount: 10,
           confidenceScore: 95,
           signals: [],
+          modId: null,
+          isSafe: false,
         },
         {
           folderPath: '/path/mod-b',
@@ -32,6 +35,8 @@ describe('DuplicateTable', () => {
           fileCount: 10,
           confidenceScore: 95,
           signals: [],
+          modId: null,
+          isSafe: false,
         },
       ],
     },
@@ -43,6 +48,7 @@ describe('DuplicateTable', () => {
         { key: 'name_similarity', detail: 'Levenshtein distance', score: 85 },
         { key: 'file_count', detail: 'Same file count', score: 80 },
       ],
+      isUnsafe: false,
       members: [
         {
           folderPath: '/path/mod-c',
@@ -51,14 +57,18 @@ describe('DuplicateTable', () => {
           fileCount: 20,
           confidenceScore: 85,
           signals: [],
+          modId: null,
+          isSafe: false,
         },
         {
           folderPath: '/path/mod-d',
           displayName: 'Mod D',
-          totalSizeBytes: 4096,
-          fileCount: 20,
+          totalSizeBytes: 2048,
+          fileCount: 10,
           confidenceScore: 85,
           signals: [],
+          modId: null,
+          isSafe: false,
         },
       ],
     },
@@ -165,8 +175,8 @@ describe('DuplicateTable', () => {
     });
   });
 
-  describe('Radio Button Groups', () => {
-    it('renders radio buttons for each group as a radiogroup', () => {
+  describe('Dropdown Controls', () => {
+    it('renders a select dropdown for each group', () => {
       const onSelectionChange = vi.fn();
 
       render(
@@ -177,11 +187,11 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const radioGroups = screen.getAllByRole('radiogroup');
-      expect(radioGroups.length).toBeGreaterThanOrEqual(2);
+      const selects = screen.getAllByRole('combobox', { name: /Resolution Action/i });
+      expect(selects).toHaveLength(2);
     });
 
-    it('displays Keep A, Keep B, and Ignore radio buttons', () => {
+    it('contains options for each member in the group', () => {
       const onSelectionChange = vi.fn();
 
       render(
@@ -192,35 +202,13 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      expect(screen.getAllByText('Keep A')).toHaveLength(1);
-      expect(screen.getAllByText('Keep B')).toHaveLength(1);
-      expect(screen.getAllByText('Ignore')).toHaveLength(1);
-    });
-
-    it('has sr-only hidden radio inputs with accessibility labels', () => {
-      const onSelectionChange = vi.fn();
-
-      render(
-        <DuplicateTable
-          groups={mockGroups.slice(0, 1)}
-          selections={new Map()}
-          onSelectionChange={onSelectionChange}
-        />,
-      );
-
-      const radioInputs = screen.getAllByRole('radio');
-      expect(radioInputs.length).toBeGreaterThanOrEqual(3);
-
-      // Check that inputs have aria-labels
-      const keepAInput = radioInputs.find(
-        (r) => (r as HTMLInputElement).getAttribute('aria-label') === 'Keep A, delete B',
-      );
-      expect(keepAInput).toBeTruthy();
+      expect(screen.getByText('Keep A: Mod A - Original')).toBeInTheDocument();
+      expect(screen.getByText('Keep B: Mod B - Duplicate')).toBeInTheDocument();
     });
   });
 
   describe('Selection tracking', () => {
-    it('calls onSelectionChange when Keep A is clicked', () => {
+    it('calls onSelectionChange when a member is selected to be kept', () => {
       const onSelectionChange = vi.fn();
 
       render(
@@ -231,13 +219,16 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const keepAButtons = screen.getAllByText('Keep A');
-      fireEvent.click(keepAButtons[0]);
+      const select = screen.getByRole('combobox', { name: /Resolution Action/i });
+      fireEvent.change(select, { target: { value: '/path/mod-a' } });
 
-      expect(onSelectionChange).toHaveBeenCalledWith('group-1', 'KeepA');
+      expect(onSelectionChange).toHaveBeenCalledWith('group-1', {
+        type: 'Keep',
+        targetPath: '/path/mod-a',
+      });
     });
 
-    it('calls onSelectionChange when Keep B is clicked', () => {
+    it('calls onSelectionChange when Ignore is selected', () => {
       const onSelectionChange = vi.fn();
 
       render(
@@ -248,32 +239,17 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const keepBButtons = screen.getAllByText('Keep B');
-      fireEvent.click(keepBButtons[0]);
+      const select = screen.getByRole('combobox', { name: /Resolution Action/i });
+      fireEvent.change(select, { target: { value: 'ignore' } });
 
-      expect(onSelectionChange).toHaveBeenCalledWith('group-1', 'KeepB');
+      expect(onSelectionChange).toHaveBeenCalledWith('group-1', { type: 'Ignore' });
     });
 
-    it('calls onSelectionChange when Ignore is clicked', () => {
+    it('highlights selected member row when Keep is active', () => {
       const onSelectionChange = vi.fn();
-
-      render(
-        <DuplicateTable
-          groups={mockGroups.slice(0, 1)}
-          selections={new Map()}
-          onSelectionChange={onSelectionChange}
-        />,
-      );
-
-      const ignoreButtons = screen.getAllByText('Ignore');
-      fireEvent.click(ignoreButtons[0]);
-
-      expect(onSelectionChange).toHaveBeenCalledWith('group-1', 'Ignore');
-    });
-
-    it('highlights selected action button', () => {
-      const onSelectionChange = vi.fn();
-      const selections = new Map<string, 'KeepA' | 'KeepB' | 'Ignore'>([['group-1', 'KeepA']]);
+      const selections = new Map<string, ResolutionAction>([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
+      ]);
 
       render(
         <DuplicateTable
@@ -283,15 +259,14 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      // The button should have btn-primary class when selected
-      // We check that it's been rendered in a selected state
-      const buttons = screen.getAllByText('Keep A');
-      expect(buttons.length).toBeGreaterThan(0);
+      // We check for the visual indicator (CheckCircle for keep, Trash2 for others)
+      expect(screen.getByTestId('check-circle-icon')).toBeInTheDocument();
+      expect(screen.getByTestId('trash-icon')).toBeInTheDocument();
     });
   });
 
   describe('Disabled state', () => {
-    it('disables all radio inputs when disabled prop is true', () => {
+    it('disables select dropdown when disabled prop is true', () => {
       const onSelectionChange = vi.fn();
 
       render(
@@ -303,29 +278,13 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const radioInputs = screen.getAllByRole('radio') as HTMLInputElement[];
-      expect(radioInputs.every((r) => r.disabled)).toBe(true);
-    });
-
-    it('does not disable inputs when disabled prop is false', () => {
-      const onSelectionChange = vi.fn();
-
-      render(
-        <DuplicateTable
-          groups={mockGroups.slice(0, 1)}
-          selections={new Map()}
-          onSelectionChange={onSelectionChange}
-          disabled={false}
-        />,
-      );
-
-      const radioInputs = screen.getAllByRole('radio') as HTMLInputElement[];
-      expect(radioInputs.some((r) => !r.disabled)).toBe(true);
+      const select = screen.getByRole('combobox', { name: /Resolution Action/i });
+      expect(select).toBeDisabled();
     });
   });
 
-  describe('Multi-member group handling', () => {
-    it('shows warning for groups with more than 2 members', () => {
+  describe('Multi-member group support', () => {
+    it('renders all members for groups with 3+ items', () => {
       const multiMemberGroup: DupScanGroup = {
         ...mockGroups[0],
         groupId: 'group-multi',
@@ -338,6 +297,8 @@ describe('DuplicateTable', () => {
             fileCount: 10,
             confidenceScore: 95,
             signals: [],
+            modId: null,
+            isSafe: true,
           },
         ],
       };
@@ -352,46 +313,15 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      expect(screen.getByText(/Multi-member groups not supported/i)).toBeInTheDocument();
-      expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-    });
+      expect(screen.getByText('Mod A - Original')).toBeInTheDocument();
+      expect(screen.getByText('Mod B - Duplicate')).toBeInTheDocument();
+      expect(screen.getByText('Mod E')).toBeInTheDocument();
 
-    it('shows overflow indicator for groups with more than 2 members', () => {
-      const multiMemberGroup: DupScanGroup = {
-        ...mockGroups[0],
-        groupId: 'group-multi',
-        members: [
-          ...mockGroups[0].members,
-          {
-            folderPath: '/path/mod-e',
-            displayName: 'Mod E',
-            totalSizeBytes: 2048,
-            fileCount: 10,
-            confidenceScore: 95,
-            signals: [],
-          },
-          {
-            folderPath: '/path/mod-f',
-            displayName: 'Mod F',
-            totalSizeBytes: 2048,
-            fileCount: 10,
-            confidenceScore: 95,
-            signals: [],
-          },
-        ],
-      };
+      fireEvent.change(screen.getByRole('combobox', { name: /Resolution Action/i }), {
+        target: { value: '/path/mod-e' },
+      });
 
-      const onSelectionChange = vi.fn();
-
-      render(
-        <DuplicateTable
-          groups={[multiMemberGroup]}
-          selections={new Map()}
-          onSelectionChange={onSelectionChange}
-        />,
-      );
-
-      expect(screen.getByText(/\+2 more/)).toBeInTheDocument();
+      expect(screen.getByText('Keep C: Mod E')).toBeInTheDocument();
     });
   });
 });

@@ -53,13 +53,13 @@ fn details_command_rejects_path_escape() {
     fs::write(&outside, "[Constants]\n$x = 1\n").unwrap();
 
     let err = read_mod_ini_inner(&mod_dir, "..\\outside.ini").unwrap_err();
-    assert!(err.contains("Invalid INI filename path"));
+    assert!(err.to_string().contains("Invalid INI filename path"));
 
     let err2 = read_mod_ini_inner(&mod_dir, "desktop.ini").unwrap_err();
-    assert!(err2.contains("desktop.ini"));
+    assert!(err2.to_string().contains("desktop.ini"));
 
     let err3 = read_mod_ini_inner(&mod_dir, "notes.txt").unwrap_err();
-    assert!(err3.contains("Only .ini files"));
+    assert!(err3.to_string().contains("Only .ini files"));
 }
 
 // Covers: EC-6.06 (Operation lock for INI writes)
@@ -84,8 +84,10 @@ async fn details_command_write_respects_operation_lock() {
     )
     .await;
 
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Operation in progress"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Operation in progress"));
 }
 
 #[test]

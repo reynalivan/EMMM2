@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, ShieldAlert, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CollectionModRow } from './CollectionModRow';
 import { type GroupedMod } from '../utils/groupMods';
 
@@ -22,8 +23,9 @@ export function ModGroupList({
   resetKey,
   expansionMode,
 }: ModGroupListProps) {
-  const resolvedEmptyGroupMessage = emptyGroupMessage ?? 'No mods in this object.';
-  const resolvedEmptyStateMessage = emptyStateMessage ?? 'No mods in this state';
+  const { t } = useTranslation('collections');
+  const resolvedEmptyGroupMessage = emptyGroupMessage ?? t('list.item.mod_count', { count: 0 });
+  const resolvedEmptyStateMessage = emptyStateMessage ?? t('preview.empty');
   const groupIdsKey = useMemo(() => groups.map((group) => group.id).join('|'), [groups]);
   const defaultExpanded = useMemo(() => new Set(groups.map((group) => group.id)), [groups]);
   const [expanded, setExpanded] = useState<Set<string>>(defaultExpanded);
@@ -50,7 +52,7 @@ export function ModGroupList({
 
   if (groups.length === 0) {
     return (
-      <div className="text-center p-4 text-sm text-base-content/40 border border-white/5 border-dashed rounded-lg bg-base-100/10">
+      <div className="text-center p-4 text-sm text-base-content/40 border border-base-content/5 border-dashed rounded-lg bg-base-content/5">
         {resolvedEmptyStateMessage}
       </div>
     );
@@ -63,7 +65,7 @@ export function ModGroupList({
         return (
           <div
             key={obj.id}
-            className="border border-white/5 rounded-lg overflow-hidden bg-base-100/30"
+            className="border border-base-content/5 rounded-lg overflow-hidden bg-base-content/5"
           >
             <div className="w-full flex items-center justify-between px-3 py-2 hover:bg-base-300/30 transition-colors">
               <button
@@ -84,7 +86,7 @@ export function ModGroupList({
                     type="checkbox"
                     className="toggle toggle-xs toggle-primary"
                     checked={obj.is_enabled}
-                    disabled={!obj.is_editable}
+                    disabled={false}
                     onChange={() => onToggleObjectState(obj.id)}
                   />
                 )}
@@ -93,10 +95,12 @@ export function ModGroupList({
                     className={`badge badge-xs ${obj.is_enabled ? 'badge-success' : 'badge-neutral'} gap-1`}
                   >
                     {!obj.is_enabled && <EyeOff size={10} />}
-                    {obj.is_enabled ? 'Enabled' : 'Disabled'}
+                    {obj.is_enabled ? t('common:status.enabled') : t('common:status.disabled')}
                   </span>
                 )}
-                <span className={`text-[10px] ${colorClass}`}>{obj.mods.length} mods</span>
+                <span className={`text-[10px] ${colorClass}`}>
+                  {t('list.item.mod_count', { count: obj.mods.length })}
+                </span>
                 {obj.unsafeCount > 0 && (
                   <span className="flex items-center gap-0.5 text-[10px] text-error/70">
                     <ShieldAlert size={10} />
@@ -106,9 +110,9 @@ export function ModGroupList({
               </div>
             </div>
             {isExpanded && (
-              <div className="border-t border-white/5 py-1 px-1">
+              <div className="border-t border-base-content/5 py-1 px-1">
                 {obj.mods.length > 0 ? (
-                  obj.mods.map((mod) => <CollectionModRow key={mod.id} mod={mod} />)
+                  obj.mods.map((mod) => <CollectionModRow key={mod.path_key} mod={mod} />)
                 ) : (
                   <div className="px-3 py-3 text-xs text-base-content/45 italic">
                     {resolvedEmptyGroupMessage}

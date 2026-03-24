@@ -11,12 +11,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
-use std::time::Duration;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::services::config::ConfigService;
+
 use crate::services::keyviewer::generator::StatusFields;
 
 use super::actions::{self, ActionResult, CycleDirection};
@@ -58,9 +58,9 @@ fn build_registration(config: &HotkeyConfig) -> Result<Vec<(String, HotkeyAction
         (HotkeyAction::ToggleSafeMode, &config.toggle_safe_mode),
         (HotkeyAction::NextPreset, &config.next_preset),
         (HotkeyAction::PrevPreset, &config.prev_preset),
+        (HotkeyAction::ToggleOverlay, &config.toggle_overlay),
         (HotkeyAction::NextVariantFolder, &config.next_variant),
         (HotkeyAction::PrevVariantFolder, &config.prev_variant),
-        (HotkeyAction::ToggleOverlay, &config.toggle_overlay),
     ];
 
     let mut entries = Vec::new();
@@ -212,7 +212,7 @@ impl HotkeyManager {
             return;
         }
 
-        if settings.hotkeys.game_focus_only && !focus::is_active_game_focused(&settings) {
+        if !focus::is_active_game_focused(&settings) {
             return;
         }
 
@@ -271,42 +271,8 @@ impl HotkeyManager {
             return;
         }
 
-        if matches!(
-            action,
-            HotkeyAction::NextVariantFolder | HotkeyAction::PrevVariantFolder
-        ) {
-            if !self.try_acquire() {
-                log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
-                return;
-            }
-
-            let app_handle = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let result = match action {
-                    HotkeyAction::NextVariantFolder => {
-                        execute_cycle_variant(&app_handle, CycleDirection::Next).await
-                    }
-                    HotkeyAction::PrevVariantFolder => {
-                        execute_cycle_variant(&app_handle, CycleDirection::Previous).await
-                    }
-                    _ => unreachable!("guarded by matches!"),
-                };
-
-                match result {
-                    Ok(summary) => log::info!("Hotkey {:?} → {}", action, summary),
-                    Err(e) => log::error!("Variant cycle hotkey {:?} failed: {e}", action),
-                }
-
-                if let Some(hotkey_manager) = app_handle.try_state::<HotkeyManager>() {
-                    hotkey_manager.inner().release();
-                }
-            });
-
-            return;
-        }
-
         let safe_mode = settings.safe_mode.enabled;
-        if let Some(result) = self.dispatch_action(action, safe_mode, None, &[], 0, 0) {
+        if let Some(result) = self.dispatch_action(action, safe_mode, None, &[]) {
             log::info!("Hotkey {:?} → {}", action, result.summary);
         }
     }
@@ -320,8 +286,6 @@ impl HotkeyManager {
         safe_mode: bool,
         current_preset: Option<&str>,
         available_presets: &[String],
-        folder_count: usize,
-        current_folder_index: usize,
     ) -> Option<ActionResult> {
         if !self.is_enabled() {
             return None;
@@ -356,40 +320,16 @@ impl HotkeyManager {
                     None => actions::plan_noop(action, "No presets available", safe_mode),
                 }
             }
-            HotkeyAction::NextVariantFolder => {
-                match actions::resolve_next_folder_index(
-                    folder_count,
-                    current_folder_index,
-                    CycleDirection::Next,
-                ) {
-                    Some(idx) => actions::plan_cycle_variant(
-                        &format!("Folder {}", idx),
-                        "Current",
-                        safe_mode,
-                        current_preset,
-                    ),
-                    None => actions::plan_noop(action, "No variant folders", safe_mode),
-                }
-            }
-            HotkeyAction::PrevVariantFolder => {
-                match actions::resolve_next_folder_index(
-                    folder_count,
-                    current_folder_index,
-                    CycleDirection::Previous,
-                ) {
-                    Some(idx) => actions::plan_cycle_variant(
-                        &format!("Folder {}", idx),
-                        "Current",
-                        safe_mode,
-                        current_preset,
-                    ),
-                    None => actions::plan_noop(action, "No variant folders", safe_mode),
-                }
-            }
+
             HotkeyAction::ToggleOverlay => {
                 // Overlay toggle is handled directly by 3DMigoto INI — no backend work needed.
                 // Just emit the event status for logging purposes.
                 actions::plan_noop(action, "Overlay toggle (handled by 3DMigoto)", safe_mode)
+            }
+            HotkeyAction::NextVariantFolder | HotkeyAction::PrevVariantFolder => {
+                // Variant cycling is handled by specific async executors;
+                // for general dispatch, we return a noop or the computed plan if available.
+                actions::plan_noop(action, "Variant cycle triggered", safe_mode)
             }
         };
 
@@ -420,22 +360,28 @@ async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<(), String> 
         .active_game_id
         .as_deref()
         .ok_or_else(|| "No active game selected".to_string())?;
+
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| "No active game selected".to_string())?;
+
     let target_enabled = !settings.safe_mode.enabled;
-    let mode = if target_enabled {
-        crate::services::privacy::Mode::SFW
-    } else {
-        crate::services::privacy::Mode::NSFW
-    };
 
-    let _lock = op_lock.inner().acquire().await?;
+    let _lock = op_lock.inner().acquire().await.map_err(|e| e.to_string())?;
 
-    crate::services::privacy::switch_mode(
-        mode,
+    crate::services::corridor_service::switch_corridor(
         pool_state.inner(),
-        watcher_state.inner(),
         &game_id,
+        target_enabled,
+        std::path::PathBuf::from(&game.mod_path),
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        &watcher_state,
+        settings.clone(),
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
     config_state.set_safe_mode_enabled(target_enabled)?;
 
     let settings_after = config_state.get_settings();
@@ -447,7 +393,7 @@ async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<(), String> 
         pool_state.inner(),
         &game_id,
         &status,
-        settings_after.keyviewer.status_ttl_seconds,
+        &settings_after.hotkeys,
     )
     .await?;
 
@@ -483,12 +429,13 @@ async fn execute_cycle_preset(
         .ok_or_else(|| "No active game selected".to_string())?;
     let safe_mode_enabled = settings.safe_mode.enabled;
 
-    let collections = crate::services::collections::list_collections(
+    let collections = crate::services::collection_service::list_collections(
         pool_state.inner(),
         &game_id,
         safe_mode_enabled,
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     if collections.is_empty() {
         let status = StatusFields {
@@ -496,13 +443,7 @@ async fn execute_cycle_preset(
             preset_name: Some("No presets configured".to_string()),
             ..Default::default()
         };
-        write_runtime_status(
-            pool_state.inner(),
-            &game_id,
-            &status,
-            settings.keyviewer.status_ttl_seconds,
-        )
-        .await?;
+        write_runtime_status(pool_state.inner(), &game_id, &status, &settings.hotkeys).await?;
         return Ok("No presets available".to_string());
     }
 
@@ -510,19 +451,18 @@ async fn execute_cycle_preset(
         .iter()
         .map(|collection| collection.name.clone())
         .collect();
-    let runtime_snapshot = crate::services::corridor_runtime::get_corridor_runtime_snapshot(
-        pool_state.inner(),
-        &game_id,
-        safe_mode_enabled,
-    )
-    .await?;
-    let current_name = if runtime_snapshot.state_kind
-        == crate::services::collections::CollectionStateKind::Named
-    {
-        runtime_snapshot.state_name.as_deref()
-    } else {
-        None
-    };
+    let corridor = crate::repo::corridor_repo::get(pool_state.inner(), &game_id, safe_mode_enabled)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let current_collection_id = corridor.and_then(|c| c.active_collection_id);
+
+    let current_name = current_collection_id.and_then(|id| {
+        collections
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.name.as_str())
+    });
     let target_name = actions::resolve_next_preset(&preset_names, current_name, direction)
         .ok_or_else(|| "No presets available".to_string())?;
 
@@ -533,14 +473,24 @@ async fn execute_cycle_preset(
 
     let _lock = op_lock.inner().acquire().await?;
 
-    let apply_result = crate::services::collections::apply_collection(
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == game_id)
+        .ok_or_else(|| "No active game selected".to_string())?;
+
+    let apply_result = crate::services::collection_service::apply_collection(
         pool_state.inner(),
-        watcher_state.inner(),
-        &target.id,
         &game_id,
+        &target.id,
         safe_mode_enabled,
+        game.mod_path.clone(),
+        watcher_state.suppressor.clone(),
+        true, // ignore_missing during hotkey-triggered preset cycling
+        settings.clone(),
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     let planner = actions::plan_cycle_preset(&target.name, safe_mode_enabled);
 
@@ -548,56 +498,15 @@ async fn execute_cycle_preset(
         pool_state.inner(),
         &game_id,
         &planner.status,
-        settings.keyviewer.status_ttl_seconds,
+        &settings.hotkeys,
     )
     .await?;
 
     let reload_key = super::reload::trigger_reload_fixes(&settings)?;
 
     Ok(format!(
-        "{} (changed: {}, reload: {})",
-        planner.summary, apply_result.changed_count, reload_key
-    ))
-}
-
-async fn execute_cycle_variant(
-    app: &tauri::AppHandle,
-    direction: CycleDirection,
-) -> Result<String, String> {
-    let Some(config_state) = app.try_state::<ConfigService>() else {
-        return Err("ConfigService not available".to_string());
-    };
-    let Some(pool_state) = app.try_state::<sqlx::SqlitePool>() else {
-        return Err("SqlitePool not available".to_string());
-    };
-
-    let settings = config_state.get_settings();
-    let game_id = settings
-        .active_game_id
-        .ok_or_else(|| "No active game selected".to_string())?;
-
-    let direction_label = match direction {
-        CycleDirection::Next => "Next",
-        CycleDirection::Previous => "Previous",
-    };
-
-    let status = StatusFields {
-        safe_mode: settings.safe_mode.enabled,
-        preset_name: None,
-        folder_name: Some("No variant group".to_string()),
-        scope_name: Some("Current scope".to_string()),
-    };
-
-    write_runtime_status(
-        pool_state.inner(),
-        &game_id,
-        &status,
-        settings.keyviewer.status_ttl_seconds,
-    )
-    .await?;
-
-    Ok(format!(
-        "{direction_label} variant ignored: no variant group for current scope"
+        "{} (changed components: {}, reload: {})",
+        planner.summary, apply_result.mods_enabled, reload_key
     ))
 }
 
@@ -605,27 +514,17 @@ async fn write_runtime_status(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     status: &StatusFields,
-    ttl_seconds: f32,
+    hotkey_config: &crate::services::hotkeys::HotkeyConfig,
 ) -> Result<(), String> {
-    let Some(mods_path) = crate::database::game_repo::get_mod_path(pool, game_id)
+    let Some(mods_path) = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await
         .map_err(|e| format!("Failed to get mods_path: {e}"))?
     else {
         return Ok(());
     };
 
-    let status_dir = Path::new(&mods_path).join("EMM2").join("status");
-    crate::services::keyviewer::generator::write_status_file(&status_dir, status)?;
-
-    if ttl_seconds > 0.0 {
-        let clear_dir = status_dir.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_secs_f32(ttl_seconds)).await;
-            if let Err(e) = crate::services::keyviewer::generator::clear_status_file(&clear_dir) {
-                log::warn!("Failed to clear runtime_status.txt: {e}");
-            }
-        });
-    }
+    let status_dir = Path::new(&mods_path).join(".emmm_data").join("status");
+    crate::services::keyviewer::generator::write_status_file(&status_dir, status, hotkey_config)?;
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::database::models::{GameType, ItemStatus};
 use crate::services::app::dashboard::{get_active_keybindings_service, get_dashboard_payload};
 use std::fs;
 use tempfile::TempDir;
@@ -28,19 +29,57 @@ async fn test_get_dashboard_payload_populated() {
     let pool = setup_test_db().await;
 
     // Insert dummy data
-    sqlx::query(
-        "INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'Game 1', 'GIMI', '/')",
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game 1",
+            game_type: GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
     )
-    .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO objects (id, name, game_id, object_type, folder_path) VALUES ('obj1', 'Obj 1', 'g1', 'Character', 'folder')")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, object_id, status, is_safe, size_bytes, object_type) 
-                 VALUES ('mod1', 'Mod 1', '/tmp/mod1', 'g1', 'obj1', 'ENABLED', 1, 1024, 'Character')")
-        .execute(&pool).await.unwrap();
+
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "obj1",
+            game_id: "g1",
+            name: "Obj 1",
+            folder_path: Some("folder"),
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod1",
+            game_id: "g1",
+            object_id: Some("obj1"),
+            actual_name: "Mod 1",
+            folder_path: "/tmp/mod1",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    // Size is 0 in insert_test_mod by default, let's update it if needed or just leave as is
+    sqlx::query("UPDATE mods SET size_bytes = 1024 WHERE id = 'mod1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     sqlx::query(
-        "INSERT INTO collections (id, name, game_id) VALUES ('coll1', 'Collection 1', 'g1')",
+        "INSERT INTO collections (id, name, name_key, game_id, is_safe, is_last_unsaved) VALUES ('coll1', 'Collection 1', 'collection_1', 'g1', 1, 0)",
     )
     .execute(&pool)
     .await
@@ -77,14 +116,35 @@ async fn test_get_active_keybindings_service_with_ini() {
     let ini_content = "[KeyBinding1]\nkey = F4\nback = shift";
     fs::write(mod_dir.join("mod.ini"), ini_content).unwrap();
 
-    sqlx::query("INSERT INTO games (id, name, game_type, path) VALUES ('g1', 'G1', 'GIMI', '/g1')")
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "G1",
+            game_type: GameType::GIMI,
+            path: "/g1",
+            mods_path: Some("/g1/Mods"),
+        },
+    )
+    .await
+    .unwrap();
 
-    sqlx::query("INSERT INTO mods (id, actual_name, folder_path, game_id, status, is_safe) VALUES ('mod1', 'Mod 1', ?, 'g1', 'ENABLED', 1)")
-        .bind(mod_dir.to_str().unwrap())
-        .execute(&pool).await.unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod1",
+            game_id: "g1",
+            object_id: None,
+            actual_name: "Mod 1",
+            folder_path: mod_dir.to_str().unwrap(),
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Other"),
+            mods_path: Some("/g1/Mods"),
+        },
+    )
+    .await
+    .unwrap();
 
     let bindings = get_active_keybindings_service(&pool, "g1").await.unwrap();
 

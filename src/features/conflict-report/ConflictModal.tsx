@@ -19,7 +19,7 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
   }, [open]);
 
   return (
-    <dialog ref={dialogRef} className="modal" onClose={onClose}>
+    <dialog ref={dialogRef} className="modal bg-overlay-mask backdrop-blur-sm" onClose={onClose}>
       <div className="modal-box w-11/12 max-w-3xl border border-warning/20 bg-base-100 shadow-2xl">
         <button
           className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"

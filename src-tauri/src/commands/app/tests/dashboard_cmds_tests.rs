@@ -1,4 +1,4 @@
-use crate::database::game_repo::{upsert_game, GameRow};
+use crate::repo::game_repo::{upsert_game, GameRow};
 use crate::services::app::dashboard;
 use crate::test_utils;
 
@@ -20,9 +20,9 @@ async fn test_dashboard_cmds_delegation() {
         &GameRow {
             id: "fake_game".into(),
             name: "Fake".into(),
-            game_type: "GIMI".into(),
+            game_type: crate::database::models::GameType::GIMI,
             path: "C:\\Fake".into(),
-            mod_path: None,
+            mods_path: Some("C:\\Mods".into()),
             game_exe: None,
             launcher_path: None,
             loader_exe: None,
@@ -46,9 +46,9 @@ async fn test_active_keybindings_delegation() {
         &GameRow {
             id: "fake_gen".into(),
             name: "Genshin".into(),
-            game_type: "GIMI".into(),
+            game_type: crate::database::models::GameType::GIMI,
             path: "C:\\Genshin".into(),
-            mod_path: None,
+            mods_path: Some("C:\\Mods".into()),
             game_exe: None,
             launcher_path: None,
             loader_exe: None,

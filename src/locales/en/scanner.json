@@ -1,0 +1,219 @@
+{
+  "title": "Mod Scanner",
+  "description": "Detects new mods, archives, and updates existing records.",
+  "start_button": "Start Scan",
+  "scanning_title": "Scanning Mods...",
+  "cancel_button": "Cancel Scan",
+  "matched": "Matched",
+  "unmatched": "Unmatched",
+  "no_mods": "No mods found. Try scanning again.",
+  "extract": {
+    "title": "Archives Detected",
+    "failed": "Failed to detect archives",
+    "extraction_failed": "Extraction failed",
+    "import_to": "Importing to: {{name}}",
+    "compatibility_check": "Archives will be checked for compatibility after extraction.",
+    "found_count": "Found {{count}} archive(s) ready for import.",
+    "no_password": "No Password Required ({{count}})",
+    "password_protected": "Password Protected ({{count}})",
+    "no_mod_files": "Archive contains no mod files",
+    "nested_tooltip": "Contains zip/rar inside. Will be unpacked if Auto-unpack is checked.",
+    "nested_label": "Nested",
+    "password_placeholder": "Key",
+    "rename_tooltip": "Click to rename",
+    "duplicate_name": "Duplicate folder name",
+    "duplicate_name_action": "Duplicate name — will auto-rename or overwrite",
+    "password_required": "Requires password to extract",
+    "option_auto_rename": "Auto rename folder if name conflict",
+    "option_overwrite": "Overwrite existing folder",
+    "option_overwrite_desc": "Original files will be permanently overwritten",
+    "not_recommended": "Not Recommended",
+    "option_disabled": "Set as disabled after extraction",
+    "option_unpack_nested": "Auto-unpack nested archives (Modpacks)",
+    "option_unpack_nested_tooltip": "Recursively unpack zip/rar files hidden inside the main archive",
+    "progress_archive": "Extracting archive {{current}} of {{total}}...",
+    "progress_extracting": "Extracting...",
+    "progress_files": "{{current}}/{{total}} files",
+    "action_skip": "Skip Extraction",
+    "selected_count": "{{count}} selected",
+    "action_stop": "Stop",
+    "action_extract": "Extract Selected",
+    "stop_confirm_title": "Stop Extraction?",
+    "stop_confirm_desc": "Are you sure you want to stop? The currently extracting archive will be reverted, but any already-extracted archives will remain.",
+    "action_cancel": "Cancel",
+    "action_yes_stop": "Yes, Stop",
+    "action_close": "Close",
+    "search_placeholder": "Search...",
+    "overwrite_confirm_title": "Overwrite Existing Folders?",
+    "overwrite_confirm_desc": "The following {{count}} folder(s) already exist and will be permanently replaced:",
+    "action_yes_overwrite": "Yes, Overwrite",
+    "password_retry": "Invalid password. Please try again.",
+    "pick_folder_error": "Failed to pick folder",
+    "pick_file_error": "Failed to pick file",
+    "validation": {
+      "empty": "Name cannot be empty",
+      "illegal": "Contains illegal characters",
+      "reserved": "Reserved Windows name"
+    },
+    "tree": {
+      "contents": "Contents ({{count}} files)",
+      "contents_singular": "Contents ({{count}} file)",
+      "folder_files": "({{count}} files)",
+      "folder_files_singular": "({{count}} file)",
+      "loose_files": "{{count}} loose files",
+      "loose_files_singular": "{{count}} loose file",
+      "more_folders": "…and {{count}} more folders",
+      "showing_entries": "Showing {{current}} of {{total}} entries"
+    }
+  },
+  "optimizer": {
+    "title": "Storage Optimizer",
+    "description": "Reclaim disk space by identifying and removing redundant mod files. EMMM safely analyzes your library to find bit-perfect duplicates.",
+    "start_button": "Start Scan",
+    "stop_button": "Stop Scan",
+    "ignored_button": "Ignored ({{count}})",
+    "filter_label": "Filter by Match Confidence",
+    "tabs": {
+      "all": "All",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
+  },
+  "report": {
+    "title": "Duplicate Scan Results",
+    "loading": "Loading duplicate report...",
+    "error_title": "Failed to load duplicate report",
+    "no_results": "No scan results available",
+    "no_results_desc": "Run a duplicate scan to see results here.",
+    "clean_title": "No duplicates found",
+    "clean_desc": "Your mod library is clean!",
+    "stats_summary": "Found {{totalGroups}} duplicate group(s) with {{totalMembers}} total members",
+    "reveal_unsafe": "Reveal Unsafe",
+    "apply_actions": "Apply {{count}} Action",
+    "apply_actions_plural": "Apply {{count}} Actions",
+    "applying": "Applying...",
+    "unsafe_revealed": "Unsafe duplicates revealed",
+    "pin_title": "Reveal Unsafe Duplicates",
+    "pin_desc": "Enter your security PIN to view duplicates marked as unsafe."
+  },
+  "table": {
+    "header": {
+      "group": "Group",
+      "members": "Duplicate Members",
+      "reason": "Reason & Confidence",
+      "action": "Action"
+    },
+    "empty": "No duplicates found in this category",
+    "empty_desc": "Try switching tabs or adjusting your scan settings.",
+    "confidence": "Confidence",
+    "unsafe": "Unsafe",
+    "select_action": "Select Action...",
+    "keep_one": "Keep One (Delete Others)",
+    "keep_label": "Keep {{id}}: {{name}}",
+    "general": "General",
+    "ignore": "Ignore / Whitelist",
+    "will_delete": "Will delete {{count}} item(s)",
+    "delete_confirm": "Are you sure you want to delete {{count}} mods?",
+    "rename_tooltip": "Double-click to rename",
+    "open_folder": "Open Folder",
+    "columns": {
+      "preview": "Preview",
+      "name": "Mod Name",
+      "category": "Category",
+      "skin": "Skin",
+      "status": "Status",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    }
+  },
+  "resolution": {
+    "title": "Confirm Resolution",
+    "summary": "You are about to resolve {{count}} duplicate group(s). This will result in {{deleted}} file deletion(s) and {{ignored}} whitelist addition(s).",
+    "keep_specific": "Keep Specific",
+    "whitelist": "Whitelist",
+    "keep_label": "KEEP:",
+    "delete_others": "Delete {{count}} other identical item(s)",
+    "ignore_label": "IGNORE:",
+    "ignore_desc": "Whitelist all {{count}} members",
+    "confirm_button": "Confirm & Resolve",
+    "processing": "Processing..."
+  },
+  "ignored_pairs": {
+    "title": "{{primary}} Duplicate Pairs",
+    "title_primary": "Ignored",
+    "description": "Pairs you've whitelisted to prevent them from appearing in future scans.",
+    "loading": "Loading ignored pairs...",
+    "no_results": "No ignored pairs found",
+    "no_results_desc": "Items you whitelist will appear here for recovery.",
+    "table": {
+      "mod_a": "Mod A",
+      "mod_b": "Mod B",
+      "reason": "Reason",
+      "ignored_at": "Ignored At",
+      "action": "Action"
+    },
+    "action_recover": "Recover",
+    "action_close": "Close"
+  },
+  "conflict_toast": {
+    "title": "Shader Conflict Detected!",
+    "count": "{{count}} conflict(s) detected."
+  },
+  "overlay": {
+    "title": "Scanning Mods...",
+    "matched": "Matched",
+    "unmatched": "Unmatched",
+    "cancel": "Cancel Scan"
+  },
+  "review": {
+    "title": "Scan Review",
+    "selected": "{{count}} selected",
+    "empty": "No items to review.",
+    "no_folders": "No mod folders found.",
+    "rename_hint": "Double-click to rename",
+    "open_folder": "Open Folder",
+    "bulk_skip_label": "Skip Selected",
+    "bulk_skip_tip": "Mark selected items as skipped",
+    "filter_label": "Filter",
+    "search_placeholder": "Search...",
+    "committing_state": "Committing...",
+    "confirm_button_label": "Confirm {{count}} Item(s)",
+    "select_deselect_all_tip": "Select / Deselect All",
+    "headers": {
+      "folder_name": "Folder Name",
+      "target_detected": "Target Detected",
+      "type": "Type",
+      "percentage": "Match %",
+      "action": "Action"
+    },
+    "actions": {
+      "enable": "Enable",
+      "disable": "Disable",
+      "organize": "Auto-Organize",
+      "delete": "Delete"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "toast": {
+      "db_load_failed": "Failed to load DB for auto-organize: {{error}}"
+    }
+  },
+  "dedup": {
+    "analyzing": "Analyzing Mod Library...",
+    "progress": "{{scanned}} / {{total}} folders",
+    "current": "Current: {{folder}}",
+    "toast": {
+      "recover_success": "Pair recovered successfully",
+      "recover_failed": "Failed to recover pair: {{error}}",
+      "scan_failed": "Scan failed: {{error}}",
+      "scan_cancelled": "Scan cancelled",
+      "cancel_failed": "Cancel failed: {{error}}",
+      "resolve_success": "Resolved {{successful}}/{{total}} duplicates",
+      "resolve_warning": "Resolved {{successful}}/{{total}} duplicates ({{failed}} failed)",
+      "resolve_failed": "Resolution failed: {{error}}"
+    }
+  }
+}

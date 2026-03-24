@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../testing/test-utils';
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
-import type { DupScanReport, DupScanGroup } from '../../../types/dedup';
+import type { DupScanReport, DupScanGroup } from '../../../types/scanner';
 
 // Mock the hooks
 vi.mock('../hooks/useDedup', () => ({
@@ -74,16 +74,19 @@ vi.mock('./ResolutionModal', () => ({
 const mockGroup: DupScanGroup = {
   groupId: 'group-1',
   confidenceScore: 95,
-  matchReason: 'Hash match',
-  signals: [],
+  matchReason: 'Perfect hash match',
+  signals: [{ key: 'hash', detail: 'BLAKE3 collision', score: 100 }],
+  isUnsafe: false,
   members: [
     {
       folderPath: '/path/mod-a',
-      displayName: 'Mod A',
+      displayName: 'Mod A - Original',
       totalSizeBytes: 1024,
       fileCount: 5,
       confidenceScore: 95,
       signals: [],
+      modId: null,
+      isSafe: false,
     },
     {
       folderPath: '/path/mod-b',
@@ -92,6 +95,8 @@ const mockGroup: DupScanGroup = {
       fileCount: 5,
       confidenceScore: 95,
       signals: [],
+      modId: null,
+      isSafe: false,
     },
   ],
 };
@@ -258,32 +263,55 @@ describe('DuplicateReport', () => {
       } as any);
     });
 
-    it('tracks selection changes from table', async () => {
-      render(<DuplicateReport />);
+    it('filters groups based on confidence score when activeFilter prop changes', () => {
+      // High filter (score >= 100)
+      const { rerender } = render(<DuplicateReport activeFilter="high" />);
+      // Both mock groups are < 100
+      expect(screen.getByText(/No duplicates found/i)).toBeInTheDocument();
 
-      const keepAButton = screen.getByTestId('keep-a-group-1');
-      fireEvent.click(keepAButton);
+      // Medium filter (score >= 70)
+      rerender(<DuplicateReport activeFilter="medium" />);
+      expect(screen.getByText('Mod A - Original')).toBeInTheDocument();
+      expect(screen.getByText('Mod C')).toBeInTheDocument();
 
-      expect(screen.getByText(/Apply 1 Action/i)).toBeInTheDocument();
+      // Low filter (score < 70)
+      rerender(<DuplicateReport activeFilter="low" />);
+      expect(screen.queryByText('Mod A - Original')).not.toBeInTheDocument();
+    });
+
+    it('updates selection when child table triggers onSelectionChange', async () => {
+      render(<DuplicateReport activeFilter="all" />);
+
+      // Find the first select (Resolution Action)
+      const selects = screen.getAllByRole('combobox', { name: /Resolution Action/i });
+
+      // Select "Keep A" for group 1
+      fireEvent.change(selects[0], { target: { value: '/path/mod-a' } });
+
+      // Click Apply button
+      fireEvent.click(screen.getByRole('button', { name: /Apply 1 Action/i }));
+
+      // Modal should show summary
+      expect(screen.getByText(/Resolution Summary/i)).toBeInTheDocument();
+      expect(screen.getByText('KEEP:')).toBeInTheDocument();
+      expect(screen.getByText('Mod A - Original')).toBeInTheDocument();
     });
 
     it('disables Apply All button when no selections', () => {
-      render(<DuplicateReport />);
+      render(<DuplicateReport activeFilter="all" />);
 
       const applyButton = screen.getByRole('button', { name: /Apply 0 Actions/i });
       expect(applyButton).toBeDisabled();
     });
 
     it('enables Apply All button when selections exist', async () => {
-      render(<DuplicateReport />);
+      render(<DuplicateReport activeFilter="all" />);
 
-      const keepAButton = screen.getByTestId('keep-a-group-1');
-      fireEvent.click(keepAButton);
+      const selects = screen.getAllByRole('combobox', { name: /Resolution Action/i });
+      fireEvent.change(selects[0], { target: { value: '/path/mod-a' } });
 
-      await waitFor(() => {
-        const applyButton = screen.getByRole('button', { name: /Apply 1 Action/i });
-        expect(applyButton).not.toBeDisabled();
-      });
+      expect(screen.getByText(/Apply 1 Action/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Apply 1 Action/i })).not.toBeDisabled();
     });
 
     it('shows warning toast when Apply All clicked with no selections', () => {

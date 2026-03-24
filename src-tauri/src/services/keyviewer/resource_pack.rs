@@ -62,3 +62,18 @@ pub fn extract_kv_entries(db: &MasterDb) -> Vec<KvObjectEntry> {
         })
         .collect()
 }
+
+/// A collection of KeyViewer objects extracted from MasterDb.
+#[derive(Debug, Default, Clone)]
+pub struct KvResourcePack {
+    pub objects: Vec<KvObjectEntry>,
+}
+
+impl KvResourcePack {
+    /// Create a new resource pack from a MasterDb.
+    pub fn new(db: &MasterDb) -> Self {
+        Self {
+            objects: extract_kv_entries(db),
+        }
+    }
+}

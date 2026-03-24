@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: (1) Users want variety in their modded gameplay but enabling random mods naïvely creates conflicts (two skins for one character) or breaks visual integrity — a random loadout must respect Object boundaries. (2) Users must manually start the 3DMigoto loader and game separately, often dealing with UAC prompts and timing; a single "Play" button would save friction.
-- **Proposed Solution**: Two QoL features: (1) A `suggest_random_mods` backend command that selects one random mod per Object using `rand::seq::SliceRandom`, respects `is_safe` filter, excludes dot-prefix folders, applies via Collections apply machinery with preview → confirm → apply flow; (2) A `launch_game` command that checks for the running loader via `sysinfo`, starts it as Admin if not running, then starts the game EXE with configured `launch_args`, optionally auto-closing EMMM2.
+- **Proposed Solution**: Two QoL features: (1) A `suggest_random_mods` backend command that selects one random mod per Object using `rand::seq::SliceRandom`, respects `is_safe` filter, excludes dot-prefix folders, applies via Collections apply machinery with preview → confirm → apply flow; (2) A `launch_game` command that checks for the running loader via `sysinfo`, starts it as Admin if not running, then starts the game EXE with configured `launch_args`, optionally auto-closing EMMM.
 - **Success Criteria**:
   - `suggest_random_mods` returns a random proposal in ≤ 200ms for ≤ 500 Objects; selection algorithm runs in ≤ 10ms even with 10,000 items.
   - Zero mod-per-Object conflicts in any generated loadout — exactly 1 mod per Object with ≥ 1 eligible mod.
@@ -26,8 +26,8 @@ As a gamer, I want a single "Play" button that automatically manages the 3DMigot
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                                                                                                                                     |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-35.1.1 | ✅ Positive | Given a configured game with a valid `launcher_path`, when I click "Play", then: (1) `sysinfo` checks if the loader process is already running; (2) if not running, launches it via `RunAs` (Admin) using `powershell start-process -Verb RunAs`; (3) launches the game EXE with any configured `launch_args` (e.g., `-popupwindow`); all within ≤ 100ms of the button click |
-| AC-35.1.2 | ✅ Positive | Given the "Auto-Close on Launch" setting is ON, when the game EXE launches successfully, then EMMM2 calls `app.exit(0)` — the mod manager closes automatically                                                                                                                                                                                                               |
-| AC-35.1.3 | ❌ Negative | Given the user declines the UAC prompt, then EMMM2 logs `"Launch Cancelled: UAC denied"` and shows a toast "Please allow Admin access when prompted — the loader requires elevated permissions"                                                                                                                                                                              |
+| AC-35.1.2 | ✅ Positive | Given the "Auto-Close on Launch" setting is ON, when the game EXE launches successfully, then EMMM calls `app.exit(0)` — the mod manager closes automatically                                                                                                                                                                                                                |
+| AC-35.1.3 | ❌ Negative | Given the user declines the UAC prompt, then EMMM logs `"Launch Cancelled: UAC denied"` and shows a toast "Please allow Admin access when prompted — the loader requires elevated permissions"                                                                                                                                                                               |
 | AC-35.1.4 | ❌ Negative | Given the configured `launcher_path` no longer exists on disk, when "Play" is clicked, then a toast shows "Launcher not found — update your game path in Settings" and navigates to the Settings > Games tab                                                                                                                                                                 |
 | AC-35.1.5 | ⚠️ Edge     | Given the loader is already running (checked via `sysinfo`), then the loader start step is skipped — only the game EXE is launched                                                                                                                                                                                                                                           |
 
@@ -54,10 +54,10 @@ As a user, I want the app to pick one random mod per character with a preview be
 
 As a user, I want system/fixed mods (prefixed with ".") to be immune to the randomizer, so that mandatory mods are never accidentally disabled.
 
-| ID        | Type        | Criteria                                                                                                                                                                                     |
-| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-35.3.1 | ✅ Positive | Given the randomizer pool, folders whose physical name starts with `"."` (e.g., `.EMMM2_System`, `.SharedShaders`) are never included as candidates — they are neither disabled nor replaced |
-| AC-35.3.2 | ⚠️ Edge     | Given a mod named `.disabled_skin` (dot + disabled prefix), then it is excluded from the pool both by the dot rule and the is-disabled filter — no double-processing needed                  |
+| ID        | Type        | Criteria                                                                                                                                                                                    |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-35.3.1 | ✅ Positive | Given the randomizer pool, folders whose physical name starts with `"."` (e.g., `.EMMM_System`, `.SharedShaders`) are never included as candidates — they are neither disabled nor replaced |
+| AC-35.3.2 | ⚠️ Edge     | Given a mod named `.disabled_skin` (dot + disabled prefix), then it is excluded from the pool both by the dot rule and the is-disabled filter — no double-processing needed                 |
 
 ---
 
@@ -97,24 +97,24 @@ suggest_random_mods(game_id, safe_mode_enabled) → Vec<RandomModProposal>:
   return proposals
 
 Frontend Flow:
-  "Play" button → invoke('launch_game', { game_id })
-  "Generate New Setup" → invoke('suggest_random_mods', { game_id, safe_mode_enabled })
+  "Play" button → commands.launchGame({ game_id })
+  "Generate New Setup" → commands.suggestRandomMods({ game_id, safe_mode_enabled })
     → RandomizerModal shows preview (thumbnail + name per Object)
-  "Re-roll" → invoke('suggest_random_mods') again
-  "Apply This Setup" → invoke('apply_collection_from_paths', { game_id, folder_paths })
+  "Re-roll" → commands.suggestRandomMods() again
+  "Apply This Setup" → commands.applyCollectionFromPaths({ game_id, folder_paths })
     → same machinery as apply_collection (Epic 31): snapshot + bulk toggle + undo toast
 ```
 
 ### Integration Points
 
-| Component         | Detail                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| sysinfo           | `sysinfo::System::new_all().processes_by_name(loader_name)` — checks if loader is running  |
-| Launcher          | `powershell start-process -Verb RunAs` on Windows for elevated launch                      |
-| Randomization     | `rand::seq::SliceRandom::choose(&mut thread_rng())`                                        |
-| Dot-prefix filter | `!folder_name.starts_with('.')` — applied in Rust query layer, not frontend                |
-| OperationLock     | Checked before `apply_collection_from_paths` — returns `AppError::Busy` if held            |
-| Apply             | Reuses `apply_collection` machinery (Epic 31) — snapshot + bulk toggle + undo toast        |
+| Component         | Detail                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| sysinfo           | `sysinfo::System::new_all().processes_by_name(loader_name)` — checks if loader is running   |
+| Launcher          | `powershell start-process -Verb RunAs` on Windows for elevated launch                       |
+| Randomization     | `rand::seq::SliceRandom::choose(&mut thread_rng())`                                         |
+| Dot-prefix filter | `!folder_name.starts_with('.')` — applied in Rust query layer, not frontend                 |
+| OperationLock     | Checked before `apply_collection_from_paths` — returns `AppError::Busy` if held             |
+| Apply             | Reuses `apply_collection` machinery (Epic 31) — snapshot + bulk toggle + undo toast         |
 | Frontend          | `RandomizerModal.tsx` + `LaunchBar.tsx` — integrated via `useLaunchGame` and Shuffle button |
 
 ### Security & Privacy

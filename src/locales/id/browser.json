@@ -1,0 +1,77 @@
+{
+  "tabs": {
+    "loading": "Memuat...",
+    "new_tab": "Tab Baru",
+    "clear_data_confirm": "Hapus semua data penjelajahan (cookie, cache, dll.) untuk sesi ini?",
+    "refresh": "Segarkan",
+    "discover": "Jelajahi",
+    "open_gamebanana": "Buka GameBanana",
+    "url_placeholder": "Masukkan URL untuk dibuka...",
+    "go": "Buka",
+    "clear_data": "Hapus cookie & cache",
+    "open_downloads": "Buka panel Unduhan"
+  },
+  "welcome": {
+    "title": "Browser Dalam Aplikasi",
+    "description": "Telusuri dan unduh mod secara langsung. Unduhan dicegat secara otomatis dan antre untuk Impor Pintar.",
+    "browse_gb": "Telusuri GameBanana",
+    "google": "Google"
+  },
+  "downloads": {
+    "title": "Unduhan",
+    "view_detail": "Lihat detail",
+    "close": "Tutup panel unduhan",
+    "select_all": "Pilih semua yang selesai",
+    "deselect_all": "Batal pilih semua",
+    "selected": "{{count}} terpilih",
+    "select_finished": "Pilih yang selesai",
+    "import_selected": "Impor Terpilih",
+    "clear_imported": "Bersihkan Selesai",
+    "empty": "Belum ada unduhan",
+    "import": "Impor",
+    "import_title": "Impor file ini",
+    "cancel_title": "Batalkan unduhan",
+    "delete_title": "Hapus dari daftar",
+    "delete": "Hapus",
+    "status": {
+      "queued": "Antre",
+      "downloading": "Mengunduh",
+      "ready": "Siap",
+      "failed": "Gagal",
+      "canceled": "Dibatalkan",
+      "imported": "Terimpor"
+    }
+  },
+  "import": {
+    "title": "Antrean Impor",
+    "review": "Tinjau",
+    "skip": "Lewati",
+    "status": {
+      "queued": "Antre",
+      "extracting": "Mengekstrak",
+      "matching": "Mencocokkan",
+      "review": "Tinjauan",
+      "placing": "Menempatkan",
+      "done": "Selesai",
+      "failed": "Gagal",
+      "canceled": "Dibatalkan"
+    }
+  },
+  "review": {
+    "title": "Tinjauan Manual Diperlukan",
+    "archive": "Arsip",
+    "duplicate": "Duplikat",
+    "target_game": "Game Target",
+    "select_game": "— Pilih game —",
+    "mod_category": "Kategori Mod",
+    "confirm": "Konfirmasi & Impor",
+    "cancel": "Batal"
+  },
+  "picker": {
+    "title": "Pilih Game Target",
+    "description": "Pilih game untuk mengimpor {{count}} file.",
+    "description_plural": "Pilih game untuk mengimpor {{count}} file.",
+    "no_games": "Belum ada game yang terkonfigurasi. Tambahkan game di Pengaturan terlebih dahulu.",
+    "import_now": "Impor Sekarang"
+  }
+}

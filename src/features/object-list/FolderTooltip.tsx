@@ -4,15 +4,12 @@
  */
 
 import { useState, useRef, useCallback, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
 import { Folder, FileText } from 'lucide-react';
-
-interface FolderEntry {
-  name: string;
-  is_dir: boolean;
-}
+import type { FolderEntry } from '../../types/scanner';
 
 interface FolderTooltipProps {
   folderPath: string;
@@ -30,6 +27,7 @@ export default function FolderTooltip({
   gameId,
   children,
 }: FolderTooltipProps) {
+  const { t } = useTranslation('objects');
   const [entries, setEntries] = useState<FolderEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const fetchedRef = useRef(false);
@@ -47,8 +45,9 @@ export default function FolderTooltip({
       }
 
       setLoading(true);
-      invoke<FolderEntry[]>('list_folder_entries_cmd', { folderPath, gameId })
-        .then((result) => {
+      commands
+        .listFolderEntriesCmd({ folderPath, gameId })
+        .then((result: FolderEntry[]) => {
           entryCache.set(folderPath, result);
           setEntries(result);
         })
@@ -101,7 +100,7 @@ export default function FolderTooltip({
                 </div>
               )}
               {entries && entries.length === 0 && (
-                <p className="text-base-content/30 italic">Empty folder</p>
+                <p className="text-base-content/30 italic">{t('empty_folder')}</p>
               )}
               {entries && entries.length > 0 && (
                 <ul className="flex flex-col gap-0.5 max-h-40 overflow-y-auto">

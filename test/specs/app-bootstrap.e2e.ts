@@ -27,7 +27,7 @@ describe('App Bootstrap & Initialization (req-01)', () => {
     await browser.waitUntil(
       async () => {
         const title = await browser.getTitle();
-        return title === 'EMMM2';
+        return title === 'EMMM';
       },
       { timeout: 15000, timeoutMsg: 'Window title did not load in 15s' },
     );
@@ -39,7 +39,7 @@ describe('App Bootstrap & Initialization (req-01)', () => {
     for (const handle of handles) {
       await browser.switchToWindow(handle);
       const title = await browser.getTitle();
-      if (title === 'EMMM2' || title === 'emmm2') {
+      if (title === 'EMMM' || title === 'emmm') {
         break;
       }
     }
@@ -53,7 +53,7 @@ describe('App Bootstrap & Initialization (req-01)', () => {
     await browser.waitUntil(
       async () => {
         const title = await browser.getTitle();
-        return title === 'EMMM2';
+        return title === 'EMMM';
       },
       { timeout: 5000 },
     );
@@ -61,6 +61,6 @@ describe('App Bootstrap & Initialization (req-01)', () => {
     // Verify some text or component from the dashboard/onboarding
     const body = await $('body');
     const text = await body.getText();
-    expect(text).toMatch(/EMMM2|Welcome|Setup/i);
+    expect(text).toMatch(/EMMM|Welcome|Setup/i);
   });
 });

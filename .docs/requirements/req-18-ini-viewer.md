@@ -4,6 +4,7 @@
 
 - **Problem Statement**: 3DMigoto mods use `*.ini` files as their functional core (shader injections, texture overrides) — without an in-app viewer and editor, power users must switch to a text editor and lose context when troubleshooting conflicts or tweaking values.
 - **Proposed Solution**: An `IniEditorSection` inside the Preview Panel that lists all `.ini` files in the mod folder via `list_mod_ini_files`, displays the selected file with syntax highlighting (sections/keys/comments differentiated), and allows direct editing with an explicit Save (Ctrl+S) that writes to disk via `write_mod_ini` under `OperationLock`.
+- **Runtime Display**: Note that the in-game KeyViewer overlay (governed by `req-43`) is a separate high-performance system. It uses a background generator to produce runtime assets in `Mods/.emmm_data/`, which are purposely excluded from the mod scanner to prevent recursion and noise.
 - **Success Criteria**:
   - `list_mod_ini_files` returns results in ≤ 100ms for a mod with ≤ 20 `.ini` files.
   - INI file content loads in the editor in ≤ 200ms for files up to 500KB.
@@ -72,13 +73,13 @@ As a user, I want to edit the INI text in-place and save with Ctrl+S or a Save b
 
 ```
 IniEditorSection.tsx
-  └── useIniFiles(folderPath) → invoke('list_mod_ini_files', { folderPath }) → IniFileEntry[]
+  └── useIniFiles(folderPath) → commands.listModIniFiles({ folderPath }) → IniFileEntry[]
       ├── Dropdown → selectedFile (IniFileEntry)
       └── useIniContent(folderPath, selectedFile.path)
-              → invoke('read_mod_ini', { folderPath, fileName }) → string
+              → commands.readModIni({ folderPath, fileName }) → string
           └── CodeEditor (CodeMirror 6 with custom INI tokenizer)
               ├── isDirty state (local, content !== loadedContent)
-              └── onSave → invoke('write_mod_ini', { folderPath, fileName, content })
+              └── onSave → commands.writeModIni({ folderPath, fileName, content })
 
 Backend:
   list_mod_ini_files(folder_path) → Vec<IniFileEntry { name, relative_path }>

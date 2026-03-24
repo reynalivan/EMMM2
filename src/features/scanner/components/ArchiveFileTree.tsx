@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Folder, File } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Entry {
   path: string;
@@ -14,6 +15,7 @@ interface Props {
 
 /** Collapsible file tree preview for archive contents. */
 export default function ArchiveFileTree({ entries, totalCount }: Props) {
+  const { t } = useTranslation(['scanner']);
   const [expanded, setExpanded] = useState(false);
 
   // Group entries by top-level folder
@@ -54,7 +56,9 @@ export default function ArchiveFileTree({ entries, totalCount }: Props) {
       >
         {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <span className="text-[10px]">
-          Contents ({totalCount} file{totalCount !== 1 ? 's' : ''})
+          {t(totalCount !== 1 ? 'extract.tree.contents' : 'extract.tree.contents_singular', {
+            count: totalCount,
+          })}
         </span>
       </button>
 
@@ -65,7 +69,14 @@ export default function ArchiveFileTree({ entries, totalCount }: Props) {
               <Folder className="w-3 h-3 text-primary/60 shrink-0" />
               <span className="truncate font-mono">{folder}/</span>
               <span className="text-base-content/40 shrink-0">
-                ({info.count} file{info.count !== 1 ? 's' : ''})
+                {t(
+                  info.count !== 1
+                    ? 'extract.tree.folder_files'
+                    : 'extract.tree.folder_files_singular',
+                  {
+                    count: info.count,
+                  },
+                )}
               </span>
             </div>
           ))}
@@ -74,20 +85,27 @@ export default function ArchiveFileTree({ entries, totalCount }: Props) {
             <div className="flex items-center gap-1.5 text-[11px]">
               <File className="w-3 h-3 text-base-content/40 shrink-0" />
               <span className="text-base-content/50 italic">
-                {grouped.rootFiles} loose file{grouped.rootFiles !== 1 ? 's' : ''}
+                {t(
+                  grouped.rootFiles !== 1
+                    ? 'extract.tree.loose_files'
+                    : 'extract.tree.loose_files_singular',
+                  {
+                    count: grouped.rootFiles,
+                  },
+                )}
               </span>
             </div>
           )}
 
           {sortedFolders.length > displayLimit && (
             <div className="text-[10px] text-base-content/40 italic">
-              …and {sortedFolders.length - displayLimit} more folders
+              {t('extract.tree.more_folders', { count: sortedFolders.length - displayLimit })}
             </div>
           )}
 
           {totalCount > entries.length && (
             <div className="text-[10px] text-base-content/40 italic">
-              Showing {entries.length} of {totalCount} entries
+              {t('extract.tree.showing_entries', { current: entries.length, total: totalCount })}
             </div>
           )}
         </div>

@@ -1,26 +1,26 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../lib/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ArrowLeft, FolderOpen, Loader2, AlertCircle } from 'lucide-react';
 import type { GameConfig } from '../../types/game';
 import { GAME_OPTIONS } from '../../types/game';
 
-const schema = z.object({
-  gameType: z.string().min(1, 'Please select a game type'),
-  path: z.string().min(1, 'Please select a game folder'),
-});
-
-type FormData = z.infer<typeof schema>;
-
-interface Props {
+interface ManualSetupFormProps {
   onBack: () => void;
-  onComplete: (game: GameConfig) => void;
+  onSuccess: (game: GameConfig) => void;
 }
 
-export default function ManualSetupForm({ onBack, onComplete }: Props) {
+type FormData = {
+  gameType: string;
+  path: string;
+};
+
+export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
+  const { t } = useTranslation('onboarding');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -28,20 +28,22 @@ export default function ManualSetupForm({ onBack, onComplete }: Props) {
     register,
     handleSubmit,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      z.object({
+        gameType: z.string().min(1, t('manual_setup.validation.game_type_required')),
+        path: z.string().min(1, t('manual_setup.validation.path_required')),
+      }),
+    ),
     defaultValues: { gameType: '', path: '' },
   });
-
-  const currentPath = watch('path');
 
   const handleBrowse = async () => {
     const selectedPath = await open({
       directory: true,
       multiple: false,
-      title: 'Select 3DMigoto game folder',
+      title: t('manual_setup.validation.select_folder_title'),
     });
     if (selectedPath) {
       setValue('path', selectedPath, { shouldValidate: true });
@@ -53,11 +55,11 @@ export default function ManualSetupForm({ onBack, onComplete }: Props) {
     setIsSubmitting(true);
     setServerError(null);
     try {
-      const game = await invoke<GameConfig>('add_game_manual', {
+      const game = await commands.addGameManual({
         gameType: data.gameType,
         path: data.path,
       });
-      onComplete(game);
+      onSuccess(game);
     } catch (err) {
       setServerError(String(err));
     } finally {
@@ -69,13 +71,14 @@ export default function ManualSetupForm({ onBack, onComplete }: Props) {
     <div className="min-h-screen bg-base-100 flex items-center justify-center p-6">
       <div className="max-w-md w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <button id="btn-back" className="btn btn-ghost btn-circle btn-sm" onClick={onBack}>
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="btn btn-ghost btn-sm gap-2">
             <ArrowLeft className="w-5 h-5" />
+            {t('common:actions.back')}
           </button>
-          <div>
-            <h2 className="text-2xl font-bold">Manual Setup</h2>
-            <p className="text-base-content/60 text-sm">Add a 3DMigoto game instance manually</p>
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold">{t('manual_setup.title')}</h2>
+            <p className="text-base-content/60 text-sm">{t('manual_setup.subtitle')}</p>
           </div>
         </div>
 
@@ -88,16 +91,17 @@ export default function ManualSetupForm({ onBack, onComplete }: Props) {
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          {/* Game Type Select */}
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend">Game Type</legend>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Game Type */}
+          <div className="form-control w-full">
+            <label className="label">
+              <span className="label-text font-semibold">{t('manual_setup.game_type')}</span>
+            </label>
             <select
-              id="select-game-type"
-              className={`select select-primary w-full ${errors.gameType ? 'select-error' : ''}`}
+              className={`select select-bordered w-full ${errors.gameType ? 'select-error' : ''}`}
               {...register('gameType')}
             >
-              <option value="">Select a game...</option>
+              <option value="">{t('manual_setup.game_type_placeholder')}</option>
               {GAME_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
@@ -105,53 +109,46 @@ export default function ManualSetupForm({ onBack, onComplete }: Props) {
               ))}
             </select>
             {errors.gameType && (
-              <p className="text-error text-sm mt-1">{errors.gameType.message}</p>
+              <label className="label">
+                <span className="label-text-alt text-error">{errors.gameType.message}</span>
+              </label>
             )}
-          </fieldset>
+          </div>
 
-          {/* Folder Path */}
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend">Game Folder</legend>
+          {/* Path */}
+          <div className="form-control w-full">
+            <label className="label">
+              <span className="label-text font-semibold">{t('manual_setup.game_folder')}</span>
+            </label>
             <div className="flex gap-2">
               <input
-                id="input-game-path"
                 type="text"
-                className={`input input-primary flex-1 ${errors.path ? 'input-error' : ''}`}
-                placeholder="Click Browse to select folder..."
+                className={`input input-bordered flex-1 truncate ${errors.path ? 'input-error' : ''}`}
+                placeholder={t('manual_setup.game_folder_placeholder')}
                 readOnly
-                value={currentPath}
                 {...register('path')}
               />
-              <button
-                id="btn-browse"
-                type="button"
-                className="btn btn-outline btn-primary"
-                onClick={handleBrowse}
-              >
+              <button type="button" className="btn btn-primary" onClick={handleBrowse}>
                 <FolderOpen className="w-4 h-4" />
-                Browse
+                {t('manual_setup.browse')}
               </button>
             </div>
-            {errors.path && <p className="text-error text-sm mt-1">{errors.path.message}</p>}
-            <p className="text-base-content/40 text-xs mt-1">
-              Select the root folder containing d3dx.ini, d3d11.dll, and /Mods
-            </p>
-          </fieldset>
+            {errors.path && (
+              <label className="label">
+                <span className="label-text-alt text-error">{errors.path.message}</span>
+              </label>
+            )}
+            <label className="label">
+              <span className="label-text-alt text-base-content/50">{t('manual_setup.hint')}</span>
+            </label>
+          </div>
 
-          {/* Submit */}
-          <button
-            id="btn-add-game"
-            type="submit"
-            className="btn btn-primary btn-block btn-lg"
-            disabled={isSubmitting}
-          >
+          {/* Actions */}
+          <button type="submit" className="btn btn-primary btn-block gap-2" disabled={isSubmitting}>
             {isSubmitting ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Validating...
-              </>
+              <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              'Add Game'
+              t('manual_setup.submit_button')
             )}
           </button>
         </form>

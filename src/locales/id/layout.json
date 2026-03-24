@@ -1,0 +1,53 @@
+{
+  "app_locked_title": "Aplikasi Terkunci",
+  "app_locked_description": "PIN diperlukan untuk mengakses aplikasi dalam Mode Tidak Aman.",
+  "nav": {
+    "dashboard": "Dasbor",
+    "mods_manager": "Manajer Mod",
+    "collections": "Koleksi",
+    "settings": "Pengaturan",
+    "storage_optimizer": "Pengoptimal Penyimpanan",
+    "app_menu_tip": "Menu Aplikasi",
+    "quick_play": "Main Cepat",
+    "no_game_selected": "Tidak ada game terpilih",
+    "back_to_dashboard": "Kembali ke Dasbor"
+  },
+  "empty": {
+    "no_selection": "Tidak Ada Objek Terpilih",
+    "select_category": "Pilih kategori dari bilah sisi (seperti <0>Karakter</0> atau <1>Senjata</1>) untuk melihat dan mengelola mod Anda."
+  },
+  "maintenance": {
+    "clear_success": "Berhasil membersihkan {{count}} thumbnail lama.",
+    "maintenance_success": "Pemeliharaan selesai. Database dioptimalkan. Memangkas {{pruned}} thumbnail. Membersihkan {{trash}} entri sampah kosong yang lama."
+  },
+  "actions": {
+    "trash": "Tempat Sampah",
+    "refresh": "Segarkan",
+    "settings": "Pengaturan",
+    "safe_mode": "Mode Aman",
+    "privacy_mode": "Mode Privasi",
+    "privacy_toggle": "Alihkan Mode Privasi Utama",
+    "hide_preview": "Sembunyikan Pratinjau",
+    "show_preview": "Tampilkan Pratinjau"
+  },
+  "game_selector": {
+    "select_game": "Pilih Game",
+    "loading": "Memuat...",
+    "add_game": "Tambah Game"
+  },
+  "context": {
+    "safe_mode_tip": "Saklar Mode Aman",
+    "loading": "Memuat...",
+    "collections_title": "Koleksi",
+    "save_current": "Simpan Sekarang",
+    "no_collections": "Tidak ada koleksi tersimpan",
+    "manage_collections": "Kelola Koleksi"
+  },
+  "launch_bar": {
+    "play": "Main",
+    "launching": "Meluncurkan...",
+    "randomizer": "Acak (Gacha)",
+    "conflicts": "Konflik",
+    "conflict_toast": "{{count}} Konflik Shader Terdeteksi"
+  }
+}

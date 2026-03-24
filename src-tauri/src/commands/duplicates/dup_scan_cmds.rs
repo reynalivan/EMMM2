@@ -65,6 +65,7 @@ impl Default for DupScanState {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn dup_scan_start(
     game_id: String,
     mods_root: String,
@@ -227,16 +228,41 @@ pub async fn dup_scan_start(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn dup_scan_cancel(state: State<'_, DupScanState>) -> Result<(), String> {
     state.cancel();
     Ok(())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn dup_scan_get_report(
     state: State<'_, DupScanState>,
+    config: State<'_, crate::services::config::ConfigService>,
+    pin: Option<String>,
 ) -> Result<Option<DupScanReport>, String> {
-    Ok(state.load_report())
+    let mut report = match state.load_report() {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    let settings = config.get_settings();
+    if settings.safe_mode.enabled {
+        let mut reveal_unsafe = false;
+        if let Some(p) = pin {
+            if config.verify_pin(&p) {
+                reveal_unsafe = true;
+            }
+        }
+
+        if !reveal_unsafe {
+            report.groups.retain(|g| !g.is_unsafe);
+            report.total_groups = report.groups.len();
+            report.total_members = report.groups.iter().map(|g| g.members.len()).sum();
+        }
+    }
+
+    Ok(Some(report))
 }
 
 fn dup_scan_build_scan_id() -> String {

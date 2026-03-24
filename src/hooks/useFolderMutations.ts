@@ -9,22 +9,18 @@
  */
 
 import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../lib/bindings';
 import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
 import { folderKeys, updateFolderCache } from './useFolders';
-import { reconcileActiveCollection } from '../features/collections/utils/reconcileActiveCollection';
-import { invalidateCorridorRuntime } from '../features/collections/utils/invalidateCorridorRuntime';
-import { refetchCurrentCorridorRuntime } from '../features/collections/utils/refetchCurrentCorridorRuntime';
-import type {
+import { corridorKeys } from '../features/collections/queryKeys';
+import {
   FolderGridResponse,
-  BulkResult,
-  ModInfo,
   ModInfoUpdate,
   TrashEntry,
   ConflictInfo,
-  DuplicateInfo,
+  ModFolder,
 } from '../types/mod';
 
 // ── Trash ───────────────────────────────────────────────────────
@@ -39,7 +35,7 @@ export const trashKeys = {
 export function useListTrash(enabled = true) {
   return useQuery<TrashEntry[]>({
     queryKey: trashKeys.list(),
-    queryFn: () => invoke<TrashEntry[]>('list_trash'),
+    queryFn: () => commands.listTrash(),
     enabled,
     staleTime: 30_000,
   });
@@ -50,7 +46,7 @@ export function useEmptyTrash() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => invoke<number>('empty_trash'),
+    mutationFn: () => commands.emptyTrash(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: trashKeys.all });
     },
@@ -65,10 +61,10 @@ export function useUpdateModCategory() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; category: string }) =>
-      invoke<void>('set_mod_category', params),
+      commands.setModCategory(params),
     onSuccess: (_data, variables) => {
       // Targeted: update category in cache instead of full re-listing
-      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
+      updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) => ({
         ...f,
         category: variables.category,
       }));
@@ -83,7 +79,7 @@ export function useUpdateModThumbnail() {
 
   return useMutation({
     mutationFn: (params: { folderPath: string; sourcePath: string }) =>
-      invoke<string>('update_mod_thumbnail', params),
+      commands.updateModThumbnail(params),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
@@ -97,7 +93,7 @@ export function useToggleModSafe() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
-      invoke<void>('toggle_mod_safe', params),
+      commands.toggleModSafe(params),
     onSuccess: async (_data, variables) => {
       // Phase 24 barrier: The mod just switched contexts.
       // Remove it from the current grid view aggressively so it doesn't linger.
@@ -110,8 +106,7 @@ export function useToggleModSafe() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      await invalidateCorridorRuntime(queryClient);
-      await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
     },
   });
 }
@@ -121,7 +116,7 @@ export function useDeleteModThumbnail() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (folderPath: string) => invoke<void>('delete_mod_thumbnail', { folderPath }),
+    mutationFn: (folderPath: string) => commands.deleteModThumbnail({ folderPath }),
     onSuccess: (_data, folderPath) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(folderPath) });
@@ -135,7 +130,7 @@ export function usePasteThumbnail() {
 
   return useMutation({
     mutationFn: (params: { folderPath: string; imageData: number[] }) =>
-      invoke<string>('paste_thumbnail', params),
+      commands.pasteThumbnail(params),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
@@ -150,10 +145,10 @@ export function useUpdateModInfo() {
 
   return useMutation({
     mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) =>
-      invoke<ModInfo>('update_mod_info', params),
+      commands.updateModInfo(params),
     onSuccess: (_data, variables) => {
       // Targeted: update the specific folder in cache
-      updateFolderCache(queryClient, [variables.folderPath], (f) => ({
+      updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) => ({
         ...f,
         metadata: variables.update.metadata
           ? { ...f.metadata, ...variables.update.metadata }
@@ -183,7 +178,7 @@ function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: 
     });
     for (const [, data] of prevQueries) {
       if (!data) continue;
-      const match = data.children.find((f) => f.path === p);
+      const match = data.children.find((f: ModFolder) => f.path === p);
       if (match) return match.name;
     }
     return name;
@@ -200,9 +195,10 @@ import { useAppStore } from '../stores/useAppStore';
 export function useBulkToggle() {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (params: { paths: string[]; enable: boolean }) =>
-      invoke<BulkResult>('bulk_toggle_mods', params),
+  const mutation = useMutation({
+    mutationFn: (params: { gameId: string; paths: string[]; enable: boolean }) =>
+      commands.bulkToggleMods(params),
+
     onSuccess: async (result, variables) => {
       result.success.forEach((newPath) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
@@ -223,8 +219,7 @@ export function useBulkToggle() {
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       const activeGameId = useAppStore.getState().activeGameId;
       if (activeGameId) {
-        await invalidateCorridorRuntime(queryClient);
-        await refetchCurrentCorridorRuntime(queryClient, activeGameId);
+        queryClient.invalidateQueries({ queryKey: corridorKeys.all });
       }
 
       if (result.success.length > 0) {
@@ -235,27 +230,44 @@ export function useBulkToggle() {
         toast.error(`Failed to toggle ${result.failures.length} items`);
       }
     },
+    onError: (error, variables) => {
+      const errStr = String(error);
+      if (errStr.includes('"type":"FileInUse"')) {
+        try {
+          const body = JSON.parse(errStr);
+          const payload = body.payload;
+          useAppStore
+            .getState()
+            .openFileInUseDialog(payload.path, payload.processes, () =>
+              mutation.mutate(variables),
+            );
+          return;
+        } catch {
+          /* parse failed */
+        }
+      }
+      toast.error(errStr);
+    },
   });
+
+  return mutation;
 }
+
 
 /** Hook to bulk delete mods. */
 export function useBulkDelete() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { paths: string[]; gameId?: string }) =>
-      invoke<BulkResult>('bulk_delete_mods', params),
-    onSuccess: async (result, variables) => {
+    mutationFn: (params: { paths: string[]; gameId?: string }) => commands.bulkDeleteMods(params),
+    onSuccess: async (result) => {
       result.success.forEach((path) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
       });
       // Targeted cache update instead of full refetch: remove deleted folders
       updateFolderCache(queryClient, result.success, undefined, true);
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      await invalidateCorridorRuntime(queryClient);
-      if (variables.gameId) {
-        await refetchCurrentCorridorRuntime(queryClient, variables.gameId);
-      }
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
 
       if (result.success.length > 0) {
         toast.success(getBulkToastMessage(queryClient, result.success, 'Deleted'));
@@ -272,11 +284,11 @@ export function useBulkUpdateInfo() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { paths: string[]; update: ModInfoUpdate }) =>
-      invoke<BulkResult>('bulk_update_info', params),
+    mutationFn: (params: { gameId: string; paths: string[]; update: ModInfoUpdate }) =>
+      commands.bulkUpdateInfo(params),
     onSuccess: (result, variables) => {
       // Targeted cache update instead of full refetch
-      updateFolderCache(queryClient, result.success, (f) => {
+      updateFolderCache(queryClient, result.success, (f: ModFolder) => {
         const update = variables.update;
         return {
           ...f,
@@ -301,9 +313,9 @@ export function useBulkFavorite() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPaths: string[]; favorite: boolean }) =>
-      invoke<BulkResult>('bulk_toggle_favorite', params),
+      commands.bulkToggleFavorite(params),
     onSuccess: (result, variables) => {
-      updateFolderCache(queryClient, result.success, (f) => ({
+      updateFolderCache(queryClient, result.success, (f: ModFolder) => ({
         ...f,
         is_favorite: variables.favorite,
       }));
@@ -324,9 +336,9 @@ export function useBulkPin() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
-      invoke<BulkResult>('bulk_pin_mods', params),
+      commands.bulkPinMods(params),
     onSuccess: (result, variables) => {
-      updateFolderCache(queryClient, result.success, (f) => ({
+      updateFolderCache(queryClient, result.success, (f: ModFolder) => ({
         ...f,
         is_pinned: variables.pin,
       }));
@@ -354,19 +366,21 @@ export function useImportMods() {
       strategy: ImportStrategy;
       dbJson?: string | null;
     }) => {
-      await invoke('set_watcher_suppression_cmd', { suppressed: true });
+      await commands.setWatcherSuppression({ suppressed: true });
       try {
-        return await invoke<BulkResult>('import_mods_from_paths', params);
+        return await commands.importModsFromPaths({
+          ...params,
+          dbJson: params.dbJson ?? undefined,
+        });
       } finally {
-        await invoke('set_watcher_suppression_cmd', { suppressed: false });
+        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      void invalidateCorridorRuntime(queryClient);
-      void reconcileActiveCollection();
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
       if (result.success.length > 0) {
         toast.success(`Imported ${result.success.length} items`);
       }
@@ -383,13 +397,12 @@ export function useAutoOrganizeMods() {
 
   return useMutation({
     mutationFn: (params: { paths: string[]; targetRoot: string; dbJson: string }) =>
-      invoke<BulkResult>('auto_organize_mods', params),
+      commands.autoOrganizeMods(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
       queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      void invalidateCorridorRuntime(queryClient);
-      void reconcileActiveCollection();
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
     },
   });
 }
@@ -404,11 +417,10 @@ export function useEnableOnlyThis() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { targetPath: string; gameId: string }) =>
-      invoke<BulkResult>('enable_only_this', params),
+    mutationFn: (params: { targetPath: string; gameId: string }) => commands.enableOnlyThis(params),
     onSuccess: (result) => {
       // The first item is the one enabled, the rest are disabled
-      result.success.forEach((newPath, idx) => {
+      result.success.forEach((newPath: string, idx: number) => {
         queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
 
         // Derive old path to keep grid selection alive
@@ -425,7 +437,7 @@ export function useEnableOnlyThis() {
       // desync risk. It is a rare operation where an active refetch is 100% justified.
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-      void invalidateCorridorRuntime(queryClient);
+      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
 
       const disabled = result.success.length - 1;
       if (disabled > 0) {
@@ -445,7 +457,7 @@ export function useEnableOnlyThis() {
 export function useCheckDuplicate() {
   return useMutation({
     mutationFn: (params: { folderPath: string; gameId: string }) =>
-      invoke<DuplicateInfo[]>('check_duplicate_enabled', params),
+      commands.checkDuplicateEnabled(params),
   });
 }
 
@@ -460,7 +472,7 @@ export function useActiveConflicts() {
     queryKey: ['conflicts', activeGame?.id],
     queryFn: () =>
       activeGame?.id
-        ? invoke<ConflictInfo[]>('get_active_mod_conflicts', { gameId: activeGame.id })
+        ? commands.getActiveModConflicts({ gameId: activeGame.id })
         : Promise.resolve([]),
     enabled: !!activeGame?.id,
     staleTime: 60_000, // Conflicts rarely change — watcher invalidates on toggle

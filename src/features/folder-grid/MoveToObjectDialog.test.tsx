@@ -13,10 +13,11 @@ describe('MoveToObjectDialog', () => {
     const onSubmit = vi.fn();
     render(
       <MoveToObjectDialog
-        open={true}
+        isOpen={true}
         onClose={vi.fn()}
         objects={dummyObjects}
         currentObjectId="idle"
+        targetModPaths={['mod/path']}
         currentStatus={true}
         onSubmit={onSubmit}
       />,
@@ -43,10 +44,11 @@ describe('MoveToObjectDialog', () => {
   it('disables currentObject from being selected', () => {
     render(
       <MoveToObjectDialog
-        open={true}
+        isOpen={true}
         onClose={vi.fn()}
         objects={dummyObjects}
         currentObjectId="2" // Alpha is current
+        targetModPaths={['mod/path']}
         currentStatus={true}
         onSubmit={vi.fn()}
       />,

@@ -118,31 +118,28 @@ pub fn plan_cycle_preset(new_preset_name: &str, safe_mode: bool) -> ActionResult
 
 // ─── Variant Folder Cycling ──────────────────────────────────────────────────
 
-/// Compute which folder index to switch to when cycling.
-///
-/// Returns `None` if there are no folders to cycle through.
-/// Uses wrap-around.
+/// Compute the next folder index for variant cycling.
 pub fn resolve_next_folder_index(
-    folder_count: usize,
-    current_index: usize,
+    total_folders: usize,
+    current_idx: usize,
     direction: CycleDirection,
 ) -> Option<usize> {
-    if folder_count == 0 {
+    if total_folders == 0 {
         return None;
     }
 
-    let next = match direction {
-        CycleDirection::Next => (current_index + 1) % folder_count,
+    let next_idx = match direction {
+        CycleDirection::Next => (current_idx + 1) % total_folders,
         CycleDirection::Previous => {
-            if current_index == 0 {
-                folder_count - 1
+            if current_idx == 0 {
+                total_folders - 1
             } else {
-                current_index - 1
+                current_idx - 1
             }
         }
     };
 
-    Some(next)
+    Some(next_idx)
 }
 
 /// Compute the result of switching variant folders.
@@ -159,9 +156,10 @@ pub fn plan_cycle_variant(
             preset_name: preset_name.map(|s| s.to_string()),
             folder_name: Some(folder_name.to_string()),
             scope_name: Some(scope_name.to_string()),
+            ..Default::default()
         },
         needs_reload: true,
-        summary: format!("Folder: {folder_name} (Scope: {scope_name})"),
+        summary: format!("Folder: {folder_name}"),
     }
 }
 

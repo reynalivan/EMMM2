@@ -8,6 +8,7 @@ import {
   Pin,
   ArrowRightLeft,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ContextMenuItem, ContextMenuSeparator } from '../../components/ui/ContextMenu';
 
 interface BulkContextMenuProps {
@@ -31,51 +32,53 @@ export default function BulkContextMenu({
   onPin,
   onMoveToObject,
 }: BulkContextMenuProps) {
+  const { t } = useTranslation(['grid']);
+
   return (
     <>
       <div className="px-2 py-1 text-xs font-semibold opacity-50 select-none">
-        {count} items selected
+        {t('context.selected_count', { count })}
       </div>
       <ContextMenuSeparator />
       <ContextMenuItem icon={ToggleLeft} onClick={() => onToggle?.(true)}>
-        Enable Selected
+        {t('context.enable_selected')}
       </ContextMenuItem>
       <ContextMenuItem icon={ToggleLeft} onClick={() => onToggle?.(false)}>
-        Disable Selected
+        {t('context.disable_selected')}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem icon={Star} onClick={() => onFavorite?.(true)}>
-        Favorite Selected
+        {t('context.favorite_selected')}
       </ContextMenuItem>
       <ContextMenuItem icon={Star} onClick={() => onFavorite?.(false)}>
-        Unfavorite Selected
+        {t('context.unfavorite_selected')}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem icon={ShieldCheck} onClick={() => onSafe?.(true)}>
-        Mark Safe
+        {t('context.mark_safe')}
       </ContextMenuItem>
       <ContextMenuItem icon={ShieldOff} onClick={() => onSafe?.(false)}>
-        Mark Unsafe
+        {t('context.mark_unsafe')}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem icon={Pin} onClick={() => onPin?.(true)}>
-        Pin Selected
+        {t('context.pin_selected')}
       </ContextMenuItem>
       <ContextMenuItem icon={Pin} onClick={() => onPin?.(false)}>
-        Unpin Selected
+        {t('context.unpin_selected')}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem icon={Pencil} onClick={onTag}>
-        Add Tags...
+        {t('context.add_tags')}
       </ContextMenuItem>
       {onMoveToObject && (
         <ContextMenuItem icon={ArrowRightLeft} onClick={onMoveToObject}>
-          Move to Object...
+          {t('context.move_to_object')}
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
       <ContextMenuItem icon={Trash2} danger onClick={onDelete}>
-        Delete {count} Items
+        {t('context.delete_items', { count })}
       </ContextMenuItem>
     </>
   );

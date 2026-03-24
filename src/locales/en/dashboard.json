@@ -1,0 +1,63 @@
+{
+  "empty": {
+    "title": "Welcome to EMMM",
+    "subtitle": "Get started by adding your first game to manage mods.",
+    "add_game": "Add Your First Game"
+  },
+  "error": {
+    "message": "Failed to load dashboard data.",
+    "retry": "Retry"
+  },
+  "header": {
+    "title": "Dashboard",
+    "subtitle": "Overview of your mod ecosystem",
+    "refresh": "Refresh"
+  },
+  "actions": {
+    "quick_play": "Quick Play",
+    "mods_manager": "Mods Manager",
+    "storage_optimizer": "Storage Optimizer",
+    "collections": "Collections",
+    "settings": "Settings",
+    "discover": "Discover",
+    "downloads": "Downloads"
+  },
+  "stats": {
+    "total_mods": "Total Mods",
+    "enabled": "enabled",
+    "disabled": "disabled",
+    "games": "Games",
+    "configured": "Configured",
+    "storage": "Storage",
+    "total_size_desc": "Total mod size",
+    "collections": "Collections",
+    "presets_desc": "Presets saved"
+  },
+  "waste": {
+    "title": "Duplicate Waste Detected",
+    "subtitle": "{{size}} wasted on duplicate mods. Run Optimizer to clean up."
+  },
+  "charts": {
+    "category_title": "Category Distribution",
+    "no_mod_data": "No mod data yet",
+    "game_title": "Mods per Game",
+    "no_game_data": "No game data yet"
+  },
+  "activity": {
+    "recent_title": "Recently Added",
+    "category": "Category: {{category}}",
+    "uncategorized": "Uncategorized",
+    "no_mods": "No mods indexed yet",
+    "last_selected": "Last selected game",
+    "launch": "Launch",
+    "no_game": "No game selected"
+  },
+  "keys": {
+    "title": "Active Key Mapping",
+    "table_mod": "Mod",
+    "table_section": "Section",
+    "table_key": "Key",
+    "table_back": "Back",
+    "no_bindings": "No keybindings found in enabled mods"
+  }
+}

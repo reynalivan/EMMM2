@@ -1,34 +1,23 @@
+// ---------------------------------------------------------------------------
+// v2 Query Key Factory — Single source of truth for all v2 query cache keys
+// ---------------------------------------------------------------------------
+
+export const corridorKeys = {
+  all: ['v2-corridor'] as const,
+  state: (gameId: string, safeMode: boolean) =>
+    [...corridorKeys.all, 'state', gameId, safeMode] as const,
+};
+
 export const collectionKeys = {
-  all: ['collections'] as const,
-  list: (gameId: string) => [...collectionKeys.all, gameId] as const,
-  runtimePreview: (collectionId: string) =>
-    [...collectionKeys.all, 'runtime-preview', collectionId] as const,
+  all: ['v2-collections'] as const,
+  list: (gameId: string, isSafe: boolean) => [...collectionKeys.all, 'list', gameId, isSafe] as const,
+  preview: (collectionId: string) => [...collectionKeys.all, 'preview', collectionId] as const,
+  previewApply: (collectionId: string) =>
+    [...collectionKeys.all, 'previewApply', collectionId] as const,
 };
 
-export const corridorRuntimeKeys = {
-  all: ['corridor-runtime'] as const,
-  snapshot: (gameId: string, isSafe: boolean) =>
-    [...corridorRuntimeKeys.all, gameId, isSafe] as const,
-};
-
-export const corridorPreviewKeys = {
-  all: ['corridor-preview'] as const,
-  detail: (
-    gameId: string,
-    currentSafeMode: boolean,
-    targetSafeMode: boolean,
-    currentStateToken: string,
-  ) =>
-    [
-      ...corridorPreviewKeys.all,
-      gameId,
-      currentSafeMode,
-      targetSafeMode,
-      currentStateToken,
-    ] as const,
-};
-
-export const applyProgressKeys = {
-  all: ['apply-progress'] as const,
-  detail: (gameId: string) => [...applyProgressKeys.all, gameId] as const,
+export const pinKeys = {
+  all: ['v2-pin'] as const,
+  status: () => [...pinKeys.all, 'status'] as const,
+  hasPin: () => [...pinKeys.all, 'has-pin'] as const,
 };

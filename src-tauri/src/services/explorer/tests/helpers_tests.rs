@@ -33,7 +33,9 @@ fn test_contains_filtered_keyword() {
         category: None,
         conflict_group_id: None,
         conflict_state: None,
+        warnings: vec![],
     };
+
 
     assert!(contains_filtered_keyword(&folder, &["sky".into()]));
     assert!(!contains_filtered_keyword(&folder, &["ocean".into()]));

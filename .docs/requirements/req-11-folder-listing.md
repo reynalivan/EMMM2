@@ -2,15 +2,15 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: The mod explorer needs to display raw filesystem folders as structured, navigable mod cards — but raw directories contain mixed content (plain containers, complete mods, variant sets, internal assets) that must be reliably classified before the UI can render them correctly.
-- **Proposed Solution**: A backend listing command (`list_mod_folders`) that performs recursive classification per folder to distinguish between containers, mod packs, and internal assets. It employs a single-pass `fs::read_dir` strategy to identify 3DMigoto project structures (ini files, .buf/.ib/.dds assets), calculates folder sizes and modified timestamps, and normalizes display names by stripping "DISABLED " prefixes. It also detects "naming conflicts" where folders would have identical normalized display names.
+- **Proposed Solution**: A backend listing command (`list_mod_folders`) that performs recursive classification per folder to distinguish between containers, mod packs, and internal assets. It employs a single-pass `fs::read_dir` strategy to identify 3DMigoto project structures (ini files, .buf/.ib/.dds assets), calculates folder sizes and modified timestamps, and normalizes display names by stripping "DISABLED " prefixes. It also detects "naming conflicts" and **inherited disabled states** (scanning path segments for parent prefixes). It now includes a **warnings scan** (e.g., detecting 0KB corrupt INIs) during classification.
 - **Success Criteria**:
   - [x] Command returns in ≤ 200ms for 500 top-level folders on an SSD.
   - [x] Correctly identifies `ModPackRoot` (has ini + mod sections).
   - [x] Strips `DISABLED ` prefix variants (`dis-`, `disable_`, `dis_`) from display names.
   - [x] Identifies "InternalAssets" (folders referenced by `filename=` in a parent mod's INI).
-  - [x] Returns `classification_reasons` for every node to facilitate frontend debugging/tooltips.
-  - [x] Detects `EnabledDisabledBothPresent` conflicts for siblings with same base name.
+  - [x] Returns `classification_reasons` and **`warnings`** for every node.
+  - [x] Detects `EnabledDisabledBothPresent` conflicts.
+  - [x] **Path-based Inheritance**: Identifies if a folder is locked by a `DISABLED ` parent ancestor in $O(\text{depth})$.
   - Incremental classification skips cache-valid entries — re-scan time ≤ 20ms when ≤ 5% of entries have changed mtime/size.
   - `.ini` files without any `TextureOverride*`, `ShaderOverride*`, or `Resource*` sections are never falsely classified as `ModPackRoot`.
   - Malformed `info.json` isolates parse failure without breaking the rest of the directory listing.
@@ -86,8 +86,8 @@ As a system, I want each listed folder to carry its `info.json` fields and thumb
 | ID        | Type        | Criteria                                                                                                                                                                                  |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-11.1.1 | ✅ Positive | A folder is `ModPackRoot` if it contains a `.ini` file with valid 3DMigoto sections (`[TextureOverride...]`, etc.) AND has meaningful subfolders or assets.                               |
-| AC-11.1.2 | ✅ Positive | A folder is `FlatModRoot` if it is a `ModPackRoot` but its children are ONLY internal assets (referenced by INI).                                                                          |
-| AC-11.1.3 | ✅ Positive | A folder is `VariantContainer` if it contains 3+ subfolders each containing a mod INI, or 2+ subfolders if a parent INI references them.                                                   |
+| AC-11.1.2 | ✅ Positive | A folder is `FlatModRoot` if it is a `ModPackRoot` but its children are ONLY internal assets (referenced by INI).                                                                         |
+| AC-11.1.3 | ✅ Positive | A folder is `VariantContainer` if it contains 3+ subfolders each containing a mod INI, or 2+ subfolders if a parent INI references them.                                                  |
 | AC-11.1.4 | ✅ Positive | A folder is `InternalAssets` if it is referenced by a `filename=` directive in a parent INI.                                                                                              |
 | AC-11.1.5 | ✅ Positive | A folder is `ContainerFolder` if it does not meet mod criteria (general categorization folder).                                                                                           |
 | AC-11.5.1 | ✅ Positive | Given a folder containing `info.json`, when listed, then `author`, `description`, `version`, and `link` from the JSON are attached to the `FolderEntry` response                          |
@@ -121,7 +121,7 @@ list_folders(game_id, sub_path) → Vec<FolderEntry>
   │       ├── classify(entry_path, cache) → FolderType  [cache key: (path, mtime, size)]
   │       │     └── classify() rules (in priority order):
   │       │         1. has_valid_mod_ini() AND has_mod_assets() → ModPackRoot
-  │       │         2. subfolder count ≥ 5 AND each has valid mod ini → VariantContainer
+  │       │         2. subfolder count ≥ 3 AND each has valid mod ini → VariantContainer
   │       │         3. root ini references ≥ 2 subfolders via filename= → VariantContainer
   │       │         4. none of above → ContainerFolder
   │       │     └── extract_referenced_subfolders(ini_text):
@@ -141,9 +141,11 @@ FolderEntry {
   folder_path: String,              // relative to mods_path
   name: String,                     // display name (DISABLED stripped)
   is_enabled: bool,
+  ancestor_disabled_by: Option<String>, // name of first disabled parent segment
   folder_type: FolderType,          // ContainerFolder | ModPackRoot | VariantContainer | InternalAssets
   is_navigable: bool,               // derived: folder_type == ContainerFolder
   classification_reasons: Vec<String>, // debug/tooltip strings e.g. ["has-mod-ini", "has-assets"]
+  warnings: Vec<String>,            // corruption/issue strings e.g. ["corrupt-ini-0kb"]
   variants: Vec<VariantEntry>,      // populated if VariantContainer
   referenced_subfolders: Vec<String>,  // subfolder names used as InternalAssets
   metadata: Option<ModMetadata>,

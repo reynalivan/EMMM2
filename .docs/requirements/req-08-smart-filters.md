@@ -20,13 +20,13 @@
 
 As a user, I want to sort the objectlist by name, date added, or rarity, so that I can organize my mods based on game value or chronological addition.
 
-| ID        | Type        | Criteria                                                                                                                                          |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-08.1.1 | ✅ Positive | Given "A-Z", the list sorts alphabetically by display name (Name column in DB)                                                                  |
-| AC-08.1.2 | ✅ Positive | Given "New", the list sorts by `created_at` descending, showing most recently added objects first                                                 |
-| AC-08.1.3 | ✅ Positive | Given "★" (Rarity), the list sorts by numeric rarity metadata (from MasterDB/Schema) descending                                                  |
-| AC-08.1.4 | ✅ Positive | Given any sort selection, the preference is written to `localStorage['sidebarSort']` and restored on next launch                                  |
-| AC-08.1.5 | ⚠️ Edge     | Ties in rarity or date sort are resolved by alphabetical name fallback to ensure a stable, deterministic list position                            |
+| ID        | Type        | Criteria                                                                                                               |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| AC-08.1.1 | ✅ Positive | Given "A-Z", the list sorts alphabetically by display name (Name column in DB)                                         |
+| AC-08.1.2 | ✅ Positive | Given "New", the list sorts by `created_at` descending, showing most recently added objects first                      |
+| AC-08.1.3 | ✅ Positive | Given "★" (Rarity), the list sorts by numeric rarity metadata (from MasterDB/Schema) descending                        |
+| AC-08.1.4 | ✅ Positive | Given any sort selection, the preference is written to `localStorage['sidebarSort']` and restored on next launch       |
+| AC-08.1.5 | ⚠️ Edge     | Ties in rarity or date sort are resolved by alphabetical name fallback to ensure a stable, deterministic list position |
 
 ---
 
@@ -47,12 +47,12 @@ As a user, I want to search for objects by name using a text bar with typo toler
 
 As a user, I want to filter the objectlist by status (enabled/disabled) or category, so that I can focus on specific subsets of my mods.
 
-| ID        | Type        | Criteria                                                                                                                                                                             |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-08.3.1 | ✅ Positive | Given "Enabled Only", the list is filtered to objects having `enabled_count > 0`. "Disabled Only" shows objects with `enabled_count = 0` or missing files.                            |
-| AC-08.3.2 | ✅ Positive | Given a Category selection (e.g., Characters), the list is filtered to objects where `object_type` matches. Non-matching objects are excluded.                                       |
-| AC-08.3.3 | ✅ Positive | Given multiple metadata filters (Element: Pyro, Rarity: 5), the list uses an AND logic intersection — only objects matching ALL active chips are shown                                |
-| AC-08.3.4 | ⚠️ Edge     | Given a newly sync'd object that changes category while a filter is active, it immediately moves or disappears from the list based on match criteria via cache invalidation          |
+| ID        | Type        | Criteria                                                                                                                                                                    |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-08.3.1 | ✅ Positive | Given "Enabled Only", the list is filtered to objects having `enabled_count > 0`. "Disabled Only" shows objects with `enabled_count = 0` or missing files.                  |
+| AC-08.3.2 | ✅ Positive | Given a Category selection (e.g., Characters), the list is filtered to objects where `object_type` matches. Non-matching objects are excluded.                              |
+| AC-08.3.3 | ✅ Positive | Given multiple metadata filters (Element: Pyro, Rarity: 5), the list uses an AND logic intersection — only objects matching ALL active chips are shown                      |
+| AC-08.3.4 | ⚠️ Edge     | Given a newly sync'd object that changes category while a filter is active, it immediately moves or disappears from the list based on match criteria via cache invalidation |
 
 ---
 
@@ -60,11 +60,11 @@ As a user, I want to filter the objectlist by status (enabled/disabled) or categ
 
 As a privacy-conscious user, I want NSFW-flagged objects to be hidden or masked in the objectlist when Safe Mode is active, so that sensitive content is never visible in public.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-08.4.1 | ✅ Positive | Given Safe Mode is ENABLED, then the `get_objects_cmd` backend query excludes any object where ALL its mods are NSFW (`is_safe = false`) — the object does not appear in the "Safe" corridor list at all |
-| AC-08.4.2 | ✅ Positive | Given Safe Mode is DISABLED (Unsafe Corridor), then only objects with at least one NSFW mod are shown (or all if configured for a mixed view, but current logic enforces corridor isolation)  |
-| AC-08.4.3 | ❌ Negative | Given an object contains only mods with explicit `is_safe = false` flags and Safe Mode is ENABLED, it is excluded even if its folder name contains no NSFW keywords |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                   |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-08.4.1 | ✅ Positive | Given Safe Mode is ENABLED, then the `get_objects_cmd` backend query excludes any object where ALL its mods are NSFW (`is_safe = false`) — the object does not appear in the "Safe" corridor list at all                                                                                   |
+| AC-08.4.2 | ✅ Positive | Given Safe Mode is DISABLED (Unsafe Corridor), then only objects with at least one NSFW mod are shown (or all if configured for a mixed view, but current logic enforces corridor isolation)                                                                                               |
+| AC-08.4.3 | ❌ Negative | Given an object contains only mods with explicit `is_safe = false` flags and Safe Mode is ENABLED, it is excluded even if its folder name contains no NSFW keywords                                                                                                                        |
 | AC-08.4.4 | ⚠️ Edge     | Given Safe Mode is toggled via the global toggle mid-session while a sensitive object is currently selected in the objectlist, then within ≤ 100ms: the selected object is deselected, the list re-fetches with the new filter, and no sensitive data remains visible in the preview panel |
 
 ---
@@ -92,7 +92,7 @@ FilterToolbar (ObjectListToolbar component)
       └── MetadataChips: [Dynamic based on schema]
 
 useObjects(gameId, filterState) → React Query
-  └── invoke('get_objects_cmd', { gameId, safeMode, hideEmpty, sortBy })
+  └── commands.getObjectsCmd({ gameId, safeMode, hideEmpty, sortBy })
       └── SQL: WHERE ... ORDER BY ... (sort applied DB-side)
 
 Fuzzy search (heavy path):
@@ -102,13 +102,13 @@ Fuzzy search (heavy path):
 
 ### Integration Points
 
-| Component        | Detail                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Object Query     | `invoke('get_objects_cmd', { gameId, hide_empty, safe_mode, sort_by })` — sorting and empty-filter done DB-side via `ORDER BY` and `HAVING` |
-| Fuzzy Search     | `fuzzysort` npm package (Jaro-Winkler variant) — threshold 0.75, runs in Web Worker for ≥ 500 objects                                       |
-| Sort Persist     | `localStorage['sidebarSort']` — string enum `'az'                                                                                           | 'active_first'` |
-| Safe Mode        | Read from `useAppStore.safeMode` Zustand state → passed as query param to `get_objects_cmd`                                                 |
-| Query Invalidate | All filter changes call `queryClient.invalidateQueries(['objects', gameId])` to re-fetch with new params                                    |
+| Component        | Detail                                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Object Query     | `commands.getObjectsCmd({ gameId, hide_empty, safe_mode, sort_by })` — sorting and empty-filter done DB-side via `ORDER BY` and `HAVING` |
+| Fuzzy Search     | `fuzzysort` npm package (Jaro-Winkler variant) — threshold 0.75, runs in Web Worker for ≥ 500 objects                                    |
+| Sort Persist     | `localStorage['sidebarSort']` — string enum `'az'                                                                                        | 'active_first'` |
+| Safe Mode        | Read from `useAppStore.safeMode` Zustand state → passed as query param to `get_objects_cmd`                                              |
+| Query Invalidate | All filter changes call `queryClient.invalidateQueries(['objects', gameId])` to re-fetch with new params                                 |
 
 ### Security & Privacy
 

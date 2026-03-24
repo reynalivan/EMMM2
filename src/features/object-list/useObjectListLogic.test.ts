@@ -15,7 +15,6 @@ vi.mock('../../stores/useAppStore', () => ({
       sidebarSearchQuery: '',
       setSidebarSearch: vi.fn(),
       safeMode: false,
-      setSafeMode: vi.fn(),
     })),
     {
       getState: vi.fn(() => ({
@@ -110,25 +109,25 @@ describe('useObjectListLogic', () => {
   it('initializes basic state correctly', () => {
     const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
 
-    expect(result.current.isMobile).toBe(false);
-    expect(result.current.objects).toEqual([]);
-    expect(result.current.activeFilters).toEqual({});
-    expect(result.current.sortBy).toBe('name');
+    expect(result.current.state.isMobile).toBe(false);
+    expect(result.current.state.objects).toEqual([]);
+    expect(result.current.filters.activeFilters).toEqual({});
+    expect(result.current.filters.sortBy).toBe('name');
   });
 
   it('updates filters properly', () => {
     const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
 
     act(() => {
-      result.current.handleFilterChange('element', ['Fire']);
+      result.current.filters.handleFilterChange('element', ['Fire']);
     });
 
-    expect(result.current.activeFilters).toEqual({ element: ['Fire'] });
+    expect(result.current.filters.activeFilters).toEqual({ element: ['Fire'] });
 
     act(() => {
-      result.current.handleClearFilters();
+      result.current.filters.handleClearFilters();
     });
 
-    expect(result.current.activeFilters).toEqual({});
+    expect(result.current.filters.activeFilters).toEqual({});
   });
 });

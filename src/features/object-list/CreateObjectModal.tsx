@@ -8,15 +8,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { X } from 'lucide-react';
 import { useMemo, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useCreateObject, useGameSchema } from '../../hooks/useObjects';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { toast } from '../../stores/useToastStore';
-import type { FilterDef } from '../../types/object';
+import { type FilterDef, ItemStatus } from '../../types/object';
 
 const createSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(255, 'Name is too long'),
-  object_type: z.string().min(1, 'Category is required'),
+  object_type: z.string().min(1, 'Object type is required'),
   sub_category: z.string().optional(),
+  thumbnail_url: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -35,6 +37,7 @@ export default function CreateObjectModal({
   onImportDropped,
   onClose,
 }: CreateObjectModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const { data: gameSchema } = useGameSchema();
   const createObject = useCreateObject();
@@ -52,6 +55,7 @@ export default function CreateObjectModal({
       name: '',
       object_type: '',
       sub_category: '',
+      thumbnail_url: '',
       metadata: {},
     },
   });
@@ -85,21 +89,28 @@ export default function CreateObjectModal({
         name: data.name,
         object_type: data.object_type,
         sub_category: data.sub_category || null,
-        metadata: data.metadata,
+        metadata: data.metadata || {},
+        status: ItemStatus.Enabled,
+        folder_path: null,
+        thumbnail_url: null,
       });
 
       // If we have items to import specifically for this new object
       if (pendingPaths && pendingPaths.length > 0 && onImportDropped) {
-        onImportDropped(newObjectId, data.name, pendingPaths);
+        onImportDropped(newObjectId.id, data.name, pendingPaths);
       } else {
-        toast.success(`Object "${data.name}" created`);
+        toast.success(t('create_modal.success_message', { name: data.name }));
       }
 
       reset();
       onClose();
     } catch (err) {
       console.error('Failed to create object:', err);
-      toast.error(`Failed to create object: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(
+        t('create_modal.error_message', {
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
     }
   };
 
@@ -114,23 +125,23 @@ export default function CreateObjectModal({
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2"
           onClick={handleClose}
-          aria-label="Close"
+          aria-label={t('common:actions.close')}
         >
           <X size={16} />
         </button>
 
-        <h3 className="font-bold text-lg mb-4">Create New Object</h3>
+        <h3 className="font-bold text-lg mb-4">{t('create_modal.title')}</h3>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
           {/* Name */}
           <div className="form-control w-full">
             <label className="label py-1">
-              <span className="label-text font-medium">Name</span>
+              <span className="label-text font-medium">{t('create_modal.name')}</span>
             </label>
             <input
               type="text"
               className={`input input-bordered w-full ${errors.name ? 'input-error' : ''}`}
-              placeholder="e.g. Eula"
+              placeholder={t('create_modal.placeholder_name')}
               autoFocus
               {...register('name')}
             />
@@ -140,13 +151,13 @@ export default function CreateObjectModal({
           {/* Category */}
           <div className="form-control w-full">
             <label className="label py-1">
-              <span className="label-text font-medium">Category</span>
+              <span className="label-text font-medium">{t('create_modal.category')}</span>
             </label>
             <select
               className={`select select-bordered w-full ${errors.object_type ? 'select-error' : ''}`}
               {...register('object_type')}
             >
-              <option value="">Select Category</option>
+              <option value="">{t('create_modal.select_category')}</option>
               {gameSchema?.categories.map((cat) => (
                 <option key={cat.name} value={cat.name}>
                   {cat.label ?? cat.name}
@@ -161,19 +172,19 @@ export default function CreateObjectModal({
           {/* Sub-category (optional, useful for "Other" type) */}
           <div className="form-control w-full">
             <label className="label py-1">
-              <span className="label-text">Sub-category (optional)</span>
+              <span className="label-text">{t('create_modal.sub_category')}</span>
             </label>
             <input
               type="text"
               className="input input-bordered w-full input-sm"
-              placeholder="e.g. Enemy, NPC, VFX"
+              placeholder={t('create_modal.placeholder_sub')}
               {...register('sub_category')}
             />
           </div>
 
           {/* Dynamic Metadata Fields — per-category filters */}
           {categoryFilters.length > 0 && (
-            <div className="divider text-xs opacity-50 my-1">Metadata</div>
+            <div className="divider text-xs opacity-50 my-1">{t('create_modal.metadata')}</div>
           )}
           {categoryFilters.map((filter) => (
             <div key={filter.key} className="form-control w-full">
@@ -185,7 +196,7 @@ export default function CreateObjectModal({
                   className="select select-bordered w-full select-sm"
                   {...register(`metadata.${filter.key}`)}
                 >
-                  <option value="">None</option>
+                  <option value="">{t('common:actions.none')}</option>
                   {filter.options.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
@@ -206,7 +217,7 @@ export default function CreateObjectModal({
             <div className="alert alert-error text-sm">
               {createObject.error instanceof Error
                 ? createObject.error.message
-                : 'Failed to create object'}
+                : t('create_modal.error_generic')}
             </div>
           )}
 
@@ -217,7 +228,7 @@ export default function CreateObjectModal({
               onClick={handleClose}
               disabled={createObject.isPending}
             >
-              Cancel
+              {t('common:actions.cancel')}
             </button>
             <button
               type="submit"
@@ -227,7 +238,7 @@ export default function CreateObjectModal({
               {createObject.isPending ? (
                 <span className="loading loading-spinner"></span>
               ) : (
-                'Create Object'
+                t('create_modal.submit')
               )}
             </button>
           </div>

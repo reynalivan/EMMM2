@@ -1,21 +1,21 @@
-# EMMM2 Mod Manager
+# EMMM Mod Manager
 
 > **Premium Mod Orchestrator for the 3DMigoto Ecosystem**
 
-**EMMM2** is a high-performance, intelligent mod manager designed specifically for 3DMigoto-based games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, and Arknights: Endfield).
+**EMMM** is a high-performance, intelligent mod manager designed specifically for 3DMigoto-based games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, and Arknights: Endfield).
 
-Built to replace tedious manual file management, EMMM2 bridges the gap between raw filesystem operations and the modern user's expectation for speed, safety, and visual excellence.
+Built to replace tedious manual file management, EMMM bridges the gap between raw filesystem operations and the modern user's expectation for speed, safety, and visual excellence.
 
 ---
 
-## 🎯 Why EMMM2 Exists
+## 🎯 Why EMMM Exists
 
 Managing 3DMigoto mods manually involves extracting archives, dealing with deeply nested folders, renaming files to toggle them on/off, and resolving hash conflicts by hand. For users with hundreds or thousands of mods, this becomes unmanageable.
 
-EMMM2 was built with the following core principles to solve these pain points:
+EMMM was built with the following core principles to solve these pain points:
 
 1. **Zero Data Loss & Safety First:** Atomic operations, soft-deletion (Trash system), collision detection, and Safe Mode for privacy.
-2. **The Filesystem is the Source of Truth:** `DISABLED ` folder prefixes are the sole determinant of mod status. EMMM2 reads what's on disk, ensuring it never desyncs from reality.
+2. **The Filesystem is the Source of Truth:** `DISABLED ` folder prefixes are the sole determinant of mod status. EMMM reads what's on disk, ensuring it never desyncs from reality.
 3. **Instant Responsiveness:** Render 10,000+ items without lag. Optimistic UI updates provide immediate feedback before disk I/O completes.
 4. **Intelligent Automation:** The Deep Matcher pipeline auto-categorizes unstructured mod folders into the correct Characters/Weapons without manual tagging.
 
@@ -25,7 +25,7 @@ EMMM2 was built with the following core principles to solve these pain points:
 
 > **Core Stack:** Tauri v2 (Rust Backend), React v19, TypeScript, SQLite (SQLx), Tailwind CSS v4, DaisyUI 5, Zustand, TanStack Query.
 
-EMMM2 is built on a robust hybrid architecture that separates physical reality from logical presentation:
+EMMM is built on a robust hybrid architecture that separates physical reality from logical presentation:
 
 ### 1. The Hybrid State Model
 
@@ -36,7 +36,7 @@ EMMM2 is built on a robust hybrid architecture that separates physical reality f
 
 ### 2. The Deep Matcher Pipeline (The Brain)
 
-To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`), EMMM2 uses a staged, deterministic matching engine:
+To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`), EMMM uses a staged, deterministic matching engine:
 
 1. **Quick Hash & Alias:** Scans `.ini` file contents and exact folder names against a bundled `schema.json`.
 2. **Deep Content Scan:** Tokenizes subfolders, file stems, and INI keys to build strong evidence.
@@ -59,7 +59,7 @@ To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`)
 
 ## 🚀 Scope of Capabilities
 
-EMMM2's capabilities are thoroughly documented across **42 dedicated requirement specifications**, grouped into major feature domains:
+EMMM's capabilities are thoroughly documented across **42 dedicated requirement specifications**, grouped into major feature domains:
 
 - **Bootstrap & Game Management (req-01 to req-05):** Single-instance guards, DB migrations, and auto-discovery of game installations.
 - **Object Schema & ObjectList Navigation (req-06 to req-09):** Schema-driven categories, dynamic element/rarity filtering, and a virtualized object tree.
@@ -70,4 +70,4 @@ EMMM2's capabilities are thoroughly documented across **42 dedicated requirement
 
 ---
 
-> _This document serves as the high-level introduction to the EMMM2 ecosystem. For specific implementation details, refer to the individual `req-*.md` specification files in the `.docs/requirements` directory._
+> _This document serves as the high-level introduction to the EMMM ecosystem. For specific implementation details, refer to the individual `req-*.md` specification files in the `.docs/requirements` directory._

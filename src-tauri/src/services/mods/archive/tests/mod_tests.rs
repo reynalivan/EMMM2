@@ -25,18 +25,18 @@ fn create_test_zip(dir: &Path, name: &str, files: &[(&str, &[u8])]) -> PathBuf {
 #[test]
 fn test_format_detection() {
     assert_eq!(
-        ArchiveFormat::from_path(Path::new("mod.zip")),
+        ArchiveFormat::detect(Path::new("mod.zip")),
         Some(ArchiveFormat::Zip)
     );
     assert_eq!(
-        ArchiveFormat::from_path(Path::new("mod.7z")),
+        ArchiveFormat::detect(Path::new("mod.7z")),
         Some(ArchiveFormat::SevenZ)
     );
     assert_eq!(
-        ArchiveFormat::from_path(Path::new("mod.rar")),
+        ArchiveFormat::detect(Path::new("mod.rar")),
         Some(ArchiveFormat::Rar)
     );
-    assert_eq!(ArchiveFormat::from_path(Path::new("mod.txt")), None);
+    assert_eq!(ArchiveFormat::detect(Path::new("mod.txt")), None);
 }
 
 // Covers: US-2.1 Pre-Extraction Analysis (ZIP)

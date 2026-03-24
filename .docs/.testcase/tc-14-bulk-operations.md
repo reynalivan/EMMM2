@@ -4,18 +4,19 @@
 
 - **Feature Goal**: Manage massive mod library arrays enabling structured multi-select bounds executing parallel-friendly atomic backend actions securely isolating exactly resolving conflicts natively without destroying array mapping structures partially.
 - **User Stories**:
- - US-14.1: Multi-Select Mods
- - US-14.2: Bulk Action Bar
- - US-14.3: Bulk Move
+- US-14.1: Multi-Select Mods
+- US-14.2: Bulk Action Bar
+- US-14.3: Bulk Move
 - **Success Criteria**:
- - Selection mapping visually completes (Checkbox/Shift-Click) <50ms.
- - Action Bar logic animates <100ms.
- - Streaming operations logically maps progression updating arrays.
- - Partial bounds failure maps distinct contextual errors structurally bypassing mapping mechanical whole-batch abort structures.
+- Selection mapping visually completes (Checkbox/Shift-Click) <50ms.
+- Action Bar logic animates <100ms.
+- Streaming operations logically maps progression updating arrays.
+- Partial bounds failure maps distinct contextual errors structurally bypassing mapping mechanical whole-batch abort structures.
 - **Main Risks**: Destructive arrays mapped incorrectly deleting entirely wrong components mechanically. Race conditions executing parallel structures violently matching identical mutex blocks internally. 1 in 100 object moving locks terminating the entire batch operation halfway.
+
 ## B. Coverage Matrix
 
-**Requirement File**:`e:\Dev\EMMM2NEW\.docs\requirements\req-14-bulk-operations.md`
+**Requirement File**:`e:\Dev\EMMMNEW\.docs\requirements\req-14-bulk-operations.md`
 
 - AC-14.1.1, AC-14.1.2 → TC-14-01
 - AC-14.1.3 → TC-14-02
@@ -28,17 +29,17 @@
 
 ## C. Test Cases
 
-| TC ID | Scenario | Type | Priority | Test Data | Steps | Expected Result | Failure Severity | Coverage |
-| -------- | ------------------------------------------------ | -------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | -------------------- |
-| TC-14-01 | Basic Selection & Action Bar bounds | Positive | High |`Valid entries` | 1. Grid populated visually.<br>2. Hover item mapping.<br>3. Click Checkbox. | State natively saves exactly matching target strings.`BulkActionBar` logically maps interface bounding context rendering operations accurately <100ms. | S2 | AC-14.1.1, AC-14.1.2 |
-| TC-14-02 | Rapid Range Selection logical bounds | Positive | High |`>50 elements` | 1. Click specifically explicit target.<br>2. Hold`Shift` clicking explicit target bounds 50 lines mapping. | System instantaneously executes intersection array mappings logically calculating precisely structural boundary elements selecting <50ms. | S2 | AC-14.1.3 |
-| TC-14-03 | Protecting Active background processing loops | Negative | High |`Processing Target` | 1. Click targeted explicit block attempting selection mapping constraints.<br>2. Shift paths mapping externally. | Selection denies mapping avoiding state traps visually resetting accurately handling path navigation drops. | S2 | AC-14.1.4, AC-14.1.5 |
-| TC-14-04 | Bulk Bar UI routing commands | Positive | Med |`Multiple Targets` | 1. Verify buttons function.<br>2. Trigger explicit "Deselect All". | Toolbar accurately executes parameters exactly mapping text matching exact components hiding interface exactly <100ms. | S3 | AC-14.2.1, AC-14.2.2 |
-| TC-14-05 | Bulk Failure logic isolation constraints | Edge | High |`Explicit backend trap` | 1. Simulate mechanical total operation explicit failure executing internal bounds. | Component mechanically resets exact state mappings fully presenting exactly localized Toast feedback matching "failed - {X} errors" without locking logic permanently loading state. | S1 | AC-14.2.3 |
-| TC-14-06 | Multi Move Progress streaming events | Positive | High |`50 Targets` | 1. Select 50 explicit objects.<br>2. Click logically explicit "Move to Object" bound.<br>3. Track Frontend context arrays. | Backend streams JSON progression exact variables matching 1-update/sec bounding cache visually resolving exact paths. | S2 | AC-14.3.1, AC-14.3.2 |
-| TC-14-07 | Partial Batch Conflicts mapping | Negative | Critical |`Duplicated Names` | 1. Force structurally mapped directory move collision payload internally.<br>2. Observe Toast feedback. | Backend pauses specific execution bounding exact structural dialog effectively bypassing leaving other independent payloads operating without batch abort logic. | S1 | AC-14.3.3 |
-| TC-14-08 | Mutex Lock Batch operations guarding state | Edge | Med |`2 Concurrent ops` | 1. Initiate Active specific batch array executing internally.<br>2. Attempt natively starting a totally explicit second Bulk action. | Target UI denies matching mechanical buttons enforcing single threading precisely against mapped`OperationLock` avoiding race exceptions. | S1 | AC-14.3.4 |
-| TC-14-09 | [Implied] Watcher Suppression scaling explicitly | Implied | Critical |`Valid batch` | 1. Execute explicit macro rename bounds mapping structs.<br>2. Assert File Watcher explicit system natively mapping structs internally. | Array appends all targeted batch entries within explicitly massive overarching suppression set natively dropping precisely 0 recursive update exceptions. | S2 | N/A |
+| TC ID    | Scenario                                         | Type     | Priority | Test Data               | Steps                                                                                                                                   | Expected Result                                                                                                                                                                      | Failure Severity | Coverage             |
+| -------- | ------------------------------------------------ | -------- | -------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | -------------------- |
+| TC-14-01 | Basic Selection & Action Bar bounds              | Positive | High     | `Valid entries`         | 1. Grid populated visually.<br>2. Hover item mapping.<br>3. Click Checkbox.                                                             | State natively saves exactly matching target strings.`BulkActionBar` logically maps interface bounding context rendering operations accurately <100ms.                               | S2               | AC-14.1.1, AC-14.1.2 |
+| TC-14-02 | Rapid Range Selection logical bounds             | Positive | High     | `>50 elements`          | 1. Click specifically explicit target.<br>2. Hold`Shift` clicking explicit target bounds 50 lines mapping.                              | System instantaneously executes intersection array mappings logically calculating precisely structural boundary elements selecting <50ms.                                            | S2               | AC-14.1.3            |
+| TC-14-03 | Protecting Active background processing loops    | Negative | High     | `Processing Target`     | 1. Click targeted explicit block attempting selection mapping constraints.<br>2. Shift paths mapping externally.                        | Selection denies mapping avoiding state traps visually resetting accurately handling path navigation drops.                                                                          | S2               | AC-14.1.4, AC-14.1.5 |
+| TC-14-04 | Bulk Bar UI routing commands                     | Positive | Med      | `Multiple Targets`      | 1. Verify buttons function.<br>2. Trigger explicit "Deselect All".                                                                      | Toolbar accurately executes parameters exactly mapping text matching exact components hiding interface exactly <100ms.                                                               | S3               | AC-14.2.1, AC-14.2.2 |
+| TC-14-05 | Bulk Failure logic isolation constraints         | Edge     | High     | `Explicit backend trap` | 1. Simulate mechanical total operation explicit failure executing internal bounds.                                                      | Component mechanically resets exact state mappings fully presenting exactly localized Toast feedback matching "failed - {X} errors" without locking logic permanently loading state. | S1               | AC-14.2.3            |
+| TC-14-06 | Multi Move Progress streaming events             | Positive | High     | `50 Targets`            | 1. Select 50 explicit objects.<br>2. Click logically explicit "Move to Object" bound.<br>3. Track Frontend context arrays.              | Backend streams JSON progression exact variables matching 1-update/sec bounding cache visually resolving exact paths.                                                                | S2               | AC-14.3.1, AC-14.3.2 |
+| TC-14-07 | Partial Batch Conflicts mapping                  | Negative | Critical | `Duplicated Names`      | 1. Force structurally mapped directory move collision payload internally.<br>2. Observe Toast feedback.                                 | Backend pauses specific execution bounding exact structural dialog effectively bypassing leaving other independent payloads operating without batch abort logic.                     | S1               | AC-14.3.3            |
+| TC-14-08 | Mutex Lock Batch operations guarding state       | Edge     | Med      | `2 Concurrent ops`      | 1. Initiate Active specific batch array executing internally.<br>2. Attempt natively starting a totally explicit second Bulk action.    | Target UI denies matching mechanical buttons enforcing single threading precisely against mapped`OperationLock` avoiding race exceptions.                                            | S1               | AC-14.3.4            |
+| TC-14-09 | [Implied] Watcher Suppression scaling explicitly | Implied  | Critical | `Valid batch`           | 1. Execute explicit macro rename bounds mapping structs.<br>2. Assert File Watcher explicit system natively mapping structs internally. | Array appends all targeted batch entries within explicitly massive overarching suppression set natively dropping precisely 0 recursive update exceptions.                            | S2               | N/A                  |
 
 ## D. Missing / Implied Test Areas
 

@@ -12,7 +12,7 @@ fn create_valid_instance(dir: &Path) {
 // TC-1.2-01: Valid full instance returns Ok with no warnings
 #[test]
 fn test_valid_instance_passes() {
-    let dir = std::env::temp_dir().join("emmm2_test_valid");
+    let dir = std::env::temp_dir().join("emmm_test_valid");
     let _ = fs::remove_dir_all(&dir);
     create_valid_instance(&dir);
 
@@ -32,7 +32,7 @@ fn test_valid_instance_passes() {
 // NC-1.3-01: Missing /Mods folder => warning, not error
 #[test]
 fn test_missing_mods_folder_is_warning() {
-    let dir = std::env::temp_dir().join("emmm2_test_no_mods");
+    let dir = std::env::temp_dir().join("emmm_test_no_mods");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("d3dx.ini"), "").unwrap();
@@ -56,7 +56,7 @@ fn test_missing_mods_folder_is_warning() {
 // NC-1.3-04: Missing d3d11.dll => warning, not error
 #[test]
 fn test_missing_dll_is_warning() {
-    let dir = std::env::temp_dir().join("emmm2_test_no_dll");
+    let dir = std::env::temp_dir().join("emmm_test_no_dll");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("Mods")).unwrap();
     fs::write(dir.join("d3dx.ini"), "").unwrap();
@@ -80,7 +80,7 @@ fn test_missing_dll_is_warning() {
 // NC-1.2-02: Missing d3dx.ini => warning, not error
 #[test]
 fn test_missing_d3dx_ini_is_warning() {
-    let dir = std::env::temp_dir().join("emmm2_test_no_ini");
+    let dir = std::env::temp_dir().join("emmm_test_no_ini");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("Mods")).unwrap();
     // d3dx.ini intentionally missing
@@ -104,7 +104,7 @@ fn test_missing_d3dx_ini_is_warning() {
 // Heuristic: prefers "loader" in exe name
 #[test]
 fn test_loader_priority() {
-    let dir = std::env::temp_dir().join("emmm2_test_loader_prio");
+    let dir = std::env::temp_dir().join("emmm_test_loader_prio");
     let _ = fs::remove_dir_all(&dir);
     create_valid_instance(&dir);
     fs::write(dir.join("SomeOtherApp.exe"), "").unwrap();
@@ -118,7 +118,7 @@ fn test_loader_priority() {
 // No .exe found at all => warning, not error
 #[test]
 fn test_no_exe_found_is_warning() {
-    let dir = std::env::temp_dir().join("emmm2_test_no_exe");
+    let dir = std::env::temp_dir().join("emmm_test_no_exe");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("Mods")).unwrap();
     fs::write(dir.join("d3dx.ini"), "").unwrap();
@@ -153,7 +153,7 @@ fn test_nonexistent_path() {
 // Smart resolution: selecting /Mods climbs up to the parent
 #[test]
 fn test_smart_mods_folder_correction() {
-    let base = std::env::temp_dir().join("emmm2_test_smart_correction");
+    let base = std::env::temp_dir().join("emmm_test_smart_correction");
     let _ = fs::remove_dir_all(&base);
     create_valid_instance(&base);
 
@@ -177,7 +177,7 @@ fn test_smart_mods_folder_correction() {
 // TC-1.2-02: Multi-game scan partial results
 #[test]
 fn test_scan_xxmi_partial() {
-    let root = std::env::temp_dir().join("emmm2_test_xxmi_scan");
+    let root = std::env::temp_dir().join("emmm_test_xxmi_scan");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
 
@@ -196,7 +196,7 @@ fn test_scan_xxmi_partial() {
 // EC-1.03: Unicode path
 #[test]
 fn test_unicode_path() {
-    let dir = std::env::temp_dir().join("emmm2_test_unicode_❤");
+    let dir = std::env::temp_dir().join("emmm_test_unicode_❤");
     let _ = fs::remove_dir_all(&dir);
     create_valid_instance(&dir);
 
@@ -209,7 +209,7 @@ fn test_unicode_path() {
 // EC-1.02: Mixed path separators
 #[test]
 fn test_mixed_separators() {
-    let dir = std::env::temp_dir().join("emmm2_test_mixed");
+    let dir = std::env::temp_dir().join("emmm_test_mixed");
     let _ = fs::remove_dir_all(&dir);
     create_valid_instance(&dir);
 

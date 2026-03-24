@@ -1,12 +1,11 @@
 /**
- * Confirmation modal for bulk duplicate resolution.
- * Implements focus trap and escape-to-close patterns.
- * Covers: TC-9.5-03 (User confirmation before destructive operations)
+ * Resolution Confirmation Modal for Epic 9.
+ * Shows a summary of intended actions (Keep/Ignore) before applying.
  */
 
-import { useRef, useEffect } from 'react';
-import { AlertTriangle, Loader2, Trash2, Shield, XCircle } from 'lucide-react';
-import type { DupScanGroup, ResolutionAction } from '../../../types/dedup';
+import { Trash2, ShieldCheck, AlertTriangle, X } from 'lucide-react';
+import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   isOpen: boolean;
@@ -17,199 +16,168 @@ interface Props {
   isPending?: boolean;
 }
 
-/**
- * Get summary counts by action type from selections.
- */
-const getActionSummary = (
-  selections: Map<string, ResolutionAction>,
-): { keepA: number; keepB: number; ignore: number } => {
-  const summary = { keepA: 0, keepB: 0, ignore: 0 };
-
-  selections.forEach((action) => {
-    if (action === 'KeepA') summary.keepA++;
-    else if (action === 'KeepB') summary.keepB++;
-    else if (action === 'Ignore') summary.ignore++;
-  });
-
-  return summary;
-};
-
 export default function ResolutionModal({
   isOpen,
   selections,
   groups,
   onConfirm,
   onCancel,
-  isPending = false,
+  isPending,
 }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const { t } = useTranslation(['scanner']);
+  if (!isOpen) return null;
 
-  // Sync dialog state with isOpen prop
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
+  const selectedGroups = Array.from(selections.entries())
+    .map(([groupId, action]) => ({
+      group: groups.find((g) => g.groupId === groupId),
+      action,
+    }))
+    .filter((item) => item.group && item.action);
 
-    if (isOpen) {
-      dialog.showModal();
-    } else {
-      dialog.close();
+  const totalToDelete = selectedGroups.reduce((acc, item) => {
+    if (item.action?.type === 'Keep') {
+      return acc + (item.group?.members.length || 0) - 1;
     }
-  }, [isOpen]);
+    return acc;
+  }, 0);
 
-  // Handle escape key (DaisyUI modal supports this natively)
-  const handleDialogClose = () => {
-    if (!isPending) {
-      onCancel();
-    }
-  };
-
-  const summary = getActionSummary(selections);
-  const totalDeletions = summary.keepA + summary.keepB;
+  const totalToIgnore = selectedGroups.filter((s) => s.action?.type === 'Ignore').length;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="modal modal-bottom sm:modal-middle"
-      onCancel={handleDialogClose}
+    <div
+      className="modal modal-open"
+      role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
-      aria-describedby="modal-description"
+      aria-labelledby="resolution-modal-title"
+      aria-describedby="resolution-modal-description"
     >
-      <div className="modal-box max-w-2xl">
+      <div className="modal-box max-w-2xl bg-base-100 border border-base-300 shadow-2xl p-0 overflow-hidden">
         {/* Header */}
-        <div className="flex items-start gap-3 mb-4">
-          <AlertTriangle className="w-6 h-6 text-warning flex-shrink-0" />
-          <div>
-            <h3 id="modal-title" className="font-bold text-lg">
-              Confirm Resolution
+        <div className="bg-base-200/50 px-6 py-4 flex items-center justify-between border-b border-base-300">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="text-warning w-5 h-5" />
+            <h3 id="resolution-modal-title" className="text-lg font-bold">
+              {t('scanner:resolution.title')}
             </h3>
-            <p id="modal-description" className="text-sm text-base-content/70">
-              Review the actions below before applying. Deleted mods will be moved to trash.
-            </p>
           </div>
-        </div>
-
-        {/* Action Summary */}
-        <div className="stats shadow w-full mb-4">
-          <div className="stat place-items-center">
-            <div className="stat-title flex items-center gap-1">
-              <Trash2 className="w-4 h-4 text-error" />
-              Deletions
-            </div>
-            <div className="stat-value text-error">{totalDeletions}</div>
-            <div className="stat-desc">Moved to trash</div>
-          </div>
-
-          <div className="stat place-items-center">
-            <div className="stat-title flex items-center gap-1">
-              <Shield className="w-4 h-4 text-warning" />
-              Ignored
-            </div>
-            <div className="stat-value text-warning">{summary.ignore}</div>
-            <div className="stat-desc">Whitelisted pairs</div>
-          </div>
-
-          <div className="stat place-items-center">
-            <div className="stat-title">Total</div>
-            <div className="stat-value">{selections.size}</div>
-            <div className="stat-desc">Actions</div>
-          </div>
-        </div>
-
-        {/* Detailed Breakdown */}
-        <div className="max-h-64 overflow-y-auto bg-base-200 rounded-lg p-3 mb-4">
-          <ul className="space-y-2" role="list" aria-label="Resolution action breakdown">
-            {Array.from(selections.entries()).map(([groupId, action]) => {
-              const group = groups.find((g) => g.groupId === groupId);
-              if (!group || group.members.length !== 2) return null;
-
-              const [memberA, memberB] = group.members;
-
-              return (
-                <li key={groupId} className="flex items-start gap-2 text-sm">
-                  {action === 'KeepA' && (
-                    <>
-                      <XCircle className="w-4 h-4 text-error flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <span className="font-medium">Delete:</span>{' '}
-                        <span className="text-base-content/70">{memberB.displayName}</span>
-                        <br />
-                        <span className="text-xs text-success">Keep: {memberA.displayName}</span>
-                      </div>
-                    </>
-                  )}
-
-                  {action === 'KeepB' && (
-                    <>
-                      <XCircle className="w-4 h-4 text-error flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <span className="font-medium">Delete:</span>{' '}
-                        <span className="text-base-content/70">{memberA.displayName}</span>
-                        <br />
-                        <span className="text-xs text-success">Keep: {memberB.displayName}</span>
-                      </div>
-                    </>
-                  )}
-
-                  {action === 'Ignore' && (
-                    <>
-                      <Shield className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <span className="font-medium">Ignore:</span>{' '}
-                        <span className="text-base-content/70">
-                          {memberA.displayName} ↔ {memberB.displayName}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        {/* Progress Indicator (shown when pending) */}
-        {isPending && (
-          <div className="alert alert-info mb-4">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Resolving duplicates... This may take a moment.</span>
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="modal-action">
           <button
-            className="btn btn-ghost"
+            className="btn btn-sm btn-ghost btn-circle"
             onClick={onCancel}
             disabled={isPending}
-            aria-label="Cancel resolution"
           >
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onConfirm}
-            disabled={isPending}
-            aria-label={`Confirm and apply ${selections.size} resolution actions`}
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Applying...
-              </>
-            ) : (
-              `Confirm (${selections.size})`
-            )}
+            <X size={18} />
           </button>
         </div>
-      </div>
 
-      {/* Backdrop (DaisyUI modal-backdrop) */}
-      <form method="dialog" className="modal-backdrop">
-        <button type="button" onClick={handleDialogClose} disabled={isPending}>
-          close
-        </button>
-      </form>
-    </dialog>
+        <div className="p-6">
+          <div className="alert alert-warning mb-6 shadow-sm">
+            <InfoIcon className="w-5 h-5" />
+            <p id="resolution-modal-description" className="text-sm">
+              {t('scanner:resolution.summary', {
+                count: selectedGroups.length,
+                deleted: totalToDelete,
+                ignored: totalToIgnore,
+              })}
+            </p>
+          </div>
+
+          <div className="space-y-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar" role="list">
+            {selectedGroups.map(({ group, action }) => (
+              <div
+                key={group?.groupId}
+                className="p-4 rounded-xl border border-base-300 bg-base-200/30"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-xs font-mono opacity-50 uppercase tracking-tighter">
+                    {t('scanner:table.header.group')}: {group?.groupId.slice(0, 8)}...
+                  </span>
+                  {action?.type === 'Keep' ? (
+                    <span className="badge badge-primary badge-sm gap-1">
+                      <ShieldCheck size={12} /> {t('scanner:resolution.keep_specific')}
+                    </span>
+                  ) : (
+                    <span className="badge badge-warning badge-sm gap-1">
+                      <ShieldCheck size={12} /> {t('scanner:resolution.whitelist')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  {action?.type === 'Keep' ? (
+                    <>
+                      <div className="text-sm flex items-center gap-2">
+                        <span className="text-success font-bold">
+                          {t('scanner:resolution.keep_label')}
+                        </span>
+                        <span className="truncate">
+                          {
+                            group?.members.find((m) => m.folderPath === action.targetPath)
+                              ?.displayName
+                          }
+                        </span>
+                      </div>
+                      <div className="text-xs text-error flex items-center gap-2 pl-2 border-l-2 border-error/30 mt-1 italic">
+                        <Trash2 size={12} />
+                        {t('scanner:resolution.delete_others', {
+                          count: group!.members.length - 1,
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm flex items-center gap-2">
+                      <span className="text-warning font-bold">
+                        {t('scanner:resolution.ignore_label')}
+                      </span>
+                      <span>
+                        {t('scanner:resolution.ignore_desc', { count: group?.members.length })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-end gap-3">
+            <button className="btn btn-ghost" onClick={onCancel} disabled={isPending}>
+              {t('common:actions.cancel')}
+            </button>
+            <button
+              className="btn btn-primary px-8 shadow-lg shadow-primary/20"
+              onClick={onConfirm}
+              disabled={isPending}
+            >
+              {isPending ? (
+                <>
+                  <span className="loading loading-spinner loading-xs"></span>
+                  {t('scanner:resolution.processing')}
+                </>
+              ) : (
+                t('scanner:resolution.confirm_button')
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="modal-backdrop bg-overlay-mask backdrop-blur-sm" onClick={onCancel}></div>
+    </div>
+  );
+}
+
+function InfoIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      className={`stroke-current shrink-0 h-6 w-6 ${className}`}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      ></path>
+    </svg>
   );
 }

@@ -1,4 +1,6 @@
 import { FolderOpen, ChevronLeft, Upload, FolderInput } from 'lucide-react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { useTranslation } from 'react-i18next';
 
 export interface FolderGridEmptyProps {
   explorerSearchQuery: string;
@@ -15,15 +17,17 @@ export default function FolderGridEmpty({
   handleBreadcrumbClick,
   handleImportFiles,
 }: FolderGridEmptyProps) {
+  const { t } = useTranslation(['grid']);
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
       <FolderOpen size={40} className="text-base-content/15" />
       <p className="text-sm text-base-content/40 text-center">
         {explorerSearchQuery
-          ? 'No mods match your search'
+          ? t('empty.no_match')
           : currentPath.length > 0
-            ? 'This folder is empty.'
-            : 'No mod folders found. Add mods to your game directory to get started.'}
+            ? t('empty.folder_empty')
+            : t('empty.no_mods')}
       </p>
 
       {explorerSearchQuery && (
@@ -31,7 +35,7 @@ export default function FolderGridEmpty({
           className="btn btn-sm btn-ghost gap-2 text-primary mt-2"
           onClick={() => setExplorerSearch('')}
         >
-          Clear Search
+          {t('empty.clear_search')}
         </button>
       )}
 
@@ -43,17 +47,18 @@ export default function FolderGridEmpty({
             onClick={() => handleBreadcrumbClick(currentPath.length - 2)}
           >
             <ChevronLeft size={16} />
-            Go back
+            {t('empty.go_back')}
           </button>
 
-          <div className="divider text-base-content/20 text-[10px] my-0">OR</div>
+          <div className="divider text-base-content/20 text-[10px] my-0">
+            {t('empty.divider_or')}
+          </div>
 
-          <p className="text-xs text-base-content/30">Import mods into this folder</p>
+          <p className="text-xs text-base-content/30">{t('empty.import_hint')}</p>
           <div className="flex gap-2">
             <button
               className="btn btn-outline btn-sm gap-2"
               onClick={async () => {
-                const { open } = await import('@tauri-apps/plugin-dialog');
                 const selected = await open({
                   multiple: true,
                   filters: [{ name: 'Archives', extensions: ['zip', 'rar', '7z'] }],
@@ -65,12 +70,11 @@ export default function FolderGridEmpty({
               }}
             >
               <Upload size={14} />
-              Import Archive
+              {t('empty.import_archive')}
             </button>
             <button
               className="btn btn-outline btn-sm gap-2"
               onClick={async () => {
-                const { open } = await import('@tauri-apps/plugin-dialog');
                 const selected = await open({ directory: true, multiple: false });
                 if (selected) {
                   const paths = Array.isArray(selected) ? selected : [selected];
@@ -79,7 +83,7 @@ export default function FolderGridEmpty({
               }}
             >
               <FolderInput size={14} />
-              Import Folder
+              {t('empty.import_folder')}
             </button>
           </div>
         </div>

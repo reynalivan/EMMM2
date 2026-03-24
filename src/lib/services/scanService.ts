@@ -1,4 +1,5 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
+import { commands } from '../bindings';
 import type {
   ArchiveInfo,
   ArchiveAnalysis,
@@ -7,54 +8,65 @@ import type {
   ScanResultItem,
   ScanEvent,
   ConflictInfo,
+  SyncResult,
+  ScanPreviewItem,
+  MatchCheckResult,
+  ConfirmedScanItem,
 } from '../../types/scanner';
+import type { GameType } from '../../types/game';
+import { getGameTypeKey } from '../../types/game';
 
-/** Preview item returned by scan_preview_cmd (before user confirms). */
-export interface ScanPreviewItem {
-  folderPath: string;
-  displayName: string;
-  isDisabled: boolean;
-  matchedObject: string | null;
-  matchLevel: string;
-  confidence: string;
-  confidenceScore: number;
-  matchDetail: string | null;
-  detectedSkin: string | null;
-  objectType: string | null;
-  thumbnailPath: string | null;
-  tagsJson: string | null;
-  metadataJson: string | null;
-  alreadyInDb: boolean;
-  alreadyMatched: boolean;
-  scoredCandidates: Array<{ name: string; objectType: string; scorePct: number }>;
-}
-
-/** User-confirmed item sent to commit_scan_cmd. */
-export interface ConfirmedScanItem {
-  folderPath: string;
-  displayName: string;
-  isDisabled: boolean;
-  matchedObject: string | null;
-  objectType: string | null;
-  thumbnailPath: string | null;
-  tagsJson: string | null;
-  metadataJson: string | null;
-  skip: boolean;
-}
+export type { ScanPreviewItem, ConfirmedScanItem };
 
 export const scanService = {
   /**
+   * Start the full scan pipeline with progress streaming.
+   * @param gameType Game type code (e.g. "GIMI", "SRMI")
+   * @param onEvent Callback for progress events
+   */
+  async startScan(
+    gameType: GameType,
+    modsPath: string,
+    onEvent: (event: ScanEvent) => void,
+  ): Promise<ScanResultItem[]> {
+    const channel = new Channel<ScanEvent>();
+
+    channel.onmessage = (message) => {
+      onEvent(message);
+    };
+
+    const dbJson = await scanService.getMasterDb(gameType);
+
+    return commands.startScan({
+      modsPath,
+      dbJson,
+      onProgress: channel,
+    });
+  },
+
+  /**
+   * Get scan results without streaming (batch mode).
+   */
+  async getScanResult(gameType: GameType, modsPath: string): Promise<ScanResultItem[]> {
+    const dbJson = await scanService.getMasterDb(gameType);
+    return commands.getScanResult({
+      modsPath,
+      dbJson,
+    });
+  },
+
+  /**
    * Get the MasterDB JSON for a game type (e.g. "GIMI", "SRMI").
    */
-  async getMasterDb(gameType: string): Promise<string> {
-    return invoke('get_master_db', { gameType });
+  async getMasterDb(gameType: GameType): Promise<string> {
+    return commands.getMasterDb({ gameType });
   },
 
   /**
    * Detect archives in the mod directory.
    */
   async detectArchives(modsPath: string): Promise<ArchiveInfo[]> {
-    return invoke('detect_archives_cmd', { modsPath });
+    return commands.detectArchives({ modsPath });
   },
 
   /**
@@ -74,7 +86,7 @@ export const scanService = {
     if (onFileProgress) {
       channel.onmessage = onFileProgress;
     }
-    return invoke('extract_archive_cmd', {
+    return commands.extractArchive({
       archivePath,
       modsDir,
       password: password || null,
@@ -87,12 +99,7 @@ export const scanService = {
   },
 
   /**
-   * A1: Shared batch extraction utility with queue model.
-   * Splits archives into non-encrypted and encrypted, extracts sequentially.
-   * A non-password failure continues to the next archive (queue resilience).
-   * Password errors and user abort stop immediately for retry / cancellation.
-   *
-   * @returns Object with `extractedPaths`, per-archive `results`, and summary.
+   * Extract multiple archives sequentially.
    */
   async extractArchiveBatch(
     selectedPaths: string[],
@@ -116,7 +123,6 @@ export const scanService = {
       error?: string;
       destPaths?: string[];
     }>;
-    /** Set when a password error stops the queue (for retry flow). */
     failedPath?: string;
     isPasswordError?: boolean;
     error?: string;
@@ -166,7 +172,6 @@ export const scanService = {
         );
 
         if (result.aborted) {
-          // User cancelled — mark this as aborted, remaining as skipped
           results.push({ path: archivePath, status: 'aborted' });
           for (const remaining of ordered.slice(current + 1)) {
             results.push({ path: remaining, status: 'skipped' });
@@ -176,8 +181,6 @@ export const scanService = {
 
         if (!result.success) {
           const errMsg = result.error ?? 'Unknown error';
-
-          // Password errors stop the queue for retry (#5 flow)
           if (isPasswordRelated(errMsg)) {
             results.push({ path: archivePath, status: 'failed', error: errMsg });
             for (const remaining of ordered.slice(current + 1)) {
@@ -192,8 +195,6 @@ export const scanService = {
               error: errMsg,
             };
           }
-
-          // Non-password error → log and continue to next archive
           results.push({ path: archivePath, status: 'failed', error: errMsg });
         } else {
           const destPaths = result.dest_paths ?? [];
@@ -202,7 +203,6 @@ export const scanService = {
         }
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : String(e);
-
         if (isPasswordRelated(errMsg)) {
           results.push({ path: archivePath, status: 'failed', error: errMsg });
           for (const remaining of ordered.slice(current + 1)) {
@@ -217,8 +217,6 @@ export const scanService = {
             error: errMsg,
           };
         }
-
-        // Non-password exception → log and continue
         results.push({ path: archivePath, status: 'failed', error: errMsg });
       }
 
@@ -233,60 +231,21 @@ export const scanService = {
    * Analyze an archive before extraction.
    */
   async analyzeArchive(archivePath: string): Promise<ArchiveAnalysis> {
-    return invoke('analyze_archive_cmd', { archivePath });
+    return commands.analyzeArchive({ archivePath });
   },
 
   /**
-   * Run a lightweight match check against an extracted folder to see if it belongs to a target object.
-   * @param folderPath The path to the extracted mod folder
-   * @param targetObjectName The expected object name (e.g., 'Keqing')
-   * @param gameType The active game type (e.g., 'GIMI') to load the correct MasterDB
+   * Run a lightweight match check against an extracted folder.
    */
   async matchCheckFolder(
     folderPath: string,
     targetObjectName: string,
-    gameType: string,
-  ): Promise<import('../../types/scanner').MatchCheckResult> {
-    const dbJson = await scanService.getMasterDb(gameType);
-    return invoke('match_check_folder_cmd', {
+    gameType: GameType,
+  ): Promise<MatchCheckResult> {
+    const dbJson = await this.getMasterDb(gameType);
+    return commands.matchCheckFolder({
       folderPath,
       targetObjectName,
-      dbJson,
-    });
-  },
-
-  /**
-   * Start the full scan pipeline with progress streaming.
-   * @param gameType Game type code (e.g. "GIMI", "SRMI")
-   * @param onEvent Callback for progress events
-   */
-  async startScan(
-    gameType: string,
-    modsPath: string,
-    onEvent: (event: ScanEvent) => void,
-  ): Promise<ScanResultItem[]> {
-    const channel = new Channel<ScanEvent>();
-
-    channel.onmessage = (message) => {
-      onEvent(message);
-    };
-
-    const dbJson = await scanService.getMasterDb(gameType);
-
-    return invoke('start_scan', {
-      modsPath,
-      dbJson,
-      onProgress: channel,
-    });
-  },
-
-  /**
-   * Get scan results without streaming (batch mode).
-   */
-  async getScanResult(gameType: string, modsPath: string): Promise<ScanResultItem[]> {
-    const dbJson = await scanService.getMasterDb(gameType);
-    return invoke('get_scan_result', {
-      modsPath,
       dbJson,
     });
   },
@@ -295,104 +254,90 @@ export const scanService = {
    * Detect conflicts in INI files.
    */
   async detectConflicts(iniPaths: string[]): Promise<ConflictInfo[]> {
-    return invoke('detect_conflicts_cmd', { iniPaths });
+    return commands.detectConflicts({ iniPaths });
   },
 
   /**
    * Detect conflicts in the entire mods folder.
-   * Efficient alternative to detectConflicts that runs scanning on backend.
    */
   async detectConflictsInFolder(modsPath: string): Promise<ConflictInfo[]> {
-    return invoke('detect_conflicts_in_folder_cmd', { modsPath });
+    return commands.detectConflictsInFolder({ modsPath });
   },
 
   /**
    * Cancel the currently running scan.
    */
   async cancelScan(): Promise<void> {
-    return invoke('cancel_scan_cmd');
+    return commands.cancelScan();
   },
 
   /**
-   * Legacy sync: scan + commit in one step (with game upsert).
-   * @param onEvent Callback for progress events
+   * Sync database (scan + commit in one step).
    */
   async syncDatabase(
     gameId: string,
     gameName: string,
-    gameType: string,
+    gameType: GameType,
     modsPath: string,
     onEvent?: (event: ScanEvent) => void,
   ): Promise<SyncResult> {
     const channel = new Channel<ScanEvent>();
-
     if (onEvent) {
-      channel.onmessage = (message) => {
-        onEvent(message);
-      };
+      channel.onmessage = onEvent;
     }
-
-    const dbJson = await scanService.getMasterDb(gameType);
-
-    return invoke('sync_database_cmd', {
+    const dbJson = await this.getMasterDb(gameType);
+    return commands.syncDatabase({
       gameId,
       gameName,
-      gameType,
+      gameType: getGameTypeKey(gameType),
       modsPath,
       dbJson,
-      preserveExistingMappings: false, // Explicit old sync flow: allow overrides
+      preserveExistingMappings: false,
       onProgress: channel,
     });
   },
 
   /**
-   * Phase 1: Scan folders + match, return preview without writing to DB.
-   * Used by the review flow.
+   * Phase 1: Scan folders + match, return preview.
    */
   async scanPreview(
     gameId: string,
-    gameType: string,
+    gameType: GameType,
     modsPath: string,
     onEvent?: (event: ScanEvent) => void,
     specificPaths?: string[],
   ): Promise<ScanPreviewItem[]> {
     const channel = new Channel<ScanEvent>();
-
     if (onEvent) {
-      channel.onmessage = (message) => {
-        onEvent(message);
-      };
+      channel.onmessage = onEvent;
     }
-
-    const dbJson = await scanService.getMasterDb(gameType);
-
-    return invoke('scan_preview_cmd', {
+    const dbJson = await this.getMasterDb(gameType);
+    return commands.scanPreview({
       gameId,
       modsPath,
       dbJson,
       onProgress: channel,
-      specificPaths,
+      specificPaths: specificPaths ?? undefined,
     });
   },
 
   /**
-   * Quick import: scan + commit with EMPTY MasterDB so nothing matches.
-   * All folders are imported as "Other" instantly. No Deep Matcher.
+   * Quick import: scan + commit with EMPTY MasterDB.
    */
   async quickImport(
     gameId: string,
     gameName: string,
-    gameType: string,
+    gameType: GameType,
     modsPath: string,
   ): Promise<SyncResult> {
     const channel = new Channel<ScanEvent>();
-    return invoke('sync_database_cmd', {
+    return commands.syncDatabase({
       gameId,
       gameName,
-      gameType,
+      gameType: getGameTypeKey(gameType),
       modsPath,
       dbJson: '[]',
-      preserveExistingMappings: true, // Crucial for Index Only mode: preserve matched_objects
+      preserveExistingMappings: true,
       onProgress: channel,
     });
   },
@@ -403,14 +348,14 @@ export const scanService = {
   async commitScan(
     gameId: string,
     gameName: string,
-    gameType: string,
+    gameType: GameType,
     modsPath: string,
     items: ConfirmedScanItem[],
   ): Promise<SyncResult> {
-    return invoke('commit_scan_cmd', {
+    return commands.commitScan({
       gameId,
       gameName,
-      gameType,
+      gameType: getGameTypeKey(gameType),
       modsPath,
       items,
     });
@@ -418,27 +363,17 @@ export const scanService = {
 
   /**
    * Score a folder against candidate object names.
-   * Returns a map of candidateName → score (0-100%).
-   * Used for pre-drop validation to check if the target is a good match.
    */
   async scoreCandidatesBatch(
     folderPath: string,
     candidateNames: string[],
-    gameType: string,
+    gameType: GameType,
   ): Promise<Record<string, number>> {
-    const dbJson = await scanService.getMasterDb(gameType);
-    return invoke('score_candidates_batch_cmd', {
+    const dbJson = await this.getMasterDb(gameType);
+    return commands.scoreCandidatesBatch({
       folderPath,
       candidateNames,
       dbJson,
     });
   },
 };
-
-export interface SyncResult {
-  total_scanned: number;
-  new_mods: number;
-  updated_mods: number;
-  deleted_mods: number;
-  new_objects: number;
-}

@@ -1,0 +1,79 @@
+{
+  "empty": {
+    "no_mod_selected": "未选择模组",
+    "select_folder": "从列表中选择一个文件夹以查看其详细信息、管理图像并编辑配置。"
+  },
+  "actions": {
+    "import_archives": "导入压缩包",
+    "import_folders": "导入文件夹",
+    "view_location": "查看文件位置",
+    "edit_metadata": "编辑元数据",
+    "revert": "撤销",
+    "done": "完成",
+    "save": "保存",
+    "close": "关闭",
+    "edit": "编辑"
+  },
+  "metadata": {
+    "title": "元数据",
+    "author": "作者",
+    "author_placeholder": "未知",
+    "unknown_author": "未知作者",
+    "version": "版本",
+    "version_placeholder": "1.0",
+    "version_default": "1.0",
+    "version_aria": "模组版本",
+    "description": "描述",
+    "description_placeholder": "暂无描述。",
+    "no_description": "暂无描述。",
+    "auto_saving": "自动保存中...",
+    "revert_title": "撤销元数据更改并取消自动保存",
+    "edit_title": "编辑元数据",
+    "double_click_edit": "双击进行编辑",
+    "auto_saving_label": "自动保存中…",
+    "done_label": "完成"
+  },
+  "gallery": {
+    "title": "预览图",
+    "no_preview": "无预览图",
+    "broken_image": "图片损坏",
+    "image_placeholder": "图片占位符",
+    "prev_image": "上一张",
+    "next_image": "下一张",
+    "fullscreen": "全屏",
+    "slider_label": "预览图轮播",
+    "go_to_image": "前往第 {{index}} 张图",
+    "menu": {
+      "paste": "粘贴缩略图",
+      "import": "导入缩略图",
+      "remove_current": "删除此缩略图",
+      "clear_all": "清除所有缩略图"
+    }
+  },
+  "ini_editor": {
+    "title": "INI 编辑器",
+    "no_sections": "未检测到按键绑定部分。",
+    "open_in_editor": "在默认编辑器中打开",
+    "edit_keybinds": "编辑按键绑定",
+    "close_edit": "关闭编辑模式",
+    "revert_changes": "放弃 INI 更改",
+    "save_changes": "保存 INI 更改",
+    "enter_field": "输入 {{label}}...",
+    "auto_detect": "自动检测按键组合",
+    "conflict_warning": "警告：此按键在多个部分中使用。",
+    "conflict_tooltip": "按键冲突！在多个部分中使用。",
+    "advanced_capture": "高级按键捕获",
+    "original_key": "原始按键",
+    "press_key_combo": "按下按键组合...",
+    "captured_click_to_recapture": "按键已捕获（点击重新捕获）",
+    "no_key": "未检测到按键",
+    "strict_modifiers": "严格修饰键（推荐）",
+    "strict_modifiers_hint": "确保仅在按下精确组合时触发操作，忽略其他按下的按键。",
+    "no_shift": "no_shift",
+    "no_ctrl": "no_ctrl",
+    "no_alt": "no_alt",
+    "shift_restriction_disabled": "Shift 是组合键的一部分，无法限制。",
+    "ctrl_restriction_disabled": "Ctrl 是组合键的一部分，无法限制。",
+    "alt_restriction_disabled": "Alt 是组合键的一部分，无法限制。"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "app_locked_title": "App Locked",
+  "app_locked_description": "A PIN is required to access the application in Unsafe Mode.",
+  "nav": {
+    "dashboard": "Dashboard",
+    "mods_manager": "Mods Manager",
+    "collections": "Collections",
+    "settings": "Settings",
+    "storage_optimizer": "Storage Optimizer",
+    "app_menu_tip": "App Menu",
+    "quick_play": "Quick Play",
+    "no_game_selected": "No game selected",
+    "back_to_dashboard": "Back to Dashboard"
+  },
+  "empty": {
+    "no_selection": "No Object Selected",
+    "select_category": "Select a category from the sidebar (like <0>Characters</0> or <1>Weapons</1>) to view and manage your mods."
+  },
+  "maintenance": {
+    "clear_success": "Successfully cleared {{count}} old thumbnails.",
+    "maintenance_success": "Maintenance complete. Database optimized. Pruned {{pruned}} thumbnails. Purged {{trash}} old empty trash entries."
+  },
+  "actions": {
+    "trash": "Trash",
+    "refresh": "Refresh",
+    "settings": "Settings",
+    "safe_mode": "Safe Mode",
+    "privacy_mode": "Privacy Mode",
+    "privacy_toggle": "Toggle Master Privacy Mode",
+    "hide_preview": "Hide Preview",
+    "show_preview": "Show Preview"
+  },
+  "game_selector": {
+    "select_game": "Select Game",
+    "loading": "Loading...",
+    "add_game": "Add Game"
+  },
+  "context": {
+    "safe_mode_tip": "Safe Mode Toggle",
+    "loading": "Loading...",
+    "collections_title": "Collections",
+    "save_current": "Save Current",
+    "no_collections": "No collections saved",
+    "manage_collections": "Manage Collections"
+  },
+  "launch_bar": {
+    "play": "Play",
+    "launching": "Launching...",
+    "randomizer": "Randomizer (Gacha)",
+    "conflicts": "Conflicts",
+    "conflict_toast": "{{count}} Shader Conflicts Detected"
+  }
+}

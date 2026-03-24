@@ -1,0 +1,55 @@
+{
+  "welcome": {
+    "title": "欢迎使用 EMMM",
+    "subtitle": "3DMigoto 游戏的增强型模组管理器",
+    "auto_detect": "XXMI 自动检测",
+    "auto_detect_tip": "选择您的 XXMI 根文件夹，例如 D:/Games/XXMI Launcher/",
+    "manual_setup": "手动添加游戏",
+    "description": "自动检测会扫描您的 XXMI Launcher 文件夹以查找已安装的游戏。",
+    "select_folder_title": "选择您的 XXMI Launcher 文件夹",
+    "duplicate_error": "此游戏文件夹已作为 \"{{name}}\" 添加。"
+  },
+  "manual_setup": {
+    "title": "手动设置",
+    "subtitle": "手动添加 3DMigoto 游戏实例",
+    "game_type": "游戏类型",
+    "game_type_placeholder": "选择游戏...",
+    "game_folder": "游戏文件夹",
+    "game_folder_placeholder": "点击浏览以选择文件夹...",
+    "browse": "浏览",
+    "hint": "选择包含 d3dx.ini、d3d11.dll 和 /Mods 的根文件夹",
+    "submit_button": "添加游戏",
+    "submitting": "正在验证...",
+    "game_types": {
+      "gimi": "原神 (Genshin)",
+      "srmi": "崩坏：星穹铁道 (Star Rail)",
+      "zzmi": "绝区零 (ZZZ)",
+      "wwmi": "鸣潮 (Wuthering Waves)",
+      "efmi": "明日方舟：终末地 (Arknights Endfield)"
+    },
+    "validation": {
+      "game_type_required": "请选择游戏类型",
+      "path_required": "请选择游戏文件夹",
+      "select_folder_title": "选择 3DMigoto 游戏文件夹"
+    }
+  },
+  "result": {
+    "back_to_welcome": "返回欢迎界面",
+    "back": "返回",
+    "title_one": "找到 1 个游戏！",
+    "title_other": "找到 {{count}} 个游戏！",
+    "subtitle": "已检测到以下游戏，可以进行管理。",
+    "remove_tip": "从检测中移除",
+    "warnings_header": "设置警告 — 您仍可以继续",
+    "add_another": "添加另一个",
+    "confirm": "确认"
+  },
+  "scanning": {
+    "title": "正在扫描游戏...",
+    "subtitle": "正在 XXMI 子文件夹中查找 3DMigoto 实例"
+  },
+  "indexing": {
+    "title": "正在索引您的模组...",
+    "subtitle": "请稍候，EMMM 正在扫描游戏文件夹。"
+  }
+}

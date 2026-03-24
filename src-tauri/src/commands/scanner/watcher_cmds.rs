@@ -8,6 +8,7 @@ use tauri::State;
 ///
 /// # Covers: EC-2.06
 #[tauri::command]
+#[specta::specta]
 pub async fn set_watcher_suppression_cmd(
     suppressed: bool,
     watcher: State<'_, WatcherState>,
@@ -22,6 +23,7 @@ pub async fn set_watcher_suppression_cmd(
 /// Delegates the full lifecycle (thread spawning, event loop, DB sync) to
 /// `services::scanner::watcher::lifecycle::start_watcher`.
 #[tauri::command]
+#[specta::specta]
 pub async fn start_watcher_cmd(
     app: tauri::AppHandle,
     path: String,
@@ -41,6 +43,7 @@ pub async fn start_watcher_cmd(
 ///
 /// # Covers: req-05 AC-05.2.2, req-28 (Game Switch → stop → init)
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_watcher_cmd(watcher: State<'_, WatcherState>) -> Result<(), String> {
     let mut w = watcher.watcher.lock().unwrap();
     if w.is_some() {

@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { dedupService } from './dedupService';
-import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../types/dedup';
+import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../types/scanner';
 
 // Mock Tauri API
 let channelInstances: Array<{ onmessage: ((event: any) => void) | null }> = [];
@@ -57,7 +57,7 @@ describe('dedupService', () => {
 
       // Simulate receiving a progress event
       const mockEvent: DupScanEvent = {
-        event: 'Progress',
+        event: 'progress',
         data: {
           scanId: 'scan-1',
           processedFolders: 10,
@@ -119,6 +119,7 @@ describe('dedupService', () => {
             groupId: 'group-1',
             confidenceScore: 95,
             matchReason: 'Hash match',
+            isUnsafe: false,
             signals: [{ key: 'hash', detail: 'BLAKE3', score: 100 }],
             members: [
               {
@@ -126,16 +127,20 @@ describe('dedupService', () => {
                 displayName: 'Mod A',
                 totalSizeBytes: 1024,
                 fileCount: 5,
+                isSafe: true,
                 confidenceScore: 95,
                 signals: [],
+                modId: null,
               },
               {
                 folderPath: '/path/mod-b',
                 displayName: 'Mod B',
                 totalSizeBytes: 1024,
                 fileCount: 5,
+                isSafe: true,
                 confidenceScore: 95,
                 signals: [],
+                modId: null,
               },
             ],
           },
@@ -146,7 +151,7 @@ describe('dedupService', () => {
 
       const result = await dedupService.getReport();
 
-      expect(invoke).toHaveBeenCalledWith('dup_scan_get_report');
+      expect(invoke).toHaveBeenCalledWith('dup_scan_get_report', { pin: undefined });
       expect(result).toEqual(mockReport);
     });
 
@@ -181,15 +186,14 @@ describe('dedupService', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'KeepA' as const,
-          folderA: '/path/mod-a',
-          folderB: '/path/mod-b',
+          action: 'Keep' as const,
+          targetPath: '/path/mod-a',
+          allMembers: ['/path/mod-a', '/path/mod-b'],
         },
         {
           groupId: 'group-2',
           action: 'Ignore' as const,
-          folderA: '/path/mod-c',
-          folderB: '/path/mod-d',
+          allMembers: ['/path/mod-c', '/path/mod-d'],
         },
       ];
 
@@ -210,6 +214,7 @@ describe('dedupService', () => {
         errors: [
           {
             groupId: 'group-2',
+            action: { type: 'Keep', targetPath: '/path/mod-a' },
             message: 'Permission denied when deleting folder',
           },
         ],
@@ -220,9 +225,9 @@ describe('dedupService', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'KeepA' as const,
-          folderA: '/path/mod-a',
-          folderB: '/path/mod-b',
+          action: 'Keep' as const,
+          targetPath: '/path/mod-a',
+          allMembers: ['/path/mod-a', '/path/mod-b'],
         },
       ];
 
@@ -240,9 +245,9 @@ describe('dedupService', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'KeepA' as const,
-          folderA: '/path/mod-a',
-          folderB: '/path/mod-b',
+          action: 'Keep' as const,
+          targetPath: '/path/mod-a',
+          allMembers: ['/path/mod-a', '/path/mod-b'],
         },
       ];
 

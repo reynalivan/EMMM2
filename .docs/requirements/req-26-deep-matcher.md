@@ -292,15 +292,15 @@ FolderSignals {
 
 ### Integration Points
 
-| Component              | Detail                                                                                                                                  |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Master DB / hash_index | `HashMap<hash_str, Vec<entry_id>>` — loaded at startup (Epic 09)                                                                        |
-| Token DF index         | `HashMap<token, Vec<entry_id>>`, built at startup from `schema.json` aliases                                                            |
-| `hash_db` schema       | Per-entity `hash_db: HashMap<String, Vec<String>>` in `schema.json` (backward-compatible, default `{}`)                                 |
-| GameBanana API         | `reqwest::Client` with 3s timeout; public API v11; no auth key required                                                                 |
-| AI Provider            | Configured in Settings (Epic 04); API key in OS keychain via `keyring` crate                                                            |
-| ScanReviewModal        | Reads `Vec<ScoredCandidate>` from Tauri state; "Commit" triggers Epic 27                                                                |
-| Debug logs             | Feature-flag `EMMM2_MATCH_DEBUG=1` prints: mode, best/second scores, margin, primary evidence flags, `foreign_strong_hits`, scan counts |
+| Component              | Detail                                                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Master DB / hash_index | `HashMap<hash_str, Vec<entry_id>>` — loaded at startup (Epic 09)                                                                       |
+| Token DF index         | `HashMap<token, Vec<entry_id>>`, built at startup from `schema.json` aliases                                                           |
+| `hash_db` schema       | Per-entity `hash_db: HashMap<String, Vec<String>>` in `schema.json` (backward-compatible, default `{}`)                                |
+| GameBanana API         | `reqwest::Client` with 3s timeout; public API v11; no auth key required                                                                |
+| AI Provider            | Configured in Settings (Epic 04); API key in OS keychain via `keyring` crate                                                           |
+| ScanReviewModal        | Reads `Vec<ScoredCandidate>` from Tauri state; "Commit" triggers Epic 27                                                               |
+| Debug logs             | Feature-flag `EMMM_MATCH_DEBUG=1` prints: mode, best/second scores, margin, primary evidence flags, `foreign_strong_hits`, scan counts |
 
 ### Security & Privacy
 

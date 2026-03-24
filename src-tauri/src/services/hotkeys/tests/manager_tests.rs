@@ -67,7 +67,7 @@ fn dispatch_when_disabled_returns_none() {
     let manager = HotkeyManager::new(&config).expect("manager should initialize");
 
     // Any action should return None when disabled.
-    let result = manager.dispatch_action(HotkeyAction::ToggleSafeMode, false, None, &[], 0, 0);
+    let result = manager.dispatch_action(HotkeyAction::ToggleSafeMode, false, None, &[]);
     assert!(result.is_none());
 }
 
@@ -89,7 +89,7 @@ fn dispatch_safe_mode_toggle() {
     // Simulate already-enabled runtime manager.
     manager.set_enabled_for_test(true);
 
-    let result = manager.dispatch_action(HotkeyAction::ToggleSafeMode, false, None, &[], 0, 0);
+    let result = manager.dispatch_action(HotkeyAction::ToggleSafeMode, false, None, &[]);
 
     assert!(result.is_some());
     let res = result.unwrap();
@@ -105,14 +105,7 @@ fn dispatch_preset_cycle_with_presets() {
 
     let presets = vec!["Alpha".to_string(), "Beta".to_string(), "Gamma".to_string()];
 
-    let result = manager.dispatch_action(
-        HotkeyAction::NextPreset,
-        false,
-        Some("Alpha"),
-        &presets,
-        0,
-        0,
-    );
+    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, Some("Alpha"), &presets);
 
     assert!(result.is_some());
 }
@@ -124,7 +117,7 @@ fn dispatch_preset_cycle_no_presets_returns_noop() {
 
     manager.set_enabled_for_test(true);
 
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, None, &[], 0, 0);
+    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, None, &[]);
 
     assert!(result.is_some());
     let res = result.unwrap();

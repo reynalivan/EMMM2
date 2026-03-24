@@ -7,18 +7,21 @@ use tauri::State;
 /// Bulk Auto-Organize mods.
 /// Moves selected mods to `Mods/{Category}/{ObjectName}/{ModName}`.
 #[tauri::command]
+#[specta::specta]
 pub async fn auto_organize_mods(
+    config: tauri::State<'_, crate::services::config::ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
     paths: Vec<String>,
-    target_root: String,
     db_json: String,
     watcher: State<'_, WatcherState>,
-) -> Result<BulkResult, String> {
+) -> Result<BulkResult, crate::domain::errors::AppError> {
     crate::services::mods::organizer_ext::auto_organize_mods_service(
-        &pool,
+        &config,
+        pool.inner(),
+        &game_id,
         paths,
-        target_root,
-        db_json,
+        &db_json,
         &watcher,
     )
     .await

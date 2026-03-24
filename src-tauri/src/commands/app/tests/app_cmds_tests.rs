@@ -1,34 +1,10 @@
 use super::*;
-use crate::database::game_repo::{upsert_game, GameRow};
-use sqlx::sqlite::SqlitePoolOptions;
+use crate::repo::game_repo::{upsert_game, GameRow};
 use sqlx::SqlitePool;
 
 async fn setup_pool() -> SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS games (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            game_type TEXT NOT NULL,
-            path TEXT NOT NULL,
-            launcher_path TEXT,
-            launch_args TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            mod_path TEXT,
-            game_exe TEXT,
-            loader_exe TEXT
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    pool
+    let ctx = crate::test_utils::init_test_db().await;
+    ctx.pool
 }
 
 #[tokio::test]
@@ -50,9 +26,9 @@ async fn test_check_config_status_has_config() {
     let game = GameRow {
         id: "game1".into(),
         name: "Test Game".into(),
-        game_type: "GIMI".into(),
+        game_type: crate::database::models::GameType::GIMI,
         path: "C:\\Game".into(),
-        mod_path: None,
+        mods_path: Some("C:\\Mods".into()),
         game_exe: None,
         launcher_path: None,
         loader_exe: None,

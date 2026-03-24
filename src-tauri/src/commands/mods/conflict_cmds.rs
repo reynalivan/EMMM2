@@ -7,22 +7,43 @@ use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 
+use crate::domain::errors::AppError;
+use crate::services::config::ConfigService;
+use crate::services::fs_utils::guard::PathGuard;
+
 /// Resolve a naming conflict where both "X" and "DISABLED X" exist on disk.
 ///
 /// Strategies:
 /// - `keep_enabled`: Keep the enabled folder, rename the disabled duplicate
 /// - `keep_disabled`: Keep the disabled folder, rename the enabled duplicate
 /// - `separate`: Rename one folder's base name to make them unique
+#[specta::specta]
 #[tauri::command]
 pub async fn resolve_conflict(
+    config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    game_id: String,
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     keep_path: String,
     duplicate_path: String,
     strategy: String,
-) -> Result<String, String> {
-    let _lock = op_lock.acquire().await?;
-    resolve_conflict_inner(&state, &keep_path, &duplicate_path, &strategy)
+) -> Result<String, AppError> {
+    PathGuard::validate_path(&config, &game_id, &keep_path).map_err(AppError::Security)?;
+    PathGuard::validate_path(&config, &game_id, &duplicate_path).map_err(AppError::Security)?;
+
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let result = resolve_conflict_inner(&state, &keep_path, &duplicate_path, &strategy)?;
+
+    // Sync in-game overlay artifacts (Req-43)
+    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        &pool,
+        &config,
+        state.suppressor.clone(),
+    )
+    .await;
+
+    Ok(result)
 }
 
 pub fn resolve_conflict_inner(
@@ -30,15 +51,19 @@ pub fn resolve_conflict_inner(
     keep_path: &str,
     duplicate_path: &str,
     strategy: &str,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let keep = Path::new(keep_path);
     let dup = Path::new(duplicate_path);
 
     if !keep.exists() {
-        return Err(format!("Keep path does not exist: {keep_path}"));
+        return Err(AppError::Io(format!(
+            "Keep path does not exist: {keep_path}"
+        )));
     }
     if !dup.exists() {
-        return Err(format!("Duplicate path does not exist: {duplicate_path}"));
+        return Err(AppError::Io(format!(
+            "Duplicate path does not exist: {duplicate_path}"
+        )));
     }
 
     let parent = dup.parent().unwrap_or_else(|| Path::new(""));
@@ -59,19 +84,23 @@ pub fn resolve_conflict_inner(
             let copy_base = format!("{} (copy)", base);
             find_unique_name(parent, &copy_base, is_disabled)
         }
-        _ => return Err(format!("Unknown strategy: {strategy}")),
+        _ => return Err(AppError::Io(format!("Unknown strategy: {strategy}"))),
     };
 
     let new_path = parent.join(&new_name);
 
     // Final guard: new target must not exist
     if new_path.exists() {
-        return Err(format!("Target already exists: {}", new_path.display()));
+        return Err(AppError::Io(format!(
+            "Target already exists: {}",
+            new_path.display()
+        )));
     }
 
     {
         let _guard = SuppressionGuard::new(&state.suppressor);
-        fs::rename(dup, &new_path).map_err(|e| format!("Failed to rename duplicate: {e}"))?;
+        fs::rename(dup, &new_path)
+            .map_err(|e| AppError::Io(format!("Failed to rename duplicate: {e}")))?;
     }
 
     log::info!(
@@ -116,7 +145,7 @@ fn find_unique_name(parent: &Path, base: &str, is_disabled: bool) -> String {
 
 // ── Conflict Details (for comparison dialog) ─────────────────────────────────
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct FolderDetail {
     pub path: String,
     pub folder_name: String,
@@ -127,14 +156,14 @@ pub struct FolderDetail {
     pub thumbnail_path: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct FileEntry {
     pub name: String,
     pub size: u64,
     pub is_ini: bool,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct ConflictDetails {
     pub enabled: FolderDetail,
     pub disabled: FolderDetail,
@@ -142,22 +171,28 @@ pub struct ConflictDetails {
 
 /// Get detailed file listings for both enabled and disabled versions of a conflicting folder.
 /// Used by the enhanced ConflictResolveDialog for side-by-side comparison.
+#[specta::specta]
 #[tauri::command]
 pub async fn get_conflict_details(
+    config: State<'_, ConfigService>,
+    game_id: String,
     enabled_path: String,
     disabled_path: String,
-) -> Result<ConflictDetails, String> {
+) -> Result<ConflictDetails, AppError> {
+    PathGuard::validate_path(&config, &game_id, &enabled_path).map_err(AppError::Security)?;
+    PathGuard::validate_path(&config, &game_id, &disabled_path).map_err(AppError::Security)?;
+
     let enabled = scan_folder_detail(&enabled_path, true)?;
     let disabled = scan_folder_detail(&disabled_path, false)?;
     Ok(ConflictDetails { enabled, disabled })
 }
 
-fn scan_folder_detail(path_str: &str, is_enabled: bool) -> Result<FolderDetail, String> {
+fn scan_folder_detail(path_str: &str, is_enabled: bool) -> Result<FolderDetail, AppError> {
     let path = Path::new(path_str);
     if !path.exists() || !path.is_dir() {
-        return Err(format!(
+        return Err(AppError::Io(format!(
             "Path does not exist or is not a directory: {path_str}"
-        ));
+        )));
     }
 
     let folder_name = path
@@ -179,7 +214,6 @@ fn scan_folder_detail(path_str: &str, is_enabled: bool) -> Result<FolderDetail, 
                 let lower = name.to_lowercase();
                 let is_ini = lower.ends_with(".ini");
 
-                // Detect thumbnail
                 if thumbnail_path.is_none() {
                     let thumb_exts = ["png", "jpg", "jpeg", "webp", "gif", "bmp"];
                     if thumb_exts.iter().any(|ext| lower.ends_with(ext)) {
@@ -233,6 +267,40 @@ fn scan_folder_detail(path_str: &str, is_enabled: bool) -> Result<FolderDetail, 
         files,
         thumbnail_path,
     })
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn ignore_object_conflict(
+    pool: State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    object_id: String,
+    mod_ids: Vec<String>,
+) -> Result<(), AppError> {
+    crate::repo::conflict_repo::ignore_object_conflict(&pool, &game_id, &object_id, &mod_ids)
+        .await?;
+    Ok(())
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn revoke_object_conflict(
+    pool: State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    object_id: String,
+) -> Result<(), AppError> {
+    crate::repo::conflict_repo::revoke_object_conflict(&pool, &game_id, &object_id).await?;
+    Ok(())
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn list_ignored_object_conflicts(
+    pool: State<'_, sqlx::SqlitePool>,
+    game_id: String,
+) -> Result<Vec<crate::repo::conflict_repo::IgnoredConflict>, AppError> {
+    let list = crate::repo::conflict_repo::list_ignored_object_conflicts(&pool, &game_id).await?;
+    Ok(list)
 }
 
 #[cfg(test)]

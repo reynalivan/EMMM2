@@ -23,7 +23,7 @@ As a user, I want the Preview Panel to show Object stats with no mod selected, a
 
 | ID        | Type        | Criteria                                                                                                                                                                                                |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-16.1.1 | ✅ Positive | Given an Object selected in the objectlist but no folder selected in the grid, then the Preview Panel shows `ObjectSummary`: object name, total mod count, enabled count, thumbnail if available           |
+| AC-16.1.1 | ✅ Positive | Given an Object selected in the objectlist but no folder selected in the grid, then the Preview Panel shows `ObjectSummary`: object name, total mod count, enabled count, thumbnail if available        |
 | AC-16.1.2 | ✅ Positive | Given I click a `FolderCard`, then the panel switches to `ModDetails` in ≤ 100ms, loading Metadata, INI, and Gallery sub-sections in parallel                                                           |
 | AC-16.1.3 | ✅ Positive | Given I click empty grid space (deselect), then `selectedFolders` resets to `[]` and the panel reverts to `ObjectSummary` in ≤ 100ms                                                                    |
 | AC-16.1.4 | ❌ Negative | Given the selected mod no longer exists in the `['folders']` cache (deleted externally), then the panel automatically reverts to `ObjectSummary` without showing a broken detail view or error boundary |
