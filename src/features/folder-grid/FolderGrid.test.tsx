@@ -27,7 +27,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
-vi.mock('../../hooks/useFolders', () => ({
+vi.mock('../../hooks/useFolderMutations', () => ({
   useActiveConflicts: () => ({ data: [] }),
 }));
 
@@ -174,6 +174,7 @@ const defaultHookReturn = {
   handleDuplicateForceEnable: vi.fn(),
   handleDuplicateEnableOnly: vi.fn(),
   handleDuplicateCancel: vi.fn(),
+  isFolderSwitchPending: vi.fn(() => false),
 };
 
 describe('FolderGrid', () => {
@@ -188,7 +189,7 @@ describe('FolderGrid', () => {
       sortedFolders: [],
     });
     render(<FolderGrid />, { wrapper: createWrapper });
-    expect(screen.getByText(/No mod folders found/i)).toBeInTheDocument();
+    expect(screen.getByText('empty.no_mods')).toBeInTheDocument();
   });
 
   it('renders loading state', () => {
@@ -286,7 +287,7 @@ describe('FolderGrid', () => {
     });
 
     render(<FolderGrid />, { wrapper: createWrapper });
-    expect(screen.getByText(/No mods match your search/i)).toBeInTheDocument();
+    expect(screen.getByText('empty.no_match')).toBeInTheDocument();
     expect(screen.queryByText(/NonExistentMod/i)).not.toBeInTheDocument();
   });
 
@@ -299,8 +300,8 @@ describe('FolderGrid', () => {
     });
 
     render(<FolderGrid />, { wrapper: createWrapper });
-    // Assuming Breadcrumbs component has text 'Breadcrumbs' based on mock
-    expect(screen.getByText('Breadcrumbs')).toBeInTheDocument();
+    expect(screen.getByText('Characters')).toBeInTheDocument();
+    expect(screen.getByText('Albedo')).toBeInTheDocument();
   });
 
   it('TC-15-005: Renders DragOverlay when dragging', () => {

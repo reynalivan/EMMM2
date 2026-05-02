@@ -1,11 +1,10 @@
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::trash;
-use crate::services::scanner::watcher::SuppressionGuard;
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherSuppressor};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -62,7 +61,7 @@ pub async fn resolve_batch<F>(
     game_id: String,
     db: &SqlitePool,
     op_lock: &OperationLock,
-    watcher_suppressor: &Arc<AtomicBool>,
+    watcher_suppressor: &Arc<WatcherSuppressor>,
     trash_dir: &Path,
     mut on_progress: F,
 ) -> Result<ResolutionSummary, String>

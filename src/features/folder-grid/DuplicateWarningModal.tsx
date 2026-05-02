@@ -6,12 +6,8 @@
 
 import { useRef, useEffect } from 'react';
 import { AlertTriangle, Zap, ShieldAlert } from 'lucide-react';
-
-export interface DuplicateInfo {
-  mod_id: string;
-  folder_path: string;
-  actual_name: string;
-}
+import { useTranslation } from 'react-i18next';
+import type { DuplicateInfo } from '../../types/scanner';
 
 interface DuplicateWarningModalProps {
   open: boolean;
@@ -30,6 +26,7 @@ export default function DuplicateWarningModal({
   onEnableOnlyThis,
   onCancel,
 }: DuplicateWarningModalProps) {
+  const { t } = useTranslation(['folder_grid', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -53,12 +50,10 @@ export default function DuplicateWarningModal({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-base text-base-content">
-              Duplicate Character Active
+              {t('duplicate_warning.title')}
             </h3>
             <p className="text-sm text-base-content/60 mt-1 leading-relaxed">
-              A mod for the same character is already enabled. Enabling{' '}
-              <span className="font-medium text-base-content">{targetName}</span> may cause texture
-              conflicts or visual glitches.
+              {t('duplicate_warning.description', { targetName })}
             </p>
           </div>
         </div>
@@ -67,7 +62,7 @@ export default function DuplicateWarningModal({
         {duplicates.length > 0 && (
           <div className="mt-3 bg-base-200/50 rounded-lg p-3 border border-base-content/5">
             <p className="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-2">
-              Currently Enabled
+              {t('duplicate_warning.currently_enabled')}
             </p>
             <ul className="space-y-1">
               {duplicates.map((d) => (
@@ -83,21 +78,21 @@ export default function DuplicateWarningModal({
         {/* Actions */}
         <div className="modal-action mt-4 flex-wrap gap-2">
           <button className="btn btn-sm btn-ghost" onClick={onCancel}>
-            Cancel
+            {t('common:actions.cancel')}
           </button>
           <button className="btn btn-sm btn-primary gap-1" onClick={onEnableOnlyThis}>
             <Zap size={14} />
-            Enable Only This
+            {t('duplicate_warning.enable_only_this')}
           </button>
           <button className="btn btn-sm btn-warning btn-outline gap-1" onClick={onForceEnable}>
-            Force Enable
+            {t('duplicate_warning.force_enable')}
           </button>
         </div>
       </div>
 
       {/* Backdrop */}
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onCancel}>close</button>
+        <button onClick={onCancel}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

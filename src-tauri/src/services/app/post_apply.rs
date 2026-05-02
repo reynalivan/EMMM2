@@ -6,9 +6,9 @@ use crate::services::keyviewer::harvester;
 use crate::services::keyviewer::matcher;
 use crate::services::keyviewer::resource_pack;
 use crate::services::mods::metadata;
+use crate::services::scanner::watcher::WatcherSuppressor;
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 /// Context for post-mutation tasks.
@@ -18,7 +18,7 @@ pub struct PostApplyContext {
     pub game_id: String,
     pub is_safe: bool,
     pub mods_path: PathBuf,
-    pub suppressor: Arc<AtomicBool>,
+    pub suppressor: Arc<WatcherSuppressor>,
     pub settings: AppSettings,
     /// Optional status overrides (e.g. preset name, folder name) from the mutation source.
     pub status_fields: Option<generator::StatusFields>,
@@ -47,6 +47,10 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
     let signature = corridor_service::recompute_signature(pool, game_id, is_safe)
         .await
         .map_err(|e| format!("Sig recompute failed: {e}"))?;
+
+    crate::services::runtime_projection_service::rebuild_game_projection(pool, game_id)
+        .await
+        .map_err(|e| format!("Projection rebuild failed: {e}"))?;
 
     // 2. Refresh conflict cache
     let conflicts = metadata::get_active_mod_conflicts(pool, game_id).await?;
@@ -169,15 +173,9 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
 
     // 4. Update Runtime Status (Req-42)
     let mut preset_name = None;
-
-    // Try to find the active collection name for this corridor
-    if let Ok(Some(corridor)) = repo::corridor_repo::get(pool, game_id, is_safe).await {
-        if let Some(active_id) = corridor.active_collection_id {
-            if let Ok(Some(coll)) = repo::collection_repo::get_by_id(pool, &active_id).await {
-                if !coll.is_unsaved {
-                    preset_name = Some(coll.name);
-                }
-            }
+    if let Ok(snapshot) = corridor_service::get_corridor_state(pool, game_id, is_safe).await {
+        if !snapshot.is_dirty && !snapshot.active_collection_is_unsaved {
+            preset_name = snapshot.active_collection_name;
         }
     }
 
@@ -214,24 +212,23 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
 
 /// Convenience function to trigger a full overlay artifact regeneration for the active game.
 /// Useful when settings (hotkeys, safe mode) change without a mod mutation.
-pub async fn trigger_overlay_refresh(
+pub async fn trigger_overlay_refresh_for_game(
     pool: &SqlitePool,
     config: &crate::services::config::ConfigService,
-    suppressor: Arc<AtomicBool>,
+    suppressor: Arc<WatcherSuppressor>,
+    game_id: &str,
 ) -> Result<(), String> {
     let settings = config.get_settings();
-    let game_id = settings.active_game_id.clone().ok_or("No active game")?;
     let game = settings
         .games
         .iter()
-        .find(|g| g.id == game_id)
-        .ok_or_else(|| format!("Active game {} not found", game_id))?;
-
+        .find(|entry| entry.id == game_id)
+        .ok_or_else(|| format!("Game {} not found", game_id))?;
     let is_safe = settings.safe_mode.enabled;
 
     let ctx = PostApplyContext {
         pool: pool.clone(),
-        game_id,
+        game_id: game_id.to_string(),
         is_safe,
         mods_path: game.mod_path.clone(),
         suppressor,
@@ -240,4 +237,16 @@ pub async fn trigger_overlay_refresh(
     };
 
     run_post_apply_tasks(ctx).await
+}
+
+/// Convenience function to trigger a full overlay artifact regeneration for the active game.
+/// Useful when settings (hotkeys, safe mode) change without a mod mutation.
+pub async fn trigger_overlay_refresh(
+    pool: &SqlitePool,
+    config: &crate::services::config::ConfigService,
+    suppressor: Arc<WatcherSuppressor>,
+) -> Result<(), String> {
+    let settings = config.get_settings();
+    let game_id = settings.active_game_id.clone().ok_or("No active game")?;
+    trigger_overlay_refresh_for_game(pool, config, suppressor, &game_id).await
 }

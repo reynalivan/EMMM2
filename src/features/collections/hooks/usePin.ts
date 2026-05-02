@@ -10,6 +10,7 @@ import { toast } from '../../../stores/useToastStore';
 import { pinKeys } from '../queryKeys';
 import type { PinStatus } from '../../../types/collection';
 import { commands } from '../../../lib/bindings';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 /** Check if a PIN is set (lightweight boolean query). */
 export function useV2HasPin() {
@@ -36,17 +37,16 @@ export function useV2VerifyPin() {
   return useMutation({
     mutationFn: (pin: string) => commands.verifyPin({ pin }),
 
-    onSuccess: (isValid) => {
-      // Refresh status (failed_attempts may have changed)
-      queryClient.invalidateQueries({ queryKey: pinKeys.all });
+    onSuccess: async (isValid) => {
+      await publishQueryScopes(queryClient, ['pins']);
 
       if (!isValid) {
         toast.error('Incorrect PIN');
       }
     },
 
-    onError: (err) => {
-      queryClient.invalidateQueries({ queryKey: pinKeys.all });
+    onError: async (err) => {
+      await publishQueryScopes(queryClient, ['pins']);
       toast.error(String(err));
     },
   });
@@ -60,8 +60,8 @@ export function useV2SetPin() {
     mutationFn: ({ pin, recoveryCode }: { pin: string; recoveryCode?: string }) =>
       commands.setPin({ pin, recoveryCode: recoveryCode ?? undefined }),
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: pinKeys.all });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['pins']);
       toast.success('PIN updated');
     },
 
@@ -78,8 +78,8 @@ export function useV2ClearPin() {
   return useMutation({
     mutationFn: () => commands.clearPin({}),
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: pinKeys.all });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['pins']);
       toast.success('PIN removed');
     },
 

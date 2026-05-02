@@ -4,6 +4,7 @@ import { useBrowserStore } from '../../../stores/useBrowserStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
 import { useToastStore } from '../../../stores/useToastStore';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 export default function BrowserTab() {
   const { t } = useTranslation(['settings', 'common']);
@@ -31,8 +32,8 @@ export default function BrowserTab() {
 
   const setHomepageMutation = useMutation({
     mutationFn: (url: string) => commands.browserSetHomepage({ url }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['browser_homepage'] });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['browserHomepage']);
       addToast('success', t('settings:browser.homepage_success'));
     },
     onError: (err) => {
@@ -42,10 +43,9 @@ export default function BrowserTab() {
 
   const clearOldDownloadsMutation = useMutation({
     mutationFn: () => commands.browserClearOldDownloads(),
-    onSuccess: (count) => {
+    onSuccess: async (count) => {
       addToast('success', t('settings:browser.clear_success', { count }));
-      // Invalidate downloads query if it happens to be active
-      queryClient.invalidateQueries({ queryKey: ['browser-downloads'] });
+      await publishQueryScopes(queryClient, ['browserDownloads']);
     },
     onError: (err) => {
       addToast('error', t('settings:browser.clear_failed', { error: String(err) }));

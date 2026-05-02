@@ -12,13 +12,7 @@ import type {
   ModInfoUpdate,
   RenameResult,
 } from './object';
-import type {
-  BulkActionError,
-  BulkResult,
-  ConflictInfo,
-  DuplicateInfo,
-  TrashMetadata,
-} from './scanner';
+import type { BulkActionError, BulkResult, ConflictInfo, TrashMetadata } from './scanner';
 
 /** A single mod folder entry from `list_mod_folders` backend command. */
 export type { ModFolder };
@@ -71,6 +65,3 @@ export type { BulkResult };
 
 /** Info about a shader/buffer hash conflict. */
 export type { ConflictInfo };
-
-/** Info about a duplicate/conflicting enabled mod. */
-export type { DuplicateInfo };

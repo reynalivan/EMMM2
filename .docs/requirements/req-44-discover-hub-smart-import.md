@@ -55,7 +55,7 @@ As a user, I want a dedicated area to manage all my mod downloads, so I can impo
 - **Browser Homepage**: Configurable URL. Default: `https://www.google.com`. Shown on every new tab.
 - **Download Manager**: Status panel showing download items. Supports single-select and multi-select with bulk import.
 - **Game Picker (Auto-Organize)**: Before importing, user selects which game's workspace to target.
-- **Auto Smart Import**: Event-triggered pipeline (staging → extract → deep matcher → place as DISABLED).
+- **Auto Smart Import**: Event-triggered pipeline (staging → extract → Deep Match Scanner → place as DISABLED).
 - **Remote Security**: Remote web pages have **zero IPC access** to EMMM commands.
 
 **Non-Goals (This Phase):**
@@ -338,7 +338,7 @@ A targeted file watcher on `BrowserDownloadsRoot` (NOT the OS Downloads folder):
 - Validate that the archive can be opened and is not corrupt/password-protected.
 - On failure: mark job `Failed: InvalidArchive`. UI shows: "Open file location", "Retry", "Delete file".
 
-### 10.3 Deep Matcher
+### 10.3 Deep Match Scanner
 
 Runs the Epic 26 pipeline against the extracted content.
 
@@ -380,7 +380,9 @@ If `NeedsReview` (confidence < 0.70 or duplicate hash):
   - Archive filename.
   - **Manual Game Picker** (allows changing target).
   - **Manual Category Picker** (Character/Weapon/UI/Other).
+  - **Optional Physical Object Picker** for the selected game.
 - On confirm → resume pipeline with `Place` step.
+- The stored canonical suggestion (`match_entry_key`, `match_alias_name`, confidence, reason) must survive manual review; review selects the physical target folder, not a canonical folder rename.
 
 ---
 
@@ -422,7 +424,7 @@ On `DownloadEvent::Requested`:
 | **Download Manager Panel** | Slide-in panel. Lists all items with status, progress, checkboxes for multi-select, "Import Selected" bulk action. |
 | **Game Picker Dialog**     | Modal to select target game before import. Auto-skipped for single game or remembered choice.                      |
 | **Import Queue**           | Live list of Import Jobs: `Queued` → `Extracting` → `Matching` → `NeedsReview` → `Done` / `Failed`.                |
-| **Needs Review Modal**     | Appears for low-confidence matches. Shows candidates + manual override.                                            |
+| **Needs Review Modal**     | Appears for low-confidence matches. Shows canonical suggestion, manual game/category selection, and optional physical object override. |
 | **Import Result Toast**    | On `Done`: summary + "Open mod folder", "Edit metadata". Does **not** auto-enable the mod.                         |
 
 ---
@@ -468,6 +470,7 @@ On `DownloadEvent::Requested`:
 | AC-44.11 | Opening ≥5 tabs, switching between them, and closing all — no crash occurs.                                                                      |
 | AC-44.12 | Corrupted archive → Import Job status is `Failed: InvalidArchive`. UI offers "Retry" and "Open file location".                                   |
 | AC-44.13 | Low-confidence match (< 0.70) → Import Job is suspended; Needs Review modal appears with candidate list.                                         |
+| AC-44.16 | Confirming Needs Review keeps the stored canonical relation (`match_entry_key`, `match_alias_name`) and only changes the physical placement target. |
 | AC-44.14 | Remote web page inside a browser tab cannot invoke any EMMM Tauri command (IPC is isolated).                                                     |
 | AC-44.15 | Duplicate archive (same `archive_hash`) → flagged as duplicate; auto-mode keeps both with suffix `(2)`.                                          |
 
@@ -476,7 +479,7 @@ On `DownloadEvent::Requested`:
 ## 16. Dependencies
 
 - **Depends On**:
-  - Epic 26 (Deep Matcher — classification pipeline).
+  - Epic 26 (Deep Match Scanner — classification pipeline).
   - Epic 23 (Mod Import Pipeline — staging & archive extraction logic).
   - Epic 02 (Game Management — `games` table used by Game Picker).
 - **Blocks**: Future advanced API-based scraping / direct GameBanana API integration.

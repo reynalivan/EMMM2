@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import type { GameConfig } from '../../../types/game';
 import { commands } from '../../../lib/bindings';
 import type { ImportJobItem } from '../types';
 import { ObjectCategory, OBJECT_CATEGORIES } from '../../../types/object';
+import type { ObjectSummary } from '../../../types/object';
 
 interface Props {
   job: ImportJobItem;
@@ -22,6 +23,7 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
   const [selectedCategory, setSelectedCategory] = useState<string>(
     job.match_category ?? ObjectCategory.Other,
   );
+  const [selectedObjectId, setSelectedObjectId] = useState<string>('');
 
   const gamesQuery = useQuery({
     queryKey: ['games'],
@@ -30,6 +32,32 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
   });
 
   const games = gamesQuery.data ?? [];
+
+  const objectsQuery = useQuery({
+    queryKey: ['browser-import-objects', selectedGameId],
+    queryFn: async () => {
+      if (!selectedGameId) return [];
+      const result = await commands.getObjects({
+        filter: {
+          game_id: selectedGameId,
+          search_query: null,
+          object_type: null,
+          safe_mode: true,
+          meta_filters: null,
+          sort_by: null,
+          status_filter: null,
+        },
+      });
+      return result.objects;
+    },
+    enabled: open && !!selectedGameId,
+  });
+
+  const objects = objectsQuery.data ?? [];
+
+  useEffect(() => {
+    setSelectedObjectId('');
+  }, [selectedGameId]);
 
   if (!open) return null;
 
@@ -95,6 +123,27 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
           </select>
         </div>
 
+        <div className="form-control mb-4">
+          <label className="label py-1">
+            <span className="label-text font-medium">{t('review.target_object_optional')}</span>
+          </label>
+          <select
+            id="review-object-select"
+            className="select select-bordered select-sm"
+            value={selectedObjectId}
+            onChange={(e) => setSelectedObjectId(e.target.value)}
+            disabled={!selectedGameId}
+          >
+            <option value="">{t('review.keep_as_other')}</option>
+            {objects.map((object: ObjectSummary) => (
+              <option key={object.id} value={object.id}>
+                {object.name}
+                {object.matched_alias_name ? ` (${object.matched_alias_name})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Category Picker */}
         <div className="form-control mb-4">
           <label className="label py-1">
@@ -137,7 +186,7 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
             id="review-confirm-btn"
             className="btn btn-primary btn-sm"
             disabled={!selectedGameId || !selectedCategory}
-            onClick={() => onConfirm(selectedGameId, selectedCategory, null)}
+            onClick={() => onConfirm(selectedGameId, selectedCategory, selectedObjectId || null)}
           >
             {t('review.confirm')}
           </button>

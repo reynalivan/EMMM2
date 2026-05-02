@@ -81,6 +81,9 @@ pub async fn snapshot(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
             mod_path_key: Some(key.clone()),
             object_id: oid.clone(),
             display_name: Some(actual_name),
+            preview_path: None,
+            node_type: None,
+            warnings: Vec::new(),
             is_enabled: true,
         });
         roots.push(CollectionRoot {
@@ -102,7 +105,7 @@ pub async fn snapshot(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     }
 
     // Compute signature
-    let signature = crate::services::collection_service::compute_signature(&mods);
+    let signature = crate::services::collection_service::compute_signature(&mods, &objects);
 
     collection_repo::replace_all_state(
         &ctx.pool,

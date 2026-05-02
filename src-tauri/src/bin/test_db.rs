@@ -4,10 +4,8 @@ use sqlx::Row;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_url = "sqlite://../db/emmm.db".to_string();
-    
-    let pool = SqlitePoolOptions::new()
-        .connect(&db_url)
-        .await?;
+
+    let pool = SqlitePoolOptions::new().connect(&db_url).await?;
 
     let rows = sqlx::query("SELECT id, name, folder_path, object_type, name_key, folder_path_key FROM objects WHERE folder_path LIKE '%amber%' OR name LIKE '%amber%'")
         .fetch_all(&pool)
@@ -21,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let object_type: String = row.try_get("object_type")?;
         let name_key: String = row.try_get("name_key")?;
         let folder_path_key: String = row.try_get("folder_path_key")?;
-        
+
         println!("ID: {}", id);
         println!("Name: {}", name);
         println!("Folder Path: {}", folder_path);

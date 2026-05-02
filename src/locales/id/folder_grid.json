@@ -38,7 +38,12 @@
     "title": "Konflik Nama Terdeteksi",
     "loading": "Memuat detail folder...",
     "enabled_label": "Versi Aktif",
-    "disabled_label": "Versi Nonaktif"
+    "disabled_label": "Versi Nonaktif",
+    "description": "Versi aktif dan nonaktif dari {{name}} ada di direktori yang sama. Bandingkan keduanya lalu pilih yang ingin dipertahankan.",
+    "file_count_one": "{{count}} file",
+    "file_count_other": "{{count}} file",
+    "more_files_one": "+{{count}} file lagi",
+    "more_files_other": "+{{count}} file lagi"
   },
   "breadcrumbs": {
     "root": "ROOT"
@@ -46,5 +51,37 @@
   "context": {
     "switching": "Beralih konteks...",
     "active_warning": "Namun, mod ini saat ini sedang <strong>Aktif</strong>. Mod aktif tidak dapat diubah secara langsung."
+  },
+  "context_dialog": {
+    "title": "Ubah Konteks Mod Aktif?",
+    "move_message": "\"{{modName}}\" akan dipindahkan ke konteks {{target}}.",
+    "target_safe": "SAFE",
+    "target_unsafe": "UNSAFE",
+    "active_warning": "Mod ini sedang aktif. Memindahkannya dapat memengaruhi setup yang sedang diterapkan.",
+    "confirm_checkbox": "Saya memahami dampaknya dan ingin melanjutkan.",
+    "confirm_action": "Ubah Konteks"
+  },
+  "duplicate_warning": {
+    "title": "Kemungkinan Mod Aktif Duplikat",
+    "description": "{{targetName}} sudah memiliki mod aktif lain pada target yang sama. Pilih cara melanjutkan.",
+    "currently_enabled": "Sedang Aktif",
+    "enable_only_this": "Aktifkan Hanya Ini",
+    "force_enable": "Paksa Aktifkan"
+  },
+  "drag_overlay": {
+    "title": "Pindah ke Objek",
+    "subtitle": "Lepas folder ini ke objek untuk memindahkannya."
+  },
+  "ignore_management": {
+    "toast_revoked": "Aturan konflik yang diabaikan berhasil dicabut.",
+    "toast_revoke_failed": "Gagal mencabut aturan konflik yang diabaikan: {{error}}",
+    "title": "Aturan Konflik yang Diabaikan",
+    "subtitle": "Tinjau konflik objek yang sebelumnya Anda izinkan.",
+    "empty_title": "Tidak ada konflik yang diabaikan",
+    "empty_subtitle": "Aturan konflik yang diabaikan akan muncul di sini.",
+    "unknown_object": "Objek Tidak Diketahui",
+    "revoke_title": "Cabut aturan konflik yang diabaikan",
+    "revoke": "Cabut",
+    "note": "Jika aturan dicabut, objek ini akan kembali memunculkan peringatan konflik."
   }
 }

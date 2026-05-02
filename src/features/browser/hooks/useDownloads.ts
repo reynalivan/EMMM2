@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type { BrowserDownloadItem, DownloadStatusEvent, DownloadProgressEvent } from '../types';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 export const DOWNLOADS_QUERY_KEY = ['browser-downloads'] as const;
 
@@ -64,17 +65,17 @@ export function useDownloads() {
   const deleteMutation = useMutation({
     mutationFn: ({ id, deleteFile }: { id: string; deleteFile: boolean }) =>
       commands.browserDeleteDownload({ id, deleteFile }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: DOWNLOADS_QUERY_KEY }),
+    onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
   });
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => commands.browserCancelDownload({ id, deleteFile: false }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: DOWNLOADS_QUERY_KEY }),
+    onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
   });
 
   const clearImportedMutation = useMutation({
     mutationFn: () => commands.browserClearImported(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: DOWNLOADS_QUERY_KEY }),
+    onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
   });
 
   return {

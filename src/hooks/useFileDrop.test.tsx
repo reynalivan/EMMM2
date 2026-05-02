@@ -158,7 +158,7 @@ describe('useFileDrop Hook (TC-23)', () => {
     expect(toast.error).not.toHaveBeenCalled(); // Error only fires if all are invalid
     expect(toast.warning).toHaveBeenCalledWith('Skipped 1 unsupported file(s).');
 
-    // Calls onDrop with ALL paths; useFolderGridActions handles the specific routing based on context
+    // Calls onDrop with ALL paths; FolderGrid runtime handles the specific routing based on context
     expect(onDrop).toHaveBeenCalledWith(['C:\\Mods\\ValidMod.rar', 'C:\\Mods\\bad.exe'], {
       x: 0,
       y: 0,

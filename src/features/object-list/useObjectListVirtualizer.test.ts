@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 
-import type { ObjectSummary } from '../../types/object';
+import type { WorkspaceObjectNode } from '../../types/workspace';
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: vi.fn(() => ({
@@ -20,44 +20,108 @@ describe('useObjectListVirtualizer', () => {
     ],
   };
 
-  const mockObjects: ObjectSummary[] = [
+  const mockObjects: WorkspaceObjectNode[] = [
     {
       id: '1',
       name: 'Zeta',
+      display_name: 'Zeta',
+      node_kind: 'object',
       object_type: 'Character',
       is_pinned: false,
       thumbnail_path: null,
       folder_path: 'zeta',
-    } as ObjectSummary,
+      mod_count: 0,
+      enabled_count: 0,
+      is_object_disabled: false,
+      has_naming_conflict: false,
+      is_effectively_active: false,
+      inactive_reason: null,
+      warning_state: 'none',
+      primary_warning: null,
+      metadata: '{}',
+      tags: '[]',
+    } as WorkspaceObjectNode,
     {
       id: '2',
       name: 'Alpha',
+      display_name: 'Alpha',
+      node_kind: 'object',
       object_type: 'Character',
       is_pinned: false,
       thumbnail_path: null,
-    } as ObjectSummary,
+      folder_path: 'alpha',
+      mod_count: 0,
+      enabled_count: 0,
+      is_object_disabled: false,
+      has_naming_conflict: false,
+      is_effectively_active: false,
+      inactive_reason: null,
+      warning_state: 'none',
+      primary_warning: null,
+      metadata: '{}',
+      tags: '[]',
+    } as WorkspaceObjectNode,
     {
       id: '3',
       name: 'Sword 1',
+      display_name: 'Sword 1',
+      node_kind: 'object',
       object_type: 'Weapon',
       is_pinned: false,
       thumbnail_path: null,
-    } as ObjectSummary,
+      folder_path: 'sword-1',
+      mod_count: 0,
+      enabled_count: 0,
+      is_object_disabled: false,
+      has_naming_conflict: false,
+      is_effectively_active: false,
+      inactive_reason: null,
+      warning_state: 'none',
+      primary_warning: null,
+      metadata: '{}',
+      tags: '[]',
+    } as WorkspaceObjectNode,
     {
       id: '4',
       name: 'Random',
+      display_name: 'Random',
+      node_kind: 'object',
       object_type: 'Other',
       sub_category: 'Misc',
       is_pinned: false,
       thumbnail_path: null,
-    } as ObjectSummary,
+      folder_path: 'random',
+      mod_count: 0,
+      enabled_count: 0,
+      is_object_disabled: false,
+      has_naming_conflict: false,
+      is_effectively_active: false,
+      inactive_reason: null,
+      warning_state: 'none',
+      primary_warning: null,
+      metadata: '{}',
+      tags: '[]',
+    } as WorkspaceObjectNode,
     {
       id: '5',
       name: 'Glitch',
+      display_name: 'Glitch',
+      node_kind: 'object',
       object_type: 'Unknown',
       is_pinned: false,
       thumbnail_path: null,
-    } as ObjectSummary,
+      folder_path: 'glitch',
+      mod_count: 0,
+      enabled_count: 0,
+      is_object_disabled: false,
+      has_naming_conflict: false,
+      is_effectively_active: false,
+      inactive_reason: null,
+      warning_state: 'none',
+      primary_warning: null,
+      metadata: '{}',
+      tags: '[]',
+    } as WorkspaceObjectNode,
   ];
 
   it('flattens objects correctly into headers and rows', () => {
@@ -129,5 +193,34 @@ describe('useObjectListVirtualizer', () => {
     });
 
     expect(result.current.selectedIndex).toBe(-1);
+  });
+
+  it('keeps pinned objects at the top of each section', () => {
+    const { result } = renderHook(() =>
+      useObjectListVirtualizer({
+        objects: [
+          {
+            ...mockObjects[0],
+            name: 'Beta',
+            is_pinned: false,
+          },
+          {
+            ...mockObjects[1],
+            name: 'Alpha',
+            is_pinned: true,
+          },
+        ],
+        schema: mockSchema as unknown as import('../../types/object').GameSchema,
+        selectedObjectFolderPath: null,
+        isMobile: false,
+      }),
+    );
+
+    expect(result.current.flatObjectItems[1]).toEqual(
+      expect.objectContaining({ type: 'row', obj: expect.objectContaining({ name: 'Alpha' }) }),
+    );
+    expect(result.current.flatObjectItems[2]).toEqual(
+      expect.objectContaining({ type: 'row', obj: expect.objectContaining({ name: 'Beta' }) }),
+    );
   });
 });

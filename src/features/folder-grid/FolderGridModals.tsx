@@ -1,16 +1,17 @@
 import type { ModFolder } from '../../types/mod';
 import MoveToObjectDialog from './MoveToObjectDialog';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import { useAppStore } from '../../stores/useAppStore';
 import ObjectConflictModal from './ObjectConflictModal';
 import IgnoreManagementModal from './IgnoreManagementModal';
 import { BulkTagModal } from './BulkTagModal';
 import PinEntryModal from '../safe-mode/PinEntryModal';
 import ActiveModContextDialog from './ActiveModContextDialog';
 import SyncConfirmModal from '../object-list/SyncConfirmModal';
-import type { MatchedDbEntry } from '../object-list/SyncConfirmModal';
+import type { MatchedDbEntry } from '../../lib/bindings';
 import type { ObjectSummary } from '../../types/object';
 import { useTranslation } from 'react-i18next';
+import { closeWorkspaceDialog } from '../workspace-runtime/state/workspaceDialogs';
+import { useWorkspaceRuntimeSelector } from '../workspace-runtime/state/workspaceStoreBridge';
 
 export interface FolderGridModalsProps {
   moveDialog: { open: boolean; folder: ModFolder | null };
@@ -85,6 +86,11 @@ export default function FolderGridModals({
   objects,
 }: FolderGridModalsProps) {
   const { t } = useTranslation(['grid']);
+  const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
+  const duplicateConflict =
+    dialogState.kind === 'duplicateConflict'
+      ? { open: true, folder: dialogState.folder, duplicates: dialogState.duplicates }
+      : { open: false, folder: null, duplicates: [] };
 
   return (
     <>
@@ -135,10 +141,10 @@ export default function FolderGridModals({
 
       {/* Conflict Resolution Modal (Structured Error) */}
       <ObjectConflictModal
-        open={useAppStore((state) => state.duplicateConflictDialog.open)}
-        folder={useAppStore((state) => state.duplicateConflictDialog.folder)}
-        duplicates={useAppStore((state) => state.duplicateConflictDialog.duplicates)}
-        onClose={() => useAppStore.getState().closeDuplicateConflictDialog()}
+        open={duplicateConflict.open}
+        folder={duplicateConflict.folder}
+        duplicates={duplicateConflict.duplicates}
+        onClose={() => closeWorkspaceDialog('duplicateConflict')}
       />
 
       {/* Ignore Management Modal */}

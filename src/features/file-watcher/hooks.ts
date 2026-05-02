@@ -1,266 +1,482 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient } from '@tanstack/react-query';
-import { folderKeys } from '../../hooks/useFolders';
-import { thumbnailKeys } from '../../hooks/useThumbnail';
-import { relativePathFromRoot } from '../../lib/pathKey';
-import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
+import { toast } from '../../stores/useToastStore';
 import type { GameConfig } from '../../types/game';
-import { commands } from '../../lib/bindings';
+import { commands, type DiskReconcileReason, type DiskReconcileResult } from '../../lib/bindings';
+import { isSameOrDescendantPath, joinModPath, normalizePath, rewritePath } from './pathUtils';
+import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '../workspace-runtime/optimistic/descriptorBuilders';
+import { dispatchWorkspaceRuntimeEvent } from '../workspace-runtime/state/workspaceStoreBridge';
 
-/**
- * Typed IPC payload from the Rust backend.
- * Matches `WatchEventPayload` in `src-tauri/src/services/scanner/watcher/mod.rs`
- */
-export type WatchEventPayload =
-  | { type: 'Created'; path: string }
-  | { type: 'Modified'; path: string }
-  | { type: 'Removed'; path: string }
-  | { type: 'Renamed'; from: string; to: string }
-  | { type: 'StatusChanged'; path: string; from_status: string; to_status: string }
-  | { type: 'Error'; error: string; path?: string; retry_count?: number };
+const MODS_VIEW_SYNC_TTL_MS = 5_000;
+const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
+const TOAST_SAMPLE_LIMIT = 2;
 
-/**
- * Hook 1: Manages the lifecycle (start/stop) of the Rust filesystem watcher
- * when the active game changes.
- */
-export function useWatcherLifecycle(activeGame: GameConfig | null, safeMode: boolean) {
+export function useWatcherLifecycle(activeGame: GameConfig | null) {
   useEffect(() => {
     let cancelled = false;
+
     const init = async () => {
-      console.log('[Watcher] SafeMode changed or Game changed. Initializing lifecycle...');
-      // Always stop existing watcher first to prevent duplicates
       await commands.stopWatcherCmd().catch(() => {});
-      if (cancelled) return;
-
-      if (activeGame?.mod_path && activeGame?.id) {
-        console.log(
-          `[Watcher] Starting watcher for ${activeGame.id} at ${activeGame.mod_path} (SafeMode: ${safeMode})`,
-        );
-        await commands
-          .startWatcherCmd({
-            path: activeGame.mod_path,
-            gameId: activeGame.id,
-          })
-          .catch((err: unknown) => console.error('[Watcher] Failed to start:', err));
-      } else {
-        console.log('[Watcher] No active game or path, watcher will remain stopped.');
-      }
-    };
-    init();
-
-    return () => {
-      console.log('[Watcher] Cleanup: Stopping watcher');
-      cancelled = true;
-      commands.stopWatcherCmd().catch(() => {});
-    };
-  }, [activeGame?.mod_path, activeGame?.id, safeMode]);
-}
-
-/**
- * Internal helper to check if a path is a mod folder (depth 1 or 2)
- * vs a file/unrelated folder.
- */
-export function isModFolder(targetPath: string | undefined, rootPath: string | undefined): boolean {
-  if (!targetPath || !rootPath) return false;
-
-  const relativeClean = relativePathFromRoot(rootPath, targetPath);
-  if (relativeClean === null) return false;
-
-  // Depth 1 = object folder (Mods/Alhaitham)
-  // Depth 2 = mod folder (Mods/Alhaitham/Hair)
-  const depth = relativeClean ? relativeClean.split('/').length : 0;
-
-  // Ignore files (have an extension)
-  const lastSegment = relativeClean.split('/').pop() ?? '';
-  const hasExtension = lastSegment.includes('.') && lastSegment.lastIndexOf('.') > 0;
-
-  // Ignore hidden folders
-  if (lastSegment.startsWith('.')) return false;
-  if (hasExtension) return false;
-
-  return depth === 1 || depth === 2;
-}
-
-/**
- * Hook 2: Listens for typed IPC events from the backend, filters invalid ones,
- * and batches them into a queue using a 300ms debounce window.
- */
-export function useWatcherEvents(activeGame: GameConfig | null): WatchEventPayload[] {
-  const [batchedEvents, setBatchedEvents] = useState<WatchEventPayload[]>([]);
-  const eventQueueRef = useRef<WatchEventPayload[]>([]);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!activeGame?.mod_path) return;
-
-    const unlistenPromise = listen<WatchEventPayload[]>('mod_watch:events_batch', (event) => {
-      const payloads = event.payload;
-
-      // Skip events during mutation cooldown to prevent UI glitches
-      const cooldownUntil = useAppStore.getState().watcherCooldownUntil;
-      if (cooldownUntil && Date.now() < cooldownUntil) {
+      if (cancelled) {
         return;
       }
 
-      let hasValidEvents = false;
-
-      // Process the batch
-      for (const payload of payloads) {
-        // Handle raw backend errors immediately
-        if (payload.type === 'Error') {
-          if (payload.retry_count !== undefined) {
-            toast.error(`Sync failed after ${payload.retry_count} retries: ${payload.error}`);
-          } else {
-            toast.error(`Watcher error: ${payload.error}`);
-          }
-          console.error('Watcher runtime error:', payload);
-          continue;
-        }
-
-        const isValid = (() => {
-          switch (payload.type) {
-            case 'Created':
-            case 'Removed':
-            case 'StatusChanged':
-              return isModFolder(payload.path, activeGame.mod_path);
-            case 'Renamed':
-              return (
-                isModFolder(payload.from, activeGame.mod_path) ||
-                isModFolder(payload.to, activeGame.mod_path)
-              );
-            default:
-              return false;
-          }
-        })();
-
-        if (isValid) {
-          eventQueueRef.current.push(payload);
-          hasValidEvents = true;
-
-          // Immediate feedback for status changes
-          if (payload.type === 'StatusChanged') {
-            const folderName = payload.path.split(/[\\/]/).pop() ?? 'Unknown Item';
-            const isEnabled = payload.to_status === 'ENABLED';
-            toast.success(`"${folderName}" was ${isEnabled ? 'enabled' : 'disabled'} externally.`);
-          }
-        } else if (payload.type === 'Modified') {
-          // Files like .ini getting modified don't trigger structure changes,
-          // but we want to enqueue them to trigger cache invalidations
-          eventQueueRef.current.push(payload);
-          hasValidEvents = true;
-        }
+      if (!activeGame?.mod_path || !activeGame?.id) {
+        return;
       }
 
-      if (!hasValidEvents) return; // Ignore if entire batch was invalid
+      await commands
+        .startWatcherCmd({
+          path: activeGame.mod_path,
+          gameId: activeGame.id,
+        })
+        .catch((error: unknown) => {
+          console.error('[DiskReconcile] Failed to start watcher:', error);
+        });
+    };
 
-      // Debounce logic (300ms window)
-      if (timeoutRef.current !== null) {
-        clearTimeout(timeoutRef.current);
-      }
-
-      timeoutRef.current = setTimeout(() => {
-        const queue = [...eventQueueRef.current];
-        eventQueueRef.current = [];
-        timeoutRef.current = null;
-
-        if (queue.length > 0) {
-          setBatchedEvents(queue);
-        }
-      }, 300);
-    });
+    void init();
 
     return () => {
-      if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
-      unlistenPromise.then((unlisten) => unlisten());
+      cancelled = true;
+      commands.stopWatcherCmd().catch(() => {});
     };
-  }, [activeGame?.mod_path]);
-
-  // Clear events once they're observed to prevent loops, but doing that in rendering
-  // is bad practice. We expose the raw batch state. Downstream reacts to changes.
-  return batchedEvents;
+  }, [activeGame?.id, activeGame?.mod_path]);
 }
 
-/**
- * Hook 3: Reacts to a batch of validated watcher events by invalidating React Query
- * caches and showing summary toasts.
- */
-export function useWatcherReactions(events: WatchEventPayload[], queryClient: QueryClient) {
-  useEffect(() => {
-    if (events.length === 0) return;
+function totalChangeCount(counts: {
+  added: number;
+  removed: number;
+  renamed: number;
+  modified: number;
+}): number {
+  return counts.added + counts.removed + counts.renamed + counts.modified;
+}
 
-    const totals = { created: 0, removed: 0, renamed: 0, statusChanged: 0, modified: 0 };
-    events.forEach((ev) => {
-      if (ev.type === 'Created') totals.created++;
-      else if (ev.type === 'Removed') totals.removed++;
-      else if (ev.type === 'Renamed') totals.renamed++;
-      else if (ev.type === 'StatusChanged') totals.statusChanged++;
-      else if (ev.type === 'Modified') totals.modified++;
+function formatToastNames(names: string[]): string {
+  if (names.length === 0) {
+    return '';
+  }
+
+  if (names.length <= TOAST_SAMPLE_LIMIT) {
+    return names.join(', ');
+  }
+
+  return `${names.slice(0, TOAST_SAMPLE_LIMIT).join(', ')}, +${names.length - TOAST_SAMPLE_LIMIT} others`;
+}
+
+function maybeShowExternalChangeToast(result: DiskReconcileResult) {
+  if (
+    result.reason === 'StartupBoot' ||
+    result.reason === 'InternalMutation' ||
+    result.reason === 'OnboardingCompleted' ||
+    result.reason === 'GameSwitched' ||
+    !result.change_summary.has_user_visible_changes
+  ) {
+    return;
+  }
+
+  const objectCount = totalChangeCount(result.change_summary.object_changes);
+  const modCount = totalChangeCount(result.change_summary.mod_changes);
+  const messages: string[] = [];
+
+  if (objectCount > 0) {
+    const names = formatToastNames(result.change_summary.object_sample_names);
+    messages.push(
+      names
+        ? `${objectCount} object folder changes: ${names}`
+        : `${objectCount} object folder changes detected`,
+    );
+  }
+
+  if (modCount > 0) {
+    const names = formatToastNames(result.change_summary.mod_sample_names);
+    messages.push(
+      names ? `${modCount} mod folder changes: ${names}` : `${modCount} mod folder changes detected`,
+    );
+  }
+
+  if (messages.length > 0) {
+    toast.info(messages.join(' | '), 5000);
+  }
+}
+
+function applyPathUpdates(result: DiskReconcileResult, activeGame: GameConfig | null) {
+  const appStore = useAppStore.getState();
+  const modsPath = activeGame?.mod_path;
+  const rewrites: Array<{ oldPath: string; newPath: string }> = [];
+
+  for (const update of result.path_updates) {
+    if (update.kind !== 'Mod' || !modsPath) {
+      rewrites.push({
+        oldPath: update.from,
+        newPath: update.to,
+      });
+      continue;
+    }
+
+    const absoluteFrom = joinModPath(modsPath, update.from);
+    const absoluteTo = joinModPath(modsPath, update.to);
+    rewrites.push({
+      oldPath: absoluteFrom,
+      newPath: absoluteTo,
     });
+    appStore.replaceGridSelection(absoluteFrom, absoluteTo);
+  }
 
-    const hasStructureChange = totals.created > 0 || totals.removed > 0 || totals.renamed > 0;
+  if (rewrites.length === 0) {
+    return;
+  }
 
-    // React Query Invalidation
-    if (totals.statusChanged > 0 && !hasStructureChange) {
-      // Status change only: invalidate objects and category counts
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      queryClient.invalidateQueries({ queryKey: ['corridor'] });
+  dispatchWorkspaceRuntimeEvent({
+    type: 'PATHS_REWRITTEN',
+    rewrites,
+  });
+}
+
+function clearStaleSelections(result: DiskReconcileResult, activeGame: GameConfig | null) {
+  const appStore = useAppStore.getState();
+  const modsPath = activeGame?.mod_path;
+
+  if (result.cleared_selection_paths.length === 0) {
+    return;
+  }
+
+  const invalidatedPaths = [...result.cleared_selection_paths];
+  if (modsPath) {
+    invalidatedPaths.push(
+      ...result.cleared_selection_paths.map((path) => joinModPath(modsPath, path)),
+    );
+  }
+
+  dispatchWorkspaceRuntimeEvent({
+    type: 'TARGETS_INVALIDATED',
+    paths: invalidatedPaths,
+    resetExplorer: true,
+  });
+
+  if (!modsPath || appStore.gridSelection.size === 0) {
+    return;
+  }
+
+  const selectedPaths = Array.from(appStore.gridSelection);
+  const shouldClearGridSelection = result.cleared_selection_paths.some((path) => {
+    const absoluteRoot = joinModPath(modsPath, path);
+    return selectedPaths.some((selectedPath) => isSameOrDescendantPath(selectedPath, absoluteRoot));
+  });
+
+  if (shouldClearGridSelection) {
+    appStore.clearGridSelection();
+  }
+}
+
+function isPreviewAffected(result: DiskReconcileResult, activeGame: GameConfig | null): boolean {
+  if (!activeGame?.mod_path) {
+    return false;
+  }
+
+  const appStore = useAppStore.getState();
+  const selectedPaths = Array.from(appStore.gridSelection);
+  const selectedModPath =
+    selectedPaths.length > 0 ? selectedPaths[selectedPaths.length - 1] : undefined;
+  if (!selectedModPath) {
+    return false;
+  }
+
+  const selectedPath = normalizePath(selectedModPath);
+  const selectedObjectPath = appStore.selectedObjectFolderPath
+    ? normalizePath(appStore.selectedObjectFolderPath)
+    : null;
+
+  for (const update of result.path_updates) {
+    if (update.kind === 'Mod') {
+      const absoluteFrom = joinModPath(activeGame.mod_path, update.from);
+      const absoluteTo = joinModPath(activeGame.mod_path, update.to);
+      if (
+        rewritePath(selectedPath, absoluteFrom, absoluteTo) ||
+        isSameOrDescendantPath(selectedPath, absoluteTo)
+      ) {
+        return true;
+      }
+      continue;
     }
 
-    if (hasStructureChange) {
-      // Structure change: invalidate all queries
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      queryClient.invalidateQueries({ queryKey: ['corridor'] });
+    const objectRewrite = selectedObjectPath ? rewritePath(selectedObjectPath, update.from, update.to) : null;
+    if (objectRewrite || (selectedObjectPath && isSameOrDescendantPath(selectedObjectPath, update.to))) {
+      return true;
     }
+  }
 
-    if (totals.modified > 0 && !hasStructureChange && totals.statusChanged === 0) {
-      // Only modified files (e.g. .ini, thumbnail edits): silent invalidation
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.all, refetchType: 'active' });
+  for (const clearedPath of result.cleared_selection_paths) {
+    const absoluteRoot = joinModPath(activeGame.mod_path, clearedPath);
+    if (isSameOrDescendantPath(selectedPath, absoluteRoot)) {
+      return true;
     }
+  }
 
-    // Only show toast if user is actively viewing mods (req-05)
-    // and there was a structural change
-    const workspaceView = useAppStore.getState().workspaceView;
-    if (workspaceView !== 'mods' || (!hasStructureChange && totals.statusChanged === 0)) {
+  for (const changedRoot of result.changed_roots) {
+    const absoluteRoot = joinModPath(activeGame.mod_path, changedRoot);
+    if (isSameOrDescendantPath(selectedPath, absoluteRoot)) {
+      return true;
+    }
+  }
+
+  for (const thumbnailRoot of result.thumbnail_roots) {
+    const absoluteRoot = joinModPath(activeGame.mod_path, thumbnailRoot);
+    if (isSameOrDescendantPath(selectedPath, absoluteRoot)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function applyDiskReconcileResult(
+  result: DiskReconcileResult,
+  queryClient: QueryClient,
+  activeGame: GameConfig | null,
+) {
+  // Disk Reconcile owns filesystem truth and global runtime refresh for disk-backed changes.
+  const appStore = useAppStore.getState();
+  appStore.setDiskReconcileTimestamp(result.game_id, Date.now());
+  applyPathUpdates(result, activeGame);
+  clearStaleSelections(result, activeGame);
+
+  const objectListAffected =
+    result.objects_changed || result.folders_changed || result.path_updates.length > 0;
+
+  if (objectListAffected) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('objectRows'),
+      'active',
+    );
+  }
+
+  if (result.folders_changed) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('folderStructureOnly'),
+      'active',
+    );
+  }
+
+  if (result.thumbnail_roots.length > 0) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('thumbnailOnly'),
+      'active',
+    );
+  }
+
+  if (result.collections_changed) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor(['collectionsCatalog', 'dashboardKeybindings']),
+      'none',
+    );
+  }
+
+  if (
+    result.objects_changed ||
+    result.folders_changed ||
+    result.runtime_file_changed ||
+    result.thumbnail_roots.length > 0
+  ) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('dashboardKeybindings'),
+      'none',
+    );
+  }
+
+  if (isPreviewAffected(result, activeGame)) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('previewOnly'),
+      'active',
+    );
+  }
+
+  if (result.folders_changed || result.objects_changed) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('conflictsOnly'),
+      'none',
+    );
+  }
+
+  maybeShowExternalChangeToast(result);
+}
+
+export function useDiskReconcileCoordinator(activeGame: GameConfig | null, queryClient: QueryClient) {
+  const workspaceView = useAppStore((state) => state.workspaceView);
+  const lastDiskReconcileAtByGame = useAppStore((state) => state.lastDiskReconcileAtByGame);
+  const pendingDiskReconcileByGame = useAppStore((state) => state.pendingDiskReconcileByGame);
+  const markDiskReconcilePending = useAppStore((state) => state.markDiskReconcilePending);
+  const inFlightRef = useRef(false);
+  const lastModsViewSyncKeyRef = useRef<string | null>(null);
+  const hydratedModsViewByGameRef = useRef<Record<string, boolean>>({});
+  const requiresFullReconcileByGameRef = useRef<Record<string, boolean>>({});
+  const lastWindowBlurAtRef = useRef<number>(0);
+  const lastActiveGameIdRef = useRef<string | null>(activeGame?.id ?? null);
+
+  useWatcherLifecycle(activeGame);
+
+  const markGameHydrated = useCallback((gameId: string) => {
+    hydratedModsViewByGameRef.current[gameId] = true;
+    requiresFullReconcileByGameRef.current[gameId] = false;
+    lastWindowBlurAtRef.current = 0;
+  }, []);
+
+  const shouldSync = useCallback(
+    (gameId: string, forceFull: boolean) => {
+      if (forceFull) {
+        return true;
+      }
+
+      if (requiresFullReconcileByGameRef.current[gameId]) {
+        return true;
+      }
+
+      if (!hydratedModsViewByGameRef.current[gameId]) {
+        return true;
+      }
+
+      const lastSyncAt = lastDiskReconcileAtByGame[gameId] ?? 0;
+      const isDirty = pendingDiskReconcileByGame[gameId] ?? false;
+      if (isDirty) {
+        return true;
+      }
+
+      return Date.now() - lastSyncAt > MODS_VIEW_SYNC_TTL_MS;
+    },
+    [lastDiskReconcileAtByGame, pendingDiskReconcileByGame],
+  );
+
+  const runRefresh = useCallback(
+    async (reason: DiskReconcileReason, forceFull: boolean) => {
+      if (!activeGame?.id || inFlightRef.current) {
+        return;
+      }
+
+      if (!shouldSync(activeGame.id, forceFull)) {
+        return;
+      }
+
+      inFlightRef.current = true;
+      markDiskReconcilePending(activeGame.id, true);
+
+      try {
+        // Disk Reconcile only. This path must never trigger the Deep Match Scanner.
+        const result = await commands.reconcileDiskState({
+          gameId: activeGame.id,
+          reason,
+          forceFull,
+        });
+        applyDiskReconcileResult(result, queryClient, activeGame);
+        markGameHydrated(activeGame.id);
+      } catch (error) {
+        console.error('[DiskReconcile] Refresh failed:', error);
+      } finally {
+        inFlightRef.current = false;
+      }
+    },
+    [activeGame, markDiskReconcilePending, markGameHydrated, queryClient, shouldSync],
+  );
+
+  useEffect(() => {
+    const currentGameId = activeGame?.id ?? null;
+    const previousGameId = lastActiveGameIdRef.current;
+    if (!currentGameId) {
+      lastActiveGameIdRef.current = currentGameId;
       return;
     }
 
-    const getFolderName = (p?: string) => p?.split(/[\\/]/).pop() ?? 'Unknown Item';
-
-    // Filter out "Modified" events for the toast counting
-    const structuralEvents = events.filter(
-      (e) => e.type !== 'Modified' && e.type !== 'StatusChanged',
-    );
-
-    if (structuralEvents.length === 1) {
-      const ev = structuralEvents[0];
-      if (ev.type === 'Created') {
-        toast.info(`"${getFolderName(ev.path)}" was added externally. View refreshed.`);
-      } else if (ev.type === 'Removed') {
-        toast.warning(`"${getFolderName(ev.path)}" was removed externally. View refreshed.`);
-      } else if (ev.type === 'Renamed') {
-        toast.info(
-          `"${getFolderName(ev.from)}" renamed to "${getFolderName(ev.to)}" externally. View refreshed.`,
-        );
-      }
-    } else if (structuralEvents.length > 1) {
-      const summaryParts = [];
-      if (totals.created > 0) summaryParts.push(`${totals.created} added`);
-      if (totals.removed > 0) summaryParts.push(`${totals.removed} removed`);
-      if (totals.renamed > 0) summaryParts.push(`${totals.renamed} renamed`);
-
-      const msg = `External changes detected: ${summaryParts.join(', ')}. View refreshed.`;
-      if (totals.removed > 0) {
-        toast.warning(msg);
-      } else {
-        toast.info(msg);
-      }
+    if (previousGameId && previousGameId !== currentGameId) {
+      requiresFullReconcileByGameRef.current[currentGameId] = true;
     }
-  }, [events, queryClient]); // Trigger whenever batch changes
+
+    lastActiveGameIdRef.current = currentGameId;
+  }, [activeGame?.id]);
+
+  useEffect(() => {
+    const currentGameId = activeGame?.id ?? null;
+    const syncKey = currentGameId ? `${workspaceView}:${currentGameId}` : null;
+
+    if (!currentGameId || workspaceView !== 'mods') {
+      lastModsViewSyncKeyRef.current = syncKey;
+      return;
+    }
+
+    const previousKey = lastModsViewSyncKeyRef.current;
+    lastModsViewSyncKeyRef.current = syncKey;
+    if (previousKey === syncKey) {
+      return;
+    }
+
+    const requiresFull = requiresFullReconcileByGameRef.current[currentGameId] ?? false;
+    const isHydrated = hydratedModsViewByGameRef.current[currentGameId] ?? false;
+    const reason: DiskReconcileReason = requiresFull ? 'GameSwitched' : 'ModsViewEntered';
+    void runRefresh(reason, requiresFull || !isHydrated);
+  }, [activeGame?.id, runRefresh, workspaceView]);
+
+  useEffect(() => {
+    if (!activeGame?.id) {
+      return;
+    }
+
+    const unlistenPromise = listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
+      if (event.payload.game_id !== activeGame.id) {
+        return;
+      }
+
+      applyDiskReconcileResult(event.payload, queryClient, activeGame);
+      markGameHydrated(activeGame.id);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [activeGame?.id, activeGame, markGameHydrated, queryClient]);
+
+  useEffect(() => {
+    if (!activeGame?.id) {
+      return;
+    }
+
+    const unlistenFocusPromise = listen('tauri://focus', () => {
+      if (workspaceView !== 'mods') {
+        return;
+      }
+
+      const gameId = activeGame.id;
+      const pending = pendingDiskReconcileByGame[gameId] ?? false;
+      const requiresFull = requiresFullReconcileByGameRef.current[gameId] ?? false;
+      const isHydrated = hydratedModsViewByGameRef.current[gameId] ?? false;
+      const lastBlurAt = lastWindowBlurAtRef.current;
+      const blurElapsed = lastBlurAt > 0 ? Date.now() - lastBlurAt : Number.POSITIVE_INFINITY;
+      if (
+        !pending &&
+        !requiresFull &&
+        isHydrated &&
+        blurElapsed < WINDOW_REFOCUS_MIN_BLUR_MS
+      ) {
+        return;
+      }
+
+      void runRefresh('WindowRefocused', requiresFull);
+    });
+    const unlistenBlurPromise = listen('tauri://blur', () => {
+      lastWindowBlurAtRef.current = Date.now();
+    });
+
+    return () => {
+      unlistenFocusPromise.then((unlisten) => unlisten());
+      unlistenBlurPromise.then((unlisten) => unlisten());
+    };
+  }, [activeGame?.id, activeGame, pendingDiskReconcileByGame, runRefresh, workspaceView]);
 }

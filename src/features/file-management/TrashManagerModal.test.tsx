@@ -1,11 +1,32 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import TrashManagerModal from './TrashManagerModal';
-import * as folderHooks from '../../hooks/useFolders';
+import * as folderCoreHooks from '../../hooks/useFolderCoreMutations';
+import * as folderMutationHooks from '../../hooks/useFolderMutations';
 
-vi.mock('../../hooks/useFolders', () => ({
-  useListTrash: vi.fn(),
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const labels: Record<string, string> = {
+        'objects:trash.title': 'Trash',
+        'objects:trash.restore_tip': 'Restore to original location',
+        'objects:trash.empty_tip': 'Permanently delete all items',
+        'objects:trash.empty_state': 'Trash is empty',
+        'common:action.close': 'Close',
+        'common:date.just_now': 'just now',
+      };
+
+      return labels[key] ?? key;
+    },
+  }),
+}));
+
+vi.mock('../../hooks/useFolderCoreMutations', () => ({
   useRestoreMod: vi.fn(),
+}));
+
+vi.mock('../../hooks/useFolderMutations', () => ({
+  useListTrash: vi.fn(),
   useEmptyTrash: vi.fn(),
 }));
 
@@ -29,18 +50,18 @@ describe('TrashManagerModal (TC-22)', () => {
     vi.clearAllMocks();
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
-    (folderHooks.useRestoreMod as ReturnType<typeof vi.fn>).mockReturnValue({
+    (folderCoreHooks.useRestoreMod as ReturnType<typeof vi.fn>).mockReturnValue({
       mutateAsync: mockRestore,
       isPending: false,
     });
-    (folderHooks.useEmptyTrash as ReturnType<typeof vi.fn>).mockReturnValue({
+    (folderMutationHooks.useEmptyTrash as ReturnType<typeof vi.fn>).mockReturnValue({
       mutateAsync: mockEmptyTrash,
       isPending: false,
     });
   });
 
   it('TC-22-04: View Trash Manager (Renders items correctly)', () => {
-    (folderHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
+    (folderMutationHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
       data: [
         {
           id: 'uuid-1',
@@ -69,11 +90,11 @@ describe('TrashManagerModal (TC-22)', () => {
     expect(screen.getByText('Trash')).toBeInTheDocument();
     expect(screen.getByText('Ayaka Mod')).toBeInTheDocument();
     expect(screen.getByText('Raiden Mod')).toBeInTheDocument();
-    expect(screen.getByText('55.0 MB', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('55 MB', { exact: false })).toBeInTheDocument();
   });
 
   it('TC-22-05: Restore Discarded Mod triggers mutation', async () => {
-    (folderHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
+    (folderMutationHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
       data: [
         {
           id: 'uuid-1',
@@ -99,7 +120,7 @@ describe('TrashManagerModal (TC-22)', () => {
   });
 
   it('TC-22-06: Clean Custom Trash DB (Empty Trash)', async () => {
-    (folderHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
+    (folderMutationHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
       data: [
         {
           id: 'uuid-1',
@@ -125,7 +146,7 @@ describe('TrashManagerModal (TC-22)', () => {
   });
 
   it('Renders empty state', () => {
-    (folderHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
+    (folderMutationHooks.useListTrash as ReturnType<typeof vi.fn>).mockReturnValue({
       data: [],
       isLoading: false,
       isError: false,

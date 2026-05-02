@@ -116,7 +116,7 @@ const GalleryTrigger = forwardRef<
               {shouldLoad && !isBroken ? (
                 <img
                   src={getFileUrl(imagePath)}
-                  alt="Mod preview"
+                  alt={t('preview:gallery.image_alt')}
                   className="h-full w-full object-cover"
                   loading="lazy"
                   onError={() => {
@@ -131,7 +131,7 @@ const GalleryTrigger = forwardRef<
                 <div className="flex h-full items-center justify-center text-xs text-base-content/30 text-center px-4">
                   {shouldLoad && isBroken
                     ? t('preview:gallery.broken_image')
-                    : t('preview:gallery.placeholder_image')}
+                    : t('preview:gallery.image_placeholder')}
                 </div>
               )}
             </div>

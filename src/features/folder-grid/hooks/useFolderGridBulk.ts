@@ -12,9 +12,9 @@ import {
   useBulkUpdateInfo,
   useBulkFavorite,
   useBulkPin,
-  ModFolder,
-} from '../../../hooks/useFolders';
+} from '../../../hooks/useFolderMutations';
 import { useActiveGame } from '../../../hooks/useActiveGame';
+import type { ModFolder } from '../../../types/mod';
 
 interface FolderGridBulkOptions {
   gridSelection: Set<string>;

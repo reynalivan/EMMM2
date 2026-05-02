@@ -68,30 +68,45 @@ pub struct CorridorSnapshot {
     pub is_safe: bool,
     pub active_collection_id: Option<String>,
     pub active_collection_name: Option<String>,
+    pub active_collection_is_unsaved: bool,
     pub undo_collection_id: Option<String>,
     pub current_signature: String,
     pub is_dirty: bool,
+    pub current_mods: Vec<crate::domain::collection::CollectionMod>,
+    pub current_objects: Vec<crate::domain::collection::CollectionObject>,
+    pub current_tree_nodes: Vec<crate::domain::collection::PreviewTreeNode>,
+    pub projected_state: crate::domain::collection::ProjectedCollectionState,
 }
 
 /// Preview of a Safe/Unsafe switch, containing current vs target members.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CorridorSwitchPreview {
     pub leaving_state_name: Option<String>,
+    pub leaving_state_is_unsaved: bool,
+    pub leaving_state_is_safe: bool,
     pub leaving_mods: Vec<crate::domain::collection::CollectionMod>,
     pub leaving_objects: Vec<crate::domain::collection::CollectionObject>,
+    pub leaving_tree_nodes: Vec<crate::domain::collection::PreviewTreeNode>,
+    pub leaving_projected_state: crate::domain::collection::ProjectedCollectionState,
     pub target_state_name: Option<String>,
-    pub target_state_kind: String, // "none" or "undo_snapshot"
+    pub target_state_is_unsaved: bool,
+    pub target_state_is_safe: bool,
+    pub target_state_kind: String, // "active_collection" | "unsaved" | "system_fallback" | "none"
     pub target_mods: Vec<crate::domain::collection::CollectionMod>,
     pub target_objects: Vec<crate::domain::collection::CollectionObject>,
+    pub target_tree_nodes: Vec<crate::domain::collection::PreviewTreeNode>,
+    pub target_projected_state: crate::domain::collection::ProjectedCollectionState,
 }
 
 /// Result of a corridor switch operation.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SwitchResult {
     pub success: bool,
+    pub active_safe: bool,
     pub mods_disabled: usize,
     pub mods_restored: usize,
     pub new_signature: String,
+    pub warnings: Vec<String>,
     /// The collection ID that was restored in the target corridor (if any).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restored_collection_id: Option<String>,

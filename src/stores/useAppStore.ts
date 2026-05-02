@@ -2,26 +2,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { SortField, SortOrder, ViewMode } from '../types/mod';
-import { corridorKeys } from '../features/collections/queryKeys';
+import { collectionKeys, corridorKeys } from '../features/collections/queryKeys';
+import { areObjectMetaFiltersEqual } from '../features/object-list/objectFilterState';
 
 import { commands } from '../lib/bindings';
 import { queryClient } from '../lib/queryClient';
-
-import type { ModFolder } from '../types/mod';
-import type { DuplicateInfo } from '../types/scanner';
-
-/** Structured error returned by toggle_mod when target path already exists. */
-export interface RenameConflictError {
-  type: 'RenameConflict';
-  attempted_target: string;
-  existing_path: string;
-  base_name: string;
-}
-
-export interface DuplicateConflictError {
-  type: 'DuplicateConflict';
-  content: DuplicateInfo[];
-}
+import type {
+  WorkspaceDialogState,
+  WorkspacePreviewTransitionState,
+} from '../features/workspace-runtime/state/workspaceState';
 type WorkspaceView =
   | 'dashboard'
   | 'mods'
@@ -38,7 +27,7 @@ export type SafeModeFlowState =
   | { kind: 'pin' }
   | { kind: 'confirm'; targetSafe: boolean };
 
-interface AppState {
+export interface AppState {
   // Global Settings (Persisted in config.json)
   activeGameId: string | null;
   safeMode: boolean;
@@ -58,12 +47,19 @@ interface AppState {
 
   // Selection State
   selectedObjectFolderPath: string | null;
+  selectedModPath: string | null;
   gridSelection: Set<string>;
+  workspacePreviewDirty: boolean;
+  workspacePreviewTransition: WorkspacePreviewTransitionState;
+  workspaceDialogState: WorkspaceDialogState;
 
   // Epic 3: Sidebar State
   selectedObjectType: string | null;
   sidebarSearchQuery: string;
   collapsedCategories: Set<string>;
+  objectMetaFilters: Record<string, string[]>;
+  objectSortBy: 'name' | 'date' | 'rarity';
+  objectStatusFilter: 'all' | 'enabled' | 'disabled';
 
   // Layout State (Persisted in LocalStorage via Zustand)
   leftPanelWidth: number;
@@ -77,32 +73,11 @@ interface AppState {
   explorerSearchQuery: string;
   explorerScrollOffset: number;
 
-  // Conflict Resolution State
-  conflictDialog: { open: boolean; conflict: RenameConflictError | null };
-  openConflictDialog: (conflict: RenameConflictError) => void;
-  closeConflictDialog: () => void;
-
-  duplicateConflictDialog: {
-    open: boolean;
-    folder: ModFolder | null;
-    duplicates: DuplicateInfo[];
-  };
-  openDuplicateConflictDialog: (folder: ModFolder, duplicates: DuplicateInfo[]) => void;
-  closeDuplicateConflictDialog: () => void;
-
-  fileInUseDialog: {
-    open: boolean;
-    path: string | null;
-    processes: string[];
-    onRetry?: () => void;
-  };
-  openFileInUseDialog: (path: string, processes: string[], onRetry?: () => void) => void;
-  closeFileInUseDialog: () => void;
-
-
-  // Watcher cooldown: skip external change events during active mutations
-  watcherCooldownUntil: number;
-  setWatcherCooldown: (until: number) => void;
+  // Disk Reconcile bookkeeping
+  lastDiskReconcileAtByGame: Record<string, number>;
+  pendingDiskReconcileByGame: Record<string, boolean>;
+  setDiskReconcileTimestamp: (gameId: string, timestamp: number) => void;
+  markDiskReconcilePending: (gameId: string, dirty: boolean) => void;
 
   // Context-Aware Selection
   activePane: 'objectList' | 'folderGrid';
@@ -125,6 +100,7 @@ interface AppState {
   setWorkspaceView: (view: WorkspaceView) => void;
   setCurrentPath: (path: string[]) => void;
   setSelectedObjectFolderPath: (folderPath: string | null) => void;
+  setSelectedModPath: (path: string | null) => void;
 
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
@@ -140,6 +116,9 @@ interface AppState {
   setSelectedObjectType: (type: string | null) => void;
   setSidebarSearch: (query: string) => void;
   toggleCategoryCollapse: (category: string) => void;
+  setObjectMetaFilters: (filters: Record<string, string[]>) => void;
+  setObjectSortBy: (sortBy: 'name' | 'date' | 'rarity') => void;
+  setObjectStatusFilter: (filter: 'all' | 'enabled' | 'disabled') => void;
 
   // Epic 4: Explorer Actions
   setSortField: (field: SortField) => void;
@@ -185,7 +164,11 @@ export const useAppStore = create<AppState>()(
       workspaceView: 'dashboard',
       currentPath: [],
       selectedObjectFolderPath: null,
+      selectedModPath: null,
       gridSelection: new Set(),
+      workspacePreviewDirty: false,
+      workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
+      workspaceDialogState: { kind: 'none' },
 
       leftPanelWidth: 260,
       rightPanelWidth: 320,
@@ -194,6 +177,9 @@ export const useAppStore = create<AppState>()(
       selectedObjectType: null,
       sidebarSearchQuery: '',
       collapsedCategories: new Set(),
+      objectMetaFilters: {},
+      objectSortBy: 'name',
+      objectStatusFilter: 'all',
 
       // Responsive Defaults
       mobileActivePane: 'sidebar',
@@ -215,27 +201,27 @@ export const useAppStore = create<AppState>()(
       isIgnoreManagementOpen: false,
       setIgnoreManagementOpen: (open) => set({ isIgnoreManagementOpen: open }),
 
-      // Conflict Resolution State
-      conflictDialog: { open: false, conflict: null },
-      openConflictDialog: (conflict) => set({ conflictDialog: { open: true, conflict } }),
-      closeConflictDialog: () => set({ conflictDialog: { open: false, conflict: null } }),
-
-      duplicateConflictDialog: { open: false, folder: null, duplicates: [] },
-      openDuplicateConflictDialog: (folder, duplicates) =>
-        set({ duplicateConflictDialog: { open: true, folder, duplicates } }),
-      closeDuplicateConflictDialog: () =>
-        set({ duplicateConflictDialog: { open: false, folder: null, duplicates: [] } }),
-
-      fileInUseDialog: { open: false, path: null, processes: [] },
-      openFileInUseDialog: (path, processes, onRetry) =>
-        set({ fileInUseDialog: { open: true, path, processes, onRetry } }),
-      closeFileInUseDialog: () =>
-        set({ fileInUseDialog: { open: false, path: null, processes: [], onRetry: undefined } }),
-
-
-      // Watcher cooldown
-      watcherCooldownUntil: 0,
-      setWatcherCooldown: (until) => set({ watcherCooldownUntil: until }),
+      // Disk Reconcile bookkeeping
+      lastDiskReconcileAtByGame: {},
+      pendingDiskReconcileByGame: {},
+      setDiskReconcileTimestamp: (gameId, timestamp) =>
+        set((state) => ({
+          lastDiskReconcileAtByGame: {
+            ...state.lastDiskReconcileAtByGame,
+            [gameId]: timestamp,
+          },
+          pendingDiskReconcileByGame: {
+            ...state.pendingDiskReconcileByGame,
+            [gameId]: false,
+          },
+        })),
+      markDiskReconcilePending: (gameId, dirty) =>
+        set((state) => ({
+          pendingDiskReconcileByGame: {
+            ...state.pendingDiskReconcileByGame,
+            [gameId]: dirty,
+          },
+        })),
 
       // Context-Aware Selection
       activePane: 'objectList',
@@ -254,17 +240,25 @@ export const useAppStore = create<AppState>()(
           });
 
           if (settings.active_game_id) {
-            await queryClient.prefetchQuery({
-              queryKey: corridorKeys.state(
-                settings.active_game_id,
-                settings.safe_mode.enabled ?? false,
-              ),
-              queryFn: () =>
-                commands.getCorridorState({
-                  gameId: settings.active_game_id as string,
-                  isSafe: settings.safe_mode.enabled ?? false,
-                }),
-            });
+            const safeMode = settings.safe_mode.enabled ?? false;
+            await Promise.all([
+              queryClient.prefetchQuery({
+                queryKey: corridorKeys.state(settings.active_game_id, safeMode),
+                queryFn: () =>
+                  commands.getCorridorState({
+                    gameId: settings.active_game_id as string,
+                    isSafe: safeMode,
+                  }),
+              }),
+              queryClient.prefetchQuery({
+                queryKey: collectionKeys.list(settings.active_game_id, safeMode),
+                queryFn: () =>
+                  commands.listCollections({
+                    gameId: settings.active_game_id as string,
+                    isSafe: safeMode,
+                  }),
+              }),
+            ]);
           }
         } catch (err) {
           console.error('Failed to init store from backend:', err);
@@ -281,24 +275,38 @@ export const useAppStore = create<AppState>()(
           currentPath: [],
           explorerSearchQuery: '',
           selectedObjectFolderPath: null,
+          selectedModPath: null,
           gridSelection: new Set(),
+          workspacePreviewDirty: false,
+          workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
+          workspaceDialogState: { kind: 'none' },
           // Reset sidebar state to prevent stale filters from previous game
           sidebarSearchQuery: '',
           selectedObjectType: null,
           collapsedCategories: new Set(),
+          objectMetaFilters: {},
+          objectSortBy: 'name',
+          objectStatusFilter: 'all',
         });
 
         try {
           await commands.setActiveGame({ gameId: id });
           if (id) {
-            await queryClient.prefetchQuery({
-              queryKey: corridorKeys.state(id, get().safeMode),
-              queryFn: () =>
-                commands.getCorridorState({
-                  gameId: id as string,
-                  isSafe: get().safeMode,
-                }),
-            });
+            const safeMode = get().safeMode;
+            await Promise.all([
+              queryClient.prefetchQuery({
+                queryKey: corridorKeys.state(id, safeMode),
+                queryFn: () =>
+                  commands.getCorridorState({
+                    gameId: id as string,
+                    isSafe: safeMode,
+                  }),
+              }),
+              queryClient.prefetchQuery({
+                queryKey: collectionKeys.list(id, safeMode),
+                queryFn: () => commands.listCollections({ gameId: id as string, isSafe: safeMode }),
+              }),
+            ]);
           }
         } catch (e) {
           console.error('Failed to sync active game to backend', e);
@@ -326,6 +334,7 @@ export const useAppStore = create<AppState>()(
           // Auto-navigate to grid on mobile when object selected
           mobileActivePane: folderPath ? 'grid' : 'sidebar',
         }),
+      setSelectedModPath: (path) => set({ selectedModPath: path }),
 
       toggleGridSelection: (id, multi = false) =>
         set((state) => {
@@ -341,17 +350,24 @@ export const useAppStore = create<AppState>()(
 
           return {
             gridSelection: newSet,
+            selectedModPath: newSet.size > 0 ? id : null,
             mobileActivePane: nextMobilePane,
           };
         }),
 
-      clearGridSelection: () => set({ gridSelection: new Set() }),
+      clearGridSelection: () => set({ gridSelection: new Set(), selectedModPath: null }),
 
       setGridSelection: (selection) =>
         set((state) => {
           // Auto-navigate to details on mobile when item selected (single select)
           const nextMobilePane = selection.size === 1 ? 'details' : state.mobileActivePane;
-          return { gridSelection: selection, mobileActivePane: nextMobilePane };
+          const selectionEntries = Array.from(selection);
+          return {
+            gridSelection: selection,
+            selectedModPath:
+              selectionEntries.length > 0 ? selectionEntries[selectionEntries.length - 1] : null,
+            mobileActivePane: nextMobilePane,
+          };
         }),
 
       replaceGridSelection: (oldPath, newPath) =>
@@ -360,7 +376,10 @@ export const useAppStore = create<AppState>()(
           const newSet = new Set(state.gridSelection);
           newSet.delete(oldPath);
           newSet.add(newPath);
-          return { gridSelection: newSet };
+          return {
+            gridSelection: newSet,
+            selectedModPath: state.selectedModPath === oldPath ? newPath : state.selectedModPath,
+          };
         }),
 
       setPanelWidths: (left, right) => set({ leftPanelWidth: left, rightPanelWidth: right }),
@@ -369,8 +388,12 @@ export const useAppStore = create<AppState>()(
       togglePreview: () => set((state) => ({ isPreviewOpen: !state.isPreviewOpen })),
 
       // Epic 3: Sidebar Actions
-      setSelectedObjectType: (type) => set({ selectedObjectType: type }),
-      setSidebarSearch: (query) => set({ sidebarSearchQuery: query }),
+      setSelectedObjectType: (type) =>
+        set((state) => (state.selectedObjectType === type ? state : { selectedObjectType: type })),
+      setSidebarSearch: (query) =>
+        set((state) =>
+          state.sidebarSearchQuery === query ? state : { sidebarSearchQuery: query },
+        ),
       toggleCategoryCollapse: (category) =>
         set((state) => {
           const next = new Set(state.collapsedCategories);
@@ -381,6 +404,18 @@ export const useAppStore = create<AppState>()(
           }
           return { collapsedCategories: next };
         }),
+      setObjectMetaFilters: (filters) =>
+        set((state) =>
+          areObjectMetaFiltersEqual(state.objectMetaFilters, filters)
+            ? state
+            : { objectMetaFilters: filters },
+        ),
+      setObjectSortBy: (sortBy) =>
+        set((state) => (state.objectSortBy === sortBy ? state : { objectSortBy: sortBy })),
+      setObjectStatusFilter: (filter) =>
+        set((state) =>
+          state.objectStatusFilter === filter ? state : { objectStatusFilter: filter },
+        ),
 
       // Epic 4: Explorer Actions
       setSortField: (field) => set({ sortField: field }),

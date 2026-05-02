@@ -20,8 +20,12 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
+import { applyRuntimeMutationResult } from '../workspace-runtime/actions/sharedRuntimeResultMapper';
+import {
+  closeWorkspaceDialog,
+} from '../workspace-runtime/state/workspaceDialogs';
+import { useWorkspaceRuntimeSelector } from '../workspace-runtime/state/workspaceStoreBridge';
 
 import type { ConflictDetails, FolderDetail } from '../../types/scanner';
 import { formatBytes } from '../../utils/formatters';
@@ -30,14 +34,15 @@ type Strategy = 'keep_enabled' | 'keep_disabled' | 'separate';
 
 export default function ConflictResolveDialog() {
   const { t } = useTranslation(['folder_grid', 'common']);
-  const { conflictDialog, closeConflictDialog } = useAppStore();
+  const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
   const queryClient = useQueryClient();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState<ConflictDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
-  const { open, conflict } = conflictDialog;
+  const open = dialogState.kind === 'conflict';
+  const conflict = dialogState.kind === 'conflict' ? dialogState.conflict : null;
 
   // Fetch details when dialog opens
   const fetchDetails = useCallback(async () => {
@@ -51,11 +56,11 @@ export default function ConflictResolveDialog() {
       });
       setDetails(result);
     } catch (err) {
-      console.error('Failed to fetch conflict details:', err);
+      toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
     } finally {
       setDetailsLoading(false);
     }
-  }, [conflict]);
+  }, [conflict, t]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -84,11 +89,10 @@ export default function ConflictResolveDialog() {
         strategy,
       });
 
-      await queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-      await queryClient.invalidateQueries({ queryKey: ['objects'] });
+      await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
 
       toast.success(t('folder_grid:conflicts.toast.resolved'));
-      closeConflictDialog();
+      closeWorkspaceDialog('conflict');
     } catch (err) {
       toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
     } finally {
@@ -102,7 +106,7 @@ export default function ConflictResolveDialog() {
     <dialog
       ref={dialogRef}
       className="modal modal-bottom sm:modal-middle"
-      onClose={closeConflictDialog}
+      onClose={() => closeWorkspaceDialog('conflict')}
     >
       <div className="modal-box bg-base-100 border border-base-content/10 shadow-2xl max-w-2xl">
         {/* Header */}
@@ -115,8 +119,7 @@ export default function ConflictResolveDialog() {
               {t('folder_grid:resolution.title')}
             </h3>
             <p className="text-sm text-base-content/60 mt-1 leading-relaxed">
-              Both an enabled and disabled version of <strong>{baseName}</strong> exist in the same
-              directory. Compare and choose which to keep:
+              {t('folder_grid:resolution.description', { name: baseName })}
             </p>
           </div>
         </div>
@@ -160,7 +163,8 @@ export default function ConflictResolveDialog() {
               {t('common:actions.keep_enabled')}
               {details && (
                 <span className="text-[10px] opacity-60 ml-1">
-                  ({formatBytes(details.enabled.total_size)}, {details.enabled.file_count} files)
+                  ({formatBytes(details.enabled.total_size)},{' '}
+                  {t('folder_grid:resolution.file_count', { count: details.enabled.file_count })})
                 </span>
               )}
             </span>
@@ -176,7 +180,8 @@ export default function ConflictResolveDialog() {
               {t('common:actions.keep_disabled')}
               {details && (
                 <span className="text-[10px] opacity-60 ml-1">
-                  ({formatBytes(details.disabled.total_size)}, {details.disabled.file_count} files)
+                  ({formatBytes(details.disabled.total_size)},{' '}
+                  {t('folder_grid:resolution.file_count', { count: details.disabled.file_count })})
                 </span>
               )}
             </span>
@@ -194,7 +199,11 @@ export default function ConflictResolveDialog() {
 
         {/* Cancel */}
         <div className="modal-action mt-4">
-          <button className="btn btn-sm btn-ghost" onClick={closeConflictDialog} disabled={loading}>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() => closeWorkspaceDialog('conflict')}
+            disabled={loading}
+          >
             {t('common:actions.cancel')}
           </button>
         </div>
@@ -202,7 +211,7 @@ export default function ConflictResolveDialog() {
 
       {/* Backdrop */}
       <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-sm">
-        <button onClick={closeConflictDialog}>{t('common:actions.close')}</button>
+        <button onClick={() => closeWorkspaceDialog('conflict')}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );
@@ -220,6 +229,7 @@ function FolderColumn({
   accentClass: string;
   borderClass: string;
 }) {
+  const { t } = useTranslation('folder_grid');
   const thumbSrc = detail.thumbnail_path ? convertFileSrc(detail.thumbnail_path) : null;
   const [imgErr, setImgErr] = useState(false);
 
@@ -249,7 +259,7 @@ function FolderColumn({
 
       {/* Stats */}
       <div className="flex gap-3 text-[10px] text-base-content/50 mb-2">
-        <span>{detail.file_count} files</span>
+        <span>{t('resolution.file_count', { count: detail.file_count })}</span>
         <span>{formatBytes(detail.total_size)}</span>
       </div>
 
@@ -269,7 +279,7 @@ function FolderColumn({
         ))}
         {detail.files.length > 6 && (
           <div className="text-[10px] text-base-content/30 pl-4">
-            +{detail.files.length - 6} more…
+            {t('resolution.more_files', { count: detail.files.length - 6 })}
           </div>
         )}
       </div>

@@ -36,6 +36,10 @@ pub struct ModFolder {
     pub classification_reasons: Vec<String>,
     /// Database ID (UUID), if available
     pub id: Option<String>,
+    /// Owning object ID resolved from runtime object roots, if any
+    pub owner_object_id: Option<String>,
+    /// Owning object folder path resolved from runtime object roots, if any
+    pub owner_object_folder_path: Option<String>,
     /// Display name (without "DISABLED " prefix)
     pub name: String,
     /// Actual folder name on disk
@@ -110,6 +114,8 @@ pub struct FolderGridResponse {
     pub self_node_type: Option<String>,
     pub self_is_mod: bool,
     pub self_is_enabled: bool,
+    pub self_owner_object_id: Option<String>,
+    pub self_owner_object_folder_path: Option<String>,
     pub self_classification_reasons: Vec<String>,
     pub children: Vec<ModFolder>,
     /// Conflict groups detected in children (empty if none)

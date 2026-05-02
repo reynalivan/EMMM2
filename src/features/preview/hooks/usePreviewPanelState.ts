@@ -1,144 +1,76 @@
 import { useEffect, useMemo, useState } from 'react';
 import { validateKeyBinding } from '../keybindingValidator';
-import { useModFolders, useToggleMod, ModFolder } from '../../../hooks/useFolders';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
-import {
-  useAllModIniDocuments,
-  useClearPreviewImages,
-  useModInfo,
-  useModIniFiles,
-  usePreviewImages,
-  useRemovePreviewImage,
-  useSavePreviewImage,
-  useSelectedModPath,
-  useUpdateModInfoDetails,
-  useWriteModIni,
-  type IniFileEntry,
-} from './usePreviewData';
 import {
   buildKeyBindSections,
   getConflictingKeys,
   toFieldValueMap,
   toIniWritePayload,
-  type IniDocumentLike,
 } from '../previewPanelUtils';
 import { useMetadataDraft } from './useMetadataDraft';
-import { resolvePreviewTargetPath } from '../previewTargetResolver';
-
-type PendingTransition =
-  | { kind: 'mod'; path: string | null }
-  | { kind: 'collapse'; sectionId: string }
-  | null;
+import {
+  dispatchWorkspaceRuntimeEvent,
+  useWorkspaceRuntimeSelector,
+} from '../../workspace-runtime/state/workspaceStoreBridge';
+import { usePreviewRuntime } from './usePreviewRuntime';
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function areFieldMapsEqual(
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
+function areStringSetsEqual(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function usePreviewPanelState() {
-  const explorerSubPath = useAppStore((state) => state.explorerSubPath);
-  const { activeGame } = useActiveGame();
-  const modPath = activeGame?.mod_path ?? null;
-  const externalSelectedPath = useSelectedModPath();
-
-  // For FlatModRoot: derive path from explorerSubPath when no grid item is selected
-  const { data: rawResponse } = useModFolders(explorerSubPath);
-  const isFlatModRoot = rawResponse?.self_is_mod ?? false;
-  const flatModRootPath = useMemo(() => {
-    if (!isFlatModRoot || !modPath || !explorerSubPath) return null;
-    return `${modPath.replace(/\\/g, '/')}/${explorerSubPath.replace(/\\/g, '/')}`;
-  }, [isFlatModRoot, modPath, explorerSubPath]);
-
-  // Use gridSelection path with parent-mod anchoring, or fall back to FlatModRoot's own path
-  const effectivePath = useMemo(
-    () =>
-      resolvePreviewTargetPath(externalSelectedPath, flatModRootPath, rawResponse?.children ?? []),
-    [externalSelectedPath, flatModRootPath, rawResponse?.children],
-  );
-
-  const [activePath, setActivePath] = useState<string | null>(effectivePath);
-  const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null);
-  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const {
+    activePath,
+    selectedFolder,
+    previewSummary,
+    resolvedTitle,
+    resolvedSubtitle,
+    availableObjects,
+    iniDocuments,
+    images,
+    previewImagesQuery,
+    updateModInfo,
+    savePreviewImage,
+    removePreviewImage,
+    clearPreviewImages,
+    writeModIni,
+  } = usePreviewRuntime();
+  const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
+  const previewTransition = useWorkspaceRuntimeSelector((state) => state.previewTransition);
+  const previewDirty = useWorkspaceRuntimeSelector((state) => state.previewDirty);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const [draftByField, setDraftByField] = useState<Record<string, string>>({});
   const [initialByField, setInitialByField] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(new Set());
-
-  const modInfoQuery = useModInfo(activePath);
-  const iniFilesQuery = useModIniFiles(activePath);
-  const previewImagesQuery = usePreviewImages(activePath);
-
-  const updateModInfo = useUpdateModInfoDetails();
-  const savePreviewImage = useSavePreviewImage();
-  const removePreviewImage = useRemovePreviewImage();
-  const clearPreviewImages = useClearPreviewImages();
-  const writeModIni = useWriteModIni();
-  const toggleMod = useToggleMod();
-
-  const folders = useMemo(
-    () => rawResponse?.children || ([] as ModFolder[]),
-    [rawResponse?.children],
-  );
-  const selectedFolder = useMemo(() => {
-    const byChildren = folders.find((folder) => folder.path === activePath) ?? null;
-    if (byChildren) {
-      return byChildren;
-    }
-
-    if (
-      !activePath ||
-      !flatModRootPath ||
-      activePath !== flatModRootPath ||
-      !(rawResponse?.self_is_mod ?? false)
-    ) {
-      return null;
-    }
-
-    const normalizedSubPath = explorerSubPath?.replace(/\\/g, '/').replace(/\/+$/g, '') ?? '';
-    const folderName = normalizedSubPath.split('/').filter(Boolean).pop() ?? 'Mod';
-
-    return {
-      node_type: rawResponse?.self_node_type ?? 'FlatModRoot',
-      classification_reasons: rawResponse?.self_classification_reasons ?? [],
-      name: folderName,
-      folder_name: folderName,
-      path: activePath,
-      is_enabled: rawResponse?.self_is_enabled ?? true,
-      is_directory: true,
-      thumbnail_path: null,
-      modified_at: 0,
-      size_bytes: 0,
-      has_info_json: false,
-      is_favorite: false,
-      is_misplaced: false,
-      is_safe: true,
-      metadata: null,
-      category: null,
-      conflict_group_id: null,
-      conflict_state: null,
-    } as ModFolder;
-  }, [folders, activePath, flatModRootPath, rawResponse, explorerSubPath]);
-
-  // listModIniFiles returns string[] — map to IniFileEntry for useAllModIniDocuments
-  const iniFiles = useMemo(
-    () =>
-      (iniFilesQuery.data ?? []).map((filename) =>
-        typeof filename === 'string' ? { filename, path: filename } : filename,
-      ) as IniFileEntry[],
-    [iniFilesQuery.data],
-  );
-  const allIniQueries = useAllModIniDocuments(activePath, iniFiles);
-  const iniDocuments = useMemo(
-    () =>
-      iniFiles.map((file, index) => ({
-        fileName: file.filename,
-        document: allIniQueries[index]?.data as IniDocumentLike | null | undefined,
-      })),
-    [iniFiles, allIniQueries],
-  );
 
   const keyBindSections = useMemo(() => buildKeyBindSections(iniDocuments), [iniDocuments]);
   const allKeyBindFields = useMemo(
@@ -164,10 +96,7 @@ export function usePreviewPanelState() {
 
   const hasUnsavedEditorChanges = changedIniFields.length > 0;
 
-  const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
-
-  const fallbackTitle = selectedFolder?.name ?? '';
-  const metaSource = modInfoQuery.data;
+  const metaSource = previewSummary?.mod_info_summary ?? null;
 
   const {
     titleDraft,
@@ -179,11 +108,12 @@ export function usePreviewPanelState() {
     setVersionDraft,
     setDescriptionDraft,
     metadataDirty,
+    changedFields: changedMetadataFields,
     saveMetadata,
     discardMetadata,
   } = useMetadataDraft({
     activePath,
-    fallbackTitle,
+    fallbackTitle: resolvedTitle ?? '',
     source: metaSource,
     onSave: async (folderPath, draft) => {
       await updateModInfo.mutateAsync({ folderPath, update: draft });
@@ -191,67 +121,15 @@ export function usePreviewPanelState() {
     },
   });
 
-  const changedMetadataFields = useMemo(() => {
-    const changes: { label: string; oldValue: string; newValue: string }[] = [];
-    if (!metadataDirty) return changes;
-
-    if (titleDraft !== (metaSource?.actual_name ?? fallbackTitle)) {
-      changes.push({
-        label: 'Title',
-        oldValue: metaSource?.actual_name ?? fallbackTitle,
-        newValue: titleDraft,
-      });
-    }
-    if (authorDraft !== (metaSource?.author ?? '')) {
-      changes.push({ label: 'Author', oldValue: metaSource?.author ?? '', newValue: authorDraft });
-    }
-    if (versionDraft !== (metaSource?.version ?? '')) {
-      changes.push({
-        label: 'Version',
-        oldValue: metaSource?.version ?? '',
-        newValue: versionDraft,
-      });
-    }
-    if (descriptionDraft !== (metaSource?.description ?? '')) {
-      changes.push({
-        label: 'Description',
-        oldValue: metaSource?.description ?? '',
-        newValue: descriptionDraft,
-      });
-    }
-    return changes;
-  }, [
-    metadataDirty,
-    titleDraft,
-    authorDraft,
-    versionDraft,
-    descriptionDraft,
-    metaSource,
-    fallbackTitle,
-  ]);
-
   const hasUnsavedChanges = hasUnsavedEditorChanges || metadataDirty;
 
   useEffect(() => {
-    if (effectivePath === activePath) {
+    if (previewDirty === hasUnsavedChanges) {
       return;
     }
 
-    if (hasUnsavedChanges) {
-      if (activePath) {
-        useAppStore.setState({
-          gridSelection: new Set([activePath]),
-          mobileActivePane: 'details',
-        });
-      }
-
-      setPendingTransition({ kind: 'mod', path: effectivePath });
-      setShowUnsavedModal(true);
-      return;
-    }
-
-    setActivePath(effectivePath);
-  }, [effectivePath, activePath, hasUnsavedChanges]);
+    dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_DIRTY_CHANGED', dirty: hasUnsavedChanges });
+  }, [hasUnsavedChanges, previewDirty]);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -259,13 +137,15 @@ export function usePreviewPanelState() {
 
   const fieldIds = useMemo(() => allKeyBindFields.map((f) => f.id).join('\0'), [allKeyBindFields]);
   useEffect(() => {
-    if (!hasUnsavedEditorChanges) {
-      const nextInitialMap = toFieldValueMap(allKeyBindFields);
-      setInitialByField(nextInitialMap);
-      setDraftByField(nextInitialMap);
-      setFieldErrors({});
+    if (hasUnsavedEditorChanges) {
+      return;
     }
-  }, [fieldIds, hasUnsavedEditorChanges, allKeyBindFields]);
+
+    const nextInitialMap = toFieldValueMap(allKeyBindFields);
+    setInitialByField((prev) => (areFieldMapsEqual(prev, nextInitialMap) ? prev : nextInitialMap));
+    setDraftByField((prev) => (areFieldMapsEqual(prev, nextInitialMap) ? prev : nextInitialMap));
+    setFieldErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+  }, [fieldIds, hasUnsavedEditorChanges]);
 
   const sectionIds = useMemo(() => keyBindSections.map((s) => s.id).join('\0'), [keyBindSections]);
   useEffect(() => {
@@ -275,24 +155,29 @@ export function usePreviewPanelState() {
       if (next.size === 0 && keyBindSections[0]) {
         next.add(keyBindSections[0].id);
       }
-      return next;
+      return areStringSetsEqual(prev, next) ? prev : next;
     });
-  }, [sectionIds, keyBindSections]);
+  }, [sectionIds]);
 
-  const applyPendingTransition = (transition: PendingTransition) => {
-    if (!transition) {
+  const pendingTransition =
+    previewTransition.kind === 'pending' &&
+    previewTransition.pendingTarget.kind === 'collapseSection'
+      ? previewTransition.pendingTarget
+      : null;
+  const showUnsavedModal = dialogState.kind === 'previewUnsavedChanges';
+
+  const applyPendingTransition = () => {
+    if (pendingTransition?.kind === 'collapseSection') {
+      setOpenSectionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(pendingTransition.sectionId);
+        return next;
+      });
+      dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_TRANSITION_CONFIRMED' });
       return;
     }
-    if (transition.kind === 'mod') {
-      setActivePath(transition.path);
-      return;
-    }
 
-    setOpenSectionIds((prev) => {
-      const next = new Set(prev);
-      next.delete(transition.sectionId);
-      return next;
-    });
+    dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_TRANSITION_CONFIRMED' });
   };
 
   const saveEditor = async (): Promise<boolean> => {
@@ -322,7 +207,6 @@ export function usePreviewPanelState() {
         });
       }
 
-      await Promise.all(allIniQueries.map((query) => query.refetch()));
       setInitialByField({ ...draftByField });
       setDraftByField({ ...draftByField });
       setFieldErrors({});
@@ -342,8 +226,10 @@ export function usePreviewPanelState() {
   const requestToggleSection = (sectionId: string) => {
     const isOpen = openSectionIds.has(sectionId);
     if (isOpen && hasUnsavedEditorChanges) {
-      setPendingTransition({ kind: 'collapse', sectionId });
-      setShowUnsavedModal(true);
+      dispatchWorkspaceRuntimeEvent({
+        type: 'PREVIEW_TRANSITION_REQUESTED',
+        target: { kind: 'collapseSection', sectionId },
+      });
       return;
     }
 
@@ -387,6 +273,10 @@ export function usePreviewPanelState() {
   return {
     activePath,
     selectedFolder,
+    previewSummary,
+    resolvedTitle,
+    resolvedSubtitle,
+    availableObjects,
     images,
     currentImageIndex,
     setCurrentImageIndex,
@@ -413,10 +303,7 @@ export function usePreviewPanelState() {
     clearPreviewImages,
     writeModIni,
     previewImagesQuery,
-    toggleMod,
     showUnsavedModal,
-    setShowUnsavedModal,
-    setPendingTransition,
     pendingTransition,
     applyPendingTransition,
     saveMetadata,

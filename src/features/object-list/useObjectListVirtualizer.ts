@@ -5,19 +5,28 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { ObjectSummary, GameSchema, CategoryDef } from '../../types/object';
+import type { GameSchema, CategoryDef } from '../../types/object';
+import type { WorkspaceObjectNode } from '../../types/workspace';
 
 /** Discriminated union for flat list items in Object Mode */
 export type FlatItem =
   | { type: 'header'; category: CategoryDef; count: number }
   | { type: 'sub-header'; label: string; parentCategory: string; count: number }
-  | { type: 'row'; obj: ObjectSummary };
+  | { type: 'row'; obj: WorkspaceObjectNode };
 
 interface VirtualizerOptions {
-  objects: ObjectSummary[];
+  objects: WorkspaceObjectNode[];
   schema: GameSchema | undefined;
   selectedObjectFolderPath: string | null;
   isMobile: boolean;
+}
+
+function sortObjectRows(left: WorkspaceObjectNode, right: WorkspaceObjectNode): number {
+  if (left.is_pinned !== right.is_pinned) {
+    return left.is_pinned ? -1 : 1;
+  }
+
+  return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
 }
 
 export function useObjectListVirtualizer({
@@ -30,7 +39,7 @@ export function useObjectListVirtualizer({
 
   // Group objects by category
   const groupedObjects = useMemo(() => {
-    const groups: Record<string, ObjectSummary[]> = {};
+    const groups: Record<string, WorkspaceObjectNode[]> = {};
     for (const obj of objects) {
       const key = obj.object_type || 'Other';
       if (!groups[key]) groups[key] = [];
@@ -63,8 +72,8 @@ export function useObjectListVirtualizer({
 
       // "Other" category: sub-group by sub_category
       if (cat.name === 'Other' && catObjects.length > 0) {
-        const subGroups: Record<string, ObjectSummary[]> = {};
-        const noSubCat: ObjectSummary[] = [];
+        const subGroups: Record<string, WorkspaceObjectNode[]> = {};
+        const noSubCat: WorkspaceObjectNode[] = [];
         for (const obj of catObjects) {
           if (obj.sub_category) {
             if (!subGroups[obj.sub_category]) subGroups[obj.sub_category] = [];
@@ -75,9 +84,7 @@ export function useObjectListVirtualizer({
         }
 
         for (const subCat of Object.keys(subGroups).sort()) {
-          const subObjects = subGroups[subCat]
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+          const subObjects = subGroups[subCat].slice().sort(sortObjectRows);
           items.push({
             type: 'sub-header',
             label: subCat,
@@ -89,16 +96,12 @@ export function useObjectListVirtualizer({
           }
         }
 
-        const sortedNoSubCat = noSubCat
-          .slice()
-          .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        const sortedNoSubCat = noSubCat.slice().sort(sortObjectRows);
         for (const obj of sortedNoSubCat) {
           items.push({ type: 'row', obj });
         }
       } else {
-        const sortedCatObjects = catObjects
-          .slice()
-          .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        const sortedCatObjects = catObjects.slice().sort(sortObjectRows);
         for (const obj of sortedCatObjects) {
           items.push({ type: 'row', obj });
         }
@@ -106,7 +109,7 @@ export function useObjectListVirtualizer({
     }
 
     // Collect objects whose type doesn't match any schema category
-    const uncategorized: ObjectSummary[] = [];
+    const uncategorized: WorkspaceObjectNode[] = [];
     for (const [type, objs] of Object.entries(groupedObjects)) {
       if (!matchedTypes.has(type)) {
         uncategorized.push(...objs);
@@ -119,9 +122,7 @@ export function useObjectListVirtualizer({
         category: { name: 'Uncategorized', icon: 'HelpCircle', color: 'warning' },
         count: uncategorized.length,
       });
-      const sortedUncategorized = uncategorized
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      const sortedUncategorized = uncategorized.slice().sort(sortObjectRows);
       for (const obj of sortedUncategorized) {
         items.push({ type: 'row', obj });
       }

@@ -4,6 +4,7 @@
  */
 
 import { Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface BreadcrumbsProps {
   path: string[];
@@ -18,6 +19,7 @@ export default function ExplorerBreadcrumbs({
   onGoHome,
   isRootHidden = false,
 }: BreadcrumbsProps) {
+  const { t } = useTranslation('folder_grid');
   // Truncate middle segments when path is too deep
   const MAX_VISIBLE = 4;
   const shouldTruncate = path.length > MAX_VISIBLE;
@@ -42,7 +44,7 @@ export default function ExplorerBreadcrumbs({
               className="hover:text-primary transition-colors flex items-center gap-1"
             >
               <Home size={14} />
-              <span className="hidden sm:inline text-xs">ROOT</span>
+              <span className="hidden sm:inline text-xs">{t('breadcrumbs.root')}</span>
             </button>
           </li>
         )}

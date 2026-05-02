@@ -76,10 +76,12 @@
     "snapshot": "Snapshot",
     "restore": "Pulihkan",
     "active_mods": "Mod Aktif Saat Ini",
+    "all_disabled": "Semua Dinonaktifkan",
     "empty": "{{name}} kosong (Semua Dinonaktifkan).",
     "target_desc": {
       "active": "Koleksi Aktif Terakhir",
-      "none": "Tidak ada koleksi aktif yang diingat"
+      "none": "Tidak ada koleksi aktif yang diingat",
+      "system_fallback": "Memulihkan mod yang diingat oleh status sistem corridor."
     },
     "missing_target": "Tidak ada status tujuan yang disimpan. Semua mod akan tetap dinonaktifkan."
   },

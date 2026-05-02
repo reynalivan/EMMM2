@@ -15,7 +15,7 @@ import TrashManagerModal from '../../../features/file-management/TrashManagerMod
 import LaunchBar from '../../../features/launch-bar/LaunchBar';
 import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
 import ModeSwitchConfirmModal from '../../../features/safe-mode/ModeSwitchConfirmModal';
-import { useSafeModeToggle as useSafeModeToggle } from '../../../features/collections/hooks';
+import { useSafeModeToggle } from '../../../features/collections/hooks/useSafeModeToggle';
 
 export default function GlobalActions() {
   const { t } = useTranslation('layout');

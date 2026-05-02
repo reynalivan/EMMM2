@@ -44,10 +44,10 @@ pub async fn reset_all_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await;
 
     // Defensive safeguard against orphaned references to deprecated table (Phase 19 fix)
-    let _ = sqlx::query("DROP TABLE IF EXISTS collection_signatures")
+    let _ = sqlx::query("DROP VIEW IF EXISTS collection_signatures")
         .execute(&mut *tx)
         .await;
-    let _ = sqlx::query("DROP VIEW IF EXISTS collection_signatures")
+    let _ = sqlx::query("DROP TABLE IF EXISTS collection_signatures")
         .execute(&mut *tx)
         .await;
 
@@ -61,7 +61,18 @@ pub async fn reset_all_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let _ = sqlx::query("DELETE FROM collection_roots")
         .execute(&mut *tx)
         .await;
-    let _ = sqlx::query("DELETE FROM corridor").execute(&mut *tx).await;
+    let _ = sqlx::query("DELETE FROM collection_nested_items")
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM corridor_runtime_cache")
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM corridor_state")
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM object_runtime_projection")
+        .execute(&mut *tx)
+        .await;
     let _ = sqlx::query("DELETE FROM dedup_group_members")
         .execute(&mut *tx)
         .await;

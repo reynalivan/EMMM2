@@ -1,6 +1,6 @@
 import { Lock, CheckCircle2, PowerOff, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ModFolder } from '../../types/mod';
+import type { WorkspaceExplorerNode } from '../../types/workspace';
 
 interface EnableParentDialogProps {
   open: boolean;
@@ -8,9 +8,9 @@ interface EnableParentDialogProps {
   /** Display name of the nearest disabled ancestor folder */
   ancestorName: string;
   /** Child folders whose own name has NO DISABLED prefix — will become active */
-  willActivate: ModFolder[];
+  willActivate: WorkspaceExplorerNode[];
   /** Child folders whose own name HAS DISABLED prefix — stay disabled regardless */
-  stayDisabled: ModFolder[];
+  stayDisabled: WorkspaceExplorerNode[];
   /** Callback to trigger the actual parent enable toggle */
   onConfirm: () => void;
 }

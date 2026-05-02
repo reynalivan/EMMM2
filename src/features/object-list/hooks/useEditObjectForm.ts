@@ -4,18 +4,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
-import { useUpdateObject } from '../../../hooks/useObjects';
+import { useUpdateObject } from '../../../hooks/useObjectMutations';
 import {
-  useRenameMod,
-  useUpdateModCategory,
-  useUpdateModThumbnail,
   useDeleteModThumbnail,
+  useUpdateModCategory,
   useUpdateModInfo,
-  ModFolder,
-  ModInfo,
-} from '../../../hooks/useFolders';
-import { ItemStatus } from '../../../types/object';
+  useUpdateModThumbnail,
+} from '../../../hooks/useFolderMutations';
+import { useRenameMod } from '../../../hooks/useFolderCoreMutations';
+import { ItemStatus, type ModInfo } from '../../../types/object';
 import type { ObjectSummary } from '../../../types/object';
+import type { ModFolder } from '../../../types/mod';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 
 export const schema = z

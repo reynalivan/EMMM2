@@ -5,7 +5,6 @@ import type {
   ArchiveAnalysis,
   ExtractionResult,
   ExtractionEvent,
-  ScanResultItem,
   ScanEvent,
   ConflictInfo,
   SyncResult,
@@ -19,42 +18,6 @@ import { getGameTypeKey } from '../../types/game';
 export type { ScanPreviewItem, ConfirmedScanItem };
 
 export const scanService = {
-  /**
-   * Start the full scan pipeline with progress streaming.
-   * @param gameType Game type code (e.g. "GIMI", "SRMI")
-   * @param onEvent Callback for progress events
-   */
-  async startScan(
-    gameType: GameType,
-    modsPath: string,
-    onEvent: (event: ScanEvent) => void,
-  ): Promise<ScanResultItem[]> {
-    const channel = new Channel<ScanEvent>();
-
-    channel.onmessage = (message) => {
-      onEvent(message);
-    };
-
-    const dbJson = await scanService.getMasterDb(gameType);
-
-    return commands.startScan({
-      modsPath,
-      dbJson,
-      onProgress: channel,
-    });
-  },
-
-  /**
-   * Get scan results without streaming (batch mode).
-   */
-  async getScanResult(gameType: GameType, modsPath: string): Promise<ScanResultItem[]> {
-    const dbJson = await scanService.getMasterDb(gameType);
-    return commands.getScanResult({
-      modsPath,
-      dbJson,
-    });
-  },
-
   /**
    * Get the MasterDB JSON for a game type (e.g. "GIMI", "SRMI").
    */
@@ -272,9 +235,9 @@ export const scanService = {
   },
 
   /**
-   * Sync database (scan + commit in one step).
+   * Deep Match Scanner (scan + canonical import in one step).
    */
-  async syncDatabase(
+  async runDeepmatchScanner(
     gameId: string,
     gameName: string,
     gameType: GameType,
@@ -286,7 +249,7 @@ export const scanService = {
       channel.onmessage = onEvent;
     }
     const dbJson = await this.getMasterDb(gameType);
-    return commands.syncDatabase({
+    return commands.runDeepmatchScanner({
       gameId,
       gameName,
       gameType: getGameTypeKey(gameType),
@@ -298,9 +261,9 @@ export const scanService = {
   },
 
   /**
-   * Phase 1: Scan folders + match, return preview.
+   * Deep Match Scanner preview.
    */
-  async scanPreview(
+  async runDeepmatchPreview(
     gameId: string,
     gameType: GameType,
     modsPath: string,
@@ -312,33 +275,12 @@ export const scanService = {
       channel.onmessage = onEvent;
     }
     const dbJson = await this.getMasterDb(gameType);
-    return commands.scanPreview({
+    return commands.runDeepmatchPreview({
       gameId,
       modsPath,
       dbJson,
       onProgress: channel,
       specificPaths: specificPaths ?? undefined,
-    });
-  },
-
-  /**
-   * Quick import: scan + commit with EMPTY MasterDB.
-   */
-  async quickImport(
-    gameId: string,
-    gameName: string,
-    gameType: GameType,
-    modsPath: string,
-  ): Promise<SyncResult> {
-    const channel = new Channel<ScanEvent>();
-    return commands.syncDatabase({
-      gameId,
-      gameName,
-      gameType: getGameTypeKey(gameType),
-      modsPath,
-      dbJson: '[]',
-      preserveExistingMappings: true,
-      onProgress: channel,
     });
   },
 

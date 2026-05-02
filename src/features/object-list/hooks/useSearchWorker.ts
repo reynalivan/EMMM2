@@ -15,8 +15,18 @@ interface WorkerResponse {
   ids: string[] | null;
 }
 
+function buildIdsSignature(ids: Iterable<string> | null): string | null {
+  if (!ids) {
+    return null;
+  }
+
+  return Array.from(ids).join('\0');
+}
+
 export function useSearchWorker() {
   const workerRef = useRef<Worker | null>(null);
+  const resultSignatureRef = useRef<string | null>(null);
+  const querySignatureRef = useRef<string | null>(null);
   const [filteredIds, setFilteredIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
@@ -26,7 +36,20 @@ export function useSearchWorker() {
       });
       workerRef.current.onmessage = (e: MessageEvent<WorkerResponse>) => {
         const { ids } = e.data;
-        setFilteredIds(ids ? new Set(ids) : null);
+        const nextSignature = buildIdsSignature(ids);
+        if (resultSignatureRef.current === nextSignature) {
+          return;
+        }
+
+        resultSignatureRef.current = nextSignature;
+        setFilteredIds((current) => {
+          if (!ids) {
+            return current === null ? current : null;
+          }
+
+          const nextSet = new Set(ids);
+          return buildIdsSignature(current) === nextSignature ? current : nextSet;
+        });
       };
     } catch {
       // Worker not available (test env, SSR, etc.) — sync fallback used
@@ -39,23 +62,48 @@ export function useSearchWorker() {
   }, []);
 
   const search = useCallback((items: SearchableItem[], query: string) => {
-    if (!query || query.trim().length === 0) {
-      setFilteredIds(null);
+    const normalizedQuery = query.trim().toLowerCase();
+    const querySignature =
+      normalizedQuery.length === 0
+        ? null
+        : `${normalizedQuery}\0${items.map((item) => `${item.id}:${item.name}`).join('\0')}`;
+
+    if (querySignatureRef.current === querySignature) {
+      return;
+    }
+
+    querySignatureRef.current = querySignature;
+
+    if (!normalizedQuery) {
+      resultSignatureRef.current = null;
+      setFilteredIds((current) => (current === null ? current : null));
       return;
     }
 
     if (workerRef.current) {
-      workerRef.current.postMessage({ objects: items, query });
+      workerRef.current.postMessage({ objects: items, query: normalizedQuery });
     } else {
       // Synchronous fallback (test env)
-      const tokens = query.toLowerCase().trim().split(/\s+/);
+      const tokens = normalizedQuery.split(/\s+/);
       const ids = items
         .filter((i) => {
           const name = i.name.toLowerCase();
           return tokens.every((t) => name.includes(t));
         })
         .map((i) => i.id);
-      setFilteredIds(new Set(ids));
+      const nextSignature = buildIdsSignature(ids);
+      if (resultSignatureRef.current === nextSignature) {
+        return;
+      }
+
+      resultSignatureRef.current = nextSignature;
+      setFilteredIds((current) => {
+        if (ids.length === 0) {
+          return buildIdsSignature(current) === nextSignature ? current : new Set<string>();
+        }
+
+        return buildIdsSignature(current) === nextSignature ? current : new Set(ids);
+      });
     }
   }, []);
 

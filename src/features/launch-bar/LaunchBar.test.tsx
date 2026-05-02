@@ -1,20 +1,37 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import LaunchBar from './LaunchBar';
-import { invoke } from '@tauri-apps/api/core';
 import { exit } from '@tauri-apps/plugin-process';
+
+const launchGame = vi.fn();
 
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
-vi.mock('../../hooks/useFolders', () => ({
+vi.mock('../../hooks/useFolderMutations', () => ({
   useActiveConflicts: vi.fn(() => ({ data: [] })), // no conflicts initially
 }));
 vi.mock('../../stores/useAppStore', () => ({
   useAppStore: vi.fn(() => ({ autoCloseLauncher: true })),
 }));
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const labels: Record<string, string> = {
+        'layout:launch_bar.play': 'Play',
+        'layout:launch_bar.launching': 'Launching',
+        'layout:launch_bar.randomizer': 'Randomizer',
+        'layout:launch_bar.conflicts': 'Conflicts',
+      };
+
+      return labels[key] ?? key;
+    },
+  }),
+}));
+vi.mock('../../lib/bindings', () => ({
+  commands: {
+    launchGame: (...args: unknown[]) => launchGame(...args),
+  },
 }));
 vi.mock('@tauri-apps/plugin-process', () => ({
   exit: vi.fn(),
@@ -38,14 +55,14 @@ describe('LaunchBar', () => {
     fireEvent.click(screen.getByText('Play'));
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('launch_game', { gameId: 'game-1' });
+      expect(launchGame).toHaveBeenCalledWith({ gameId: 'game-1' });
     });
 
     expect(exit).toHaveBeenCalledWith(0);
   });
 
   it('handles launch error gracefully', async () => {
-    vi.mocked(invoke).mockRejectedValue(new Error('Launch failed'));
+    launchGame.mockRejectedValue(new Error('Launch failed'));
     render(<LaunchBar />);
 
     fireEvent.click(screen.getByText('Play'));

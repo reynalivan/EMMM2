@@ -54,6 +54,17 @@ pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String
 /// Resolve all thumbnail fields in a slice of serde_json entries to absolute paths.
 pub fn resolve_entry_thumbnails(entries: &mut [Value], resource_dir: &Path) {
     for entry in entries.iter_mut() {
+        if let Some(name) = entry.get("name").and_then(|v| v.as_str()) {
+            let alias_name = name.to_string();
+            let entry_key = crate::services::scanner::sync::helpers::canonical_entry_key(name);
+            if entry.get("matched_entry_key").is_none() {
+                entry["matched_entry_key"] = Value::String(entry_key);
+            }
+            if entry.get("matched_alias_name").is_none() {
+                entry["matched_alias_name"] = Value::String(alias_name);
+            }
+        }
+
         if let Some(thumb_rel) = entry.get("thumbnail_path").and_then(|v| v.as_str()) {
             let abs_path = resource_dir.join(thumb_rel);
             if let Some(abs_str) = abs_path.to_str() {
@@ -80,6 +91,8 @@ pub fn resolve_entry_thumbnails(entries: &mut [Value], resource_dir: &Path) {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct MatchedDbEntry {
     pub name: String,
+    pub matched_entry_key: Option<String>,
+    pub matched_alias_name: Option<String>,
     pub object_type: String,
     pub tags: Vec<String>,
     pub metadata: Option<Value>,
@@ -138,6 +151,10 @@ pub fn build_matched_db_entry_from_staged(
 
     Some(MatchedDbEntry {
         name: entry.name.clone(),
+        matched_entry_key: Some(
+            crate::services::scanner::sync::helpers::canonical_entry_key(&entry.name),
+        ),
+        matched_alias_name: Some(entry.name.clone()),
         object_type: entry.object_type.clone(),
         tags: entry.tags.clone(),
         metadata: entry.metadata.clone(),

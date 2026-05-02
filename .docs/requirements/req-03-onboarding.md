@@ -10,6 +10,7 @@
   - 0 unhandled errors shown to the user when they select an invalid folder during setup.
   - The welcome screen is never shown again after the first successful game save (gated 100% by `ConfigStatus::HasConfig`).
   - Welcome screen renders first meaningful paint in ≤ 500ms on app start (Lighthouse LCP target).
+  - Completing onboarding persists games, then runs Disk Reconcile only; it does not silently trigger Deep Match Scanner.
 
 ---
 
@@ -38,7 +39,7 @@ As a first-time user, I want to select my XXMI launcher folder and have games de
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-03.2.1 | ✅ Positive | Given the user clicks "Auto-Detect" and selects a valid XXMI root via the OS folder dialog, then detected games are listed with name, type, and path within ≤ 1s                                       |
 | AC-03.2.2 | ✅ Positive | Given detected games are listed, then the user can remove individual games from the list before confirming                                                                                             |
-| AC-03.2.3 | ✅ Positive | Given ≥ 1 games remain in the list, when the user clicks "Confirm & Continue", then all games are saved via `add_game`, the first is set as `active_game_id`, and the router navigates to `/dashboard` |
+| AC-03.2.3 | ✅ Positive | Given ≥ 1 games remain in the list, when the user clicks "Confirm & Continue", then all games are saved, Disk Reconcile runs for runtime projection truth, the first is set as `active_game_id`, and the router navigates to `/dashboard` |
 | AC-03.2.4 | ❌ Negative | Given the selected folder contains no recognized game subfolders, when auto-detect finishes, then "No games found in this folder" message is displayed and the user can try a different path           |
 | AC-03.2.5 | ❌ Negative | Given the user cancels the native folder dialog (presses Escape or closes it), then the welcome screen state is unchanged — no error is shown                                                          |
 | AC-03.2.6 | ⚠️ Edge     | Given the scanner encounters a symlink loop or extreme nesting (> 5 levels), then the heuristic bails out after the depth limit and returns any valid games found so far — no UI freeze or crash       |
@@ -90,13 +91,13 @@ As a first-time user, I want to navigate back from sub-steps to the initial welc
   └── WelcomeStateMachine: landing → scanning → results → manual
       ├── landing:  Two CTA buttons
       ├── scanning: commands.autoDetectGames({ rootPath }) → GameConfig[]
-      ├── results:  Editable list → commands.addGame() * N → navigate('/dashboard')
+      ├── results:  Editable list → commands.saveOnboardingGames() → commands.reconcileDiskState() → navigate('/dashboard')
       └── manual:   Form → commands.addGame({ gameType, path }) → navigate('/dashboard')
 
 Backend
   ├── check_config_status() → FreshInstall | HasConfig   (Epic 01)
   ├── auto_detect_games(root_path) → Vec<GameConfig>     (Epic 02)
-  └── add_game(game_type, path) → GameRecord             (Epic 02)
+  └── save_onboarding_games(games) → () + Disk Reconcile runtime refresh
 ```
 
 ### Integration Points
@@ -105,7 +106,8 @@ Backend
 | -------------- | --------------------------------------------------------------------------- |
 | Config Status  | `commands/app/settings_cmds.rs` → `check_config_status` (Epic 01)           |
 | Game Detection | `commands/games/auto_detect_games` (Epic 02)                                |
-| Game Save      | `commands/games/add_game` (Epic 02)                                         |
+| Game Save      | `commands.saveOnboardingGames` (Epic 02)                                    |
+| Runtime Truth  | `commands.reconcileDiskState({ reason: OnboardingCompleted })`              |
 | Folder Dialog  | `tauri-plugin-dialog` → `open({ directory: true })`                         |
 | Routing        | React Router v6 — programmatic `navigate('/dashboard')` on success          |
 | Animation      | Framer Motion — entrance transitions ≤ 400ms, no layout-blocking animations |

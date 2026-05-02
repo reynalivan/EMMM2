@@ -7,12 +7,14 @@ import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands, type IngestResult } from '../../lib/bindings';
 import type { ScanPreviewItem } from '../../types/scanner';
-import { exists, mkdir } from '@tauri-apps/plugin-fs';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { getGameTypeKey } from '../../types/game';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
-import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
+import {
+  executeImportAndInvalidate,
+  parseMasterDb,
+} from '../mod-runtime/operations/sharedOperations';
 import { classifyDroppedPaths } from './dropUtils';
 import type { ObjectSummary } from '../../types/object';
 import type { MasterDbEntry } from './scanReviewHelpers';
@@ -39,6 +41,14 @@ interface DropDeps {
     }>
   >;
   setIsSyncing: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+async function ensureDirectoryExists(path: string) {
+  if (await commands.checkPathExistsCmd({ path })) {
+    return;
+  }
+
+  await commands.ensureDir({ path });
 }
 
 export function useObjHandlersDrop({
@@ -158,8 +168,8 @@ export function useObjHandlersDrop({
       await commands.setWatcherSuppression({ suppressed: true });
       try {
         const tempPath = `${activeGame.mod_path}\\.emmm_temp`;
-        if (looseFiles.length > 0 && !(await exists(tempPath))) {
-          await mkdir(tempPath, { recursive: true });
+        if (looseFiles.length > 0) {
+          await ensureDirectoryExists(tempPath);
         }
 
         if (looseFiles.length > 0) {
@@ -174,7 +184,7 @@ export function useObjHandlersDrop({
         }
 
         setIsSyncing(true);
-        const previewItemsRaw = await scanService.scanPreview(
+        const previewItemsRaw = await scanService.runDeepmatchPreview(
           activeGame.id,
           activeGame.game_type,
           activeGame.mod_path,
@@ -218,9 +228,7 @@ export function useObjHandlersDrop({
       const pathsToIngest = [...classified.folders, ...classified.iniFiles, ...classified.images];
 
       try {
-        if (!(await exists(objectFolderPath))) {
-          await mkdir(objectFolderPath, { recursive: true });
-        }
+        await ensureDirectoryExists(objectFolderPath);
       } catch (e) {
         console.error('Failed to create object directory on disk:', e);
         toast.error('Failed to create object directory on disk.');
@@ -258,15 +266,9 @@ export function useObjHandlersDrop({
     [activeGame, queryClient, handleArchivesInteractively],
   );
 
-  /** No-op — ObjectList.tsx handles opening CreateObjectModal with pendingPaths */
-  const handleDropNewObject = useCallback((_paths: string[]) => {
-    // Intentionally empty — ObjectList.tsx handles opening CreateObjectModal
-  }, []);
-
   return {
     handleDropOnItem,
     handleDropAutoOrganize,
-    handleDropNewObject,
     handleDropOnNewObjectSubmit,
   };
 }

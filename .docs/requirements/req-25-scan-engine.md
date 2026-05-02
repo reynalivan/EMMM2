@@ -2,8 +2,8 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: Users with existing mod libraries need the app to discover all mod folders automatically — but a naive recursive walk is slow, blocks the UI, and misses folders that need normalization (disabled prefix, variant structure) or signal extraction (INI hashes, folder name tokens) for Deep Matcher categorization.
-- **Proposed Solution**: An async Tokio task that walks the `mods_path` with `walkdir` (bounded depth), extracts `FolderSignals` (name tokens, INI section tokens) per discovered mod, emits `scan_progress` events at ≤ 2s intervals, supports cancellation via a `CancellationToken`, and stores its running state in an `Arc<Mutex<ScanState>>`.
+- **Problem Statement**: Users with existing mod libraries need the app to discover all mod folders automatically — but a naive recursive walk is slow, blocks the UI, and misses folders that need normalization (disabled prefix, variant structure) or signal extraction (INI hashes, folder name tokens) for Deep Match Scanner categorization.
+- **Proposed Solution**: An async Tokio task that walks the `mods_path` with `walkdir` (bounded depth), extracts `FolderSignals` (name tokens, INI section tokens) per discovered mod, emits `scan_progress` events at ≤ 2s intervals, supports cancellation via a `CancellationToken`, and stores its running state in an `Arc<Mutex<ScanState>>`. This is an explicit scan/import pipeline, separate from Disk Reconcile.
 - **Success Criteria**:
   - A scan of 1,000 mod folders completes in ≤ 30s on SSD (measured on a benchmark library).
   - Progress events stream to the frontend within ≤ 2s of each batch of 50 folders being processed.
@@ -37,7 +37,7 @@ As a user, I want to stop a long-running scan, so that I can regain control of t
 | ID        | Type        | Criteria                                                                                                                                                                                   |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-25.2.1 | ✅ Positive | Given a scan is running, when `commands.cancelScan()` is called, then the `CancellationToken` is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled`            |
-| AC-25.2.2 | ✅ Positive | Given cancellation, the partial scan results collected so far are NOT discarded — they can still be retrieved via `get_scan_result` and processed by the Deep Matcher over the partial set |
+| AC-25.2.2 | ✅ Positive | Given cancellation, the partial scan results collected so far are NOT discarded — they remain available to the explicit scan pipeline for diagnostic or partial-review use without becoming a runtime refresh path |
 | AC-25.2.3 | ⚠️ Edge     | Given `cancel_scan` is called after the scan has already `Completed`, then the command returns an `AlreadyCompleted` status — no error thrown                                              |
 
 ---
@@ -55,7 +55,7 @@ As a system, I want the scanner to note preview image paths for each mod, so tha
 
 #### US-25.4: Folder Signal Extraction
 
-As a system, I want to extract tokenized signals from folder names and INI files during scanning, so that the Deep Matcher has rich context to auto-categorize mods.
+As a system, I want to extract tokenized signals from folder names and INI files during scanning, so that the Deep Match Scanner has rich context to auto-categorize mods.
 
 | ID        | Type        | Criteria                                                                                                                                                                              |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -67,9 +67,10 @@ As a system, I want to extract tokenized signals from folder names and INI files
 
 ### Non-Goals
 
-- Scan does not write DB records — it produces `ScanResult` data structures used by Epic 26 (Deep Matcher) and Epic 27 (Sync DB) to update the DB.
+- Scan does not write DB records — it produces `ScanResult` data structures used by Epic 26 (Deep Match Scanner) and Epic 27 (Sync DB) to update the DB.
 - Scan does not produce thumbnail images — only records existing image paths.
 - No incremental scan in this epic — only full scan; incremental updates come from Epic 28 (File Watcher).
+- Scan Engine is NOT Disk Reconcile. Watcher/focus/mods-entry refreshes use Disk Reconcile instead of this full scan pipeline.
 
 ---
 
@@ -82,23 +83,8 @@ ScanState: Running | Completed | Cancelled | Idle
   stored in: Arc<Mutex<ScanState>> (Tauri managed state)
   progress: (scanned: u32, estimate: u32, last_path: PathBuf)
 
-start_scan(game_id) → Result<(), CommandError>:
-  1. Check ScanState != Running (error if already running)
-  2. Set ScanState = Running
-  3. Spawn Tokio task:
-     walker = WalkDir::new(mods_path).max_depth(8).follow_links(false).into_iter()
-     for entry in walker:
-       if token.is_cancelled(): break (→ ScanState = Cancelled)
-       if error(PermissionDenied): warn!() + continue
-       if classify(entry) == ModPackRoot:
-         signals = extract_folder_signals(entry, game_schema)
-         thumbnail = find_thumbnail(entry)
-         push ScanResult { path, signals, thumbnail, is_enabled }
-       if scanned_count % 50 == 0: emit('scan_progress', { scanned_count, estimate, last_path })
-     Set ScanState = Completed + store Vec<ScanResult>
-
-cancel_scan() → (): token.cancel()
-get_scan_result() → Vec<ScanResult>
+deepmatch_preview_cmd(game_id, mods_path, specific_paths?) → Vec<ScanPreviewItem>
+cancel_scan() → (): cancel the active explicit scan UI flow
 ```
 
 ### Integration Points
@@ -109,8 +95,8 @@ get_scan_result() → Vec<ScanResult>
 | Cancellation      | `tokio_util::CancellationToken` — stored in `Arc` alongside `ScanState`                                     |
 | Signal Extraction | `services/scanner/signals.rs::extract_folder_signals` — uses GameSchema stopwords (Epic 09)                 |
 | Progress Events   | `window.emit('scan_progress', payload)` every 50 entries; includes `elapsedMs` and `etaMs`                  |
-| Frontend          | `useScannerStore.ts` listens to `scan_progress` → progress bar; `commands.getScanResult()` after `Finished` |
-| Deep Matcher      | Consumes `Vec<ScanResult>` (Epic 26)                                                                        |
+| Frontend          | User-facing Deep Match UI uses `deepmatch_preview_cmd` / `commit_scan_cmd`; legacy generic scan commands are retired |
+| Deep Match Scanner | Consumes `Vec<ScanResult>` (Epic 26)                                                                       |
 | Archive Detection | `detect_archives` scans for `.zip`, `.7z`, `.rar` in root mods directory before full scan                   |
 
 ### Security & Privacy
@@ -124,4 +110,4 @@ get_scan_result() → Vec<ScanResult>
 ## 4. Dependencies
 
 - **Blocked by**: Epic 02 (Game Management — valid `mods_path`), Epic 09 (Object Schema — GameSchema for stopword tokenization).
-- **Blocks**: Epic 26 (Deep Matcher — consumes `Vec<ScanResult>`), Epic 27 (Sync DB — writes scan results to DB).
+- **Blocks**: Epic 26 (Deep Match Scanner — consumes `Vec<ScanResult>`), Epic 27 (Sync DB — writes scan results to DB).

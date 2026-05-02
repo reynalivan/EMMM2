@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EMMM Loading</title>
+    <style>
+      :root {
+        --color-bg: #0b0b0f; /* Onyx base */
+        --color-primary: #64b3e4;
+        --color-secondary: #a390e4;
+        --color-accent: #5b8aff;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: #0b0b0f; /* Fallback before var */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        overflow: hidden;
+        color: white;
+      }
+
+      /* Aurora Background Effect */
+      .aurora {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        filter: blur(100px);
+        opacity: 0.5;
+        overflow: hidden;
+      }
+
+      .blob {
+        position: absolute;
+        border-radius: 50%;
+        mix-blend-mode: screen;
+        animation: drift 20s infinite alternate ease-in-out;
+      }
+
+      .blob-1 {
+        width: 150vw;
+        height: 150vh;
+        top: -50%;
+        left: -50%;
+        background: radial-gradient(circle at center, var(--color-primary) 0%, transparent 50%);
+      }
+
+      .blob-2 {
+        width: 150vw;
+        height: 150vh;
+        bottom: -50%;
+        right: -50%;
+        background: radial-gradient(circle at center, var(--color-secondary) 0%, transparent 50%);
+        animation-delay: -5s;
+      }
+
+      .blob-3 {
+        width: 100vw;
+        height: 100vh;
+        top: 10%;
+        left: 10%;
+        background: radial-gradient(circle at center, var(--color-accent) 0%, transparent 40%);
+        opacity: 0.3;
+        animation-delay: -10s;
+      }
+
+      @keyframes drift {
+        from {
+          transform: rotate(0deg) translate(5%, 5%);
+        }
+        to {
+          transform: rotate(360deg) translate(-5%, -5%);
+        }
+      }
+
+      .content {
+        position: relative;
+        z-index: 10;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+      }
+
+      .welcome-text {
+        font-size: 0.75rem;
+        letter-spacing: 0.4em;
+        font-weight: 800;
+        color: var(--color-accent);
+        opacity: 0;
+        animation: fadeInWelcome 0.5s ease-out forwards;
+        margin-bottom: -0.5rem;
+      }
+
+      @keyframes fadeInWelcome {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 0.6;
+          transform: translateY(0);
+        }
+      }
+
+      /* Logo Container */
+      .container {
+        text-align: center;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2rem;
+      }
+
+      .logo {
+        width: 120px;
+        height: 120px;
+        filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.4));
+        opacity: 0;
+        animation: fadeInLogo 1s ease-out 0.3s forwards;
+      }
+
+      @keyframes fadeInLogo {
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.8) translateY(10px);
+          filter: blur(10px);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+          filter: blur(0);
+        }
+      }
+
+      .loader-text {
+        font-size: 1.1rem;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        opacity: 0.6;
+        text-transform: uppercase;
+        animation: pulse 2s infinite ease-in-out;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.3;
+        }
+        50% {
+          opacity: 0.7;
+        }
+      }
+
+      /* Noise Texture */
+      .noise {
+        position: fixed;
+        inset: 0;
+        opacity: 0.03;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+      }
+    </style>
+  </head>
+  <body>
+    <div class="aurora">
+      <div class="aurora__item"></div>
+      <div class="aurora__item"></div>
+      <div class="aurora__item"></div>
+      <div class="aurora__item"></div>
+    </div>
+
+    <div class="content">
+      <div class="welcome-text">WELCOME</div>
+      <svg class="logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color: #3b82f6; stop-opacity: 1" />
+            <stop offset="100%" style="stop-color: #b15eff; stop-opacity: 1" />
+          </linearGradient>
+        </defs>
+        <!-- Hexagon with glow -->
+        <path
+          d="M60 10 L103.3 35 L103.3 85 L60 110 L16.7 85 L16.7 35 Z"
+          fill="none"
+          stroke="url(#logoGrad)"
+          stroke-width="4"
+          class="logo-path"
+        />
+        <!-- Branded 'E' mark -->
+        <path
+          d="M45 40 L75 40 M45 60 L70 60 M45 80 L75 80 M45 40 L45 80"
+          fill="none"
+          stroke="white"
+          stroke-width="6"
+          stroke-linecap="round"
+          class="logo-e"
+        />
+      </svg>
+      <div class="title">EMMM</div>
+      <div class="subtitle">Enabled Model Mods Manager</div>
+      <div class="loading-bar">
+        <div class="loading-progress"></div>
+      </div>
+    </div>
+  </body>
+</html>

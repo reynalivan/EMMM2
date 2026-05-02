@@ -1,34 +1,69 @@
 import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useObjectListLogic } from './useObjectListLogic';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
+const setObjectMetaFilters = vi.fn();
+
+const appStoreState: {
+  selectedObjectFolderPath: string | null;
+  setSelectedObjectFolderPath: ReturnType<typeof vi.fn>;
+  setSelectedModPath: ReturnType<typeof vi.fn>;
+  selectedObjectType: string | null;
+  setSelectedObjectType: ReturnType<typeof vi.fn>;
+  sidebarSearchQuery: string;
+  setSidebarSearch: ReturnType<typeof vi.fn>;
+  setExplorerSubPath: ReturnType<typeof vi.fn>;
+  setCurrentPath: ReturnType<typeof vi.fn>;
+  clearGridSelection: ReturnType<typeof vi.fn>;
+  setExplorerScrollOffset: ReturnType<typeof vi.fn>;
+  safeMode: boolean;
+  objectMetaFilters: Record<string, string[]>;
+  setObjectMetaFilters: typeof setObjectMetaFilters;
+  objectSortBy: 'name' | 'date' | 'rarity';
+  setObjectSortBy: ReturnType<typeof vi.fn>;
+  objectStatusFilter: 'all' | 'enabled' | 'disabled';
+  setObjectStatusFilter: ReturnType<typeof vi.fn>;
+} = {
+  selectedObjectFolderPath: null,
+  setSelectedObjectFolderPath: vi.fn(),
+  setSelectedModPath: vi.fn(),
+  selectedObjectType: null,
+  setSelectedObjectType: vi.fn(),
+  sidebarSearchQuery: '',
+  setSidebarSearch: vi.fn(),
+  setExplorerSubPath: vi.fn(),
+  setCurrentPath: vi.fn(),
+  clearGridSelection: vi.fn(),
+  setExplorerScrollOffset: vi.fn(),
+  safeMode: false,
+  objectMetaFilters: {},
+  setObjectMetaFilters,
+  objectSortBy: 'name',
+  setObjectSortBy: vi.fn(),
+  objectStatusFilter: 'all',
+  setObjectStatusFilter: vi.fn(),
+};
+
 vi.mock('../../stores/useAppStore', () => ({
-  useAppStore: Object.assign(
-    vi.fn(() => ({
-      selectedObjectFolderPath: null,
-      setSelectedObjectFolderPath: vi.fn(),
-      selectedObjectType: null,
-      setSelectedObjectType: vi.fn(),
-      sidebarSearchQuery: '',
-      setSidebarSearch: vi.fn(),
-      safeMode: false,
+  useAppStore: Object.assign(vi.fn(() => appStoreState), {
+    getState: vi.fn(() => ({
+      explorerSubPath: '',
+      setExplorerSubPath: vi.fn(),
+      setCurrentPath: vi.fn(),
     })),
-    {
-      getState: vi.fn(() => ({
-        explorerSubPath: '',
-        setExplorerSubPath: vi.fn(),
-        setCurrentPath: vi.fn(),
-      })),
-    },
-  ),
+  }),
 }));
 
-vi.mock('../../hooks/useObjects', () => ({
-  useObjects: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
-  useGameSchema: vi.fn(() => ({ data: undefined })),
+const useGameSchemaMock = vi.fn<() => { data: unknown }>(() => ({ data: undefined }));
+vi.mock('../../hooks/useObjectQueries', () => ({
+  useGameSchema: () => useGameSchemaMock(),
+}));
+
+vi.mock('../workspace-runtime/useWorkspaceViewModel', () => ({
+  useWorkspaceViewModel: vi.fn(() => ({ data: { objects: [] }, isLoading: false, isError: false })),
 }));
 
 vi.mock('../../hooks/useActiveGame', () => ({
@@ -47,9 +82,6 @@ vi.mock('./useObjectListHandlers', () => ({
   useObjectListHandlers: vi.fn(() => ({
     deleteDialog: { open: false, path: '', name: '', itemCount: 0 },
     setDeleteDialog: vi.fn(),
-    handleToggle: vi.fn(),
-    handleOpen: vi.fn(),
-    handleDelete: vi.fn(),
     confirmDelete: vi.fn(),
     handleDeleteObject: vi.fn(),
     editObject: null,
@@ -65,7 +97,6 @@ vi.mock('./useObjectListHandlers', () => ({
     handleCommitScan: vi.fn(),
     handleCloseScanReview: vi.fn(),
     handlePin: vi.fn(),
-    handleFavorite: vi.fn(),
     handleMoveCategory: vi.fn(),
     handleRevealInExplorer: vi.fn(),
     handleEnableObject: vi.fn(),
@@ -73,7 +104,6 @@ vi.mock('./useObjectListHandlers', () => ({
     categoryNames: [],
     handleDropOnItem: vi.fn(),
     handleDropAutoOrganize: vi.fn(),
-    handleDropNewObject: vi.fn(),
     handleDropOnNewObjectSubmit: vi.fn(),
     archiveModal: { open: false },
     handleArchiveExtractSubmit: vi.fn(),
@@ -106,6 +136,13 @@ const createWrapper = () => {
 };
 
 describe('useObjectListLogic', () => {
+  beforeEach(() => {
+    setObjectMetaFilters.mockClear();
+    appStoreState.selectedObjectType = null;
+    appStoreState.objectMetaFilters = {};
+    useGameSchemaMock.mockReturnValue({ data: undefined });
+  });
+
   it('initializes basic state correctly', () => {
     const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
 
@@ -122,12 +159,36 @@ describe('useObjectListLogic', () => {
       result.current.filters.handleFilterChange('element', ['Fire']);
     });
 
-    expect(result.current.filters.activeFilters).toEqual({ element: ['Fire'] });
+    expect(setObjectMetaFilters).toHaveBeenCalledWith({ element: ['Fire'] });
 
+    appStoreState.objectMetaFilters = { element: ['Fire'] };
+    setObjectMetaFilters.mockClear();
+
+    const { result: rerendered } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
     act(() => {
-      result.current.filters.handleClearFilters();
+      rerendered.current.filters.handleClearFilters();
     });
 
-    expect(result.current.filters.activeFilters).toEqual({});
+    expect(setObjectMetaFilters).toHaveBeenLastCalledWith({});
+  });
+
+  it('sanitizes invalid persisted filters without writing them back on mount', () => {
+    appStoreState.selectedObjectType = 'Character';
+    appStoreState.objectMetaFilters = { element: ['Pyro'], rarity: ['5'] };
+    useGameSchemaMock.mockReturnValue({
+      data: {
+        categories: [
+          {
+            name: 'Character',
+            filters: [{ key: 'element', label: 'Element', options: ['Pyro'] }],
+          },
+        ],
+      },
+    });
+
+    const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
+
+    expect(result.current.filters.activeFilters).toEqual({ element: ['Pyro'] });
+    expect(setObjectMetaFilters).not.toHaveBeenCalled();
   });
 });

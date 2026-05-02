@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Enabling/disabling a mod by adding/removing a `DISABLED ` prefix from the folder name is the single most frequent user action — it must be instant from the UI's perspective and safe against concurrent toggles, folder locks, and rename collisions.
-- **Proposed Solution**: A `toggle_mod` Tauri command that acquires `OperationLock` + `WatcherSuppression`, performs `fs::rename` with a pre-check for collision, returns structured errors on failure, and is wrapped by an optimistic React Query cache update with `onError` rollback.
+- **Proposed Solution**: A single public workspace switch command (`execute_workspace_switch`) that acquires `OperationLock` + `WatcherSuppression`, performs the physical rename/toggle flow, returns structured switch results and `WorkspaceImpact`, and is wrapped by the shared workspace switch engine for optimistic/runtime updates and rollback.
 - **Success Criteria**:
   - UI optimistic toggle update applies within ≤ 16ms (one frame).
   - `fs::rename` completes within ≤ 300ms on SSD.
@@ -27,7 +27,7 @@ As a user, I want to enable or disable a mod with one click on a toggle, so that
 | AC-20.1.2 | ✅ Positive | Given `MyMod` (enabled), when I click the toggle to disable, then the folder is renamed to `DISABLED MyMod` and the card shows "disabled" within ≤ 16ms (optimistic)                                                                                         |
 | AC-20.1.3 | ✅ Positive | Given a successful toggle, then the object's `enabled_count` in the objectlist badge updates within ≤ 50ms via the same optimistic batch update                                                                                                              |
 | AC-20.1.4 | ❌ Negative | Given `OperationLock` is already held by another operation (in-flight rename or bulk toggle), when the toggle fires, then it awaits the lock with a timeout of 3s; if not acquired, returns "Operation in progress" toast and reverts the optimistic UI      |
-| AC-20.1.5 | ❌ Negative | Given a folder is locked by parent (`ancestor_disabled_by` is present), then clicking the toggle does NOT execute `toggle_mod` directly — instead, it opens the `EnableParentDialog` to resolve the root cause.     |
+| AC-20.1.5 | ❌ Negative | Given a folder is locked by parent (`ancestor_disabled_by` is present), then clicking the toggle does NOT execute the physical switch directly — instead, it opens the `EnableParentDialog` to resolve the root cause. |
 | AC-20.1.6 | ⚠️ Edge     | Given rapid toggle spam (≥ 5 clicks in < 1s), then IPC calls are debounced on the frontend (the last click's target state is the intended state); the backend serializes via `OperationLock` — no intermediate state leaves a partially-prefixed folder name |
 
 ---
@@ -38,7 +38,7 @@ As a system, I want to detect if a toggle would rename into an already-existing 
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                 |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-20.2.1 | ❌ Negative | Given toggling `DISABLED MyMod` to enabled but `MyMod` already exists, then `toggle_mod` returns `CommandError::Conflict { existing_path }` — no rename is executed, no data is overwritten                                              |
+| AC-20.2.1 | ❌ Negative | Given toggling `DISABLED MyMod` to enabled but `MyMod` already exists, then the switch command returns a structured conflict result — no rename is executed, no data is overwritten                                                           |
 | AC-20.2.2 | ✅ Positive | Given a `Conflict` error, then the `ConflictResolveDialog` appears with three choices: "Skip" (leave as disabled), "Rename target" (rename existing to `MyMod_conflict`), or "Overwrite" (move conflicting folder to Trash, then rename) |
 | AC-20.2.3 | ⚠️ Edge     | Given the user chooses "Overwrite" but the Trash is unavailable, then the Overwrite is blocked and an additional error toast shows "Cannot overwrite — Trash unavailable" — the original mod stays disabled                              |
 
@@ -58,28 +58,26 @@ As a system, I want to detect if a toggle would rename into an already-existing 
 ### Architecture Overview
 
 ```rust
-// Backend Service: Mod Toggle (core_ops.rs)
+// Backend Service: Workspace Switch
 
-toggle_mod(id, enable):
+execute_workspace_switch(input):
   1. Acquire OperationLock(game_id).
-  2. Map folder_path from DB.
+  2. Resolve target path or object target from the runtime projection.
   3. Activate SuppressionGuard to block watcher storm.
-  4. Perform atomic fs::rename (strip or prepend "DISABLED ").
-  5. Update DB record for parent mod and all child asset paths.
-     - Also sets `disabled_reason = 'USER'` if disabled, or clears to `NULL` if enabled.
-  6. If top-level folder, update the Object's folder_path record.
-  7. RAII drop lock and guard.
+  4. Perform atomic fs::rename (strip or prepend "DISABLED ") or object-root enable/disable as required.
+  5. Return `WorkspaceSwitchResult { status, primary_path, impact, ... }`.
+  6. Shared frontend switch engine applies descriptor updates, dialog escalation, and refresh scopes from `impact`.
 ```
 
 ### Integration Points
 
 | Component         | Detail                                                                            |
 | ----------------- | --------------------------------------------------------------------------------- |
-| Command           | `mod_core_cmds.rs::toggle_mod` delegating to `core_ops.rs::toggle_mod_inner`      |
+| Command           | `workspace_cmds.rs::execute_workspace_switch` as the public frontend switch entrypoint |
 | Path Logic        | `path_utils::is_path_safe` ensures operations stay within the mod directory.      |
 | DB Sync           | `update_mod_path_and_status` handles cross-platform path separators (win vs nix). |
 | Recursive Update  | `update_child_paths` ensures nested mods remain linked after a parent rename.     |
-| Optimistic Update | `useFolderGridActions.ts` patches the cache before DB confirmation.               |
+| Optimistic Update | Shared workspace switch actions apply descriptor-driven cache effects before backend confirmation. |
 
 ### Security & Privacy
 
@@ -92,4 +90,4 @@ toggle_mod(id, enable):
 ## 4. Dependencies
 
 - **Blocked by**: Epic 11 (Folder Listing — `folder_path` semantics), Epic 12 (Folder Grid — toggle UI), Epic 13 (Core Mod Ops — shared OperationLock), Epic 28 (File Watcher — WatcherSuppression).
-- **Blocks**: Epic 24 (Conflict Resolution — dialog triggered by toggle collision), Epic 14 (Bulk Operations — calls `toggle_mod_inner` for each item).
+- **Blocks**: Epic 24 (Conflict Resolution — dialog triggered by toggle collision), Epic 14 (Bulk Operations — reuses the same physical switch internals per item).

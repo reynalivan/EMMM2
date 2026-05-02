@@ -95,15 +95,25 @@
     "important": "重要",
     "warning": "清除这些任务将允许您再次访问应用。您应该手动重试中断的收藏集应用或模式切换，以确保您的游戏文件处于正确状态。",
     "actions": {
-      "clear": "中止并清除",
-      "clearing": "正在清除...",
+      "ignore": "忽略任务",
+      "ignoring": "正在忽略...",
+      "rollback": "回滚",
+      "rolling_back": "正在回滚...",
       "resume": "恢复任务",
       "resuming": "正在恢复..."
     },
     "toast": {
-      "cleared": "中断的任务已清除。您可以重试上次操作。",
+      "ignored": "中断的任务已忽略并标记为失败。",
+      "ignore_failed": "忽略任务失败：{{error}}",
+      "rolled_back": "中断的操作已回滚到上一个稳定状态。",
+      "rollback_failed": "回滚失败：{{error}}",
       "resumed": "中断的操作已成功恢复并完成。",
       "resume_failed": "恢复失败：{{error}}"
+    },
+    "labels": {
+      "id": "ID：",
+      "type": "类型：",
+      "target": "目标："
     }
   },
   "randomizer": {
@@ -124,5 +134,19 @@
   "mod_row": {
     "unknown": "未知 Mod",
     "nested": "嵌套 Mod"
+  },
+  "tree": {
+    "disabled": "已禁用",
+    "disabled_by_container": "被容器禁用",
+    "inactive_section": "无效容器",
+    "inactive_section_desc": "这些已禁用容器下方即使标记为启用的子项，也不会影响当前加载项。",
+    "uncategorized": "未分类",
+    "object_off": "对象关闭",
+    "types": {
+      "variant_container": "变体容器",
+      "mod_pack_root": "模组包根目录",
+      "flat_mod_root": "平铺模组根目录",
+      "container_folder": "容器文件夹"
+    }
   }
 }

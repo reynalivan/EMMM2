@@ -23,9 +23,15 @@
     "delete": "删除",
     "close": "关闭",
     "reload_app": "重新加载应用程序",
-    "remove": "移除 {{item}}",
+    "remove": "移除",
     "save_changes": "保存更改",
-    "retry": "重试"
+    "retry": "重试",
+    "discard": "放弃更改",
+    "done": "完成",
+    "keep_enabled": "保留已启用版本",
+    "keep_disabled": "保留已禁用版本",
+    "separate": "分开保留两者",
+    "dismiss": "忽略"
   },
   "action": {
     "back": "返回",
@@ -33,7 +39,8 @@
     "confirm": "确认",
     "save": "保存",
     "delete": "删除",
-    "close": "关闭"
+    "close": "关闭",
+    "dismiss": "忽略"
   },
   "errors": {
     "no_active_game": "未选择活动游戏",
@@ -44,6 +51,34 @@
     "validation": {
       "required": "此字段必填",
       "invalid": "无效输入"
+    },
+    "clipboard_not_supported": "此设备不支持剪贴板访问。"
+  },
+  "status": {
+    "none": "无",
+    "loading": "加载中...",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "not_set": "未设置",
+    "no_subfolders": "未找到嵌套文件夹"
+  },
+  "units": {
+    "ms": "ms"
+  },
+  "file_in_use": {
+    "title": "文件夹正在被占用",
+    "description": "请关闭仍在使用“{{folderName}}”的应用或窗口，然后重试。",
+    "windows_explorer": "Windows 资源管理器",
+    "hint": "文件锁通常来自资源管理器窗口、文本编辑器或正在监视该文件夹的工具。",
+    "folder_fallback": "此文件夹"
+  },
+  "workspace": {
+    "reason": {
+      "disabled_by_container": "被容器禁用：{{name}}",
+      "object_folder_disabled": "对象文件夹已禁用"
+    },
+    "warning": {
+      "naming_conflict": "检测到命名冲突"
     }
   }
 }

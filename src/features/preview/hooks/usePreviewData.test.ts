@@ -11,11 +11,9 @@ import {
   useSavePreviewImage,
   useRemovePreviewImage,
   useClearPreviewImages,
-  useSelectedModPath,
   useWriteModIni,
   useUpdateModInfoDetails,
 } from './usePreviewData';
-import { useAppStore } from '../../../stores/useAppStore';
 
 vi.unmock('@tanstack/react-query');
 
@@ -26,7 +24,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 describe('usePreviewData hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ gridSelection: new Set() });
   });
 
   it('fetches mod info when folder path is provided', async () => {
@@ -198,17 +195,5 @@ describe('usePreviewData hooks', () => {
       folderPath: 'E:/Mods/ModA',
       update: { actual_name: 'Mod A+', description: 'updated' },
     });
-  });
-
-  it('tracks the latest selected folder path for preview sync', () => {
-    useAppStore.setState({
-      gridSelection: new Set(['E:/Mods/First', 'E:/Mods/Active']),
-    });
-
-    const { result } = renderHook(() => useSelectedModPath(), {
-      wrapper: createWrapper,
-    });
-
-    expect(result.current).toBe('E:/Mods/Active');
   });
 });

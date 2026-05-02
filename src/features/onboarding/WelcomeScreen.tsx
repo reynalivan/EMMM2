@@ -6,7 +6,6 @@ import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-r
 import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
 import { pathsEqual } from '../../lib/pathKey';
-import { scanService } from '../../lib/services/scanService';
 import { ManualSetupForm } from './ManualSetupForm';
 import { AutoDetectResult } from './AutoDetectResult';
 import AuroraBackground from '../welcome/AuroraBackground';
@@ -87,14 +86,18 @@ export default function WelcomeScreen({
       // Save the games to DB — this is mandatory
       await commands.saveOnboardingGames({ games });
 
-      // Best-effort sync: try to import mods from each game folder.
+      // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
       for (const game of games) {
         try {
-          await scanService.syncDatabase(game.id, game.name, game.game_type, game.mod_path);
-        } catch (scanErr) {
+          await commands.reconcileDiskState({
+            gameId: game.id,
+            reason: 'OnboardingCompleted',
+            forceFull: true,
+          });
+        } catch (refreshErr) {
           console.warn(
-            `[onboarding] syncDatabase failed for "${game.name}", will retry via watcher:`,
-            scanErr,
+            `[onboarding] reconcileDiskState failed for "${game.name}", Disk Reconcile will retry on next entry:`,
+            refreshErr,
           );
         }
       }

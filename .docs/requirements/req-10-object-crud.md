@@ -2,8 +2,8 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: The auto-scanner may fail to map some mod folders to any known game entity — users need to manually create, edit, rename, delete, and pin objects to keep their objectlist organized without touching the filesystem.
-- **Proposed Solution**: A full CRUD interface for Object records in the local SQLite DB, with: creation (with validation), category edit (with schema validation), deletion (blocked via server-side FK constraints), and persistent properties (pin, favorite, auto-sync) — all surfaced via `ObjectList` context menus and modals.
+- **Problem Statement**: The Deep Match Scanner may fail to map some mod folders to any known game entity — users need to manually create, edit, rename, delete, and pin objects to keep their object list organized without touching the filesystem.
+- **Proposed Solution**: A full CRUD interface for Object records in the local SQLite DB, with: creation (with validation + disk folder creation), category edit (with schema validation), deletion (blocked via server-side FK constraints), and persistent properties (pin, favorite, auto-sync) — all surfaced via `ObjectList` context menus and modals.
 - **Success Criteria**:
   - Object creation (DB insert + list refresh) completes in ≤ 300ms from submit.
   - Object rename/category edit reflects in the list in ≤ 200ms via optimistic UI updates.
@@ -37,7 +37,7 @@ As a user, I want to edit an object's name or category, so that I can correct ma
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                         |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-10.2.1 | ✅ Positive | Given the edit modal, when I change the category (e.g., Weapon → Character) and save, then the DB record is updated and the object visually moves to its new category section in ≤ 200ms                                                                         |
-| AC-10.2.2 | ✅ Positive | Given I change only the display name, when saved, then the objectlist row updates via optimistic mutation — no full list refetch required                                                                                                                        |
+| AC-10.2.2 | ✅ Positive | Given I change only the display name or thumbnail, when saved, then the objectlist row updates via optimistic mutation — no wait for an unrelated full list refetch                                                                                             |
 | AC-10.2.3 | ✅ Positive | Given I switch to the "Auto-Sync" tab, I can search MasterDB entries; selecting one auto-populates the form's name, category, structured metadata, and thumbnail URL for review before saving                                                                    |
 | AC-10.2.4 | ❌ Negative | Given I edit the category to a value no longer present in the active schema (e.g., tampered request), then the backend rejects with a `SchemaValidationError` — the object's category is not changed                                                             |
 | AC-10.2.5 | ⚠️ Edge     | Given I rename an object to precisely match an existing object's name, then the form shows a warning "Another object has this name — this may cause confusion" but does not block submission (names are not globally unique by enforced constraint, only warned) |
@@ -62,8 +62,8 @@ As a user, I want to pin frequently used objects and quickly open their folders 
 
 | ID        | Type        | Criteria                                                                                                                                                |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin", then `is_pinned = true` is written to DB and the object sorts to the top of its section in ≤ 100ms        |
-| AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical or chronological order within its category                            |
+| AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin", then `is_pinned = true` is written to DB and the object sorts to the top of its section immediately via optimistic UI, with backend reconciliation after                                                  |
+| AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical order within its category                                                                                                                              |
 | AC-10.4.3 | ✅ Positive | Given the "Reveal in Explorer" action, the OS file explorer opens with the object's root folder selected (folder_path resolution)                       |
 | AC-10.4.4 | ❌ Negative | Given a folder that was manually deleted from disk, "Reveal" caught by the backend returns `NotFound` and triggers a cache invalidation to clean the UI |
 
@@ -71,11 +71,11 @@ As a user, I want to pin frequently used objects and quickly open their folders 
 
 #### US-10.5: Single-Object Database Sync
 
-As a user, I want to sync a single object's metadata with the MasterDB via the context menu, so that I can automatically pull in correct tags, element, and rarity without manually editing the form.
+As a user, I want to sync a single object's metadata with the MasterDB via the context menu, so that I can explicitly run a Deep Match-style metadata alignment without manually editing the form.
 
 | ID        | Type        | Criteria                                                                                                                                                                                 |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-10.5.1 | ✅ Positive | Given the context menu, when I click "Sync with DB", then `match_object_with_db` runs via the staged quick matcher pipeline and opens the `SyncConfirmModal` showing a diff preview      |
+| AC-10.5.1 | ✅ Positive | Given the context menu, when I click "Sync with DB", then `match_object_with_db` runs via the explicit Deep Match Scanner matcher pipeline and opens the `SyncConfirmModal` showing a diff preview |
 | AC-10.5.2 | ✅ Positive | Given the `SyncConfirmModal`, when I click Apply, then the DB object logic updates name, category, and metadata atomically and invalidates the cache                                     |
 | AC-10.5.3 | ❌ Negative | Given `match_object_with_db` finds no confident match, then a toast warns "No matched DB entry found" and asks if the user wants to open Manual Edit instead                             |
 | AC-10.5.4 | ⚠️ Edge     | Given the object already perfectly matches the MasterDB data, the modal still shows the diff (which will be empty/identical) allowing the user to confirm or cancel without side-effects |
@@ -84,10 +84,11 @@ As a user, I want to sync a single object's metadata with the MasterDB via the c
 
 ### Non-Goals
 
-- No bulk object deletion via multi-select in this phase.
+- No destructive bulk object merge or archive workflow in this phase; bulk delete / pin / enable / disable may exist where already implemented in UI.
 - No custom object icons or avatar uploads.
-- Objects are DB-only entities — creating an object does NOT create a corresponding directory on disk; folders are mapped to objects via the `folder_path` FK.
+- Objects are not DB-only entities in current runtime flow — creating an object also creates the corresponding directory on disk so watcher and UI stay aligned.
 - No object merging (combining two object records into one).
+- Disk Reconcile does NOT run this feature automatically; MasterDB sync is always user-driven.
 
 ---
 
@@ -121,9 +122,9 @@ delete_object(id):
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | DB Table           | `objects(id UUID PK, game_id FK, name TEXT, folder_path TEXT, category_id TEXT, is_pinned BOOL, metadata JSON, thumbnail_path TEXT)` |
 | Schema Validation  | Category IDs validated against `GameSchema` loaded in memory; Unique name check on game_id + lower(name).                            |
-| ObjectList Refresh | All mutations call `queryClient.invalidateQueries(['objects', gameId])` on success.                                                  |
+| ObjectList Refresh | Mutations use shared object-query refresh helpers; direct object edits and pinning patch ObjectList optimistically, then reconcile with an active refresh. |
 | Delete Guard       | Handled via server-side logic: acquires `OperationLock` and moves folder to Trash (Epic 22) + Cascade.                               |
-| Watcher Flow       | "DB First" creation ensures the event loop recognizes the new folder as a tracked object immediately.                                |
+| Watcher Flow       | "DB First" creation ensures Disk Reconcile recognizes the new folder as a tracked object immediately.                                 |
 
 ### Security & Privacy
 
@@ -131,6 +132,7 @@ delete_object(id):
 - **Atomic Deletion**: The whole operation—from trashing the disk folder to DB cleanup—is guarded by an `OperationLock`.
 - **Race Condition Prevention**: "DB First" pattern ensures filesystem watcher and UI stay in sync during object birth.
 - **Trash Safety**: Deletion is non-destructive initially; folders can be recovered from the `.trash` directory via maintenance tools.
+- **Domain Boundary**: Object CRUD mutates the curated object model. Disk Reconcile maintains filesystem truth, while Deep Match Scanner is the only automatic canonical matching flow.
 
 ---
 

@@ -6,8 +6,8 @@ import GameFormModal from '../modals/GameFormModal';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useToastStore } from '../../../stores/useToastStore';
 import { scanService } from '../../../lib/services/scanService';
-import { corridorKeys } from '../../collections/queryKeys';
 import { useQueryClient } from '@tanstack/react-query';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 export default function GamesTab() {
   const { t } = useTranslation(['settings', 'common']);
@@ -65,7 +65,7 @@ export default function GamesTab() {
     const toastId = addToast('info', t('settings:games.actions.scanning', { name: game.name }), 0); // Persist toast
 
     try {
-      const result = await scanService.syncDatabase(
+      const result = await scanService.runDeepmatchScanner(
         game.id,
         game.name,
         game.game_type,
@@ -83,7 +83,7 @@ export default function GamesTab() {
       );
 
       if (activeGameId === game.id) {
-        queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+        await publishQueryScopes(queryClient, ['corridorState']);
       }
     } catch (e) {
       console.error(e);

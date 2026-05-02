@@ -8,6 +8,7 @@ use crate::services::scanner::core::walker::ModCandidate;
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::{match_folder_phased, MasterDb};
+use crate::services::scanner::sync::helpers::resolve_or_create_object_target_for_match;
 
 /// DTO returned to the frontend for import queue display.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -18,7 +19,8 @@ pub struct ImportJobDto {
     pub archive_path: String,
     pub status: String,
     pub match_category: Option<String>,
-    pub match_object_id: Option<String>,
+    pub match_entry_key: Option<String>,
+    pub match_alias_name: Option<String>,
     pub match_confidence: Option<f64>,
     pub match_reason: Option<String>,
     pub placed_path: Option<String>,
@@ -193,7 +195,7 @@ async fn run_pipeline(
         );
     }
 
-    // -- Step 6: Deep Matcher --
+    // -- Step 6: Deep Match Scanner --
     set_job_status(db, job_id, "matching", None).await?;
     emit_status(app, job_id, "matching", None);
 
@@ -210,19 +212,19 @@ async fn run_pipeline(
 
     // Store match result
     if let Some(ref m) = match_result {
-        sqlx::query!(
-            r#"UPDATE import_jobs
-               SET match_category = ?, match_object_id = ?, match_confidence = ?, match_reason = ?
-               WHERE id = ?"#,
-            m.category,
-            m.object_id,
-            m.confidence,
-            m.reason,
-            job_id
+        let _ = sqlx::query(
+            "UPDATE import_jobs
+             SET match_category = ?, match_entry_key = ?, match_alias_name = ?, match_confidence = ?, match_reason = ?
+             WHERE id = ?",
         )
+        .bind(&m.category)
+        .bind(&m.entry_key)
+        .bind(&m.alias_name)
+        .bind(m.confidence)
+        .bind(&m.reason)
+        .bind(job_id)
         .execute(db)
-        .await
-        .ok();
+        .await;
     }
 
     let confidence = match_result.as_ref().map(|m| m.confidence).unwrap_or(0.0);
@@ -236,7 +238,8 @@ async fn run_pipeline(
             match_result.as_ref().map(|m| {
                 serde_json::json!({
                     "category": m.category,
-                    "object_id": m.object_id,
+                    "entry_key": m.entry_key,
+                    "alias_name": m.alias_name,
                     "confidence": m.confidence,
                     "reason": m.reason,
                 })
@@ -246,7 +249,7 @@ async fn run_pipeline(
     }
 
     // -- Step 7: Place --
-    place_mod(db, app, job_id, &extract_dir, &match_result.unwrap()).await
+    place_mod(db, app, job_id, &extract_dir, &match_result.unwrap(), None).await
 }
 
 // ── Placement ────────────────────────────────────────────────────────────────
@@ -257,6 +260,7 @@ async fn place_mod(
     job_id: &str,
     extract_dir: &Path,
     match_result: &MatchResult,
+    selected_object_id: Option<&str>,
 ) -> Result<(), String> {
     set_job_status(db, job_id, "placing", None).await?;
 
@@ -270,23 +274,74 @@ async fn place_mod(
 
     let game_id = game_id.ok_or("No game_id set on import job — cannot place mod")?;
 
-    // Fetch game mods_path (games.path = the /Mods directory)
-    let mods_path: String = sqlx::query_scalar!("SELECT path FROM games WHERE id = ?", game_id)
+    let mods_path: String = sqlx::query_scalar("SELECT mods_path FROM games WHERE id = ?")
+        .bind(&game_id)
         .fetch_one(db)
         .await
         .map_err(|e| format!("Game not found: {e}"))?;
 
-    let category = match_result.category.as_deref().unwrap_or("Other");
     let mod_name = extract_dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| format!("ImportedMod_{}", Uuid::new_v4().as_simple()));
 
-    let dest = PathBuf::from(&mods_path).join(category).join(format!(
-        "{} {}",
-        crate::DISABLED_PREFIX,
-        mod_name
-    ));
+    let mut tx = db.begin().await.map_err(|error| error.to_string())?;
+    let mut shell_objects_created = 0;
+
+    let selected_target = if let Some(object_id) = selected_object_id {
+        let folder_path: Option<String> =
+            sqlx::query_scalar("SELECT folder_path FROM objects WHERE id = ? LIMIT 1")
+                .bind(object_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|error| format!("Failed to resolve selected object folder: {error}"))?;
+
+        folder_path.map(
+            |path| crate::services::scanner::sync::helpers::ResolvedObjectTarget {
+                object_id: object_id.to_string(),
+                folder_path: path,
+            },
+        )
+    } else {
+        None
+    };
+
+    let match_target = if selected_target.is_none() {
+        resolve_or_create_object_target_for_match(
+            &mut *tx,
+            &game_id,
+            &mods_path,
+            &mod_name,
+            match_result.entry_key.as_deref(),
+            match_result.category.as_deref().unwrap_or("Other"),
+            None,
+            "[]",
+            "{}",
+            None,
+            None,
+            &mut shell_objects_created,
+        )
+        .await?
+    } else {
+        None
+    };
+
+    let resolved_target = selected_target.or(match_target);
+    let target_object_folder = resolved_target
+        .as_ref()
+        .map(|target| target.folder_path.clone())
+        .unwrap_or_else(|| "Other".to_string());
+    let target_object_id = resolved_target
+        .as_ref()
+        .map(|target| target.object_id.clone());
+
+    let target_parent = PathBuf::from(&mods_path).join(&target_object_folder);
+    if !target_parent.exists() {
+        std::fs::create_dir_all(&target_parent)
+            .map_err(|error| format!("Failed to create object shell folder: {error}"))?;
+    }
+
+    let dest = target_parent.join(format!("{} {}", crate::DISABLED_PREFIX, mod_name));
 
     // Collision guard
     let dest = resolve_collision(dest);
@@ -299,18 +354,33 @@ async fn place_mod(
         .map_err(|e| format!("Failed to place mod: {e}"))?;
 
     let dest_str = dest.to_string_lossy().to_string();
+
+    if let Some(object_id) = target_object_id.as_deref() {
+        crate::repo::object_repo::apply_canonical_match(
+            &mut *tx,
+            object_id,
+            match_result.entry_key.as_deref(),
+            match_result.alias_name.as_deref(),
+            Some(match_result.confidence),
+            match_result.reason.as_deref(),
+            Some("browser_import"),
+        )
+        .await
+        .map_err(|e| format!("Failed to persist browser import canonical relation: {e}"))?;
+    }
+
     sqlx::query!(
         "UPDATE import_jobs SET placed_path = ?, status = 'done', updated_at = datetime('now') WHERE id = ?",
         dest_str, job_id
     )
-    .execute(db)
+    .execute(&mut *tx)
     .await
     .ok();
 
     // Mark the linked download as imported
     if let Some(dl_id) =
         sqlx::query_scalar!("SELECT download_id FROM import_jobs WHERE id = ?", job_id)
-            .fetch_optional(db)
+            .fetch_optional(&mut *tx)
             .await
             .ok()
             .flatten()
@@ -320,10 +390,14 @@ async fn place_mod(
             "UPDATE browser_downloads SET status = 'imported' WHERE id = ?",
             dl_id
         )
-        .execute(db)
+        .execute(&mut *tx)
         .await
         .ok();
     }
+
+    tx.commit().await.map_err(|error| error.to_string())?;
+
+    emit_internal_disk_reconcile(app, db, &game_id, vec![dest_str.clone()]).await?;
 
     emit_status(
         app,
@@ -382,9 +456,68 @@ async fn stage_archive(app: &AppHandle, job_id: &str, archive: &Path) -> Result<
 
 struct MatchResult {
     category: Option<String>,
-    object_id: Option<String>,
+    entry_key: Option<String>,
+    alias_name: Option<String>,
     confidence: f64,
     reason: Option<String>,
+}
+
+async fn emit_internal_disk_reconcile(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    game_id: &str,
+    changed_paths: Vec<String>,
+) -> Result<(), String> {
+    let config = app
+        .try_state::<crate::services::config::ConfigService>()
+        .ok_or_else(|| "ConfigService state missing for browser import".to_string())?;
+    let watcher = app
+        .try_state::<crate::services::scanner::watcher::WatcherState>()
+        .ok_or_else(|| "WatcherState missing for browser import".to_string())?;
+    let disk_reconcile_state = app
+        .try_state::<crate::services::disk_reconcile::orchestrator::DiskReconcileState>()
+        .ok_or_else(|| "DiskReconcileState missing for browser import".to_string())?;
+
+    let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
+        app,
+        pool,
+        &config,
+        &disk_reconcile_state,
+        watcher.suppressor.clone(),
+        game_id.to_string(),
+        crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+        changed_paths,
+        false,
+    )
+    .await?;
+
+    app.emit("disk_reconcile:result", result)
+        .map_err(|error| error.to_string())
+}
+
+async fn load_job_match_result(db: &SqlitePool, job_id: &str) -> Result<MatchResult, String> {
+    use sqlx::Row;
+
+    let row = sqlx::query(
+        "SELECT match_category, match_entry_key, match_alias_name, match_confidence, match_reason
+         FROM import_jobs
+         WHERE id = ?",
+    )
+    .bind(job_id)
+    .fetch_one(db)
+    .await
+    .map_err(|e| format!("Failed to load import job match result: {e}"))?;
+
+    Ok(MatchResult {
+        category: row.try_get("match_category").unwrap_or(None),
+        entry_key: row.try_get("match_entry_key").unwrap_or(None),
+        alias_name: row.try_get("match_alias_name").unwrap_or(None),
+        confidence: row
+            .try_get("match_confidence")
+            .unwrap_or(Some(0.0))
+            .unwrap_or(0.0),
+        reason: row.try_get("match_reason").unwrap_or(None),
+    })
 }
 
 /// Attempt deep match. If the scanner service has a `quick_folder_match` function, call it.
@@ -432,7 +565,8 @@ async fn try_deep_match(
     if !resource_path.exists() {
         return Some(MatchResult {
             category: None,
-            object_id: None,
+            entry_key: None,
+            alias_name: None,
             confidence: 0.0,
             reason: Some(format!(
                 "Master DB not found at: {}",
@@ -469,7 +603,8 @@ async fn try_deep_match(
         None => {
             return Some(MatchResult {
                 category: None,
-                object_id: None,
+                entry_key: None,
+                alias_name: None,
                 confidence: 0.0,
                 reason: Some("No match found by deep matcher.".to_string()),
             })
@@ -487,7 +622,8 @@ async fn try_deep_match(
 
     Some(MatchResult {
         category: Some(top.object_type),
-        object_id: Some(top.name),
+        entry_key: Some(crate::services::scanner::sync::helpers::canonical_entry_key(&top.name)),
+        alias_name: Some(top.name),
         confidence: conf_val,
         reason: top.reasons.first().map(|r| format!("{:?}", r)),
     })
@@ -543,14 +679,16 @@ async fn set_job_status(
 
 /// Return all active (non-canceled) import jobs ordered by most recent first.
 pub async fn list_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, String> {
-    let rows = sqlx::query!(
+    use sqlx::Row;
+
+    let rows = sqlx::query(
         r#"SELECT id, download_id, game_id, archive_path, status,
-                  match_category, match_object_id, match_confidence, match_reason,
+                  match_category, match_entry_key, match_alias_name, match_confidence, match_reason,
                   placed_path, error_msg, is_duplicate, created_at, updated_at
            FROM import_jobs
            WHERE status != 'canceled'
            ORDER BY created_at DESC
-           LIMIT 100"#
+           LIMIT 100"#,
     )
     .fetch_all(db)
     .await
@@ -559,20 +697,21 @@ pub async fn list_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, String> {
     Ok(rows
         .into_iter()
         .map(|r| ImportJobDto {
-            id: r.id.unwrap_or_default(),
-            download_id: r.download_id,
-            game_id: r.game_id,
-            archive_path: r.archive_path,
-            status: r.status,
-            match_category: r.match_category,
-            match_object_id: r.match_object_id,
-            match_confidence: r.match_confidence,
-            match_reason: r.match_reason,
-            placed_path: r.placed_path,
-            error_msg: r.error_msg,
-            is_duplicate: r.is_duplicate != 0,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
+            id: r.try_get("id").unwrap_or_default(),
+            download_id: r.try_get("download_id").unwrap_or(None),
+            game_id: r.try_get("game_id").unwrap_or(None),
+            archive_path: r.try_get("archive_path").unwrap_or_default(),
+            status: r.try_get("status").unwrap_or_default(),
+            match_category: r.try_get("match_category").unwrap_or(None),
+            match_entry_key: r.try_get("match_entry_key").unwrap_or(None),
+            match_alias_name: r.try_get("match_alias_name").unwrap_or(None),
+            match_confidence: r.try_get("match_confidence").unwrap_or(None),
+            match_reason: r.try_get("match_reason").unwrap_or(None),
+            placed_path: r.try_get("placed_path").unwrap_or(None),
+            error_msg: r.try_get("error_msg").unwrap_or(None),
+            is_duplicate: r.try_get::<i64, _>("is_duplicate").unwrap_or(0) != 0,
+            created_at: r.try_get("created_at").unwrap_or_default(),
+            updated_at: r.try_get("updated_at").unwrap_or_default(),
         })
         .collect())
 }
@@ -587,10 +726,14 @@ pub async fn confirm_review(
     category: &str,
     object_id: Option<&str>,
 ) -> Result<(), String> {
-    sqlx::query!(
-        "UPDATE import_jobs SET game_id = ?, match_category = ?, match_object_id = ?, status = 'placing', updated_at = datetime('now') WHERE id = ?",
-        game_id, category, object_id, job_id
+    sqlx::query(
+        "UPDATE import_jobs
+         SET game_id = ?, match_category = ?, status = 'placing', updated_at = datetime('now')
+         WHERE id = ?",
     )
+    .bind(game_id)
+    .bind(category)
+    .bind(job_id)
     .execute(db)
     .await
     .map_err(|e| format!("DB confirm_review failed: {e}"))?;
@@ -606,14 +749,16 @@ pub async fn confirm_review(
 
     let extract_dir = PathBuf::from(&archive).parent().unwrap().join("extracted");
 
-    let match_result = MatchResult {
-        category: Some(category.to_string()),
-        object_id: object_id.map(|s| s.to_string()),
-        confidence: 1.0,
-        reason: Some("User confirmed".to_string()),
-    };
+    let mut match_result = load_job_match_result(db, job_id).await?;
+    match_result.category = Some(category.to_string());
+    if match_result.reason.is_none() {
+        match_result.reason = Some("User confirmed".to_string());
+    }
+    if match_result.confidence <= 0.0 {
+        match_result.confidence = 1.0;
+    }
 
-    place_mod(db, app, job_id, &extract_dir, &match_result).await
+    place_mod(db, app, job_id, &extract_dir, &match_result, object_id).await
 }
 
 /// Cancel a job and clean up its staging folder.

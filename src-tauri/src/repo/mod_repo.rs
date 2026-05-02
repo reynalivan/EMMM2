@@ -668,8 +668,7 @@ pub async fn update_mod_identity<'c, E>(
     new_folder_path: &str,
     new_actual_name: &str,
     new_status: ItemStatus,
-    old_folder_path: &str,
-    game_id: &str,
+    old_id: &str,
     mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error>
 where
@@ -683,7 +682,7 @@ where
     sqlx::query(
         "UPDATE mods
          SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, disabled_reason = ?
-         WHERE folder_path_key = ? AND game_id = ?",
+         WHERE id = ?",
     )
         .bind(new_id)
         .bind(new_folder_path)
@@ -691,8 +690,7 @@ where
         .bind(new_actual_name)
         .bind(new_status as i64)
         .bind(disabled_reason)
-        .bind(folder_path_key(old_folder_path, mods_path.as_deref()))
-        .bind(game_id)
+        .bind(old_id)
         .execute(executor)
         .await?;
     Ok(())
@@ -706,8 +704,7 @@ pub async fn update_mod_identity_tx(
     new_status: ItemStatus,
     new_is_safe: bool,
     corridor_source: &str,
-    old_folder_path: &str,
-    game_id: &str,
+    old_id: &str,
     mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let disabled_reason = if new_status.is_enabled() {
@@ -718,7 +715,7 @@ pub async fn update_mod_identity_tx(
     sqlx::query(
         "UPDATE mods
          SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, corridor_source = ?, disabled_reason = ?
-         WHERE folder_path_key = ? AND game_id = ?",
+         WHERE id = ?",
     )
         .bind(new_id)
         .bind(new_folder_path)
@@ -728,8 +725,7 @@ pub async fn update_mod_identity_tx(
         .bind(new_is_safe)
         .bind(corridor_source)
         .bind(disabled_reason)
-        .bind(folder_path_key(old_folder_path, mods_path.as_deref()))
-        .bind(game_id)
+        .bind(old_id)
         .execute(conn)
         .await?;
     Ok(())

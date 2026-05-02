@@ -3,40 +3,44 @@
  * Used by FolderGrid in list mode.
  */
 
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useMemo } from 'react';
 import {
   Folder,
   File,
-  ExternalLink,
-  Pencil,
-  Trash2,
-  ToggleLeft,
-  Star,
-  ArrowRightLeft,
   Copy,
   Package,
   Layers,
   AlertTriangle,
+  Star,
+  type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../types/mod';
+import type { WorkspaceExplorerNode, WorkspaceTypeChip } from '../../types/workspace';
 import BulkContextMenu from './BulkContextMenu';
 import { useAppStore } from '../../stores/useAppStore';
-import { commands } from '../../lib/bindings';
+import { useModContextMenuItems } from '../../hooks/useModContextMenuItems';
+import { useModContextMenuActions } from '../mod-runtime/actions/useModContextMenuActions';
 
 import {
   ContextMenu,
-  ContextMenuItem,
-  ContextMenuSeparator,
 } from '../../components/ui/ContextMenu';
 import { useThumbnail } from '../../hooks/useThumbnail';
+import {
+  formatWorkspaceReason,
+  formatWorkspaceWarning,
+} from '../workspace-runtime/workspaceSemantics';
+import { buildWorkspaceSwitchPolicy } from '../workspace-runtime/actions/workspaceSwitchPolicy';
+import { WorkspaceSwitchControl } from '../workspace-runtime/components/WorkspaceSwitchControl';
+import { WorkspaceSwitchLabel } from '../workspace-runtime/components/WorkspaceSwitchLabel';
 
 interface FolderListRowProps {
-  item: ModFolder;
+  item: WorkspaceExplorerNode;
   isSelected: boolean;
+  isActive?: boolean;
   toggleSelection: (id: string, multi: boolean, isShift?: boolean) => void;
-  clearSelection: () => void;
-  onToggleEnabled?: (folder: ModFolder) => void;
+  onActivate?: (path: string) => void;
+  onToggleEnabled?: (folder: WorkspaceExplorerNode) => void;
   onToggleFavorite?: (folder: ModFolder) => void;
   selectionSize?: number;
   onBulkToggle?: (enable: boolean) => void;
@@ -50,14 +54,49 @@ interface FolderListRowProps {
   onDelete?: (folder: ModFolder) => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
   onToggleSafe?: () => void;
+  onEnableOnlyThis?: (folder: ModFolder) => void;
+  onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
+  isSwitchPending?: boolean;
+}
+
+function getTypeChip(
+  typeChip: WorkspaceTypeChip | null,
+  t: ReturnType<typeof useTranslation>['t'],
+): { label: string; className: string; icon: LucideIcon } | null {
+  if (typeChip === 'mod_pack') {
+    return {
+      label: t('card.mod_pack'),
+      className: 'bg-info/20 text-info',
+      icon: Package,
+    };
+  }
+
+  if (typeChip === 'variant') {
+    return {
+      label: t('card.variants'),
+      className: 'bg-secondary/20 text-secondary',
+      icon: Layers,
+    };
+  }
+
+  if (typeChip === 'flat_mod') {
+    return {
+      label: t('card.flat_mod'),
+      className: 'bg-base-300 text-base-content/70',
+      icon: Folder,
+    };
+  }
+
+  return null;
 }
 
 function FolderListRowInner({
   item,
   isSelected,
+  isActive,
   toggleSelection,
-  clearSelection,
+  onActivate,
   onToggleEnabled,
   onToggleFavorite,
   selectionSize = 0,
@@ -72,26 +111,59 @@ function FolderListRowInner({
   onDelete,
   onOpenMoveDialog,
   onToggleSafe,
+  onEnableOnlyThis,
+  onSyncWithDb,
   hasConflict = false,
+  isSwitchPending = false,
 }: FolderListRowProps) {
-  const { t } = useTranslation(['grid']);
+  const { t } = useTranslation(['grid', 'common']);
+  const typeChip = getTypeChip(item.type_chip, t);
+  const inactiveReasonText = formatWorkspaceReason(t, item.inactive_reason);
+  const primaryWarningText = formatWorkspaceWarning(t, item.primary_warning);
+  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, item), [item, t]);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(
     activeGameId || '',
     item.path,
   );
+  const contextActions = useModContextMenuActions(item);
   const [imgError, setImgError] = useState(false);
   const thumbnailSrc = thumbnailPath && !imgError ? thumbnailPath : null;
   const isBulkSelection =
     isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
+  const contextItems = useModContextMenuItems({
+    folder: item,
+    onRename: () => onRename?.(item),
+    onDelete: () => onDelete?.(item),
+    onToggleEnabled: () => onToggleEnabled?.(item),
+    onToggleFavorite: () => onToggleFavorite?.(item),
+    onEnableOnlyThis: onEnableOnlyThis ? () => onEnableOnlyThis(item) : undefined,
+    onOpenMoveDialog,
+    onToggleSafe,
+    onSyncWithDb: onSyncWithDb ? () => onSyncWithDb(item) : undefined,
+    onOpenExplorer: contextActions.openExplorer,
+    onPasteThumbnail: contextActions.pasteThumbnailFromClipboard,
+    onImportThumbnail: contextActions.importThumbnail,
+  });
 
   // Reset error state when thumbnail path changes
   useEffect(() => {
     setImgError(false);
   }, [thumbnailPath]);
 
+  const handleClick = (e: React.MouseEvent) => {
+    if (item.display_mode === 'internal_assets') {
+      return;
+    }
+    if (e.ctrlKey || e.shiftKey) {
+      toggleSelection(item.path, true, e.shiftKey);
+    } else {
+      onActivate?.(item.path);
+    }
+  };
+
   const handleContextClick = (_: React.MouseEvent) => {
-    if (item.node_type === 'InternalAssets') {
+    if (item.display_mode === 'internal_assets') {
       return;
     }
 
@@ -99,7 +171,6 @@ function FolderListRowInner({
     // Actually ContextMenu trigger handles visibility, but we want to ensure selection logic is visually consistent.
     // If user right clicks an unselected item, standard OS behavior is to select it.
     if (!isSelected) {
-      clearSelection();
       toggleSelection(item.path, false);
     }
   };
@@ -120,64 +191,48 @@ function FolderListRowInner({
           />
         ) : (
           <>
-            <ContextMenuItem
-              icon={ExternalLink}
-              onClick={async () => {
-                if (activeGameId) {
-                  commands
-                    .openInExplorer({ gameId: activeGameId, path: item.path })
-                    .catch(console.error);
-                }
-              }}
-            >
-              {t('context.open_explorer')}
-            </ContextMenuItem>
-            <ContextMenuItem icon={Pencil} onClick={() => onRename?.(item)}>
-              {t('context.rename')}
-            </ContextMenuItem>
-            <ContextMenuItem icon={ToggleLeft} onClick={() => onToggleEnabled?.(item)}>
-              {item.is_enabled ? t('context.disable') : t('context.enable')}
-            </ContextMenuItem>
-            {onOpenMoveDialog && (
-              <>
-                <ContextMenuSeparator />
-                <ContextMenuItem icon={ArrowRightLeft} onClick={() => onOpenMoveDialog(item)}>
-                  {t('context.move_to_object')}
-                </ContextMenuItem>
-              </>
-            )}
-            <ContextMenuSeparator />
-            <ContextMenuItem icon={Trash2} danger onClick={() => onDelete?.(item)}>
-              {t('context.delete_trash')}
-            </ContextMenuItem>
-            {onToggleSafe && (
-              <>
-                <ContextMenuSeparator />
-                <ContextMenuItem icon={item.is_safe ? ToggleLeft : Star} onClick={onToggleSafe}>
-                  {item.is_safe ? t('context.mark_unsafe') : t('context.mark_safe')}
-                </ContextMenuItem>
-              </>
-            )}
+            {contextItems.map((contextItem) => {
+              if (contextItem.hidden) {
+                return null;
+              }
+
+              return (
+                <div key={contextItem.id}>
+                  {contextItem.separatorBefore ? <div className="divider my-0" /> : null}
+                  <button
+                    type="button"
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
+                      contextItem.danger
+                        ? 'text-error hover:bg-error/10'
+                        : 'hover:bg-base-200'
+                    }`}
+                    onClick={contextItem.onClick}
+                  >
+                    <contextItem.icon size={14} className="opacity-70" />
+                    {contextItem.label}
+                  </button>
+                </div>
+              );
+            })}
           </>
         )
       }
     >
       <div
         id={`grid-item-${item.path}`}
-        onClick={(e) => {
-          if (item.node_type === 'InternalAssets') {
-            return;
-          }
-
-          if (!e.ctrlKey && !e.shiftKey) clearSelection();
-          toggleSelection(item.path, e.ctrlKey || e.shiftKey, e.shiftKey);
-        }}
+        onClick={handleClick}
         onContextMenu={handleContextClick}
         className={`
         flex items-center gap-3 p-2 rounded-md border cursor-pointer active:scale-[0.99] transition-all h-full
-        ${item.node_type === 'InternalAssets' ? 'opacity-50' : ''}
-        ${!item.is_enabled ? 'opacity-[0.65] grayscale-[0.8]' : ''}
-        ${isSelected ? 'border-primary/50 bg-primary/10' : 'border-base-content/5 bg-base-200 hover:bg-base-300'}
+        ${item.display_mode === 'internal_assets' ? 'opacity-50' : ''}
+        ${!item.is_effectively_active ? 'opacity-[0.65] grayscale-[0.8]' : ''}
+        ${
+          isActive
+            ? 'border-primary/60 bg-primary/10'
+            : isSelected
+              ? 'border-primary/50 bg-primary/10'
+              : 'border-base-content/5 bg-base-200 hover:bg-base-300'
+        }
       `}
       >
         <div className="group relative w-10 h-10 shrink-0 bg-base-300 rounded-md overflow-hidden flex items-center justify-center select-none border border-base-content/5">
@@ -221,23 +276,20 @@ function FolderListRowInner({
         <div className="min-w-0 flex-1 flex items-center gap-3">
           <div
             className={`text-sm font-medium truncate leading-tight flex-1
-            ${isSelected ? 'text-primary' : 'text-base-content/80'}
-            ${!item.is_enabled ? 'line-through text-base-content/50' : ''}`}
+            ${isActive || isSelected ? 'text-primary' : 'text-base-content/80'}
+            ${!switchPolicy.checked ? 'line-through text-base-content/50' : ''}
+            ${!item.is_effectively_active && switchPolicy.checked ? 'text-base-content/55' : ''}`}
           >
-            {item.name}
+            {item.display_name}
           </div>
 
           {/* Node type badge */}
-          {item.node_type === 'ModPackRoot' && (
-            <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-info/20 text-info rounded-md shrink-0">
-              <Package size={10} />
-              <span className="text-[9px] font-bold">{t('card.mod_pack')}</span>
-            </div>
-          )}
-          {item.node_type === 'VariantContainer' && (
-            <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-secondary/20 text-secondary rounded-md shrink-0">
-              <Layers size={10} />
-              <span className="text-[9px] font-bold">{t('card.variants')}</span>
+          {typeChip && (
+            <div
+              className={`flex items-center gap-0.5 rounded-md px-1.5 py-0.5 shrink-0 ${typeChip.className}`}
+            >
+              <typeChip.icon size={10} />
+              <span className="text-[9px] font-bold">{typeChip.label}</span>
             </div>
           )}
 
@@ -256,10 +308,10 @@ function FolderListRowInner({
           {!hasConflict && item.warnings.length > 0 && (
             <div
               className="flex items-center gap-0.5 px-1.5 py-0.5 bg-error/20 text-error rounded-md shrink-0"
-              title={item.warnings.join('\n') || t('card.corrupt_ini_title')}
+              title={primaryWarningText || item.warnings.join('\n') || t('card.corrupt_ini_title')}
             >
               <AlertTriangle size={10} />
-              <span className="text-[9px] font-bold">CORRUPT</span>
+              <span className="text-[9px] font-bold">{t('badges.corrupt')}</span>
             </div>
           )}
 
@@ -287,15 +339,26 @@ function FolderListRowInner({
               className="flex items-center gap-1.5 cursor-pointer"
               onClick={(e) => e.stopPropagation()}
             >
-              <input
-                type="checkbox"
-                className="toggle toggle-xs toggle-success"
-                checked={item.is_enabled}
-                onChange={() => onToggleEnabled?.(item)}
+              <WorkspaceSwitchControl
+                node={item}
+                policy={switchPolicy}
+                isPending={isSwitchPending}
+                size="xs"
+                ariaLabel={t('common:actions.toggle')}
+                onToggle={() => {
+                  onToggleEnabled?.(item);
+                }}
               />
-              <span className="text-[10px] font-semibold text-base-content/40 hidden sm:inline">
-                {t(item.is_enabled ? 'card.status_enabled' : 'card.status_disabled')}
-              </span>
+              <WorkspaceSwitchLabel
+                node={item}
+                policy={switchPolicy}
+                className="text-[10px] font-semibold text-base-content/40 hidden sm:inline"
+              />
+              {inactiveReasonText && !switchPolicy.checked && (
+                <span className="hidden text-[10px] text-warning/70 sm:inline">
+                  {inactiveReasonText}
+                </span>
+              )}
             </label>
           </div>
         </div>

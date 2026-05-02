@@ -1,5 +1,6 @@
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 
+use crate::domain::collection::ProjectedCollectionState;
 use crate::domain::corridor::{CorridorRuntime, CorridorSnapshot, CorridorState};
 use crate::domain::errors::CorridorError;
 
@@ -73,6 +74,26 @@ pub async fn update_pointers(
     active_collection_id: Option<&str>,
     undo_collection_id: Option<&str>,
 ) -> Result<(), CorridorError> {
+    let mut tx = pool.begin().await?;
+    update_pointers_tx(
+        &mut *tx,
+        game_id,
+        is_safe,
+        active_collection_id,
+        undo_collection_id,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn update_pointers_tx(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    is_safe: bool,
+    active_collection_id: Option<&str>,
+    undo_collection_id: Option<&str>,
+) -> Result<(), CorridorError> {
     let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
 
     sqlx::query(
@@ -86,7 +107,47 @@ pub async fn update_pointers(
     .bind(is_safe_i32)
     .bind(active_collection_id)
     .bind(undo_collection_id)
-    .execute(pool)
+    .execute(&mut *conn)
+    .await?;
+
+    Ok(())
+}
+
+/// Clear any stale active/undo pointers that reference a deleted collection.
+pub async fn clear_collection_references(
+    pool: &SqlitePool,
+    collection_id: &str,
+) -> Result<(), CorridorError> {
+    let mut tx = pool.begin().await?;
+    clear_collection_references_tx(&mut *tx, collection_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn clear_collection_references_tx(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+) -> Result<(), CorridorError> {
+    sqlx::query(
+        r#"
+        UPDATE corridor_state
+        SET
+            active_collection_id = CASE
+                WHEN active_collection_id = ? THEN NULL
+                ELSE active_collection_id
+            END,
+            undo_collection_id = CASE
+                WHEN undo_collection_id = ? THEN NULL
+                ELSE undo_collection_id
+            END
+        WHERE active_collection_id = ? OR undo_collection_id = ?
+        "#,
+    )
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .execute(&mut *conn)
     .await?;
 
     Ok(())
@@ -134,31 +195,63 @@ pub async fn get_snapshot(
 ) -> Result<CorridorSnapshot, CorridorError> {
     let state = get(pool, game_id, is_safe).await?;
     let runtime = get_runtime(pool, game_id, is_safe).await?;
-
-    let active_collection_name: Option<String> = if let Some(ref s) = state {
-        if let Some(ref id) = s.active_collection_id {
-            sqlx::query_scalar("SELECT name FROM collections WHERE id = ?")
+    let runtime_collection_id = runtime
+        .as_ref()
+        .and_then(|entry| entry.matched_collection_id.clone());
+    let lookup_collection_id = runtime_collection_id.as_deref().or_else(|| {
+        state
+            .as_ref()
+            .and_then(|entry| entry.active_collection_id.as_deref())
+    });
+    let (active_collection_name, active_collection_is_unsaved): (Option<String>, bool) =
+        if let Some(id) = lookup_collection_id {
+            if let Some(row) = sqlx::query("SELECT name, is_unsaved FROM collections WHERE id = ?")
                 .bind(id)
                 .fetch_optional(pool)
                 .await?
+            {
+                (row.get("name"), row.get::<i32, _>("is_unsaved") != 0)
+            } else {
+                (
+                    runtime.as_ref().and_then(|entry| entry.state_name.clone()),
+                    false,
+                )
+            }
         } else {
-            None
-        }
-    } else {
-        None
-    };
+            (
+                runtime.as_ref().and_then(|entry| entry.state_name.clone()),
+                false,
+            )
+        };
 
     Ok(CorridorSnapshot {
         game_id: game_id.to_string(),
         is_safe,
-        active_collection_id: state.as_ref().and_then(|s| s.active_collection_id.clone()),
+        active_collection_id: runtime_collection_id
+            .or_else(|| state.as_ref().and_then(|s| s.active_collection_id.clone())),
         active_collection_name,
+        active_collection_is_unsaved,
         undo_collection_id: state.as_ref().and_then(|s| s.undo_collection_id.clone()),
         current_signature: runtime
             .as_ref()
             .map(|r| r.signature.clone())
             .unwrap_or_default(),
-        is_dirty: runtime.as_ref().is_some_and(|r| r.state_kind == "unsaved"),
+        is_dirty: runtime
+            .as_ref()
+            .is_some_and(|r| r.state_kind == "unsaved" && r.matched_collection_id.is_none()),
+        current_mods: Vec::new(),
+        current_objects: Vec::new(),
+        current_tree_nodes: Vec::new(),
+        projected_state: ProjectedCollectionState {
+            object_states: Vec::new(),
+            active_roots: Vec::new(),
+            summary: crate::domain::collection::ProjectedStateSummary {
+                object_count: 0,
+                enabled_object_count: 0,
+                active_root_count: 0,
+                missing_root_count: 0,
+            },
+        },
     })
 }
 /// Ensure a corridor row exists for a game + mode.
@@ -188,12 +281,17 @@ pub async fn update_signature(
     let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
 
     sqlx::query(
-        r#"UPDATE corridor_runtime_cache SET signature = ?, updated_at = CURRENT_TIMESTAMP 
-           WHERE game_id = ? AND is_safe = ?"#,
+        r#"INSERT INTO corridor_runtime_cache
+           (game_id, is_safe, matched_collection_id, state_kind, state_name, signature, snapshot_json, snapshot_source, updated_at)
+           VALUES (?, ?, NULL, 'unsaved', NULL, ?, ?, 'signature_update', CURRENT_TIMESTAMP)
+           ON CONFLICT(game_id, is_safe) DO UPDATE SET
+               signature = excluded.signature,
+               updated_at = CURRENT_TIMESTAMP"#,
     )
-    .bind(signature)
     .bind(game_id)
     .bind(is_safe_i32)
+    .bind(signature)
+    .bind(empty_projected_state_json())
     .execute(pool)
     .await?;
 
@@ -209,13 +307,21 @@ pub async fn record_switch(
     let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
 
     sqlx::query(
-        r#"UPDATE corridor_runtime_cache SET updated_at = CURRENT_TIMESTAMP 
-           WHERE game_id = ? AND is_safe = ?"#,
+        r#"INSERT INTO corridor_runtime_cache
+           (game_id, is_safe, matched_collection_id, state_kind, state_name, signature, snapshot_json, snapshot_source, updated_at)
+           VALUES (?, ?, NULL, 'unsaved', NULL, '', ?, 'record_switch', CURRENT_TIMESTAMP)
+           ON CONFLICT(game_id, is_safe) DO UPDATE SET
+               updated_at = CURRENT_TIMESTAMP"#,
     )
     .bind(game_id)
     .bind(is_safe_i32)
+    .bind(empty_projected_state_json())
     .execute(pool)
     .await?;
 
     Ok(())
+}
+
+fn empty_projected_state_json() -> &'static str {
+    r#"{"object_states":[],"active_roots":[],"summary":{"object_count":0,"enabled_object_count":0,"active_root_count":0,"missing_root_count":0}}"#
 }

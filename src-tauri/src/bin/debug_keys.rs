@@ -7,7 +7,7 @@ fn main() {
     let k2 = folder_path_key(p2, None);
     println!("P1: {} -> KEY: {}", p1, k1);
     println!("P2: {} -> KEY: {}", p2, k2);
-    
+
     let p3 = "E:\\Dev\\EMMMNEW\\src-tauri\\Mods\\DISABLED Kazuha";
     let k3 = folder_path_key(p3, None);
     println!("P3: {} -> KEY: {}", p3, k3);

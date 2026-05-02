@@ -6,7 +6,8 @@
 import { useRef, useEffect, useMemo } from 'react';
 import { Trash2, RotateCcw, Loader2, FolderOpen, Clock, HardDrive, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useListTrash, useRestoreMod, useEmptyTrash } from '../../hooks/useFolders';
+import { useRestoreMod } from '../../hooks/useFolderCoreMutations';
+import { useListTrash, useEmptyTrash } from '../../hooks/useFolderMutations';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { toast } from '../../stores/useToastStore';
 import { formatBytes } from '../../utils/formatters';

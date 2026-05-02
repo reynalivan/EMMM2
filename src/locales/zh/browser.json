@@ -40,7 +40,12 @@
       "failed": "失败",
       "canceled": "已取消",
       "imported": "已导入"
-    }
+    },
+    "table_filename": "文件名",
+    "table_status": "状态",
+    "table_progress": "进度",
+    "table_actions": "操作",
+    "unknown_size": "大小未知"
   },
   "import": {
     "title": "导入队列",
@@ -62,7 +67,9 @@
     "archive": "压缩包",
     "duplicate": "重复",
     "target_game": "目标游戏",
+    "target_object_optional": "目标物理对象（可选）",
     "select_game": "— 选择游戏 —",
+    "keep_as_other": "— 保持为 Other —",
     "mod_category": "模组类别",
     "confirm": "确认并导入",
     "cancel": "取消"

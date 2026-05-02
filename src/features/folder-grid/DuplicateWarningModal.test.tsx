@@ -2,6 +2,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DuplicateWarningModal from './DuplicateWarningModal';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, vars?: Record<string, unknown>) => {
+      if (key === 'duplicate_warning.title') {
+        return 'Duplicate Character Active';
+      }
+      if (key === 'duplicate_warning.description') {
+        return `Duplicate warning for ${String(vars?.targetName ?? '')}`;
+      }
+      if (key === 'duplicate_warning.currently_enabled') {
+        return 'Currently Enabled';
+      }
+      if (key === 'duplicate_warning.enable_only_this') {
+        return 'Enable Only This';
+      }
+      if (key === 'duplicate_warning.force_enable') {
+        return 'Force Enable';
+      }
+      if (key === 'common:actions.cancel') {
+        return 'Cancel';
+      }
+      if (key === 'common:actions.close') {
+        return 'Close';
+      }
+
+      return key;
+    },
+  }),
+}));
+
 // Mock dialog behavior
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = vi.fn();
@@ -10,8 +40,22 @@ beforeEach(() => {
 
 describe('DuplicateWarningModal (TC-29 Conflict Detection)', () => {
   const mockDuplicates = [
-    { mod_id: '1', folder_path: 'C:/Mods/A', actual_name: 'Mod A' },
-    { mod_id: '2', folder_path: 'C:/Mods/B', actual_name: 'Mod B' },
+    {
+      mod_id: '1',
+      object_id: 'object-1',
+      folder_path: 'C:/Mods/A',
+      actual_name: 'Mod A',
+      is_variant: false,
+      parent_path: 'C:/Mods',
+    },
+    {
+      mod_id: '2',
+      object_id: 'object-1',
+      folder_path: 'C:/Mods/B',
+      actual_name: 'Mod B',
+      is_variant: false,
+      parent_path: 'C:/Mods',
+    },
   ];
 
   const onForceEnableMock = vi.fn();
@@ -39,7 +83,7 @@ describe('DuplicateWarningModal (TC-29 Conflict Detection)', () => {
     expect(screen.getByText('Duplicate Character Active')).toBeInTheDocument();
 
     // Verify target name is bolded in text
-    expect(screen.getByText('New Target Mod')).toBeInTheDocument();
+    expect(screen.getByText(/New Target Mod/)).toBeInTheDocument();
 
     // Verify conflicting mods are listed
     expect(screen.getByText('Mod A')).toBeInTheDocument();

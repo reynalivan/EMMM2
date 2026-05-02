@@ -18,7 +18,8 @@
   },
   "maintenance": {
     "clear_success": "Berhasil membersihkan {{count}} thumbnail lama.",
-    "maintenance_success": "Pemeliharaan selesai. Database dioptimalkan. Memangkas {{pruned}} thumbnail. Membersihkan {{trash}} entri sampah kosong yang lama."
+    "maintenance_success": "Pemeliharaan selesai. Database dioptimalkan. Memangkas {{pruned}} thumbnail. Membersihkan {{trash}} entri sampah kosong yang lama.",
+    "failed": "Pemeliharaan gagal: {{error}}"
   },
   "actions": {
     "trash": "Tempat Sampah",
@@ -38,6 +39,8 @@
   "context": {
     "safe_mode_tip": "Saklar Mode Aman",
     "loading": "Memuat...",
+    "unsaved_safe": "Preset Aman Belum Disimpan",
+    "unsaved_unsafe": "Preset Tidak Aman Belum Disimpan",
     "collections_title": "Koleksi",
     "save_current": "Simpan Sekarang",
     "no_collections": "Tidak ada koleksi tersimpan",
@@ -49,5 +52,9 @@
     "randomizer": "Acak (Gacha)",
     "conflicts": "Konflik",
     "conflict_toast": "{{count}} Konflik Shader Terdeteksi"
+  },
+  "app": {
+    "name": "EMMM",
+    "version": "Manajer Mod"
   }
 }

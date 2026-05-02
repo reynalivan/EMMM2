@@ -2,60 +2,54 @@ import { useState } from 'react';
 import { commands } from '../../../lib/bindings';
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { PipelineTask } from '../../../types/task';
+import type { PipelineTask, RecoveryAction } from '../../../types/task';
 import { toast } from '../../../stores/useToastStore';
+import { formatAppError } from '../../../lib/appError';
 
 interface RecoveryDialogProps {
   tasks: PipelineTask[];
-  onResolved: () => void;
+  onResolved: (remainingTasks: PipelineTask[]) => void;
 }
 
 export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
   const { t } = useTranslation('collections');
-  const [isClearing, setIsClearing] = useState(false);
-  const [isResuming, setIsResuming] = useState(false);
+  const [pendingAction, setPendingAction] = useState<RecoveryAction | null>(null);
+  const primaryTask = tasks[0] ?? null;
 
-  const handleClear = async () => {
-    setIsClearing(true);
-    try {
-      await commands.clearPendingTasks();
-      toast.success(t('recovery.toast.cleared'), 5000);
-      onResolved();
-    } catch (e) {
-      console.error('Failed to clear pending tasks:', e);
-      toast.error(String(e), 5000);
-      setIsClearing(false);
-    }
+  const resolveTasks = async (): Promise<void> => {
+    const remainingTasks = await commands.appStartupCheck();
+    onResolved(remainingTasks);
   };
 
-  const handleResume = async (task: PipelineTask) => {
-    setIsResuming(true);
-    try {
-      if (task.task_type === 'apply_collection') {
-        if (!task.target_id) throw new Error('Missing target collection ID');
-        await commands.applyCollection({
-          gameId: task.game_id,
-          collectionId: task.target_id,
-          ignoreMissing: false,
-        });
-      } else if (task.task_type === 'switch_corridor') {
-        if (!task.target_id) throw new Error('Missing target corridor state');
-        await commands.switchCorridor({
-          gameId: task.game_id,
-          targetSafe: task.target_id === 'true',
-        });
-      } else {
-        throw new Error(`Unknown task type: ${task.task_type}`);
-      }
+  const handleResolve = async (action: RecoveryAction) => {
+    if (!primaryTask) {
+      return;
+    }
 
-      // If we succeed, the task is effectively handled. Clear pending tracking.
-      await commands.clearPendingTasks();
-      toast.success(t('recovery.toast.resumed'), 5000);
-      onResolved();
+    setPendingAction(action);
+    try {
+      await commands.resolveRecoveryTask({
+        taskId: primaryTask.id,
+        action,
+      });
+      const successKey =
+        action === 'RETRY'
+          ? 'recovery.toast.resumed'
+          : action === 'ROLLBACK'
+            ? 'recovery.toast.rolled_back'
+            : 'recovery.toast.ignored';
+      toast.success(t(successKey), 5000);
+      await resolveTasks();
     } catch (e) {
-      console.error('Failed to resume task:', e);
-      toast.error(t('recovery.toast.resume_failed', { error: String(e) }), 5000);
-      setIsResuming(false);
+      const failureKey =
+        action === 'RETRY'
+          ? 'recovery.toast.resume_failed'
+          : action === 'ROLLBACK'
+            ? 'recovery.toast.rollback_failed'
+            : 'recovery.toast.ignore_failed';
+      toast.error(t(failureKey, { error: formatAppError(e) }), 5000);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -83,12 +77,18 @@ export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
                 className="flex flex-col text-sm bg-base-100 p-2 rounded border border-base-300"
               >
                 <div className="flex justify-between">
-                  <span className="font-mono text-xs opacity-70">ID: {task.id.slice(0, 8)}...</span>
+                  <span className="font-mono text-xs opacity-70">
+                    {t('recovery.labels.id')} {task.id.slice(0, 8)}...
+                  </span>
                   <span className="badge badge-warning badge-sm">{task.status}</span>
                 </div>
-                <div className="font-medium mt-1">Type: {task.task_type}</div>
+                <div className="font-medium mt-1">
+                  {t('recovery.labels.type')} {task.task_type}
+                </div>
                 {task.target_id && (
-                  <div className="text-xs opacity-60 mt-1">Target: {task.target_id}</div>
+                  <div className="text-xs opacity-60 mt-1">
+                    {t('recovery.labels.target')} {task.target_id}
+                  </div>
                 )}
               </div>
             ))}
@@ -104,24 +104,38 @@ export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
           <div className="flex justify-end gap-2">
             <button
               className="btn btn-ghost w-full sm:w-auto"
-              onClick={handleClear}
-              disabled={isClearing || isResuming}
+              onClick={() => void handleResolve('IGNORE')}
+              disabled={pendingAction !== null}
             >
-              {isClearing ? (
+              {pendingAction === 'IGNORE' ? (
                 <>
                   <Loader2 className="animate-spin" size={18} />
-                  {t('recovery.actions.clearing')}
+                  {t('recovery.actions.ignoring')}
                 </>
               ) : (
-                t('recovery.actions.clear')
+                t('recovery.actions.ignore')
+              )}
+            </button>
+            <button
+              className="btn btn-warning w-full sm:w-auto"
+              onClick={() => void handleResolve('ROLLBACK')}
+              disabled={pendingAction !== null}
+            >
+              {pendingAction === 'ROLLBACK' ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} />
+                  {t('recovery.actions.rolling_back')}
+                </>
+              ) : (
+                t('recovery.actions.rollback')
               )}
             </button>
             <button
               className="btn btn-primary w-full sm:w-auto"
-              onClick={() => handleResume(tasks[0])}
-              disabled={isClearing || isResuming}
+              onClick={() => void handleResolve('RETRY')}
+              disabled={pendingAction !== null}
             >
-              {isResuming ? (
+              {pendingAction === 'RETRY' ? (
                 <>
                   <Loader2 className="animate-spin" size={18} />
                   {t('recovery.actions.resuming')}

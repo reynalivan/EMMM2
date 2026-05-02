@@ -69,6 +69,17 @@
       "engine_val": "Vite + React"
     }
   },
+  "toast": {
+    "save_success": "设置已成功保存。",
+    "save_failed": "保存设置失败：{{error}}",
+    "pin_success": "Safe Mode PIN 已成功更新。",
+    "pin_failed": "更新 PIN 失败：{{error}}",
+    "ai_failed": "更新 AI 配置失败：{{error}}",
+    "theme_success": "主题已成功更新。",
+    "theme_failed": "更新主题失败：{{error}}",
+    "lang_success": "界面语言已更新。",
+    "lang_failed": "更新语言失败：{{error}}"
+  },
   "games": {
     "title": "游戏库",
     "desc": "管理您的安装位置和游戏配置。",
@@ -213,6 +224,7 @@
     "empty_trash": "清空回收站",
     "trash_confirm": "您确定要永久删除回收站中的所有项目吗？",
     "trash_success": "回收站已清空：所有项目已删除。",
+    "trash_failed": "清空回收站失败：{{error}}",
     "system_title": "系统维护",
     "system_desc": "运行自动清理任务、验证数据库完整性并清理孤立元数据。",
     "run_maintenance": "运行维护",

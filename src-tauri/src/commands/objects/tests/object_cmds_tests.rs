@@ -64,16 +64,6 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
         status_filter: None,
     };
 
-    // Sync filesystem -> DB first so the DISABLED-prefixed folder is indexed
-    crate::services::scanner::object_sync::sync_objects_for_game(
-        &pool,
-        &game_id,
-        "Mods",                           // This is mods_path_str
-        &Vec::<String>::new().as_slice(), // This is safe_mode_keywords (4th arg)
-    )
-    .await
-    .expect("sync_objects_for_game failed");
-
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
 
     // We expect the object to be indexed
@@ -412,6 +402,236 @@ async fn test_pin_object_cmd() -> CommandResult<()> {
     assert_eq!(
         objects[0].is_pinned, true,
         "TC-10-09: Object should be pinned"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_apply_object_match_cmd() -> CommandResult<()> {
+    let (_tmp, pool, game_id) = setup_test_db().await;
+
+    let obj_id = "test_obj_match";
+    let mods_path = _tmp.path().join("Mods");
+    std::fs::create_dir_all(mods_path.join("test_obj_match_folder")).unwrap();
+
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: obj_id,
+            game_id: &game_id,
+            name: "PhysicalName",
+            folder_path: Some("test_obj_match_folder"),
+            object_type: "Other",
+        },
+    )
+    .await
+    .unwrap();
+
+    apply_object_match_cmd_inner(
+        &ApplyObjectMatchInput {
+            game_id: game_id.clone(),
+            object_id: Some(obj_id.to_string()),
+            folder_path: None,
+            matched_entry_key: Some("kazuha".to_string()),
+            matched_alias_name: Some("Kazuha".to_string()),
+            matched_confidence: Some(0.91),
+            matched_reason: Some("Manual deep match".to_string()),
+            matched_source: Some("manual_match".to_string()),
+        },
+        &pool,
+    )
+    .await?;
+
+    let row = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT name, matched_entry_key, matched_alias_name, matched_source
+         FROM objects
+         WHERE id = ?",
+    )
+    .bind(obj_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(row.0, "PhysicalName");
+    assert_eq!(row.1, "kazuha");
+    assert_eq!(row.2, "Kazuha");
+    assert_eq!(row.3, "manual_match");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()> {
+    let (tmp, pool, game_id) = setup_test_db().await;
+    let mods_path = tmp.path().join("Mods");
+    let object_folder = "Albedo";
+
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "obj_terminal_counts",
+            game_id: &game_id,
+            name: "Albedo",
+            folder_path: Some(object_folder),
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    let flat_dir = mods_path.join(object_folder).join("FlatSolo");
+    fs::create_dir_all(&flat_dir).unwrap();
+    fs::write(
+        flat_dir.join("flat.ini"),
+        "[TextureOverrideFlat]\nhash = 1234\n",
+    )
+    .unwrap();
+
+    let modpack_dir = mods_path.join(object_folder).join("BigPack");
+    fs::create_dir_all(&modpack_dir).unwrap();
+    fs::write(
+        modpack_dir.join("pack.ini"),
+        "[TextureOverridePack]\nhash = 5678\n",
+    )
+    .unwrap();
+    fs::write(modpack_dir.join("asset.dds"), "asset").unwrap();
+
+    let variant_dir = mods_path.join(object_folder).join("SchoolVest");
+    for child in ["1.school", "2.no_skirt", "3.no_shirt"] {
+        let child_dir = variant_dir.join(child);
+        fs::create_dir_all(&child_dir).unwrap();
+        fs::write(
+            child_dir.join("variant.ini"),
+            format!("[TextureOverride{child}]\nhash = 9999\n"),
+        )
+        .unwrap();
+    }
+    fs::write(
+        variant_dir.join("root.ini"),
+        "[TextureOverrideRoot]\nhash = 4242\nfilename = 1.school/file.buf\n",
+    )
+    .unwrap();
+
+    let disabled_container_dir = mods_path
+        .join(object_folder)
+        .join("DISABLED DisabledNest")
+        .join("InnerLeaf");
+    fs::create_dir_all(&disabled_container_dir).unwrap();
+    fs::write(
+        disabled_container_dir.join("inner.ini"),
+        "[TextureOverrideInner]\nhash = 3131\n",
+    )
+    .unwrap();
+
+    let container_only_dir = mods_path.join(object_folder).join("New folder");
+    fs::create_dir_all(&container_only_dir).unwrap();
+
+    let mods_root = mods_path.to_string_lossy().to_string();
+    for fixture in [
+        TestModFixture {
+            id: "flat-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "FlatSolo",
+            folder_path: "Albedo/FlatSolo",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+        TestModFixture {
+            id: "pack-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "BigPack",
+            folder_path: "Albedo/BigPack",
+            status: crate::database::models::ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+        TestModFixture {
+            id: "variant-root-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "SchoolVest",
+            folder_path: "Albedo/SchoolVest",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+        TestModFixture {
+            id: "variant-child-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "1.school",
+            folder_path: "Albedo/SchoolVest/1.school",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+        TestModFixture {
+            id: "disabled-container-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "DISABLED DisabledNest",
+            folder_path: "Albedo/DISABLED DisabledNest",
+            status: crate::database::models::ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+        TestModFixture {
+            id: "disabled-child-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "InnerLeaf",
+            folder_path: "Albedo/DISABLED DisabledNest/InnerLeaf",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+        TestModFixture {
+            id: "container-only-row",
+            game_id: &game_id,
+            object_id: Some("obj_terminal_counts"),
+            actual_name: "New folder",
+            folder_path: "Albedo/New folder",
+            status: crate::database::models::ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_root),
+        },
+    ] {
+        insert_test_mod(&pool, &fixture).await.unwrap();
+    }
+
+    let filter = ObjectFilter {
+        game_id,
+        search_query: None,
+        object_type: None,
+        safe_mode: true,
+        meta_filters: None,
+        sort_by: None,
+        status_filter: None,
+    };
+    let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
+    let object = objects
+        .iter()
+        .find(|entry| entry.id == "obj_terminal_counts")
+        .expect("object to be present");
+
+    assert_eq!(
+        object.mod_count, 4,
+        "Total count should collapse variant/modpack roots and ignore pure container rows"
+    );
+    assert_eq!(
+        object.enabled_count, 2,
+        "Enabled count should exclude disabled-container descendants from active impact"
     );
 
     Ok(())

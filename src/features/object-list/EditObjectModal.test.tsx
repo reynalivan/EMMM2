@@ -9,7 +9,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import EditObjectModal from './EditObjectModal';
-import { useUpdateObject } from '../../hooks/useObjects';
+import { useUpdateObject } from '../../hooks/useObjectMutations';
 import type { ObjectSummary } from '../../types/object';
 import { createWrapper } from '../../testing/test-utils';
 import { useForm } from 'react-hook-form';
@@ -18,7 +18,8 @@ import { useEditObjectForm, schema } from './hooks/useEditObjectForm';
 import type { EditObjectFormData } from './hooks/useEditObjectForm';
 
 // Mock dependencies
-vi.mock('../../hooks/useObjects');
+vi.mock('../../hooks/useObjectMutations');
+vi.mock('../../hooks/useObjectQueries');
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
@@ -35,13 +36,15 @@ vi.mock('./hooks/useEditObjectForm', async (importOriginal) => {
   };
 });
 
-// Mock useFolders mutations — with real react-query, these now use real useMutation
-// which imports Tauri plugins and causes test hangs.
-vi.mock('../../hooks/useFolders', () => ({
+// Mock folder mutations — real hooks use react-query + Tauri APIs that hang in jsdom.
+vi.mock('../../hooks/useFolderCoreMutations', () => ({
   useRenameMod: () => ({
     mutateAsync: vi.fn().mockResolvedValue({ new_path: '/new/path' }),
     isPending: false,
   }),
+}));
+
+vi.mock('../../hooks/useFolderMutations', () => ({
   useUpdateModCategory: () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
@@ -118,12 +121,8 @@ vi.mock('@tauri-apps/api/core', () => ({
     return Promise.resolve(null);
   }),
 }));
-// Helper to mock useGameSchema if needed (it's in useObjects) but let's be explicit if separate
-// Actually useGameSchema is imported from useObjects in component.
-// So we need to mock it on the existing mockUseUpdateObject or ensuring useObjects mock covers it.
-
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useGameSchema } from '../../hooks/useObjects';
+import { useGameSchema } from '../../hooks/useObjectQueries';
 
 const mockUseUpdateObject = useUpdateObject as unknown as ReturnType<typeof vi.fn>;
 const mockUseActiveGame = useActiveGame as unknown as ReturnType<typeof vi.fn>;
@@ -222,7 +221,7 @@ describe('EditObjectModal', () => {
     // With real useForm({defaultValues}) via mockImplementation,
     // inputs are immediately pre-populated (no async query needed).
     expect(screen.getByDisplayValue('Diluc')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Character')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveValue('Character');
   });
 
   it('validates required fields', () => {
@@ -248,8 +247,8 @@ describe('EditObjectModal', () => {
       wrapper: createWrapper,
     });
 
-    // The component should render the error message directly from formState
-    expect(screen.getByText(/name is required/i)).toBeInTheDocument();
+    const nameInput = screen.getByDisplayValue('Diluc');
+    expect(nameInput.className).toContain('input-error');
   });
 
   // TC-10-03: Button debouncing logic on form submit

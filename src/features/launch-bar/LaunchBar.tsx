@@ -1,7 +1,7 @@
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useActiveConflicts } from '../../hooks/useFolders';
+import { useActiveConflicts } from '../../hooks/useFolderMutations';
 import { useAppStore } from '../../stores/useAppStore';
 import { commands } from '../../lib/bindings';
 import { exit } from '@tauri-apps/plugin-process';

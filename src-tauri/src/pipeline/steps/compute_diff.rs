@@ -5,7 +5,11 @@ use std::collections::HashSet;
 /// Step 4: Compute the diff between current state and target collection.
 pub async fn compute(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     // Collect target path_keys from mods
-    let target_keys: HashSet<String> = ctx.target_mods.iter().map(|m| m.mod_path.clone()).collect();
+    let target_keys: HashSet<String> = ctx
+        .target_mods
+        .iter()
+        .filter_map(|member| member.mod_path_key.clone().or_else(|| Some(member.mod_path.clone())))
+        .collect();
 
     // To enable: in target but not currently enabled
     ctx.to_enable = target_keys

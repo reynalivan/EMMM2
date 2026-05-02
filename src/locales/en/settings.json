@@ -69,6 +69,17 @@
       "engine_val": "Vite + React"
     }
   },
+  "toast": {
+    "save_success": "Settings saved successfully.",
+    "save_failed": "Failed to save settings: {{error}}",
+    "pin_success": "Safe Mode PIN updated successfully.",
+    "pin_failed": "Failed to update PIN: {{error}}",
+    "ai_failed": "Failed to update AI config: {{error}}",
+    "theme_success": "Theme updated successfully.",
+    "theme_failed": "Failed to update theme: {{error}}",
+    "lang_success": "Interface language updated.",
+    "lang_failed": "Failed to update language: {{error}}"
+  },
   "games": {
     "title": "Games Library",
     "desc": "Manage your install locations and game configurations.",
@@ -213,6 +224,7 @@
     "empty_trash": "Empty Trash",
     "trash_confirm": "Are you sure you want to permanently delete all items in the Trash?",
     "trash_success": "Trash Emptied: All items deleted.",
+    "trash_failed": "Failed to empty trash: {{error}}",
     "system_title": "System Maintenance",
     "system_desc": "Run automated cleanup tasks, verify database integrity, and prune orphaned metadata.",
     "run_maintenance": "Run Maintenance",

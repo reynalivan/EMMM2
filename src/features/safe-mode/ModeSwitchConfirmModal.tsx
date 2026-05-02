@@ -8,21 +8,38 @@ import { useAppStore } from '../../stores/useAppStore';
 import { CollectionTreeView } from '../collections/components/CollectionTreeView';
 import { useCorridor } from '../collections/hooks/useCorridor';
 import { commands } from '../../lib/bindings';
-import { getCorridorStateName } from '../../lib/corridorLabels';
-import type { CollectionMember, CorridorSwitchPreview } from '../../types/collection';
+import {
+  getCorridorStateName,
+  getCorridorSwitchTargetName,
+  type CorridorSwitchTextLabels,
+  useCorridorSwitchLabels,
+} from '../../lib/corridorLabels';
+import type { CorridorSwitchPreview } from '../../types/collection';
+import { corridorKeys } from '../collections/queryKeys';
 
-
-
-function buildLeavingSubtitle(preview: CorridorSwitchPreview | undefined): string {
-  return getCorridorStateName(preview?.leaving_state_name);
+function buildLeavingSubtitle(
+  preview: CorridorSwitchPreview | undefined,
+  labels: CorridorSwitchTextLabels,
+): string {
+  return getCorridorStateName({
+    stateName: preview?.leaving_state_name,
+    isUnsaved: preview?.leaving_state_is_unsaved,
+    isSafe: preview?.leaving_state_is_safe,
+    labels,
+  });
 }
 
-function buildTargetSubtitle(preview: CorridorSwitchPreview | undefined, t: TFunction): string {
-  if (!preview || preview.target_state_kind === 'none') {
-    return t('safe_mode:switch.empty', { name: '' }).split('(')[1].replace(')', ''); // Hacky way to get "All Disabled" or just use common
-  }
-
-  return getCorridorStateName(preview.target_state_name);
+function buildTargetSubtitle(
+  preview: CorridorSwitchPreview | undefined,
+  labels: CorridorSwitchTextLabels,
+): string {
+  return getCorridorSwitchTargetName({
+    targetStateKind: preview?.target_state_kind,
+    stateName: preview?.target_state_name,
+    isUnsaved: preview?.target_state_is_unsaved,
+    isSafe: preview?.target_state_is_safe,
+    labels,
+  });
 }
 
 function buildTargetDescription(preview: CorridorSwitchPreview | undefined, t: TFunction): string {
@@ -30,15 +47,30 @@ function buildTargetDescription(preview: CorridorSwitchPreview | undefined, t: T
     return t('safe_mode:switch.target_desc.none');
   }
 
+  if (preview.target_state_kind === 'system_fallback') {
+    return t('safe_mode:switch.target_desc.system_fallback');
+  }
+
   return t('safe_mode:switch.target_desc.active');
 }
 
-function buildTargetEmptyState(preview: CorridorSwitchPreview | undefined, t: TFunction): string {
+function buildTargetEmptyState(
+  preview: CorridorSwitchPreview | undefined,
+  t: TFunction,
+  labels: CorridorSwitchTextLabels,
+): string {
   if (!preview || preview.target_state_kind === 'none') {
     return t('safe_mode:switch.missing_target');
   }
 
-  return t('safe_mode:switch.empty', { name: getCorridorStateName(preview.target_state_name) });
+  return t('safe_mode:switch.empty', {
+    name: getCorridorStateName({
+      stateName: preview.target_state_name,
+      isUnsaved: preview.target_state_is_unsaved,
+      isSafe: preview.target_state_is_safe,
+      labels,
+    }),
+  });
 }
 
 interface ModeSwitchConfirmModalProps {
@@ -54,8 +86,9 @@ export default function ModeSwitchConfirmModal({
   onClose,
   onConfirm,
 }: ModeSwitchConfirmModalProps) {
-  const { t } = useTranslation(['safe_mode', 'common']);
+  const { t } = useTranslation(['safe_mode', 'common', 'layout']);
   const { activeGameId, safeMode } = useAppStore();
+  const unsavedLabels = useCorridorSwitchLabels();
   const currentRuntimeQuery = useCorridor(activeGameId, safeMode);
   const currentStateToken = useMemo(() => {
     if (!currentRuntimeQuery.data) {
@@ -71,10 +104,7 @@ export default function ModeSwitchConfirmModal({
 
   const { data: preview, isLoading } = useQuery<CorridorSwitchPreview>({
     queryKey: [
-      'v2-corridor-preview',
-      activeGameId ?? '',
-      safeMode,
-      targetSafeMode,
+      ...corridorKeys.switchPreview(activeGameId ?? '', safeMode, targetSafeMode),
       currentStateToken,
     ],
     queryFn: () =>
@@ -86,20 +116,6 @@ export default function ModeSwitchConfirmModal({
     staleTime: 0,
   });
   const isPreviewLoading = currentRuntimeQuery.status !== 'success' || isLoading;
-
-  const leavingMembers = useMemo((): CollectionMember[] => {
-    if (!preview) return [];
-    return preview.leaving_members.filter(
-      (m) => m.kind === 'object' || m.kind === 'root' || ((m.kind === 'mod' || m.kind === 'nested') && m.is_enabled),
-    );
-  }, [preview]);
-
-  const targetMembers = useMemo((): CollectionMember[] => {
-    if (!preview) return [];
-    return preview.target_members.filter(
-      (m) => m.kind === 'object' || m.kind === 'root' || ((m.kind === 'mod' || m.kind === 'nested') && m.is_enabled),
-    );
-  }, [preview]);
 
   if (!open) return null;
 
@@ -146,15 +162,16 @@ export default function ModeSwitchConfirmModal({
                   <p
                     className={`text-lg font-semibold break-all leading-tight ${targetSafeMode ? 'text-error/90' : 'text-success/90'}`}
                   >
-                    {buildLeavingSubtitle(preview)}
+                    {buildLeavingSubtitle(preview, unsavedLabels)}
                   </p>
                   <p className="text-xs text-base-content/45 mt-1">
-                    {t('safe_mode:switch.active_mods')}
+                    {t('safe_mode:switch.active_mods')} ·{' '}
+                    {preview?.leaving_projected_state?.summary.active_root_count ?? 0}
                   </p>
                 </div>
                 <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
                   <CollectionTreeView
-                    members={leavingMembers}
+                    nodes={preview?.leaving_tree_nodes}
                     colorClass={targetSafeMode ? 'text-error' : 'text-success'}
                   />
                 </div>
@@ -189,17 +206,18 @@ export default function ModeSwitchConfirmModal({
                   <p
                     className={`text-lg font-semibold break-all leading-tight ${targetSafeMode ? 'text-success/90' : 'text-error/90'}`}
                   >
-                    {buildTargetSubtitle(preview, t)}
+                    {buildTargetSubtitle(preview, unsavedLabels)}
                   </p>
                   <p className="text-xs text-base-content/45 mt-1">
-                    {buildTargetDescription(preview, t)}
+                    {buildTargetDescription(preview, t)} ·{' '}
+                    {preview?.target_projected_state?.summary.active_root_count ?? 0}
                   </p>
                 </div>
                 <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
                   <CollectionTreeView
-                    members={targetMembers}
+                    nodes={preview?.target_tree_nodes}
                     colorClass={targetSafeMode ? 'text-success' : 'text-error'}
-                    emptyMessage={buildTargetEmptyState(preview, t)}
+                    emptyMessage={buildTargetEmptyState(preview, t, unsavedLabels)}
                   />
                 </div>
               </div>

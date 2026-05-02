@@ -34,12 +34,7 @@ describe('ConflictResolveDialog (TC-39)', () => {
     vi.clearAllMocks();
     queryClient = new QueryClient();
     useAppStore.setState({
-      conflictDialog: {
-        open: false,
-        conflict: null,
-      },
-      closeConflictDialog: () =>
-        useAppStore.setState({ conflictDialog: { open: false, conflict: null } }),
+      workspaceDialogState: { kind: 'none' },
     });
   });
 
@@ -49,8 +44,8 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
   const openDialog = () => {
     useAppStore.setState({
-      conflictDialog: {
-        open: true,
+      workspaceDialogState: {
+        kind: 'conflict',
         conflict: {
           type: 'RenameConflict',
           base_name: 'TestMod',
@@ -95,12 +90,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
     });
 
     // Check header
-    expect(screen.getByText('Name Conflict Detected')).toBeInTheDocument();
+    expect(screen.getByText('folder_grid:resolution.title')).toBeInTheDocument();
 
     // Check fetching logic
     await waitFor(() => {
-      expect(screen.getByText('Enabled Version')).toBeInTheDocument();
-      expect(screen.getByText('Disabled Version')).toBeInTheDocument();
+      expect(screen.getByText('folder_grid:resolution.enabled_label')).toBeInTheDocument();
+      expect(screen.getByText('folder_grid:resolution.disabled_label')).toBeInTheDocument();
     });
 
     expect(invoke).toHaveBeenCalledWith('get_conflict_details', {
@@ -119,12 +114,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
     act(() => openDialog());
 
-    await waitFor(() => screen.getByText('Keep Enabled'));
+    await waitFor(() => screen.getByText('common:actions.keep_enabled'));
 
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined); // for resolve_conflict
 
     act(() => {
-      fireEvent.click(screen.getByText(/Keep Enabled/));
+      fireEvent.click(screen.getByText('common:actions.keep_enabled'));
     });
 
     await waitFor(() => {
@@ -133,7 +128,7 @@ describe('ConflictResolveDialog (TC-39)', () => {
         duplicatePath: 'C:\\Mods\\DISABLED TestMod',
         strategy: 'keep_enabled',
       });
-      expect(useAppStore.getState().conflictDialog.open).toBe(false);
+      expect(useAppStore.getState().workspaceDialogState.kind).toBe('none');
     });
   });
 
@@ -147,12 +142,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
     act(() => openDialog());
 
-    await waitFor(() => screen.getByText('Keep Disabled'));
+    await waitFor(() => screen.getByText('common:actions.keep_disabled'));
 
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
     act(() => {
-      fireEvent.click(screen.getByText(/Keep Disabled/));
+      fireEvent.click(screen.getByText('common:actions.keep_disabled'));
     });
 
     await waitFor(() => {
@@ -174,12 +169,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
     act(() => openDialog());
 
-    await waitFor(() => screen.getByText('Treat as Two Separate Mods'));
+    await waitFor(() => screen.getByText('common:actions.separate'));
 
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
     act(() => {
-      fireEvent.click(screen.getByText('Treat as Two Separate Mods'));
+      fireEvent.click(screen.getByText('common:actions.separate'));
     });
 
     await waitFor(() => {

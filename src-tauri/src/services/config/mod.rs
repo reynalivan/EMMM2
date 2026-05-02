@@ -4,7 +4,7 @@ pub mod pin_guard;
 pub use models::*;
 
 use crate::repo::{game_repo, settings_repo};
-use pin_guard::{validate_pin_format, PinGuardState, PinVerifyStatus};
+use pin_guard::{validate_pin_format, PinVerifyStatus};
 use sqlx::SqlitePool;
 use std::sync::Mutex;
 use tauri::AppHandle;
@@ -12,7 +12,6 @@ use tauri::AppHandle;
 pub struct ConfigService {
     pool: SqlitePool,
     settings: Mutex<AppSettings>,
-    pin_guard: Mutex<PinGuardState>,
 }
 
 impl ConfigService {
@@ -36,15 +35,9 @@ impl ConfigService {
         // 2. Load current settings from DB
         let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
-        let mut pin_guard = PinGuardState::default();
-        if let Some(failed) = settings.safe_mode.failed_attempts {
-            pin_guard = PinGuardState::new(failed, settings.safe_mode.lockout_until_ts);
-        }
-
         Self {
             pool,
             settings: Mutex::new(settings),
-            pin_guard: Mutex::new(pin_guard),
         }
     }
 
@@ -56,15 +49,9 @@ impl ConfigService {
 
         let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
-        let mut pin_guard = PinGuardState::default();
-        if let Some(failed) = settings.safe_mode.failed_attempts {
-            pin_guard = PinGuardState::new(failed, settings.safe_mode.lockout_until_ts);
-        }
-
         Self {
             pool,
             settings: Mutex::new(settings),
-            pin_guard: Mutex::new(pin_guard),
         }
     }
 
@@ -140,13 +127,10 @@ impl ConfigService {
         let language = kv.get("language").cloned().unwrap_or_else(|| "en".into());
         let active_game_id = kv.get("active_game_id").cloned();
 
-        let mut safe_mode: SafeModeConfig = kv
+        let safe_mode: SafeModeConfig = kv
             .get("safe_mode")
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
-
-        // Epic 7 Requirement: App ALWAYS starts in SFW mode regardless of previous session.
-        safe_mode.enabled = true;
 
         let ai: AiConfig = kv
             .get("ai")
@@ -168,11 +152,6 @@ impl ConfigService {
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
 
-        let sync_timestamps = kv
-            .get("sync_timestamps")
-            .and_then(|v| serde_json::from_str(v).ok())
-            .unwrap_or_default();
-
         AppSettings {
             theme,
             language,
@@ -183,7 +162,6 @@ impl ConfigService {
             auto_close_launcher,
             hotkeys,
             keyviewer,
-            sync_timestamps,
         }
     }
 
@@ -235,12 +213,6 @@ impl ConfigService {
             .await
             .map_err(|e| e.to_string())?;
 
-        let sync_timestamps_json =
-            serde_json::to_string(&settings.sync_timestamps).map_err(|e| e.to_string())?;
-        settings_repo::set_setting(pool, "sync_timestamps", &sync_timestamps_json)
-            .await
-            .map_err(|e| e.to_string())?;
-
         // Persist games
         for game in &settings.games {
             let row = config_to_game_row(game);
@@ -258,11 +230,6 @@ impl ConfigService {
             .settings
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = AppSettings::default();
-
-        *self
-            .pin_guard
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = PinGuardState::default();
     }
 
     pub fn get_settings(&self) -> AppSettings {
@@ -288,119 +255,37 @@ impl ConfigService {
     }
 
     pub fn verify_pin_status(&self, pin: &str) -> PinVerifyStatus {
-        use std::time::{Duration, SystemTime};
-
-        // === PHASE 1: Check DB for lockout status (source of truth) ===
-        let db_lockout_ts = {
-            let settings = self
-                .settings
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            settings.safe_mode.lockout_until_ts
-        };
-
-        let now = SystemTime::now();
-        if let Some(lockout_ts) = db_lockout_ts {
-            let lockout_time = SystemTime::UNIX_EPOCH + Duration::from_secs(lockout_ts);
-            if now < lockout_time {
-                // Lockout is still active in DB - return locked immediately
-                let remaining = lockout_time
-                    .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs()
-                    .max(1);
-                return PinVerifyStatus {
+        let pool = self.pool.clone();
+        Self::run_async(async move {
+            let before = crate::services::pin_service::get_status(&pool)
+                .await
+                .map_err(|error| error.to_string())?;
+            if before.is_locked {
+                return Ok(PinVerifyStatus {
                     valid: false,
                     attempts_remaining: 0,
-                    locked_seconds_remaining: remaining,
-                };
-            } else {
-                // Lockout expired in DB - clear it
-                let mut updated_settings = self
-                    .settings
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .clone();
-                updated_settings.safe_mode.lockout_until_ts = None;
-                updated_settings.safe_mode.failed_attempts = None;
-                let _ = self.save_settings(updated_settings.clone());
-
-                // Reset in-memory guard state
-                self.pin_guard
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .reset();
+                    locked_seconds_remaining: before.lockout_seconds_remaining.max(0) as u64,
+                });
             }
-        }
 
-        // === PHASE 2: Check PIN ===
-        let (pin_hash, original_snapshot) = {
-            let settings = self
-                .settings
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let safe_mode = &settings.safe_mode;
-            let snapshot = (
-                safe_mode.failed_attempts.unwrap_or(0),
-                safe_mode.lockout_until_ts,
-            );
-            (safe_mode.pin_hash.clone(), snapshot)
-        };
+            let valid = crate::services::pin_service::verify_pin(&pool, pin)
+                .await
+                .map_err(|error| error.to_string())?;
+            let after = crate::services::pin_service::get_status(&pool)
+                .await
+                .map_err(|error| error.to_string())?;
 
-        let new_status = {
-            let mut guard = self
-                .pin_guard
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            guard.verify(pin, pin_hash.as_deref())
-        };
-
-        // === PHASE 3: Persist lockout immediately if triggered ===
-        // Check if we just entered lockout state (attempts_remaining == 0 && !valid)
-        if !new_status.valid
-            && new_status.attempts_remaining == 0
-            && new_status.locked_seconds_remaining > 0
-        {
-            // 5 failed attempts reached - lockout triggered
-            // Persist immediately to DB to ensure it survives app crash
-            let mut updated_settings = self
-                .settings
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .clone();
-
-            let lockout_until =
-                SystemTime::now() + Duration::from_secs(new_status.locked_seconds_remaining);
-            let lockout_ts = lockout_until
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs();
-
-            updated_settings.safe_mode.lockout_until_ts = Some(lockout_ts);
-            updated_settings.safe_mode.failed_attempts = Some(0); // Reset in DB once lockout is set
-            let _ = self.save_settings(updated_settings);
-
-            return new_status;
-        }
-
-        // === PHASE 4: Sync other state changes to DB ===
-        let current_snapshot = self
-            .pin_guard
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .snapshot();
-        if current_snapshot != original_snapshot {
-            let mut updated_settings = self
-                .settings
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .clone();
-            updated_settings.safe_mode.failed_attempts = Some(current_snapshot.0);
-            updated_settings.safe_mode.lockout_until_ts = current_snapshot.1;
-            let _ = self.save_settings(updated_settings);
-        }
-
-        new_status
+            Ok::<PinVerifyStatus, String>(PinVerifyStatus {
+                valid,
+                attempts_remaining: after.attempts_remaining.max(0) as u8,
+                locked_seconds_remaining: after.lockout_seconds_remaining.max(0) as u64,
+            })
+        })
+        .unwrap_or(PinVerifyStatus {
+            valid: false,
+            attempts_remaining: 0,
+            locked_seconds_remaining: 0,
+        })
     }
 
     pub fn verify_pin(&self, pin: &str) -> bool {
@@ -430,10 +315,12 @@ impl ConfigService {
         settings.safe_mode.pin_hash = Some(password_hash);
 
         self.save_settings(settings)?;
-        self.pin_guard
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .reset();
+        let pool = self.pool.clone();
+        Self::run_async(async {
+            crate::services::pin_service::set_pin(&pool, pin, None)
+                .await
+                .map_err(|error| error.to_string())
+        })?;
 
         Ok(())
     }
@@ -491,14 +378,16 @@ impl ConfigService {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        settings.safe_mode.pin_hash = Some(password_hash);
-        settings.safe_mode.recovery_code_hash = Some(recovery_hash);
+        settings.safe_mode.pin_hash = Some(password_hash.clone());
+        settings.safe_mode.recovery_code_hash = Some(recovery_hash.clone());
 
         self.save_settings(settings)?;
-        self.pin_guard
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .reset();
+        let pool = self.pool.clone();
+        Self::run_async(async move {
+            crate::repo::pin_repo::set_pin(&pool, &password_hash, Some(recovery_hash.as_str()))
+                .await
+                .map_err(|error| error.to_string())
+        })?;
 
         Ok(recovery_code)
     }
@@ -544,10 +433,12 @@ impl ConfigService {
         settings.safe_mode.failed_attempts = None;
         settings.safe_mode.lockout_until_ts = None;
         self.save_settings(settings)?;
-        self.pin_guard
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .reset();
+        let pool = self.pool.clone();
+        Self::run_async(async move {
+            crate::repo::pin_repo::clear_pin(&pool)
+                .await
+                .map_err(|error| error.to_string())
+        })?;
 
         Ok(true)
     }
@@ -579,16 +470,6 @@ impl ConfigService {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         settings.auto_close_launcher = enabled;
-        self.save_settings(settings)
-    }
-
-    pub fn update_sync_timestamp(&self, game_id: &str, ts: u64) -> Result<(), String> {
-        let mut settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        settings.sync_timestamps.insert(game_id.to_string(), ts);
         self.save_settings(settings)
     }
 

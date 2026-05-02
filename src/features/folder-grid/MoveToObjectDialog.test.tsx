@@ -18,16 +18,15 @@ describe('MoveToObjectDialog', () => {
         objects={dummyObjects}
         currentObjectId="idle"
         targetModPaths={['mod/path']}
-        currentStatus={true}
         onSubmit={onSubmit}
       />,
     );
 
-    expect(screen.getByText('Move to Object')).toBeInTheDocument();
+    expect(screen.getByText('folder_grid:move.title')).toBeInTheDocument();
     expect(screen.getByText('Zeta')).toBeInTheDocument();
 
     // Search for Alpha
-    fireEvent.change(screen.getByPlaceholderText('Search objects...'), {
+    fireEvent.change(screen.getByPlaceholderText('folder_grid:move.placeholder'), {
       target: { value: 'alp' },
     });
 
@@ -36,7 +35,7 @@ describe('MoveToObjectDialog', () => {
 
     // Select and submit
     fireEvent.click(screen.getByText('Alpha'));
-    fireEvent.click(screen.getByText('Move'));
+    fireEvent.click(screen.getByText('common:actions.move'));
 
     expect(onSubmit).toHaveBeenCalledWith('2', 'disabled');
   });
@@ -49,13 +48,12 @@ describe('MoveToObjectDialog', () => {
         objects={dummyObjects}
         currentObjectId="2" // Alpha is current
         targetModPaths={['mod/path']}
-        currentStatus={true}
         onSubmit={vi.fn()}
       />,
     );
 
     const alphaButton = screen.getByText('Alpha').closest('button');
     expect(alphaButton).toBeDisabled();
-    expect(screen.getByText('(Current)')).toBeInTheDocument();
+    expect(screen.getByText('folder_grid:move.current_marker')).toBeInTheDocument();
   });
 });

@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
 import { SaveCollectionModal } from '../../../features/collections/components/SaveCollectionModal';
 import { ApplyCollectionModal } from '../../../features/collections/components/ApplyCollectionModal';
-import { useCollections, useCorridor } from '../../../features/collections/hooks';
-import { getCorridorStateName } from '../../../lib/corridorLabels';
+import { useCollections } from '../../../features/collections/hooks/useCollections';
+import { useCorridor } from '../../../features/collections/hooks/useCorridor';
+import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
 import { useState } from 'react';
 import { useSafeModeToggle } from '../../../features/collections/hooks/useSafeModeToggle';
 import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
@@ -30,12 +31,17 @@ export default function ContextControls() {
   const [applyModalCollectionId, setApplyModalCollectionId] = useState<string | null>(null);
 
   const activeNamedCollectionId = corridorQuery.data?.active_collection_id ?? null;
+  const unsavedLabels = useUnsavedLabels();
   const triggerText =
     activeGameId && corridorQuery.status === 'pending'
       ? t('context.loading')
-      : corridorQuery.data?.is_dirty
-        ? getCorridorStateName(null)
-        : getCorridorStateName(corridorQuery.data?.active_collection_name);
+      : getCollectionDisplayName({
+          name: corridorQuery.data?.is_dirty ? null : corridorQuery.data?.active_collection_name,
+          isUnsaved:
+            corridorQuery.data?.is_dirty || corridorQuery.data?.active_collection_is_unsaved,
+          isSafe: corridorQuery.data?.is_safe ?? safeMode,
+          labels: unsavedLabels,
+        });
   const corridorCollections = collections.filter(
     (collection) => collection.is_safe === safeMode && !collection.is_undo_target,
   );
@@ -43,6 +49,7 @@ export default function ContextControls() {
   const handleApplyClick = (e: React.MouseEvent, id: string, _name: string) => {
     e.stopPropagation();
     if (!activeGameId) return;
+    if (activeNamedCollectionId === id) return;
 
     setApplyModalCollectionId(id);
     if (document.activeElement instanceof HTMLElement) {
@@ -114,12 +121,24 @@ export default function ContextControls() {
                     {corridorCollections.map((c) => (
                       <li key={c.id}>
                         <button
-                          className={`text-sm justify-between ${activeNamedCollectionId === c.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-base-content/10'}`}
+                          className={`text-sm justify-between ${
+                            activeNamedCollectionId === c.id
+                              ? 'bg-primary/10 text-primary font-medium cursor-default'
+                              : 'hover:bg-base-content/10'
+                          }`}
                           onClick={(e) => handleApplyClick(e, c.id, c.name)}
+                          disabled={activeNamedCollectionId === c.id}
                         >
-                          <span className="truncate max-w-32.5">{c.name}</span>
+                          <span className="truncate max-w-32.5">
+                            {getCollectionDisplayName({
+                              name: c.name,
+                              isUnsaved: c.is_unsaved,
+                              isSafe: c.is_safe,
+                              labels: unsavedLabels,
+                            })}
+                          </span>
                           <span className="badge badge-xs badge-ghost opacity-75">
-                            {c.member_count}
+                            {c.mod_count}
                           </span>
                         </button>
                       </li>

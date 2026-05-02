@@ -28,7 +28,9 @@ export function AutoDetectResult({
   const getGameTypeKey = (type?: string | number) => {
     if (type === undefined || type === null) return '';
     const typeStr = String(type);
-    return t(`manual_setup.game_types.${typeStr.toLowerCase()}`, { defaultValue: typeStr });
+    const translationKey = `manual_setup.game_types.${typeStr.toLowerCase()}`;
+    const translatedValue = t(translationKey);
+    return translatedValue === translationKey ? typeStr : translatedValue;
   };
 
   return (

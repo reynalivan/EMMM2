@@ -60,8 +60,7 @@ pub async fn delete_mod_service(
         PathGuard::validate_path(config, gid, &path).map_err(AppError::Security)?;
     }
 
-    let is_safe = if let Some(ref gid) = game_id {
-        // Need to find relative path to query DB is_safe BEFORE deletion
+    let (is_safe, object_id) = if let Some(ref gid) = game_id {
         let mods_path = crate::repo::game_repo::get_mod_path(pool, gid)
             .await
             .ok()
@@ -71,24 +70,29 @@ pub async fn delete_mod_service(
             let base = Path::new(&mp);
             let rel = Path::new(&path)
                 .strip_prefix(base)
-                .map(|p| p.to_string_lossy().to_string())
+                .map(|value| value.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.clone());
 
-            sqlx::query_scalar::<_, i32>(
+            let safe = sqlx::query_scalar::<_, i32>(
                 "SELECT is_safe FROM mods WHERE game_id = ? AND folder_path = ? LIMIT 1",
             )
             .bind(gid)
-            .bind(rel)
+            .bind(&rel)
             .fetch_optional(pool)
             .await
             .ok()
             .flatten()
-            .map(|v| v != 0)
+            .map(|value| value != 0);
+            let object = crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &rel, gid)
+                .await
+                .ok()
+                .flatten();
+            (safe, object)
         } else {
-            None
+            (None, None)
         }
     } else {
-        None
+        (None, None)
     };
 
     let path_obj = Path::new(&path);
@@ -97,9 +101,25 @@ pub async fn delete_mod_service(
     move_to_trash(path_obj, &trash_dir, game_id.clone())?;
     let _ = crate::repo::mod_repo::delete_mod_by_path(pool, &path).await;
 
-    // Trigger Dirty State: Register unsaved change so TopBar switches to "Unsaved"
     if let (Some(gid), Some(safe)) = (game_id, is_safe) {
-        let _ = crate::services::collection_service::handle_dirty_state(pool, &gid, safe).await;
+        let changed_object_ids = object_id.into_iter().collect::<Vec<_>>();
+        let _ = crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+            pool,
+            &gid,
+            &changed_object_ids,
+            false,
+        )
+        .await;
+        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+            pool,
+            config,
+            state.suppressor.clone(),
+            &gid,
+            &[safe],
+            true,
+            true,
+        )
+        .await;
     }
 
     Ok(())
@@ -197,7 +217,6 @@ pub fn move_to_trash(
             AppError::Io(format!("Failed to move to trash: {e}"))
         })?;
 
-
     log::info!("Moved '{}' to trash (id: {})", folder_name, trash_id);
     Ok(metadata)
 }
@@ -266,7 +285,6 @@ pub fn restore_from_trash(
             }
             AppError::Io(format!("Failed to restore from trash: {e}"))
         })?;
-
 
     // Cleanup trash entry
     fs::remove_dir_all(&entry_dir)

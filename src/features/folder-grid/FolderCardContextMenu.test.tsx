@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import FolderCardContextMenu from './FolderCardContextMenu';
-import type { ModFolder } from '../../types/mod';
+import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '../../types/workspace';
 
 // Mock Lucide icons
 vi.mock('lucide-react', () => ({
@@ -20,8 +20,74 @@ vi.mock('lucide-react', () => ({
 }));
 
 // Mock custom hooks
-vi.mock('../../hooks/useFolders', () => ({
+vi.mock('../../hooks/useFolderMutations', () => ({
   usePasteThumbnail: () => ({ mutateAsync: vi.fn() }),
+}));
+vi.mock('../../hooks/useModContextMenuItems', () => ({
+  useModContextMenuItems: (props: {
+    folder: { is_enabled: boolean; is_favorite: boolean };
+    onOpenMoveDialog?: (folder: WorkspaceExplorerNode) => void;
+    onEnableOnlyThis?: () => void;
+    onToggleFavorite: () => void;
+    onDelete: () => void;
+    onRename: () => void;
+    onToggleEnabled: () => void;
+  }) => {
+    const items = [
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: () => null,
+        onClick: props.onRename,
+      },
+      {
+        id: 'toggle-enabled',
+        label: props.folder.is_enabled ? 'Disable' : 'Enable',
+        icon: () => null,
+        onClick: props.onToggleEnabled,
+      },
+      {
+        id: 'favorite',
+        label: props.folder.is_favorite ? 'Unfavorite' : 'Favorite',
+        icon: () => null,
+        onClick: props.onToggleFavorite,
+      },
+      {
+        id: 'delete',
+        label: 'Delete',
+        icon: () => null,
+        onClick: props.onDelete,
+      },
+    ];
+
+    if (props.onOpenMoveDialog) {
+      items.push({
+        id: 'move',
+        label: 'Move to Object...',
+        icon: () => null,
+        onClick: () => props.onOpenMoveDialog?.(mockFolder),
+      });
+    }
+
+    if (props.onEnableOnlyThis && !props.folder.is_enabled) {
+      items.push({
+        id: 'enable-only-this',
+        label: 'Enable Only This',
+        icon: () => null,
+        onClick: props.onEnableOnlyThis,
+      });
+    }
+
+    return items;
+  },
+}));
+
+vi.mock('../mod-runtime/actions/useModContextMenuActions', () => ({
+  useModContextMenuActions: () => ({
+    openExplorer: vi.fn(),
+    pasteThumbnailFromClipboard: vi.fn(),
+    importThumbnail: vi.fn(),
+  }),
 }));
 
 // Mock tauri plugins
@@ -42,19 +108,54 @@ vi.mock('../../components/ui/ContextMenu', () => ({
   ContextMenuSeparator: () => <hr role="separator" />,
 }));
 
-const mockFolder: ModFolder = {
+const baseCapabilities: WorkspaceCapabilities = {
+  can_toggle: true,
+  can_rename: true,
+  can_delete: true,
+  can_move: true,
+  can_toggle_safe: true,
+  can_sync: true,
+  can_enable_only_this: true,
+  can_pin: true,
+  can_edit_metadata: true,
+  can_reveal_in_explorer: true,
+  can_move_category: false,
+  can_open_in_explorer: true,
+};
+
+const mockFolder: WorkspaceExplorerNode = {
   path: 'E:\\Mods\\Char\\Ayaka',
   folder_name: 'Ayaka',
   name: 'Ayaka Mod',
-  game_id: 'genshin',
+  node_type: 'VariantContainer',
+  classification_reasons: [],
   is_enabled: false,
   is_favorite: false,
   is_safe: true,
-  node_type: 'ModFolder',
-  has_thumbnail: false,
-  items: [],
-  enabled_count: 0,
-} as unknown as ModFolder;
+  is_directory: true,
+  thumbnail_path: null,
+  modified_at: 0,
+  size_bytes: 0,
+  has_info_json: false,
+  is_misplaced: false,
+  metadata: null,
+  category: null,
+  warnings: [],
+  node_kind: 'terminal_mod',
+  display_mode: 'variant',
+  type_chip: 'variant',
+  display_name: 'Ayaka Mod',
+  is_effectively_active: false,
+  ancestor_disabled: false,
+  inactive_reason: null,
+  warning_state: 'none',
+  primary_warning: null,
+  switch_state: 'disabled',
+  switch_reason: null,
+  switch_policy_key: 'mod',
+  capabilities: baseCapabilities,
+  can_navigate: false,
+};
 
 describe('FolderCardContextMenu (TC-15)', () => {
   it('TC-15-009: Renders Move to Object when onOpenMoveDialog is provided', () => {

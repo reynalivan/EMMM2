@@ -92,12 +92,10 @@ export default function DownloadsPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>{t('downloads.table_filename', { defaultValue: 'File Name' })}</th>
-                    <th>{t('downloads.table_status', { defaultValue: 'Status' })}</th>
-                    <th>{t('downloads.table_progress', { defaultValue: 'Progress' })}</th>
-                    <th className="text-right">
-                      {t('downloads.table_actions', { defaultValue: 'Actions' })}
-                    </th>
+                    <th>{t('downloads.table_filename')}</th>
+                    <th>{t('downloads.table_status')}</th>
+                    <th>{t('downloads.table_progress')}</th>
+                    <th className="text-right">{t('downloads.table_actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,7 +138,7 @@ export default function DownloadsPage() {
                                 <span>
                                   {item.bytes_total
                                     ? formatBytes(item.bytes_total)
-                                    : t('downloads.unknown_size', { defaultValue: 'Unknown size' })}
+                                    : t('downloads.unknown_size')}
                                 </span>
                               </div>
                             </div>

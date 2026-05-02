@@ -1,13 +1,32 @@
 use crate::database::models::GameType;
-use crate::services::objects::query::{
-    gc_lost_objects, get_category_counts_service, get_object_by_id_service,
-};
+use crate::services::disk_reconcile::reconcile::reconcile_disk_projection;
+use crate::services::disk_reconcile::types::{DiskReconcileReason, DiskReconcileStatus};
+use crate::services::objects::query::{get_category_counts_service, get_object_by_id_service};
 use crate::test_utils::{insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture};
 use std::fs;
 use tempfile::TempDir;
 
 async fn setup_test_db() -> sqlx::SqlitePool {
     crate::test_utils::init_test_db().await.pool
+}
+
+async fn run_full_disk_reconcile(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    mods_path: &std::path::Path,
+) {
+    reconcile_disk_projection(
+        pool,
+        game_id,
+        mods_path,
+        &[],
+        &DiskReconcileReason::ManualRepair,
+        &[],
+        true,
+        None,
+    )
+    .await
+    .expect("Disk Reconcile should succeed in test");
 }
 
 #[tokio::test]
@@ -113,7 +132,7 @@ async fn test_get_category_counts_service() {
 }
 
 #[tokio::test]
-async fn test_gc_lost_objects_removes_missing() {
+async fn test_disk_reconcile_removes_missing_object_rows() {
     let pool = setup_test_db().await;
     let temp_dir = TempDir::new().unwrap();
     let mod_path = temp_dir.path().join("mods_dir");
@@ -163,10 +182,7 @@ async fn test_gc_lost_objects_removes_missing() {
     .await
     .unwrap();
 
-    let lost = gc_lost_objects(&pool, "g_gc_lost").await.unwrap();
-
-    assert_eq!(lost.len(), 1);
-    assert_eq!(lost[0], "MissingObj");
+    run_full_disk_reconcile(&pool, "g_gc_lost", &mod_path).await;
 
     let remaining: Vec<String> =
         sqlx::query_scalar("SELECT id FROM objects WHERE game_id = 'g_gc_lost'")
@@ -179,7 +195,7 @@ async fn test_gc_lost_objects_removes_missing() {
 }
 
 #[tokio::test]
-async fn test_gc_lost_objects_keeps_unicode_folder_with_ascii_case_variants() {
+async fn test_disk_reconcile_keeps_unicode_folder_with_ascii_case_variants() {
     let pool = setup_test_db().await;
     let temp_dir = TempDir::new().unwrap();
     let mod_path = temp_dir.path().join("mods_dir");
@@ -212,9 +228,7 @@ async fn test_gc_lost_objects_keeps_unicode_folder_with_ascii_case_variants() {
     .await
     .unwrap();
 
-    let lost = gc_lost_objects(&pool, "g_gc_unicode").await.unwrap();
-
-    assert!(lost.is_empty());
+    run_full_disk_reconcile(&pool, "g_gc_unicode", &mod_path).await;
 
     let remaining: Vec<String> =
         sqlx::query_scalar("SELECT id FROM objects WHERE game_id = 'g_gc_unicode'")
@@ -222,4 +236,59 @@ async fn test_gc_lost_objects_keeps_unicode_folder_with_ascii_case_variants() {
             .await
             .unwrap();
     assert_eq!(remaining, vec!["o_unicode".to_string()]);
+}
+
+#[tokio::test]
+async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
+    let pool = setup_test_db().await;
+    let temp_dir = TempDir::new().unwrap();
+    let missing_mod_path = temp_dir.path().join("missing_mods_dir");
+
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_missing_path",
+            name: "ZZZ",
+            game_type: GameType::GIMI,
+            path: "/game_missing_path",
+            mods_path: Some(missing_mod_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "o_missing_path",
+            game_id: "g_missing_path",
+            name: "Obj",
+            folder_path: Some("existing_index_row"),
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    let outcome = reconcile_disk_projection(
+        &pool,
+        "g_missing_path",
+        &missing_mod_path,
+        &[],
+        &DiskReconcileReason::ManualRepair,
+        &[],
+        true,
+        None,
+    )
+    .await
+    .expect("missing source should return a typed no-write result");
+
+    assert_eq!(outcome.status, DiskReconcileStatus::SourceUnavailable);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
+        .bind("g_missing_path")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
 }

@@ -1,10 +1,12 @@
 import React from 'react';
 import { ContextMenuItem, ContextMenuSeparator } from '../../components/ui/ContextMenu';
 import type { ModFolder } from '../../types/mod';
+import type { WorkspaceExplorerNode } from '../../types/workspace';
 import { useModContextMenuItems } from '../../hooks/useModContextMenuItems';
+import { useModContextMenuActions } from '../mod-runtime/actions/useModContextMenuActions';
 
 interface FolderCardContextMenuProps {
-  folder: ModFolder;
+  folder: WorkspaceExplorerNode;
   onRename: () => void;
   onDelete: () => void;
   onToggle: () => void;
@@ -28,6 +30,7 @@ export default function FolderCardContextMenu({
   onToggleSafe,
   onSyncWithDb,
 }: FolderCardContextMenuProps) {
+  const contextActions = useModContextMenuActions(folder);
   const items = useModContextMenuItems({
     folder,
     onRename,
@@ -39,6 +42,9 @@ export default function FolderCardContextMenu({
     onOpenMoveDialog,
     onNavigateModPack: onNavigate,
     onSyncWithDb,
+    onOpenExplorer: contextActions.openExplorer,
+    onPasteThumbnail: contextActions.pasteThumbnailFromClipboard,
+    onImportThumbnail: contextActions.importThumbnail,
   });
 
   return (

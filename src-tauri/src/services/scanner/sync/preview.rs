@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 use std::path::Path;
 use tauri::ipc::Channel;
 
-use super::helpers::auto_matched_candidate;
+use super::helpers::{auto_matched_candidate, canonical_entry_key};
 use super::types::{ScanPreviewItem, ScoredCandidate};
 use crate::services::scanner::core::types::{
     match_status_label, staged_confidence_label, ScanEvent,
@@ -13,7 +13,7 @@ use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationCo
 use crate::services::scanner::deep_matcher::models::result_summary::score_to_percentage;
 use crate::services::scanner::deep_matcher::models::types;
 
-/// Phase 1: Scan folders and run Deep Matcher, return preview items without writing to DB.
+/// Phase 1: Scan folders and run the Deep Match Scanner preview without writing to DB.
 pub async fn scan_preview(
     pool: &SqlitePool,
     game_id: &str,
@@ -60,9 +60,6 @@ pub async fn scan_preview(
         .await
         .map_err(|e| e.to_string())?;
 
-        let already_in_db = existing.is_some();
-        let already_matched = check_already_matched(pool, &existing, master_db).await?;
-
         // Run phased matcher (Quick first, then FullScoring fallback).
         let content = walker::scan_folder_content(&candidate.path, 3);
         let match_result = deep_matcher::match_folder_phased(
@@ -74,13 +71,19 @@ pub async fn scan_preview(
         );
         let auto_candidate = auto_matched_candidate(&match_result);
 
-        let matched_object = auto_candidate.map(|c| c.name.clone());
+        let matched_alias_name = auto_candidate.map(|c| c.name.clone());
+        let matched_entry_key = matched_alias_name
+            .as_ref()
+            .map(|name| canonical_entry_key(name));
         let object_type = auto_candidate.map(|c| c.object_type.clone());
         let match_level = match_status_label(&match_result.status).to_string();
         let confidence = staged_confidence_label(&match_result).to_string();
         let match_detail = Some(match_result.summary());
+        let already_in_db = existing.is_some();
+        let already_matched =
+            check_already_matched(pool, &existing, matched_entry_key.as_deref()).await?;
 
-        let db_entry = matched_object
+        let db_entry = matched_alias_name
             .as_ref()
             .and_then(|name| master_db.entries.iter().find(|e| &e.name == name));
 
@@ -97,7 +100,7 @@ pub async fn scan_preview(
             .map(|e| serde_json::to_string(&e.custom_skins).unwrap_or_else(|_| "[]".to_string()));
 
         if let Some(channel) = &on_progress {
-            if let Some(ref matched) = matched_object {
+            if let Some(ref matched) = matched_alias_name {
                 let _ = channel.send(ScanEvent::Matched {
                     folder_name: candidate.display_name.clone(),
                     object_name: matched.clone(),
@@ -121,7 +124,8 @@ pub async fn scan_preview(
             folder_path: folder_path_str,
             display_name: candidate.display_name.clone(),
             is_disabled: candidate.is_disabled,
-            matched_object,
+            matched_entry_key,
+            matched_alias_name,
             match_level,
             confidence,
             confidence_score: match_result.confidence_score(),
@@ -141,7 +145,10 @@ pub async fn scan_preview(
     }
 
     if let Some(channel) = &on_progress {
-        let matched = items.iter().filter(|i| i.matched_object.is_some()).count();
+        let matched = items
+            .iter()
+            .filter(|i| i.matched_entry_key.is_some())
+            .count();
         let _ = channel.send(ScanEvent::Finished {
             matched,
             unmatched: total - matched,
@@ -154,8 +161,11 @@ pub async fn scan_preview(
 async fn check_already_matched(
     pool: &SqlitePool,
     existing: &Option<(String, Option<String>)>,
-    master_db: &deep_matcher::MasterDb,
+    expected_entry_key: Option<&str>,
 ) -> Result<bool, String> {
+    let Some(expected_entry_key) = expected_entry_key else {
+        return Ok(false);
+    };
     let (_, obj_id) = match existing {
         Some(r) => r,
         None => return Ok(false),
@@ -165,18 +175,11 @@ async fn check_already_matched(
         return Ok(false);
     };
 
-    let obj_name = crate::repo::object_repo::get_object_name_by_id(pool, id)
+    let matched_entry_key = crate::repo::object_repo::get_matched_entry_key_by_id(pool, id)
         .await
         .map_err(|e| e.to_string())?;
 
-    match obj_name {
-        Some(name) => {
-            // Only "already matched" if the object name exists in MasterDB
-            // (i.e., it was matched to a real character/weapon, not a folder-name placeholder)
-            Ok(master_db.entries.iter().any(|e| e.name == name))
-        }
-        None => Ok(false),
-    }
+    Ok(matched_entry_key.as_deref() == Some(expected_entry_key))
 }
 
 fn resolve_thumbnail(

@@ -39,8 +39,10 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
 
   it('TC-01-08: Routes to /welcome on FreshInstall status', async () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
+      if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('FreshInstall');
       if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'close_splashscreen') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -58,8 +60,11 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
 
   it('TC-01-09: Routes to /dashboard on HasConfig status', async () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
+      if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('HasConfig');
+      if (cmd === 'check_boot_security') return Promise.resolve(false);
       if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'close_splashscreen') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -77,8 +82,10 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
 
   it('TC-01-10: Falls back to Dashboard on IPC timeout or error', async () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
+      if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.reject(new Error('Backend missing'));
       if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'close_splashscreen') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -91,6 +98,27 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     await waitFor(() => {
       // Per implementation in App.tsx (Fallback for frontend-only dev mode)
       expect(screen.getByTestId('dashboard')).toBeInTheDocument();
+    });
+  });
+
+  it('TC-01-11: Locks the UI only when boot security requires it', async () => {
+    vi.mocked(invoke).mockImplementation((cmd) => {
+      if (cmd === 'app_startup_check') return Promise.resolve([]);
+      if (cmd === 'check_config_status') return Promise.resolve('HasConfig');
+      if (cmd === 'check_boot_security') return Promise.resolve(true);
+      if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'close_splashscreen') return Promise.resolve();
+      return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('app_locked_title')).toBeInTheDocument();
     });
   });
 });

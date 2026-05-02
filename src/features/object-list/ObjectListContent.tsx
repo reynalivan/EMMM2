@@ -9,9 +9,9 @@ import { ChevronUp, ChevronDown } from 'lucide-react';
 import ObjectRowItem from './ObjectRowItem';
 import CategorySection from './CategorySection';
 import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
+import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { FlatItem } from './useObjectListVirtualizer';
-import { isDisabledName } from '../../lib/disabledPrefix';
 
 interface ContentProps {
   parentRef: RefObject<HTMLDivElement | null>;
@@ -19,7 +19,7 @@ interface ContentProps {
   flatObjectItems: FlatItem[];
   selectedObjectFolderPath: string | null;
   selectedObjectType: string | null;
-  setSelectedObjectFolderPath: (folderPath: string | null) => void;
+  onSelectObject: (folderPath: string) => void;
   setSelectedObjectType: (type: string | null) => void;
   isMobile: boolean;
   /* Sticky */
@@ -43,13 +43,9 @@ export interface ContextMenuHandlerProps {
   categoryNames: { name: string; label?: string }[];
   handleEdit: (id: string) => void;
   handleSyncWithDb: (id: string, name: string) => void;
-  handleDelete: (path: string) => void;
   handleDeleteObject: (id: string) => void;
-  handleToggle: (path: string, currentEnabled: boolean) => void;
-  handleOpen: (path: string) => void;
   handlePin: (id: string) => void;
-  handleFavorite: (path: string) => void;
-  handleMoveCategory: (id: string, category: string, type: 'object' | 'folder') => void;
+  handleMoveCategory: (id: string, category: string, type: 'object') => void;
   handleRevealInExplorer?: (id: string) => void;
   handleEnableObject?: (id: string) => void;
   handleDisableObject?: (id: string) => void;
@@ -63,14 +59,9 @@ function renderContextMenu(item: ContextMenuTarget, ctx: ContextMenuHandlerProps
       isSyncing={ctx.isSyncing}
       categories={ctx.categoryNames}
       onEditObject={ctx.handleEdit}
-      onEditFolder={() => {}}
       onSyncWithDb={ctx.handleSyncWithDb}
-      onDelete={ctx.handleDelete}
       onDeleteObject={ctx.handleDeleteObject}
-      onToggle={ctx.handleToggle}
-      onOpen={ctx.handleOpen}
       onPin={ctx.handlePin}
-      onFavorite={ctx.handleFavorite}
       onMoveCategory={ctx.handleMoveCategory}
       onRevealInExplorer={ctx.handleRevealInExplorer}
       onEnableObject={ctx.handleEnableObject}
@@ -85,7 +76,7 @@ export default function ObjectListContent({
   flatObjectItems,
   selectedObjectFolderPath,
   selectedObjectType,
-  setSelectedObjectFolderPath,
+  onSelectObject,
   setSelectedObjectType,
   isMobile,
   stickyPosition,
@@ -165,19 +156,7 @@ export default function ObjectListContent({
                 }}
               >
                 <ContextMenu
-                  content={renderContextMenu(
-                    {
-                      type: 'object',
-                      id: item.obj.id,
-                      name: item.obj.name,
-                      objectType: item.obj.object_type,
-                      isEnabled: !isDisabledName(item.obj.folder_path?.split(/[/\\]/).pop() ?? ''),
-                      enabledCount: item.obj.enabled_count,
-                      modCount: item.obj.mod_count,
-                      isPinned: item.obj.is_pinned,
-                    },
-                    ctx,
-                  )}
+                  content={renderContextMenu(buildObjectContextMenuTarget(item.obj), ctx)}
                 >
                   <ObjectRowItem
                     obj={item.obj}
@@ -186,7 +165,7 @@ export default function ObjectListContent({
                       selectedObjectFolderPath !== null
                     }
                     isMobile={isMobile}
-                    onClick={() => setSelectedObjectFolderPath(item.obj.folder_path)}
+                    onClick={() => onSelectObject(item.obj.folder_path)}
                     isDropTarget={isDragging && hoveredItemId === item.obj.id}
                     isBulkSelected={isBulkSelected?.(item.obj.id)}
                     onToggleBulkSelect={onToggleBulkSelect}
@@ -248,21 +227,7 @@ function StickyRow({
       onClick={scrollToSelected}
     >
       <div className="bg-base-100/95 backdrop-blur-md rounded-lg relative">
-        <ContextMenu
-          content={renderContextMenu(
-            {
-              type: 'object',
-              id: item.obj.id,
-              name: item.obj.name,
-              objectType: item.obj.object_type,
-              isEnabled: !isDisabledName(item.obj.folder_path?.split(/[/\\]/).pop() ?? ''),
-              enabledCount: item.obj.enabled_count,
-              modCount: item.obj.mod_count,
-              isPinned: item.obj.is_pinned,
-            },
-            ctx,
-          )}
-        >
+        <ContextMenu content={renderContextMenu(buildObjectContextMenuTarget(item.obj), ctx)}>
           <ObjectRowItem obj={item.obj} isSelected isMobile={isMobile} onClick={scrollToSelected} />
         </ContextMenu>
         {/* Direction indicator */}

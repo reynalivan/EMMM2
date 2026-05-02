@@ -14,9 +14,9 @@ commands.allow = [
     "browser_clear_imported",
     "browser_clear_old_downloads",
     "browser_import_selected",
-    "import_get_queue",
-    "import_confirm_review",
-    "import_skip",
+    "browser_list_import_queue",
+    "browser_confirm_import",
+    "browser_cancel_import",
     "create_download_session",
 ]
 

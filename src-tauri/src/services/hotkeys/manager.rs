@@ -376,7 +376,7 @@ async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<(), String> 
         &game_id,
         target_enabled,
         std::path::PathBuf::from(&game.mod_path),
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        watcher_state.suppressor.clone(),
         &watcher_state,
         settings.clone(),
     )
@@ -433,6 +433,7 @@ async fn execute_cycle_preset(
         pool_state.inner(),
         &game_id,
         safe_mode_enabled,
+        None,
     )
     .await
     .map_err(|e| e.to_string())?;

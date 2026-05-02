@@ -73,8 +73,3 @@ export function deleteObject(id: string, force: boolean): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return commands.deleteObject({ id, force } as any);
 }
-
-/** Garbage-collect objects whose disk folders are missing. Called at sync points only. */
-export function gcLostObjects(gameId: string): Promise<string[]> {
-  return commands.gcLostObjects({ gameId });
-}

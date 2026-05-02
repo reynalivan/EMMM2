@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use crate::repo::object_repo::{get_runtime_descriptors, ObjectRuntimeDescriptor};
 use crate::services::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
 use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_display_name};
 
@@ -62,11 +63,11 @@ pub async fn scan_fs_folders(
 
 /// Builds a `ModFolder` from a filesystem `DirEntry`. Returns `None` if the entry
 /// should be skipped (non-directory, hidden, or no file name).
-pub fn build_mod_folder_from_fs_entry(
-    entry: std::fs::DirEntry,
+fn build_mod_folder_with_path(
+    path: &Path,
     sub_path: Option<&str>,
+    entry_meta: Option<std::fs::Metadata>,
 ) -> Option<ModFolder> {
-    let path = entry.path();
     if !path.is_dir() {
         return None;
     }
@@ -83,7 +84,6 @@ pub fn build_mod_folder_from_fs_entry(
     };
 
     // Call metadata once and reuse for both modified_at and size_bytes.
-    let entry_meta = entry.metadata().ok();
     let modified_at = entry_meta
         .as_ref()
         .and_then(|m| m.modified().ok())
@@ -100,6 +100,8 @@ pub fn build_mod_folder_from_fs_entry(
         node_type: node_type.as_str().to_string(),
         classification_reasons,
         id: None,
+        owner_object_id: None,
+        owner_object_folder_path: None,
         name: display_name,
         folder_name,
         path: path.to_string_lossy().to_string(),
@@ -120,11 +122,111 @@ pub fn build_mod_folder_from_fs_entry(
     })
 }
 
+pub fn build_mod_folder_from_path(path: &Path, sub_path: Option<&str>) -> Option<ModFolder> {
+    let entry_meta = std::fs::metadata(path).ok();
+    build_mod_folder_with_path(path, sub_path, entry_meta)
+}
+
+pub fn build_mod_folder_from_fs_entry(
+    entry: std::fs::DirEntry,
+    sub_path: Option<&str>,
+) -> Option<ModFolder> {
+    let path = entry.path();
+    let entry_meta = entry.metadata().ok();
+    build_mod_folder_with_path(&path, sub_path, entry_meta)
+}
+
+fn resolve_owner_descriptor<'a>(
+    owners: &'a [ObjectRuntimeDescriptor],
+    folder_path: &str,
+    mods_path: &str,
+) -> Option<&'a ObjectRuntimeDescriptor> {
+    let mut best_match: Option<&ObjectRuntimeDescriptor> = None;
+    let mut best_key_length = 0usize;
+
+    for owner in owners {
+        if !crate::services::path_key::path_starts_with_key(
+            folder_path,
+            &owner.folder_path,
+            Some(mods_path),
+        ) {
+            continue;
+        }
+
+        let key_length = owner.folder_path_key.len();
+        if key_length <= best_key_length {
+            continue;
+        }
+
+        best_match = Some(owner);
+        best_key_length = key_length;
+    }
+
+    best_match
+}
+
+fn enrich_owner_metadata(
+    response: &mut crate::services::explorer::types::FolderGridResponse,
+    owners: &[ObjectRuntimeDescriptor],
+    mods_path: &str,
+    sub_path: Option<&str>,
+) {
+    for folder in &mut response.children {
+        let Some(owner) = resolve_owner_descriptor(owners, &folder.path, mods_path) else {
+            continue;
+        };
+        folder.owner_object_id = Some(owner.id.clone());
+        folder.owner_object_folder_path = Some(owner.folder_path.clone());
+    }
+
+    let Some(relative_sub_path) = sub_path else {
+        return;
+    };
+    if relative_sub_path.is_empty() {
+        return;
+    }
+
+    let self_path = Path::new(mods_path).join(relative_sub_path);
+    let self_path_str = self_path.to_string_lossy().to_string();
+    let Some(owner) = resolve_owner_descriptor(owners, &self_path_str, mods_path) else {
+        return;
+    };
+    response.self_owner_object_id = Some(owner.id.clone());
+    response.self_owner_object_folder_path = Some(owner.folder_path.clone());
+}
+
+pub async fn list_mod_folders_for_game(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    mods_path: String,
+    sub_path: Option<String>,
+) -> Result<crate::services::explorer::types::FolderGridResponse, String> {
+    let owners = get_runtime_descriptors(pool, game_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut response = list_mod_folders_inner(mods_path.clone(), sub_path.clone()).await?;
+    enrich_owner_metadata(&mut response, &owners, &mods_path, sub_path.as_deref());
+    Ok(response)
+}
+
 pub async fn list_mod_folders_inner(
     mods_path: String,
     sub_path: Option<String>,
 ) -> Result<crate::services::explorer::types::FolderGridResponse, String> {
-    let base = Path::new(&mods_path);
+    let mut base = Path::new(&mods_path).to_path_buf();
+    let mut is_root_disabled = false;
+
+    if !base.exists() {
+        // Check if the root directory itself is disabled (prefixed with "DISABLED ")
+        if let (Some(parent), Some(name)) = (base.parent(), base.file_name()) {
+            let disabled_name = format!("{}{}", crate::DISABLED_PREFIX, name.to_string_lossy());
+            let disabled_base = parent.join(disabled_name);
+            if disabled_base.exists() {
+                base = disabled_base;
+                is_root_disabled = true;
+            }
+        }
+    }
 
     if !base.exists() {
         return Err(format!("Mods path does not exist: {mods_path}"));
@@ -194,7 +296,7 @@ pub async fn list_mod_folders_inner(
 
     log::info!("Scanning filesystem for mods at {}", target.display());
 
-    let mut folders = scan_fs_folders(&target, base, sub_path.as_deref()).await?;
+    let mut folders = scan_fs_folders(&target, &base, sub_path.as_deref()).await?;
 
     log::info!(
         "Listed {} mod folders from {} (sub: {:?})",
@@ -365,7 +467,6 @@ pub async fn list_mod_folders_inner(
         true
     };
 
-    // Compute ancestor lock status from sub_path segments (O(depth), zero I/O).
     let ancestor_info = sub_path.as_deref().and_then(|sp| {
         if sp.is_empty() {
             None
@@ -374,15 +475,27 @@ pub async fn list_mod_folders_inner(
         }
     });
 
-    let (ancestor_disabled_by, ancestor_disabled_path) = match ancestor_info {
+    let (mut ancestor_disabled_by, mut ancestor_disabled_path) = match ancestor_info {
         Some((name, path)) => (Some(name), Some(path)),
         None => (None, None),
     };
+
+    // If the root itself is disabled, treat it as the "ultimate" ancestor lock
+    if is_root_disabled && ancestor_disabled_by.is_none() {
+        ancestor_disabled_by = Some(
+            path_file_name_lossy(&base)
+                .map(|n| normalize_display_name(&n))
+                .unwrap_or_else(|| "Mods".to_string()),
+        );
+        ancestor_disabled_path = Some(base.to_string_lossy().to_string());
+    }
 
     Ok(crate::services::explorer::types::FolderGridResponse {
         self_node_type: Some(self_node_type.as_str().to_string()),
         self_is_mod,
         self_is_enabled,
+        self_owner_object_id: None,
+        self_owner_object_folder_path: None,
         self_classification_reasons,
         children: folders,
         conflicts,

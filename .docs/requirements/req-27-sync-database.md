@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: After a scan + Deep Matcher produces approved `ScoredCandidate` mappings, the SQLite DB must be updated atomically — creating new Objects if needed, updating `folder_path → object_id` associations, and purging "orphaned" DB rows whose physical folders no longer exist.
+- **Problem Statement**: After a scan + Deep Match Scanner produces approved `ScoredCandidate` mappings, the SQLite DB must be updated atomically — creating new Objects if needed, updating `folder_path → object_id` associations, and purging "orphaned" DB rows whose physical folders no longer exist.
 - **Proposed Solution**: A `commit_scan` backend command that runs a single SQLite transaction: upserts `folders` rows from the approved candidate list, runs BLAKE3 identity matching to detect moved folders (path changed, content is the same), then calls `repair_orphan_mods` to delete rows with non-existent paths.
 - **Success Criteria**:
   - `commit_scan` for 500 approved candidates completes in ≤ 3s (bounded by SQLite batch insert performance).
@@ -95,5 +95,5 @@ Frontend:
 
 ## 4. Dependencies
 
-- **Blocked by**: Epic 26 (Deep Matcher — provides `Vec<ApprovedCandidate>`), Epic 01 (App Bootstrap — DB pool).
+- **Blocked by**: Epic 26 (Deep Match Scanner — provides `Vec<ApprovedCandidate>`), Epic 01 (App Bootstrap — DB pool).
 - **Blocks**: Epic 28 (File Watcher — starts watching `mods_path` after initial sync).

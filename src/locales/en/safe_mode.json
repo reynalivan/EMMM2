@@ -76,10 +76,12 @@
     "snapshot": "Snapshot",
     "restore": "Restore",
     "active_mods": "Current Active Mods",
+    "all_disabled": "All Disabled",
     "empty": "{{name}} is empty (All Disabled).",
     "target_desc": {
       "active": "Last Active Collection",
-      "none": "No remembered active collection"
+      "none": "No remembered active collection",
+      "system_fallback": "Restoring mods remembered by corridor system state."
     },
     "missing_target": "No saved target state. All mods will remain disabled."
   },

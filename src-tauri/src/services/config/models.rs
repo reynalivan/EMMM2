@@ -63,9 +63,6 @@ pub struct AppSettings {
     pub hotkeys: HotkeyConfig,
     #[serde(default)]
     pub keyviewer: KeyViewerConfig,
-    #[serde(default)]
-    #[specta(type = std::collections::HashMap<String, f64>)]
-    pub sync_timestamps: std::collections::HashMap<String, u64>,
 }
 
 impl Default for AppSettings {
@@ -80,7 +77,6 @@ impl Default for AppSettings {
             auto_close_launcher: false,
             hotkeys: HotkeyConfig::default(),
             keyviewer: KeyViewerConfig::default(),
-            sync_timestamps: std::collections::HashMap::new(),
         }
     }
 }

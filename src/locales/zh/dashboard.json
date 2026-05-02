@@ -41,7 +41,8 @@
     "category_title": "类别分布",
     "no_mod_data": "尚无模组数据",
     "game_title": "每款游戏的模组数",
-    "no_game_data": "尚无游戏数据"
+    "no_game_data": "尚无游戏数据",
+    "series_mods": "模组"
   },
   "activity": {
     "recent_title": "最近添加",

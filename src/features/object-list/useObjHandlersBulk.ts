@@ -7,16 +7,33 @@ import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../lib/bindings';
 import { toast } from '../../stores/useToastStore';
-import type { ObjectSummary, UpdateObjectInput } from '../../types/object';
+import type { UpdateObjectInput } from '../../types/object';
+import type { ScanPreviewItem } from '../../types/scanner';
 import { useActiveGame } from '../../hooks/useActiveGame';
+import { runObjectBatchMutation } from '../../hooks/objectQueryCache';
 import { useDeleteCollection as useDeleteObject } from '../collections/hooks/useCollections';
 import { scanService } from '../../lib/services/scanService';
-import type { GameType } from '../../types/game';
 import { useTranslation } from 'react-i18next';
+import {
+  parseMasterDb,
+} from '../mod-runtime/operations/sharedOperations';
+import type { MasterDbEntry } from './scanReviewHelpers';
+import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '../workspace-runtime/optimistic/descriptorBuilders';
+import { useWorkspaceSwitchActions } from '../workspace-runtime/actions/useWorkspaceSwitchActions';
+import type { WorkspaceObjectNode } from '../../types/workspace';
 
 interface BulkDeps {
-  objects: ObjectSummary[];
-  toggleObjectMods: (objectId: string, enable: boolean, suppressToast?: boolean) => Promise<void>;
+  objects: WorkspaceObjectNode[];
+  setScanReview: React.Dispatch<
+    React.SetStateAction<{
+      open: boolean;
+      items: ScanPreviewItem[];
+      masterDbEntries: MasterDbEntry[];
+      isCommitting: boolean;
+    }>
+  >;
+  setIsSyncing: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 /**
@@ -39,11 +56,12 @@ function createObjectUpdate(patch: Partial<UpdateObjectInput>): UpdateObjectInpu
   };
 }
 
-export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
+export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: BulkDeps) {
   const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const queryClient = useQueryClient();
   const deleteObjectMutation = useDeleteObject();
+  const switchActions = useWorkspaceSwitchActions();
 
   const [bulkTagModal, setBulkTagModal] = useState<{
     open: boolean;
@@ -63,8 +81,11 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
           failed++;
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('objectRows'),
+        'active',
+      );
 
       const count = ids.size;
       const displayNames = Array.from(ids).map((id) => {
@@ -79,27 +100,39 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
 
       if (failed === 0) {
         toast.success(t('objects:delete_dialog.success_bulk', { name: itemsStr }));
-      } else {
-        toast.error(
-          t('objects:edit_modal.error_message', {
-            error: `Deleted ${success}, failed ${failed}`,
-          }),
-        );
+        return;
       }
+
+      toast.error(
+        t('objects:edit_modal.error_message', {
+          error: `Deleted ${success}, failed ${failed}`,
+        }),
+      );
     },
-    [deleteObjectMutation, queryClient, objects, activeGame, t],
+    [activeGame, deleteObjectMutation, objects, queryClient, t],
   );
 
   const handleBulkPin = useCallback(
     async (ids: Set<string>, pin: boolean) => {
-      for (const id of ids) {
-        try {
-          await commands.pinObject({ id, isPinned: pin });
-        } catch (e) {
-          console.error('Bulk pin failed for', id, e);
-        }
+      try {
+        await runObjectBatchMutation({
+          queryClient,
+          applyOptimisticUpdate: (object) =>
+            ids.has(object.id)
+              ? {
+                  ...object,
+                  is_pinned: pin,
+                }
+              : object,
+          mutation: async () => {
+            for (const id of ids) {
+              await commands.pinObject({ id, isPinned: pin });
+            }
+          },
+        });
+      } catch (e) {
+        console.error('Bulk pin failed', e);
       }
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
 
       const count = ids.size;
       const displayNames = Array.from(ids).map((id) => {
@@ -107,49 +140,89 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
         return obj ? obj.name : id;
       });
 
-      const action = pin
-        ? t('objects:bulk.pinned')
-        : t('objects:bulk.unpinned', { defaultValue: 'Unpinned' });
+      const action = pin ? t('objects:bulk.pinned') : t('objects:bulk.unpinned');
       const toastMsg =
         count <= 4
           ? `${action} ${displayNames.join(', ')}`
-          : `${action} ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
+          : `${action} ${displayNames.slice(0, 4).join(', ')} ${t('objects:bulk.more_others', {
+              count: count - 4,
+            })}`;
 
       toast.success(toastMsg);
     },
-    [queryClient, objects, t],
+    [objects, queryClient, t],
   );
 
   const handleBulkEnable = useCallback(
     async (ids: Set<string>) => {
-      for (const id of ids) await toggleObjectMods(id, true, true);
+      if (!activeGame) {
+        return;
+      }
 
-      const toastMsg = t(
-        ids.size === 1 ? 'objects:toasts.enabled_one' : 'objects:toasts.enabled_other',
-        {
-          count: ids.size,
-        },
-      );
+      let successCount = 0;
+      let failedCount = 0;
+      for (const object of objects.filter((candidate) => ids.has(candidate.id))) {
+        const nextPath = await switchActions.setNodeEnabled(object, true, 'object_list', {
+          syncExplorerPath: false,
+        });
+        if (nextPath) {
+          successCount += 1;
+          continue;
+        }
+        failedCount += 1;
+      }
 
-      toast.success(toastMsg);
+      if (failedCount === 0) {
+        toast.success(
+          t(
+            successCount === 1 ? 'objects:toasts.enabled_one' : 'objects:toasts.enabled_other',
+            {
+              count: successCount,
+            },
+          ),
+        );
+        return;
+      }
+
+      toast.error(`Enabled ${successCount}, failed ${failedCount}`);
     },
-    [toggleObjectMods, t],
+    [activeGame, objects, switchActions, t],
   );
 
   const handleBulkDisable = useCallback(
     async (ids: Set<string>) => {
-      for (const id of ids) await toggleObjectMods(id, false, true);
+      if (!activeGame) {
+        return;
+      }
 
-      const toastMsg = t(
-        ids.size === 1 ? 'objects:toasts.disabled_one' : 'objects:toasts.disabled_other',
-        {
-          count: ids.size,
-        },
-      );
+      let successCount = 0;
+      let failedCount = 0;
+      for (const object of objects.filter((candidate) => ids.has(candidate.id))) {
+        const nextPath = await switchActions.setNodeEnabled(object, false, 'object_list', {
+          syncExplorerPath: false,
+        });
+        if (nextPath) {
+          successCount += 1;
+          continue;
+        }
+        failedCount += 1;
+      }
 
-      toast.success(toastMsg);
+      if (failedCount === 0) {
+        toast.success(
+          t(
+            successCount === 1 ? 'objects:toasts.disabled_one' : 'objects:toasts.disabled_other',
+            {
+              count: successCount,
+            },
+          ),
+        );
+        return;
+      }
+
+      toast.error(`Disabled ${successCount}, failed ${failedCount}`);
     },
-    [toggleObjectMods, t],
+    [activeGame, objects, switchActions, t],
   );
 
   const handleBulkAddTags = useCallback(
@@ -174,7 +247,11 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
           console.error('Bulk add tags failed for', id, e);
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('objectRows'),
+        'active',
+      );
 
       const count = ids.size;
       const displayNames = Array.from(ids).map((id) => {
@@ -215,7 +292,11 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
           console.error('Bulk remove tags failed for', id, e);
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('objectRows'),
+        'active',
+      );
 
       const count = ids.size;
       const displayNames = Array.from(ids).map((id) => {
@@ -257,27 +338,33 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
           return;
         }
 
-        const dbJson = await scanService.getMasterDb(activeGame.game_type as unknown as GameType);
-        const result = await commands.autoOrganizeMods({
-          paths: allModPaths,
-          targetRoot: activeGame.mod_path,
-          dbJson,
+        setIsSyncing(true);
+
+        // Deep Match Scanner preview only. This action must not move physical folders directly.
+        const previewItems = await scanService.runDeepmatchPreview(
+          activeGame.id,
+          activeGame.game_type,
+          activeGame.mod_path,
+          undefined,
+          allModPaths,
+        );
+        const dbJson = await scanService.getMasterDb(activeGame.game_type);
+        const masterEntries = parseMasterDb(dbJson);
+
+        setScanReview({
+          open: true,
+          items: previewItems,
+          masterDbEntries: masterEntries,
+          isCommitting: false,
         });
-
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
-        queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
-        queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-
-        const moved = result.success.length;
-        const failed = result.failures.length;
-        if (moved > 0) toast.success(t('objects:auto_organize.toast_success', { count: moved }));
-        if (failed > 0) toast.error(t('objects:auto_organize.toast_failed', { count: failed }));
       } catch (e) {
         console.error('Auto-organize failed:', e);
         toast.error(t('objects:auto_organize.toast_error', { error: String(e) }));
+      } finally {
+        setIsSyncing(false);
       }
     },
-    [activeGame, objects, queryClient, t],
+    [activeGame, objects, setIsSyncing, setScanReview, t],
   );
 
   const handleBulkFavorite = useCallback(
@@ -290,7 +377,11 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
           folderPaths: paths,
           favorite,
         });
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('objectRows'),
+          'active',
+        );
         toast.success(
           t(
             favorite
@@ -318,7 +409,11 @@ export function useObjHandlersBulk({ objects, toggleObjectMods }: BulkDeps) {
           paths,
           update: { is_safe: safe },
         });
-        queryClient.invalidateQueries({ queryKey: ['objects'] });
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('objectRows'),
+          'active',
+        );
         toast.success(
           t(safe ? 'objects:toasts.mark_safe' : 'objects:toasts.mark_unsafe', {
             count: ids.size,

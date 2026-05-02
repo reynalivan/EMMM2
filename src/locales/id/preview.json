@@ -12,7 +12,8 @@
     "done": "Selesai",
     "save": "Simpan",
     "close": "Tutup",
-    "edit": "Edit"
+    "edit": "Edit",
+    "more_actions": "Aksi Lainnya"
   },
   "metadata": {
     "title": "Metadata",
@@ -47,8 +48,23 @@
       "paste": "Tempel Thumbnail",
       "import": "Impor Thumbnail",
       "remove_current": "Hapus Thumbnail Ini",
-      "clear_all": "Hapus Semua Thumbnail"
-    }
+      "clear_all": "Hapus Semua Thumbnail",
+      "thumbnail_imported": "Thumbnail berhasil diimpor."
+    },
+    "image_alt": "Gambar pratinjau",
+    "maximize_label": "Buka pratinjau layar penuh",
+    "no_image_in_clipboard": "Tidak ada gambar di clipboard.",
+    "thumbnail_pasted": "Thumbnail ditempel.",
+    "paste_error": "Gagal menempel thumbnail: {{error}}",
+    "thumbnail_removed": "Thumbnail dihapus.",
+    "remove_error": "Gagal menghapus thumbnail: {{error}}",
+    "all_thumbnails_cleared": "Semua thumbnail dihapus.",
+    "clear_all_error": "Gagal menghapus semua thumbnail: {{error}}",
+    "remove_confirm_message": "Hapus thumbnail yang dipilih?",
+    "clear_all_confirm_message": "Hapus semua thumbnail dari mod ini?",
+    "no_thumbnail_selected": "Tidak ada thumbnail yang dipilih.",
+    "no_thumbnails_to_clear": "Tidak ada thumbnail untuk dihapus.",
+    "import_error": "Gagal mengimpor thumbnail: {{error}}"
   },
   "ini_editor": {
     "title": "INI Editor",
@@ -74,6 +90,24 @@
     "no_alt": "no_alt",
     "shift_restriction_disabled": "Shift adalah bagian dari kombo, tidak bisa dibatasi.",
     "ctrl_restriction_disabled": "Ctrl adalah bagian dari kombo, tidak bisa dibatasi.",
-    "alt_restriction_disabled": "Alt adalah bagian dari kombo, tidak bisa dibatasi."
+    "alt_restriction_disabled": "Alt adalah bagian dari kombo, tidak bisa dibatasi.",
+    "modifier_ctrl": "CTRL",
+    "modifier_alt": "ALT",
+    "modifier_shift": "SHIFT"
+  },
+  "modals": {
+    "unsaved": {
+      "title": "Perubahan Belum Disimpan",
+      "description": "\"{{modName}}\" memiliki perubahan metadata atau INI yang belum disimpan.",
+      "this_mod": "Mod ini",
+      "metadata_edits": "Perubahan metadata",
+      "ini_edits": "Perubahan INI",
+      "change_title": "Dari \"{{oldValue}}\" ke \"{{newValue}}\"",
+      "empty_value": "(kosong)",
+      "saving": "Menyimpan..."
+    }
+  },
+  "errors": {
+    "open_location_failed": "Gagal membuka lokasi file: {{error}}"
   }
 }

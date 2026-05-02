@@ -130,6 +130,17 @@ The EMMM Overlay System is a **hybrid architecture** where EMMM handles the comp
 - **Unified Toggle**: A single global variable `$kv_active` (toggled via `F7`) gates all rendering.
 - **Priority Stack**: Rendering uses a single `Notification` slot in `help.ini`. If a character is detected (`$kv_has_active`), the character-specific keybinds are shown. Otherwise, if `$kv_active` is ON, the global "Status" banner is shown. This prevents overlay overlap.
 
+### Runtime Regeneration Trigger Matrix
+
+| Trigger | Owner | Regenerates KeyViewer | Emits `disk_reconcile:result` |
+| --- | --- | --- | --- |
+| Watcher / external rename-move-add-delete-enable-disable | Disk Reconcile | Yes | Yes |
+| Window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile | Yes when runtime state changed | Yes |
+| Explicit toggle / rename / move / delete mod from UI | Explicit runtime mutation service | Yes | No |
+| `write_mod_ini` / `update_mod_info` | Disk Reconcile (`InternalMutation`) | Yes | Yes |
+| Preview image / thumbnail-only mutation | Disk Reconcile (`InternalMutation`) | No | Yes |
+| Safe mode / collection apply / corridor switch | Apply-switch pipeline | Yes | No |
+
 ---
 
 ## 5. File Specimens

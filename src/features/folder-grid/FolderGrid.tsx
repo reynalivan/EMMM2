@@ -12,7 +12,7 @@ import { Loader2, RefreshCw, CheckSquare, FolderOpen } from 'lucide-react';
 import BulkProgressBar from './BulkProgressBar';
 import BulkActionBar from './BulkActionBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
-import { useActiveConflicts } from '../../hooks/useFolders';
+import { useActiveConflicts } from '../../hooks/useFolderMutations';
 import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
 import {
@@ -20,8 +20,6 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from '../../components/ui/ContextMenu';
-import { commands } from '../../lib/bindings';
-import { useActiveGame } from '../../hooks/useActiveGame';
 
 export default function FolderGrid() {
   const { t } = useTranslation(['grid']);
@@ -32,9 +30,10 @@ export default function FolderGrid() {
     isError,
     error,
     isPlaceholderData,
-    selfNodeType,
+    selfDisplayMode,
     selfIsMod,
     selfIsEnabled,
+    selfIsEffectivelyActive,
     selfReasons,
     conflicts: nameConflicts,
     isGridView,
@@ -63,15 +62,18 @@ export default function FolderGrid() {
     handleKeyDown,
     focusedId,
     handleRefresh,
+    currentAbsPath,
+    handleOpenCurrentFolderInExplorer,
 
     // Selection
     gridSelection,
     toggleGridSelection,
+    activateGridItem,
     clearGridSelection,
+    selectedModPath,
 
     // Actions
     handleToggleSelf,
-    handleToggleEnabled,
     handleToggleFavorite,
     handleEnableOnlyThis,
     handleMoveToObject,
@@ -83,7 +85,11 @@ export default function FolderGrid() {
     // Parent-disabled lock state
     ancestorDisabledBy,
     enableParentDialogOpen,
-    setEnableParentDialogOpen,
+    enableParentDialogAncestorName,
+    enableParentDialogWillActivate,
+    enableParentDialogStayDisabled,
+    openEnableParentDialog,
+    closeEnableParentDialog,
     handleEnableParent,
     handleToggleEnabledGuarded,
 
@@ -129,11 +135,12 @@ export default function FolderGrid() {
     // Sync with DB
     syncConfirm,
     handleSyncWithDb,
-    handleCloseSyncConfirm,
+    closeSyncConfirm,
     handleApplySyncMatch,
+    isSwitchPending,
+    isFolderSwitchPending,
 
     isDragging,
-    selectedObject,
     handleImportFiles,
   } = useFolderGrid();
 
@@ -150,32 +157,15 @@ export default function FolderGrid() {
     return s;
   }, [conflicts]);
 
-  // Safe-mode filtering is already applied in useFolderGrid (via filteredFolders)
+  // WorkspaceViewModel explorer payload is already corridor-filtered in the backend.
   const visibleFolders = sortedFolders;
 
-  const isFlatModRoot = selfNodeType === 'FlatModRoot' || selfIsMod;
+  const isFlatModRoot = selfDisplayMode === 'flat_mod' || selfIsMod;
 
   const activePane = useAppStore((state) => state.activePane);
   const setActivePane = useAppStore((state) => state.setActivePane);
   const isIgnoreManagementOpen = useAppStore((state) => state.isIgnoreManagementOpen);
   const setIsIgnoreManagementOpen = useAppStore((state) => state.setIgnoreManagementOpen);
-  const { activeGame } = useActiveGame();
-
-  // Current absolute path for "Open Folder in Explorer" on background right-click
-  const currentAbsPath = useMemo(() => {
-    if (!activeGame?.mod_path) return null;
-    const parts = [activeGame.mod_path, ...currentPath.filter(Boolean)];
-    return parts.join('\\');
-  }, [activeGame, currentPath]);
-
-  const handleOpenFolderInExplorer = async () => {
-    if (!currentAbsPath || !activeGame?.id) return;
-    try {
-      await commands.openInExplorer({ gameId: activeGame.id, path: currentAbsPath });
-    } catch (err) {
-      console.error('Failed to open folder:', err);
-    }
-  };
 
   const handleSelectAll = () => {
     useAppStore.getState().setGridSelection(new Set(visibleFolders.map((f) => f.path)));
@@ -214,7 +204,7 @@ export default function FolderGrid() {
         isError={isError}
         nameConflicts={nameConflicts}
         isFlatModRoot={isFlatModRoot}
-        selfIsEnabled={selfIsEnabled}
+        selfIsEnabled={selfIsEffectivelyActive || selfIsEnabled}
         selfReasons={selfReasons}
         isMobile={isMobile}
         isPreviewOpen={isPreviewOpen}
@@ -223,7 +213,7 @@ export default function FolderGrid() {
         handleToggleSelf={handleToggleSelf}
         ancestorDisabledBy={ancestorDisabledBy}
         currentPath={currentPath}
-        onOpenEnableParentDialog={() => setEnableParentDialogOpen(true)}
+        onOpenEnableParentDialog={openEnableParentDialog}
       />
 
       <FolderGridToolbar
@@ -231,7 +221,6 @@ export default function FolderGrid() {
         currentPath={currentPath}
         handleBreadcrumbClick={handleBreadcrumbClick}
         handleGoHome={handleGoHome}
-        selectedObject={selectedObject}
         setMobilePane={setMobilePane}
         handleSortToggle={handleSortToggle}
         sortLabel={sortLabel}
@@ -296,7 +285,9 @@ export default function FolderGrid() {
             <ContextMenuSeparator />
             <ContextMenuItem
               icon={FolderOpen}
-              onClick={handleOpenFolderInExplorer}
+              onClick={() => {
+                void handleOpenCurrentFolderInExplorer();
+              }}
               disabled={!currentAbsPath}
             >
               {t('context.open_explorer')}
@@ -323,20 +314,22 @@ export default function FolderGrid() {
                 return (
                   <div
                     key={virtualRow.index}
-                    className="absolute top-0 left-0 w-full flex gap-3"
+                    className="absolute top-0 left-0 w-full grid gap-3 justify-center"
                     style={{
                       height: `${virtualRow.size}px`,
                       transform: `translateY(${virtualRow.start}px)`,
+                      gridTemplateColumns: `repeat(${columnCount}, ${cardWidth}px)`,
                     }}
                   >
                     {rowItems.map((folder) => (
-                      <div key={folder.path} className="flex-none" style={{ width: cardWidth }}>
+                      <div key={folder.path} className="min-w-0">
                         <FolderCard
                           folder={folder}
                           isSelected={gridSelection.has(folder.path)}
+                          isActive={selectedModPath === folder.path}
                           onNavigate={handleNavigate}
+                          onActivate={activateGridItem}
                           toggleSelection={toggleGridSelection}
-                          clearSelection={clearGridSelection}
                           onToggleEnabled={handleToggleEnabledGuarded}
                           onToggleFavorite={handleToggleFavorite}
                           onEnableOnlyThis={handleEnableOnlyThis}
@@ -359,7 +352,10 @@ export default function FolderGrid() {
                           onSyncWithDb={handleSyncWithDb}
                           hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
                           isLockedByParent={!!ancestorDisabledBy}
-                          onRequestEnableParent={() => setEnableParentDialogOpen(true)}
+                          onRequestEnableParent={openEnableParentDialog}
+                          isSwitchPending={
+                            isSwitchPending || isFolderSwitchPending(folder)
+                          }
                         />
                       </div>
                     ))}
@@ -383,11 +379,12 @@ export default function FolderGrid() {
                   <FolderListRow
                     item={folder}
                     isSelected={gridSelection.has(folder.path)}
+                    isActive={selectedModPath === folder.path}
+                    onActivate={activateGridItem}
                     toggleSelection={(id: string, multi: boolean, isShift?: boolean) =>
                       toggleGridSelection(id, multi, isShift)
                     }
-                    clearSelection={clearGridSelection}
-                    onToggleEnabled={handleToggleEnabled}
+                    onToggleEnabled={handleToggleEnabledGuarded}
                     selectionSize={gridSelection.size}
                     onBulkToggle={handleBulkToggle}
                     onBulkDelete={handleBulkDeleteRequest}
@@ -399,9 +396,14 @@ export default function FolderGrid() {
                     onRename={() => handleRenameRequest(folder)}
                     onDelete={() => handleDeleteRequest(folder)}
                     onToggleFavorite={handleToggleFavorite}
+                    onEnableOnlyThis={handleEnableOnlyThis}
                     onOpenMoveDialog={openMoveDialog}
                     onToggleSafe={() => handleToggleSafeRequest(folder)}
+                    onSyncWithDb={handleSyncWithDb}
                     hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
+                    isSwitchPending={
+                      isSwitchPending || isFolderSwitchPending(folder)
+                    }
                   />
                 </div>
               );
@@ -432,7 +434,7 @@ export default function FolderGrid() {
         handleActiveContextCancel={handleActiveContextCancel}
         handleActiveContextSubmit={handleActiveContextSubmit}
         syncConfirm={syncConfirm}
-        handleCloseSyncConfirm={handleCloseSyncConfirm}
+        handleCloseSyncConfirm={closeSyncConfirm}
         handleApplySyncMatch={handleApplySyncMatch}
         objectId={undefined}
         currentPath={typeof currentPath === 'string' ? currentPath : undefined}
@@ -443,10 +445,10 @@ export default function FolderGrid() {
       {ancestorDisabledBy && (
         <EnableParentDialog
           open={enableParentDialogOpen}
-          onClose={() => setEnableParentDialogOpen(false)}
-          ancestorName={ancestorDisabledBy}
-          willActivate={sortedFolders.filter((f) => f.is_enabled)}
-          stayDisabled={sortedFolders.filter((f) => !f.is_enabled)}
+          onClose={closeEnableParentDialog}
+          ancestorName={enableParentDialogAncestorName}
+          willActivate={enableParentDialogWillActivate}
+          stayDisabled={enableParentDialogStayDisabled}
           onConfirm={handleEnableParent}
         />
       )}

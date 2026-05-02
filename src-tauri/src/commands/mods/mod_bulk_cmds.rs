@@ -32,6 +32,7 @@ pub async fn bulk_toggle_mods(
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
     let result = bulk::bulk_toggle(
         &app,
+        &config,
         pool.inner(),
         &state,
         &mods_path,
@@ -40,17 +41,6 @@ pub async fn bulk_toggle_mods(
         enable,
     )
     .await?;
-
-    let post_ctx = crate::services::app::post_apply::PostApplyContext {
-        game_id,
-        pool: pool.inner().clone(),
-        is_safe: config.get_settings().safe_mode.enabled,
-        mods_path: mods_path.into(),
-        suppressor: state.suppressor.clone(),
-        settings: config.get_settings(),
-        status_fields: None,
-    };
-    let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
 
     Ok(result)
 }
@@ -73,22 +63,8 @@ pub async fn bulk_delete_mods(
     }
 
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
-    let result = bulk::bulk_delete(&app, pool.inner(), &state, paths, game_id.clone()).await?;
-
-    if let Some(gid) = game_id {
-        if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &gid).await? {
-            let post_ctx = crate::services::app::post_apply::PostApplyContext {
-                game_id: gid,
-                pool: pool.inner().clone(),
-                is_safe: config.get_settings().safe_mode.enabled,
-                mods_path: mods_path.into(),
-                suppressor: state.suppressor.clone(),
-                settings: config.get_settings(),
-                status_fields: None,
-            };
-            let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
-        }
-    }
+    let result =
+        bulk::bulk_delete(&app, &config, pool.inner(), &state, paths, game_id.clone()).await?;
 
     Ok(result)
 }

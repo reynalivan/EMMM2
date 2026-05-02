@@ -1,10 +1,27 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import CreateObjectModal from './CreateObjectModal';
-import { useCreateObject } from '../../hooks/useObjects';
+import { useCreateObject } from '../../hooks/useObjectMutations';
 
-vi.mock('../../hooks/useObjects', () => ({
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const labels: Record<string, string> = {
+        'create_modal.title': 'Create New Object',
+        'create_modal.submit': 'Create Object',
+        'create_modal.placeholder_name': 'e.g. Eula',
+      };
+
+      return labels[key] ?? key;
+    },
+  }),
+}));
+
+vi.mock('../../hooks/useObjectMutations', () => ({
   useCreateObject: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false, isError: false })),
+}));
+
+vi.mock('../../hooks/useObjectQueries', () => ({
   useGameSchema: vi.fn(() => ({
     data: { categories: [{ name: 'Character', label: 'Characters', filters: [] }] },
   })),

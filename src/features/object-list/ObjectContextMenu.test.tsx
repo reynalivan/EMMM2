@@ -1,11 +1,22 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
+import type { WorkspaceCapabilities } from '../../types/workspace';
 
 // Mock inner components to simplify
 vi.mock('../../components/ui/ContextMenu', () => ({
-  ContextMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick: () => void }) => (
-    <button onClick={onClick}>{children}</button>
+  ContextMenuItem: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
   ),
   ContextMenuSeparator: () => <hr />,
   ContextMenuSub: ({ children, label }: { children: React.ReactNode; label: React.ReactNode }) => (
@@ -18,8 +29,33 @@ vi.mock('../../components/ui/ContextMenu', () => ({
 
 describe('ObjectContextMenu', () => {
   const dummyCategories = [{ name: 'Character', label: 'Characters' }];
+  const baseCapabilities: WorkspaceCapabilities = {
+    can_toggle: true,
+    can_rename: true,
+    can_delete: true,
+    can_move: false,
+    can_toggle_safe: false,
+    can_sync: true,
+    can_enable_only_this: false,
+    can_pin: true,
+    can_edit_metadata: true,
+    can_reveal_in_explorer: true,
+    can_move_category: true,
+    can_open_in_explorer: true,
+  };
+  const createHandlers = () => ({
+    onEditObject: vi.fn(),
+    onSyncWithDb: vi.fn(),
+    onDeleteObject: vi.fn(),
+    onPin: vi.fn(),
+    onMoveCategory: vi.fn(),
+    onRevealInExplorer: vi.fn(),
+    onEnableObject: vi.fn(),
+    onDisableObject: vi.fn(),
+  });
 
-  it('renders object menu correctly', () => {
+  it('renders unpinned object menu and wires actions', () => {
+    const handlers = createHandlers();
     const itemTarget: ContextMenuTarget = {
       type: 'object',
       id: '1',
@@ -29,66 +65,100 @@ describe('ObjectContextMenu', () => {
       enabledCount: 5,
       modCount: 10,
       isPinned: false,
+      category: 'Character',
+      capabilities: baseCapabilities,
     };
-    const onPin = vi.fn();
 
     render(
       <ObjectContextMenu
         item={itemTarget}
         isSyncing={false}
         categories={dummyCategories}
-        onEditObject={vi.fn()}
-        onEditFolder={vi.fn()}
-        onSyncWithDb={vi.fn()}
-        onDelete={vi.fn()}
-        onDeleteObject={vi.fn()}
-        onToggle={vi.fn()}
-        onOpen={vi.fn()}
-        onPin={onPin}
-        onFavorite={vi.fn()}
-        onMoveCategory={vi.fn()}
+        {...handlers}
       />,
     );
 
-    expect(screen.getByText('Edit Metadata')).toBeInTheDocument();
-    expect(screen.getByText('Pin to Top')).toBeInTheDocument();
+    expect(screen.getByText('context.edit_meta')).toBeInTheDocument();
+    expect(screen.getByText('context.reveal_explorer')).toBeInTheDocument();
+    expect(screen.getByText('context.pin_top')).toBeInTheDocument();
+    expect(screen.getByText('context.disable')).toBeInTheDocument();
+    expect(screen.queryByText('context.enable')).toBeNull();
+    expect(screen.getByText('context.move_category')).toBeInTheDocument();
+    expect(screen.getByText('Characters')).toBeInTheDocument();
+    expect(screen.getByText('context.sync_db')).toBeInTheDocument();
+    expect(screen.getByText('context.delete_object')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Pin to Top'));
-    expect(onPin).toHaveBeenCalledWith('1');
+    fireEvent.click(screen.getByText('context.edit_meta'));
+    fireEvent.click(screen.getByText('context.reveal_explorer'));
+    fireEvent.click(screen.getByText('context.pin_top'));
+    fireEvent.click(screen.getByText('context.disable'));
+    fireEvent.click(screen.getByText('Characters'));
+    fireEvent.click(screen.getByText('context.sync_db'));
+    fireEvent.click(screen.getByText('context.delete_object'));
+
+    expect(handlers.onEditObject).toHaveBeenCalledWith('1');
+    expect(handlers.onRevealInExplorer).toHaveBeenCalledWith('1');
+    expect(handlers.onPin).toHaveBeenCalledWith('1');
+    expect(handlers.onDisableObject).toHaveBeenCalledWith('1');
+    expect(handlers.onMoveCategory).toHaveBeenCalledWith('1', 'Character', 'object');
+    expect(handlers.onSyncWithDb).toHaveBeenCalledWith('1', 'Zeta');
+    expect(handlers.onDeleteObject).toHaveBeenCalledWith('1');
   });
 
-  it('renders folder menu correctly', () => {
-    const folderTarget: ContextMenuTarget = {
-      type: 'folder',
-      id: 'C:\\mods',
-      name: 'Mods',
-      isEnabled: true,
+  it('renders pinned disabled object menu with enable action only', () => {
+    const handlers = createHandlers();
+    const itemTarget: ContextMenuTarget = {
+      type: 'object',
+      id: '2',
+      name: 'Amber',
+      objectType: 'Character',
+      isEnabled: false,
       enabledCount: 0,
-      modCount: 0,
-      isPinned: false,
+      modCount: 4,
+      isPinned: true,
+      category: 'Character',
+      capabilities: baseCapabilities,
     };
-    const onToggle = vi.fn();
 
     render(
       <ObjectContextMenu
-        item={folderTarget}
+        item={itemTarget}
         isSyncing={false}
         categories={dummyCategories}
-        onEditObject={vi.fn()}
-        onEditFolder={vi.fn()}
-        onSyncWithDb={vi.fn()}
-        onDelete={vi.fn()}
-        onDeleteObject={vi.fn()}
-        onToggle={onToggle}
-        onOpen={vi.fn()}
-        onPin={vi.fn()}
-        onFavorite={vi.fn()}
-        onMoveCategory={vi.fn()}
+        {...handlers}
       />,
     );
 
-    expect(screen.getByText('Disable')).toBeInTheDocument(); // Since isEnabled is true
-    fireEvent.click(screen.getByText('Disable'));
-    expect(onToggle).toHaveBeenCalledWith('C:\\mods', true);
+    expect(screen.getByText('context.unpin')).toBeInTheDocument();
+    expect(screen.getByText('context.enable')).toBeInTheDocument();
+    expect(screen.queryByText('context.disable')).toBeNull();
+
+    fireEvent.click(screen.getByText('context.enable'));
+    expect(handlers.onEnableObject).toHaveBeenCalledWith('2');
+  });
+
+  it('disables sync action while syncing', () => {
+    const handlers = createHandlers();
+    const itemTarget: ContextMenuTarget = {
+      type: 'object',
+      id: '3',
+      name: 'Kaeya',
+      objectType: 'Character',
+      isEnabled: true,
+      enabledCount: 1,
+      modCount: 3,
+      isPinned: false,
+      category: 'Character',
+      capabilities: baseCapabilities,
+    };
+
+    render(
+      <ObjectContextMenu item={itemTarget} isSyncing categories={dummyCategories} {...handlers} />,
+    );
+
+    const syncButton = screen.getByRole('button', { name: 'context.syncing' });
+    expect(syncButton).toBeDisabled();
+    fireEvent.click(syncButton);
+    expect(handlers.onSyncWithDb).not.toHaveBeenCalled();
   });
 });

@@ -103,39 +103,6 @@ fn open_explorer_select(path: &str) -> Result<String, AppError> {
 
 #[specta::specta]
 #[tauri::command]
-pub async fn toggle_mod(
-    config: State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    state: State<'_, WatcherState>,
-    op_lock: State<'_, OperationLock>,
-    path: String,
-    enable: bool,
-    game_id: String,
-) -> Result<String, AppError> {
-    let result = crate::services::mods::core_ops::toggle_mod_inner_service(
-        &config,
-        pool.inner(),
-        &state,
-        &op_lock,
-        path,
-        enable,
-        &game_id,
-    )
-    .await?;
-
-    // Sync in-game overlay artifacts
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        &config,
-        state.suppressor.clone(),
-    )
-    .await;
-
-    Ok(result)
-}
-
-#[specta::specta]
-#[tauri::command]
 pub async fn rename_mod_folder(
     config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
@@ -155,14 +122,6 @@ pub async fn rename_mod_folder(
         &game_id,
     )
     .await?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        &config,
-        state.suppressor.clone(),
-    )
-    .await;
 
     Ok(result)
 }

@@ -31,7 +31,8 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 
 ## 3. Workflow
 
-1. **PLAN**: Research context -> `implementation_plan.md` -> User Approval. No guessing.
-2. **ACT**: Execute via `./.agent/workflows/` + `./.agent/skills/`.
-3. **REFLECT**: Verify quality, eslint, build check, run test.
-4. **Post-Implementation**: Run `.agent/rules/post_log.md` after every session.
+1. **HISTORY**: Read the 3-4 latest files from `.docs/history/` to understand recent context, patterns, and avoid regressions.
+2. **PLAN**: Research context -> `implementation_plan.md` -> User Approval. No guessing.
+3. **ACT**: Execute via `./.agent/workflows/` + `./.agent/skills/`.
+4. **REFLECT**: Verify quality, eslint, build check, run test.
+5. **Post-Implementation**: Run `.agent/rules/post_log.md` after every session.

@@ -45,6 +45,11 @@ export type ObjectSummary = {
   id: string;
   name: string;
   folder_path: string;
+  matched_entry_key?: string | null;
+  matched_alias_name?: string | null;
+  matched_confidence?: number | null;
+  matched_reason?: string | null;
+  matched_source?: string | null;
   object_type: string;
   sub_category: string | null;
   status: number | null;
@@ -117,12 +122,12 @@ export type DbEntry = {
   hash_db: Record<string, string[]>;
 };
 
-export type DbEntryFull = DbEntry; // alias
-
 export type ModFolder = {
   node_type: string;
   classification_reasons: string[];
   id?: string | null;
+  owner_object_id?: string | null;
+  owner_object_folder_path?: string | null;
   name: string;
   folder_name: string;
   path: string;
@@ -190,6 +195,8 @@ export type FolderGridResponse = {
   self_node_type: string | null;
   self_is_mod: boolean;
   self_is_enabled: boolean;
+  self_owner_object_id?: string | null;
+  self_owner_object_folder_path?: string | null;
   self_classification_reasons: string[];
   children: ModFolder[];
   conflicts: ConflictGroup[];

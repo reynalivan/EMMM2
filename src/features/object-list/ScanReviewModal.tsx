@@ -87,7 +87,7 @@ export default function ScanReviewModal({
     for (const item of items) {
       if (item.alreadyMatched) {
         alreadyMatched++;
-      } else if (overrides[item.folderPath] || item.matchedObject) {
+      } else if (overrides[item.folderPath] || item.matchedEntryKey) {
         matched++;
       } else {
         unmatched++;
@@ -111,7 +111,10 @@ export default function ScanReviewModal({
         folderPath: item.folderPath,
         displayName: renames[item.folderPath] ?? item.displayName,
         isDisabled: item.isDisabled,
-        matchedObject: ov ? ov.name : item.matchedObject,
+        matchedEntryKey: ov ? ov.matched_entry_key : item.matchedEntryKey,
+        matchedAliasName: ov ? ov.name : item.matchedAliasName,
+        matchedConfidence: ov ? 1 : item.confidenceScore / 100,
+        matchedReason: ov ? 'Manual override' : item.matchDetail,
         objectType: ov ? ov.object_type : item.objectType,
         thumbnailPath: ov ? ov.thumbnail_path : item.thumbnailPath,
         tagsJson: ov ? JSON.stringify(ov.tags) : item.tagsJson,
@@ -131,7 +134,7 @@ export default function ScanReviewModal({
       if (skips[item.folderPath]) return 'Skipped';
       if (item.alreadyMatched) return 'Existing';
       const ov = overrides[item.folderPath];
-      if (ov || item.matchedObject) return 'Matched';
+      if (ov || item.matchedEntryKey) return 'Matched';
       return 'Unmatched';
     },
     [overrides, skips],

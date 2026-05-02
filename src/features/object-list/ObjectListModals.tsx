@@ -11,7 +11,7 @@ import ScanReviewModal from './ScanReviewModal';
 import AutoSetupModal from './AutoSetupModal';
 import { useTranslation } from 'react-i18next';
 import type { ObjectSummary } from '../../types/object';
-import type { MatchedDbEntry } from './SyncConfirmModal';
+import type { MatchedDbEntry } from '../../lib/bindings';
 import type { ScanPreviewItem, ConfirmedScanItem } from '../../lib/services/scanService';
 import type { MasterDbEntry } from './scanReviewHelpers';
 import type { GameConfig } from '../../types/game';
@@ -43,10 +43,6 @@ const SYNC_CONFIRM_RESET: SyncConfirmState = {
 
 interface ModalsProps {
   activeGame: GameConfig | null;
-  /* Delete dialog */
-  deleteDialog: { open: boolean; path: string; name: string; itemCount: number };
-  onConfirmDelete: () => void;
-  onCancelDelete: () => void;
   /* Edit modal */
   editObject: ObjectSummary | null;
   onCloseEdit: () => void;
@@ -88,9 +84,6 @@ interface ModalsProps {
 
 export default function ObjectListModals({
   activeGame,
-  deleteDialog,
-  onConfirmDelete,
-  onCancelDelete,
   editObject,
   onCloseEdit,
   syncConfirm,
@@ -120,22 +113,6 @@ export default function ObjectListModals({
 
   return (
     <>
-      {/* NC-3.3-02: Delete confirmation dialog */}
-      <ConfirmDialog
-        open={deleteDialog.open}
-        title={t('delete_dialog.title_folder')}
-        message={t('delete_dialog.message_folder', {
-          name: deleteDialog.name,
-          count: deleteDialog.itemCount,
-          suffix: deleteDialog.itemCount === 1 ? '' : 's',
-        })}
-        confirmLabel={t('delete_dialog.confirm')}
-        cancelLabel={t('common:actions.cancel')}
-        danger
-        onConfirm={onConfirmDelete}
-        onCancel={onCancelDelete}
-      />
-
       {/* Edit Object Modal (US-3.3) */}
       <EditObjectModal open={!!editObject} object={editObject} onClose={onCloseEdit} />
 

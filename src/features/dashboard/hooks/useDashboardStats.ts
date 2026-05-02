@@ -2,8 +2,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
 import type { DashboardPayload } from '../../../types/dashboard';
 import { useAppStore } from '../../../stores/useAppStore';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
-const DASHBOARD_QUERY_KEY = ['dashboard-stats'] as const;
+export const dashboardKeys = {
+  all: ['dashboard-stats'] as const,
+};
 
 /**
  * TanStack Query hook for dashboard data.
@@ -16,13 +19,13 @@ export function useDashboardStats() {
   const queryClient = useQueryClient();
 
   const query = useQuery<DashboardPayload>({
-    queryKey: [...DASHBOARD_QUERY_KEY, safeMode],
+    queryKey: [...dashboardKeys.all, safeMode],
     queryFn: () => commands.getDashboardStats({ safeMode }),
     staleTime: 30_000,
   });
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY });
+    void publishQueryScopes(queryClient, ['dashboard']);
   };
 
   return {

@@ -217,10 +217,9 @@ pub async fn get_duplicates_for_mod_service(
             (Path::new(folder_path).parent(), Path::new(&path).parent())
         {
             if target_parent == dup_parent {
-                let (node_type, _, _) =
-                    crate::services::explorer::classifier::classify_folder(
-                        &Path::new(&mods_path).join(target_parent),
-                    );
+                let (node_type, _, _) = crate::services::explorer::classifier::classify_folder(
+                    &Path::new(&mods_path).join(target_parent),
+                );
                 if node_type == crate::services::explorer::classifier::NodeType::VariantContainer {
                     is_variant = true;
                     parent_path = target_parent.to_string_lossy().to_string();
@@ -272,6 +271,7 @@ pub async fn get_duplicates_for_mod_service(
 /// Enable a specific mod and disable all other enabled siblings for the same object.
 /// Wrapped here to decouple the command layer from direct database queries and orchestration logic.
 pub async fn enable_only_this_service(
+    config: &crate::services::config::ConfigService,
     pool: &sqlx::SqlitePool,
     state: &tauri::State<'_, crate::services::scanner::watcher::WatcherState>,
     target_path: String,
@@ -389,9 +389,18 @@ pub async fn enable_only_this_service(
     let _ = crate::services::corridor_service::recompute_signature(pool, game_id, true).await;
     let _ = crate::services::corridor_service::recompute_signature(pool, game_id, false).await;
 
-    // Phase 2: Gap Closure - Trigger Dirty State (Unsaved Collection) transition
-    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, true).await;
-    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, false).await;
+    let _ =
+        crate::services::runtime_projection_service::rebuild_game_projection(pool, game_id).await;
+    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        pool,
+        config,
+        state.suppressor.clone(),
+        game_id,
+        &[true, false],
+        true,
+        true,
+    )
+    .await;
 
     Ok(BulkResult { success, failures })
 }

@@ -211,9 +211,21 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
 
           {/* Result Preview */}
           <div className="flex flex-wrap items-center justify-center gap-2 min-h-12 bg-base-300/40 p-4 rounded-lg font-mono text-lg font-bold">
-            {ctrlKey && <kbd className="kbd text-primary border-primary/30">CTRL</kbd>}
-            {altKey && <kbd className="kbd text-accent border-accent/30">ALT</kbd>}
-            {shiftKey && <kbd className="kbd text-secondary border-secondary/30">SHIFT</kbd>}
+            {ctrlKey && (
+              <kbd className="kbd text-primary border-primary/30">
+                {t('preview:ini_editor.modifier_ctrl')}
+              </kbd>
+            )}
+            {altKey && (
+              <kbd className="kbd text-accent border-accent/30">
+                {t('preview:ini_editor.modifier_alt')}
+              </kbd>
+            )}
+            {shiftKey && (
+              <kbd className="kbd text-secondary border-secondary/30">
+                {t('preview:ini_editor.modifier_shift')}
+              </kbd>
+            )}
 
             {mainKey ? (
               <kbd className="kbd bg-base-100 text-base-content shadow-sm border-base-content/30 px-4">

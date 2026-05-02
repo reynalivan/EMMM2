@@ -1,5 +1,8 @@
 use super::*;
 use crate::services::scanner::deep_matcher;
+use crate::services::scanner::sync::helpers::{
+    canonical_entry_key, resolve_or_create_object_target_for_match,
+};
 use serde_json::json;
 
 use sqlx::Row;
@@ -84,7 +87,8 @@ async fn test_scan_preview_needs_review_has_no_auto_assignment() {
 
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].match_level, "NeedsReview");
-    assert!(items[0].matched_object.is_none());
+    assert!(items[0].matched_entry_key.is_none());
+    assert!(items[0].matched_alias_name.is_none());
 }
 
 // Covers: TC-2.3-Review-06 (Commit auto-links unmatched item to "Other" object)
@@ -100,7 +104,10 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         folder_path: mod_dir.to_string_lossy().to_string(),
         display_name: "Sunset Pack".to_string(),
         is_disabled: false,
-        matched_object: None,
+        matched_entry_key: None,
+        matched_alias_name: None,
+        matched_confidence: None,
+        matched_reason: None,
         object_type: None,
         thumbnail_path: None,
         tags_json: None,
@@ -163,7 +170,10 @@ async fn test_ensure_object_case_insensitive_merge() {
         folder_path: mod_dir.to_string_lossy().to_string(),
         display_name: "hook".to_string(),
         is_disabled: false,
-        matched_object: None,
+        matched_entry_key: None,
+        matched_alias_name: None,
+        matched_confidence: None,
+        matched_reason: None,
         object_type: None,
         thumbnail_path: None,
         tags_json: None,
@@ -198,12 +208,15 @@ async fn test_ensure_object_case_insensitive_merge() {
             .unwrap();
     assert_eq!(obj_count_before, 1);
 
-    // Second commit: matched → obj_name = "Hook" (Character, with thumbnail)
+    // Second commit enriches the same physical object with canonical relation data.
     let items_matched = vec![ConfirmedScanItem {
         folder_path: mod_dir.to_string_lossy().to_string(),
         display_name: "hook".to_string(),
         is_disabled: false,
-        matched_object: Some("Hook".to_string()),
+        matched_entry_key: Some(canonical_entry_key("Hook")),
+        matched_alias_name: Some("Hook".to_string()),
+        matched_confidence: Some(0.98),
+        matched_reason: Some("ExactAlias".to_string()),
         object_type: Some("Character".to_string()),
         thumbnail_path: Some("thumbnails/hook.png".to_string()),
         tags_json: Some(r#"["fire"]"#.to_string()),
@@ -240,22 +253,28 @@ async fn test_ensure_object_case_insensitive_merge() {
         "Should have merged, not created a duplicate"
     );
 
-    // Verify: the surviving object has the canonical name "Hook" and type "Character"
-    let obj_row =
-        sqlx::query("SELECT name, object_type, thumbnail_path FROM objects WHERE game_id = ?")
-            .bind("g1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    // Verify: the surviving object keeps its physical identity and stores canonical relation.
+    let obj_row = sqlx::query(
+        "SELECT name, object_type, thumbnail_path, matched_entry_key, matched_alias_name
+         FROM objects WHERE game_id = ?",
+    )
+    .bind("g1")
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let name: String = obj_row.try_get("name").unwrap();
     let obj_type: String = obj_row.try_get("object_type").unwrap();
     let thumb: Option<String> = obj_row.try_get("thumbnail_path").unwrap();
-    assert_eq!(name, "Hook", "Name should be upgraded to MasterDB alias");
+    let matched_entry_key: Option<String> = obj_row.try_get("matched_entry_key").unwrap();
+    let matched_alias_name: Option<String> = obj_row.try_get("matched_alias_name").unwrap();
+    assert_eq!(name, "hook", "Physical object name must remain unchanged");
     assert_eq!(
         obj_type, "Character",
-        "Type should be upgraded to Character"
+        "Type should still be enriched from canonical match"
     );
     assert!(thumb.is_some(), "Thumbnail should be set from matched data");
+    assert_eq!(matched_entry_key.as_deref(), Some("hook"));
+    assert_eq!(matched_alias_name.as_deref(), Some("Hook"));
 }
 
 // Covers: TC-27-001 & TC-27-004 (Atomic Upsert and Auto-Create Object link)
@@ -288,7 +307,10 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
         folder_path: mod_dir.to_string_lossy().to_string(),
         display_name: "Kazuha New".to_string(),
         is_disabled: false,
-        matched_object: Some("Kazuha".to_string()),
+        matched_entry_key: Some(canonical_entry_key("Kazuha")),
+        matched_alias_name: Some("Kazuha".to_string()),
+        matched_confidence: Some(0.91),
+        matched_reason: Some("Alias".to_string()),
         object_type: Some("Character".to_string()),
         thumbnail_path: None,
         tags_json: Some("[]".to_string()),
@@ -318,11 +340,107 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
     assert_eq!(result.new_objects, 1);
 
     // Verify DB linkage
-    let object_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE name = 'Kazuha'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let object_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM objects WHERE game_id = ? AND matched_entry_key = ?",
+    )
+    .bind("g1")
+    .bind(canonical_entry_key("Kazuha"))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(object_count, 1);
+}
+
+#[tokio::test]
+async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physical_shell() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mods_path = temp_dir.path().to_string_lossy().to_string();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .unwrap();
+
+    let matched_entry_key = canonical_entry_key("Navia");
+    let mut tx = pool.begin().await.unwrap();
+    let mut new_objects_count = 0_usize;
+
+    let created = resolve_or_create_object_target_for_match(
+        &mut *tx,
+        "g1",
+        &mods_path,
+        "Navia Import Pack",
+        Some(&matched_entry_key),
+        "Character",
+        None,
+        "[]",
+        "{}",
+        None,
+        None,
+        &mut new_objects_count,
+    )
+    .await
+    .unwrap()
+    .expect("expected physical object shell to be created");
+
+    crate::repo::object_repo::apply_canonical_match(
+        &mut *tx,
+        &created.object_id,
+        Some(&matched_entry_key),
+        Some("Navia"),
+        Some(0.92),
+        Some("AutoMatched"),
+        Some("deepmatch_scanner"),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(created.folder_path, "Navia Import Pack");
+    assert_eq!(new_objects_count, 1);
+
+    let mut tx = pool.begin().await.unwrap();
+    let mut second_new_objects_count = 0_usize;
+    let reused = resolve_or_create_object_target_for_match(
+        &mut *tx,
+        "g1",
+        &mods_path,
+        "Another Physical Name",
+        Some(&matched_entry_key),
+        "Character",
+        None,
+        "[]",
+        "{}",
+        None,
+        None,
+        &mut second_new_objects_count,
+    )
+    .await
+    .unwrap()
+    .expect("expected existing canonical object shell to be reused");
+    tx.rollback().await.unwrap();
+
+    assert_eq!(reused.object_id, created.object_id);
+    assert_eq!(reused.folder_path, created.folder_path);
+    assert_eq!(second_new_objects_count, 0);
+
+    let object_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM objects WHERE game_id = ? AND matched_entry_key = ?",
+    )
+    .bind("g1")
+    .bind(&matched_entry_key)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(object_count, 1);
 }
 
@@ -349,7 +467,10 @@ async fn test_commit_rolls_back_on_failure() {
             folder_path: mod1_dir.to_string_lossy().to_string(),
             display_name: "Valid".to_string(),
             is_disabled: false,
-            matched_object: Some("Valid_Obj".to_string()),
+            matched_entry_key: Some(canonical_entry_key("Valid_Obj")),
+            matched_alias_name: Some("Valid_Obj".to_string()),
+            matched_confidence: Some(0.75),
+            matched_reason: Some("Test".to_string()),
             object_type: Some("Character".to_string()),
             thumbnail_path: None,
             tags_json: None,
@@ -364,7 +485,10 @@ async fn test_commit_rolls_back_on_failure() {
             folder_path: mod2_dir.to_string_lossy().to_string(),
             display_name: "Invalid Move".to_string(),
             is_disabled: false,
-            matched_object: Some("Crash_Obj".to_string()),
+            matched_entry_key: Some(canonical_entry_key("Crash_Obj")),
+            matched_alias_name: Some("Crash_Obj".to_string()),
+            matched_confidence: Some(0.75),
+            matched_reason: Some("Test".to_string()),
             object_type: Some("Character".to_string()),
             thumbnail_path: None,
             tags_json: None,

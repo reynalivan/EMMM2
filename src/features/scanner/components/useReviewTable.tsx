@@ -71,7 +71,11 @@ export function useReviewTable({
           return (
             <div className="avatar">
               <div className="w-10 h-10 rounded-md">
-                <img src={convertFileSrc(path)} alt="mod preview" className="object-cover" />
+                <img
+                  src={convertFileSrc(path)}
+                  alt={t('scanner:review.mod_preview_alt')}
+                  className="object-cover"
+                />
               </div>
             </div>
           );
@@ -94,8 +98,8 @@ export function useReviewTable({
           />
         ),
       }),
-      // Matched Object
-      columnHelper.accessor('matchedObject', {
+      // Canonical alias suggestion
+      columnHelper.accessor('matchedAliasName', {
         header: t('scanner:review.columns.category'),
         cell: (info) => {
           const val = info.getValue();

@@ -69,6 +69,17 @@
       "engine_val": "Vite + React"
     }
   },
+  "toast": {
+    "save_success": "Pengaturan berhasil disimpan.",
+    "save_failed": "Gagal menyimpan pengaturan: {{error}}",
+    "pin_success": "PIN Safe Mode berhasil diperbarui.",
+    "pin_failed": "Gagal memperbarui PIN: {{error}}",
+    "ai_failed": "Gagal memperbarui konfigurasi AI: {{error}}",
+    "theme_success": "Tema berhasil diperbarui.",
+    "theme_failed": "Gagal memperbarui tema: {{error}}",
+    "lang_success": "Bahasa antarmuka berhasil diperbarui.",
+    "lang_failed": "Gagal memperbarui bahasa: {{error}}"
+  },
   "games": {
     "title": "Perpustakaan Game",
     "desc": "Kelola lokasi instalasi dan konfigurasi game Anda.",
@@ -213,6 +224,7 @@
     "empty_trash": "Kosongkan Tempat Sampah",
     "trash_confirm": "Apakah Anda yakin ingin menghapus semua item di Tempat Sampah secara permanen?",
     "trash_success": "Tempat Sampah Dikosongkan: Semua item dihapus.",
+    "trash_failed": "Gagal mengosongkan tempat sampah: {{error}}",
     "system_title": "Pemeliharaan Sistem",
     "system_desc": "Jalankan tugas pembersihan otomatis, verifikasi integritas database, dan bersihkan metadata yatim piatu.",
     "run_maintenance": "Jalankan Pemeliharaan",

@@ -10,8 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 // Grid layout constants
-const CARD_MIN_W = 160;
-const CARD_MAX_W = 280;
+const CARD_MIN_W = 180;
 const CARD_INFO_H = 70;
 const LIST_ROW_HEIGHT = 52;
 const GAP = 12;
@@ -40,9 +39,10 @@ export function useFolderGridLayout({
     ? Math.max(1, Math.floor((containerWidth + GAP) / (CARD_MIN_W + GAP)))
     : 1;
   const cardWidth = isGridView
-    ? Math.min(CARD_MAX_W, Math.floor((containerWidth - GAP * (columnCount - 1)) / columnCount))
+    ? Math.floor((containerWidth - GAP * (columnCount - 1)) / columnCount)
     : 0;
-  const cardHeight = isGridView ? Math.round(cardWidth * (4 / 3)) + CARD_INFO_H : 0;
+  // Actual image container uses aspect-square (1:1), so height equals cardWidth
+  const cardHeight = isGridView ? Math.round(cardWidth) + CARD_INFO_H : 0;
   const rowCount = isGridView ? Math.ceil(itemCount / columnCount) : itemCount;
 
   // ── ResizeObserver ────────────────────────────────────────────────────────
@@ -71,6 +71,11 @@ export function useFolderGridLayout({
     overscan: 5,
     initialOffset: explorerScrollOffset,
   });
+
+  // Force virtualizer to recalculate when row height changes to prevent tearing/overlaps
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [cardHeight, isGridView, rowVirtualizer]);
 
   const scrollToIndex = useCallback(
     (index: number, options?: { align?: 'start' | 'center' | 'end' | 'auto' }) => {

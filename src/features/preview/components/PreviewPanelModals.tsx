@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/mod';
+import type { DuplicateInfo } from '../../../types/scanner';
 import MoveToObjectDialog from '../../folder-grid/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
-import DuplicateWarningModal, { type DuplicateInfo } from '../../folder-grid/DuplicateWarningModal';
+import DuplicateWarningModal from '../../folder-grid/DuplicateWarningModal';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
+import ActiveModContextDialog from '../../folder-grid/ActiveModContextDialog';
+import type { ObjectSummary } from '../../../types/object';
 
 interface PreviewPanelModalsProps {
   // Move Dialog
@@ -16,6 +19,7 @@ interface PreviewPanelModalsProps {
     status: 'disabled' | 'only-enable' | 'keep',
   ) => void;
   objectId?: string;
+  objects: ObjectSummary[];
 
   // Delete Dialog
   deleteConfirm: { open: boolean; folder: ModFolder | null };
@@ -37,6 +41,9 @@ interface PreviewPanelModalsProps {
   pinSafeDialog: { open: boolean; folder: ModFolder | null };
   handleToggleSafeCancel: () => void;
   handleToggleSafeSubmit: () => void;
+  activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
+  handleActiveContextCancel: () => void;
+  handleActiveContextSubmit: () => void;
 }
 
 export default function PreviewPanelModals({
@@ -44,6 +51,7 @@ export default function PreviewPanelModals({
   closeMoveDialog,
   handleMoveToObject,
   objectId,
+  objects,
   deleteConfirm,
   setDeleteConfirm,
   handleDeleteConfirm,
@@ -57,6 +65,9 @@ export default function PreviewPanelModals({
   pinSafeDialog,
   handleToggleSafeCancel,
   handleToggleSafeSubmit,
+  activeContextDialog,
+  handleActiveContextCancel,
+  handleActiveContextSubmit,
 }: PreviewPanelModalsProps) {
   const { t } = useTranslation(['preview', 'common']);
 
@@ -80,6 +91,7 @@ export default function PreviewPanelModals({
         <MoveToObjectDialog
           isOpen={moveDialog.open}
           onClose={closeMoveDialog}
+          objects={objects}
           targetModPaths={[currentPath]}
           currentObjectId={objectId || undefined}
           onSubmit={(targetId: string, status: 'disabled' | 'only-enable' | 'keep') => {
@@ -132,7 +144,7 @@ export default function PreviewPanelModals({
           </div>
         </div>
         <form method="dialog" className="modal-backdrop" onClick={handleRenameCancel}>
-          <button>close</button>
+          <button>{t('common:actions.close')}</button>
         </form>
       </dialog>
 
@@ -151,6 +163,16 @@ export default function PreviewPanelModals({
         open={pinSafeDialog.open}
         onClose={handleToggleSafeCancel}
         onSuccess={handleToggleSafeSubmit}
+      />
+
+      <ActiveModContextDialog
+        key={activeContextDialog.folder?.path || 'preview-dialog-hidden'}
+        open={activeContextDialog.open}
+        modName={activeContextDialog.folder?.name ?? ''}
+        targetSafeStatus={!(activeContextDialog.folder?.is_safe ?? false)}
+        isProcessing={activeContextDialog.isProcessing}
+        onCancel={handleActiveContextCancel}
+        onConfirm={handleActiveContextSubmit}
       />
     </>
   );

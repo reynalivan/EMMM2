@@ -71,57 +71,6 @@ describe('scanService', () => {
     });
   });
 
-  describe('startScan', () => {
-    it('should fetch master db and invoke start_scan with channel', async () => {
-      vi.mocked(invoke).mockImplementation(async (cmd) => {
-        if (cmd === 'get_master_db') return '[]';
-        return [{ folderPath: '/test' }];
-      });
-
-      const onEvent = vi.fn();
-      const result = await scanService.startScan(GameType.GIMI, '/mods', onEvent);
-
-      expect(invoke).toHaveBeenCalledWith('get_master_db', { gameType: GameType.GIMI });
-
-      const startScanCallArgs = vi
-        .mocked(invoke)
-        .mock.calls.find((c) => c[0] === 'start_scan')?.[1] as Record<string, unknown>;
-      expect(startScanCallArgs).toBeDefined();
-      expect(startScanCallArgs.modsPath).toBe('/mods');
-      expect(startScanCallArgs.dbJson).toBe('[]');
-      expect(startScanCallArgs.onProgress).toBeInstanceOf(Channel);
-
-      expect(result).toEqual([{ folderPath: '/test' }]);
-
-      // Test channel message routing
-      const channelInstance =
-        startScanCallArgs.onProgress as import('@tauri-apps/api/core').Channel<{
-          type: string;
-          message?: string;
-        }>;
-      expect(channelInstance.onmessage).toBeInstanceOf(Function);
-
-      const mockEvent = { type: 'progress', message: '', action: 'Ignore' };
-      channelInstance.onmessage(mockEvent);
-      expect(onEvent).toHaveBeenCalledWith(mockEvent);
-    });
-  });
-
-  describe('getScanResult', () => {
-    it('should fetch master db and invoke get_scan_result', async () => {
-      vi.mocked(invoke).mockImplementation(async (cmd) => {
-        if (cmd === 'get_master_db') return '[]';
-        return [];
-      });
-
-      await scanService.getScanResult(GameType.GIMI, '/mods');
-      expect(invoke).toHaveBeenCalledWith('get_scan_result', {
-        modsPath: '/mods',
-        dbJson: '[]',
-      });
-    });
-  });
-
   describe('detectConflicts', () => {
     it('should invoke detect_conflicts_cmd', async () => {
       await scanService.detectConflicts(['/path1', '/path2']);
@@ -145,15 +94,15 @@ describe('scanService', () => {
     });
   });
 
-  describe('syncDatabase', () => {
-    it('should fetch master db and invoke sync_database_cmd', async () => {
+  describe('runDeepmatchScanner', () => {
+    it('should fetch master db and invoke deepmatch_scanner_cmd', async () => {
       vi.mocked(invoke).mockImplementation(async (cmd) => {
         if (cmd === 'get_master_db') return '[]';
         return { total_scanned: 10 };
       });
 
       const onEvent = vi.fn();
-      const result = await scanService.syncDatabase(
+      const result = await scanService.runDeepmatchScanner(
         'g1',
         'Genshin',
         GameType.GIMI,
@@ -163,7 +112,7 @@ describe('scanService', () => {
 
       const syncCallArgs = vi
         .mocked(invoke)
-        .mock.calls.find((c) => c[0] === 'sync_database_cmd')?.[1] as Record<string, unknown>;
+        .mock.calls.find((c) => c[0] === 'deepmatch_scanner_cmd')?.[1] as Record<string, unknown>;
       expect(syncCallArgs.gameId).toBe('g1');
       expect(syncCallArgs.dbJson).toBe('[]');
       expect(syncCallArgs.onProgress).toBeInstanceOf(Channel);
@@ -182,28 +131,28 @@ describe('scanService', () => {
         return { total_scanned: 10 };
       });
 
-      await scanService.syncDatabase('g1', 'Genshin', GameType.GIMI, '/mods');
+      await scanService.runDeepmatchScanner('g1', 'Genshin', GameType.GIMI, '/mods');
 
       const syncCallArgs = vi
         .mocked(invoke)
-        .mock.calls.find((c) => c[0] === 'sync_database_cmd')?.[1] as Record<string, unknown>;
+        .mock.calls.find((c) => c[0] === 'deepmatch_scanner_cmd')?.[1] as Record<string, unknown>;
       expect(syncCallArgs.onProgress).toBeInstanceOf(Channel);
     });
   });
 
-  describe('scanPreview', () => {
-    it('should fetch master db and invoke scan_preview_cmd', async () => {
+  describe('runDeepmatchPreview', () => {
+    it('should fetch master db and invoke deepmatch_preview_cmd', async () => {
       vi.mocked(invoke).mockImplementation(async (cmd) => {
         if (cmd === 'get_master_db') return '[]';
         return [];
       });
 
       const onEvent = vi.fn();
-      await scanService.scanPreview('g1', GameType.GIMI, '/mods', onEvent, ['/specific']);
+      await scanService.runDeepmatchPreview('g1', GameType.GIMI, '/mods', onEvent, ['/specific']);
 
       const previewCallArgs = vi
         .mocked(invoke)
-        .mock.calls.find((c) => c[0] === 'scan_preview_cmd')?.[1] as Record<string, unknown>;
+        .mock.calls.find((c) => c[0] === 'deepmatch_preview_cmd')?.[1] as Record<string, unknown>;
       expect(previewCallArgs.gameId).toBe('g1');
       expect(previewCallArgs.specificPaths).toEqual(['/specific']);
       expect(previewCallArgs.onProgress).toBeInstanceOf(Channel);
@@ -213,17 +162,6 @@ describe('scanService', () => {
       }>;
       channel.onmessage({ type: 'progress' });
       expect(onEvent).toHaveBeenCalledWith({ type: 'progress' });
-    });
-  });
-
-  describe('quickImport', () => {
-    it('should invoke sync_database_cmd with empty dbJson', async () => {
-      await scanService.quickImport('g1', 'Genshin', GameType.GIMI, '/mods');
-
-      const args = vi
-        .mocked(invoke)
-        .mock.calls.find((c) => c[0] === 'sync_database_cmd')?.[1] as Record<string, unknown>;
-      expect(args.dbJson).toBe('[]');
     });
   });
 

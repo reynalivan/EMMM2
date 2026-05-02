@@ -17,7 +17,7 @@ use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -112,14 +112,14 @@ impl WatchEventPayload {
 
 /// Managed state for the watcher, accessible via Tauri commands.
 pub struct WatcherState {
-    pub suppressor: Arc<AtomicBool>,
+    pub suppressor: Arc<WatcherSuppressor>,
     pub watcher: std::sync::Mutex<Option<RecommendedWatcher>>,
 }
 
 impl WatcherState {
     pub fn new() -> Self {
         Self {
-            suppressor: Arc::new(AtomicBool::new(false)),
+            suppressor: Arc::new(WatcherSuppressor::new(false)),
             watcher: std::sync::Mutex::new(None),
         }
     }
@@ -131,15 +131,51 @@ impl Default for WatcherState {
     }
 }
 
+pub struct WatcherSuppressor {
+    depth: AtomicUsize,
+}
+
+impl WatcherSuppressor {
+    pub fn new(suppressed: bool) -> Self {
+        Self {
+            depth: AtomicUsize::new(if suppressed { 1 } else { 0 }),
+        }
+    }
+
+    pub fn load(&self, ordering: Ordering) -> bool {
+        self.depth.load(ordering) > 0
+    }
+
+    pub fn store(&self, suppressed: bool, ordering: Ordering) {
+        if suppressed {
+            self.depth.fetch_add(1, ordering);
+            return;
+        }
+
+        self.depth.store(0, ordering);
+    }
+
+    fn increment(&self) {
+        self.depth.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn decrement(&self) {
+        let _ = self
+            .depth
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                Some(current.saturating_sub(1))
+            });
+    }
+}
+
 /// RAII Guard for watcher suppression.
-/// Sets suppression to TRUE on creation, and FALSE on drop.
 pub struct SuppressionGuard {
-    suppressor: Arc<AtomicBool>,
+    suppressor: Arc<WatcherSuppressor>,
 }
 
 impl SuppressionGuard {
-    pub fn new(suppressor: &Arc<AtomicBool>) -> Self {
-        suppressor.store(true, Ordering::Release);
+    pub fn new(suppressor: &Arc<WatcherSuppressor>) -> Self {
+        suppressor.increment();
         Self {
             suppressor: suppressor.clone(),
         }
@@ -148,7 +184,7 @@ impl SuppressionGuard {
 
 impl Drop for SuppressionGuard {
     fn drop(&mut self) {
-        self.suppressor.store(false, Ordering::Release);
+        self.suppressor.decrement();
     }
 }
 
@@ -156,11 +192,19 @@ impl Drop for SuppressionGuard {
 
 /// Extensions relevant to the mod manager.
 /// Everything else (`.dds`, `.buf`, `.hlsl`, `.blend`, `.dll`) is noise.
-const RELEVANT_EXTENSIONS: &[&str] = &["ini", "png", "jpg", "jpeg", "webp"];
+const RELEVANT_EXTENSIONS: &[&str] = &["ini", "json", "png", "jpg", "jpeg", "webp"];
 
 /// Check if a path is relevant to the mod manager.
 /// Directories (no extension) always pass; files must match the allowlist.
 fn is_relevant_path(path: &Path) -> bool {
+    if path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("info.json"))
+    {
+        return true;
+    }
+
     match path.extension().and_then(|e| e.to_str()) {
         None => true, // No extension = likely a directory
         Some(ext) => {
@@ -206,7 +250,7 @@ fn detect_status_change(from_path: &Path, to_path: &Path) -> Option<(&'static st
 /// # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 pub fn watch_mod_directory(
     path: &Path,
-    is_suppressed: Arc<AtomicBool>,
+    is_suppressed: Arc<WatcherSuppressor>,
 ) -> Result<
     (
         RecommendedWatcher,
@@ -265,9 +309,17 @@ pub fn watch_mod_directory(
                         }
 
                         if depth > 2 {
+                            if p.file_name()
+                                .and_then(|value| value.to_str())
+                                .is_some_and(|value| value.eq_ignore_ascii_case("info.json"))
+                            {
+                                return true;
+                            }
+
                             if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
                                 let ext_lower = ext.to_lowercase();
                                 if ext_lower != "ini"
+                                    && ext_lower != "json"
                                     && ext_lower != "png"
                                     && ext_lower != "jpg"
                                     && ext_lower != "jpeg"

@@ -46,6 +46,7 @@
     "aria_label_disabled": "{{name}} — 已禁用",
     "mod_pack": "模组包",
     "variants": "变体",
+    "flat_mod": "平铺模组",
     "favorite": "收藏",
     "unfavorite": "取消收藏",
     "misplaced_title": "放置错误：在 info.json 中检测到角色不匹配",
@@ -60,7 +61,8 @@
     "dir_label": "目录",
     "locked_by_parent": "受父文件夹限制",
     "locked_badge": "已锁定",
-    "corrupt_ini_title": "损坏：.ini 文件大小为 0 KB"
+    "corrupt_ini_title": "损坏：.ini 文件大小为 0 KB",
+    "inherited_lock_warning": "锁定继承自父级"
   },
   "enable_parent_dialog": {
     "title": "启用父文件夹？",
@@ -120,5 +122,8 @@
     "load_error": "加载模组失败",
     "no_subfolders": "未找到子文件夹。",
     "preview_hint": "查看详细信息面板以获取模组信息。"
+  },
+  "badges": {
+    "corrupt": "损坏"
   }
 }

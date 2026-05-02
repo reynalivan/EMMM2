@@ -7,12 +7,10 @@
  *   - Bottom (status bar): Append as new object folder
  */
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { FolderPlus, FolderInput, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useObjectListLogic } from './useObjectListLogic';
-import { commands } from '../../lib/bindings';
-import { join } from '@tauri-apps/api/path';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
 import ObjectListToolbar from './ObjectListToolbar';
@@ -21,11 +19,14 @@ import ObjectListContent from './ObjectListContent';
 import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
 import { useObjectListDropZones } from './useObjectListDropZones';
 import DropConfirmModal from './DropConfirmModal';
-import { ObjectListBanners } from './ObjectListBanners';
 import ArchiveModal from '../scanner/components/ArchiveModal';
 import BulkTagModal from './BulkTagModal';
 import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
+import { useWorkspaceRuntime } from '../workspace-runtime/state/workspaceStoreBridge';
+import { openWorkspaceConflictDialog } from '../workspace-runtime/state/workspaceDialogs';
+import { useObjectSelectionRepair } from './hooks/useObjectSelectionRepair';
+import { useObjectListEffects } from './hooks/useObjectListEffects';
 
 export default function ObjectList() {
   const { t } = useTranslation(['objects']);
@@ -48,12 +49,13 @@ export default function ObjectList() {
 
   const {
     selectedObjectFolderPath,
-    setSelectedObjectFolderPath,
+    selectObject,
     selectedObjectType,
     setSelectedObjectType,
     sidebarSearchQuery,
     setSidebarSearch,
   } = nav;
+  const { clearSelection } = useWorkspaceRuntime();
 
   const {
     parentRef,
@@ -65,8 +67,6 @@ export default function ObjectList() {
   } = virtualizer;
 
   const {
-    deleteDialog,
-    setDeleteDialog,
     deleteObjectDialog,
     setDeleteObjectDialog,
     forceDeleteObjectDialog,
@@ -84,16 +84,11 @@ export default function ObjectList() {
   } = modals;
 
   const {
-    handleToggle,
-    handleOpen,
-    handleDelete,
-    confirmDelete,
     handleDeleteObject,
     confirmDeleteObject,
     confirmForceDeleteObject,
     handleEdit,
     handlePin,
-    handleFavorite,
     handleMoveCategory,
     handleRevealInExplorer,
     handleEnableObject,
@@ -123,42 +118,18 @@ export default function ObjectList() {
     handleBulkSafe,
   } = handlers;
 
-  // Fix 3: handleBackgroundSync is stable (wrapped in useCallback in sub-hook).
-  // No eslint-disable needed — dependency is correctly limited to activeGame.id.
-  const activeGameId = activeGame?.id;
-  useEffect(() => {
-    if (activeGameId) {
-      handleBackgroundSync();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGameId]);
+  const activeGameId = activeGame?.id ?? null;
 
-  // Validate selected object exists on disk
-  useEffect(() => {
-    if (!activeGame || !selectedObjectFolderPath) return;
+  const clearObjectSelection = useCallback(() => {
+    clearSelection({ resetExplorer: true, clearObjectSelection: true });
+  }, [clearSelection]);
 
-    let isMounted = true;
-    const validateSelection = async () => {
-      try {
-        const fullPath = await join(activeGame.mod_path, selectedObjectFolderPath);
-        const folderExists = await commands.checkPathExistsCmd({ path: fullPath });
-
-        if (!folderExists && isMounted) {
-          console.warn(`Selected object missing on disk: ${fullPath}. Triggering sync...`);
-          // Calling background sync to repair DB
-          setSelectedObjectFolderPath(null); // Clear selection to prevent infinite validation loop
-          handleBackgroundSync();
-        }
-      } catch (e) {
-        console.error('Failed to validate selected object path:', e);
-      }
-    };
-
-    validateSelection();
-    return () => {
-      isMounted = false;
-    };
-  }, [activeGame, selectedObjectFolderPath, handleBackgroundSync, setSelectedObjectFolderPath]);
+  useObjectSelectionRepair({
+    modRootPath: activeGame?.mod_path ?? null,
+    selectedObjectFolderPath,
+    clearSelection: clearObjectSelection,
+    requestRepairSync: handleBackgroundSync,
+  });
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [autoSetupOpen, setAutoSetupOpen] = useState(false);
@@ -238,37 +209,12 @@ export default function ObjectList() {
     }
   }, [activeGame, handleBackgroundSync]);
 
-  // Listen to remote auto-organize requests (e.g., from PreviewPanel empty state)
-  useEffect(() => {
-    const onAutoOrganizeRequest = () => handleBackgroundSync();
-    window.addEventListener('request-auto-organize', onAutoOrganizeRequest);
-
-    const onAutoOrganizePathsRequest = (e: Event) => {
-      const paths = (e as CustomEvent<string[]>).detail;
-      if (paths && Array.isArray(paths)) {
-        handleDropAutoOrganize(paths);
-      }
-    };
-    window.addEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
-
-    // Listen to archive import requests from FolderGrid
-    const onArchiveImportRequest = (e: Event) => {
-      const { archives, nonArchivePaths, targetDir } = (e as CustomEvent).detail;
-      handleArchivesInteractively(archives, {
-        type: 'item',
-        pathsToIngest: nonArchivePaths || [],
-        targetFolder: targetDir,
-        targetObjectId: '',
-      });
-    };
-    window.addEventListener('request-archive-import', onArchiveImportRequest);
-
-    return () => {
-      window.removeEventListener('request-auto-organize', onAutoOrganizeRequest);
-      window.removeEventListener('request-auto-organize-paths', onAutoOrganizePathsRequest);
-      window.removeEventListener('request-archive-import', onArchiveImportRequest);
-    };
-  }, [handleBackgroundSync, handleDropAutoOrganize, handleArchivesInteractively]);
+  useObjectListEffects({
+    activeGameId,
+    handleBackgroundSync,
+    handleDropAutoOrganize,
+    handleArchivesInteractively,
+  });
 
   const isEmpty = !isLoading && !isError && objects.length === 0;
   const hasNoGame = !activeGame;
@@ -284,12 +230,8 @@ export default function ObjectList() {
       categoryNames,
       handleEdit,
       handleSyncWithDb,
-      handleDelete,
       handleDeleteObject,
-      handleToggle,
-      handleOpen,
       handlePin,
-      handleFavorite,
       handleMoveCategory,
       handleRevealInExplorer,
       handleEnableObject,
@@ -300,12 +242,8 @@ export default function ObjectList() {
       categoryNames,
       handleEdit,
       handleSyncWithDb,
-      handleDelete,
       handleDeleteObject,
-      handleToggle,
-      handleOpen,
       handlePin,
-      handleFavorite,
       handleMoveCategory,
       handleRevealInExplorer,
       handleEnableObject,
@@ -438,7 +376,7 @@ export default function ObjectList() {
                 const modPath = activeGame.mod_path.replace(/\\/g, '/');
                 const enabledPath = `${modPath}/${obj.folder_path}`;
                 const disabledPath = `${modPath}/DISABLED ${baseName}`;
-                useAppStore.getState().openConflictDialog({
+                openWorkspaceConflictDialog({
                   type: 'RenameConflict',
                   attempted_target: enabledPath,
                   existing_path: disabledPath,
@@ -483,7 +421,7 @@ export default function ObjectList() {
             rowVirtualizer={rowVirtualizer}
             flatObjectItems={flatObjectItems}
             selectedObjectFolderPath={selectedObjectFolderPath}
-            setSelectedObjectFolderPath={setSelectedObjectFolderPath}
+            onSelectObject={selectObject}
             selectedObjectType={selectedObjectType}
             setSelectedObjectType={setSelectedObjectType}
             isMobile={isMobile}
@@ -565,9 +503,6 @@ export default function ObjectList() {
       {/* Modals: delete, edit, sync, create */}
       <ObjectListModals
         activeGame={activeGame}
-        deleteDialog={deleteDialog}
-        onConfirmDelete={confirmDelete}
-        onCancelDelete={() => setDeleteDialog({ open: false, path: '', name: '', itemCount: 0 })}
         editObject={editObject}
         onCloseEdit={() => setEditObject(null)}
         syncConfirm={syncConfirm}

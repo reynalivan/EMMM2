@@ -1,12 +1,8 @@
-use std::collections::HashMap;
-
 use crate::repo::object_repo::{GetObjectsResult, ObjectFilter};
-use crate::services::path_key::object_name_key;
-use crate::services::scanner::core::normalizer::normalize_display_name;
 
 /// Pure DB read — no filesystem access.
 /// Returns objects from the DB index with `has_naming_conflict = false` (default).
-/// Naming conflicts and lost object GC are handled separately by `gc_lost_objects`.
+/// Runtime freshness is maintained by Disk Reconcile before queries run.
 pub async fn get_filtered_objects_with_conflict_check(
     pool: &sqlx::SqlitePool,
     filter: &ObjectFilter,
@@ -21,129 +17,6 @@ pub async fn get_filtered_objects_with_conflict_check(
         objects,
         lost_objects: vec![],
     })
-}
-
-/// Garbage-collect objects whose folders no longer exist on disk.
-///
-/// Compares each object's `folder_path` (a folder name like `"Alhaitham"`)
-/// against the normalized set of filesystem directories under `mods_path`.
-/// Objects with no matching FS directory are deleted from the DB.
-///
-/// # Safety Invariants
-/// - If `mods_dir` doesn't exist → GC is skipped (config issue, not GC signal).
-/// - If filesystem returns 0 non-hidden folders → GC is skipped (FS unreadable).
-/// - If GC would delete ALL objects for a game → GC is **aborted** entirely
-///   (likely a `folder_path` format mismatch, not legitimate cleanup).
-///
-/// # Call Sites
-/// - `startup_sync::reconcile_game` (app startup)
-/// - Manual "Sync Database" action
-/// - Watcher `Removed` events (via lifecycle.rs)
-pub async fn gc_lost_objects(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-) -> Result<Vec<String>, String> {
-    let filter = ObjectFilter {
-        game_id: game_id.to_string(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
-    };
-
-    let objects = crate::repo::object_repo::get_filtered_objects(pool, &filter)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if objects.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mod_path_opt = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let Some(ref mod_path) = mod_path_opt else {
-        return Ok(vec![]);
-    };
-
-    let mods_dir = std::path::Path::new(mod_path);
-    if !mods_dir.is_dir() {
-        // mods_path gone — do NOT delete objects; this is a config issue, not a GC signal.
-        log::warn!(
-            "GC skipped for game '{}': mods_dir '{}' does not exist. Keeping DB intact.",
-            game_id,
-            mod_path
-        );
-        return Ok(vec![]);
-    }
-
-    // Build normalized folder name set from disk
-    let mut norm_set: HashMap<String, Vec<String>> = HashMap::new();
-    let read_dir_ok = if let Ok(entries) = std::fs::read_dir(mods_dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if !name.starts_with('.') {
-                    let key = object_name_key(&normalize_display_name(&name));
-                    norm_set.entry(key).or_default().push(name);
-                }
-            }
-        }
-        true
-    } else {
-        false
-    };
-
-    // SAFETY: If read_dir failed, skip GC — filesystem is unreadable
-    if !read_dir_ok {
-        log::warn!(
-            "GC skipped for game '{}': read_dir failed at '{}'. Keeping DB intact.",
-            game_id,
-            mod_path
-        );
-        return Ok(vec![]);
-    }
-
-    // Phase 1: Collect candidates (do NOT delete yet)
-    let mut candidates: Vec<(String, String, String)> = Vec::new(); // (id, name, folder_path)
-    for obj in &objects {
-        let key = object_name_key(&normalize_display_name(&obj.folder_path));
-        if !norm_set.contains_key(&key) {
-            candidates.push((obj.id.clone(), obj.name.clone(), obj.folder_path.clone()));
-        }
-    }
-
-    // SAFETY: If GC would delete ALL objects AND there are at least 2 objects,
-    // abort — this most likely indicates a folder_path format mismatch, not
-    // legitimate cleanup. When objects.len() == 1 we allow the delete because
-    // "the only object was deleted" is a valid user action.
-    if !candidates.is_empty() && candidates.len() == objects.len() && objects.len() > 1 {
-        log::error!(
-            "GC ABORTED for game '{}': would delete ALL {} objects. \
-              This indicates a folder_path format mismatch between DB and FS, \
-              not legitimate cleanup. DB objects kept intact.",
-            game_id,
-            objects.len()
-        );
-        return Ok(vec![]);
-    }
-
-    // Phase 2: Delete only the safe subset
-    let mut lost_names = Vec::new();
-    for (id, name, folder_path) in &candidates {
-        log::info!(
-            "GC: lost object '{}' (folder_path='{}') — deleting from DB",
-            name,
-            folder_path
-        );
-        let _ = crate::repo::object_repo::delete_object(pool, id).await;
-        lost_names.push(name.clone());
-    }
-
-    Ok(lost_names)
 }
 
 pub async fn get_category_counts_service(

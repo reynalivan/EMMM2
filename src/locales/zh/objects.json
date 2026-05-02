@@ -49,6 +49,7 @@
     "resolve": "解决",
     "disabled_overlay": "已禁用",
     "conflict_tooltip": "命名冲突：同时存在启用和禁用的版本",
+    "matched_alias": "别名：{{alias}}",
     "badge_existing": "现有",
     "badge_edited": "已编辑",
     "status_unmatched": "未匹配",
@@ -62,6 +63,7 @@
     "enable": "启用",
     "disable": "禁用",
     "move_category": "移动类别...",
+    "sync_db": "与数据库同步",
     "syncing": "正在同步...",
     "sync": {
       "title": "同步数据库",
@@ -100,6 +102,9 @@
     "selected_count": "已选择 {{count}} 项",
     "delete_selected": "删除所选",
     "pin_selected": "固定所选",
+    "pinned": "已固定",
+    "unpinned": "已取消固定",
+    "more_others": "+ 另外 {{count}} 个",
     "favorite": "收藏",
     "unfavorite": "取消收藏",
     "mark_safe": "标记为安全",
@@ -157,7 +162,15 @@
     "db_no_matches": "未找到匹配项",
     "db_hint": "正在显示前面的结果。输入更多字符以缩小范围。",
     "smart_suggestions": "智能建议",
-    "match_percent": "{{percent}}% 匹配"
+    "match_percent": "{{percent}}% 匹配",
+    "thumbnail": {
+      "label": "缩略图",
+      "alt": "对象缩略图",
+      "change": "更换缩略图",
+      "delete_title": "删除缩略图",
+      "selected": "已选择的缩略图",
+      "will_delete": "保存时将删除此缩略图。"
+    }
   },
   "delete_dialog": {
     "title_folder": "删除文件夹？",
@@ -247,5 +260,43 @@
       "empty_success": "已清空回收站 (移除了 {{count}} 个项目)",
       "empty_failed": "清空回收站失败: {{error}}"
     }
+  },
+  "bulk_tags": {
+    "add_title": "添加标签",
+    "remove_title": "移除标签",
+    "add_description": "为选中的对象添加一个或多个标签。",
+    "placeholder": "输入标签后按 Enter",
+    "add_submit": "添加标签",
+    "remove_description": "选择要从所选对象中移除的标签。",
+    "empty": "没有可移除的标签。"
+  },
+  "drop_confirm": {
+    "validating": "正在验证文件夹目标...",
+    "validating_description": "正在检查 {{folderName}} 的最佳对象匹配。",
+    "skip_validation": "跳过验证",
+    "title": "移动文件夹？",
+    "description": "将此文件夹移动到 {{targetName}}？",
+    "match_score": "匹配分数：{{score}}%",
+    "suggested_target": "建议目标",
+    "move_anyway": "仍然移动",
+    "move_to": "移动到 {{targetName}}"
+  },
+  "auto_setup_modal": {
+    "toast_partial": "已添加 {{successCount}} 个文件夹，{{failedCount}} 个失败。",
+    "toast_success": "已成功添加 {{count}} 个文件夹。",
+    "title": "自动设置文件夹",
+    "description": "在创建文件夹前，先检查 {{gameName}} 的检测目标。",
+    "loading": "正在加载检测到的对象...",
+    "search_placeholder": "搜索对象...",
+    "deselect_all": "取消全选",
+    "select_all": "全选",
+    "selection_status": "已选择 {{selected}} / {{total}}",
+    "no_results": "没有对象匹配“{{query}}”。",
+    "no_thumbnail": "没有缩略图",
+    "add_selected": "添加所选项"
+  },
+  "folder_tooltip": {
+    "preview_alt": "文件夹预览",
+    "contents": "内容"
   }
 }

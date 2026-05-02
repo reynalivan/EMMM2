@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Power } from 'lucide-react';
-import { DEMO_MODS, usePrefersReducedMotion } from '../demoTypes';
+import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion';
+import { DEMO_MODS } from '../demoTypes';
 
 export default function DemoTogglePreset({ onComplete }: { onComplete?: () => void }) {
   const { t } = useTranslation();

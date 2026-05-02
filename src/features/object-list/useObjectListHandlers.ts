@@ -6,8 +6,8 @@
  */
 
 import React from 'react';
-import type { ModFolder } from '../../hooks/useFolders';
-import type { ObjectSummary, GameSchema } from '../../types/object';
+import type { GameSchema } from '../../types/object';
+import type { WorkspaceObjectNode } from '../../types/workspace';
 import { useObjHandlersCrud } from './useObjHandlersCrud';
 import { useObjHandlersScan } from './useObjHandlersScan';
 import { useObjHandlersArchive } from './useObjHandlersArchive';
@@ -15,27 +15,21 @@ import { useObjHandlersDrop } from './useObjHandlersDrop';
 import { useObjHandlersBulk } from './useObjHandlersBulk';
 
 interface HandlerDeps {
-  objects: ObjectSummary[];
-  folders?: ModFolder[];
+  objects: WorkspaceObjectNode[];
   schema: GameSchema | undefined;
   mismatchConfirm: string[] | null;
   setMismatchConfirm: React.Dispatch<React.SetStateAction<string[] | null>>;
-  bulkSelect: {
-    selectedIds: Set<string>;
-    clearSelection: () => void;
-  };
 }
 
 export function useObjectListHandlers({
   objects,
-  folders = [],
   schema,
   mismatchConfirm,
   setMismatchConfirm,
 }: HandlerDeps) {
   // ── 1. Feature Hooks ───────────────────────────────────────────
-  const crud = useObjHandlersCrud({ objects, folders, schema });
-  const scan = useObjHandlersScan({ objects, folders });
+  const crud = useObjHandlersCrud({ objects, schema });
+  const scan = useObjHandlersScan();
 
   // Archive depends on scan review state to resume flows
   const archive = useObjHandlersArchive({
@@ -55,14 +49,13 @@ export function useObjectListHandlers({
 
   const bulk = useObjHandlersBulk({
     objects,
-    toggleObjectMods: crud.toggleObjectMods,
+    setScanReview: scan.setScanReview,
+    setIsSyncing: scan.setIsSyncing,
   });
 
   // ── 2. Mapping to Unified Interface ────────────────────────────
   return {
     // Dialog & Modal States
-    deleteDialog: crud.deleteDialog,
-    setDeleteDialog: crud.setDeleteDialog,
     editObject: crud.editObject,
     setEditObject: crud.setEditObject,
     deleteObjectDialog: crud.deleteObjectDialog,
@@ -74,41 +67,36 @@ export function useObjectListHandlers({
     mismatchConfirm,
     setMismatchConfirm,
     isSyncing: scan.isSyncing,
-    syncConfirm: scan.syncConfirm,
-    setSyncConfirm: scan.setSyncConfirm,
+    syncConfirm: crud.syncConfirm,
+    setSyncConfirm: crud.setSyncConfirm,
     scanReview: scan.scanReview,
     handleCommitScan: scan.handleCommitScan,
     handleCloseScanReview: scan.handleCloseScanReview,
     archiveModal: archive.archiveModal,
 
     // CRUD Handlers
-    handleToggle: crud.handleToggle,
-    handleOpen: crud.handleOpen,
-    handleDelete: crud.handleDelete,
-    confirmDelete: crud.confirmDelete,
     handleDeleteObject: crud.handleDeleteObject,
     confirmDeleteObject: crud.confirmDeleteObject,
     confirmForceDeleteObject: crud.confirmForceDeleteObject,
     handleEdit: crud.handleEdit,
     handlePin: crud.handlePin,
-    handleFavorite: crud.handleFavorite,
     handleMoveCategory: crud.handleMoveCategory,
-    handleToggleObjectMods: crud.toggleObjectMods,
     handleRevealInExplorer: crud.handleRevealInExplorer,
     handleEnableObject: crud.handleEnableObject,
     handleDisableObject: crud.handleDisableObject,
+    isSwitchPending: crud.isSwitchPending,
+    isObjectSwitchPending: crud.isObjectSwitchPending,
     categoryNames: crud.categoryNames,
 
     // Scanning & Sync Handlers
     handleSync: scan.handleSync,
     handleBackgroundSync: scan.handleBackgroundSync,
-    handleSyncWithDb: scan.handleSyncWithDb,
-    handleApplySyncMatch: scan.handleApplySyncMatch,
+    handleSyncWithDb: crud.handleSyncWithDb,
+    handleApplySyncMatch: crud.handleApplySyncMatch,
 
     // Drop & Ingest Handlers
     handleDropOnItem: drop.handleDropOnItem,
     handleDropAutoOrganize: drop.handleDropAutoOrganize,
-    handleDropNewObject: drop.handleDropNewObject,
     handleDropOnNewObjectSubmit: drop.handleDropOnNewObjectSubmit,
 
     // Archive Handlers

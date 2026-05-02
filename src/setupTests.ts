@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import React from 'react';
 
 // Mock Tauri API globally
 vi.mock('@tauri-apps/api/core', () => ({
@@ -32,15 +33,12 @@ vi.mock('@/lib/bindings', () => ({
   },
 }));
 
-import React from 'react';
-
 // Mock lucide-react dynamically
 vi.mock('lucide-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('lucide-react')>();
   const mockExports: Record<string, unknown> = { ...actual };
   for (const key in actual) {
     if (key === 'default' || key === '__esModule') continue;
-    // Mock every icon as an empty element to prevent text pollution in getByText
     mockExports[key] = () =>
       React.createElement('span', { 'data-testid': `icon-${key.toLowerCase()}` });
   }
@@ -66,6 +64,11 @@ vi.mock('@tauri-apps/plugin-log', () => ({
   trace: vi.fn(),
   debug: vi.fn(),
   attachConsole: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  exists: vi.fn().mockResolvedValue(true),
+  mkdir: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock ResizeObserver for JSDOM
@@ -108,23 +111,7 @@ if (typeof HTMLDialogElement !== 'undefined') {
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: Record<string, unknown>) => {
-      const keys: Record<string, string> = {
-        'scanner:resolution.title': 'Confirm Resolution',
-        'scanner:resolution.summary': `You are about to resolve ${options?.count} duplicate group(s). This will result in ${options?.deleted} file deletion(s) and ${options?.ignored} whitelist addition(s).`,
-        'scanner:resolution.keep_specific': 'Keep Specific',
-        'scanner:resolution.whitelist': 'Whitelist',
-        'scanner:resolution.keep_label': 'KEEP:',
-        'scanner:resolution.delete_others': `Delete ${options?.count} other identical item(s)`,
-        'scanner:resolution.ignore_label': 'IGNORE:',
-        'scanner:resolution.ignore_desc': `Whitelist all ${options?.count} members`,
-        'scanner:resolution.confirm_button': 'Confirm & Resolve',
-        'scanner:resolution.processing': 'Processing...',
-        'scanner:resolution_modal.title': 'Confirm Resolution',
-        'common:cancel': 'Cancel',
-      };
-      return keys[key] || key;
-    },
+    t: (key: string) => key,
     i18n: {
       changeLanguage: () => Promise.resolve(),
       language: 'en',
@@ -139,16 +126,60 @@ vi.mock('react-i18next', () => ({
 // Mock motion/react to avoid animation issues in jsdom
 vi.mock('motion/react', () => ({
   motion: {
-    div: ({ children, layout, ...props }: any) => React.createElement('div', props, children),
-    button: ({ children, layout, ...props }: any) => React.createElement('button', props, children),
-    span: ({ children, ...props }: any) => React.createElement('span', props, children),
-    h1: ({ children, ...props }: any) => React.createElement('h1', props, children),
-    h2: ({ children, ...props }: any) => React.createElement('h2', props, children),
-    p: ({ children, ...props }: any) => React.createElement('p', props, children),
-    section: ({ children, ...props }: any) => React.createElement('section', props, children),
-    article: ({ children, ...props }: any) => React.createElement('article', props, children),
-    ul: ({ children, ...props }: any) => React.createElement('ul', props, children),
-    li: ({ children, ...props }: any) => React.createElement('li', props, children),
+    div: ({
+      children,
+      layout: _layout,
+      ...props
+    }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('div', props as any, children),
+    button: ({
+      children,
+      layout: _layout,
+      ...props
+    }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('button', props as any, children),
+    span: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('span', props as any, children),
+    h1: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('h1', props as any, children),
+    h2: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('h2', props as any, children),
+    p: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('p', props as any, children),
+    section: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('section', props as any, children),
+    article: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('article', props as any, children),
+    ul: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('ul', props as any, children),
+    li: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('li', props as any, children),
   },
-  AnimatePresence: ({ children }: any) => children,
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
+  useAnimation: () => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+  }),
+  Reorder: {
+    Group: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('div', props as any, children),
+    Item: ({
+      children,
+      layout: _layout,
+      ...props
+    }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      React.createElement('div', props as any, children),
+  },
 }));

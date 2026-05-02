@@ -157,7 +157,10 @@ async fn test_pin_lockout_persists_after_restart() {
 
         // Verify lockout is stored in DB
         let settings = service.get_settings();
-        assert!(settings.safe_mode.lockout_until_ts.is_some(), "Lockout timestamp should be in DB");
+        assert!(
+            settings.safe_mode.lockout_until_ts.is_some(),
+            "Lockout timestamp should be in DB"
+        );
     }
 
     // === Phase 2: Create new service instance (simulating app restart) ===
@@ -167,12 +170,24 @@ async fn test_pin_lockout_persists_after_restart() {
         // Immediately check PIN - should still be locked
         let status = service_restarted.verify_pin_status("000000");
         assert!(!status.valid, "PIN should still be locked after restart");
-        assert_eq!(status.attempts_remaining, 0, "No attempts remaining while locked");
-        assert!(status.locked_seconds_remaining > 0, "Lockout timeout should be preserved");
+        assert_eq!(
+            status.attempts_remaining, 0,
+            "No attempts remaining while locked"
+        );
+        assert!(
+            status.locked_seconds_remaining > 0,
+            "Lockout timeout should be preserved"
+        );
 
         // Even correct PIN should fail while locked
         let status_correct = service_restarted.verify_pin_status("123456");
-        assert!(!status_correct.valid, "Even correct PIN should fail during lockout");
-        assert_eq!(status_correct.locked_seconds_remaining, status.locked_seconds_remaining);
+        assert!(
+            !status_correct.valid,
+            "Even correct PIN should fail during lockout"
+        );
+        assert_eq!(
+            status_correct.locked_seconds_remaining,
+            status.locked_seconds_remaining
+        );
     }
 }

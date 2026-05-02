@@ -1,4 +1,5 @@
 import { ImageIcon, Upload, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface EditObjectTabThumbnailProps {
   displayThumbnail: string | null;
@@ -17,14 +18,18 @@ export function EditObjectTabThumbnail({
   handleThumbnailClick,
   handleDeleteThumbnail,
 }: EditObjectTabThumbnailProps) {
+  const { t } = useTranslation(['objects']);
+
   return (
     <div className="flex w-full shrink-0 flex-col items-center gap-2 md:w-32">
-      <span className="label-text self-center font-medium">Thumbnail</span>
+      <span className="label-text self-center font-medium">
+        {t('edit_modal.thumbnail.label')}
+      </span>
       <div className="w-32 h-32 rounded-xl bg-base-300 overflow-hidden flex items-center justify-center border border-base-content/10 relative shadow-inner">
         {displayThumbnail ? (
           <img
             src={displayThumbnail}
-            alt="Thumbnail"
+            alt={t('edit_modal.thumbnail.alt')}
             className={`w-full h-full object-cover ${selectedThumbnailPath ? 'opacity-50' : ''}`}
           />
         ) : (
@@ -39,24 +44,28 @@ export function EditObjectTabThumbnail({
             onClick={handleThumbnailClick}
           >
             <Upload size={14} />
-            Change
+            {t('edit_modal.thumbnail.change')}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-outline btn-error square px-2"
             onClick={handleDeleteThumbnail}
             disabled={!displayThumbnail}
-            title="Delete Thumbnail"
+            title={t('edit_modal.thumbnail.delete_title')}
           >
             <Trash2 size={14} />
           </button>
         </div>
       )}
       {thumbnailAction === 'update' && (
-        <div className="text-xs opacity-50 truncate max-w-32">Selected</div>
+        <div className="text-xs opacity-50 truncate max-w-32">
+          {t('edit_modal.thumbnail.selected')}
+        </div>
       )}
       {thumbnailAction === 'delete' && (
-        <div className="text-xs text-error opacity-70">Will be deleted</div>
+        <div className="text-xs text-error opacity-70">
+          {t('edit_modal.thumbnail.will_delete')}
+        </div>
       )}
     </div>
   );

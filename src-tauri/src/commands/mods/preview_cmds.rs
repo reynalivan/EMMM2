@@ -1,5 +1,7 @@
 use crate::domain::errors::{AppError, MetadataError};
 use crate::services::config::ConfigService;
+use crate::services::disk_reconcile::orchestrator::DiskReconcileState;
+use crate::services::disk_reconcile::types::DiskReconcileReason;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::ini::document::{self as ini_document, IniDocument};
@@ -9,7 +11,7 @@ use crate::services::scanner::core::thumbnail;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub struct IniFileEntry {
@@ -192,6 +194,33 @@ pub fn clear_mod_preview_images_inner(mod_root: &Path) -> Result<Vec<String>, Ap
     preview_image::clear_preview_images(mod_root).map_err(AppError::Io)
 }
 
+async fn emit_internal_disk_reconcile(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    config: &ConfigService,
+    disk_reconcile_state: &DiskReconcileState,
+    watcher: &WatcherState,
+    game_id: &str,
+    changed_paths: Vec<String>,
+) -> Result<(), AppError> {
+    let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
+        app,
+        pool,
+        config,
+        disk_reconcile_state,
+        watcher.suppressor.clone(),
+        game_id.to_string(),
+        DiskReconcileReason::InternalMutation,
+        changed_paths,
+        false,
+    )
+    .await
+    .map_err(AppError::Internal)?;
+
+    app.emit("disk_reconcile:result", result)
+        .map_err(|error| AppError::Internal(error.to_string()))
+}
+
 #[specta::specta]
 #[tauri::command]
 pub async fn list_mod_ini_files(
@@ -220,8 +249,12 @@ pub async fn read_mod_ini(
 #[specta::specta]
 #[tauri::command]
 pub async fn write_mod_ini(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<'_, DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
+    watcher: State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
     file_name: String,
@@ -229,7 +262,19 @@ pub async fn write_mod_ini(
 ) -> Result<(), AppError> {
     let mod_root = PathGuard::validate_path(&config, &game_id, &folder_path)
         .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
-    write_mod_ini_locked_inner(&op_lock, &mod_root, &file_name, line_updates).await
+    let changed_path = mod_root.join(&file_name).to_string_lossy().to_string();
+    let _guard = SuppressionGuard::new(&watcher.suppressor);
+    write_mod_ini_locked_inner(&op_lock, &mod_root, &file_name, line_updates).await?;
+    emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &config,
+        &disk_reconcile_state,
+        &watcher,
+        &game_id,
+        vec![changed_path],
+    )
+    .await
 }
 
 #[specta::specta]
@@ -247,7 +292,10 @@ pub async fn list_mod_preview_images(
 #[specta::specta]
 #[tauri::command]
 pub async fn save_mod_preview_image(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<'_, DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     watcher: State<'_, WatcherState>,
     game_id: String,
@@ -267,13 +315,27 @@ pub async fn save_mod_preview_image(
         .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
     let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    save_mod_preview_image_inner(&mod_root, &object_name, &image_data)
+    let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
+    emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &config,
+        &disk_reconcile_state,
+        &watcher,
+        &game_id,
+        vec![saved.clone()],
+    )
+    .await?;
+    Ok(saved)
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn remove_mod_preview_image(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<'_, DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     watcher: State<'_, WatcherState>,
     game_id: String,
@@ -282,15 +344,29 @@ pub async fn remove_mod_preview_image(
 ) -> Result<(), AppError> {
     let mod_root = PathGuard::validate_path(&config, &game_id, &folder_path)
         .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
+    let target = resolve_image_path(&mod_root, &image_path)?;
     let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    remove_mod_preview_image_inner(&mod_root, &image_path)
+    remove_mod_preview_image_inner(&mod_root, &image_path)?;
+    emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &config,
+        &disk_reconcile_state,
+        &watcher,
+        &game_id,
+        vec![target.to_string_lossy().to_string()],
+    )
+    .await
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn clear_mod_preview_images(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<'_, DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     watcher: State<'_, WatcherState>,
     game_id: String,
@@ -300,7 +376,23 @@ pub async fn clear_mod_preview_images(
         .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
     let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    clear_mod_preview_images_inner(&mod_root)
+    let removed = clear_mod_preview_images_inner(&mod_root)?;
+    let changed_paths = if removed.is_empty() {
+        vec![mod_root.to_string_lossy().to_string()]
+    } else {
+        removed.clone()
+    };
+    emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &config,
+        &disk_reconcile_state,
+        &watcher,
+        &game_id,
+        changed_paths,
+    )
+    .await?;
+    Ok(removed)
 }
 
 #[cfg(test)]

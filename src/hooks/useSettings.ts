@@ -6,6 +6,7 @@ import { useToastStore } from '../stores/useToastStore';
 import { normalizeThemeSetting, type ThemeSetting } from '../features/settings/theme/themeOptions';
 import i18n from '../lib/i18n';
 import { useTranslation } from 'react-i18next';
+import { publishQueryScopes } from '../features/runtime-sync/queryRefresh';
 
 // Re-export for consumers
 export type { GameConfig, AppSettings, AiConfig, PinVerifyStatus };
@@ -31,9 +32,7 @@ export function useSettings() {
       queryClient.setQueryData(settingsKeys.all, newSettings);
       addToast(
         'success',
-        t('settings:toast.save_success', {
-          defaultValue: 'Settings Saved: Configuration updated successfully.',
-        }),
+        t('settings:toast.save_success'),
       );
     },
     onError: (err) => {
@@ -42,7 +41,6 @@ export function useSettings() {
         'error',
         t('settings:toast.save_failed', {
           error: String(err),
-          defaultValue: `Save Failed: ${String(err)}`,
         }),
       );
     },
@@ -50,13 +48,11 @@ export function useSettings() {
 
   const setPinMutation = useMutation({
     mutationFn: (pin: string) => commands.setPin({ pin, recoveryCode: undefined }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['settings']);
       addToast(
         'success',
-        t('settings:toast.pin_success', {
-          defaultValue: 'PIN Updated: Safe Mode PIN has been set securely.',
-        }),
+        t('settings:toast.pin_success'),
       );
     },
     onError: (err) => {
@@ -65,7 +61,6 @@ export function useSettings() {
         'error',
         t('settings:toast.pin_failed', {
           error: String(err),
-          defaultValue: `PIN Update Failed: ${String(err)}`,
         }),
       );
     },
@@ -78,8 +73,8 @@ export function useSettings() {
       await commands.setPin({ pin, recoveryCode: code });
       return code;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['settings']);
     },
     onError: (err) => {
       console.error(err);
@@ -87,7 +82,6 @@ export function useSettings() {
         'error',
         t('settings:toast.pin_failed', {
           error: String(err),
-          defaultValue: `PIN Update Failed: ${String(err)}`,
         }),
       );
     },
@@ -95,8 +89,10 @@ export function useSettings() {
 
   const resetPinWithRecoveryMutation = useMutation({
     mutationFn: (code: string) => commands.resetPinWithRecoveryCode({ code }),
-    onSuccess: (valid) => {
-      if (valid) queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    onSuccess: async (valid) => {
+      if (valid) {
+        await publishQueryScopes(queryClient, ['settings']);
+      }
     },
     onError: (err) => {
       console.error(err);
@@ -114,10 +110,9 @@ export function useSettings() {
       const [pruned, purged] = data;
       addToast(
         'success',
-        t('layout:maintenance.success', {
+        t('layout:maintenance.maintenance_success', {
           pruned,
-          purged,
-          defaultValue: `Maintenance complete. Pruned ${pruned} thumbnails. Purged ${purged} old empty trash entries.`,
+          trash: purged,
         }),
       );
     },
@@ -126,7 +121,6 @@ export function useSettings() {
         'error',
         t('layout:maintenance.failed', {
           error: String(err),
-          defaultValue: `Maintenance Failed: ${String(err)}`,
         }),
       );
     },
@@ -141,8 +135,8 @@ export function useSettings() {
       };
       return commands.saveSettings({ settings: newSettings });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['settings']);
     },
     onError: (err) => {
       console.error(err);
@@ -150,7 +144,6 @@ export function useSettings() {
         'error',
         t('settings:toast.ai_failed', {
           error: String(err),
-          defaultValue: `Failed to update AI config: ${String(err)}`,
         }),
       );
     },
@@ -167,13 +160,11 @@ export function useSettings() {
 
       return commands.saveSettings({ settings: newSettings });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['settings']);
       addToast(
         'success',
-        t('settings:toast.theme_success', {
-          defaultValue: 'Theme Updated: Appearance updated successfully.',
-        }),
+        t('settings:toast.theme_success'),
       );
     },
     onError: (err) => {
@@ -182,7 +173,6 @@ export function useSettings() {
         'error',
         t('settings:toast.theme_failed', {
           error: String(err),
-          defaultValue: `Theme Update Failed: ${String(err)}`,
         }),
       );
     },
@@ -215,13 +205,11 @@ export function useSettings() {
         await i18n.changeLanguage(language);
         return newSettings;
       },
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+      onSuccess: async () => {
+        await publishQueryScopes(queryClient, ['settings']);
         addToast(
           'success',
-          t('settings:toast.lang_success', {
-            defaultValue: 'Language Updated: Interface language changed.',
-          }),
+          t('settings:toast.lang_success'),
         );
       },
       onError: (err) => {
@@ -230,7 +218,6 @@ export function useSettings() {
           'error',
           t('settings:toast.lang_failed', {
             error: String(err),
-            defaultValue: `Language Update Failed: ${String(err)}`,
           }),
         );
       },

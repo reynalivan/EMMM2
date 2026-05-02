@@ -2,7 +2,7 @@ use super::{resolve_batch, ResolutionAction, ResolutionRequest};
 use crate::services::fs_utils::operation_lock::OperationLock;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use crate::services::scanner::watcher::WatcherSuppressor;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -125,7 +125,7 @@ async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
         .unwrap();
 
     let lock = OperationLock::new();
-    let suppressor = Arc::new(AtomicBool::new(false));
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         vec![ResolutionRequest {
             group_id: "group-1".to_string(),
@@ -170,7 +170,7 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
         .unwrap();
 
     let lock = OperationLock::new();
-    let suppressor = Arc::new(AtomicBool::new(false));
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         vec![ResolutionRequest {
             group_id: "group-2".to_string(),
@@ -207,7 +207,7 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
         .unwrap();
 
     let lock = OperationLock::new();
-    let suppressor = Arc::new(AtomicBool::new(false));
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         vec![ResolutionRequest {
             group_id: "group-3".to_string(),
@@ -265,7 +265,7 @@ async fn test_nc_9_2_03_lock_contention_returns_clear_error() {
 
     let lock = OperationLock::new();
     let _held_guard = lock.acquire().await.unwrap();
-    let suppressor = Arc::new(AtomicBool::new(false));
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
 
     let result = resolve_batch(
         vec![ResolutionRequest {
@@ -363,7 +363,7 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
     let mut progress_events = Vec::new();
 
     let lock = OperationLock::new();
-    let suppressor = Arc::new(AtomicBool::new(false));
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         requests,
         game_id.to_string(),
@@ -481,7 +481,7 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
     // This test verifies graceful error handling exists
 
     let lock = OperationLock::new();
-    let suppressor = Arc::new(AtomicBool::new(false));
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         requests,
         game_id.to_string(),

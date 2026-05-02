@@ -56,12 +56,34 @@ pub async fn reset_database(
     Ok(())
 }
 
+#[specta::specta]
+#[tauri::command]
+pub async fn close_splashscreen(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(splash) = app.get_webview_window("splashscreen") {
+        let _ = splash.close();
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        main.show().map_err(|e| e.to_string())?;
+        main.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Check if a given absolute path exists on the disk.
 /// Bypasses restrictive Tauri v2 plugin-fs scopes.
 #[specta::specta]
 #[tauri::command]
 pub fn check_path_exists_cmd(path: String) -> bool {
     std::path::Path::new(&path).exists()
+}
+
+/// Ensure a directory exists on disk.
+/// Used by frontend import flows to avoid direct plugin-fs dependency in tests/runtime.
+#[specta::specta]
+#[tauri::command]
+pub fn ensure_dir_cmd(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create directory {path}: {e}"))
 }
 
 #[cfg(test)]

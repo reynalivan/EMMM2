@@ -25,14 +25,6 @@ pub async fn delete_mod(
     let result =
         trash::delete_mod_service(&config, &pool, &state, &op_lock, trash_dir, path, game_id).await;
 
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        &pool,
-        &config,
-        state.suppressor.clone(),
-    )
-    .await;
-
     result
 }
 
@@ -50,20 +42,6 @@ pub async fn restore_mod(
 
     let result =
         trash::restore_from_trash(&trash_id, &app_data_dir.join("trash"), game_id.as_ref())?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    if let (Some(pool), Some(config), Some(state)) = (
-        app.try_state::<sqlx::SqlitePool>(),
-        app.try_state::<ConfigService>(),
-        app.try_state::<WatcherState>(),
-    ) {
-        let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-            &pool,
-            &config,
-            state.suppressor.clone(),
-        )
-        .await;
-    }
 
     Ok(result)
 }

@@ -12,7 +12,8 @@
     "done": "完成",
     "save": "保存",
     "close": "关闭",
-    "edit": "编辑"
+    "edit": "编辑",
+    "more_actions": "更多操作"
   },
   "metadata": {
     "title": "元数据",
@@ -47,8 +48,23 @@
       "paste": "粘贴缩略图",
       "import": "导入缩略图",
       "remove_current": "删除此缩略图",
-      "clear_all": "清除所有缩略图"
-    }
+      "clear_all": "清除所有缩略图",
+      "thumbnail_imported": "缩略图已导入。"
+    },
+    "image_alt": "预览图片",
+    "maximize_label": "打开全屏预览",
+    "no_image_in_clipboard": "剪贴板中没有图片。",
+    "thumbnail_pasted": "缩略图已粘贴。",
+    "paste_error": "粘贴缩略图失败：{{error}}",
+    "thumbnail_removed": "缩略图已删除。",
+    "remove_error": "删除缩略图失败：{{error}}",
+    "all_thumbnails_cleared": "所有缩略图已清除。",
+    "clear_all_error": "清除所有缩略图失败：{{error}}",
+    "remove_confirm_message": "删除当前选中的缩略图？",
+    "clear_all_confirm_message": "删除此模组的所有缩略图？",
+    "no_thumbnail_selected": "未选择缩略图。",
+    "no_thumbnails_to_clear": "没有可清除的缩略图。",
+    "import_error": "导入缩略图失败：{{error}}"
   },
   "ini_editor": {
     "title": "INI 编辑器",
@@ -74,6 +90,24 @@
     "no_alt": "no_alt",
     "shift_restriction_disabled": "Shift 是组合键的一部分，无法限制。",
     "ctrl_restriction_disabled": "Ctrl 是组合键的一部分，无法限制。",
-    "alt_restriction_disabled": "Alt 是组合键的一部分，无法限制。"
+    "alt_restriction_disabled": "Alt 是组合键的一部分，无法限制。",
+    "modifier_ctrl": "CTRL",
+    "modifier_alt": "ALT",
+    "modifier_shift": "SHIFT"
+  },
+  "modals": {
+    "unsaved": {
+      "title": "存在未保存的更改",
+      "description": "“{{modName}}”有尚未保存的元数据或 INI 更改。",
+      "this_mod": "此模组",
+      "metadata_edits": "元数据更改",
+      "ini_edits": "INI 更改",
+      "change_title": "从“{{oldValue}}”变为“{{newValue}}”",
+      "empty_value": "（空）",
+      "saving": "保存中..."
+    }
+  },
+  "errors": {
+    "open_location_failed": "打开文件位置失败：{{error}}"
   }
 }

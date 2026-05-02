@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Beyond single-click toggle, users need rich contextual actions on mod cards (rename, delete, open in Explorer, paste thumbnail) from a right-click menu — and a drag-selection marquee and drag-to-objectlist for rapid re-categorization.
-- **Proposed Solution**: A right-click context menu (custom, not browser default) on cards and grid background, standardized Shift-click and Ctrl-click selection, and a "Move to Object" dialog for re-categorization.
+- **Proposed Solution**: A right-click context menu (custom, not browser default) on cards and grid background, standardized Shift-click and Ctrl-click selection, and a "Move to Object" dialog for re-categorization. Menu structure is resolved by shared policy, while imperative actions (Explorer open, thumbnail paste/import, move, sync) are dispatched through dedicated action hooks.
 - **Success Criteria**:
   - [x] Context menu appears within ≤ 50ms of right-click (positioned correctly within viewport bounds).
   - [x] Thumbnail paste (clipboard → `preview.png`) completes in ≤ 500ms.
@@ -40,7 +40,7 @@ As a user, I want to right-click empty grid space to access global grid actions,
 | ID        | Type        | Criteria                                                                                                                                                          |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-15.2.1 | ✅ Positive | Given a right-click precisely on the grid background (not on any card), then a context menu shows: "Refresh", "Select All", "Open Folder in Explorer"             |
-| AC-15.2.2 | ✅ Positive | Given "Refresh" is clicked, then `queryClient.invalidateQueries(['folders', gameId, subPath])` triggers a re-fetch — the grid reloads without a full page refresh |
+| AC-15.2.2 | ✅ Positive | Given "Refresh" is clicked, then the shared runtime refresh path publishes a folder/workspace refresh descriptor and the grid reloads without a full page refresh     |
 | AC-15.2.3 | ❌ Negative | Given "Select All" is clicked when the grid has 0 items, then the action is disabled (menu item is grayed out) — `selectedItems` stays empty                      |
 
 ---
@@ -89,13 +89,14 @@ As a user, I want to click-drag on empty grid space to draw a selection rectangl
 ```
 Context Menu (custom, portal-mounted)
   ├── CardContextMenu (appears on card right-click)
-  │   ├── commands.openInExplorer({ path: folderPath })
+  │   ├── buildModContextMenuItems(policy, callbacks)
+  │   ├── useModContextMenuActions(folder)
   │   ├── handleToggleEnabled(folder)
   │   ├── handleRenameRequest(folder)
   │   ├── handleDeleteRequest(folder)
   │   └── handlePasteThumbnail(folder)
   └── Toolbar Refresh
-      ├── invalidate('folders')
+      ├── publish runtime refresh descriptor
 
 Keyboard Navigation:
   - Arrow keys: setFocusedId
@@ -108,9 +109,9 @@ Keyboard Navigation:
 
 | Component       | Detail                                                                                                                                 |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Context Menu    | Custom React component — `onContextMenu` event captured on card and grid background, `event.preventDefault()` to suppress browser menu |
+| Context Menu    | Custom React component — `onContextMenu` event captured on card and grid background, with policy-only menu descriptors and dedicated action hooks |
 | Clipboard       | `tauri-plugin-clipboard-manager` — `readImageBase64()` → decode → `writeFile('preview.png')`                                           |
-| Shell Open      | `commands.openInExplorer({ path })` → Rust `Command::new("explorer").arg(path).spawn()`                                                |
+| Shell Open      | Explorer open action lives in mod action hooks; policy/menu builders do not call commands directly                                      |
 | Lasso           | `useRef` for overlay `<div>`, `getBoundingClientRect()` intersection per virtual row rect                                              |
 | DnD             | `@dnd-kit/core` `DndContext`, `useDraggable`, `useDroppable`, `DragOverlay`                                                            |
 | Bulk Move (DnD) | Delegates to Epic 14 `bulk_move` on `onDragEnd`                                                                                        |

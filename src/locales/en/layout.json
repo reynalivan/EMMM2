@@ -1,6 +1,10 @@
 {
   "app_locked_title": "App Locked",
   "app_locked_description": "A PIN is required to access the application in Unsafe Mode.",
+  "app": {
+    "name": "EMMM",
+    "version": "Mod Manager"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "mods_manager": "Mods Manager",
@@ -18,7 +22,8 @@
   },
   "maintenance": {
     "clear_success": "Successfully cleared {{count}} old thumbnails.",
-    "maintenance_success": "Maintenance complete. Database optimized. Pruned {{pruned}} thumbnails. Purged {{trash}} old empty trash entries."
+    "maintenance_success": "Maintenance complete. Database optimized. Pruned {{pruned}} thumbnails. Purged {{trash}} old empty trash entries.",
+    "failed": "Maintenance failed: {{error}}"
   },
   "actions": {
     "trash": "Trash",
@@ -38,6 +43,8 @@
   "context": {
     "safe_mode_tip": "Safe Mode Toggle",
     "loading": "Loading...",
+    "unsaved_safe": "Unsaved SAFE Preset",
+    "unsaved_unsafe": "Unsaved UNSAFE Preset",
     "collections_title": "Collections",
     "save_current": "Save Current",
     "no_collections": "No collections saved",

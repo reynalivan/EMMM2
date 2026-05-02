@@ -1,11 +1,7 @@
 /**
  * useFolderMutations — Non-core mutation hooks for mod folders.
  *
- * Extracted from useFolders.ts to keep that file under 350 lines.
- * Contains: trash, metadata, bulk, import, and advanced operation hooks.
- *
- * All hooks are barrel-re-exported from useFolders.ts so consumers
- * don't need to change their import paths.
+ * Owner surface for trash, metadata, bulk, import, and advanced folder hooks.
  */
 
 import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
@@ -13,8 +9,16 @@ import { commands } from '../lib/bindings';
 import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
-import { folderKeys, updateFolderCache } from './useFolders';
-import { corridorKeys } from '../features/collections/queryKeys';
+import { folderKeys, updateFolderCache } from './folderCache';
+import { stripDisabledPrefix, toggleDisabledInPath } from '../lib/disabledPrefix';
+import { detailsKeys } from '../features/preview/hooks/usePreviewData';
+import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
+import { applyRuntimeEffects } from '../features/workspace-runtime/optimistic/applyOptimisticEffects';
+import {
+  buildQueryInvalidationDescriptor,
+  buildQueryRemovalDescriptor,
+  buildRuntimeMutationDescriptor,
+} from '../features/workspace-runtime/optimistic/descriptorBuilders';
 import {
   FolderGridResponse,
   ModInfoUpdate,
@@ -22,6 +26,10 @@ import {
   ConflictInfo,
   ModFolder,
 } from '../types/mod';
+import { useAppStore } from '../stores/useAppStore';
+import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
+import { extractFileInUsePayload, formatAppError } from '../lib/appError';
+import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
 
 // ── Trash ───────────────────────────────────────────────────────
 
@@ -48,7 +56,11 @@ export function useEmptyTrash() {
   return useMutation({
     mutationFn: () => commands.emptyTrash(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trashKeys.all });
+      void publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('trashOnly'),
+        'active',
+      );
     },
   });
 }
@@ -68,7 +80,11 @@ export function useUpdateModCategory() {
         ...f,
         category: variables.category,
       }));
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      void publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('workspaceOnly'),
+        'active',
+      );
     },
   });
 }
@@ -80,9 +96,12 @@ export function useUpdateModThumbnail() {
   return useMutation({
     mutationFn: (params: { folderPath: string; sourcePath: string }) =>
       commands.updateModThumbnail(params),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
+    onSuccess: async (_data, variables) => {
+      const descriptor = buildQueryInvalidationDescriptor(
+        [thumbnailKeys.folder(variables.folderPath)],
+        [],
+      );
+      applyRuntimeEffects(queryClient, descriptor);
     },
   });
 }
@@ -105,8 +124,12 @@ export function useToggleModSafe() {
         appStore.clearGridSelection();
       }
 
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+      await applyRuntimePathInvalidationMutationResult(
+        queryClient,
+        [variables.folderPath],
+        'workspaceCorridor',
+        'active',
+      );
     },
   });
 }
@@ -114,12 +137,22 @@ export function useToggleModSafe() {
 /** Hook to delete a mod's thumbnail file. */
 export function useDeleteModThumbnail() {
   const queryClient = useQueryClient();
+  const { activeGame } = useActiveGame();
 
   return useMutation({
-    mutationFn: (folderPath: string) => commands.deleteModThumbnail({ folderPath }),
-    onSuccess: (_data, folderPath) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(folderPath) });
+    mutationFn: async (folderPath: string) => {
+      if (!activeGame?.id) {
+        throw new Error('No active game selected');
+      }
+
+      await commands.deleteModThumbnail({ folderPath });
+    },
+    onSuccess: async (_data, folderPath) => {
+      const descriptor = buildQueryInvalidationDescriptor(
+        [thumbnailKeys.folder(folderPath), detailsKeys.previewImages(folderPath)],
+        [],
+      );
+      applyRuntimeEffects(queryClient, descriptor);
     },
   });
 }
@@ -131,9 +164,12 @@ export function usePasteThumbnail() {
   return useMutation({
     mutationFn: (params: { folderPath: string; imageData: number[] }) =>
       commands.pasteThumbnail(params),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all, refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: thumbnailKeys.folder(variables.folderPath) });
+    onSuccess: async (_data, variables) => {
+      const descriptor = buildQueryInvalidationDescriptor(
+        [thumbnailKeys.folder(variables.folderPath)],
+        [],
+      );
+      applyRuntimeEffects(queryClient, descriptor);
     },
   });
 }
@@ -162,7 +198,7 @@ export function useUpdateModInfo() {
 
 // ── Bulk Operations ─────────────────────────────────────────────
 
-export type ImportStrategy = 'Raw' | 'AutoOrganize';
+export type ImportStrategy = 'Raw';
 
 /** Helper to construct bulk toast messages with explicit names. */
 function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: string): string {
@@ -170,8 +206,7 @@ function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: 
   if (count === 0) return '';
 
   const displayNames = paths.map((p) => {
-    let name = p.split(/[/\\]/).pop() || '';
-    if (name.startsWith('DISABLED ')) name = name.substring(9);
+    const name = stripDisabledPrefix(p.split(/[/\\]/).pop() || '');
 
     const prevQueries = queryClient.getQueriesData<FolderGridResponse>({
       queryKey: folderKeys.all,
@@ -189,70 +224,77 @@ function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: 
     : `${action} ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
 }
 
-import { useAppStore } from '../stores/useAppStore';
+function formatBulkFailureMessage(
+  failures: { path: string; error: unknown }[],
+  action: string,
+): string {
+  if (failures.length === 0) {
+    return '';
+  }
+
+  const firstFailure = failures[0];
+  const firstName = stripDisabledPrefix(
+    firstFailure.path.split(/[/\\]/).pop() || firstFailure.path,
+  );
+  const reason = formatAppError(firstFailure.error);
+  if (failures.length === 1) {
+    return `${action} failed for ${firstName}: ${reason}`;
+  }
+
+  return `${action} failed for ${firstName} + ${failures.length - 1} others: ${reason}`;
+}
 
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
+    // Bulk toggle is an explicit runtime switch path.
+    // Global runtime refresh comes from one final publish, not per-item ad-hoc invalidation.
     mutationFn: (params: { gameId: string; paths: string[]; enable: boolean }) =>
       commands.bulkToggleMods(params),
 
     onSuccess: async (result, variables) => {
+      const removalDescriptor = buildQueryRemovalDescriptor(
+        result.success.map((newPath) => thumbnailKeys.folder(newPath)),
+        [],
+      );
+      applyRuntimeEffects(queryClient, removalDescriptor);
       result.success.forEach((newPath) => {
-        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
-
         // Derive old path to keep grid selection alive
-        const namePart = newPath.split(/[/\\]/).pop() || '';
-        const guessedOldName = variables.enable
-          ? `DISABLED ${namePart}`
-          : namePart.replace(/^DISABLED /, '');
-        const oldPath = newPath.slice(0, -namePart.length) + guessedOldName;
+        const oldPath = toggleDisabledInPath(newPath, !variables.enable);
         useAppStore.getState().replaceGridSelection(oldPath, newPath);
       });
-      // Opt-AA: Revert to full active refetch. Bulk operations alter
-      // physical directory paths. Trying to accurately map all new paths
-      // inside the frontend cache is a massive architectural risk that leads
-      // directly to Path Instability and silent UI failures.
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      const activeGameId = useAppStore.getState().activeGameId;
-      if (activeGameId) {
-        queryClient.invalidateQueries({ queryKey: corridorKeys.all });
-      }
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('folderSwitch'),
+        'active',
+      );
 
       if (result.success.length > 0) {
         const action = variables.enable ? 'Enabled' : 'Disabled';
         toast.success(getBulkToastMessage(queryClient, result.success, action));
       }
       if (result.failures.length > 0) {
-        toast.error(`Failed to toggle ${result.failures.length} items`);
+        toast.error(formatBulkFailureMessage(result.failures, 'Toggle'));
       }
     },
     onError: (error, variables) => {
-      const errStr = String(error);
-      if (errStr.includes('"type":"FileInUse"')) {
-        try {
-          const body = JSON.parse(errStr);
-          const payload = body.payload;
-          useAppStore
-            .getState()
-            .openFileInUseDialog(payload.path, payload.processes, () =>
-              mutation.mutate(variables),
-            );
-          return;
-        } catch {
-          /* parse failed */
-        }
+      const payload = extractFileInUsePayload(error);
+      if (payload) {
+        openWorkspaceFileInUseDialog({
+          path: payload.path,
+          processes: payload.processes,
+          onRetry: () => mutation.mutate(variables),
+        });
+        return;
       }
-      toast.error(errStr);
+      toast.error(formatAppError(error));
     },
   });
 
   return mutation;
 }
-
 
 /** Hook to bulk delete mods. */
 export function useBulkDelete() {
@@ -261,19 +303,26 @@ export function useBulkDelete() {
   return useMutation({
     mutationFn: (params: { paths: string[]; gameId?: string }) => commands.bulkDeleteMods(params),
     onSuccess: async (result) => {
-      result.success.forEach((path) => {
-        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(path) });
-      });
+      applyRuntimeEffects(
+        queryClient,
+        buildQueryRemovalDescriptor(
+          result.success.map((path) => thumbnailKeys.folder(path)),
+          [],
+        ),
+      );
       // Targeted cache update instead of full refetch: remove deleted folders
       updateFolderCache(queryClient, result.success, undefined, true);
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor(['workspaceCorridor', 'dashboardKeybindings']),
+        'active',
+      );
 
       if (result.success.length > 0) {
         toast.success(getBulkToastMessage(queryClient, result.success, 'Deleted'));
       }
       if (result.failures.length > 0) {
-        toast.error(`Failed to delete ${result.failures.length} items`);
+        toast.error(formatBulkFailureMessage(result.failures, 'Delete'));
       }
     },
   });
@@ -301,7 +350,7 @@ export function useBulkUpdateInfo() {
         toast.success(getBulkToastMessage(queryClient, result.success, 'Updated'));
       }
       if (result.failures.length > 0) {
-        toast.error(`Failed to update ${result.failures.length} items`);
+        toast.error(formatBulkFailureMessage(result.failures, 'Update'));
       }
     },
   });
@@ -324,7 +373,7 @@ export function useBulkFavorite() {
         toast.success(getBulkToastMessage(queryClient, result.success, action));
       }
       if (result.failures.length > 0) {
-        toast.error(`Failed to update ${result.failures.length} items`);
+        toast.error(formatBulkFailureMessage(result.failures, 'Favorite'));
       }
     },
   });
@@ -347,7 +396,7 @@ export function useBulkPin() {
         toast.success(getBulkToastMessage(queryClient, result.success, action));
       }
       if (result.failures.length > 0) {
-        toast.error(`Failed to update ${result.failures.length} items`);
+        toast.error(formatBulkFailureMessage(result.failures, 'Pin'));
       }
     },
   });
@@ -377,87 +426,18 @@ export function useImportMods() {
       }
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
+      void publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('folderSwitch'),
+        'active',
+      );
       if (result.success.length > 0) {
         toast.success(`Imported ${result.success.length} items`);
       }
       if (result.failures.length > 0) {
-        toast.error(`Failed to import ${result.failures.length} items`);
+        toast.error(formatBulkFailureMessage(result.failures, 'Import'));
       }
     },
-  });
-}
-
-/** Hook to auto-organize existing mods. */
-export function useAutoOrganizeMods() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { paths: string[]; targetRoot: string; dbJson: string }) =>
-      commands.autoOrganizeMods(params),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['category-counts'] });
-      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
-    },
-  });
-}
-
-// ── Advanced Mod Operations ─────────────────────────────────────
-
-/**
- * Enable a single mod and disable all others sharing the same object.
- * Covers: TC-5.3-01 (Enable Only This)
- */
-export function useEnableOnlyThis() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { targetPath: string; gameId: string }) => commands.enableOnlyThis(params),
-    onSuccess: (result) => {
-      // The first item is the one enabled, the rest are disabled
-      result.success.forEach((newPath: string, idx: number) => {
-        queryClient.removeQueries({ queryKey: thumbnailKeys.folder(newPath) });
-
-        // Derive old path to keep grid selection alive
-        const isEnabled = idx === 0;
-        const namePart = newPath.split(/[/\\]/).pop() || '';
-        const guessedOldName = isEnabled
-          ? `DISABLED ${namePart}`
-          : namePart.replace(/^DISABLED /, '');
-        const oldPath = newPath.slice(0, -namePart.length) + guessedOldName;
-        useAppStore.getState().replaceGridSelection(oldPath, newPath);
-      });
-      // Opt-Z3: Revert to full invalidation. This touches potentially hundreds of
-      // folders physically, and guessing all their new paths in cache is a massive
-      // desync risk. It is a rare operation where an active refetch is 100% justified.
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
-
-      const disabled = result.success.length - 1;
-      if (disabled > 0) {
-        toast.info(`Disabled ${disabled} other mod(s)`);
-      }
-    },
-    onError: (error) => {
-      toast.error(String(error));
-    },
-  });
-}
-
-/**
- * Check for duplicate enabled mods before toggling.
- * Covers: NC-5.2-03 (Duplicate Character Warning)
- */
-export function useCheckDuplicate() {
-  return useMutation({
-    mutationFn: (params: { folderPath: string; gameId: string }) =>
-      commands.checkDuplicateEnabled(params),
   });
 }
 

@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Power users managing large mod libraries need to toggle, move, or delete dozens of mods at once — doing so one at a time is impractical and error-prone; a single collision or lock mid-batch should not silently abort all remaining operations.
-- **Proposed Solution**: A multi-select system (checkbox hover, shift-click range, ctrl-click) with a `BulkActionBar` overlay, plus backend batch commands (`bulk_toggle_mods`, `bulk_delete_mods`, etc.) that stream per-item progress events, hold a global `OperationLock`, and report partial failures without aborting the entire batch.
+- **Proposed Solution**: A multi-select system (checkbox hover, shift-click range, ctrl-click) with a `BulkActionBar` overlay, plus backend batch switch/delete/move commands that stream per-item progress events, hold a global `OperationLock`, and report partial failures without aborting the entire batch.
 - **Success Criteria**:
   - Shift-click range selection of 100 items applies in ≤ 50ms (pure client-side index intersection).
   - `BulkActionBar` renders in ≤ 100ms after first item is selected.
@@ -81,9 +81,9 @@ Frontend:
     └── "Delete Selected" → ConfirmDialog → commands.bulkDelete({ paths: [...selectedItems] })
 
 Backend:
-  bulk_toggle_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
+  bulk_switch_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
     └── acquire OperationLock → activate WatcherSuppression(paths)
-        → for path in paths: toggle_mod_internal(path, enable) → emit_event('bulk-progress', {i, total})
+        → for path in paths: switch_item_internal(path, enable) → emit_event('bulk-progress', {i, total})
         → return BulkResult { success, failed: Vec<{path, error}> }
 
   bulk_move(game_id, paths, target_object_path) → BulkResult
@@ -100,7 +100,7 @@ Backend:
 | Selection State      | `useAppStore.gridSelection: Set<string>` (folder_paths).                                    |
 | `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock.               |
 | Progress Events      | Tauri `Window::emit("bulk-progress", {current, total, label, active})`.                     |
-| Cache Invalidate     | `queryClient.invalidateQueries(['mod-folders'])` after bulk rename ops.                     |
+| Runtime Refresh      | Bulk mutation results map to centralized runtime descriptors / `WorkspaceImpact`; feature code does not call raw query invalidation APIs. |
 | `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes |
 
 ### Security & Privacy

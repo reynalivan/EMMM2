@@ -2,20 +2,17 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../lib/bindings';
 import { type GameType } from '../../types/game';
-import { useAppStore } from '../../stores/useAppStore';
 import { Play, ScanSearch } from 'lucide-react';
 import { useScannerStore } from '../../stores/useScannerStore';
 import { scanService } from '../../lib/services/scanService';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useTranslation } from 'react-i18next';
-import {
-  useBulkToggle,
-  useBulkDelete,
-  useRenameMod,
-  useAutoOrganizeMods,
-} from '../../hooks/useFolders'; // Imported hooks
+import { useRenameMod } from '../../hooks/useFolderCoreMutations';
+import { useBulkToggle, useBulkDelete } from '../../hooks/useFolderMutations';
 import type { ArchiveInfo } from '../../types/scanner';
 import { toast } from '../../stores/useToastStore';
+import type { ScanResultItem } from '../../types/scanner';
+import { publishQueryScopes } from '../runtime-sync/queryRefresh';
 
 import ArchiveModal from './components/ArchiveModal';
 import ScanOverlay from './components/ScanOverlay';
@@ -26,11 +23,10 @@ export default function ScannerFeature() {
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
 
-  // Hooks for actions
+  // Action hooks
   const bulkToggle = useBulkToggle();
   const bulkDelete = useBulkDelete();
   const renameMod = useRenameMod();
-  const autoOrganize = useAutoOrganizeMods();
 
   const {
     isScanning,
@@ -106,9 +102,7 @@ export default function ScannerFeature() {
           throw new Error(result.error);
         }
       } finally {
-        // B3: Always unsuppress + W2: scaled cooldown
-        const cooldown = Math.min(1000 + paths.length * 500, 5000);
-        useAppStore.getState().setWatcherCooldown(Date.now() + cooldown);
+        // B3: Always unsuppress after archive extraction batch
         await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     },
@@ -128,22 +122,48 @@ export default function ScannerFeature() {
     mutationFn: async ({ gameType, modsPath }: { gameType: GameType; modsPath: string }) => {
       resetScanner();
       setIsScanning(true);
+      if (!activeGame) {
+        throw new Error(t('common:errors.no_active_game'));
+      }
 
-      await scanService.startScan(gameType, modsPath, (event) => {
-        switch (event.event) {
-          case 'started':
-            setTotalFolders(event.data.totalFolders);
-            break;
-          case 'progress':
-            updateProgress(event.data.current, event.data.folderName, event.data.etaMs ?? 0);
-            break;
-          case 'matched':
-            break;
-          case 'finished':
-            setStats(event.data.matched, event.data.unmatched);
-            break;
-        }
-      });
+      const previewItems = await scanService.runDeepmatchPreview(
+        activeGame.id,
+        gameType,
+        modsPath,
+        (event) => {
+          switch (event.event) {
+            case 'started':
+              setTotalFolders(event.data.totalFolders);
+              break;
+            case 'progress':
+              updateProgress(event.data.current, event.data.folderName, event.data.etaMs ?? 0);
+              break;
+            case 'matched':
+              break;
+            case 'finished':
+              setStats(event.data.matched, event.data.unmatched);
+              break;
+          }
+        },
+      );
+
+      return previewItems.map<ScanResultItem>((item) => ({
+        path: item.folderPath,
+        rawName: item.displayName,
+        displayName: item.displayName,
+        isDisabled: item.isDisabled,
+        matchedAliasName: item.matchedAliasName,
+        matchLevel: item.matchLevel as ScanResultItem['matchLevel'],
+        confidence: item.confidence as ScanResultItem['confidence'],
+        confidenceScore: item.confidenceScore,
+        matchDetail: item.matchDetail,
+        detectedSkin: item.detectedSkin,
+        skinFolderName: null,
+        thumbnailPath: item.thumbnailPath,
+      }));
+    },
+    onSuccess: (results) => {
+      setScanResults(results);
     },
     onError: (err: unknown) => {
       console.error('Scan failed', err);
@@ -151,8 +171,7 @@ export default function ScannerFeature() {
     },
     onSettled: async () => {
       setIsScanning(false);
-      queryClient.invalidateQueries({ queryKey: ['mods'] });
-      queryClient.invalidateQueries({ queryKey: ['conflicts'] });
+      await publishQueryScopes(queryClient, ['folderStructure', 'conflicts']);
     },
   });
 
@@ -272,19 +291,6 @@ export default function ScannerFeature() {
               onBulkDelete={(paths) => {
                 if (confirm(t('scanner:table.delete_confirm', { count: paths.length }))) {
                   bulkDelete.mutate({ paths, gameId: activeGame?.id });
-                }
-              }}
-              onAutoOrganize={async (paths) => {
-                if (!activeGame) return;
-                try {
-                  const dbJson = await scanService.getMasterDb(activeGame.game_type);
-                  autoOrganize.mutate({
-                    paths,
-                    targetRoot: activeGame.mod_path,
-                    dbJson,
-                  });
-                } catch (e) {
-                  toast.error(t('scanner:review.toast.db_load_failed', { error: String(e) }));
                 }
               }}
             />

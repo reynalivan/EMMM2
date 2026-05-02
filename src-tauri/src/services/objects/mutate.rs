@@ -86,6 +86,14 @@ pub async fn create_object_cmd_inner(
                 let _ = std::fs::copy(&src, &dest);
             }
 
+            crate::services::runtime_projection_service::refresh_object_projection(
+                pool,
+                &input.game_id,
+                &id,
+            )
+            .await
+            .map_err(|e| CommandError::Database(e.to_string()))?;
+
             Ok(id)
         }
         Err(e) => {
@@ -115,8 +123,24 @@ pub async fn update_object(
     id: &str,
     updates: &UpdateObjectInput,
 ) -> Result<(), CommandError> {
+    let object_game_id: Option<String> =
+        sqlx::query_scalar("SELECT game_id FROM objects WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| CommandError::Database(e.to_string()))?;
+
     match crate::repo::object_repo::update_object(pool, id, updates).await {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            if let Some(game_id) = object_game_id.as_deref() {
+                crate::services::runtime_projection_service::refresh_object_projection(
+                    pool, game_id, id,
+                )
+                .await
+                .map_err(|e| CommandError::Database(e.to_string()))?;
+            }
+            Ok(())
+        }
         Err(e) => {
             let msg = e.to_string().to_lowercase();
             if msg.contains("unique constraint failed") || msg.contains("idx_objects_game_name") {
@@ -219,6 +243,9 @@ pub async fn delete_object(
 
     // 4. Delete the object record itself
     crate::repo::object_repo::delete_object(pool, id).await?;
+    crate::services::runtime_projection_service::delete_object_projection(pool, &obj_game_id, id)
+        .await
+        .map_err(|e| CommandError::Database(e.to_string()))?;
     log::info!("delete_object: removed object id={} from DB", id);
     Ok(())
 }

@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { usePrefersReducedMotion } from './demoTypes';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 export default function AnimatedLogo() {
   const prefersReduced = usePrefersReducedMotion();

@@ -1,0 +1,229 @@
+//! Commands related to the Deep Match Scanner import pipeline.
+
+use crate::services::scanner::core::types;
+use crate::services::scanner::deep_matcher::MasterDb;
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use std::path::Path;
+use tauri::{ipc::Channel, Manager, State};
+
+/// Deep Match Scanner command.
+/// This path performs canonical matching/import against MasterDB.
+/// Do not call from watcher, window focus, or Disk Reconcile triggers.
+///
+/// # Covers: US-3.5 (Sync)
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+pub async fn deepmatch_scanner_cmd(
+    app: tauri::AppHandle,
+    state: State<'_, WatcherState>,
+    game_id: String,
+    game_name: String,
+    game_type: String,
+    mods_path: String,
+    db_json: String,
+    preserve_existing_mappings: bool,
+    pool: State<'_, sqlx::SqlitePool>,
+    on_progress: Channel<types::ScanEvent>,
+) -> Result<crate::services::scanner::sync::SyncResult, String> {
+    use crate::services::scanner::sync;
+
+    let _guard = SuppressionGuard::new(&state.suppressor);
+
+    let mods = Path::new(&mods_path);
+    if !mods.exists() {
+        return Err(format!("Mods path does not exist: {}", mods_path));
+    }
+
+    let master_db = MasterDb::from_json(&db_json)?;
+    let resource_dir = app.path().resource_dir().ok();
+
+    // 1. Run the scanning/matching phase
+    let preview_items = sync::scan_preview(
+        &pool,
+        &game_id,
+        mods,
+        &master_db,
+        resource_dir.as_deref(),
+        Some(on_progress),
+        None,
+    )
+    .await?;
+
+    let confirmed_items: Vec<_> = preview_items
+        .into_iter()
+        .map(|item| sync::ConfirmedScanItem {
+            folder_path: item.folder_path,
+            display_name: item.display_name,
+            is_disabled: item.is_disabled,
+            matched_entry_key: item.matched_entry_key,
+            matched_alias_name: item.matched_alias_name,
+            matched_confidence: Some(f64::from(item.confidence_score) / 100.0),
+            matched_reason: item.match_detail,
+            object_type: item.object_type,
+            thumbnail_path: item.thumbnail_path,
+            tags_json: item.tags_json,
+            metadata_json: item.metadata_json,
+            hash_db_json: item.hash_db_json,
+            custom_skins_json: item.custom_skins_json,
+            db_thumbnail: item.db_thumbnail,
+            skip: false,
+            move_from_temp: false,
+        })
+        .collect();
+
+    let keywords = app
+        .state::<crate::services::config::ConfigService>()
+        .get_settings()
+        .safe_mode
+        .keywords;
+
+    // 3. Commit the results to DB
+    let result = sync::commit_scan_results(
+        &pool,
+        &game_id,
+        &game_name,
+        &game_type,
+        &mods_path,
+        confirmed_items,
+        resource_dir.as_deref(),
+        &keywords,
+        preserve_existing_mappings,
+    )
+    .await?;
+
+    Ok(result)
+}
+
+/// Deep Match Scanner preview.
+/// This path runs explicit matching preview without writing to DB.
+/// Frontend shows a review modal for the user to confirm/override matches.
+///
+/// # Covers: US-2.3 (Review & Organize UI)
+#[tauri::command]
+#[specta::specta]
+pub async fn deepmatch_preview_cmd(
+    app: tauri::AppHandle,
+    game_id: String,
+    mods_path: String,
+    db_json: String,
+    pool: State<'_, sqlx::SqlitePool>,
+    on_progress: Channel<types::ScanEvent>,
+    specific_paths: Option<Vec<String>>,
+) -> Result<Vec<crate::services::scanner::sync::ScanPreviewItem>, String> {
+    use crate::services::scanner::sync;
+
+    let mods = Path::new(&mods_path);
+    if !mods.exists() {
+        return Err(format!("Mods path does not exist: {}", mods_path));
+    }
+
+    let master_db = MasterDb::from_json(&db_json)?;
+    let resource_dir = app.path().resource_dir().ok();
+
+    let optional_paths = specific_paths.map(|paths| {
+        paths
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect::<Vec<_>>()
+    });
+
+    sync::scan_preview(
+        &pool,
+        &game_id,
+        mods,
+        &master_db,
+        resource_dir.as_deref(),
+        Some(on_progress),
+        optional_paths,
+    )
+    .await
+}
+
+/// Phase 2: Commit user-confirmed scan results to DB.
+/// Called after the user reviews and confirms/overrides matches in the review modal.
+///
+/// # Covers: US-2.3 (Review & Organize UI — Confirm)
+#[tauri::command]
+#[specta::specta]
+pub async fn commit_scan_cmd(
+    app: tauri::AppHandle,
+    state: State<'_, WatcherState>,
+    game_id: String,
+    game_name: String,
+    game_type: String,
+    mods_path: String,
+    items: Vec<crate::services::scanner::sync::ConfirmedScanItem>,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> Result<crate::services::scanner::sync::SyncResult, String> {
+    use crate::services::scanner::sync;
+
+    let _guard = SuppressionGuard::new(&state.suppressor);
+
+    let resource_dir = app.path().resource_dir().ok();
+
+    let keywords = app
+        .state::<crate::services::config::ConfigService>()
+        .get_settings()
+        .safe_mode
+        .keywords;
+
+    let result = sync::commit_scan_results(
+        &pool,
+        &game_id,
+        &game_name,
+        &game_type,
+        &mods_path,
+        items,
+        resource_dir.as_deref(),
+        &keywords,
+        false, // Interactive review uses explicit matches/unmatches, do not preserve blindly
+    )
+    .await?;
+
+    Ok(result)
+}
+
+/// Compute percentage scores for a specific batch of candidates against a folder.
+/// Used by the Scan Review Modal to lazy-load accurate matching percentages.
+///
+/// # Covers: US-2.3 (Review & Organize UI — Lazy Scoring)
+#[tauri::command]
+#[specta::specta]
+pub async fn score_candidates_batch_cmd(
+    folder_path: String,
+    candidate_names: Vec<String>,
+    db_json: String,
+) -> Result<std::collections::HashMap<String, u8>, String> {
+    use crate::services::scanner::sync;
+
+    let master_db = MasterDb::from_json(&db_json)?;
+
+    // Make CPU-bound work non-blocking
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        sync::score_candidates_batch(&folder_path, &master_db, candidate_names)
+    })
+    .await
+    .map_err(|e| format!("Batch scoring task panicked: {}", e))?;
+
+    Ok(res)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_folder_entries_cmd(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    folder_path: String,
+    game_id: String,
+) -> Result<Vec<crate::services::scanner::folder_entries::FolderEntry>, String> {
+    crate::services::scanner::folder_entries::list_folder_entries(
+        pool.inner(),
+        &game_id,
+        &folder_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+#[path = "tests/deepmatch_scanner_cmds_tests.rs"]
+mod tests;

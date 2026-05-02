@@ -9,17 +9,16 @@ describe('disabledPrefix', () => {
 
     it('should identify case variants', () => {
       expect(isDisabledName('disabled MyMod')).toBe(true);
-      expect(isDisabledName('DiSaBLeD_MyMod')).toBe(true);
-      expect(isDisabledName('dis MyMod')).toBe(true);
-      expect(isDisabledName('disable-MyMod')).toBe(true);
+      expect(isDisabledName('DiSaBLeD MyMod')).toBe(true);
     });
 
     it('should reject normal names', () => {
       expect(isDisabledName('MyMod')).toBe(false);
       expect(isDisabledName('NotDisabled')).toBe(false);
-      // 'distance_mod' starts with 'dis' so the regex technically matches it
-      expect(isDisabledName('distance_mod')).toBe(true);
-      expect(isDisabledName('Some_disable_mod')).toBe(false); // Not at start
+      expect(isDisabledName('distance_mod')).toBe(false);
+      expect(isDisabledName('disabled_MyMod')).toBe(false);
+      expect(isDisabledName('disable-MyMod')).toBe(false);
+      expect(isDisabledName('Some_disable_mod')).toBe(false);
     });
   });
 
@@ -28,14 +27,14 @@ describe('disabledPrefix', () => {
       expect(stripDisabledPrefix('DISABLED MyMod')).toBe('MyMod');
     });
 
-    it('should strip variations and separators', () => {
-      expect(stripDisabledPrefix('disabled_MyMod')).toBe('MyMod');
-      expect(stripDisabledPrefix('dis-MyMod')).toBe('MyMod');
-      expect(stripDisabledPrefix('disable   MyMod')).toBe('MyMod');
+    it('should strip canonical prefix case-insensitively', () => {
+      expect(stripDisabledPrefix('disabled MyMod')).toBe('MyMod');
+      expect(stripDisabledPrefix('DiSaBlEd   MyMod')).toBe('MyMod');
     });
 
     it('should leave normal names alone', () => {
       expect(stripDisabledPrefix('MyMod')).toBe('MyMod');
+      expect(stripDisabledPrefix('disabled_MyMod')).toBe('disabled_MyMod');
     });
   });
 
@@ -55,9 +54,6 @@ describe('disabledPrefix', () => {
     it('should not double-disable a path', () => {
       expect(toggleDisabledInPath('mods/Character/DISABLED MyMod', false)).toBe(
         'mods/Character/DISABLED MyMod',
-      );
-      expect(toggleDisabledInPath('mods/Character/disabled_MyMod', false)).toBe(
-        'mods/Character/disabled_MyMod',
       );
     });
 

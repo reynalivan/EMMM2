@@ -102,6 +102,33 @@ pub async fn record_failed_attempt(
     Ok(count)
 }
 
+pub async fn set_failed_attempts(pool: &SqlitePool, failed_attempts: i32) -> Result<(), PinError> {
+    sqlx::query(
+        r#"UPDATE pin_config SET
+            failed_attempts = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1"#,
+    )
+    .bind(failed_attempts)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_lockout_seconds(pool: &SqlitePool, seconds: i32) -> Result<(), PinError> {
+    sqlx::query(
+        r#"UPDATE pin_config SET
+            failed_attempts = 0,
+            lockout_until = datetime('now', '+' || ? || ' seconds'),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1"#,
+    )
+    .bind(seconds)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Reset failed attempts (after successful verification).
 pub async fn reset_failed_attempts(pool: &SqlitePool) -> Result<(), PinError> {
     sqlx::query(

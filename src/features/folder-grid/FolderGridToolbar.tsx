@@ -7,7 +7,6 @@ export interface FolderGridToolbarProps {
   currentPath: string[];
   handleBreadcrumbClick: (index: number) => void;
   handleGoHome: () => void;
-  selectedObject: string | null;
   setMobilePane: (pane: 'sidebar' | 'grid' | 'details') => void;
   handleSortToggle: () => void;
   sortLabel: string;
@@ -25,7 +24,6 @@ export default function FolderGridToolbar({
   currentPath,
   handleBreadcrumbClick,
   handleGoHome,
-  selectedObject: _selectedObject,
   setMobilePane,
   handleSortToggle,
   sortLabel,

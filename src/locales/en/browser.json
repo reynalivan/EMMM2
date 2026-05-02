@@ -33,6 +33,11 @@
     "cancel_title": "Cancel download",
     "delete_title": "Remove from list",
     "delete": "Delete",
+    "table_filename": "Filename",
+    "table_status": "Status",
+    "table_progress": "Progress",
+    "table_actions": "Actions",
+    "unknown_size": "Unknown size",
     "status": {
       "queued": "Queued",
       "downloading": "Downloading",
@@ -62,7 +67,9 @@
     "archive": "Archive",
     "duplicate": "Duplicate",
     "target_game": "Target Game",
+    "target_object_optional": "Target Physical Object (Optional)",
     "select_game": "— Select game —",
+    "keep_as_other": "— Keep as Other —",
     "mod_category": "Mod Category",
     "confirm": "Confirm & Import",
     "cancel": "Cancel"

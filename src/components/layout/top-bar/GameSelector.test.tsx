@@ -36,7 +36,7 @@ vi.mock('../../../hooks/useActiveGame', () => ({
 
 // Mock useGameSwitch hook
 const mockSwitchGame = vi.fn();
-vi.mock('../../../hooks/useObjects', () => ({
+vi.mock('../../../hooks/useObjectQueries', () => ({
   useGameSwitch: () => ({
     switchGame: mockSwitchGame,
   }),

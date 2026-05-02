@@ -188,13 +188,21 @@ pub enum AppError {
     #[error("IO error: {0}")]
     Io(String),
 
+    #[error("Runtime path not found: {target}")]
+    RuntimePathNotFound { target: String },
+
     #[error("Duplicate conflict for object: {0:?}")]
     DuplicateConflict(Vec<crate::domain::mods::DuplicateModInfo>),
 
     #[error("File in use by another process: {path}. Processes: {processes:?}")]
-    FileInUse { path: String, processes: Vec<String> },
-}
+    FileInUse {
+        path: String,
+        processes: Vec<String>,
+    },
 
+    #[error("Path is busy and cannot be renamed right now: {path}")]
+    PathBusy { path: String },
+}
 
 impl From<sqlx::Error> for AppError {
     fn from(e: sqlx::Error) -> Self {

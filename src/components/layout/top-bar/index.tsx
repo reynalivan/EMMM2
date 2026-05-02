@@ -165,10 +165,10 @@ export default function TopBar() {
 
         <div className="flex flex-col gap-0.5">
           <span className="font-bold text-lg md:text-xl leading-none tracking-tight text-base-content glow-text">
-            EMMM
+            {t('app.name')}
           </span>
           <span className="text-[9px] md:text-[10px] uppercase tracking-[0.2em] opacity-70 font-semibold hidden sm:inline-block text-accent">
-            Version 2.0.0
+            {t('app.version')}
           </span>
         </div>
 

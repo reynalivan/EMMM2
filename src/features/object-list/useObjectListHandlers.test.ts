@@ -1,10 +1,9 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useObjectListHandlers } from './useObjectListHandlers';
-import { useToggleMod, useDeleteMod } from '../../hooks/useFolders';
-import { useDeleteObject, useUpdateObject } from '../../hooks/useObjects';
+import { useDeleteMod } from '../../hooks/useFolderCoreMutations';
+import { useDeleteObject, useUpdateObject } from '../../hooks/useObjectMutations';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { invoke } from '@tauri-apps/api/core';
 import { scanService } from '../../lib/services/scanService';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -14,12 +13,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../hooks/useFolders', () => ({
-  useToggleMod: vi.fn(),
+vi.mock('../../hooks/useFolderCoreMutations', () => ({
   useDeleteMod: vi.fn(),
 }));
 
-vi.mock('../../hooks/useObjects', () => ({
+vi.mock('../../hooks/useObjectMutations', () => ({
   useDeleteObject: vi.fn(),
   useUpdateObject: vi.fn(),
 }));
@@ -30,7 +28,7 @@ vi.mock('../../hooks/useActiveGame', () => ({
 
 vi.mock('../../lib/services/scanService', () => ({
   scanService: {
-    scanPreview: vi.fn(),
+    runDeepmatchPreview: vi.fn(),
     getMasterDb: vi.fn(),
     commitScan: vi.fn(),
     extractArchive: vi.fn(),
@@ -73,6 +71,10 @@ describe('useObjectListHandlers', () => {
       {
         id: 'obj-1',
         name: 'Object 1',
+        display_name: 'Object 1',
+        node_kind: 'object' as const,
+        display_mode: 'unknown' as const,
+        type_chip: null,
         object_type: 'Character',
         is_pinned: false,
         thumbnail_path: null,
@@ -89,101 +91,37 @@ describe('useObjectListHandlers', () => {
         hash_db: null,
         custom_skins: null,
         has_naming_conflict: false,
+        inactive_reason: null,
+        is_effectively_active: false,
+        warning_state: 'none' as const,
+        primary_warning: null,
+        switch_state: 'disabled' as const,
+        switch_reason: null,
+        switch_policy_key: 'object' as const,
+        capabilities: {
+          can_toggle: false,
+          can_rename: true,
+          can_delete: true,
+          can_move: false,
+          can_toggle_safe: false,
+          can_sync: true,
+          can_enable_only_this: false,
+          can_pin: true,
+          can_edit_metadata: true,
+          can_reveal_in_explorer: true,
+          can_move_category: true,
+          can_open_in_explorer: true,
+        },
       },
     ],
-    folders: [],
     schema: {
       categories: [{ name: 'Character', label: 'Characters' }],
     } as unknown as import('../../types/object').GameSchema,
     mismatchConfirm: null,
     setMismatchConfirm: vi.fn(),
-    bulkSelect: {
-      selectedIds: new Set<string>(),
-      toggleSelect: vi.fn(),
-      clearSelection: vi.fn(),
-    },
   };
 
-  it('handleToggle calls toggleMod mutation', () => {
-    const mockToggleMutate = vi.fn();
-    vi.mocked(useToggleMod).mockReturnValue({ mutate: mockToggleMutate } as unknown as ReturnType<
-      typeof useToggleMod
-    >);
-    vi.mocked(useDeleteMod).mockReturnValue({} as unknown as ReturnType<typeof useDeleteMod>);
-    vi.mocked(useDeleteObject).mockReturnValue({} as unknown as ReturnType<typeof useDeleteObject>);
-    vi.mocked(useUpdateObject).mockReturnValue({} as unknown as ReturnType<typeof useUpdateObject>);
-    vi.mocked(useActiveGame).mockReturnValue({
-      activeGame: { id: 'game-1', mod_path: 'C:\\mods' },
-    } as unknown as ReturnType<typeof useActiveGame>);
-
-    const { result } = renderHook(() => useObjectListHandlers(defaultProps), {
-      wrapper: createWrapper(),
-    });
-
-    act(() => {
-      result.current.handleToggle('C:\\mods\\folder1', false);
-    });
-
-    expect(mockToggleMutate).toHaveBeenCalledWith(
-      { path: 'C:\\mods\\folder1', enable: true, gameId: 'game-1' },
-      expect.any(Object),
-    );
-  });
-
-  it('handleOpen invokes open_in_explorer', async () => {
-    vi.mocked(useToggleMod).mockReturnValue({} as unknown as ReturnType<typeof useToggleMod>);
-    vi.mocked(useDeleteMod).mockReturnValue({} as unknown as ReturnType<typeof useDeleteMod>);
-    vi.mocked(useDeleteObject).mockReturnValue({} as unknown as ReturnType<typeof useDeleteObject>);
-    vi.mocked(useUpdateObject).mockReturnValue({} as unknown as ReturnType<typeof useUpdateObject>);
-    vi.mocked(useActiveGame).mockReturnValue({ activeGame: null } as unknown as ReturnType<
-      typeof useActiveGame
-    >);
-
-    const { result } = renderHook(() => useObjectListHandlers(defaultProps), {
-      wrapper: createWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.handleOpen('C:\\mods');
-    });
-
-    expect(invoke).toHaveBeenCalledWith('open_in_explorer', { path: 'C:\\mods' });
-  });
-
-  it('handleDelete directly mutates if folder is empty', async () => {
-    const mockDeleteMutate = vi.fn();
-    vi.mocked(useToggleMod).mockReturnValue({} as unknown as ReturnType<typeof useToggleMod>);
-    vi.mocked(useDeleteMod).mockReturnValue({ mutate: mockDeleteMutate } as unknown as ReturnType<
-      typeof useDeleteMod
-    >);
-    vi.mocked(useDeleteObject).mockReturnValue({} as unknown as ReturnType<typeof useDeleteObject>);
-    vi.mocked(useUpdateObject).mockReturnValue({} as unknown as ReturnType<typeof useUpdateObject>);
-    vi.mocked(useActiveGame).mockReturnValue({
-      activeGame: { id: 'game-1' },
-    } as unknown as ReturnType<typeof useActiveGame>);
-
-    // Mock pre_delete_check returning empty
-    vi.mocked(invoke).mockResolvedValue({
-      is_empty: true,
-      item_count: 0,
-      name: 'folder1',
-      path: 'C:\\mods\\folder1',
-    });
-
-    const { result } = renderHook(() => useObjectListHandlers(defaultProps), {
-      wrapper: createWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.handleDelete('C:\\mods\\folder1');
-    });
-
-    expect(invoke).toHaveBeenCalledWith('pre_delete_check', { path: 'C:\\mods\\folder1' });
-    expect(mockDeleteMutate).toHaveBeenCalledWith({ path: 'C:\\mods\\folder1', gameId: 'game-1' });
-  });
-
   it('handleSync triggers scan preview flow', async () => {
-    vi.mocked(useToggleMod).mockReturnValue({} as unknown as ReturnType<typeof useToggleMod>);
     vi.mocked(useDeleteMod).mockReturnValue({} as unknown as ReturnType<typeof useDeleteMod>);
     vi.mocked(useDeleteObject).mockReturnValue({} as unknown as ReturnType<typeof useDeleteObject>);
     vi.mocked(useUpdateObject).mockReturnValue({} as unknown as ReturnType<typeof useUpdateObject>);
@@ -191,8 +129,10 @@ describe('useObjectListHandlers', () => {
       activeGame: { id: 'game-1', game_type: 'hsr', mod_path: 'C:\\mods' },
     } as unknown as ReturnType<typeof useActiveGame>);
 
-    vi.mocked(scanService.scanPreview).mockResolvedValue([
-      { folderName: 'mod1' } as unknown as Awaited<ReturnType<typeof scanService.scanPreview>>[0],
+    vi.mocked(scanService.runDeepmatchPreview).mockResolvedValue([
+      { folderName: 'mod1' } as unknown as Awaited<
+        ReturnType<typeof scanService.runDeepmatchPreview>
+      >[0],
     ]);
     vi.mocked(scanService.getMasterDb).mockResolvedValue('[]');
 
@@ -204,7 +144,7 @@ describe('useObjectListHandlers', () => {
       await result.current.handleSync();
     });
 
-    expect(scanService.scanPreview).toHaveBeenCalledWith('game-1', 'hsr', 'C:\\mods');
+    expect(scanService.runDeepmatchPreview).toHaveBeenCalledWith('game-1', 'hsr', 'C:\\mods');
     expect(scanService.getMasterDb).toHaveBeenCalledWith('hsr');
 
     expect(result.current.scanReview.open).toBe(true);

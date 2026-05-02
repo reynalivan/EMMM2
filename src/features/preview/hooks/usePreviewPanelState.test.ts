@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '../../../testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
 import * as usePreviewDataModule from './usePreviewData';
-import * as useFoldersModule from '../../../hooks/useFolders';
+import * as workspaceViewModelModule from '../../workspace-runtime/useWorkspaceViewModel';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -36,7 +36,6 @@ vi.mock('../../../hooks/useSettings', () => ({
 }));
 
 vi.mock('./usePreviewData', () => ({
-  useModInfo: vi.fn(),
   useModIniFiles: vi.fn(),
   useModIniDocument: vi.fn(),
   useAllModIniDocuments: vi.fn(),
@@ -49,9 +48,25 @@ vi.mock('./usePreviewData', () => ({
   useSelectedModPath: vi.fn(() => null),
 }));
 
-vi.mock('../../../hooks/useFolders', () => ({
-  useModFolders: vi.fn(),
-  useToggleMod: vi.fn(),
+vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
+  useWorkspaceViewModel: vi.fn(() => ({
+    data: {
+      preview: {
+        selected_path: null,
+        selected_node: null,
+        is_flat_mod_root: false,
+        display_title: null,
+        display_subtitle: null,
+        mod_info_summary: null,
+        ini_summary: null,
+        image_summary: null,
+        warning_summary: {
+          state: 'none',
+          messages: [],
+        },
+      },
+    },
+  })),
 }));
 
 function createMockQuery(data: any = null, isSuccess = false) {
@@ -73,7 +88,6 @@ function createMockMutation() {
 }
 
 function setupDefaultMocks() {
-  const useModInfoMock = usePreviewDataModule.useModInfo as any;
   const useModIniFilesMock = usePreviewDataModule.useModIniFiles as any;
   const usePreviewImagesMock = usePreviewDataModule.usePreviewImages as any;
   const useAllModIniDocumentsMock = usePreviewDataModule.useAllModIniDocuments as any;
@@ -82,10 +96,8 @@ function setupDefaultMocks() {
   const useRemovePreviewImageMock = usePreviewDataModule.useRemovePreviewImage as any;
   const useClearPreviewImagesMock = usePreviewDataModule.useClearPreviewImages as any;
   const useWriteModIniMock = usePreviewDataModule.useWriteModIni as any;
-  const useModFoldersMock = useFoldersModule.useModFolders as any;
-  const useToggleModMock = useFoldersModule.useToggleMod as any;
+  const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
 
-  useModInfoMock.mockReturnValue(createMockQuery(null));
   useModIniFilesMock.mockReturnValue(createMockQuery(null));
   usePreviewImagesMock.mockReturnValue(createMockQuery(null));
   useAllModIniDocumentsMock.mockReturnValue([]);
@@ -94,8 +106,24 @@ function setupDefaultMocks() {
   useRemovePreviewImageMock.mockReturnValue(createMockMutation());
   useClearPreviewImagesMock.mockReturnValue(createMockMutation());
   useWriteModIniMock.mockReturnValue(createMockMutation());
-  useModFoldersMock.mockReturnValue(createMockQuery([]));
-  useToggleModMock.mockReturnValue(createMockMutation());
+  useWorkspaceViewModelMock.mockReturnValue({
+    data: {
+      preview: {
+        selected_path: null,
+        selected_node: null,
+        is_flat_mod_root: false,
+        display_title: null,
+        display_subtitle: null,
+        mod_info_summary: null,
+        ini_summary: null,
+        image_summary: null,
+        warning_summary: {
+          state: 'none',
+          messages: [],
+        },
+      },
+    },
+  });
 }
 
 describe('usePreviewPanelState', () => {
@@ -125,14 +153,12 @@ describe('usePreviewPanelState', () => {
     vi.useFakeTimers();
 
     const selectedPath = 'E:/Mods/Parent/VariantA';
-    const useSelectedModPathMock = usePreviewDataModule.useSelectedModPath as any;
-    const useModFoldersMock = useFoldersModule.useModFolders as any;
-
-    useSelectedModPathMock.mockReturnValue(selectedPath);
-    useModFoldersMock.mockReturnValue(
-      createMockQuery({
-        children: [
-          {
+    const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
+    useWorkspaceViewModelMock.mockReturnValue({
+      data: {
+        preview: {
+          selected_path: selectedPath,
+          selected_node: {
             node_type: 'ContainerFolder',
             classification_reasons: [],
             name: 'VariantA',
@@ -151,11 +177,36 @@ describe('usePreviewPanelState', () => {
             category: null,
             conflict_group_id: null,
             conflict_state: null,
+            warnings: [],
+            node_kind: 'container',
+            display_mode: 'container_folder',
+            type_chip: null,
+            display_name: 'VariantA',
+            is_effectively_active: true,
+            ancestor_disabled: false,
+            inactive_reason: null,
+            warning_state: 'none',
+            primary_warning: null,
+            can_navigate: true,
           },
-        ],
-        self_is_mod: false,
-      }),
-    );
+          is_flat_mod_root: false,
+          display_title: 'VariantA',
+          display_subtitle: null,
+          mod_info_summary: {
+            actual_name: 'VariantA',
+            author: 'Unknown',
+            version: '1.0',
+            description: '',
+            is_safe: true,
+            is_favorite: false,
+            has_info_json: false,
+          },
+          ini_summary: { file_count: 0, file_names: [] },
+          image_summary: { image_count: 0, primary_image_path: null },
+          warning_summary: { state: 'none', messages: [] },
+        },
+      },
+    });
 
     const { result } = renderHook(() => usePreviewPanelState());
 
@@ -167,23 +218,38 @@ describe('usePreviewPanelState', () => {
     vi.useRealTimers();
   });
 
-  // Covers: TC-6.1-01 (Title and description sync from metadata)
-  it('should sync title and description from modInfoQuery', async () => {
-    const useModInfoMock = usePreviewDataModule.useModInfo as any;
-    useModInfoMock.mockReturnValue(
-      createMockQuery(
-        {
-          actual_name: 'Test Mod',
-          description: 'A test mod',
+  // Covers: TC-6.1-01 (Title and description sync from workspace preview summary)
+  it('should sync title and description from workspace preview summary', async () => {
+    const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
+    useWorkspaceViewModelMock.mockReturnValue({
+      data: {
+        preview: {
+          selected_path: 'E:/Mods/Test',
+          selected_node: null,
+          is_flat_mod_root: false,
+          display_title: 'Test Mod',
+          display_subtitle: 'Author • v1.0',
+          mod_info_summary: {
+            actual_name: 'Test Mod',
+            author: 'Author',
+            version: '1.0',
+            description: 'A test mod',
+            is_safe: true,
+            is_favorite: false,
+            has_info_json: true,
+          },
+          ini_summary: { file_count: 0, file_names: [] },
+          image_summary: { image_count: 0, primary_image_path: null },
+          warning_summary: { state: 'none', messages: [] },
         },
-        true,
-      ),
-    );
+      },
+    });
 
     const { result } = renderHook(() => usePreviewPanelState());
 
     await waitFor(() => {
-      expect(result.current.titleDraft).toBeDefined();
+      expect(result.current.titleDraft).toBe('Test Mod');
+      expect(result.current.descriptionDraft).toBe('A test mod');
     });
   });
 
@@ -329,22 +395,6 @@ describe('usePreviewPanelState', () => {
     });
   });
 
-  // Covers: TC-6.1-01 (Toggle mod enabled/disabled)
-  it('should handle toggle mod via mutation', async () => {
-    const useToggleModMock = useFoldersModule.useToggleMod as any;
-    const mutateMock = vi.fn();
-    useToggleModMock.mockReturnValue({
-      ...createMockMutation(),
-      mutate: mutateMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.toggleMod).toBeDefined();
-    });
-  });
-
   // Covers: TC-6.3-02 (Autosave metadata on title/description change)
   it('should handle autosave on metadata changes after 500ms', async () => {
     const useUpdateModInfoDetailsMock = usePreviewDataModule.useUpdateModInfoDetails as any;
@@ -375,7 +425,7 @@ describe('usePreviewPanelState', () => {
     const { result } = renderHook(() => usePreviewPanelState());
 
     await waitFor(() => {
-      result.current.applyPendingTransition({ kind: 'collapse', sectionId: 'section1' });
+      result.current.applyPendingTransition();
       expect(result.current.openSectionIds).toBeDefined();
     });
   });

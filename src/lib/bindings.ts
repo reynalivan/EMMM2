@@ -56,6 +56,8 @@ export interface IniLineUpdate {
 /** Shape returned by Rust `match_object_with_db` command. */
 export interface MatchedDbEntry {
   name: string;
+  matched_entry_key?: string | null;
+  matched_alias_name?: string | null;
   object_type: string;
   tags: string[];
   metadata: Record<string, unknown> | null;
@@ -68,7 +70,65 @@ export interface MatchedDbEntry {
   match_detail: string;
 }
 
+export interface ApplyObjectMatchInput {
+  game_id: string;
+  object_id?: string | null;
+  folder_path?: string | null;
+  matched_entry_key?: string | null;
+  matched_alias_name?: string | null;
+  matched_confidence?: number | null;
+  matched_reason?: string | null;
+  matched_source?: string | null;
+}
+
 export type WatcherState = { status: string; path: string | null; game_id: string | null };
+export type DiskReconcileReason =
+  | 'StartupBoot'
+  | 'OnboardingCompleted'
+  | 'ModsViewEntered'
+  | 'WindowRefocused'
+  | 'WatcherBatch'
+  | 'ManualRepair'
+  | 'GameSwitched'
+  | 'InternalMutation';
+
+export type DiskReconcilePathKind = 'Object' | 'Mod';
+
+export interface DiskReconcilePathUpdate {
+  from: string;
+  to: string;
+  kind: DiskReconcilePathKind;
+}
+
+export interface DiskReconcileChangeCounts {
+  added: number;
+  removed: number;
+  renamed: number;
+  modified: number;
+}
+
+export interface DiskReconcileChangeSummary {
+  object_changes: DiskReconcileChangeCounts;
+  mod_changes: DiskReconcileChangeCounts;
+  object_sample_names: string[];
+  mod_sample_names: string[];
+  has_user_visible_changes: boolean;
+}
+
+export interface DiskReconcileResult {
+  game_id: string;
+  reason: DiskReconcileReason;
+  changed_roots: string[];
+  objects_changed: boolean;
+  folders_changed: boolean;
+  collections_changed: boolean;
+  runtime_file_changed: boolean;
+  overlay_refresh_triggered: boolean;
+  thumbnail_roots: string[];
+  cleared_selection_paths: string[];
+  path_updates: DiskReconcilePathUpdate[];
+  change_summary: DiskReconcileChangeSummary;
+}
 
 // Domain Types
 import type { FolderEntry } from '../types/scanner';
@@ -88,10 +148,17 @@ import type {
   ModInfoUpdate,
 } from '../types/object';
 import type {
+  WorkspaceSwitchInput,
+  WorkspaceSwitchResult,
+  WorkspaceViewModel,
+  WorkspaceViewModelInput,
+} from '../types/workspace';
+import type {
   CollectionSummary,
   CorridorSnapshot,
   CorridorSwitchPreview,
   CollectionPreview,
+  ApplyProgressSnapshot,
   ApplyPreview,
   ApplyResult,
   PinStatus,
@@ -101,13 +168,11 @@ import type {
   ArchiveInfo,
   ArchiveAnalysis,
   ExtractionResult,
-  ScanResultItem,
   ConflictInfo,
   ScanPreviewItem,
   ConflictDetails,
   SyncResult,
   TrashMetadata,
-  DuplicateInfo,
   BulkResult,
   DupScanReport,
   ResolutionSummary,
@@ -140,6 +205,7 @@ export interface CustomTheme {
   config: ThemeConfig;
 }
 import type { BrowserDownloadItem, ImportJobItem } from '../features/browser/types';
+import type { RecoveryAction } from '../types/task';
 
 export interface RandomModProposal {
   object_id: string;
@@ -155,8 +221,11 @@ export interface RandomModProposal {
 export const commands = {
   // App & System
   appStartupCheck: () => invoke<PipelineTask[]>('app_startup_check'),
+  checkBootSecurity: (params: { isSafeMode: boolean }) =>
+    invoke<boolean>('check_boot_security', { isSafeMode: params.isSafeMode }),
   checkConfigStatus: () => invoke<boolean>('check_config_status'),
   checkMetadataUpdate: () => invoke<MetadataSyncResult>('check_metadata_update'),
+  closeSplashscreen: () => invoke<void>('close_splashscreen'),
   getLogs: (params: { count?: number; limit?: number; offset?: number }) =>
     invoke<string[]>('get_logs', params),
   getLogLines: (params: { count?: number; limit?: number; offset?: number }) =>
@@ -167,6 +236,7 @@ export const commands = {
   checkPathExists: (params: { path: string }) => invoke<boolean>('check_path_exists_cmd', params),
   checkPathExistsCmd: (params: { path: string }) =>
     invoke<boolean>('check_path_exists_cmd', params),
+  ensureDir: (params: { path: string }) => invoke<void>('ensure_dir_cmd', params),
   getSettings: () => invoke<AppSettings>('get_settings'),
   saveSettings: (params: { settings: AppSettings }) => invoke<void>('save_settings', params),
   runMaintenance: (params: { gameId?: string; id?: string }) =>
@@ -178,6 +248,10 @@ export const commands = {
     invoke<DashboardPayload>('get_dashboard_stats', params),
   getActiveKeybindings: (params: { gameId?: string; id?: string }) =>
     invoke<ActiveKeyBinding[]>('get_active_keybindings', params),
+  getWorkspaceViewModel: (params: { input: WorkspaceViewModelInput }) =>
+    invoke<WorkspaceViewModel>('get_workspace_view_model', params),
+  executeWorkspaceSwitch: (params: { input: WorkspaceSwitchInput }) =>
+    invoke<WorkspaceSwitchResult>('execute_workspace_switch', params),
 
   // Game Management
   getGames: () => invoke<GameConfig[]>('get_games'),
@@ -208,14 +282,12 @@ export const commands = {
     invoke<{ objects: ObjectSummary[]; lost_objects: string[] }>('get_objects_cmd', params),
   getCategoryCounts: (params?: { gameId?: string; safeMode?: boolean }) =>
     invoke<CategoryCount[]>('get_category_counts_cmd', params),
-  syncObjects: (params?: { gameId?: string; id?: string }) =>
-    invoke<SyncResult>('sync_objects_cmd', params),
-  gcLostObjects: (params?: { gameId?: string; id?: string }) =>
-    invoke<string[]>('gc_lost_objects_cmd', params),
   createObject: (params: { input: CreateObjectInput }) =>
     invoke<string>('create_object_cmd', params),
   updateObject: (params: { id?: string; updates: UpdateObjectInput }) =>
     invoke<void>('update_object_cmd', params),
+  applyObjectMatch: (params: { input: ApplyObjectMatchInput }) =>
+    invoke<void>('apply_object_match_cmd', params),
   deleteObject: (params: { id?: string }) => invoke<void>('delete_object_cmd', params),
   pinObject: (params: { id?: string; isPinned?: boolean; pin?: boolean }) =>
     invoke<void>('pin_object', params),
@@ -230,8 +302,6 @@ export const commands = {
     subPath?: string;
     objectId?: string | null;
   }) => invoke<FolderGridResponse>('list_mod_folders', params),
-  toggleMod: (params: { path?: string; folderPath?: string; enable: boolean; gameId?: string }) =>
-    invoke<string>('toggle_mod', params),
   renameModFolder: (params: {
     folderPath?: string;
     path?: string;
@@ -283,7 +353,7 @@ export const commands = {
   readModInfo: (params: { folderPath?: string; path?: string }) =>
     invoke<ModInfo>('read_mod_info', params),
   updateModInfo: (params: { folderPath?: string; path?: string; update: ModInfoUpdate }) =>
-    invoke<void>('update_mod_info', params),
+    invoke<ModInfo>('update_mod_info', params),
   listModIniFiles: (params: { folderPath?: string; path?: string }) =>
     invoke<string[]>('list_mod_ini_files', params),
   readModIni: (params: { folderPath?: string; path?: string; fileName?: string }) =>
@@ -303,11 +373,11 @@ export const commands = {
     objectName?: string;
     imageData?: number[];
     imagePath?: string;
-  }) => invoke<void>('save_mod_preview_image', params),
+  }) => invoke<string>('save_mod_preview_image', params),
   removeModPreviewImage: (params: { folderPath?: string; imagePath?: string }) =>
     invoke<void>('remove_mod_preview_image', params),
   clearModPreviewImages: (params: { folderPath?: string }) =>
-    invoke<void>('clear_mod_preview_images', params),
+    invoke<string[]>('clear_mod_preview_images', params),
 
   // Thumbnails
   getThumbnail: (params: { folderPath?: string; path?: string }) =>
@@ -358,13 +428,9 @@ export const commands = {
   abortExtractionCmd: () => invoke<void>('abort_extraction_cmd'),
 
   // Scanner (General)
-  startScan: (params: { modsPath: string; dbJson: string; onProgress: Channel<ScanEvent> }) =>
-    invoke<ScanResultItem[]>('start_scan', params),
-  getScanResult: (params: { modsPath: string; dbJson: string }) =>
-    invoke<ScanResultItem[]>('get_scan_result', params),
   cancelScan: () => invoke<void>('cancel_scan_cmd'),
   cancelScanCmd: () => invoke<void>('cancel_scan_cmd'),
-  syncDatabase: (params: {
+  runDeepmatchScanner: (params: {
     gameId?: string;
     gameName?: string;
     gameType?: string;
@@ -372,14 +438,14 @@ export const commands = {
     dbJson?: string;
     preserveExistingMappings?: boolean;
     onProgress?: Channel<ScanEvent>;
-  }) => invoke<SyncResult>('sync_database_cmd', params),
-  scanPreview: (params: {
+  }) => invoke<SyncResult>('deepmatch_scanner_cmd', params),
+  runDeepmatchPreview: (params: {
     gameId: string;
     modsPath: string;
     dbJson: string;
     onProgress: Channel<ScanEvent>;
     specificPaths?: string[];
-  }) => invoke<ScanPreviewItem[]>('scan_preview_cmd', params),
+  }) => invoke<ScanPreviewItem[]>('deepmatch_preview_cmd', params),
   commitScan: (params: {
     gameId?: string;
     gameName?: string;
@@ -392,6 +458,12 @@ export const commands = {
     candidateNames: string[];
     dbJson: string;
   }) => invoke<Record<string, number>>('score_candidates_batch_cmd', params),
+  reconcileDiskState: (params: {
+    gameId: string;
+    reason: DiskReconcileReason;
+    changedPaths?: string[];
+    forceFull?: boolean;
+  }) => invoke<DiskReconcileResult>('reconcile_disk_state_cmd', params),
   importModsFromPaths: (params: {
     paths: string[];
     targetDir: string;
@@ -406,9 +478,6 @@ export const commands = {
     gameType?: string;
     dbJson?: string;
   }) => invoke<IngestResult>('ingest_dropped_folders', params),
-  autoOrganizeMods: (params: { paths: string[]; targetRoot: string; dbJson: string }) =>
-    invoke<BulkResult>('auto_organize_mods', params),
-
   // Conflicts & Duplicates
   checkShaderConflicts: (params: { folderPath: string }) =>
     invoke<ConflictInfo[]>('check_shader_conflicts', params),
@@ -416,10 +485,6 @@ export const commands = {
     invoke<ConflictInfo[]>('detect_conflicts_cmd', params),
   detectConflictsInFolder: (params: { modsPath: string }) =>
     invoke<ConflictInfo[]>('detect_conflicts_in_folder_cmd', params),
-  checkDuplicateEnabled: (params: { folderPath: string; gameId: string }) =>
-    invoke<DuplicateInfo[]>('check_duplicate_enabled', params),
-  enableOnlyThis: (params: { targetPath: string; gameId: string }) =>
-    invoke<BulkResult>('enable_only_this', params),
   getConflictDetails: (params: { path?: string; enabledPath?: string; disabledPath?: string }) =>
     invoke<ConflictDetails>('get_conflict_details', params),
   resolveConflict: (params: {
@@ -467,7 +532,9 @@ export const commands = {
   // Collections
   getCorridorState: (params: { gameId: string; isSafe: boolean }) =>
     invoke<CorridorSnapshot>('get_corridor_state', params),
-  listCollections: (params: { gameId: string }) =>
+  getApplyProgress: (params: { gameId: string }) =>
+    invoke<ApplyProgressSnapshot | null>('get_apply_progress', params),
+  listCollections: (params: { gameId: string; isSafe: boolean }) =>
     invoke<CollectionSummary[]>('list_collections', params),
   getCollectionPreview: (params: { id?: string; collectionId?: string; gameId?: string }) =>
     invoke<CollectionPreview>('get_collection_preview', params),
@@ -477,7 +544,13 @@ export const commands = {
     gameId?: string;
     isSafe?: boolean;
   }) => invoke<ApplyPreview>('preview_apply_collection', params),
-  createCollection: (params: { gameId?: string; name: string; description?: string }) =>
+  createCollection: (params: {
+    gameId?: string;
+    name: string;
+    saveMode?: 'save_current_state' | 'clone_snapshot';
+    sourceCollectionId?: string | null;
+    description?: string;
+  }) =>
     invoke<CollectionSummary>('create_collection', params),
   updateCollection: (params: { id?: string; gameId?: string; name?: string }) =>
     invoke<CollectionSummary>('update_collection', params),
@@ -495,6 +568,8 @@ export const commands = {
   previewCorridorSwitch: (params: { gameId?: string; targetSafe?: boolean }) =>
     invoke<CorridorSwitchPreview>('preview_corridor_switch', params),
   clearPendingTasks: (params?: { gameId?: string }) => invoke<void>('clear_pending_tasks', params),
+  resolveRecoveryTask: (params: { taskId: string; action: RecoveryAction }) =>
+    invoke<void>('resolve_recovery_task', params),
 
   // Security (PIN)
   hasPin: () => invoke<boolean>('has_pin'),

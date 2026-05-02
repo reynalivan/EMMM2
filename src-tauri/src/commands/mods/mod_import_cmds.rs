@@ -8,7 +8,6 @@ use tauri::{AppHandle, Emitter, State};
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 pub enum ImportStrategy {
     Raw,
-    AutoOrganize,
 }
 
 #[specta::specta]
@@ -19,7 +18,7 @@ pub async fn import_mods_from_paths(
     op_lock: State<'_, OperationLock>,
     paths: Vec<String>,
     target_dir: String,
-    strategy: ImportStrategy,
+    _strategy: ImportStrategy,
     db_json: Option<String>,
 ) -> Result<BulkResult, String> {
     let _lock = op_lock.acquire().await?;
@@ -43,17 +42,7 @@ pub async fn import_mods_from_paths(
         return Err(format!("Target directory does not exist: {}", target_dir));
     }
 
-    let db = if let ImportStrategy::AutoOrganize = strategy {
-        if let Some(json) = db_json {
-            Some(crate::services::scanner::deep_matcher::MasterDb::from_json(
-                &json,
-            )?)
-        } else {
-            return Err("Auto-Organize requires db_json".to_string());
-        }
-    } else {
-        None
-    };
+    let _ = db_json;
 
     for (i, path_str) in paths.iter().enumerate() {
         let _ = app.emit(
@@ -77,28 +66,8 @@ pub async fn import_mods_from_paths(
             continue;
         }
 
-        if let (ImportStrategy::AutoOrganize, Some(master_db)) = (&strategy, &db) {
-            let _guard = SuppressionGuard::new(&state.suppressor);
-            match crate::services::scanner::core::organizer::organize_mod(path, target, master_db) {
-                Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
-                Err(e) => failures.push(BulkActionError {
-                    path: path_str.clone(),
-                    error: crate::domain::errors::AppError::Io(e.to_string()),
-                }),
-            }
-            continue;
-        }
-
         if ArchiveFormat::detect(path).is_some() {
-            handle_archive_import(
-                &state,
-                path,
-                target,
-                &db,
-                path_str,
-                &mut success,
-                &mut failures,
-            );
+            handle_archive_import(&state, path, target, path_str, &mut success, &mut failures);
             continue;
         }
 
@@ -146,7 +115,6 @@ fn handle_archive_import(
     state: &WatcherState,
     path: &Path,
     target: &Path,
-    db: &Option<crate::services::scanner::deep_matcher::MasterDb>,
     path_str: &str,
     success: &mut Vec<String>,
     failures: &mut Vec<BulkActionError>,
@@ -194,21 +162,7 @@ fn handle_archive_import(
                     extracted_path.to_path_buf()
                 };
 
-                if let Some(master_db) = db {
-                    match crate::services::scanner::core::organizer::organize_mod(
-                        &final_path,
-                        target,
-                        master_db,
-                    ) {
-                        Ok(res) => success.push(res.new_path.to_string_lossy().to_string()),
-                        Err(e) => {
-                            log::warn!("Smart Organization failed: {}", e);
-                            success.push(final_path.to_string_lossy().to_string());
-                        }
-                    }
-                } else {
-                    success.push(final_path.to_string_lossy().to_string());
-                }
+                success.push(final_path.to_string_lossy().to_string());
             }
         }
         Err(e) => failures.push(BulkActionError {

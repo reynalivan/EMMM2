@@ -1,10 +1,12 @@
 import { useRef, useEffect } from 'react';
 import { X, Trash2, ShieldAlert, Ghost, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/useAppStore';
 import { commands } from '../../lib/bindings';
 import { toast } from '../../stores/useToastStore';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { IgnoredConflict } from '../../types/scanner';
+import { applyRuntimeMutationResult } from '../workspace-runtime/actions/sharedRuntimeResultMapper';
 
 interface IgnoreManagementModalProps {
   open: boolean;
@@ -12,6 +14,7 @@ interface IgnoreManagementModalProps {
 }
 
 export default function IgnoreManagementModal({ open, onClose }: IgnoreManagementModalProps) {
+  const { t } = useTranslation(['folder_grid', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const queryClient = useQueryClient();
   const activeGameId = useAppStore((state) => state.activeGameId);
@@ -38,12 +41,11 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
     if (!activeGameId) return;
     try {
       await commands.revokeObjectConflict({ gameId: activeGameId, objectId });
-      toast.success('Conflict ignore revoked.');
+      toast.success(t('ignore_management.toast_revoked'));
       refetch();
-      // Invalidate conflict-related queries to ensure UI is consistent
-      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      void applyRuntimeMutationResult(queryClient, ['workspaceStructure', 'conflictsOnly']);
     } catch (err) {
-      toast.error(`Failed to revoke: ${String(err)}`);
+      toast.error(t('ignore_management.toast_revoke_failed', { error: String(err) }));
     }
   };
 
@@ -55,9 +57,11 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
           <div className="flex items-center gap-3">
             <Ghost className="text-primary" size={24} />
             <div>
-              <h3 className="font-bold text-lg text-base-content">Ignored Conflicts</h3>
+              <h3 className="font-bold text-lg text-base-content">
+                {t('ignore_management.title')}
+              </h3>
               <p className="text-xs text-base-content/60">
-                Manage mod combinations you've allowed to collide.
+                {t('ignore_management.subtitle')}
               </p>
             </div>
           </div>
@@ -70,8 +74,8 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
           {ignoredConflicts.length === 0 ? (
             <div className="py-12 flex flex-col items-center justify-center text-center opacity-40">
               <ShieldAlert size={48} className="mb-4" />
-              <p className="text-sm font-medium">No ignored conflicts found.</p>
-              <p className="text-xs">Conflicts you ignore will appear here for management.</p>
+              <p className="text-sm font-medium">{t('ignore_management.empty_title')}</p>
+              <p className="text-xs">{t('ignore_management.empty_subtitle')}</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 scrollbar-thin">
@@ -83,7 +87,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-bold text-sm text-base-content truncate">
-                        {item.object_name || 'Unknown Object'}
+                        {item.object_name || t('ignore_management.unknown_object')}
                       </span>
                       <span className="text-[10px] bg-base-content/10 text-base-content/60 px-1.5 py-0.5 rounded font-mono uppercase">
                         {item.object_id.slice(0, 8)}
@@ -103,10 +107,10 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
                   <button
                     className="btn btn-ghost btn-sm text-error opacity-0 group-hover:opacity-100 transition-opacity gap-2"
                     onClick={() => handleRevoke(item.object_id)}
-                    title="Revoke ignore status"
+                    title={t('ignore_management.revoke_title')}
                   >
                     <Trash2 size={16} />
-                    <span className="hidden sm:inline">Revoke</span>
+                    <span className="hidden sm:inline">{t('ignore_management.revoke')}</span>
                   </button>
                 </div>
               ))}
@@ -116,21 +120,19 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
           <div className="mt-8 flex items-start gap-3 bg-primary/5 p-4 rounded-xl border border-primary/10">
             <Info size={18} className="text-primary mt-0.5 shrink-0" />
             <p className="text-[11px] text-base-content/70 leading-relaxed">
-              When you "Revoke" an ignore status, the system will resume showing warnings if these
-              mods remain enabled simultaneously. Existing mod states are not changed until the next
-              toggle.
+              {t('ignore_management.note')}
             </p>
           </div>
 
           <div className="mt-6 flex justify-end">
             <button className="btn btn-primary btn-sm px-8" onClick={onClose}>
-              Done
+              {t('common:actions.done')}
             </button>
           </div>
         </div>
       </div>
       <form method="dialog" className="modal-backdrop bg-base-300/40 backdrop-blur-sm">
-        <button tabIndex={-1}>close</button>
+        <button tabIndex={-1}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

@@ -177,7 +177,7 @@ export default function ScanReviewRow({
     return () => observer.disconnect();
   }, [searchOpen, searchQuery]);
 
-  const displayMatch = override?.name ?? item.matchedObject;
+  const displayMatch = override?.name ?? item.matchedAliasName;
   const displayType = override?.object_type ?? item.objectType;
   // Build a score map from item.scoredCandidates for O(1) lookup
   const scoreMap = useMemo(() => {
@@ -259,9 +259,9 @@ export default function ScanReviewRow({
       </ContextMenuItem>
       <ContextMenuItem
         icon={FolderOpen}
-        disabled={(!item.matchedObject && !override) || !activeGame}
+        disabled={(!item.matchedEntryKey && !override) || !activeGame}
         onClick={() => {
-          const objName = override?.name ?? item.matchedObject;
+          const objName = override?.name ?? item.matchedAliasName;
           // Find the object ID from masterDbEntries based on its name
           const entry = masterDbEntries.find((e) => e.name === objName);
 

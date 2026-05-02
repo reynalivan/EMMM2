@@ -18,7 +18,8 @@
   },
   "maintenance": {
     "clear_success": "成功清除了 {{count}} 个旧缩略图。",
-    "maintenance_success": "维护完成。数据库已优化。修剪了 {{pruned}} 个缩略图。清理了 {{trash}} 个旧的空回收站条目。"
+    "maintenance_success": "维护完成。数据库已优化。修剪了 {{pruned}} 个缩略图。清理了 {{trash}} 个旧的空回收站条目。",
+    "failed": "维护失败：{{error}}"
   },
   "actions": {
     "trash": "垃圾桶",
@@ -38,6 +39,8 @@
   "context": {
     "safe_mode_tip": "切换安全模式",
     "loading": "加载中...",
+    "unsaved_safe": "未保存的 SAFE 预设",
+    "unsaved_unsafe": "未保存的 UNSAFE 预设",
     "collections_title": "收藏集",
     "save_current": "保存当前状态",
     "no_collections": "无已保存的收藏",
@@ -49,5 +52,9 @@
     "randomizer": "随机化 (扭蛋)",
     "conflicts": "冲突",
     "conflict_toast": "检测到 {{count}} 个着色器冲突"
+  },
+  "app": {
+    "name": "EMMM",
+    "version": "模组管理器"
   }
 }

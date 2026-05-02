@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type { ImportJobItem, ImportJobUpdateEvent } from '../types';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 export const IMPORT_QUEUE_KEY = ['import-queue'] as const;
 
@@ -26,7 +27,8 @@ export function useImportQueue() {
                 ...job,
                 status: event.payload.status,
                 match_category: event.payload.category ?? job.match_category,
-                match_object_id: event.payload.object_id ?? job.match_object_id,
+                match_entry_key: event.payload.entry_key ?? job.match_entry_key,
+                match_alias_name: event.payload.alias_name ?? job.match_alias_name,
                 match_confidence: event.payload.confidence ?? job.match_confidence,
                 match_reason: event.payload.reason ?? job.match_reason,
                 placed_path: event.payload.placed_path ?? job.placed_path,
@@ -60,12 +62,12 @@ export function useImportQueue() {
         category,
         objectId: objectId ?? undefined,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: IMPORT_QUEUE_KEY }),
+    onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
   });
 
   const skipMutation = useMutation({
     mutationFn: (jobId: string) => commands.browserCancelImport({ jobId }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: IMPORT_QUEUE_KEY }),
+    onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
   });
 
   // Jobs pending user decision

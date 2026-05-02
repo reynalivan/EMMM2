@@ -1,9 +1,7 @@
 /**
  * Demo data for the WelcomeScreen animation strip.
- * These are intentionally standalone types — NOT derived from real domain models —
- * because the demo scenes run before any game is configured.
+ * These are intentionally standalone types and constants, not runtime hook barrels.
  */
-export { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 export type ModTypeTag = 'Character' | 'Weapon' | 'UI';
 

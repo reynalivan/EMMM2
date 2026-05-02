@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::services::config::ConfigService;
 
-use crate::services::explorer::types::{InfoAnalysis, ModFolder};
+use crate::services::explorer::types::{ConflictGroup, InfoAnalysis, ModFolder};
 
 pub fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis {
     if !path.join("info.json").exists() {
@@ -91,6 +91,56 @@ pub fn apply_safe_mode_filter(folders: Vec<ModFolder>, config: &ConfigService) -
             }
         })
         .collect()
+}
+
+fn prune_conflicts(
+    conflicts: Vec<ConflictGroup>,
+    visible_paths: &std::collections::HashSet<String>,
+) -> Vec<ConflictGroup> {
+    conflicts
+        .into_iter()
+        .filter_map(|mut conflict| {
+            conflict
+                .members
+                .retain(|member| visible_paths.contains(&member.path));
+            if conflict.members.len() < 2 {
+                return None;
+            }
+            Some(conflict)
+        })
+        .collect()
+}
+
+pub fn apply_safe_mode_filter_to_response(
+    mut response: crate::services::explorer::types::FolderGridResponse,
+    config: &ConfigService,
+) -> crate::services::explorer::types::FolderGridResponse {
+    response.children = apply_safe_mode_filter(response.children, config);
+    let visible_paths = response
+        .children
+        .iter()
+        .map(|folder| folder.path.clone())
+        .collect::<std::collections::HashSet<_>>();
+    response.conflicts = prune_conflicts(response.conflicts, &visible_paths);
+    response
+}
+
+pub fn apply_runtime_corridor_filter_to_response(
+    mut response: crate::services::explorer::types::FolderGridResponse,
+    safe_mode: bool,
+) -> crate::services::explorer::types::FolderGridResponse {
+    response.children = response
+        .children
+        .into_iter()
+        .filter(|folder| folder.is_safe == safe_mode)
+        .collect();
+    let visible_paths = response
+        .children
+        .iter()
+        .map(|folder| folder.path.clone())
+        .collect::<std::collections::HashSet<_>>();
+    response.conflicts = prune_conflicts(response.conflicts, &visible_paths);
+    response
 }
 
 #[cfg(test)]

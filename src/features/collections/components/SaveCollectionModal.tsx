@@ -4,10 +4,13 @@ import { Save, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useCreateCollection } from '../hooks/useCollections';
+import type { CollectionSaveMode } from '../types';
 
 interface SaveCollectionModalProps {
   onClose: () => void;
   onSaved?: (collectionId: string) => void;
+  saveMode?: CollectionSaveMode;
+  sourceCollectionId?: string | null;
 }
 
 function buildDefaultCollectionName(): string {
@@ -20,18 +23,29 @@ function buildDefaultCollectionName(): string {
   return `Preset ${yyyy}${mm}${dd}${hh}${min}`;
 }
 
-export function SaveCollectionModal({ onClose, onSaved }: SaveCollectionModalProps) {
+export function SaveCollectionModal({
+  onClose,
+  onSaved,
+  saveMode = 'save_current_state',
+  sourceCollectionId,
+}: SaveCollectionModalProps) {
   const { t } = useTranslation('collections');
   const { activeGameId } = useAppStore();
   const [name, setName] = useState(buildDefaultCollectionName());
   const createMutation = useCreateCollection();
+  const isSnapshotSave = saveMode === 'clone_snapshot';
 
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!activeGameId || !name.trim()) return;
 
     createMutation.mutate(
-      { gameId: activeGameId, name: name.trim() },
+      {
+        gameId: activeGameId,
+        name: name.trim(),
+        saveMode,
+        sourceCollectionId: sourceCollectionId ?? null,
+      },
       {
         onSuccess: (result) => {
           onSaved?.(result.id);
@@ -48,7 +62,9 @@ export function SaveCollectionModal({ onClose, onSaved }: SaveCollectionModalPro
           <div className="flex items-center justify-between mb-2">
             <h2 className="card-title text-xl flex gap-2 items-center">
               <Save size={20} className="text-secondary" />
-              {t('save.title')}
+              {isSnapshotSave
+                ? t('save.snapshot_title', 'Save Snapshot as New Collection')
+                : t('save.title')}
             </h2>
             <button
               className="btn btn-sm btn-circle btn-ghost"
@@ -59,7 +75,14 @@ export function SaveCollectionModal({ onClose, onSaved }: SaveCollectionModalPro
             </button>
           </div>
 
-          <p className="text-sm text-base-content/60 mb-6">{t('save.desc')}</p>
+          <p className="text-sm text-base-content/60 mb-6">
+            {isSnapshotSave
+              ? t(
+                  'save.snapshot_desc',
+                  'Creates a new named collection from the selected stored snapshot.',
+                )
+              : t('save.desc')}
+          </p>
 
           <form onSubmit={handleSave} className="space-y-5">
             <div className="form-control">

@@ -16,10 +16,12 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ObjectSummary } from '../../types/object';
+import type { WorkspaceObjectNode } from '../../types/workspace';
 import { cn, getFileUrl } from '../../lib/utils';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useThumbnail } from '../../hooks/useThumbnail';
+import { buildWorkspaceSwitchPolicy } from '../workspace-runtime/actions/workspaceSwitchPolicy';
+import { WorkspaceSwitchLabel } from '../workspace-runtime/components/WorkspaceSwitchLabel';
 
 /** Element icon map for metadata display */
 const ELEMENT_ICONS: Record<string, typeof Flame> = {
@@ -49,8 +51,12 @@ function parseMetadata(raw: string | undefined): ParsedMeta {
   }
 }
 
+function formatObjectModCount(enabledCount: number, modCount: number): string {
+  return `${enabledCount}/${modCount}`;
+}
+
 interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
-  obj: ObjectSummary;
+  obj: WorkspaceObjectNode;
   isSelected: boolean;
   isMobile: boolean;
   onClick: () => void;
@@ -74,7 +80,7 @@ function ObjectRowItemInner({
   onToggleBulkSelect,
   ...rest
 }: ObjectRowItemProps) {
-  const { t } = useTranslation(['objects']);
+  const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
 
   // Dynamic thumbnail: resolve from physical folder (same as FolderGrid)
@@ -103,11 +109,13 @@ function ObjectRowItemInner({
   }
 
   const meta = useMemo(() => parseMetadata(obj.metadata), [obj.metadata]);
+  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, obj), [obj, t]);
 
   const ElementIcon = meta.element ? ELEMENT_ICONS[meta.element] : null;
 
-  /** Fully disabled: explicitly from DB folder path, or 0 enabled children */
-  const isDisabled = obj.is_object_disabled || (obj.enabled_count === 0 && obj.mod_count > 0);
+  /** Object disabled is driven only by the physical object folder prefix on disk. */
+  const isDisabled = obj.is_object_disabled;
+  const isInactive = !obj.is_effectively_active && obj.mod_count > 0;
 
   return (
     <div
@@ -124,6 +132,7 @@ function ObjectRowItemInner({
           : isDropTarget
             ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/40'
             : 'hover:bg-base-200/50 hover:border-base-300/30',
+        isInactive && !isSelected && 'bg-base-200/25',
         isMobile ? 'px-3 py-2' : 'px-2 py-1.5',
         className,
       )}
@@ -225,6 +234,7 @@ function ObjectRowItemInner({
               'font-medium truncate text-sm transition-colors',
               isSelected ? 'text-primary' : 'text-base-content/90 group-hover:text-base-content',
               isDisabled && 'line-through text-base-content/40',
+              isInactive && !isDisabled && 'text-base-content/55',
             )}
           >
             {obj.name}
@@ -233,17 +243,25 @@ function ObjectRowItemInner({
           <div className="flex items-center gap-1.5">
             {obj.is_pinned ? <Pin size={12} className="text-secondary rotate-45" /> : null}
             {obj.mod_count > 0 ? (
-              <span className="badge badge-xs font-mono tabular-nums bg-base-300/50 text-base-content/40 border-0">
-                {obj.mod_count}
-              </span>
-            ) : null}
-            {obj.enabled_count > 0 ? (
-              <span className="badge badge-xs badge-primary font-mono tabular-nums bg-primary/20 text-primary border-0">
-                {obj.enabled_count}
+              <span
+                className={cn(
+                  'badge badge-xs font-mono tabular-nums border-0',
+                  isInactive
+                    ? 'bg-base-300/35 text-base-content/30'
+                    : 'bg-base-300/50 text-base-content/40',
+                )}
+              >
+                {formatObjectModCount(obj.enabled_count, obj.mod_count)}
               </span>
             ) : null}
           </div>
         </div>
+
+        {obj.matched_alias_name && obj.matched_alias_name !== obj.name ? (
+          <div className="text-[11px] text-base-content/45 truncate">
+            {t('item.matched_alias', { alias: obj.matched_alias_name })}
+          </div>
+        ) : null}
 
         {/* Metadata subtext — element icon, weapon, rarity, or fallback to mod count */}
         <div className="relative flex items-center min-h-4 w-full text-xs text-base-content/40">
@@ -259,6 +277,7 @@ function ObjectRowItemInner({
             className={cn(
               'flex items-center gap-1.5 transition-opacity duration-200',
               isDisabled && 'group-hover:opacity-0',
+              isInactive && !isDisabled && 'text-base-content/30',
             )}
           >
             {ElementIcon && <ElementIcon size={11} className="shrink-0 text-base-content/50" />}
@@ -268,7 +287,12 @@ function ObjectRowItemInner({
                 <span className="truncate text-[11px]">{meta.weapon_type}</span>
               </>
             )}
-            {meta.path && !meta.weapon_type && (
+            <WorkspaceSwitchLabel
+              node={obj}
+              policy={switchPolicy}
+              className="truncate text-[11px]"
+            />
+            {meta.path && !meta.weapon_type && !switchPolicy.label && (
               <span className="truncate text-[11px]">{meta.path}</span>
             )}
             {meta.rarity ? (
@@ -304,14 +328,20 @@ export default memo(
   ObjectRowItemInner,
   (prev, next) =>
     prev.obj.id === next.obj.id &&
+    prev.obj.name === next.obj.name &&
+    prev.obj.folder_path === next.obj.folder_path &&
+    prev.obj.matched_alias_name === next.obj.matched_alias_name &&
     prev.obj.status === next.obj.status &&
     prev.obj.mod_count === next.obj.mod_count &&
     prev.obj.enabled_count === next.obj.enabled_count &&
     prev.obj.is_pinned === next.obj.is_pinned &&
+    prev.obj.is_object_disabled === next.obj.is_object_disabled &&
     prev.obj.has_naming_conflict === next.obj.has_naming_conflict &&
     prev.obj.thumbnail_path === next.obj.thumbnail_path &&
     prev.obj.metadata === next.obj.metadata &&
+    prev.isMobile === next.isMobile &&
     prev.isSelected === next.isSelected &&
     prev.isDropTarget === next.isDropTarget &&
-    prev.isBulkSelected === next.isBulkSelected,
+    prev.isBulkSelected === next.isBulkSelected &&
+    prev.className === next.className,
 );

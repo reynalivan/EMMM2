@@ -3,6 +3,7 @@ import { Package, Lock, AlertTriangle, CheckCircle2, Pencil } from 'lucide-react
 import { useTranslation } from 'react-i18next';
 import type { ArchiveInfo } from '../../../types/scanner';
 import ArchiveFileTree from './ArchiveFileTree';
+import { formatBytes } from '../../../utils/formatters';
 
 interface ExtractOptions {
   autoRename: boolean;
@@ -240,7 +241,7 @@ export default function ArchiveModal({
                 {archive.extension}
               </span>
               <span className="text-[10px] font-mono opacity-50">
-                {(archive.size_bytes / 1024 / 1024).toFixed(2)} MB
+                {formatBytes(archive.size_bytes)}
               </span>
             </div>
             {/* Password input for encrypted */}
@@ -590,7 +591,7 @@ export default function ArchiveModal({
         )}
       </div>
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onSkip}>close</button>
+        <button onClick={onSkip}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

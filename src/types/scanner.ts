@@ -1,6 +1,6 @@
 /**
  * Types for Epic 2: Mod Scanner & Organization.
- * Matches Rust structs in `src-tauri/src/commands/scan_cmds.rs`.
+ * Mirrors the active Deep Match Scanner preview/review payloads.
  */
 
 export interface ArchiveInfo {
@@ -59,7 +59,7 @@ export interface ScanResultItem {
   rawName: string;
   displayName: string;
   isDisabled: boolean;
-  matchedObject: string | null;
+  matchedAliasName: string | null;
   matchLevel: 'AutoMatched' | 'NeedsReview' | 'NoMatch';
   confidence: 'High' | 'Medium' | 'Low' | 'None';
   confidenceScore: number;
@@ -80,7 +80,8 @@ export type ScanPreviewItem = {
   folderPath: string;
   displayName: string;
   isDisabled: boolean;
-  matchedObject: string | null;
+  matchedEntryKey: string | null;
+  matchedAliasName: string | null;
   matchLevel: string;
   confidence: string;
   confidenceScore: number;
@@ -175,7 +176,7 @@ export type TrashMetadata = {
 
 export type BulkActionError = {
   path: string;
-  error: string;
+  error: unknown;
 };
 
 export type BulkResult = {
@@ -281,7 +282,10 @@ export type ConfirmedScanItem = {
   folderPath: string;
   displayName: string;
   isDisabled: boolean;
-  matchedObject: string | null;
+  matchedEntryKey: string | null;
+  matchedAliasName: string | null;
+  matchedConfidence: number | null;
+  matchedReason: string | null;
   objectType: string | null;
   thumbnailPath: string | null;
   tagsJson: string | null;

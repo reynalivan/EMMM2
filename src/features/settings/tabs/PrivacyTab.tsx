@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
 import PinModal from '../modals/PinModal';
 import { useToastStore } from '../../../stores/useToastStore';
-import { useSafeModeToggle as useSafeModeToggle } from '../../collections/hooks';
+import { useSafeModeToggle } from '../../collections/hooks/useSafeModeToggle';
 import ModeSwitchConfirmModal from '../../safe-mode/ModeSwitchConfirmModal';
 import { commands } from '../../../lib/bindings';
 import PinEntryModal from '../../safe-mode/PinEntryModal';

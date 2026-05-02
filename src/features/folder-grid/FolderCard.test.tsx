@@ -1,7 +1,8 @@
 import { render, screen, fireEvent } from '../../testing/test-utils';
 import FolderCard from './FolderCard';
-import { vi, describe, it, expect } from 'vitest';
-import { ModFolder } from '../../types/mod';
+import { beforeEach, vi, describe, it, expect } from 'vitest';
+import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '../../types/workspace';
+import { useAppStore } from '../../stores/useAppStore';
 
 // Mock dependencies
 vi.mock('@tauri-apps/api/core', () => ({
@@ -28,7 +29,30 @@ vi.mock('../../components/ui/ContextMenu', () => ({
   ContextMenuSeparator: () => null,
 }));
 
-const mockFolder: ModFolder = {
+vi.mock('./FolderCardContextMenu', () => ({
+  default: () => null,
+}));
+
+vi.mock('./BulkContextMenu', () => ({
+  default: () => null,
+}));
+
+const baseCapabilities: WorkspaceCapabilities = {
+  can_toggle: true,
+  can_rename: true,
+  can_delete: true,
+  can_move: false,
+  can_toggle_safe: false,
+  can_sync: false,
+  can_enable_only_this: false,
+  can_pin: false,
+  can_edit_metadata: false,
+  can_reveal_in_explorer: true,
+  can_move_category: false,
+  can_open_in_explorer: true,
+};
+
+const mockFolder: WorkspaceExplorerNode = {
   node_type: 'ContainerFolder',
   classification_reasons: [],
   name: 'Test Mod',
@@ -46,9 +70,27 @@ const mockFolder: ModFolder = {
   metadata: null,
   category: null,
   warnings: [],
+  node_kind: 'container',
+  display_mode: 'container_folder',
+  type_chip: null,
+  display_name: 'Test Mod',
+  is_effectively_active: true,
+  ancestor_disabled: false,
+  inactive_reason: null,
+  warning_state: 'none',
+  primary_warning: null,
+  switch_state: 'enabled',
+  switch_reason: null,
+  switch_policy_key: 'mod',
+  capabilities: baseCapabilities,
+  can_navigate: true,
 };
 
 describe('FolderCard', () => {
+  beforeEach(() => {
+    useAppStore.setState({ safeMode: false });
+  });
+
   it('renders mod name', () => {
     render(
       <FolderCard
@@ -56,7 +98,6 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
       />,
     );
     expect(screen.getByText('Test Mod')).toBeInTheDocument();
@@ -64,7 +105,7 @@ describe('FolderCard', () => {
 
   it('handles click events', () => {
     const toggleSelection = vi.fn();
-    const clearSelection = vi.fn();
+    const onActivate = vi.fn();
 
     render(
       <FolderCard
@@ -72,18 +113,17 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={toggleSelection}
-        clearSelection={clearSelection}
+        onActivate={onActivate}
       />,
     );
 
     fireEvent.click(screen.getByText('Test Mod'));
-    expect(clearSelection).toHaveBeenCalled(); // Single click clears then toggles
-    expect(toggleSelection).toHaveBeenCalledWith(mockFolder.path, false, false);
+    expect(onActivate).toHaveBeenCalledWith(mockFolder.path);
+    expect(toggleSelection).not.toHaveBeenCalled();
   });
 
   it('handles ctrl+click', () => {
     const toggleSelection = vi.fn();
-    const clearSelection = vi.fn();
 
     render(
       <FolderCard
@@ -91,19 +131,22 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={toggleSelection}
-        clearSelection={clearSelection}
       />,
     );
 
     fireEvent.click(screen.getByText('Test Mod'), { ctrlKey: true });
-    expect(clearSelection).not.toHaveBeenCalled();
     expect(toggleSelection).toHaveBeenCalledWith(mockFolder.path, true, false);
   });
 
   it('does not select InternalAssets on click', () => {
     const toggleSelection = vi.fn();
-    const clearSelection = vi.fn();
-    const internalAssetFolder = { ...mockFolder, node_type: 'InternalAssets' } as ModFolder;
+    const onActivate = vi.fn();
+    const internalAssetFolder = {
+      ...mockFolder,
+      node_type: 'InternalAssets',
+      display_mode: 'internal_assets',
+      can_navigate: false,
+    } as WorkspaceExplorerNode;
 
     render(
       <FolderCard
@@ -111,12 +154,12 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={toggleSelection}
-        clearSelection={clearSelection}
+        onActivate={onActivate}
       />,
     );
 
     fireEvent.click(screen.getByText('Test Mod'));
-    expect(clearSelection).not.toHaveBeenCalled();
+    expect(onActivate).not.toHaveBeenCalled();
     expect(toggleSelection).not.toHaveBeenCalled();
   });
 
@@ -128,7 +171,6 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={onNavigate}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
       />,
     );
 
@@ -144,35 +186,36 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
       />,
     );
-    expect(screen.getByText('Enabled')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { hidden: true })).toBeChecked();
+    expect(screen.getByText('common:status.enabled')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox', { hidden: true })[1]).toBeChecked();
 
-    const disabledFolder = { ...mockFolder, is_enabled: false };
+    const disabledFolder = {
+      ...mockFolder,
+      is_enabled: false,
+      switch_state: 'disabled' as const,
+    };
     rerender(
       <FolderCard
         folder={disabledFolder}
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
       />,
     );
-    expect(screen.getByText('Disabled')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { hidden: true })).not.toBeChecked();
+    expect(screen.getByText('common:status.disabled')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox', { hidden: true })[1]).not.toBeChecked();
   });
 
   it('renders naming conflict warning styles (TC-13)', () => {
-    const conflictFolder = { ...mockFolder, conflict_state: 'both' } as unknown as ModFolder;
+    const conflictFolder = { ...mockFolder, conflict_state: 'both' } as WorkspaceExplorerNode;
     render(
       <FolderCard
         folder={conflictFolder}
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
         hasConflict={false}
       />,
     );
@@ -192,7 +235,6 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
         isRenaming={true}
         onRenameSubmit={onRenameSubmit}
         onRenameCancel={onRenameCancel}
@@ -217,7 +259,6 @@ describe('FolderCard', () => {
         isSelected={false}
         onNavigate={vi.fn()}
         toggleSelection={vi.fn()}
-        clearSelection={vi.fn()}
         isRenaming={true}
         onRenameSubmit={onRenameSubmit}
         onRenameCancel={onRenameCancel}
@@ -232,5 +273,30 @@ describe('FolderCard', () => {
     fireEvent.blur(input);
     expect(onRenameCancel).toHaveBeenCalledTimes(2);
     expect(onRenameSubmit).not.toHaveBeenCalled();
+  });
+
+  it('masks unsafe folder names while safe mode leak guard is active', () => {
+    useAppStore.setState({ safeMode: true });
+    const unsafeFolder = {
+      ...mockFolder,
+      is_safe: false,
+      name: 'Unsafe Mod Name',
+      display_name: 'Unsafe Mod Name',
+      folder_name: 'Unsafe Mod Name',
+    };
+
+    render(
+      <FolderCard
+        folder={unsafeFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+      />,
+    );
+
+    const maskedName = screen.getByText('card.hidden_mod');
+    expect(maskedName).toBeInTheDocument();
+    expect(maskedName).toHaveClass('blur-xs');
+    expect(screen.queryByText('Unsafe Mod Name')).not.toBeInTheDocument();
   });
 });

@@ -21,7 +21,8 @@
     "confirm": "Konfirmasi",
     "save": "Simpan",
     "delete": "Hapus",
-    "close": "Tutup"
+    "close": "Tutup",
+    "dismiss": "Abaikan"
   },
   "actions": {
     "back": "Kembali",
@@ -31,9 +32,15 @@
     "delete": "Hapus",
     "close": "Tutup",
     "reload_app": "Muat Ulang Aplikasi",
-    "remove": "Hapus {{item}}",
+    "remove": "Hapus",
     "save_changes": "Simpan Perubahan",
-    "retry": "Coba Lagi"
+    "retry": "Coba Lagi",
+    "discard": "Buang Perubahan",
+    "done": "Selesai",
+    "keep_enabled": "Pertahankan yang Aktif",
+    "keep_disabled": "Pertahankan yang Nonaktif",
+    "separate": "Simpan Keduanya Terpisah",
+    "dismiss": "Abaikan"
   },
   "errors": {
     "no_active_game": "Tidak ada game aktif yang dipilih",
@@ -44,10 +51,34 @@
     "validation": {
       "required": "Bidang ini wajib diisi",
       "invalid": "Masukan tidak valid"
-    }
+    },
+    "clipboard_not_supported": "Akses clipboard tidak didukung di perangkat ini."
   },
   "status": {
     "none": "Tidak ada",
-    "no_subfolders": "Tidak ada subfolder yang ditemukan"
+    "no_subfolders": "Tidak ada subfolder yang ditemukan",
+    "loading": "Memuat...",
+    "enabled": "Aktif",
+    "disabled": "Nonaktif",
+    "not_set": "Belum diatur"
+  },
+  "units": {
+    "ms": "ms"
+  },
+  "file_in_use": {
+    "title": "Folder Sedang Digunakan",
+    "description": "Tutup aplikasi atau jendela yang masih memakai \"{{folderName}}\", lalu coba lagi.",
+    "windows_explorer": "Windows Explorer",
+    "hint": "Kunci file biasanya berasal dari jendela Explorer, editor teks, atau alat yang memantau folder.",
+    "folder_fallback": "folder ini"
+  },
+  "workspace": {
+    "reason": {
+      "disabled_by_container": "Dinonaktifkan oleh kontainer: {{name}}",
+      "object_folder_disabled": "Folder objek dinonaktifkan"
+    },
+    "warning": {
+      "naming_conflict": "Konflik penamaan terdeteksi"
+    }
   }
 }

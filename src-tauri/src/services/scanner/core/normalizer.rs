@@ -61,18 +61,18 @@ pub fn sanitize_filename(name: &str) -> String {
     RE_FORBIDDEN_CHARS.replace_all(name, "_").to_string()
 }
 
-/// Regex matching all DISABLED prefix variants (mirrors mod_core_cmds::DISABLED_RE).
+/// Regex matching the canonical DISABLED folder prefix.
 static DISABLED_DETECT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(disabled|disable|dis)[_\-\s]*").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^disabled\s+").unwrap());
 
 /// Normalize a folder name for UI display.
 ///
-/// Strips any DISABLED prefix variant and trims whitespace.
+/// Strips the canonical DISABLED prefix and trims whitespace.
 pub fn normalize_display_name(name: &str) -> String {
     DISABLED_DETECT_RE.replace(name, "").trim().to_string()
 }
 
-/// Check if a folder is disabled based on any DISABLED prefix variant.
+/// Check if a folder is disabled based on the canonical DISABLED prefix.
 pub fn is_disabled_folder(name: &str) -> bool {
     DISABLED_DETECT_RE.is_match(name)
 }

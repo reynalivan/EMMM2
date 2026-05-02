@@ -38,7 +38,12 @@
     "title": "检测到名称冲突",
     "loading": "正在加载文件夹详情...",
     "enabled_label": "已启用版本",
-    "disabled_label": "已禁用版本"
+    "disabled_label": "已禁用版本",
+    "description": "已启用和已禁用的 {{name}} 版本同时存在于同一目录中。请比较后选择要保留的版本。",
+    "file_count_one": "{{count}} 个文件",
+    "file_count_other": "{{count}} 个文件",
+    "more_files_one": "+另外 {{count}} 个文件",
+    "more_files_other": "+另外 {{count}} 个文件"
   },
   "breadcrumbs": {
     "root": "根目录"
@@ -46,5 +51,37 @@
   "context": {
     "switching": "正在切换上下文...",
     "active_warning": "然而，此模组当前处于<strong>激活（启用）</strong>状态。激活的模组无法直接修改。"
+  },
+  "context_dialog": {
+    "title": "更改活动模组的上下文？",
+    "move_message": "\"{{modName}}\" 将被移动到 {{target}} 上下文。",
+    "target_safe": "SAFE",
+    "target_unsafe": "UNSAFE",
+    "active_warning": "该模组当前处于活动状态。移动它可能影响当前已应用的配置。",
+    "confirm_checkbox": "我已了解影响并希望继续。",
+    "confirm_action": "更改上下文"
+  },
+  "duplicate_warning": {
+    "title": "可能存在重复的活动模组",
+    "description": "{{targetName}} 在同一目标下已有其他已启用模组。请选择继续方式。",
+    "currently_enabled": "当前已启用",
+    "enable_only_this": "仅启用此项",
+    "force_enable": "仍然强制启用"
+  },
+  "drag_overlay": {
+    "title": "移动到对象",
+    "subtitle": "将此文件夹拖放到对象上以重新分配。"
+  },
+  "ignore_management": {
+    "toast_revoked": "已撤销忽略的冲突规则。",
+    "toast_revoke_failed": "撤销忽略的冲突规则失败：{{error}}",
+    "title": "已忽略的冲突规则",
+    "subtitle": "查看你之前允许的对象冲突。",
+    "empty_title": "没有已忽略的冲突",
+    "empty_subtitle": "已忽略的冲突规则会显示在这里。",
+    "unknown_object": "未知对象",
+    "revoke_title": "撤销忽略的冲突规则",
+    "revoke": "撤销",
+    "note": "撤销规则后，此对象将再次显示冲突警告。"
   }
 }

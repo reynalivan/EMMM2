@@ -33,13 +33,51 @@ pub async fn resolve_conflict(
     PathGuard::validate_path(&config, &game_id, &duplicate_path).map_err(AppError::Security)?;
 
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let mods_path = crate::repo::game_repo::get_mod_path(pool.inner(), &game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
+    let mods_root = Path::new(&mods_path);
+    let old_rel = Path::new(&duplicate_path)
+        .strip_prefix(mods_root)
+        .ok()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| duplicate_path.clone());
     let result = resolve_conflict_inner(&state, &keep_path, &duplicate_path, &strategy)?;
+    let new_rel = Path::new(&result)
+        .strip_prefix(mods_root)
+        .ok()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| result.clone());
 
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        &pool,
+    if old_rel != new_rel {
+        let _ = crate::repo::mod_repo::update_mod_path_by_old_path_in_game(
+            pool.inner(),
+            &game_id,
+            &old_rel,
+            &new_rel,
+        )
+        .await;
+        let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
+            pool.inner(),
+            &old_rel,
+            &new_rel,
+            None,
+        )
+        .await;
+    }
+    let _ = crate::services::runtime_projection_service::rebuild_game_projection(
+        pool.inner(),
+        &game_id,
+    )
+    .await;
+    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        pool.inner(),
         &config,
         state.suppressor.clone(),
+        &game_id,
+        &[true, false],
+        true,
+        true,
     )
     .await;
 

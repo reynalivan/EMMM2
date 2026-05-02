@@ -7,7 +7,8 @@ import { useAppStore } from '../../stores/useAppStore';
 import { commands } from '../../lib/bindings';
 import { toast } from '../../stores/useToastStore';
 import { useQueryClient } from '@tanstack/react-query';
-import { folderKeys } from '../../hooks/useFolders';
+import { applyRuntimeMutationResult } from '../workspace-runtime/actions/sharedRuntimeResultMapper';
+import { useWorkspaceSwitchActions } from '../workspace-runtime/actions/useWorkspaceSwitchActions';
 
 interface ObjectConflictModalProps {
   open: boolean;
@@ -28,6 +29,7 @@ export default function ObjectConflictModal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const queryClient = useQueryClient();
   const activeGameId = useAppStore((state) => state.activeGameId);
+  const switchActions = useWorkspaceSwitchActions();
 
   useEffect(() => {
     if (open) {
@@ -46,9 +48,8 @@ export default function ObjectConflictModal({
     if (!selectedId || !activeGameId) return;
     setIsResolving(true);
     try {
-      await commands.enableOnlyThis({ targetPath: selectedId, gameId: activeGameId });
+      await switchActions.resolveDuplicateEnableOnly({ path: selectedId });
       toast.success(t('folder_grid:conflicts.toast.resolved'));
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       onClose();
     } catch (err) {
       toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
@@ -72,15 +73,12 @@ export default function ObjectConflictModal({
         modIds: sortedModIds,
       });
 
-      // After ignoring, force enable the current folder
-      await commands.toggleMod({
-        path: folder.path,
-        enable: true,
-        gameId: activeGameId,
+      await switchActions.setFolderPathEnabled(folder.path, true, {
+        syncExplorerPath: false,
       });
 
       toast.success(t('folder_grid:conflicts.toast.ignored'));
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+      await applyRuntimeMutationResult(queryClient, 'conflictsOnly');
       onClose();
     } catch (err) {
       toast.error(t('folder_grid:conflicts.toast.ignore_failed', { error: String(err) }));

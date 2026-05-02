@@ -37,6 +37,7 @@ pub struct BulkResult {
 /// Paths in `paths` are absolute; DB updates use relative paths computed from `mods_path`.
 pub async fn bulk_toggle(
     app: &AppHandle,
+    config: &crate::services::config::ConfigService,
     pool: &SqlitePool,
     state: &WatcherState,
     mods_path: &str,
@@ -117,6 +118,9 @@ pub async fn bulk_toggle(
         if let Err(e) = mod_repo::batch_update_path_and_status(pool, &db_updates).await {
             log::error!("Failed batch updating mod paths after bulk toggle: {}", e);
         }
+
+        let _ = crate::services::runtime_projection_service::rebuild_game_projection(pool, game_id)
+            .await;
     }
 
     // Recompute corridor signatures so dirty detection stays in sync
@@ -139,14 +143,20 @@ pub async fn bulk_toggle(
         .await
         .unwrap_or_default();
 
-        for safe_val in affected_corridors {
-            let _ = crate::services::collection_service::handle_dirty_state(
-                pool,
-                game_id,
-                safe_val != 0,
-            )
-            .await;
-        }
+        let safe_contexts = affected_corridors
+            .into_iter()
+            .map(|safe_value| safe_value != 0)
+            .collect::<Vec<_>>();
+        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+            pool,
+            config,
+            state.suppressor.clone(),
+            game_id,
+            &safe_contexts,
+            true,
+            true,
+        )
+        .await;
     }
 
     let _ = app.emit(
@@ -181,6 +191,7 @@ pub async fn bulk_toggle_inner(
 
 pub async fn bulk_delete(
     app: &AppHandle,
+    config: &crate::services::config::ConfigService,
     pool: &SqlitePool,
     state: &WatcherState,
     paths: Vec<String>,
@@ -283,14 +294,23 @@ pub async fn bulk_delete(
 
         // Trigger dirty state for cada affected corridor
         if let Some(gid) = game_id {
-            for safe_val in affected_corridors {
-                let _ = crate::services::collection_service::handle_dirty_state(
-                    pool,
-                    &gid,
-                    safe_val != 0,
-                )
-                .await;
-            }
+            let _ =
+                crate::services::runtime_projection_service::rebuild_game_projection(pool, &gid)
+                    .await;
+            let safe_contexts = affected_corridors
+                .into_iter()
+                .map(|safe_value| safe_value != 0)
+                .collect::<Vec<_>>();
+            let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+                pool,
+                config,
+                state.suppressor.clone(),
+                &gid,
+                &safe_contexts,
+                true,
+                true,
+            )
+            .await;
         }
     }
 

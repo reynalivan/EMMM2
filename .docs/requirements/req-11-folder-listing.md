@@ -85,15 +85,17 @@ As a system, I want each listed folder to carry its `info.json` fields and thumb
 
 | ID        | Type        | Criteria                                                                                                                                                                                  |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-11.1.1 | ✅ Positive | A folder is `ModPackRoot` if it contains a `.ini` file with valid 3DMigoto sections (`[TextureOverride...]`, etc.) AND has meaningful subfolders or assets.                               |
-| AC-11.1.2 | ✅ Positive | A folder is `FlatModRoot` if it is a `ModPackRoot` but its children are ONLY internal assets (referenced by INI).                                                                         |
-| AC-11.1.3 | ✅ Positive | A folder is `VariantContainer` if it contains 3+ subfolders each containing a mod INI, or 2+ subfolders if a parent INI references them.                                                  |
+| AC-11.1.1 | ✅ Positive | A folder is `ModPackRoot` if it contains a `.ini` file with valid 3DMigoto sections (`[TextureOverride...]`, etc.) AND has meaningful subfolders or assets. |
+| AC-11.1.2 | ✅ Positive | A folder is `FlatModRoot` if it is a `ModPackRoot` but its children are ONLY internal assets (referenced by INI). |
+| AC-11.1.3 | ✅ Positive | A folder is `VariantContainer` if it contains 3+ subfolders each containing a mod INI, or 2+ subfolders if a parent INI references them. |
 | AC-11.1.4 | ✅ Positive | A folder is `InternalAssets` if it is referenced by a `filename=` directive in a parent INI.                                                                                              |
 | AC-11.1.5 | ✅ Positive | A folder is `ContainerFolder` if it does not meet mod criteria (general categorization folder).                                                                                           |
 | AC-11.5.1 | ✅ Positive | Given a folder containing `info.json`, when listed, then `author`, `description`, `version`, and `link` from the JSON are attached to the `FolderEntry` response                          |
 | AC-11.5.2 | ✅ Positive | Given a folder containing `preview.png` or `preview.jpg`, when listed, then `thumbnail_path` is set to the absolute path — the frontend converts via `convertFileSrc()`                   |
 | AC-11.5.3 | ❌ Negative | Given a folder with no `info.json`, then `metadata` fields are `null` in the response — the grid renders without author/description but does not crash                                    |
 | AC-11.5.4 | ⚠️ Edge     | Given a malformed (invalid JSON) `info.json`, then the parse error is logged at `warn` level, the metadata fields are `null`, but the rest of the folder entry is still returned normally |
+| AC-11.5.5 | ✅ Positive | Given a folder contains a 0 KB root `.ini`, classification still determines its node type (`FlatModRoot`, `ModPackRoot`, or `VariantContainer`) where possible, while adding a warning entry describing the corrupt `.ini`. |
+| AC-11.5.6 | ✅ Positive | Downstream consumers such as Collections Preview may persist and reuse the resolved terminal folder type + warning metadata from this classification layer instead of re-inferring it purely from raw paths. |
 
 ---
 
@@ -162,7 +164,7 @@ FolderEntry {
 | INI Validity Check      | Scan only `TextureOverride*`, `ShaderOverride*`, `Resource*` section headers — line-by-line, no full parse |
 | `referenced_subfolders` | Parsed from `filename=` values in `Resource*` and `CustomShader*` sections only                            |
 | Parallelism             | `rayon::par_iter` for entry processing — `max_threads = Rayon default (num_cpus)`                          |
-| React Query Key         | `['folders', gameId, subPath]` — invalidated by file watcher events (Epic 28)                              |
+| React Query Key         | `['mod-folders', modsPath, subPath, safeMode]` — invalidated by Disk Reconcile results (Epic 28)          |
 | Thumbnail               | Path stored in `FolderEntry`; frontend converts with `convertFileSrc()` from `@tauri-apps/api`             |
 
 ### Security & Privacy
@@ -178,4 +180,4 @@ FolderEntry {
 ## 4. Dependencies
 
 - **Blocked by**: Epic 01 (App Bootstrap — DB), Epic 02 (Game Management — `mods_path`), Epic 09 (Object Schema — classifier uses INI detection logic).
-- **Blocks**: Epic 12 (Folder Grid UI — renders the `Vec<FolderEntry>`), Epic 28 (File Watcher — invalidates `['folders']` cache), Epic 41 (Thumbnail System — reads `thumbnail_path`).
+- **Blocks**: Epic 12 (Folder Grid UI — renders the `Vec<FolderEntry>`), Epic 28 (File Watcher / Disk Reconcile — invalidates `['mod-folders']`), Epic 41 (Thumbnail System — reads `thumbnail_path`).

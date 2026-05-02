@@ -1,9 +1,39 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
+use crate::services::disk_reconcile::orchestrator::DiskReconcileState;
+use crate::services::disk_reconcile::types::DiskReconcileReason;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::{info_json, metadata};
-use crate::services::scanner::watcher::WatcherState;
+use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use tauri::Emitter;
+
+async fn emit_internal_disk_reconcile(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    config: &ConfigService,
+    disk_reconcile_state: &DiskReconcileState,
+    watcher: &WatcherState,
+    game_id: &str,
+    changed_paths: Vec<String>,
+) -> Result<(), AppError> {
+    let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
+        app,
+        pool,
+        config,
+        disk_reconcile_state,
+        watcher.suppressor.clone(),
+        game_id.to_string(),
+        DiskReconcileReason::InternalMutation,
+        changed_paths,
+        false,
+    )
+    .await
+    .map_err(AppError::Internal)?;
+
+    app.emit("disk_reconcile:result", result)
+        .map_err(|error| AppError::Internal(error.to_string()))
+}
 
 #[specta::specta]
 #[tauri::command]
@@ -18,11 +48,14 @@ pub async fn repair_orphan_mods(
         .map_err(|e| AppError::Internal(e))?;
 
     if repaired > 0 {
-        // Sync in-game overlay artifacts (Req-43)
-        let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
             &pool,
             &config,
             watcher.suppressor.clone(),
+            &game_id,
+            &[],
+            false,
+            true,
         )
         .await;
     }
@@ -74,7 +107,7 @@ pub async fn toggle_mod_safe(
     folder_path: String,
     safe: bool,
 ) -> Result<(), AppError> {
-    let result = metadata::toggle_mod_safe(
+    metadata::toggle_mod_safe(
         &config,
         pool.inner(),
         &watcher,
@@ -83,16 +116,7 @@ pub async fn toggle_mod_safe(
         safe,
     )
     .await?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        &pool,
-        &config,
-        watcher.suppressor.clone(),
-    )
-    .await;
-
-    Ok(result)
+    Ok(())
 }
 
 #[specta::specta]
@@ -133,8 +157,10 @@ pub async fn read_mod_info(
 #[specta::specta]
 #[tauri::command]
 pub async fn update_mod_info(
+    app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: tauri::State<'_, DiskReconcileState>,
     state: tauri::State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
@@ -142,15 +168,19 @@ pub async fn update_mod_info(
 ) -> Result<info_json::ModInfo, AppError> {
     let path = PathGuard::validate_path(&config, &game_id, &folder_path)
         .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
+    let changed_path = path.join("info.json").to_string_lossy().to_string();
+    let _guard = SuppressionGuard::new(&state.suppressor);
     let info = info_json::update_info_json(&path, &update)?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        &pool,
+    emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
         &config,
-        state.suppressor.clone(),
+        &disk_reconcile_state,
+        &state,
+        &game_id,
+        vec![changed_path],
     )
-    .await;
+    .await?;
 
     Ok(info)
 }
@@ -166,12 +196,14 @@ pub async fn set_mod_category(
     category: String,
 ) -> Result<(), AppError> {
     metadata::set_mod_category(&config, &pool, &game_id, &folder_path, &category).await?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
+    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
         &pool,
         &config,
         state.suppressor.clone(),
+        &game_id,
+        &[],
+        false,
+        true,
     )
     .await;
 
@@ -201,14 +233,6 @@ pub async fn move_mod_to_object(
         status.as_deref(),
     )
     .await?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        &pool,
-        &config,
-        watcher.suppressor.clone(),
-    )
-    .await;
 
     Ok(())
 }

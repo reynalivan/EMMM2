@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (optimistic UI), be safe (suppress file watcher, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.
-- **Proposed Solution**: Three backend commands (`toggle_mod`, `rename_mod`, `delete_mod`) that each acquire an `OperationLock`, activate a `WatcherSuppression`, perform the atomic filesystem operation, and return structured errors on failure — with optimistic React Query cache updates that roll back on error.
+- **Proposed Solution**: A shared runtime action engine that routes toggle through the public workspace switch command (`execute_workspace_switch`) and delegates physical enabled/disabled folder mutation to the same runtime mutation engine used by Collections and Safe Mode switch. Rename/delete remain dedicated backend commands, with `OperationLock` + `WatcherSuppression`, structured errors, `WorkspaceImpact` refresh semantics, and optimistic runtime descriptors that roll back on failure.
 - **Success Criteria**:
   - [x] Toggle UI optimistic update applies in ≤ 16ms (one frame); backend confirms within ≤ 300ms on SSD.
   - [x] Rename completes (disk + metadata sync) in ≤ 500ms for a flat mod folder.
@@ -74,39 +74,38 @@ As a user, I want to delete a mod by moving it to the OS Trash, so that I can re
 ### Architecture Overview
 
 ```rust
-// Backend Service: Mods (core_ops.rs, trash.rs, bulk.rs)
+// Backend Service: Mods / Workspace Runtime
 
-toggle_mod(path, enable):
-  1. Acquire OperationLock(game_id).
-  2. Compute `new_path` (toggle "DISABLED " prefix).
-  3. Execute `fs::rename`.
-  4. DB Maintenance:
-     - Update path and status in `mods` table (absolute or relative fallback).
-     - If top-level, update `objects` folder_path and all child `mods` paths.
+execute_workspace_switch(input):
+  1. Acquire OperationLock(game_id) + Suppress Watcher for affected paths.
+  2. Compute target path / duplicate strategy / parent-enable resolution.
+  3. Validate current corridor parity, path traversal, missing source path, and target collision before disk mutation.
+  4. Delegate enabled/disabled filesystem rename and DB projection (`status`, `folder_path`, `folder_path_key`, `disabled_reason`) to `runtime_mutation_engine`.
+  5. Return structured switch result + WorkspaceImpact.
 
 rename_mod(old_path, new_name):
-  1. Acquire OperationLock.
-  2. Computed `new_path` (preserving "DISABLED " status).
-  3. fs::rename + update `info.json` `actual_name`.
-  4. DB Maintenance: Recursive update of child paths and parent object path.
+  1. Acquire OperationLock + Suppress Watcher.
+  2. Compute `new_path` (preserving disabled prefix semantics).
+  3. fs::rename + update metadata name fields.
+  4. Return payload + WorkspaceImpact for workspace/object/preview refresh.
 
 delete_mod(path):
   1. Acquire OperationLock + Suppress Watcher.
-  2. Generate UUID for trash entry.
-  3. Move folder to `./app_data/trash/{uuid}/` (cross-drive fallback: copy+delete).
-  4. Write `metadata.json` to trash folder for future restore.
-  5. Delete record from `mods` table.
+  2. Move folder to `./app_data/trash/{uuid}/`.
+  3. Persist trash metadata.
+  4. Remove live record and return payload + WorkspaceImpact.
 ```
 
 ### Integration Points
 
-| Component       | Detail                                                                                            |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| `OperationLock` | Shared mutex per game workspace; serializes all filesystem mutations.                             |
-| `Trash Service` | App-level soft delete; supports `restore_from_trash` with context parity checks.                  |
-| `Watcher Guard` | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                            |
-| `Info.json`     | Lifecycle managed via `info_json.rs`; fields merge-updated (not overwritten) on rename or toggle. |
-| `Bulk Progress` | Batch operations in `bulk.rs` emit `bulk-progress` events with throttled IPC updates.             |
+| Component                 | Detail                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `OperationLock`           | Shared mutex per game workspace; serializes all filesystem mutations.                                              |
+| `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                   |
+| `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                             |
+| `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects. |
+| `Runtime Mutation Engine` | Single backend boundary for `DISABLED ` prefix changes used by manual toggle, collection apply, and Safe/Unsafe corridor switch. |
+| `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code does not call raw `invalidateQueries`.  |
 
 ### Security & Privacy
 

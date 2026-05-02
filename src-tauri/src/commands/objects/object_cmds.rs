@@ -6,6 +6,18 @@ use crate::repo::object_repo::{
     CategoryCount, CreateObjectInput, GetObjectsResult, ObjectFilter, UpdateObjectInput,
 };
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct ApplyObjectMatchInput {
+    pub game_id: String,
+    pub object_id: Option<String>,
+    pub folder_path: Option<String>,
+    pub matched_entry_key: Option<String>,
+    pub matched_alias_name: Option<String>,
+    pub matched_confidence: Option<f64>,
+    pub matched_reason: Option<String>,
+    pub matched_source: Option<String>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_objects_cmd(
@@ -13,33 +25,6 @@ pub async fn get_objects_cmd(
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CommandResult<GetObjectsResult> {
     get_objects_cmd_inner(filter, &pool).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn sync_objects_cmd(
-    app: tauri::AppHandle,
-    game_id: String,
-    pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<()> {
-    let settings = app
-        .state::<crate::services::config::ConfigService>()
-        .get_settings();
-
-    let keywords = settings.safe_mode.keywords;
-    let game = settings
-        .games
-        .iter()
-        .find(|g| g.id == game_id)
-        .ok_or_else(|| {
-            crate::types::errors::CommandError::App(format!("Game {} not found", game_id))
-        })?;
-    let mods_path = game.mod_path.to_str().unwrap_or("");
-
-    crate::services::scanner::object_sync::sync_objects_for_game(
-        &pool, &game_id, &mods_path, &keywords,
-    )
-    .await
 }
 
 pub async fn get_objects_cmd_inner(
@@ -107,6 +92,59 @@ pub async fn update_object_cmd_inner(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn apply_object_match_cmd(
+    input: ApplyObjectMatchInput,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CommandResult<()> {
+    apply_object_match_cmd_inner(&input, &pool).await
+}
+
+pub async fn apply_object_match_cmd_inner(
+    input: &ApplyObjectMatchInput,
+    pool: &sqlx::SqlitePool,
+) -> CommandResult<()> {
+    let target_object_id = match input.object_id.as_deref() {
+        Some(object_id) => object_id.to_string(),
+        None => {
+            let folder_path = input.folder_path.as_deref().ok_or_else(|| {
+                crate::types::errors::CommandError::App(
+                    "apply_object_match_cmd requires object_id or folder_path".to_string(),
+                )
+            })?;
+
+            crate::repo::mod_repo::get_object_id_by_folder_and_game(
+                pool,
+                folder_path,
+                &input.game_id,
+            )
+            .await
+            .map_err(|error| crate::types::errors::CommandError::Database(error.to_string()))?
+            .ok_or_else(|| {
+                crate::types::errors::CommandError::NotFound(format!(
+                    "No physical object found for folder '{}'",
+                    folder_path
+                ))
+            })?
+        }
+    };
+
+    crate::repo::object_repo::apply_canonical_match(
+        pool,
+        &target_object_id,
+        input.matched_entry_key.as_deref(),
+        input.matched_alias_name.as_deref(),
+        input.matched_confidence,
+        input.matched_reason.as_deref(),
+        Some(input.matched_source.as_deref().unwrap_or("manual_match")),
+    )
+    .await
+    .map_err(|error| crate::types::errors::CommandError::Database(error.to_string()))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn delete_object_cmd(
     id: String,
     force: bool,
@@ -136,21 +174,6 @@ pub async fn pin_object_cmd(
     crate::services::objects::mutate::toggle_pin_object(&pool, &id, pin)
         .await
         .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))
-}
-
-/// Garbage-collect objects whose folders no longer exist on disk.
-
-/// Called at sync points (game switch, manual sync) — NOT on every ObjectList render.
-#[tauri::command]
-#[specta::specta]
-pub async fn gc_lost_objects_cmd(
-    game_id: String,
-    pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<Vec<String>> {
-    let lost = crate::services::objects::query::gc_lost_objects(&pool, &game_id)
-        .await
-        .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))?;
-    Ok(lost)
 }
 
 #[cfg(test)]

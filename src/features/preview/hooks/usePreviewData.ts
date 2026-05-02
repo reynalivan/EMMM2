@@ -1,8 +1,5 @@
-import { useMemo } from 'react';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '../../../types/mod';
-import { folderKeys } from '../../../hooks/useFolders';
-import { useAppStore } from '../../../stores/useAppStore';
 import { commands } from '../../../lib/bindings';
 
 export interface IniFileEntry {
@@ -163,102 +160,37 @@ export function usePreviewImages(folderPath?: string | null) {
 }
 
 export function useWriteModIni() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: WriteModIniInput) => commands.writeModIni({ ...input }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: detailsKeys.iniDocument(variables.folderPath, variables.fileName),
-      });
-      queryClient.invalidateQueries({ queryKey: detailsKeys.iniFiles(variables.folderPath) });
-    },
   });
 }
 
 export function usePastePreviewImage() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: PastePreviewImageInput) => commands.pasteThumbnail({ ...input }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-    },
   });
 }
 
 export function useSavePreviewImage() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: SavePreviewImageInput) => commands.saveModPreviewImage({ ...input }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-    },
   });
 }
 
 export function useRemovePreviewImage() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: RemovePreviewImageInput) => commands.removeModPreviewImage({ ...input }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-    },
   });
 }
 
 export function useClearPreviewImages() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: ClearPreviewImagesInput) => commands.clearModPreviewImages({ ...input }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: detailsKeys.previewImages(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-    },
   });
 }
 
 export function useUpdateModInfoDetails() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (input: UpdateModInfoInput) => commands.updateModInfo({ ...input }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: detailsKeys.modInfo(variables.folderPath) });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-    },
   });
-}
-
-export function useSelectedModPath() {
-  const gridSelection = useAppStore((state) => state.gridSelection);
-
-  return useMemo(() => {
-    let lastSelected: string | null = null;
-    for (const path of gridSelection) {
-      lastSelected = path;
-    }
-    return lastSelected;
-  }, [gridSelection]);
-}
-
-export function useSelectedModInfo() {
-  const selectedPath = useSelectedModPath();
-  return useModInfo(selectedPath);
-}
-
-export function useSelectedModIniFiles() {
-  const selectedPath = useSelectedModPath();
-  return useModIniFiles(selectedPath);
-}
-
-export function useSelectedPreviewImages() {
-  const selectedPath = useSelectedModPath();
-  return usePreviewImages(selectedPath);
 }

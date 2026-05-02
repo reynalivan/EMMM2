@@ -1,6 +1,10 @@
 use std::fs;
 use std::path::Path;
 
+fn is_cross_device_error(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(17) | Some(18))
+}
+
 /// Tries to rename a file or directory using `std::fs::rename`.
 /// If it fails (likely due to cross-device link errors), it falls back
 /// to using `fs_extra` to copy and remove the original.
@@ -10,6 +14,10 @@ pub fn rename_cross_drive_fallback(from: &Path, to: &Path) -> std::io::Result<()
     match fs::rename(from, to) {
         Ok(_) => Ok(()),
         Err(e) => {
+            if !is_cross_device_error(&e) {
+                return Err(e);
+            }
+
             log::warn!(
                 "fs::rename failed (cross-device?): {}. Attempting fallback move...",
                 e

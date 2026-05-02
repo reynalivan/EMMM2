@@ -19,7 +19,7 @@ vi.mock('../../lib/services/scanService', () => ({
     autoOrganizeArchive: vi.fn(),
     dismissMismatchToast: vi.fn(),
     getExtractionProgress: vi.fn().mockResolvedValue(null),
-    startScan: vi.fn(),
+    runDeepmatchPreview: vi.fn(),
     detectConflictsInFolder: vi.fn().mockResolvedValue([]),
     // Add other methods if needed
   },
@@ -71,7 +71,7 @@ describe('ScannerFeature', () => {
 
   it('renders correctly with active game', () => {
     render(<ScannerFeature />);
-    expect(screen.getByText('Start Scan')).toBeInTheDocument();
+    expect(screen.getByText('scanner:start_button')).toBeInTheDocument();
     // expect(screen.getByText('Last Scan:')).toBeInTheDocument(); // Depends on scanResults?
   });
 
@@ -86,26 +86,27 @@ describe('ScannerFeature', () => {
     // Might need to check if it shows an error or just disables buttons.
     // Based on code: it shows "No active game selected" in error message if clicked.
     // But initially it might just render generic UI.
-    expect(screen.getByText('Start Scan')).toBeInTheDocument();
+    expect(screen.getByText('scanner:start_button')).toBeInTheDocument();
   });
 
   it('starts scan when button clicked', async () => {
     render(<ScannerFeature />);
 
-    // Mock startScan to simulate progress
-    (scanService.startScan as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      async (_gameType, _path, onEvent) => {
+    (scanService.runDeepmatchPreview as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_gameId, _gameType, _path, onEvent) => {
         onEvent({ event: 'started', data: { totalFolders: 10 } });
         onEvent({ event: 'progress', data: { current: 5, folderName: 'Mod A' } });
         onEvent({ event: 'finished', data: { matched: 5, unmatched: 5 } });
+        return [];
       },
     );
 
-    const scanButton = screen.getByText('Start Scan');
+    const scanButton = screen.getByText('scanner:start_button');
     fireEvent.click(scanButton);
 
     await waitFor(() => {
-      expect(scanService.startScan).toHaveBeenCalledWith(
+      expect(scanService.runDeepmatchPreview).toHaveBeenCalledWith(
+        mockActiveGame.id,
         mockActiveGame.game_type,
         mockActiveGame.mod_path,
         expect.any(Function),
@@ -115,9 +116,10 @@ describe('ScannerFeature', () => {
 
   it.skip('detects conflicts after scan', async () => {
     // Setup scan to finish
-    (scanService.startScan as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      async (_gameType, _path, onEvent) => {
+    (scanService.runDeepmatchPreview as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_gameId, _gameType, _path, onEvent) => {
         onEvent({ event: 'finished', data: { matched: 0, unmatched: 0 } });
+        return [];
       },
     );
 
@@ -129,7 +131,7 @@ describe('ScannerFeature', () => {
 
     render(<ScannerFeature />);
 
-    fireEvent.click(screen.getByText('Start Scan'));
+    fireEvent.click(screen.getByText('scanner:start_button'));
 
     // Check if toast appears
     // ConflictToast renders if conflicts > 0.
@@ -159,7 +161,7 @@ describe('ScannerFeature', () => {
     render(<ScannerFeature />);
 
     // Trigger detection
-    fireEvent.click(screen.getByText('Start Scan'));
+    fireEvent.click(screen.getByText('scanner:start_button'));
 
     // Wait for modal (mocked)
     await waitFor(() => {

@@ -98,27 +98,11 @@ describe('useSettings', () => {
     expect(result.current.verifyPin).toBeDefined();
     expect(result.current.runMaintenance).toBeDefined();
 
-    const mutationCall = vi.mocked(useMutation).mock.calls.find((c) => {
-      // checking the onSuccess existence to find saveSettingsMutation
-      const callArgs = c[0] as Parameters<typeof useMutation>[0];
-      return callArgs.mutationFn?.toString().includes('save_settings');
-    });
-
-    expect(mutationCall).toBeDefined();
-
-    const mockOptions = mutationCall![0] as Parameters<typeof useMutation>[0];
-
-    // Simulate mutationFn
-    // @ts-expect-error mutationFn is defined
-    await mockOptions.mutationFn({ theme: 'dark' });
+    await result.current.saveSettingsAsync({ theme: 'dark' } as never);
     expect(invoke).toHaveBeenCalledWith('save_settings', { settings: { theme: 'dark' } });
-
-    // Simulate onSuccess
-    // @ts-expect-error onSuccess is defined
-    mockOptions.onSuccess(undefined, { theme: 'dark' });
     expect(mockAddToast).toHaveBeenCalledWith(
       'success',
-      expect.stringContaining('Configuration updated successfully'),
+      expect.any(String),
     );
   });
 

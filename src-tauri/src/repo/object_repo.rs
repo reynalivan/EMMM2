@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::database::models::ItemStatus;
 use crate::services::corridor_constants::{CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN};
-use crate::services::path_key::{folder_path_key, object_name_key};
+use crate::services::explorer::classifier::{classify_folder, NodeType};
+use crate::services::path_key::{
+    canonical_name_key, folder_path_key, object_name_key, resolve_collection_path,
+};
+use crate::services::scanner::core::normalizer::is_disabled_folder;
 
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 pub struct ObjectFilter {
@@ -28,6 +33,11 @@ pub struct ObjectSummary {
     pub id: String,
     pub name: String,
     pub folder_path: String,
+    pub matched_entry_key: Option<String>,
+    pub matched_alias_name: Option<String>,
+    pub matched_confidence: Option<f64>,
+    pub matched_reason: Option<String>,
+    pub matched_source: Option<String>,
     pub object_type: String,
     pub sub_category: Option<String>,
     pub status: ItemStatus, // 1: ENABLED, 0: DISABLED
@@ -44,9 +54,37 @@ pub struct ObjectSummary {
     #[specta(type = f64)]
     pub enabled_count: i64,
     pub is_object_disabled: bool,
-    #[sqlx(skip)]
     pub has_naming_conflict: bool,
     pub active_mod_paths: Option<String>,
+}
+
+#[derive(Clone, sqlx::FromRow)]
+struct ObjectSummaryRow {
+    id: String,
+    name: String,
+    folder_path: String,
+    matched_entry_key: Option<String>,
+    matched_alias_name: Option<String>,
+    matched_confidence: Option<f64>,
+    matched_reason: Option<String>,
+    matched_source: Option<String>,
+    object_type: String,
+    sub_category: Option<String>,
+    status: ItemStatus,
+    metadata: String,
+    tags: String,
+    hash_db: Option<crate::database::models::HashDbPayload>,
+    custom_skins: Option<crate::database::models::CustomSkinsPayload>,
+    is_pinned: bool,
+    is_auto_sync: bool,
+    thumbnail_path: Option<String>,
+    created_at: Option<String>,
+    mod_count: i64,
+    enabled_count: i64,
+    is_object_disabled: bool,
+    has_naming_conflict: bool,
+    active_mod_paths: Option<String>,
+    projection_available: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
@@ -55,6 +93,8 @@ pub struct ObjectRuntimeDescriptor {
     pub name: String,
     pub folder_path: String,
     pub folder_path_key: String,
+    pub matched_entry_key: Option<String>,
+    pub matched_alias_name: Option<String>,
     pub object_type: String,
     pub thumbnail_path: Option<String>,
 }
@@ -66,42 +106,36 @@ pub struct CategoryCount {
     pub count: i64,
 }
 
+#[derive(Clone, Debug, sqlx::FromRow)]
+struct ObjectCountCandidate {
+    object_id: String,
+    folder_path: String,
+    actual_name: String,
+    status: ItemStatus,
+}
+
+#[derive(Clone, Debug)]
+struct TerminalDescriptor {
+    display_path: String,
+    display_segments: Vec<String>,
+}
+
 pub async fn get_filtered_objects(
     pool: &SqlitePool,
     filter: &ObjectFilter,
 ) -> Result<Vec<ObjectSummary>, sqlx::Error> {
-    // Phase 14: Mutually Exclusive Corridors (ObjectList Visibility)
-    // ObjectList ALWAYS shows all objects.
-    // Safe mode = count only Safe mods (is_safe = 1)
-    // Unsafe mode = count only Unsafe mods (is_safe = 0)
-    let count_expr = if filter.safe_mode {
-        format!(
-            r#"
-            COUNT(CASE WHEN COALESCE(m.is_safe, 1) = 1 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}') THEN m.id END) as mod_count,
-            COUNT(CASE WHEN (COALESCE(m.is_safe, 1) = 1 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}')) AND m.status = 1 THEN 1 END) as enabled_count,
-            GROUP_CONCAT(CASE WHEN (COALESCE(m.is_safe, 1) = 1 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}')) AND m.status = 1 THEN m.folder_path END, '|') as active_mod_paths,
-        "#,
-            unknown = CORRIDOR_SOURCE_UNKNOWN,
-            manual = CORRIDOR_SOURCE_MANUAL,
-        )
-    } else {
-        format!(
-            r#"
-            COUNT(CASE WHEN COALESCE(m.is_safe, 1) = 0 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}') THEN m.id END) as mod_count,
-            COUNT(CASE WHEN (COALESCE(m.is_safe, 1) = 0 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}')) AND m.status = 1 THEN 1 END) as enabled_count,
-            GROUP_CONCAT(CASE WHEN (COALESCE(m.is_safe, 1) = 0 OR COALESCE(m.corridor_source, '{unknown}') IN ('{manual}', '{unknown}')) AND m.status = 1 THEN m.folder_path END, '|') as active_mod_paths,
-        "#,
-            unknown = CORRIDOR_SOURCE_UNKNOWN,
-            manual = CORRIDOR_SOURCE_MANUAL,
-        )
-    };
-
-    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(format!(
+    let safe_mode = if filter.safe_mode { 1i64 } else { 0i64 };
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
         SELECT
             o.id,
             o.name,
             o.folder_path,
+            o.matched_entry_key,
+            o.matched_alias_name,
+            o.matched_confidence,
+            o.matched_reason,
+            o.matched_source,
             o.object_type,
             o.sub_category,
             o.status,
@@ -113,13 +147,38 @@ pub async fn get_filtered_objects(
             COALESCE(o.is_auto_sync, 0) as is_auto_sync,
             o.thumbnail_path,
             o.created_at,
-            {}
-            (o.folder_path LIKE 'DISABLED %' OR o.folder_path LIKE '%/DISABLED %' OR o.folder_path LIKE '%\\DISABLED %') as is_object_disabled
+            CASE WHEN "#,
+    );
+    qb.push_bind(safe_mode);
+    qb.push(
+        r#" = 1
+                THEN COALESCE(p.mod_count_safe, 0)
+                ELSE COALESCE(p.mod_count_unsafe, 0)
+            END as mod_count,
+            CASE WHEN "#,
+    );
+    qb.push_bind(safe_mode);
+    qb.push(
+        r#" = 1
+                THEN COALESCE(p.enabled_count_safe, 0)
+                ELSE COALESCE(p.enabled_count_unsafe, 0)
+            END as enabled_count,
+            CASE WHEN "#,
+    );
+    qb.push_bind(safe_mode);
+    qb.push(
+        r#" = 1
+                THEN NULLIF(COALESCE(p.active_mod_paths_safe_json, '[]'), '[]')
+                ELSE NULLIF(COALESCE(p.active_mod_paths_unsafe_json, '[]'), '[]')
+            END as active_mod_paths,
+            COALESCE(p.is_object_disabled, CASE WHEN o.status = 0 THEN 1 ELSE 0 END) as is_object_disabled,
+            COALESCE(p.has_naming_conflict, 0) as has_naming_conflict,
+            CASE WHEN p.object_id IS NULL THEN 0 ELSE 1 END as projection_available
         FROM objects o
-        LEFT JOIN mods m ON m.object_id = o.id
+        LEFT JOIN object_runtime_projection p
+            ON p.game_id = o.game_id AND p.object_id = o.id
         WHERE o.game_id = "#,
-        count_expr
-    ));
+    );
     qb.push_bind(&filter.game_id);
 
     if let Some(obj_type) = &filter.object_type {
@@ -157,26 +216,394 @@ pub async fn get_filtered_objects(
         }
     }
 
-    qb.push(" GROUP BY o.id");
-
-    if let Some(status) = filter.status_filter {
-        match status {
-            ItemStatus::Enabled => {
-                qb.push(" HAVING enabled_count > 0");
-            }
-            ItemStatus::Disabled => {
-                qb.push(" HAVING mod_count > 0 AND enabled_count = 0");
-            }
-        }
-    }
-
     match filter.sort_by.as_deref() {
         Some("date") => qb.push(" ORDER BY o.is_pinned DESC, o.created_at DESC"),
         Some("rarity") => qb.push(" ORDER BY o.is_pinned DESC, CAST(JSON_EXTRACT(o.metadata, '$.rarity') AS INTEGER) DESC, o.name ASC"),
         _ => qb.push(" ORDER BY o.is_pinned DESC, o.object_type, o.name ASC"),
     };
 
-    qb.build_query_as::<ObjectSummary>().fetch_all(pool).await
+    let mut rows = qb.build_query_as::<ObjectSummaryRow>().fetch_all(pool).await?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let missing_projection_ids: Vec<String> = rows
+        .iter()
+        .filter(|row| row.projection_available == 0)
+        .map(|row| row.id.clone())
+        .collect();
+
+    if !missing_projection_ids.is_empty() {
+        let fallback_objects: Vec<ObjectSummary> = rows
+            .iter()
+            .filter(|row| row.projection_available == 0)
+            .map(|row| ObjectSummary {
+                id: row.id.clone(),
+                name: row.name.clone(),
+                folder_path: row.folder_path.clone(),
+                matched_entry_key: row.matched_entry_key.clone(),
+                matched_alias_name: row.matched_alias_name.clone(),
+                matched_confidence: row.matched_confidence,
+                matched_reason: row.matched_reason.clone(),
+                matched_source: row.matched_source.clone(),
+                object_type: row.object_type.clone(),
+                sub_category: row.sub_category.clone(),
+                status: row.status,
+                metadata: row.metadata.clone(),
+                tags: row.tags.clone(),
+                hash_db: row.hash_db.clone(),
+                custom_skins: row.custom_skins.clone(),
+                is_pinned: row.is_pinned,
+                is_auto_sync: row.is_auto_sync,
+                thumbnail_path: row.thumbnail_path.clone(),
+                created_at: row.created_at.clone(),
+                mod_count: 0,
+                enabled_count: 0,
+                is_object_disabled: row.is_object_disabled,
+                has_naming_conflict: row.has_naming_conflict,
+                active_mod_paths: None,
+            })
+            .collect();
+
+        let mods_path = load_game_mods_path(pool, &filter.game_id).await?;
+        let count_candidates = load_object_count_candidates(
+            pool,
+            &filter.game_id,
+            filter.safe_mode,
+            &fallback_objects,
+        )
+        .await?;
+        let counts_by_object =
+            build_terminal_counts(&fallback_objects, &count_candidates, mods_path.as_deref());
+
+        for row in &mut rows {
+            let Some((mod_count, enabled_count, active_paths)) = counts_by_object.get(&row.id) else {
+                continue;
+            };
+            row.mod_count = *mod_count;
+            row.enabled_count = *enabled_count;
+            row.active_mod_paths = active_paths.clone();
+        }
+
+        let _ = crate::services::runtime_projection_service::refresh_objects_projection(
+            pool,
+            &filter.game_id,
+            &missing_projection_ids,
+        )
+        .await;
+    }
+
+    let mut objects: Vec<ObjectSummary> = rows
+        .into_iter()
+        .map(|row| ObjectSummary {
+            id: row.id,
+            name: row.name,
+            folder_path: row.folder_path,
+            matched_entry_key: row.matched_entry_key,
+            matched_alias_name: row.matched_alias_name,
+            matched_confidence: row.matched_confidence,
+            matched_reason: row.matched_reason,
+            matched_source: row.matched_source,
+            object_type: row.object_type,
+            sub_category: row.sub_category,
+            status: row.status,
+            metadata: row.metadata,
+            tags: row.tags,
+            hash_db: row.hash_db,
+            custom_skins: row.custom_skins,
+            is_pinned: row.is_pinned,
+            is_auto_sync: row.is_auto_sync,
+            thumbnail_path: row.thumbnail_path,
+            created_at: row.created_at,
+            mod_count: row.mod_count,
+            enabled_count: row.enabled_count,
+            is_object_disabled: row.is_object_disabled,
+            has_naming_conflict: row.has_naming_conflict,
+            active_mod_paths: row.active_mod_paths,
+        })
+        .collect();
+
+    if let Some(status) = filter.status_filter {
+        objects.retain(|object| match status {
+            ItemStatus::Enabled => !object.is_object_disabled,
+            ItemStatus::Disabled => object.is_object_disabled,
+        });
+    }
+
+    Ok(objects)
+}
+
+async fn load_game_mods_path(pool: &SqlitePool, game_id: &str) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT mods_path FROM games WHERE id = ?")
+        .bind(game_id)
+        .fetch_optional(pool)
+        .await
+        .map(|value| value.flatten())
+}
+
+async fn load_object_count_candidates(
+    pool: &SqlitePool,
+    game_id: &str,
+    safe_mode: bool,
+    objects: &[ObjectSummary],
+) -> Result<Vec<ObjectCountCandidate>, sqlx::Error> {
+    if objects.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
+        "SELECT m.object_id, m.folder_path, m.actual_name, m.status FROM mods m WHERE m.game_id = ",
+    );
+    qb.push_bind(game_id);
+    qb.push(" AND m.object_id IN (");
+    {
+        let mut separated = qb.separated(", ");
+        for object in objects {
+            separated.push_bind(&object.id);
+        }
+    }
+    qb.push(")");
+    append_corridor_visibility_filter(&mut qb, safe_mode);
+
+    qb.build_query_as::<ObjectCountCandidate>().fetch_all(pool).await
+}
+
+fn append_corridor_visibility_filter(qb: &mut QueryBuilder<Sqlite>, safe_mode: bool) {
+    let expected_is_safe = if safe_mode { 1 } else { 0 };
+    qb.push(" AND (COALESCE(m.is_safe, 1) = ");
+    qb.push_bind(expected_is_safe);
+    qb.push(" OR COALESCE(m.corridor_source, ");
+    qb.push_bind(CORRIDOR_SOURCE_UNKNOWN);
+    qb.push(") IN (");
+    qb.push_bind(CORRIDOR_SOURCE_MANUAL);
+    qb.push(", ");
+    qb.push_bind(CORRIDOR_SOURCE_UNKNOWN);
+    qb.push("))");
+}
+
+fn build_terminal_counts(
+    objects: &[ObjectSummary],
+    candidates: &[ObjectCountCandidate],
+    mods_path: Option<&str>,
+) -> HashMap<String, (i64, i64, Option<String>)> {
+    let object_lookup: HashMap<&str, &ObjectSummary> =
+        objects.iter().map(|object| (object.id.as_str(), object)).collect();
+    let mut totals_by_object: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut enabled_by_object: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut active_paths_by_object: HashMap<String, HashMap<String, String>> = HashMap::new();
+
+    for candidate in candidates {
+        let Some(object) = object_lookup.get(candidate.object_id.as_str()) else {
+            continue;
+        };
+        let Some(descriptor) = resolve_terminal_descriptor(object, candidate, mods_path) else {
+            continue;
+        };
+
+        let terminal_key = folder_path_key(&descriptor.display_path, mods_path);
+        totals_by_object
+            .entry(candidate.object_id.clone())
+            .or_default()
+            .insert(terminal_key.clone());
+
+        if candidate.status != ItemStatus::Enabled {
+            continue;
+        }
+        if has_disabled_ancestor(&descriptor.display_segments) {
+            continue;
+        }
+
+        enabled_by_object
+            .entry(candidate.object_id.clone())
+            .or_default()
+            .insert(terminal_key.clone());
+        active_paths_by_object
+            .entry(candidate.object_id.clone())
+            .or_default()
+            .entry(terminal_key)
+            .or_insert(descriptor.display_path);
+    }
+
+    let mut counts = HashMap::new();
+    for object in objects {
+        let total = totals_by_object
+            .get(&object.id)
+            .map(|entries| entries.len() as i64)
+            .unwrap_or(0);
+        let enabled = enabled_by_object
+            .get(&object.id)
+            .map(|entries| entries.len() as i64)
+            .unwrap_or(0);
+        let active_paths = active_paths_by_object.get(&object.id).map(|entries| {
+            let mut values: Vec<String> = entries.values().cloned().collect();
+            values.sort_by_key(|value| canonical_name_key(value));
+            values.join("|")
+        });
+        counts.insert(object.id.clone(), (total, enabled, active_paths));
+    }
+
+    counts
+}
+
+fn resolve_terminal_descriptor(
+    object: &ObjectSummary,
+    candidate: &ObjectCountCandidate,
+    mods_path: Option<&str>,
+) -> Option<TerminalDescriptor> {
+    let relative_segments =
+        relative_segments_for_path(&object.folder_path, &object.name, &candidate.folder_path, &candidate.actual_name);
+    if relative_segments.is_empty() {
+        return None;
+    }
+
+    let terminal_path = resolve_collection_path(&candidate.folder_path, mods_path);
+    let candidate_paths = cumulative_candidate_paths(&terminal_path, relative_segments.len());
+    for candidate_path in candidate_paths {
+        let Some(_node_type) = classify_terminal_type(candidate_path.as_deref()) else {
+            continue;
+        };
+        let display_path = candidate_path
+            .as_ref()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_else(|| candidate.folder_path.clone());
+        let display_segments = relative_segments_for_path(
+            &object.folder_path,
+            &object.name,
+            &display_path,
+            &candidate.actual_name,
+        );
+        if display_segments.is_empty() {
+            continue;
+        }
+
+        return Some(TerminalDescriptor {
+            display_path,
+            display_segments,
+        });
+    }
+
+    let node_type = classify_terminal_type(terminal_path.as_deref())?;
+    let display_path = terminal_path
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| candidate.folder_path.clone());
+    let display_segments = relative_segments_for_path(
+        &object.folder_path,
+        &object.name,
+        &display_path,
+        &candidate.actual_name,
+    );
+    if display_segments.is_empty() {
+        return None;
+    }
+
+    if !matches!(
+        node_type,
+        NodeType::FlatModRoot | NodeType::ModPackRoot | NodeType::VariantContainer
+    ) {
+        return None;
+    }
+
+    Some(TerminalDescriptor {
+        display_path,
+        display_segments,
+    })
+}
+
+fn classify_terminal_type(path: Option<&Path>) -> Option<NodeType> {
+    let target = path?;
+    let (node_type, _reasons, _warnings) = classify_folder(target);
+    if matches!(
+        node_type,
+        NodeType::FlatModRoot | NodeType::ModPackRoot | NodeType::VariantContainer
+    ) {
+        return Some(node_type);
+    }
+    None
+}
+
+fn has_disabled_ancestor(segments: &[String]) -> bool {
+    segments
+        .iter()
+        .take(segments.len().saturating_sub(1))
+        .any(|segment| is_disabled_folder(segment))
+}
+
+fn cumulative_candidate_paths(
+    path: &Option<PathBuf>,
+    segment_count: usize,
+) -> Vec<Option<PathBuf>> {
+    let Some(full_path) = path.clone() else {
+        return Vec::new();
+    };
+
+    let mut current = full_path;
+    let mut reversed = Vec::with_capacity(segment_count);
+    reversed.push(Some(current.clone()));
+    for _ in 1..segment_count {
+        let Some(parent) = current.parent() else {
+            reversed.push(None);
+            continue;
+        };
+        let parent_path = parent.to_path_buf();
+        reversed.push(Some(parent_path.clone()));
+        current = parent_path;
+    }
+    reversed.reverse();
+    reversed
+}
+
+fn relative_segments_for_path(
+    object_folder_path: &str,
+    object_name: &str,
+    path: &str,
+    fallback_name: &str,
+) -> Vec<String> {
+    let path_segments = split_segments(path);
+    let anchors = [object_folder_path.to_string(), object_name.to_string()];
+
+    for anchor in anchors {
+        let anchor_segments = split_segments(&anchor);
+        if anchor_segments.is_empty() || anchor_segments.len() > path_segments.len() {
+            continue;
+        }
+        let Some(start_index) = find_anchor_start(&path_segments, &anchor_segments) else {
+            continue;
+        };
+        let relative = path_segments[(start_index + anchor_segments.len())..].to_vec();
+        if !relative.is_empty() {
+            return relative;
+        }
+    }
+
+    vec![path_leaf(path, fallback_name)]
+}
+
+fn split_segments(path: &str) -> Vec<String> {
+    path.replace('\\', "/")
+        .split('/')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.to_string())
+        .collect()
+}
+
+fn find_anchor_start(path_segments: &[String], anchor_segments: &[String]) -> Option<usize> {
+    for index in 0..=(path_segments.len() - anchor_segments.len()) {
+        let matches = anchor_segments.iter().enumerate().all(|(offset, anchor)| {
+            canonical_name_key(&path_segments[index + offset]) == canonical_name_key(anchor)
+        });
+        if matches {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn path_leaf(path: &str, fallback_name: &str) -> String {
+    split_segments(path)
+        .last()
+        .cloned()
+        .unwrap_or_else(|| fallback_name.to_string())
 }
 
 pub async fn get_runtime_descriptors(
@@ -190,6 +617,8 @@ pub async fn get_runtime_descriptors(
             name,
             folder_path,
             folder_path_key,
+            matched_entry_key,
+            matched_alias_name,
             object_type,
             thumbnail_path
         FROM objects
@@ -384,6 +813,98 @@ where
     .bind(folder_path_key(old_path, None))
     .execute(executor)
     .await?;
+    Ok(())
+}
+
+pub async fn update_object_runtime_folder_path<'c, E>(
+    executor: E,
+    game_id: &str,
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "UPDATE objects
+         SET folder_path = ?,
+             folder_path_key = ?
+         WHERE game_id = ? AND folder_path_key = ?",
+    )
+    .bind(new_path)
+    .bind(folder_path_key(new_path, None))
+    .bind(game_id)
+    .bind(folder_path_key(old_path, None))
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_object_runtime_state_by_path<'c, E>(
+    executor: E,
+    game_id: &str,
+    old_path: &str,
+    new_path: &str,
+    status: ItemStatus,
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "UPDATE objects
+         SET folder_path = ?,
+             folder_path_key = ?,
+             status = ?
+         WHERE game_id = ? AND folder_path_key = ?",
+    )
+    .bind(new_path)
+    .bind(folder_path_key(new_path, None))
+    .bind(status as i64)
+    .bind(game_id)
+    .bind(folder_path_key(old_path, None))
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_object_runtime_state_by_id<'c, E>(
+    executor: E,
+    object_id: &str,
+    folder_path: &str,
+    status: ItemStatus,
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "UPDATE objects
+         SET folder_path = ?,
+             folder_path_key = ?,
+             status = ?
+         WHERE id = ?",
+    )
+    .bind(folder_path)
+    .bind(folder_path_key(folder_path, None))
+    .bind(status as i64)
+    .bind(object_id)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_object_status<'c, E>(
+    executor: E,
+    object_id: &str,
+    status: ItemStatus,
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query("UPDATE objects SET status = ? WHERE id = ?")
+        .bind(status as i64)
+        .bind(object_id)
+        .execute(executor)
+        .await?;
     Ok(())
 }
 
@@ -834,6 +1355,91 @@ pub async fn get_object_name_by_id(
         .bind(id)
         .fetch_optional(pool)
         .await
+}
+
+pub async fn get_matched_entry_key_by_id(
+    pool: &sqlx::SqlitePool,
+    id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT matched_entry_key FROM objects WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn get_object_folder_by_matched_entry_key<'c, E>(
+    executor: E,
+    game_id: &str,
+    matched_entry_key: &str,
+) -> Result<Option<String>, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query_scalar(
+        "SELECT folder_path FROM objects
+         WHERE game_id = ? AND matched_entry_key = ?
+         ORDER BY updated_at DESC
+         LIMIT 1",
+    )
+    .bind(game_id)
+    .bind(matched_entry_key)
+    .fetch_optional(executor)
+    .await
+}
+
+pub async fn get_object_id_by_matched_entry_key<'c, E>(
+    executor: E,
+    game_id: &str,
+    matched_entry_key: &str,
+) -> Result<Option<String>, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query_scalar(
+        "SELECT id FROM objects
+         WHERE game_id = ? AND matched_entry_key = ?
+         ORDER BY updated_at DESC
+         LIMIT 1",
+    )
+    .bind(game_id)
+    .bind(matched_entry_key)
+    .fetch_optional(executor)
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_canonical_match<'c, E>(
+    executor: E,
+    object_id: &str,
+    matched_entry_key: Option<&str>,
+    matched_alias_name: Option<&str>,
+    matched_confidence: Option<f64>,
+    matched_reason: Option<&str>,
+    matched_source: Option<&str>,
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "UPDATE objects
+         SET matched_entry_key = ?,
+             matched_alias_name = ?,
+             matched_confidence = ?,
+             matched_reason = ?,
+             matched_source = ?,
+             matched_at = CASE WHEN ? IS NULL THEN matched_at ELSE CURRENT_TIMESTAMP END
+         WHERE id = ?",
+    )
+    .bind(matched_entry_key)
+    .bind(matched_alias_name)
+    .bind(matched_confidence)
+    .bind(matched_reason)
+    .bind(matched_source)
+    .bind(matched_entry_key)
+    .bind(object_id)
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 /// Fetch all objects that could be relevant for KeyViewer matching (primarily Characters).

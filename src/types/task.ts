@@ -1,4 +1,5 @@
 export type TaskStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
+export type RecoveryAction = 'RETRY' | 'ROLLBACK' | 'IGNORE';
 
 export interface PipelineTask {
   id: string;

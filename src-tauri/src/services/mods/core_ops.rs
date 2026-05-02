@@ -9,8 +9,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 // use std::fs;
 
-static DISABLED_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(disabled|disable|dis)[_\-\s]*").unwrap());
+static DISABLED_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^disabled\s+").unwrap());
 
 pub fn standardize_prefix(folder_name: &str, target_enabled: bool) -> String {
     let clean_name = DISABLED_RE.replace(folder_name, "").trim().to_string();
@@ -70,8 +69,8 @@ pub async fn toggle_mod_inner(
         )));
     }
 
-    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path)
-        .map_err(|e| {
+    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path).map_err(
+        |e| {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
                 let processes = crate::services::fs_utils::locking::get_locking_processes(src);
                 if !processes.is_empty() {
@@ -80,10 +79,12 @@ pub async fn toggle_mod_inner(
                         processes,
                     };
                 }
+
+                return AppError::PathBusy { path: path.clone() };
             }
             AppError::Io(format!("Failed to rename mod folder: {e}"))
-        })?;
-
+        },
+    )?;
 
     log::info!("Toggled mod: '{}' -> '{}'", old_name, new_path.display());
 
@@ -98,6 +99,22 @@ pub async fn toggle_mod_inner_service(
     path: String,
     enable: bool,
     game_id: &str,
+) -> Result<String, AppError> {
+    toggle_mod_inner_service_with_duplicate_policy(
+        config, pool, state, op_lock, path, enable, game_id, false,
+    )
+    .await
+}
+
+pub async fn toggle_mod_inner_service_with_duplicate_policy(
+    config: &ConfigService,
+    pool: &sqlx::SqlitePool,
+    state: &WatcherState,
+    op_lock: &OperationLock,
+    path: String,
+    enable: bool,
+    game_id: &str,
+    allow_duplicates: bool,
 ) -> Result<String, AppError> {
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
 
@@ -114,9 +131,17 @@ pub async fn toggle_mod_inner_service(
         .unwrap_or(&canonical_path)
         .to_string_lossy()
         .to_string();
+    let mut changed_object_ids = Vec::new();
+    if let Some((_, object_id, _)) =
+        crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, &rel_path, game_id).await?
+    {
+        if let Some(value) = object_id {
+            changed_object_ids.push(value);
+        }
+    }
 
     // AC-29.1: Conflict Detection
-    if enable {
+    if enable && !allow_duplicates {
         let duplicates: Vec<crate::domain::mods::DuplicateModInfo> =
             crate::services::scanner::conflict::get_duplicates_for_mod_service(
                 pool, &rel_path, game_id,
@@ -127,6 +152,9 @@ pub async fn toggle_mod_inner_service(
             // Implicit Swap: If ALL duplicates are variants, auto-disable them
             let all_variants = duplicates.iter().all(|d| d.is_variant);
             if all_variants {
+                for duplicate in &duplicates {
+                    changed_object_ids.push(duplicate.object_id.clone());
+                }
                 for dup in duplicates {
                     let _ = toggle_and_sync_db(
                         pool,
@@ -246,12 +274,25 @@ pub async fn toggle_mod_inner_service(
             )
             .await;
         }
-
-        // Dirty State Sync: register unsaved state automatically on toggle
-        let _ =
-            crate::services::collection_service::handle_dirty_state(pool, game_id, is_safe_bool)
-                .await;
+        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+            pool,
+            config,
+            state.suppressor.clone(),
+            game_id,
+            &[is_safe_bool],
+            true,
+            true,
+        )
+        .await;
     }
+
+    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+        pool,
+        game_id,
+        &changed_object_ids,
+        true,
+    )
+    .await?;
 
     Ok(new_absolute_path)
 }
@@ -372,8 +413,8 @@ pub async fn rename_mod_folder_inner(
         )));
     }
 
-    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path)
-        .map_err(|e| {
+    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path).map_err(
+        |e| {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
                 let processes = crate::services::fs_utils::locking::get_locking_processes(path);
                 if !processes.is_empty() {
@@ -382,10 +423,14 @@ pub async fn rename_mod_folder_inner(
                         processes,
                     };
                 }
+
+                return AppError::PathBusy {
+                    path: folder_path.clone(),
+                };
             }
             AppError::Io(format!("Failed to rename folder: {e}"))
-        })?;
-
+        },
+    )?;
 
     update_info_json_name(&new_path, &new_name);
 
@@ -514,7 +559,6 @@ pub async fn rename_mod_folder_inner_service(
         }
     }
 
-    // Dirty State Sync: register unsaved change so corridor knows about the rename
     let is_safe: Option<i32> = sqlx::query_scalar(
         "SELECT is_safe FROM mods WHERE game_id = ? AND folder_path = ? LIMIT 1",
     )
@@ -527,12 +571,16 @@ pub async fn rename_mod_folder_inner_service(
 
     if let Some(safe_val) = is_safe {
         let is_safe_bool = safe_val != 0;
-        if let Err(e) =
-            crate::services::collection_service::handle_dirty_state(pool, game_id, is_safe_bool)
-                .await
-        {
-            log::warn!("Failed to update dirty state after rename: {e}");
-        }
+        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+            pool,
+            config,
+            state.suppressor.clone(),
+            game_id,
+            &[is_safe_bool],
+            true,
+            true,
+        )
+        .await;
     }
 
     Ok(result)

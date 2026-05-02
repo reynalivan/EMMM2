@@ -9,4 +9,5 @@ description: Refactor code safely. Enforces Modularity, SRP, and Code Simplifica
   - Execute: Secure Moves (./.agent/skills/atomic-fs/SKILL.md).
   - Verify: Run all tests + lint.
 - **REFLECT**:
-  - Commit: `refactor(<scope>): <details>`
+  - Verify: Run tests. Ensure **Zero-Literal Policy** and **Zero-Hardcode i18n Policy** compliance.
+  - Docs: Update trd.md if behavior changes.

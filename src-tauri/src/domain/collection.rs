@@ -14,6 +14,14 @@ pub enum CollectionKind {
     Unsaved,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewTreeNodeKind {
+    Object,
+    Folder,
+    Mod,
+}
+
 impl CollectionKind {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -77,6 +85,8 @@ pub struct Collection {
     pub snapshot_json: Option<String>,
     pub signature: Option<String>,
     pub root_count: i32,
+    pub display_mod_count: i32,
+    pub member_count: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -92,11 +102,53 @@ pub struct CollectionSummary {
     pub is_undo_target: bool, // Derived from corridor_state
     pub signature: Option<String>,
     pub updated_at: String,
-    pub member_count: i32,
+    pub raw_member_count: i32,
+    pub mod_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedObjectState {
+    pub object_id: String,
+    pub display_name: String,
+    pub path_key: String,
+    pub is_enabled: bool,
+    #[specta(type = f64)]
+    pub active_root_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedActiveRoot {
+    pub object_id: String,
+    pub root_key: String,
+    pub display_name: String,
+    pub root_type: String,
+    pub source_path: String,
+    pub thumbnail_hint: Option<String>,
+    pub warnings: Vec<String>,
+    pub is_missing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedStateSummary {
+    #[specta(type = f64)]
+    pub object_count: usize,
+    #[specta(type = f64)]
+    pub enabled_object_count: usize,
+    #[specta(type = f64)]
+    pub active_root_count: usize,
+    #[specta(type = f64)]
+    pub missing_root_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedCollectionState {
+    pub object_states: Vec<ProjectedObjectState>,
+    pub active_roots: Vec<ProjectedActiveRoot>,
+    pub summary: ProjectedStateSummary,
 }
 
 /// A single mod member of a collection (from `collection_mods`).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CollectionMod {
     pub kind: MemberKind,
     pub collection_id: String,
@@ -105,6 +157,9 @@ pub struct CollectionMod {
     pub mod_path_key: Option<String>,
     pub object_id: String,
     pub display_name: Option<String>,
+    pub preview_path: Option<String>,
+    pub node_type: Option<String>,
+    pub warnings: Vec<String>,
     pub is_enabled: bool,
 }
 
@@ -147,6 +202,26 @@ pub enum CollectionMember {
     Root(CollectionRoot),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct PreviewTreeNode {
+    pub kind: PreviewTreeNodeKind,
+    pub id: String,
+    pub name: String,
+    pub path: Option<String>,
+    pub object_id: Option<String>,
+    pub node_type: Option<String>,
+    pub is_enabled: bool,
+    pub is_effectively_active: bool,
+    pub inactive_reason: Option<String>,
+    pub show_inactive_chip: bool,
+    pub status_kind: Option<String>,
+    pub collapse_children: bool,
+    pub warnings: Vec<String>,
+    #[specta(type = Option<f64>)]
+    pub mod_count: Option<usize>,
+    pub children: Vec<PreviewTreeNode>,
+}
+
 /// Preview data for a collection.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CollectionPreview {
@@ -155,6 +230,8 @@ pub struct CollectionPreview {
     pub mods: Vec<CollectionMod>,
     pub objects: Vec<CollectionObject>,
     pub roots: Vec<CollectionRoot>,
+    pub tree_nodes: Vec<PreviewTreeNode>,
+    pub projected_state: ProjectedCollectionState,
 }
 
 /// Result of applying a collection.
@@ -169,14 +246,26 @@ pub struct ApplyResult {
     pub objects_toggled: usize,
     pub undo_collection_id: Option<String>,
     pub new_signature: String,
+    pub warnings: Vec<String>,
+    pub final_state_name: Option<String>,
+    pub final_mode: Option<String>,
 }
 
 /// Input for creating a new collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateCollectionMode {
+    SaveCurrentState,
+    CloneSnapshot,
+}
+
 #[derive(Debug, Clone, Deserialize, specta::Type)]
 pub struct CreateCollectionInput {
     pub game_id: String,
     pub name: String,
     pub is_safe: bool,
+    pub save_mode: Option<CreateCollectionMode>,
+    pub source_collection_id: Option<String>,
 }
 
 /// Input for updating an existing collection.
@@ -192,6 +281,30 @@ pub struct UpdateCollectionInput {
 pub struct ApplyPreview {
     pub collection_name: String,
     pub current_snapshot: Option<String>,
+    pub current_mods: Vec<CollectionMod>,
+    pub current_objects: Vec<CollectionObject>,
+    pub current_tree_nodes: Vec<PreviewTreeNode>,
     pub target_mods: Vec<CollectionMod>,
     pub target_objects: Vec<CollectionObject>,
+    pub target_tree_nodes: Vec<PreviewTreeNode>,
+    pub current_state_name: Option<String>,
+    pub current_state_is_unsaved: bool,
+    pub current_projected_state: ProjectedCollectionState,
+    pub target_projected_state: ProjectedCollectionState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ApplyProgressSnapshot {
+    pub game_id: String,
+    pub is_safe: bool,
+    pub phase: String,
+    #[specta(type = f64)]
+    pub completed: usize,
+    #[specta(type = f64)]
+    pub total: usize,
+    pub current_item: Option<String>,
+    pub warnings: Vec<String>,
+    pub final_state_name: Option<String>,
+    pub final_mode: Option<String>,
+    pub success: bool,
 }

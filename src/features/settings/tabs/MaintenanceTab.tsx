@@ -22,7 +22,7 @@ export default function MaintenanceTab() {
       addToast('success', t('settings:maintenance.trash_success'));
     } catch (e) {
       console.error(e);
-      addToast('error', t('common:error.generic', { error: String(e) }));
+      addToast('error', t('settings:maintenance.trash_failed', { error: String(e) }));
     } finally {
       setIsProcessing(false);
     }
@@ -44,7 +44,6 @@ export default function MaintenanceTab() {
         'success',
         t('layout:maintenance.clear_success', {
           count,
-          defaultValue: `Cleared ${count} old thumbnails.`,
         }),
       );
     } catch (e) {

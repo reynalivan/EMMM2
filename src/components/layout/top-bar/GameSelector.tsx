@@ -1,7 +1,7 @@
 import { Gamepad2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../../hooks/useActiveGame';
-import { useGameSwitch } from '../../../hooks/useObjects';
+import { useGameSwitch } from '../../../hooks/useObjectQueries';
 import { GAME_OPTIONS, GAME_TYPE_COLORS, type GameConfig } from '../../../types/game';
 
 export default function GameSelector() {

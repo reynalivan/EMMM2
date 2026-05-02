@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: 3DMigoto mods use `*.ini` files as their functional core (shader injections, texture overrides) — without an in-app viewer and editor, power users must switch to a text editor and lose context when troubleshooting conflicts or tweaking values.
-- **Proposed Solution**: An `IniEditorSection` inside the Preview Panel that lists all `.ini` files in the mod folder via `list_mod_ini_files`, displays the selected file with syntax highlighting (sections/keys/comments differentiated), and allows direct editing with an explicit Save (Ctrl+S) that writes to disk via `write_mod_ini` under `OperationLock`.
+- **Proposed Solution**: An `IniEditorSection` inside the Preview Panel that lists all `.ini` files in the mod folder via `list_mod_ini_files`, displays the selected file with syntax highlighting (sections/keys/comments differentiated), and allows direct editing with an explicit Save (Ctrl+S) that writes to disk via `write_mod_ini` under `OperationLock` + `SuppressionGuard`, then triggers **Disk Reconcile** with `InternalMutation`.
 - **Runtime Display**: Note that the in-game KeyViewer overlay (governed by `req-43`) is a separate high-performance system. It uses a background generator to produce runtime assets in `Mods/.emmm_data/`, which are purposely excluded from the mod scanner to prevent recursion and noise.
 - **Success Criteria**:
   - `list_mod_ini_files` returns results in ≤ 100ms for a mod with ≤ 20 `.ini` files.
@@ -51,7 +51,7 @@ As a user, I want to edit the INI text in-place and save with Ctrl+S or a Save b
 | ID        | Type        | Criteria                                                                                                                                                                                                                       |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-18.3.1 | ✅ Positive | Given I edit any text in the editor, then a "Save" button appears and the editor area shows a "Unsaved changes" indicator                                                                                                      |
-| AC-18.3.2 | ✅ Positive | Given unsaved changes, when I press Ctrl+S or click Save, then `write_mod_ini` is invoked; the file is overwritten on disk in ≤ 300ms; the "Unsaved" indicator disappears                                                      |
+| AC-18.3.2 | ✅ Positive | Given unsaved changes, when I press Ctrl+S or click Save, then `write_mod_ini` is invoked; the file is overwritten on disk in ≤ 300ms; Disk Reconcile runs with `InternalMutation`; the "Unsaved" indicator disappears |
 | AC-18.3.3 | ❌ Negative | Given the `.ini` file is locked by another process (the game is running), when Save is clicked, then `write_mod_ini` returns an IO error and a toast shows "Save failed: file locked" — the editor retains the unsaved content |
 | AC-18.3.4 | ⚠️ Edge     | Given I switch to a different mod file while there are unsaved changes, then a "Discard changes?" confirmation dialog appears — the editor does not silently lose the user's edits                                             |
 | AC-18.3.5 | ✅ Positive | Given the INI text contains `[Key...]` bindings or `$variable = value` patterns, a "Quick Actions" header parses these and provides dedicated UI inputs (cycle buttons, key inputs) that auto-update the raw text on change    |
@@ -73,7 +73,8 @@ As a user, I want to edit the INI text in-place and save with Ctrl+S or a Save b
 
 ```
 IniEditorSection.tsx
-  └── useIniFiles(folderPath) → commands.listModIniFiles({ folderPath }) → IniFileEntry[]
+  └── usePreviewRuntime() / usePreviewPanelState() provide selected folder + ini documents
+      └── raw preview query hook → commands.listModIniFiles({ folderPath }) → IniFileEntry[]
       ├── Dropdown → selectedFile (IniFileEntry)
       └── useIniContent(folderPath, selectedFile.path)
               → commands.readModIni({ folderPath, fileName }) → string
@@ -90,24 +91,26 @@ Backend:
 
   write_mod_ini(folder_path, file_name, content) → ()
     └── acquire OperationLock → acquire WatcherSuppression(file_path)
-        → fs::write(file_path, content) → drop lock
+        → fs::write(file_path, content)
+        → reconcile_disk_state_cmd(reason = InternalMutation, changed_paths = [file_path])
+        → Disk Reconcile handles dirty-state + KeyViewer/overlay refresh
 ```
 
 ### Integration Points
 
 | Component           | Detail                                                                                                       |
 | ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| File List Query     | `useQuery(['iniFiles', folderPath], ...)` — re-runs whenever `folderPath` changes                            |
-| File Content Query  | `useQuery(['iniContent', folderPath, selectedFilePath], ...)`                                                |
+| File List Query     | Raw preview data query hooks load INI file lists; preview-runtime owns invalidation/effect mapping           |
+| File Content Query  | Raw preview data query hooks load file content keyed by `folderPath` and selected file                       |
 | Syntax Engine       | CodeMirror 6 with a custom `StreamLanguage` definition for 3DMigoto INI dialect                              |
-| WatcherSuppression  | Applied for the specific `.ini` file path — prevents the file watcher from triggering a grid refresh on save |
+| WatcherSuppression  | Applied for the specific `.ini` file path — prevents internal save loops while Disk Reconcile performs the authoritative refresh |
 | Read/Write Commands | `preview_cmds.rs` — `list_mod_ini_files`, `read_mod_ini`, `write_mod_ini`                                    |
 
 ### Security & Privacy
 
 - **`file_name` parameter is validated** on the backend as a relative path using `starts_with(folder_path)` after join + canonicalize — prevents path traversal to write arbitrary files outside the mod folder.
 - **`write_mod_ini` only writes inside `mods_path`** — same guard as all file operations.
-- **WatcherSuppression** prevents the app's own INI save from triggering a folder re-fetch that could overwrite an in-progress edit.
+- **WatcherSuppression + InternalMutation** prevents the app's own INI save from racing with the watcher, while still refreshing collections/keyviewer/runtime truth immediately.
 
 ---
 

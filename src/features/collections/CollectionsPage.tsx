@@ -9,8 +9,8 @@
  *           buildCollectionWorkspaceRows, findWorkspaceRowByCollectionId.
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { Layers, Save, Undo2 } from 'lucide-react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Layers, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useSafeModeToggle } from './hooks/useSafeModeToggle';
@@ -22,12 +22,20 @@ import {
   useCollections,
   useDeleteCollection,
   useUpdateCollection,
-  useUndoCollection,
 } from './hooks/useCollections';
 import { CollectionList } from './components/CollectionList';
 import { CollectionPreviewPanel } from './components/CollectionPreviewPanel';
 import { SaveCollectionModal } from './components/SaveCollectionModal';
 import { ApplyCollectionModal } from './components/ApplyCollectionModal';
+import {
+  buildCurrentRuntimeRow,
+  CURRENT_RUNTIME_ROW_ID,
+  isCollectionWorkspaceSourceEqual,
+  type CollectionListRow,
+  type CollectionSaveRequest,
+  type CollectionWorkspaceSource,
+} from './types';
+import { getCollectionDisplayName, useUnsavedLabels } from '../../lib/corridorLabels';
 
 export default function CollectionsPage() {
   const { t } = useTranslation(['collections', 'safe_mode']);
@@ -53,27 +61,118 @@ export default function CollectionsPage() {
   // ── v2 Mutations ──
   const deleteMutation = useDeleteCollection();
   const updateMutation = useUpdateCollection();
-  const undoMutation = useUndoCollection();
 
   // ── Local UI State ──
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSource, setSelectedSource] = useState<CollectionWorkspaceSource | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveRequest, setSaveRequest] = useState<CollectionSaveRequest | null>(null);
   const [applyTargetId, setApplyTargetId] = useState<string | null>(null);
 
   // Reset selection when corridor changes so stale cross-corridor IDs don't cause failed preview queries
   useEffect(() => {
-    setSelectedId(null);
+    setSelectedSource(null);
     setApplyTargetId(null);
+    setSaveRequest(null);
   }, [safeMode]);
 
-  // Default to active collection when nothing selected — guard against stale corridor data
-  const effectiveSelectedId =
-    selectedId ?? (corridor.isFetching && !corridor.data ? null : corridor.data?.active_collection_id ?? null);
+  const unsavedLabels = useUnsavedLabels();
+
+  const rows = useMemo<CollectionListRow[]>(() => {
+    const collectionRows: CollectionListRow[] = (collections.data ?? []).map((collection) => ({
+      kind: 'stored_collection',
+      rowId: collection.id,
+      collection,
+    }));
+    if (!corridor.data?.is_dirty) {
+      return collectionRows;
+    }
+
+    return [
+      buildCurrentRuntimeRow(
+        corridor.data,
+        getCollectionDisplayName({
+          name: null,
+          isUnsaved: true,
+          isSafe: corridor.data.is_safe,
+          labels: unsavedLabels,
+        }),
+      ),
+      ...collectionRows,
+    ];
+  }, [collections.data, corridor.data, unsavedLabels]);
+
+  const effectiveSource = useMemo<CollectionWorkspaceSource | null>(() => {
+    const hasCurrentRuntime = rows.some((row) => row.kind === 'current_runtime');
+    const hasStoredCollection = (collectionId: string) =>
+      rows.some((row) => row.kind === 'stored_collection' && row.collection.id === collectionId);
+
+    if (selectedSource) {
+      if (selectedSource.kind === 'current_runtime' && hasCurrentRuntime) {
+        return selectedSource;
+      }
+      if (
+        selectedSource.kind === 'stored_collection' &&
+        hasStoredCollection(selectedSource.collectionId)
+      ) {
+        return selectedSource;
+      }
+    }
+
+    const activeCollectionId = corridor.data?.active_collection_id;
+    if (activeCollectionId && hasStoredCollection(activeCollectionId)) {
+      return { kind: 'stored_collection', collectionId: activeCollectionId };
+    }
+
+    if (corridor.data?.is_dirty && hasCurrentRuntime) {
+      return { kind: 'current_runtime' };
+    }
+
+    const storedUnsaved = rows.find(
+      (row) => row.kind === 'stored_collection' && row.collection.is_unsaved,
+    );
+    if (storedUnsaved && storedUnsaved.kind === 'stored_collection') {
+      return { kind: 'stored_collection', collectionId: storedUnsaved.collection.id };
+    }
+
+    const firstStored = rows.find((row) => row.kind === 'stored_collection');
+    if (firstStored && firstStored.kind === 'stored_collection') {
+      return { kind: 'stored_collection', collectionId: firstStored.collection.id };
+    }
+
+    if (hasCurrentRuntime) {
+      return { kind: 'current_runtime' };
+    }
+
+    return null;
+  }, [corridor.data, rows, selectedSource]);
+
+  useEffect(() => {
+    if (isCollectionWorkspaceSourceEqual(selectedSource, effectiveSource)) {
+      return;
+    }
+    setSelectedSource(effectiveSource);
+  }, [effectiveSource, selectedSource]);
+
+  const effectiveSelectedId = effectiveSource
+    ? effectiveSource.kind === 'current_runtime'
+      ? CURRENT_RUNTIME_ROW_ID
+      : effectiveSource.collectionId
+    : null;
 
   // ── Handlers ──
+  const handleSelect = useCallback((rowId: string) => {
+    if (rowId === CURRENT_RUNTIME_ROW_ID) {
+      setSelectedSource({ kind: 'current_runtime' });
+      return;
+    }
+
+    setSelectedSource({ kind: 'stored_collection', collectionId: rowId });
+  }, []);
+
   const handleApply = useCallback(
     (collectionId: string, _name: string) => {
       if (!gameId) return;
+      setSelectedSource({ kind: 'stored_collection', collectionId });
       setApplyTargetId(collectionId);
     },
     [gameId],
@@ -83,9 +182,15 @@ export default function CollectionsPage() {
     (collectionId: string) => {
       if (!gameId) return;
       deleteMutation.mutate({ gameId, id: collectionId });
-      if (selectedId === collectionId) setSelectedId(null);
+      setSelectedSource((current) => {
+        if (current?.kind !== 'stored_collection' || current.collectionId !== collectionId) {
+          return current;
+        }
+
+        return null;
+      });
     },
-    [gameId, deleteMutation, selectedId],
+    [gameId, deleteMutation],
   );
 
   const handleRename = useCallback(
@@ -96,19 +201,19 @@ export default function CollectionsPage() {
     [gameId, updateMutation],
   );
 
-  const handleUndo = useCallback(() => {
-    if (!gameId) return;
-    undoMutation.mutate({ gameId });
-  }, [gameId, undoMutation]);
-
   const handleCorridorTabSwitch = useCallback(
     async (targetSafeMode: boolean) => {
       if (safeMode === targetSafeMode) return;
-      setSelectedId(null);
+      setSelectedSource(null);
       await toggleSafeMode();
     },
     [safeMode, toggleSafeMode],
   );
+
+  const handleSave = useCallback((request: CollectionSaveRequest) => {
+    setSaveRequest(request);
+    setSaveModalOpen(true);
+  }, []);
 
   // ── No active game guard ──
   if (!activeGame) {
@@ -159,17 +264,6 @@ export default function CollectionsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {corridor.data?.undo_collection_id && (
-            <button
-              className="btn btn-warning btn-outline btn-sm"
-              onClick={handleUndo}
-              disabled={undoMutation.isPending}
-              title={t('collections:page.actions.undo_title')}
-            >
-              <Undo2 size={14} />
-              {t('collections:page.actions.undo')}
-            </button>
-          )}
           <button className="btn btn-secondary btn-sm" onClick={() => setSaveModalOpen(true)}>
             <Save size={14} />
             {t('collections:page.actions.save_current')}
@@ -184,15 +278,15 @@ export default function CollectionsPage() {
           <div className="card bg-base-200/30 border border-base-content/5 shadow-lg flex-1 flex flex-col transition-all duration-300 overflow-hidden">
             <div className="card-body p-0 flex-1 overflow-y-auto custom-scrollbar relative min-h-75">
               <CollectionList
-                collections={collections.data ?? []}
+                rows={rows}
                 selectedId={effectiveSelectedId}
                 isLoading={collections.isLoading}
                 safeMode={safeMode}
-                onSelect={setSelectedId}
+                onSelect={handleSelect}
                 onApply={handleApply}
                 onDelete={handleDelete}
                 onRename={handleRename}
-                onSave={() => setSaveModalOpen(true)}
+                onSave={handleSave}
                 isApplying={!!applyTargetId}
                 isDeleting={deleteMutation.isPending}
               />
@@ -202,7 +296,11 @@ export default function CollectionsPage() {
 
         {/* RIGHT: Preview Panel */}
         <div className="lg:col-span-4 flex flex-col min-h-0 bg-base-200/30 rounded-2xl border border-base-content/5 overflow-hidden shadow-lg">
-          <CollectionPreviewPanel collectionId={effectiveSelectedId} gameId={gameId} />
+          <CollectionPreviewPanel
+            source={effectiveSource}
+            gameId={gameId}
+            corridorSnapshot={corridor.data}
+          />
         </div>
       </div>
 
@@ -221,9 +319,24 @@ export default function CollectionsPage() {
         }}
       />
 
-      {saveModalOpen && <SaveCollectionModal onClose={() => setSaveModalOpen(false)} />}
+      {saveModalOpen && (
+        <SaveCollectionModal
+          onClose={() => {
+            setSaveModalOpen(false);
+            setSaveRequest(null);
+          }}
+          saveMode={saveRequest?.mode}
+          sourceCollectionId={saveRequest?.sourceCollectionId ?? null}
+          onSaved={(collectionId) => {
+            setSelectedSource({ kind: 'stored_collection', collectionId });
+          }}
+        />
+      )}
       {applyTargetId && (
-        <ApplyCollectionModal collectionId={applyTargetId} onClose={() => setApplyTargetId(null)} />
+        <ApplyCollectionModal
+          collectionId={applyTargetId}
+          onClose={() => setApplyTargetId(null)}
+        />
       )}
     </div>
   );

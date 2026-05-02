@@ -8,6 +8,12 @@ export interface MetadataDraftValues {
   description: string;
 }
 
+export interface MetadataFieldChange {
+  label: string;
+  oldValue: string;
+  newValue: string;
+}
+
 interface UseMetadataDraftParams {
   activePath: string | null;
   fallbackTitle: string;
@@ -35,6 +41,11 @@ export function useMetadataDraft({
   const [syncedVersion, setSyncedVersion] = useState('');
   const [syncedDescription, setSyncedDescription] = useState('');
 
+  const sourceTitle = source?.actual_name ?? fallbackTitle;
+  const sourceAuthor = source?.author ?? 'Unknown';
+  const sourceVersion = source?.version ?? '1.0';
+  const sourceDescription = source?.description ?? '';
+
   useEffect(() => {
     if (!activePath) {
       setTitleDraft('');
@@ -48,26 +59,20 @@ export function useMetadataDraft({
       return;
     }
 
-    const nextTitle = source?.actual_name ?? fallbackTitle;
-    const nextAuthor = source?.author ?? 'Unknown';
-    const nextVersion = source?.version ?? '1.0';
-    const nextDescription = source?.description ?? '';
-
-    setTitleDraft(nextTitle);
-    setAuthorDraft(nextAuthor);
-    setVersionDraft(nextVersion);
-    setDescriptionDraft(nextDescription);
-    setSyncedTitle(nextTitle);
-    setSyncedAuthor(nextAuthor);
-    setSyncedVersion(nextVersion);
-    setSyncedDescription(nextDescription);
+    setTitleDraft(sourceTitle);
+    setAuthorDraft(sourceAuthor);
+    setVersionDraft(sourceVersion);
+    setDescriptionDraft(sourceDescription);
+    setSyncedTitle(sourceTitle);
+    setSyncedAuthor(sourceAuthor);
+    setSyncedVersion(sourceVersion);
+    setSyncedDescription(sourceDescription);
   }, [
     activePath,
-    source?.actual_name,
-    source?.author,
-    source?.version,
-    source?.description,
-    fallbackTitle,
+    sourceAuthor,
+    sourceDescription,
+    sourceTitle,
+    sourceVersion,
   ]);
 
   const metadataDirty = useMemo(
@@ -89,6 +94,54 @@ export function useMetadataDraft({
       syncedDescription,
     ],
   );
+
+  const changedFields = useMemo<MetadataFieldChange[]>(() => {
+    if (!metadataDirty) {
+      return [];
+    }
+
+    const changes: MetadataFieldChange[] = [];
+    if (titleDraft !== sourceTitle) {
+      changes.push({
+        label: 'Title',
+        oldValue: sourceTitle,
+        newValue: titleDraft,
+      });
+    }
+    if (authorDraft !== sourceAuthor) {
+      changes.push({
+        label: 'Author',
+        oldValue: sourceAuthor,
+        newValue: authorDraft,
+      });
+    }
+    if (versionDraft !== sourceVersion) {
+      changes.push({
+        label: 'Version',
+        oldValue: sourceVersion,
+        newValue: versionDraft,
+      });
+    }
+    if (descriptionDraft !== sourceDescription) {
+      changes.push({
+        label: 'Description',
+        oldValue: sourceDescription,
+        newValue: descriptionDraft,
+      });
+    }
+
+    return changes;
+  }, [
+    authorDraft,
+    descriptionDraft,
+    metadataDirty,
+    sourceAuthor,
+    sourceDescription,
+    sourceTitle,
+    sourceVersion,
+    titleDraft,
+    versionDraft,
+  ]);
 
   const saveMetadata = async () => {
     if (!activePath || !metadataDirty) {
@@ -153,6 +206,7 @@ export function useMetadataDraft({
     setVersionDraft,
     setDescriptionDraft,
     metadataDirty,
+    changedFields,
     saveMetadata,
     discardMetadata,
   };

@@ -126,8 +126,12 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
 
     // 2. VariantContainer explicit check
     // MUST have a root mod ini AND enough variant subfolders
-    if has_mod_ini && (child_dirs_with_ini >= 3 || (!referenced_subs.is_empty() && child_dirs_with_ini >= 2)) {
-        reasons.push(format!("{child_dirs_with_ini} child dirs with mod ini -> VariantContainer"));
+    if has_mod_ini
+        && (child_dirs_with_ini >= 3 || (!referenced_subs.is_empty() && child_dirs_with_ini >= 2))
+    {
+        reasons.push(format!(
+            "{child_dirs_with_ini} child dirs with mod ini -> VariantContainer"
+        ));
         return (NodeType::VariantContainer, reasons, warnings);
     }
 
@@ -152,7 +156,9 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
     });
 
     if !has_meaningful_children {
-        reasons.push("No meaningful subfolders (all children are internal/assets) -> FlatModRoot".into());
+        reasons.push(
+            "No meaningful subfolders (all children are internal/assets) -> FlatModRoot".into(),
+        );
         return (NodeType::FlatModRoot, reasons, warnings);
     }
 

@@ -40,7 +40,12 @@
       "failed": "Gagal",
       "canceled": "Dibatalkan",
       "imported": "Terimpor"
-    }
+    },
+    "table_filename": "Nama File",
+    "table_status": "Status",
+    "table_progress": "Progres",
+    "table_actions": "Aksi",
+    "unknown_size": "Ukuran tidak diketahui"
   },
   "import": {
     "title": "Antrean Impor",
@@ -62,7 +67,9 @@
     "archive": "Arsip",
     "duplicate": "Duplikat",
     "target_game": "Game Target",
+    "target_object_optional": "Object Fisik Target (Opsional)",
     "select_game": "— Pilih game —",
+    "keep_as_other": "— Simpan sebagai Other —",
     "mod_category": "Kategori Mod",
     "confirm": "Konfirmasi & Impor",
     "cancel": "Batal"

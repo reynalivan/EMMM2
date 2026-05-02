@@ -49,6 +49,7 @@
     "resolve": "Resolve",
     "disabled_overlay": "Disabled",
     "conflict_tooltip": "Naming conflict: both enabled and disabled versions exist",
+    "matched_alias": "Alias: {{alias}}",
     "badge_existing": "Existing",
     "badge_edited": "Edited",
     "status_unmatched": "Unmatched",
@@ -62,6 +63,7 @@
     "enable": "Enable",
     "disable": "Disable",
     "move_category": "Move Category...",
+    "sync_db": "Sync with DB",
     "syncing": "Syncing...",
     "sync": {
       "title": "Sync with Database",
@@ -100,6 +102,9 @@
     "selected_count": "{{count}} selected",
     "delete_selected": "Delete selected",
     "pin_selected": "Pin selected",
+    "pinned": "Pinned",
+    "unpinned": "Unpinned",
+    "more_others": "+ {{count}} others",
     "favorite": "Favorite",
     "unfavorite": "Unfavorite",
     "mark_safe": "Mark as Safe",
@@ -157,7 +162,53 @@
     "db_no_matches": "No matches found",
     "db_hint": "Showing first results. Type more letters to narrow down.",
     "smart_suggestions": "Smart Suggestions",
-    "match_percent": "{{percent}}% Match"
+    "match_percent": "{{percent}}% Match",
+    "thumbnail": {
+      "label": "Thumbnail",
+      "alt": "Object thumbnail",
+      "change": "Change Thumbnail",
+      "delete_title": "Delete thumbnail",
+      "selected": "Selected thumbnail",
+      "will_delete": "This thumbnail will be removed when you save."
+    }
+  },
+  "bulk_tags": {
+    "add_title": "Add Tags",
+    "remove_title": "Remove Tags",
+    "add_description": "Add one or more tags to the selected objects.",
+    "placeholder": "Type a tag and press Enter",
+    "add_submit": "Add Tags",
+    "remove_description": "Select which tags to remove from the selected objects.",
+    "empty": "No tags available to remove."
+  },
+  "drop_confirm": {
+    "validating": "Validating folder target...",
+    "validating_description": "Checking the best object match for {{folderName}}.",
+    "skip_validation": "Skip validation",
+    "title": "Move Folder?",
+    "description": "Move this folder to {{targetName}}?",
+    "match_score": "Match score: {{score}}%",
+    "suggested_target": "Suggested target",
+    "move_anyway": "Move Anyway",
+    "move_to": "Move to {{targetName}}"
+  },
+  "auto_setup_modal": {
+    "toast_partial": "Added {{successCount}} folder(s). {{failedCount}} failed.",
+    "toast_success": "Added {{count}} folder(s) successfully.",
+    "title": "Auto Setup Folder",
+    "description": "Review detected targets for {{gameName}} before creating folders.",
+    "loading": "Loading detected objects...",
+    "search_placeholder": "Search objects...",
+    "deselect_all": "Deselect All",
+    "select_all": "Select All",
+    "selection_status": "{{selected}} of {{total}} selected",
+    "no_results": "No objects match \"{{query}}\".",
+    "no_thumbnail": "No thumbnail",
+    "add_selected": "Add Selected"
+  },
+  "folder_tooltip": {
+    "preview_alt": "Folder preview",
+    "contents": "Contents"
   },
   "delete_dialog": {
     "title_folder": "Delete Folder?",

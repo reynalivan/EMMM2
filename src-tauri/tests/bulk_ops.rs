@@ -3,9 +3,9 @@ mod common;
 #[cfg(test)]
 mod tests {
     use super::common::init_test_db;
+    use emmm_lib::services::config::ConfigService;
     use emmm_lib::services::mods::bulk;
     use emmm_lib::services::mods::info_json;
-    use emmm_lib::services::config::ConfigService;
     use std::fs;
     use tempfile::TempDir;
 

@@ -49,6 +49,7 @@
     "resolve": "Selesaikan",
     "disabled_overlay": "Nonaktif",
     "conflict_tooltip": "Konflik penamaan: versi aktif dan nonaktif keduanya ada",
+    "matched_alias": "Alias: {{alias}}",
     "badge_existing": "Ada",
     "badge_edited": "Diubah",
     "status_unmatched": "Tidak Cocok",
@@ -80,6 +81,7 @@
     "enable": "Aktifkan",
     "disable": "Nonaktifkan",
     "move_category": "Pindahkan Kategori...",
+    "sync_db": "Sinkronkan dengan DB",
     "syncing": "Menyinkronkan...",
     "delete_object": "Hapus Objek",
     "open_explorer": "Buka di Explorer",
@@ -100,6 +102,9 @@
     "selected_count": "{{count}} terpilih",
     "delete_selected": "Hapus terpilih",
     "pin_selected": "Sematkan terpilih",
+    "pinned": "Menyematkan",
+    "unpinned": "Melepas sematan",
+    "more_others": "+ {{count}} lainnya",
     "favorite": "Favorit",
     "unfavorite": "Batal Favorit",
     "mark_safe": "Tandai sebagai Aman",
@@ -157,7 +162,15 @@
     "db_no_matches": "Tidak ada hasil yang cocok",
     "db_hint": "Menampilkan hasil pertama. Ketik lebih banyak huruf untuk mempersempit.",
     "smart_suggestions": "Saran Pintar",
-    "match_percent": "{{percent}}% Cocok"
+    "match_percent": "{{percent}}% Cocok",
+    "thumbnail": {
+      "label": "Thumbnail",
+      "alt": "Thumbnail objek",
+      "change": "Ubah Thumbnail",
+      "delete_title": "Hapus thumbnail",
+      "selected": "Thumbnail terpilih",
+      "will_delete": "Thumbnail ini akan dihapus saat Anda menyimpan."
+    }
   },
   "delete_dialog": {
     "title_folder": "Hapus Folder?",
@@ -247,5 +260,43 @@
       "empty_success": "Mengosongkan tempat sampah ({{count}} item dihapus)",
       "empty_failed": "Gagal mengosongkan tempat sampah: {{error}}"
     }
+  },
+  "bulk_tags": {
+    "add_title": "Tambah Tag",
+    "remove_title": "Hapus Tag",
+    "add_description": "Tambahkan satu atau lebih tag ke objek yang dipilih.",
+    "placeholder": "Ketik tag lalu tekan Enter",
+    "add_submit": "Tambah Tag",
+    "remove_description": "Pilih tag yang ingin dihapus dari objek yang dipilih.",
+    "empty": "Tidak ada tag untuk dihapus."
+  },
+  "drop_confirm": {
+    "validating": "Memvalidasi target folder...",
+    "validating_description": "Memeriksa kecocokan objek terbaik untuk {{folderName}}.",
+    "skip_validation": "Lewati validasi",
+    "title": "Pindahkan Folder?",
+    "description": "Pindahkan folder ini ke {{targetName}}?",
+    "match_score": "Skor kecocokan: {{score}}%",
+    "suggested_target": "Target yang disarankan",
+    "move_anyway": "Tetap Pindahkan",
+    "move_to": "Pindahkan ke {{targetName}}"
+  },
+  "auto_setup_modal": {
+    "toast_partial": "Berhasil menambahkan {{successCount}} folder. {{failedCount}} gagal.",
+    "toast_success": "Berhasil menambahkan {{count}} folder.",
+    "title": "Setup Folder Otomatis",
+    "description": "Tinjau target yang terdeteksi untuk {{gameName}} sebelum membuat folder.",
+    "loading": "Memuat objek terdeteksi...",
+    "search_placeholder": "Cari objek...",
+    "deselect_all": "Batalkan Semua Pilihan",
+    "select_all": "Pilih Semua",
+    "selection_status": "{{selected}} dari {{total}} dipilih",
+    "no_results": "Tidak ada objek yang cocok dengan \"{{query}}\".",
+    "no_thumbnail": "Tidak ada thumbnail",
+    "add_selected": "Tambahkan yang Dipilih"
+  },
+  "folder_tooltip": {
+    "preview_alt": "Pratinjau folder",
+    "contents": "Isi"
   }
 }

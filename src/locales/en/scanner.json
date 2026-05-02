@@ -160,6 +160,12 @@
     "title": "Shader Conflict Detected!",
     "count": "{{count}} conflict(s) detected."
   },
+  "conflict_modal": {
+    "title": "Shader Conflicts Detected",
+    "empty": "No conflicts found.",
+    "description": "These mods modify the same shader or buffer hashes. Enabling them together may cause glitches or crashes.",
+    "acknowledge": "Acknowledge"
+  },
   "overlay": {
     "title": "Scanning Mods...",
     "matched": "Matched",
@@ -190,16 +196,13 @@
     "actions": {
       "enable": "Enable",
       "disable": "Disable",
-      "organize": "Auto-Organize",
       "delete": "Delete"
     },
     "status": {
       "enabled": "Enabled",
       "disabled": "Disabled"
     },
-    "toast": {
-      "db_load_failed": "Failed to load DB for auto-organize: {{error}}"
-    }
+    "mod_preview_alt": "Mod preview"
   },
   "dedup": {
     "analyzing": "Analyzing Mod Library...",

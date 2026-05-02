@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
-import { useObjects, useGameSchema } from '../../hooks/useObjects';
+import { useGameSchema } from '../../hooks/useObjectQueries';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
@@ -8,6 +8,14 @@ import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
 import { useSearchWorker } from './hooks/useSearchWorker';
 import type { FilterDef } from '../../types/object';
+import type { WorkspaceObjectNode } from '../../types/workspace';
+import { useWorkspaceViewModel } from '../workspace-runtime/useWorkspaceViewModel';
+import { useWorkspaceRuntime } from '../workspace-runtime/state/workspaceStoreBridge';
+import {
+  areObjectMetaFiltersEqual,
+  sanitizeObjectMetaFilters,
+  type ObjectMetaFilters,
+} from './objectFilterState';
 
 /**
  * useObjectListLogic — Top-level logic for the ObjectList component.
@@ -28,48 +36,24 @@ export function useObjectListLogic() {
 
   const {
     selectedObjectFolderPath,
-    setSelectedObjectFolderPath,
     selectedObjectType,
     setSelectedObjectType,
     sidebarSearchQuery,
     setSidebarSearch,
     safeMode,
+    objectMetaFilters,
+    setObjectMetaFilters,
+    objectSortBy,
+    setObjectSortBy,
+    objectStatusFilter,
+    setObjectStatusFilter,
   } = useAppStore();
-
-  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
-  const [sortBy, setSortBy] = useState<'name' | 'date' | 'rarity'>('name');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const { focusObject } = useWorkspaceRuntime();
+  const activeFiltersState = objectMetaFilters ?? {};
+  const activeSortBy = objectSortBy ?? 'name';
+  const activeStatusFilter = objectStatusFilter ?? 'all';
 
   const { filteredIds, search: workerSearch } = useSearchWorker();
-
-  const {
-    data: allObjects = [],
-    isLoading: objectsLoading,
-    isError: objectsError,
-    error: objectsErrorInfo,
-  } = useObjects({
-    metaFilters: activeFilters,
-    sortBy,
-    statusFilter,
-    localSearch: true,
-  });
-
-  // Fix 2: Memoize search items outside the effect to avoid redundant array creation.
-  const searchItems = useMemo(
-    () => allObjects.map((o) => ({ id: o.id, name: o.name })),
-    [allObjects],
-  );
-
-  useEffect(() => {
-    const t = setTimeout(() => workerSearch(searchItems, sidebarSearchQuery), 150);
-    return () => clearTimeout(t);
-  }, [searchItems, sidebarSearchQuery, workerSearch]);
-
-  const objects = useMemo(() => {
-    if (!filteredIds) return allObjects;
-    return allObjects.filter((o) => filteredIds.has(o.id));
-  }, [allObjects, filteredIds]);
-
   const { data: schema } = useGameSchema();
 
   const categoryFilters: FilterDef[] = useMemo(() => {
@@ -87,19 +71,41 @@ export function useObjectListLogic() {
     return [...seen.values()];
   }, [schema, selectedObjectType]);
 
-  // Fix 1: Replace render-during-render setState with proper useEffect.
-  // This eliminates the double-render caused by the previous `prevCategoryFilters` pattern.
+  const effectiveObjectMetaFilters = useMemo<ObjectMetaFilters>(() => {
+    if (!schema) {
+      return activeFiltersState;
+    }
+
+    return sanitizeObjectMetaFilters(activeFiltersState, categoryFilters);
+  }, [activeFiltersState, categoryFilters, schema]);
+
+  const {
+    data: workspace,
+    isLoading: objectsLoading,
+    isError: objectsError,
+    error: objectsErrorInfo,
+  } = useWorkspaceViewModel({
+    filterOverrides: {
+      objectMetaFilters: effectiveObjectMetaFilters,
+    },
+  });
+  const allObjects = (workspace?.objects ?? []) as WorkspaceObjectNode[];
+
+  // Fix 2: Memoize search items outside the effect to avoid redundant array creation.
+  const searchItems = useMemo(
+    () => allObjects.map((o) => ({ id: o.id, name: o.name })),
+    [allObjects],
+  );
+
   useEffect(() => {
-    const validKeys = new Set(categoryFilters.map((f) => f.key));
-    setActiveFilters((prev) => {
-      const next: Record<string, string[]> = {};
-      for (const [k, v] of Object.entries(prev)) {
-        if (validKeys.has(k)) next[k] = v;
-      }
-      // Return same reference if nothing changed — avoids unnecessary re-renders.
-      return Object.keys(next).length !== Object.keys(prev).length ? next : prev;
-    });
-  }, [categoryFilters]);
+    const t = setTimeout(() => workerSearch(searchItems, sidebarSearchQuery), 150);
+    return () => clearTimeout(t);
+  }, [searchItems, sidebarSearchQuery, workerSearch]);
+
+  const objects = useMemo(() => {
+    if (!filteredIds) return allObjects;
+    return allObjects.filter((o) => filteredIds.has(o.id));
+  }, [allObjects, filteredIds]);
 
   const isLoading = objectsLoading;
   const isError = objectsError;
@@ -129,16 +135,37 @@ export function useObjectListLogic() {
     schema,
     mismatchConfirm,
     setMismatchConfirm,
-    bulkSelect,
   });
 
   const handleFilterChange = useCallback((key: string, values: string[]) => {
-    setActiveFilters((prev) => ({ ...prev, [key]: values }));
-  }, []);
+    const nextFilters: ObjectMetaFilters = { ...effectiveObjectMetaFilters };
+    if (values.length === 0) {
+      delete nextFilters[key];
+    } else {
+      nextFilters[key] = values;
+    }
+
+    if (areObjectMetaFiltersEqual(activeFiltersState, nextFilters)) {
+      return;
+    }
+
+    setObjectMetaFilters(nextFilters);
+  }, [activeFiltersState, effectiveObjectMetaFilters, setObjectMetaFilters]);
 
   const handleClearFilters = useCallback(() => {
-    setActiveFilters({});
-  }, []);
+    if (Object.keys(activeFiltersState).length === 0) {
+      return;
+    }
+
+    setObjectMetaFilters({});
+  }, [activeFiltersState, setObjectMetaFilters]);
+
+  const handleSelectObject = useCallback(
+    (folderPath: string) => {
+      focusObject(folderPath);
+    },
+    [focusObject],
+  );
 
   // ── Namespaced Return Value ─────────────────────────────────────────
   // Fix 4: Group into semantic namespaces instead of a flat 40+ property object.
@@ -169,24 +196,24 @@ export function useObjectListLogic() {
 
   const filters = useMemo(
     () => ({
-      activeFilters,
+      activeFilters: effectiveObjectMetaFilters,
       categoryFilters,
       schema,
-      sortBy,
-      setSortBy,
-      statusFilter,
-      setStatusFilter,
+      sortBy: activeSortBy,
+      setSortBy: setObjectSortBy,
+      statusFilter: activeStatusFilter,
+      setStatusFilter: setObjectStatusFilter,
       handleFilterChange,
       handleClearFilters,
     }),
     [
-      activeFilters,
+      effectiveObjectMetaFilters,
       categoryFilters,
       schema,
-      sortBy,
-      setSortBy,
-      statusFilter,
-      setStatusFilter,
+      activeSortBy,
+      setObjectSortBy,
+      activeStatusFilter,
+      setObjectStatusFilter,
       handleFilterChange,
       handleClearFilters,
     ],
@@ -195,7 +222,7 @@ export function useObjectListLogic() {
   const nav = useMemo(
     () => ({
       selectedObjectFolderPath,
-      setSelectedObjectFolderPath,
+      selectObject: handleSelectObject,
       selectedObjectType,
       setSelectedObjectType,
       sidebarSearchQuery,
@@ -203,7 +230,7 @@ export function useObjectListLogic() {
     }),
     [
       selectedObjectFolderPath,
-      setSelectedObjectFolderPath,
+      handleSelectObject,
       selectedObjectType,
       setSelectedObjectType,
       sidebarSearchQuery,
@@ -225,8 +252,6 @@ export function useObjectListLogic() {
 
   const modals = useMemo(
     () => ({
-      deleteDialog: handlers.deleteDialog,
-      setDeleteDialog: handlers.setDeleteDialog,
       deleteObjectDialog: handlers.deleteObjectDialog,
       setDeleteObjectDialog: handlers.setDeleteObjectDialog,
       forceDeleteObjectDialog: handlers.forceDeleteObjectDialog,
@@ -247,20 +272,17 @@ export function useObjectListLogic() {
 
   const handlerMap = useMemo(
     () => ({
-      handleToggle: handlers.handleToggle,
-      handleOpen: handlers.handleOpen,
-      handleDelete: handlers.handleDelete,
-      confirmDelete: handlers.confirmDelete,
       handleDeleteObject: handlers.handleDeleteObject,
       confirmDeleteObject: handlers.confirmDeleteObject,
       confirmForceDeleteObject: handlers.confirmForceDeleteObject,
       handleEdit: handlers.handleEdit,
       handlePin: handlers.handlePin,
-      handleFavorite: handlers.handleFavorite,
       handleMoveCategory: handlers.handleMoveCategory,
       handleRevealInExplorer: handlers.handleRevealInExplorer,
       handleEnableObject: handlers.handleEnableObject,
       handleDisableObject: handlers.handleDisableObject,
+      isSwitchPending: handlers.isSwitchPending,
+      isObjectSwitchPending: handlers.isObjectSwitchPending,
       categoryNames: handlers.categoryNames,
       handleSync: handlers.handleSync,
       handleBackgroundSync: handlers.handleBackgroundSync,
@@ -270,7 +292,6 @@ export function useObjectListLogic() {
       handleCloseScanReview: handlers.handleCloseScanReview,
       handleDropOnItem: handlers.handleDropOnItem,
       handleDropAutoOrganize: handlers.handleDropAutoOrganize,
-      handleDropNewObject: handlers.handleDropNewObject,
       handleDropOnNewObjectSubmit: handlers.handleDropOnNewObjectSubmit,
       handleArchivesInteractively: handlers.handleArchivesInteractively,
       handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,

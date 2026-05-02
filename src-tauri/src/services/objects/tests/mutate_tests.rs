@@ -10,6 +10,10 @@ async fn setup_test_db() -> sqlx::SqlitePool {
 #[tokio::test]
 async fn test_create_object_cmd_inner_success() {
     let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir(&mods_path).unwrap();
+    let mods_path_str = mods_path.to_string_lossy().to_string();
 
     // Insert a game
     crate::test_utils::insert_test_game(
@@ -19,7 +23,7 @@ async fn test_create_object_cmd_inner_success() {
             name: "Genshin",
             game_type: crate::database::models::GameType::GIMI,
             path: "/",
-            mods_path: Some("/Mods"),
+            mods_path: Some(&mods_path_str),
         },
     )
     .await
@@ -49,11 +53,16 @@ async fn test_create_object_cmd_inner_success() {
         .await
         .unwrap();
     assert_eq!(count, 1);
+    assert!(mods_path.join("my_folder").is_dir());
 }
 
 #[tokio::test]
 async fn test_create_object_cmd_inner_conflict() {
     let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir(&mods_path).unwrap();
+    let mods_path_str = mods_path.to_string_lossy().to_string();
 
     crate::test_utils::insert_test_game(
         &pool,
@@ -62,7 +71,7 @@ async fn test_create_object_cmd_inner_conflict() {
             name: "Genshin",
             game_type: crate::database::models::GameType::GIMI,
             path: "/",
-            mods_path: Some("/Mods"),
+            mods_path: Some(&mods_path_str),
         },
     )
     .await
@@ -91,6 +100,51 @@ async fn test_create_object_cmd_inner_conflict() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("already exists"));
+}
+
+#[tokio::test]
+async fn test_create_object_cmd_inner_does_not_leave_db_row_when_folder_creation_fails() {
+    let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mods_path_file = tmp.path().join("ModsAsFile");
+    std::fs::write(&mods_path_file, "not a directory").unwrap();
+    let mods_path_str = mods_path_file.to_string_lossy().to_string();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g_fs_fail",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path_str),
+        },
+    )
+    .await
+    .unwrap();
+
+    let input = CreateObjectInput {
+        game_id: "g_fs_fail".to_string(),
+        name: "Broken Object".to_string(),
+        folder_path: Some("broken_folder".to_string()),
+        object_type: "Character".to_string(),
+        sub_category: None,
+        status: None,
+        metadata: None,
+        thumbnail_url: None,
+        hash_db: None,
+        custom_skins: None,
+    };
+
+    let err = create_object_cmd_inner(&pool, None, input).await.unwrap_err();
+    assert!(err.to_string().contains("Failed to create object folder"));
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
+        .bind("g_fs_fail")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
 }
 
 #[tokio::test]

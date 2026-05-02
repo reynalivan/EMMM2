@@ -28,6 +28,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   const [safe, setSafe] = useState(true);
 
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const hasAutoRolledRef = useRef(false);
 
   const handleRoll = useCallback(async () => {
     setLoading(true);
@@ -56,17 +57,32 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog) return;
+    if (!dialog) {
+      return;
+    }
+
     if (open && !dialog.open) {
       dialog.showModal();
-      // Auto-fetch on open if empty
-      if (proposals.length === 0) {
-        handleRoll();
-      }
-    } else if (!open && dialog.open) {
-      dialog.close();
     }
-  }, [open, proposals.length, handleRoll]);
+
+    if (!open && dialog.open) {
+      dialog.close();
+      hasAutoRolledRef.current = false;
+      return;
+    }
+
+    if (!open) {
+      hasAutoRolledRef.current = false;
+      return;
+    }
+
+    if (proposals.length > 0 || loading || applying || hasAutoRolledRef.current) {
+      return;
+    }
+
+    hasAutoRolledRef.current = true;
+    void handleRoll();
+  }, [applying, handleRoll, loading, open, proposals.length]);
 
   const toggleSelection = (modId: string) => {
     const next = new Set(selectedModIds);
@@ -95,12 +111,18 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
       // Collect the proposals to apply
       const toApply = proposals.filter((p) => selectedModIds.has(p.mod_id));
 
-      // We apply logic by calling enable_only_this sequentially.
-      // EMMM's enable_only_this operates on object_id to disable siblings.
       for (const proposal of toApply) {
-        await commands.enableOnlyThis({
-          gameId: gameId,
-          targetPath: proposal.folder_path,
+        await commands.executeWorkspaceSwitch({
+          input: {
+            game_id: gameId,
+            target: {
+              kind: 'mod_path',
+              value: proposal.folder_path,
+            },
+            desired_enabled: true,
+            resolution: 'enable_only_this',
+            origin_surface: 'collections',
+          },
         });
       }
 
@@ -227,7 +249,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
       </div>
       <form method="dialog" className="modal-backdrop">
         <button onClick={onClose} disabled={applying}>
-          close
+          {t('common:actions.close')}
         </button>
       </form>
     </dialog>

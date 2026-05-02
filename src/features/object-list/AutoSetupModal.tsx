@@ -6,22 +6,16 @@
 import { useState, useMemo, useEffect } from 'react';
 import { X, CheckSquare, Square, Download } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMasterDb, useCreateObject } from '../../hooks/useObjects';
+import { useTranslation } from 'react-i18next';
+import { useMasterDb } from '../../hooks/useObjectQueries';
+import { useCreateObject } from '../../hooks/useObjectMutations';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { folderKeys } from '../../hooks/useFolders';
 import { toast } from '../../stores/useToastStore';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands } from '../../lib/bindings';
-
-interface DbEntryFull {
-  name: string;
-  tags?: string[];
-  object_type: string;
-  metadata?: Record<string, unknown>;
-  thumbnail_path?: string;
-  folder_path?: string;
-  custom_skins?: unknown[];
-}
+import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '../workspace-runtime/optimistic/descriptorBuilders';
+import type { DbEntryFull } from './hooks/useMasterDbSync';
 
 interface AutoSetupModalProps {
   open: boolean;
@@ -29,6 +23,7 @@ interface AutoSetupModalProps {
 }
 
 export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const { data: dbJson, isLoading: isDbLoading } = useMasterDb();
   const createObject = useCreateObject();
@@ -133,9 +128,14 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
       }
 
       if (failCount > 0) {
-        toast.warning(`Created ${successCount} objects. ${failCount} failed (likely duplicates).`);
+        toast.warning(
+          t('auto_setup_modal.toast_partial', {
+            successCount,
+            failCount,
+          }),
+        );
       } else {
-        toast.success(`Successfully created ${successCount} objects.`);
+        toast.success(t('auto_setup_modal.toast_success', { count: successCount }));
       }
 
       onClose();
@@ -146,7 +146,11 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
       // Delay disabling suppression to allow backend file watcher debounce (500ms) to clear
       setTimeout(async () => {
         await commands.setWatcherSuppressionCmd({ suppressed: false });
-        queryClient.invalidateQueries({ queryKey: folderKeys.all });
+        void publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('workspaceStructure'),
+          'active',
+        );
       }, 1000);
       setIsCreating(false);
     }
@@ -167,21 +171,20 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
           className="btn btn-sm btn-circle btn-ghost absolute right-4 top-4"
           onClick={handleClose}
           disabled={isCreating}
-          aria-label="Close"
+          aria-label={t('common:actions.close')}
         >
           <X size={20} />
         </button>
 
-        <h3 className="font-bold text-xl mb-2">Auto Setup Folders</h3>
+        <h3 className="font-bold text-xl mb-2">{t('auto_setup_modal.title')}</h3>
         <p className="text-sm text-base-content/60 mb-4">
-          Select objects from the {activeGame.name} database to automatically create folders for
-          them.
+          {t('auto_setup_modal.description', { gameName: activeGame.name })}
         </p>
 
         {isDbLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center py-20">
             <span className="loading loading-spinner text-primary w-10"></span>
-            <p className="mt-4 text-base-content/60">Loading database...</p>
+            <p className="mt-4 text-base-content/60">{t('auto_setup_modal.loading')}</p>
           </div>
         ) : (
           <>
@@ -189,7 +192,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
             <div className="flex items-center gap-4 mb-4">
               <input
                 type="text"
-                placeholder="Search objects..."
+                placeholder={t('auto_setup_modal.search_placeholder')}
                 className="input input-sm input-bordered w-full max-w-xs focus:border-primary"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -201,10 +204,13 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
                 disabled={isCreating || filteredEntries.length === 0}
               >
                 {isAllSelected ? <Square size={16} /> : <CheckSquare size={16} />}
-                {isAllSelected ? 'Deselect All' : 'Select All'}
+                {isAllSelected ? t('auto_setup_modal.deselect_all') : t('auto_setup_modal.select_all')}
               </button>
               <span className="text-sm font-medium text-base-content/70 ml-auto">
-                {selectedNames.size} / {filteredEntries.length} selected
+                {t('auto_setup_modal.selection_status', {
+                  selected: selectedNames.size,
+                  total: filteredEntries.length,
+                })}
               </span>
             </div>
 
@@ -212,7 +218,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
             <div className="flex-1 overflow-y-auto min-h-0 border border-base-300 rounded-lg bg-base-200/50 p-2">
               {filteredEntries.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-base-content/40">
-                  No objects found matching "{search}"
+                  {t('auto_setup_modal.no_results', { query: search })}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -244,7 +250,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
                               <img src={thumbUrl} alt={entry.name} />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-xs opacity-30">
-                                NA
+                                {t('auto_setup_modal.no_thumbnail')}
                               </div>
                             )}
                           </div>
@@ -283,7 +289,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
               )}
               <div className="flex justify-end gap-2">
                 <button className="btn" onClick={handleClose} disabled={isCreating}>
-                  Cancel
+                  {t('common:actions.cancel')}
                 </button>
                 <button
                   className="btn btn-primary gap-2 min-w-35"
@@ -298,7 +304,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
                   ) : (
                     <>
                       <Download size={16} />
-                      Add Selected
+                      {t('auto_setup_modal.add_selected')}
                     </>
                   )}
                 </button>

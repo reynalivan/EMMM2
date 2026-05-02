@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Visual mods are inherently graphical — users need to verify what a mod looks like (textures, lighting, outfit) without equipping it in-game, but mod folders often contain multiple screenshots and reference images with no in-app viewer.
-- **Proposed Solution**: A `GallerySection` inside the Preview Panel that auto-discovers image files (PNG, JPG, JPEG, WebP) in the mod root and `images/` subfolder, displays them in a responsive thumbnail grid, serves them via Tauri `asset://` protocol, and allows setting any image as the `preview.png` main thumbnail.
+- **Proposed Solution**: A `GallerySection` inside the Preview Panel that auto-discovers image files (PNG, JPG, JPEG, WebP) in the mod root and `images/` subfolder, displays them in a responsive thumbnail grid, serves them via Tauri `asset://` protocol, and allows setting any image as the `preview.png` main thumbnail. Internal writes run under watcher suppression and then trigger Disk Reconcile with `InternalMutation`.
 - **Success Criteria**:
   - `list_mod_preview_images` returns results in ≤ 100ms for a folder with ≤ 50 images.
   - Gallery thumbnail grid renders first image within ≤ 200ms of section mount.
@@ -38,7 +38,7 @@ As a user, I want to set any gallery image as the mod's main thumbnail, so that 
 | ID        | Type        | Criteria                                                                                                                                                                                  |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-19.2.1 | ✅ Positive | Given an image in the gallery, when I hover and click "Set as Thumbnail", then the file is copied to `preview.png` in the mod root in ≤ 300ms                                             |
-| AC-19.2.2 | ✅ Positive | Given a successful "Set as Thumbnail", then `queryClient.invalidateQueries(['folders', gameId])` is called — the `FolderCard` in the grid shows the new thumbnail in ≤ 200ms              |
+| AC-19.2.2 | ✅ Positive | Given a successful "Set as Thumbnail", then Disk Reconcile emits a thumbnail refresh result and the Folder Grid/ObjectList thumbnails update in ≤ 200ms without marking collections dirty |
 | AC-19.2.3 | ❌ Negative | Given "Set as Thumbnail" is clicked on the file that is already `preview.png`, then the operation is no-op — no file copy, no error                                                       |
 | AC-19.2.4 | ⚠️ Edge     | Given a `preview.png` already exists and is the primary thumbnail, when replaced, then the old file is overwritten (not left alongside) — no duplicate `preview.jpg` or `preview_old.png` |
 
@@ -60,7 +60,7 @@ As a user, I want to click a thumbnail to see a full-size version with prev/next
 ### Non-Goals
 
 - No in-app image editing (cropping, resizing).
-- No external image upload from disk dialog — only images already inside the mod folder are shown. Clipboard-paste thumbnail is handled by Epic 15 (Context Menu).
+- Disk import and clipboard paste are allowed through preview actions and shared context-menu actions; they remain scoped to the selected mod folder and use the same runtime refresh path.
 - No animated GIF support in the lightbox — only static images.
 - Gallery does not scan recursively beyond depth 3 — deeper nested images are ignored to protect performance.
 
@@ -72,7 +72,8 @@ As a user, I want to click a thumbnail to see a full-size version with prev/next
 
 ```
 GallerySection.tsx
-  └── useModImages(folderPath) → commands.listModPreviewImages({ folderPath }) → PathBuf[]
+  └── usePreviewRuntime() / usePreviewActions() compose selected folder, image queries, import/paste/remove intents
+      └── raw preview query hook → commands.listModPreviewImages({ folderPath }) → PathBuf[]
       └── map paths → convertFileSrc(path) → asset:// URLs
           ├── ThumbGrid (CSS grid, auto-fill, minmax(100px, 1fr))
           │   └── <img src={assetUrl} loading="lazy" onClick → openLightbox(index) />
@@ -80,10 +81,10 @@ GallerySection.tsx
               ├── full-size <img src={assetUrl} />
               └── Prev/Next → setCurrentIndex
 
-"Set as Thumbnail" btn (per thumbnail hover):
-  → commands.setModThumbnail({ folderPath, imagePath })
-  → reads file bytes → writes to {folderPath}/preview.png
-  → onSuccess: invalidateQueries(['folders', gameId]) + invalidateQueries(['modImages', folderPath])
+"Set as Thumbnail" / Import / Paste:
+  → raw preview mutation hooks write files under watcher suppression
+  → preview-runtime applies runtime/query effects centrally
+  → thumbnail/runtime projections refresh without marking collections dirty
 
 Backend:
   list_mod_preview_images(folder_path) → Vec<PathBuf>
@@ -101,8 +102,8 @@ Backend:
 | File Discovery   | `commands.listModPreviewImages({ folderPath })` → `preview_cmds.rs`                       |
 | Asset Protocol   | Tauri `asset:` protocol — configured in `tauri.conf.json` `allowlist.protocol.asset`      |
 | Image URL        | `convertFileSrc(absolutePath)` from `@tauri-apps/api/tauri`                               |
-| Set Thumbnail    | `commands.setModThumbnail({ folderPath, imagePath })`                                     |
-| Cache Invalidate | `queryClient.invalidateQueries(['folders', gameId])` on successful thumbnail set          |
+| Set Thumbnail    | Raw preview mutation hooks save/copy images for the selected mod folder                    |
+| Cache Invalidate | Preview-runtime applies thumbnail/runtime refresh via shared runtime effect mapping         |
 | Lazy Loading     | `<img loading="lazy">` — browser native, no additional virtualizer needed for ≤ 50 images |
 
 ### Security & Privacy
@@ -110,6 +111,7 @@ Backend:
 - **All `imagePath` values are validated** backend-side via `canonicalize()` + `starts_with(mods_path)` — no arbitrary read or write outside the mod folder.
 - **Tauri `asset:` protocol scope** is set to `["**"]` in `tauri.conf.json` to support mod assets located in arbitrary user-defined mod directories outside AppData.
 - **Safe Mode**: If `safe_mode = true` and the selected mod has `is_safe = false`, the Gallery section is hidden entirely — no image paths are requested from the backend.
+- **Thumbnail-only rule**: Preview image changes refresh thumbnail caches and visible cards/rows, but do not mark collections dirty on their own.
 
 ---
 

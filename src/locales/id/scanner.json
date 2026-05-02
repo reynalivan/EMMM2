@@ -190,16 +190,13 @@
     "actions": {
       "enable": "Aktifkan",
       "disable": "Nonaktifkan",
-      "organize": "Atur Otomatis",
       "delete": "Hapus"
     },
     "status": {
       "enabled": "Aktif",
       "disabled": "Nonaktif"
     },
-    "toast": {
-      "db_load_failed": "Gagal memuat DB untuk pengaturan otomatis: {{error}}"
-    }
+    "mod_preview_alt": "Pratinjau mod"
   },
   "dedup": {
     "analyzing": "Menganalisis Library Mod...",
@@ -215,5 +212,11 @@
       "resolve_warning": "Selesai {{successful}}/{{total}} duplikat ({{failed}} gagal)",
       "resolve_failed": "Gagal menyelesaikan: {{error}}"
     }
+  },
+  "conflict_modal": {
+    "title": "Konflik Shader Terdeteksi",
+    "empty": "Tidak ada konflik.",
+    "description": "Mod-mod ini mengubah hash shader atau buffer yang sama. Mengaktifkannya bersamaan dapat menyebabkan glitch atau crash.",
+    "acknowledge": "Mengerti"
   }
 }

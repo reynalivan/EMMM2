@@ -4,6 +4,5 @@ pub mod dedup;
 pub mod deep_matcher;
 pub mod folder_entries;
 pub mod master_db;
-pub mod object_sync;
 pub mod sync;
 pub mod watcher;

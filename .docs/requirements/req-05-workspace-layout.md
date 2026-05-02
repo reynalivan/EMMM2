@@ -73,7 +73,7 @@ As a user, I want a dedicated launch bar area to start my game and check for con
 
 ```
 MainLayout (React)
-  ├── ExternalChangeHandler (file watcher event listener)
+  ├── ExternalChangeHandler / Disk Reconcile coordinator
   ├── GlobalModals (portal-mounted)
   ├── ToastContainer
   └── TopBar

@@ -73,7 +73,6 @@ function detectConflicts(config: HotkeyConfig, t: TFunction): string[] {
             label1: bindings[i][0],
             label2: bindings[j][0],
             key: bindings[i][1],
-            defaultValue: `${bindings[i][0]} ${t('settings:hotkeys.conflicts.and')} ${bindings[j][0]} ${t('settings:hotkeys.conflicts.share_key')} "${bindings[i][1]}"`,
           }),
         );
       }
@@ -192,7 +191,9 @@ export default function HotkeyTab() {
                     }
                     disabled={isSaving}
                   />
-                  <span className="text-xs font-medium text-base-content/40 w-6">ms</span>
+                  <span className="text-xs font-medium text-base-content/40 w-6">
+                    {t('common:units.ms')}
+                  </span>
                 </div>
               </div>
 

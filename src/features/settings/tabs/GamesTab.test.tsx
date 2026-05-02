@@ -21,7 +21,7 @@ vi.mock('../../../stores/useToastStore', () => ({
 
 vi.mock('../../../lib/services/scanService', () => ({
   scanService: {
-    syncDatabase: vi.fn(),
+    runDeepmatchScanner: vi.fn(),
   },
 }));
 
@@ -88,7 +88,7 @@ describe('GamesTab (TC-02)', () => {
 
   it('renders empty state correctly', () => {
     render(<GamesTab />);
-    expect(screen.getByText(/No games configured/i)).toBeInTheDocument();
+    expect(screen.getByText('settings:games.empty')).toBeInTheDocument();
   });
 
   it('renders a list of games', () => {
@@ -113,7 +113,7 @@ describe('GamesTab (TC-02)', () => {
 
     render(<GamesTab />);
     expect(screen.getByText('Genshin Impact')).toBeInTheDocument();
-    expect(screen.getByText('ACTIVE')).toBeInTheDocument();
+    expect(screen.getByText('settings:games.active')).toBeInTheDocument();
     expect(screen.getByText('C:/Mods')).toBeInTheDocument();
   });
 
@@ -124,7 +124,7 @@ describe('GamesTab (TC-02)', () => {
     expect(screen.queryByTestId('game-form-modal')).not.toBeInTheDocument();
 
     // Click add game
-    fireEvent.click(screen.getByRole('button', { name: /Add Game/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'settings:games.add' }));
 
     // Modal should render
     expect(screen.getByTestId('game-form-modal')).toBeInTheDocument();
@@ -164,7 +164,7 @@ describe('GamesTab (TC-02)', () => {
     render(<GamesTab />);
 
     // We expect two trash buttons, one for each game. Click the first one (g1)
-    const deleteButtons = screen.getAllByTitle('Remove Game');
+    const deleteButtons = screen.getAllByTitle('settings:games.actions.remove');
     fireEvent.click(deleteButtons[0]);
 
     // confirm is mocked to true
@@ -193,7 +193,7 @@ describe('GamesTab (TC-02)', () => {
     render(<GamesTab />);
 
     // Play buttons (Set as Active). First one is disabled (already active).
-    const activeButtons = screen.getAllByTitle('Set as Active');
+    const activeButtons = screen.getAllByTitle('settings:games.actions.set_active');
     expect(activeButtons[0]).toBeDisabled();
 
     // Click second game to make it active
@@ -220,18 +220,18 @@ describe('GamesTab (TC-02)', () => {
       activeGameId: 'g1',
       setActiveGameId: mockSetActiveGameId,
     });
-    (scanService.syncDatabase as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (scanService.runDeepmatchScanner as ReturnType<typeof vi.fn>).mockResolvedValue({
       new_mods: 1,
       updated_mods: 2,
     });
 
     render(<GamesTab />);
 
-    const rescanBtn = screen.getByTitle('Rescan Library');
+    const rescanBtn = screen.getByTitle('settings:games.actions.rescan');
     fireEvent.click(rescanBtn);
 
     await waitFor(() => {
-      expect(scanService.syncDatabase).toHaveBeenCalled();
+      expect(scanService.runDeepmatchScanner).toHaveBeenCalled();
     });
   });
 });

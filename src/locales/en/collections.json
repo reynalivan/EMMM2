@@ -94,14 +94,24 @@
     "pending": "Pending Tasks ({{count}})",
     "important": "Important",
     "warning": "Clearing these tasks will allow you to access the app again. You should manually retry the collection apply or mode switch that was interrupted to ensure your game files are in the correct state.",
+    "labels": {
+      "id": "ID:",
+      "type": "Type:",
+      "target": "Target:"
+    },
     "actions": {
-      "clear": "Abort & Clear",
-      "clearing": "Clearing...",
+      "ignore": "Ignore Task",
+      "ignoring": "Ignoring...",
+      "rollback": "Rollback",
+      "rolling_back": "Rolling back...",
       "resume": "Resume Task",
       "resuming": "Resuming..."
     },
     "toast": {
-      "cleared": "Interrupted tasks have been cleared. You may retry your last action.",
+      "ignored": "Interrupted task was ignored and marked as failed.",
+      "ignore_failed": "Failed to ignore task: {{error}}",
+      "rolled_back": "Interrupted operation was rolled back to the last stable state.",
+      "rollback_failed": "Failed to roll back: {{error}}",
       "resumed": "Interrupted operation successfully resumed and completed.",
       "resume_failed": "Failed to resume: {{error}}"
     }
@@ -124,5 +134,19 @@
   "mod_row": {
     "unknown": "Unknown Mod",
     "nested": "Nested mod"
+  },
+  "tree": {
+    "disabled": "Disabled",
+    "disabled_by_container": "Disabled by Container",
+    "inactive_section": "Inactive Containers",
+    "inactive_section_desc": "Enabled children below these disabled containers do not affect the active loadout.",
+    "uncategorized": "Uncategorized",
+    "object_off": "Object Off",
+    "types": {
+      "variant_container": "Variant Container",
+      "mod_pack_root": "Mod Pack Root",
+      "flat_mod_root": "Flat Mod Root",
+      "container_folder": "Container Folder"
+    }
   }
 }

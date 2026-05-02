@@ -36,9 +36,14 @@
   },
   "resolution": {
     "title": "Name Conflict Detected",
+    "description": "Both an enabled and disabled version of {{name}} exist in the same directory. Compare them and choose what to keep.",
     "loading": "Loading folder details...",
     "enabled_label": "Enabled Version",
-    "disabled_label": "Disabled Version"
+    "disabled_label": "Disabled Version",
+    "file_count_one": "{{count}} file",
+    "file_count_other": "{{count}} files",
+    "more_files_one": "+{{count}} more file",
+    "more_files_other": "+{{count}} more files"
   },
   "breadcrumbs": {
     "root": "ROOT"
@@ -46,5 +51,37 @@
   "context": {
     "switching": "Switching context...",
     "active_warning": "However, this mod is currently <strong>Active (Enabled)</strong>. Active mods cannot be modified directly."
+  },
+  "context_dialog": {
+    "title": "Change Context for Active Mod?",
+    "move_message": "\"{{modName}}\" will be moved into the {{target}} context.",
+    "target_safe": "SAFE",
+    "target_unsafe": "UNSAFE",
+    "active_warning": "This mod is currently active. Moving it can affect the currently applied setup.",
+    "confirm_checkbox": "I understand the impact and want to continue.",
+    "confirm_action": "Change Context"
+  },
+  "duplicate_warning": {
+    "title": "Possible Duplicate Active Mod",
+    "description": "{{targetName}} already has other enabled mods in the same target. Choose how to proceed.",
+    "currently_enabled": "Currently Enabled",
+    "enable_only_this": "Enable Only This",
+    "force_enable": "Force Enable Anyway"
+  },
+  "drag_overlay": {
+    "title": "Move to Object",
+    "subtitle": "Drop this folder on an object to reassign it."
+  },
+  "ignore_management": {
+    "toast_revoked": "Ignored conflict revoked.",
+    "toast_revoke_failed": "Failed to revoke ignored conflict: {{error}}",
+    "title": "Ignored Conflict Rules",
+    "subtitle": "Review object conflicts you previously allowed.",
+    "empty_title": "No ignored conflicts",
+    "empty_subtitle": "Ignored conflict rules will appear here.",
+    "unknown_object": "Unknown Object",
+    "revoke_title": "Revoke ignored conflict",
+    "revoke": "Revoke",
+    "note": "Revoking a rule makes this object eligible for conflict warnings again."
   }
 }

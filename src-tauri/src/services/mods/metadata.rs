@@ -8,6 +8,21 @@ use sqlx::SqlitePool;
 use std::fs;
 use std::path::Path;
 
+async fn refresh_projection_for_optional_object(
+    pool: &SqlitePool,
+    game_id: &str,
+    object_id: Option<String>,
+) -> Result<(), sqlx::Error> {
+    let object_ids = object_id.into_iter().collect::<Vec<_>>();
+    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+        pool,
+        game_id,
+        &object_ids,
+        false,
+    )
+    .await
+}
+
 /// Set the category (Object Type) for a mod.
 /// Updates the `mods` table.
 pub async fn set_mod_category(
@@ -93,6 +108,7 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
 
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let mut repaired = 0usize;
+    let mut changed_object_ids: Vec<String> = Vec::new();
 
     for row in &orphans {
         let mod_id = &row.id;
@@ -109,7 +125,7 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
             .unwrap_or_else(|| clean_name.clone());
 
         let mut new_objects_count = 0;
-        let object_id = crate::services::scanner::sync::helpers::ensure_object_exists(
+        let object_id = crate::repo::object_repo::ensure_object_exists(
             &mut tx,
             game_id,
             &obj_folder,
@@ -131,10 +147,19 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
         .await
         .map_err(|e| e.to_string())?;
 
+        changed_object_ids.push(object_id);
         repaired += 1;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+        pool,
+        game_id,
+        &changed_object_ids,
+        false,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(repaired)
 }
 
@@ -196,6 +221,8 @@ pub async fn toggle_mod_safe(
         .to_string();
 
     // Update mod-level safety (is_safe lives on the mods table, not objects)
+    let object_id =
+        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &rel_path, game_id).await?;
     crate::repo::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await?;
 
     let update = crate::services::mods::info_json::ModInfoUpdate {
@@ -204,10 +231,19 @@ pub async fn toggle_mod_safe(
     };
     let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
 
-    // Trigger Dirty State for BOTH safety states (old and new)
-    // because the mod effectively "moved" corridors.
-    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, safe).await;
-    let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, !safe).await;
+    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        pool,
+        config,
+        watcher.suppressor.clone(),
+        game_id,
+        &[safe, !safe],
+        true,
+        true,
+    )
+    .await;
+    refresh_projection_for_optional_object(pool, game_id, object_id)
+        .await
+        .map_err(MetadataError::from)?;
 
     Ok(())
 }

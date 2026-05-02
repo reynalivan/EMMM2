@@ -81,7 +81,7 @@ export default function FolderTooltip({
               <div className="mb-2 rounded overflow-hidden border border-base-300/30">
                 <img
                   src={convertFileSrc(thumbnailPath)}
-                  alt="Preview"
+                  alt={t('folder_tooltip.preview_alt')}
                   className="w-full h-20 object-cover"
                 />
               </div>
@@ -90,7 +90,7 @@ export default function FolderTooltip({
             {/* Folder content */}
             <div className="border-t border-base-content/10 pt-2">
               <p className="text-[10px] uppercase tracking-wider text-base-content/40 font-semibold mb-1">
-                Contents
+                {t('folder_tooltip.contents')}
               </p>
               {loading && (
                 <div className="flex flex-col gap-1">

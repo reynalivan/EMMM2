@@ -15,10 +15,13 @@ description: EMMM Core Architecture & Domain - High-level system design, domain 
 - Mod: Folder w/ .ini. Enabled if NO 'DISABLED ' prefix.
 - Collection: Loadout snapshots applied via diffing + watcher suppression.
 - Safe Mode: PIN gate transition (Snapshot -> Disable -> Restore).
-- Watcher: notify-rs + debounce. Triggers DB Sync & GC.
+- Watcher: notify-rs + debounce. Triggers Disk Reconcile and GC.
 - System Mod: Folder/Archive prefixed with `.` is immune to randomizer.
 - Launch Engine: PowerShell RunAs Admin for loaders/games on Windows.
 - Command Guard: EVERY backend command (`#[tauri::command]`) MUST be registered in `src-tauri/src/lib.rs` and whitelisted in `src-tauri/permissions/app-commands.toml` before use. Missing permissions cause runtime "Command not found" errors.
 - Instance Guard: Single-instance lock required.
-- Index vs Auto-Organize: USE `quickImport` (sends empty MasterDB) to ONLY index disk folders to DB silently. DO NOT use `scanPreview` or `syncDatabase` for silent indexing, as they trigger Auto-Organize (Deep Matcher mapping).
+- Disk Reconcile vs Deep Match Scanner:
+  - USE `commands.reconcileDiskState` / `reconcile_disk_state_cmd` for watcher, window focus, Mods entry, and silent runtime repair.
+  - USE `commands.runDeepmatchPreview` / `deepmatch_preview_cmd` and `commands.runDeepmatchScanner` / `deepmatch_scanner_cmd` only for explicit scan/import flows.
+  - DO NOT use Deep Match Scanner commands for silent indexing or watcher-driven runtime refresh.
 - Post-log rule executed, check rules on `.agent/rules/post_log.md`.

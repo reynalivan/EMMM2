@@ -6,7 +6,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_watcher_detects_file_creation() {
     let dir = TempDir::new().unwrap();
-    let suppressed = Arc::new(AtomicBool::new(false));
+    let suppressed = Arc::new(WatcherSuppressor::new(false));
     let (watcher, mut rx) = watch_mod_directory(dir.path(), suppressed).unwrap();
 
     // Give watcher time to initialize
@@ -36,7 +36,7 @@ async fn test_watcher_detects_file_creation() {
 async fn test_watcher_suppression() {
     let dir = TempDir::new().unwrap();
     // Start suppressed
-    let suppressed = Arc::new(AtomicBool::new(true));
+    let suppressed = Arc::new(WatcherSuppressor::new(true));
     let (watcher, mut rx) = watch_mod_directory(dir.path(), suppressed.clone()).unwrap();
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -90,8 +90,28 @@ async fn test_watcher_suppression() {
 }
 
 #[test]
+fn test_nested_suppression_guards_keep_watcher_suppressed_until_last_drop() {
+    let state = WatcherState::default();
+
+    assert!(!state.suppressor.load(Ordering::Acquire));
+
+    let first_guard = SuppressionGuard::new(&state.suppressor);
+    assert!(state.suppressor.load(Ordering::Acquire));
+
+    {
+        let _second_guard = SuppressionGuard::new(&state.suppressor);
+        assert!(state.suppressor.load(Ordering::Acquire));
+    }
+
+    assert!(state.suppressor.load(Ordering::Acquire));
+
+    drop(first_guard);
+    assert!(!state.suppressor.load(Ordering::Acquire));
+}
+
+#[test]
 fn test_watcher_nonexistent_path() {
-    let suppressed = Arc::new(AtomicBool::new(false));
+    let suppressed = Arc::new(WatcherSuppressor::new(false));
     let result = watch_mod_directory(Path::new("/nonexistent/path"), suppressed);
     assert!(result.is_err());
 }

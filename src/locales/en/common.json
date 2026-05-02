@@ -21,7 +21,8 @@
     "confirm": "Confirm",
     "save": "Save",
     "delete": "Delete",
-    "close": "Close"
+    "close": "Close",
+    "dismiss": "Dismiss"
   },
   "actions": {
     "back": "Back",
@@ -31,9 +32,15 @@
     "delete": "Delete",
     "close": "Close",
     "reload_app": "Reload Application",
-    "remove": "Remove {{item}}",
+    "remove": "Remove",
     "save_changes": "Save Changes",
-    "retry": "Retry"
+    "retry": "Retry",
+    "discard": "Discard",
+    "done": "Done",
+    "keep_enabled": "Keep Enabled",
+    "keep_disabled": "Keep Disabled",
+    "separate": "Keep Both Separately",
+    "dismiss": "Dismiss"
   },
   "errors": {
     "no_active_game": "No active game selected",
@@ -41,6 +48,7 @@
     "unknown": "An unknown error occurred",
     "unexpected": "An unexpected error occurred.",
     "boundary_title": "Something went wrong",
+    "clipboard_not_supported": "Clipboard access is not supported on this device.",
     "validation": {
       "required": "This field is required",
       "invalid": "Invalid input"
@@ -48,6 +56,29 @@
   },
   "status": {
     "none": "None",
+    "loading": "Loading...",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "not_set": "Not set",
     "no_subfolders": "No nested folders found"
+  },
+  "units": {
+    "ms": "ms"
+  },
+  "file_in_use": {
+    "title": "Folder Is In Use",
+    "description": "Close any app or window still using \"{{folderName}}\", then try again.",
+    "windows_explorer": "Windows Explorer",
+    "hint": "File locks usually come from Explorer windows, text editors, or tools watching the folder.",
+    "folder_fallback": "this folder"
+  },
+  "workspace": {
+    "reason": {
+      "disabled_by_container": "Disabled by container: {{name}}",
+      "object_folder_disabled": "Object folder disabled"
+    },
+    "warning": {
+      "naming_conflict": "Naming conflict detected"
+    }
   }
 }

@@ -10,13 +10,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commands, type IngestResult } from '../../lib/bindings';
 import type { ArchiveInfo, ScanPreviewItem } from '../../types/scanner';
 import { basename } from '@tauri-apps/api/path';
-import { exists, mkdir } from '@tauri-apps/plugin-fs';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { getGameTypeKey } from '../../types/game';
-import { useAppStore } from '../../stores/useAppStore';
 import { scanService } from '../../lib/services/scanService';
 import { toast } from '../../stores/useToastStore';
-import { parseMasterDb, executeImportAndInvalidate } from './objHandlersHelpers';
+import {
+  executeImportAndInvalidate,
+  parseMasterDb,
+} from '../mod-runtime/operations/sharedOperations';
 import type { ObjectSummary } from '../../types/object';
 import type { MasterDbEntry } from './scanReviewHelpers';
 
@@ -42,6 +43,14 @@ export type PendingDropContext = {
   baseFolderPaths?: string[];
   baseLooseFiles?: string[];
 };
+
+async function ensureDirectoryExists(path: string) {
+  if (await commands.checkPathExistsCmd({ path })) {
+    return;
+  }
+
+  await commands.ensureDir({ path });
+}
 
 export function useObjHandlersArchive({
   objects,
@@ -153,8 +162,8 @@ export function useObjHandlersArchive({
             ? `${activeGame.mod_path}\\.emmm_temp`
             : activeGame.mod_path;
 
-        if (pendingDropContext.type === 'auto-organize' && !(await exists(extractTarget))) {
-          await mkdir(extractTarget, { recursive: true });
+        if (pendingDropContext.type === 'auto-organize') {
+          await ensureDirectoryExists(extractTarget);
         }
 
         const totalArchives = selectedPaths.length;
@@ -294,7 +303,7 @@ export function useObjHandlersArchive({
           }
 
           setIsSyncing(true);
-          const previewItemsRaw = await scanService.scanPreview(
+          const previewItemsRaw = await scanService.runDeepmatchPreview(
             activeGame.id,
             activeGame.game_type,
             activeGame.mod_path,
@@ -323,10 +332,6 @@ export function useObjHandlersArchive({
           error: e instanceof Error ? e.message : String(e),
         }));
       } finally {
-        // W2: Scale cooldown with archive count to avoid false watcher events
-        const archiveCount = archiveModal.archives.length;
-        const cooldown = Math.min(1000 + archiveCount * 500, 5000);
-        useAppStore.getState().setWatcherCooldown(Date.now() + cooldown);
         await commands.setWatcherSuppressionCmd({ suppressed: false });
         if (pendingDropContext.type === 'auto-organize') setIsSyncing(false);
       }
@@ -345,7 +350,7 @@ export function useObjHandlersArchive({
 
   const handleStopExtraction = useCallback(async () => {
     try {
-      await commands.cancelScanCmd(); // abort_extraction_cmd was replaced by cancelScanCmd in some contexts or missing
+      await commands.abortExtractionCmd();
     } catch (e) {
       console.error('Failed to abort extraction:', e);
     }
@@ -378,7 +383,6 @@ export function useObjHandlersArchive({
         console.error('Drop on item failed after skipping archives:', e);
         toast.error('Failed to import items');
       } finally {
-        useAppStore.getState().setWatcherCooldown(Date.now() + 1000);
         await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     } else if (pendingDropContext.type === 'auto-organize') {
@@ -396,7 +400,7 @@ export function useObjHandlersArchive({
 
         const extractTarget = `${activeGame.mod_path}\\.emmm_temp`;
         if (looseFiles.length > 0) {
-          if (!(await exists(extractTarget))) await mkdir(extractTarget, { recursive: true });
+          await ensureDirectoryExists(extractTarget);
           const ingestResult: IngestResult = await commands.ingestDroppedFolders({
             paths: looseFiles,
             modsPath: extractTarget,
@@ -407,7 +411,7 @@ export function useObjHandlersArchive({
           folderPaths.push(...ingestResult.moved);
         }
 
-        const previewItemsRaw = await scanService.scanPreview(
+        const previewItemsRaw = await scanService.runDeepmatchPreview(
           activeGame.id,
           activeGame.game_type,
           activeGame.mod_path,
@@ -432,7 +436,6 @@ export function useObjHandlersArchive({
         toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setIsSyncing(false);
-        useAppStore.getState().setWatcherCooldown(Date.now() + 1000);
         await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     }

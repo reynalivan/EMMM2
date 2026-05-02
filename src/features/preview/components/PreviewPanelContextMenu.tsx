@@ -1,10 +1,13 @@
 import React from 'react';
 import { MoreVertical } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/mod';
+import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { useModContextMenuItems } from '../../../hooks/useModContextMenuItems';
+import { useModContextMenuActions } from '../../mod-runtime/actions/useModContextMenuActions';
 
 interface PreviewPanelContextMenuProps {
-  folder: ModFolder;
+  folder: WorkspaceExplorerNode;
   onRename: () => void;
   onDelete: () => void;
   onToggle: (folder: ModFolder) => void;
@@ -24,6 +27,8 @@ export default function PreviewPanelContextMenu({
   onOpenMoveDialog,
   onToggleSafe,
 }: PreviewPanelContextMenuProps) {
+  const { t } = useTranslation('preview');
+  const contextActions = useModContextMenuActions(folder);
   const items = useModContextMenuItems({
     folder,
     onRename,
@@ -33,6 +38,9 @@ export default function PreviewPanelContextMenu({
     onEnableOnlyThis: () => onEnableOnlyThis(folder),
     onToggleSafe: () => onToggleSafe(folder),
     onOpenMoveDialog,
+    onOpenExplorer: contextActions.openExplorer,
+    onPasteThumbnail: contextActions.pasteThumbnailFromClipboard,
+    onImportThumbnail: contextActions.importThumbnail,
   });
 
   return (
@@ -41,7 +49,7 @@ export default function PreviewPanelContextMenu({
         tabIndex={0}
         role="button"
         className="btn btn-ghost btn-sm btn-square text-base-content/70 hover:text-base-content hover:bg-base-content/10"
-        title="More Actions"
+        title={t('actions.more_actions')}
       >
         <MoreVertical size={16} />
       </div>

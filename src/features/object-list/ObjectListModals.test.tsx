@@ -33,9 +33,6 @@ describe('ObjectListModals', () => {
     render(
       <ObjectListModals
         activeGame={null}
-        deleteDialog={{ open: false, path: '', name: '', itemCount: 1 }}
-        onConfirmDelete={vi.fn()}
-        onCancelDelete={vi.fn()}
         editObject={null}
         onCloseEdit={vi.fn()}
         syncConfirm={SYNC_CONFIRM_RESET}
@@ -67,9 +64,6 @@ describe('ObjectListModals', () => {
     render(
       <ObjectListModals
         activeGame={null}
-        deleteDialog={{ open: true, path: '', name: '', itemCount: 1 }}
-        onConfirmDelete={vi.fn()}
-        onCancelDelete={vi.fn()}
         editObject={
           { id: '1', name: 'Z' } as unknown as React.ComponentProps<
             typeof ObjectListModals
@@ -87,7 +81,7 @@ describe('ObjectListModals', () => {
         onCloseCreate={vi.fn()}
         autoSetupOpen={true}
         onCloseAutoSetup={vi.fn()}
-        deleteObjectDialog={{ open: false, id: '', name: '' }}
+        deleteObjectDialog={{ open: true, id: '1', name: 'Amber' }}
         onConfirmDeleteObject={vi.fn()}
         onCancelDeleteObject={vi.fn()}
         forceDeleteObjectDialog={{ open: false, id: '', name: '', count: 0 }}

@@ -1,5 +1,6 @@
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Folder, X } from 'lucide-react';
 import { useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ConflictInfo } from '../../types/mod';
 
 interface ConflictModalProps {
@@ -9,6 +10,7 @@ interface ConflictModalProps {
 }
 
 export default function ConflictModal({ open, onClose, conflicts }: ConflictModalProps) {
+  const { t } = useTranslation(['scanner', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -30,19 +32,16 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
 
         <h3 className="font-bold text-lg text-warning flex items-center gap-2 pb-4 border-b border-base-content/10">
           <AlertTriangle className="fill-warning/20" />
-          Shader Conflicts Detected
+          {t('scanner:conflict_modal.title')}
         </h3>
 
         <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           {conflicts.length === 0 ? (
-            <p className="text-success text-center italic">No conflicts found.</p>
+            <p className="text-success text-center italic">{t('scanner:conflict_modal.empty')}</p>
           ) : (
             <div className="flex flex-col gap-3">
               <div className="alert alert-warning text-xs shadow-sm">
-                <span>
-                  These mods modify the same shader/buffer signatures (hashes). Enabling them
-                  together may cause graphical glitches or crashes.
-                </span>
+                <span>{t('scanner:conflict_modal.description')}</span>
               </div>
 
               {conflicts.map((conflict, idx) => (
@@ -69,7 +68,10 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
                           className="text-sm truncate hover:text-primary transition-colors cursor-default"
                           title={path}
                         >
-                          📁 {name}
+                          <span className="inline-flex items-center gap-1">
+                            <Folder size={14} className="shrink-0" />
+                            <span className="truncate">{name}</span>
+                          </span>
                         </div>
                       );
                     })}
@@ -82,12 +84,12 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
 
         <div className="modal-action border-t border-base-content/10 pt-4">
           <button className="btn btn-primary" onClick={onClose}>
-            Acknowledge
+            {t('scanner:conflict_modal.acknowledge')}
           </button>
         </div>
       </div>
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>close</button>
+        <button onClick={onClose}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

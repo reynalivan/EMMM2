@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../../stores/useToastStore';
-import { useBulkUpdateInfo } from '../../hooks/useFolders';
+import { useBulkUpdateInfo } from '../../hooks/useFolderMutations';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { X, Tag, Plus } from 'lucide-react';
 

@@ -88,7 +88,7 @@ Mobile (viewport < 768px):
 | -------------- | --------------------------------------------------------------------------------------------------------------- |
 | Panel Width    | `react-resizable-panels` `Panel` with `minSize`, `maxSize` props; `onLayout` → debounced `localStorage.setItem` |
 | Game Schema    | `useGameSchema()` hook — reads from React Query cache seeded by Epic 09                                         |
-| Object List    | `useObjects()` hook — reads from Epic 07's React Query cache                                                    |
+| Object List    | `useWorkspaceViewModel()` hook — reads runtime object rows from the shared workspace read-model                  |
 | Virtualization | `@tanstack/react-virtual` — single instance for the entire sidebar scroll container                             |
 
 ### Security & Privacy

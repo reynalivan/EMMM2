@@ -8,8 +8,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
-import { corridorKeys, collectionKeys } from '../queryKeys';
+import { collectionKeys, corridorKeys } from '../queryKeys';
 import { commands } from '../../../lib/bindings';
+import { formatAppError } from '../../../lib/appError';
+import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
 
 export function useCorridorSwitch() {
   const queryClient = useQueryClient();
@@ -18,31 +21,61 @@ export function useCorridorSwitch() {
     mutationFn: ({ gameId, targetSafe }: { gameId: string; targetSafe: boolean }) =>
       commands.switchCorridor({ gameId, targetSafe }),
 
-    onSuccess: (result, { targetSafe }) => {
+    onSuccess: async (result, { gameId, targetSafe }) => {
+      const previousSafe = useAppStore.getState().safeMode;
       // Update zustand store
+      const activeSafe = result.active_safe;
       useAppStore.setState({
-        safeMode: targetSafe,
+        safeMode: activeSafe,
         gridSelection: new Set(),
         selectedObjectFolderPath: null,
+        selectedModPath: null,
+        explorerSubPath: undefined,
+        currentPath: [],
+        mobileActivePane: 'sidebar',
       });
 
       // Invalidate all caches that depend on corridor state
-      queryClient.invalidateQueries({ queryKey: corridorKeys.all });
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['mod-folders'] });
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('corridorState'),
+        'active',
+      );
+      const corridorState = await commands.getCorridorState({
+        gameId,
+        isSafe: activeSafe,
+      });
+      queryClient.setQueryData(corridorKeys.state(gameId, activeSafe), corridorState);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: collectionKeys.list(gameId, activeSafe),
+          refetchType: 'active',
+        }),
+        queryClient.invalidateQueries({
+          queryKey: collectionKeys.list(gameId, previousSafe),
+          refetchType: 'active',
+        }),
+        queryClient.invalidateQueries({
+          queryKey: corridorKeys.switchPreview(gameId, previousSafe, targetSafe),
+          refetchType: 'all',
+        }),
+      ]);
 
       // Build toast message
-      const label = targetSafe ? 'SAFE Mode Enabled' : 'UNSAFE Mode Enabled';
+      const label = activeSafe ? 'SAFE Mode Enabled' : 'UNSAFE Mode Enabled';
       const parts: string[] = [];
       if (result.mods_disabled > 0) parts.push(`Disabled ${result.mods_disabled}`);
-      if (result.mods_enabled > 0) parts.push(`Restored ${result.mods_enabled}`);
+      if (result.mods_restored > 0) parts.push(`Restored ${result.mods_restored}`);
       const detail = parts.length > 0 ? ` — ${parts.join(', ')} mod(s)` : '';
-      toast.success(`${label}${detail}`);
+      const warningDetail =
+        result.warnings && result.warnings.length > 0
+          ? ` — ${result.warnings.length} warning(s)`
+          : '';
+      toast.success(`${label}${detail}${warningDetail}`);
     },
 
     onError: (err) => {
-      toast.error(String(err));
+      toast.error(formatAppError(err));
     },
   });
 }

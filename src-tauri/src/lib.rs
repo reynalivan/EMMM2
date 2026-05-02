@@ -16,15 +16,19 @@ pub const DISABLED_PREFIX: &str = "DISABLED ";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri_specta::Builder::<tauri::Wry>::new()
-        .commands(tauri_specta::collect_commands![
+    let builder =
+        tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
             commands::app::app_cmds::check_config_status,
+            commands::app::app_cmds::close_splashscreen,
             commands::app::dashboard_cmds::get_dashboard_stats,
             commands::app::dashboard_cmds::get_active_keybindings,
+            commands::app::workspace_cmds::get_workspace_view_model,
+            commands::app::workspace_cmds::execute_workspace_switch,
             commands::app::app_cmds::get_logs,
             commands::app::app_cmds::open_log_folder,
             commands::app::app_cmds::reset_database,
             commands::app::app_cmds::check_path_exists_cmd,
+            commands::app::app_cmds::ensure_dir_cmd,
             commands::app::game_cmds::auto_detect_games,
             commands::app::game_cmds::add_game_manual,
             commands::app::game_cmds::save_onboarding_games,
@@ -37,15 +41,12 @@ pub fn run() {
             commands::objects::master_db_cmds::search_master_db,
             commands::objects::master_db_cmds::match_object_with_db,
             commands::objects::master_db_cmds::pin_object,
-            commands::scanner::scan_cmds::cancel_scan_cmd,
+            commands::scanner::scan_control_cmds::cancel_scan_cmd,
             commands::scanner::archive_cmds::detect_archives_cmd,
             commands::scanner::archive_cmds::extract_archive_cmd,
             commands::scanner::archive_cmds::analyze_archive_cmd,
             commands::scanner::archive_cmds::match_check_folder_cmd,
             commands::scanner::archive_cmds::abort_extraction_cmd,
-            commands::scanner::scan_cmds::start_scan,
-            commands::scanner::organize_cmds::auto_organize_mods,
-            commands::scanner::scan_cmds::get_scan_result,
             commands::scanner::conflict_cmds::detect_conflicts_cmd,
             commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
             commands::scanner::watcher_cmds::set_watcher_suppression_cmd,
@@ -53,7 +54,6 @@ pub fn run() {
             commands::folder_grid::get_mod_thumbnail,
             commands::mods::mod_core_cmds::open_in_explorer,
             commands::mods::mod_core_cmds::reveal_object_in_explorer,
-            commands::mods::mod_core_cmds::toggle_mod,
             commands::mods::conflict_cmds::resolve_conflict,
             commands::mods::conflict_cmds::get_conflict_details,
             commands::mods::conflict_cmds::ignore_object_conflict,
@@ -104,21 +104,18 @@ pub fn run() {
             commands::app::theme_cmds::load_custom_theme,
             commands::app::theme_cmds::save_custom_theme,
             commands::app::theme_cmds::delete_custom_theme,
-            commands::scanner::conflict_cmds::enable_only_this,
-            commands::scanner::conflict_cmds::check_duplicate_enabled,
             commands::scanner::conflict_cmds::check_shader_conflicts,
             commands::objects::object_cmds::get_objects_cmd,
-            commands::objects::object_cmds::sync_objects_cmd,
             commands::objects::object_cmds::get_category_counts_cmd,
             commands::objects::object_cmds::create_object_cmd,
             commands::objects::object_cmds::update_object_cmd,
+            commands::objects::object_cmds::apply_object_match_cmd,
             commands::objects::object_cmds::pin_object_cmd,
             commands::objects::object_cmds::delete_object_cmd,
-
-            commands::objects::object_cmds::gc_lost_objects_cmd,
             commands::collections::cmds::switch_corridor,
             commands::collections::cmds::preview_corridor_switch,
             commands::collections::cmds::get_corridor_state,
+            commands::collections::cmds::get_apply_progress,
             commands::collections::cmds::list_collections,
             commands::collections::cmds::create_collection,
             commands::collections::cmds::apply_collection,
@@ -139,11 +136,12 @@ pub fn run() {
             commands::collections::cmds::verify_pin,
             commands::collections::cmds::clear_pin,
             commands::collections::cmds::get_pin_status,
-            commands::scanner::sync_cmds::sync_database_cmd,
-            commands::scanner::sync_cmds::scan_preview_cmd,
-            commands::scanner::sync_cmds::commit_scan_cmd,
-            commands::scanner::sync_cmds::score_candidates_batch_cmd,
-            commands::scanner::sync_cmds::list_folder_entries_cmd,
+            commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
+            commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
+            commands::scanner::deepmatch_scanner_cmds::commit_scan_cmd,
+            commands::scanner::deepmatch_scanner_cmds::score_candidates_batch_cmd,
+            commands::scanner::deepmatch_scanner_cmds::list_folder_entries_cmd,
+            commands::scanner::disk_reconcile_cmds::reconcile_disk_state_cmd,
             commands::scanner::watcher_cmds::start_watcher_cmd,
             commands::scanner::watcher_cmds::stop_watcher_cmd,
             commands::duplicates::dup_scan_cmds::dup_scan_start,
@@ -175,7 +173,6 @@ pub fn run() {
             commands::browser::browser_cmds::browser_cancel_import,
             commands::browser::browser_cmds::create_download_session,
         ]);
-
 
     /*
     #[cfg(debug_assertions)]
@@ -225,6 +222,7 @@ pub fn run() {
                 .build(),
         )
         .manage(services::scanner::watcher::WatcherState::new())
+        .manage(services::disk_reconcile::orchestrator::DiskReconcileState::new())
         .setup(move |app| {
             let app_handle = app.handle();
 
@@ -293,9 +291,6 @@ pub fn run() {
                                 let backup_path = app_data_dir.join(format!("app_corrupt_{}.db", timestamp));
                                 let _ = std::fs::rename(&db_path, &backup_path);
                                 let recovered_pool = try_init().await.expect("Failed to initialize database after recovery");
-                                let _ = sqlx::query("DELETE FROM app_settings WHERE key = 'sync_timestamps'")
-                                    .execute(&recovered_pool)
-                                    .await;
                                 recovered_pool
                             }
                         };
@@ -338,21 +333,63 @@ pub fn run() {
                 let settings = config_svc.get_settings();
                 let pool_state: tauri::State<'_, sqlx::SqlitePool> = app.state();
                 let pool_clone = pool_state.inner().clone();
-                let keywords = settings.safe_mode.keywords.clone();
+                let watcher_state: tauri::State<'_, services::scanner::watcher::WatcherState> =
+                    app.state();
+                let disk_reconcile_state: tauri::State<
+                    '_,
+                    services::disk_reconcile::orchestrator::DiskReconcileState,
+                > = app.state();
+                let app_handle_clone = app_handle.clone();
 
                 use tauri::async_runtime::block_on;
                 block_on(async {
-                    for game in &settings.games {
-                        let mod_path = game.mod_path.to_string_lossy().to_string();
-                        if mod_path.is_empty() { continue; }
-                        let cached = settings.sync_timestamps.get(&game.id).copied().unwrap_or(0);
-                        match services::startup_sync::reconcile_game(&pool_clone, &game.id, &mod_path, &keywords, cached).await {
-                            Ok(new_ts) => {
-                                if new_ts != cached {
-                                    let _ = config_svc.update_sync_timestamp(&game.id, new_ts);
-                                }
-                            }
-                            Err(e) => log::warn!("Startup sync failed for '{}': {e}", game.name),
+                    match sqlx::query("DELETE FROM tasks WHERE created_at < datetime('now', '-7 days')")
+                        .execute(&pool_clone)
+                        .await
+                    {
+                        Ok(result) if result.rows_affected() > 0 => {
+                            log::info!(
+                                "startup: purged {} old task log(s) before boot reconcile",
+                                result.rows_affected()
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            log::warn!("startup: task GC failed before boot reconcile: {error}");
+                        }
+                    }
+
+                    let Some(active_game_id) = settings.active_game_id.as_deref() else {
+                        return;
+                    };
+                    let Some(game) = settings.games.iter().find(|entry| entry.id == active_game_id) else {
+                        return;
+                    };
+                    let mod_path = game.mod_path.to_string_lossy().to_string();
+                    if mod_path.is_empty() {
+                        return;
+                    }
+
+                    match services::disk_reconcile::orchestrator::reconcile_disk_state(
+                        &app_handle_clone,
+                        &pool_clone,
+                        config_svc.inner(),
+                        &disk_reconcile_state,
+                        watcher_state.suppressor.clone(),
+                        game.id.clone(),
+                        services::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+                        Vec::new(),
+                        true,
+                    )
+                    .await
+                    {
+                        Ok(_) => {}
+                        Err(error) => {
+                            log::warn!(
+                                "Startup Disk Reconcile failed for '{}': {}",
+                                game.name,
+                                error
+                            );
                         }
                     }
                 });
@@ -360,7 +397,7 @@ pub fn run() {
 
             Ok(())
         })
-        .manage(commands::scanner::scan_cmds::ScanState::new())
+        .manage(commands::scanner::scan_control_cmds::ScanState::new())
         .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
         .manage(services::fs_utils::operation_lock::OperationLock::new())
         .manage(commands::objects::master_db_cmds::MasterDbCache::new())
@@ -379,12 +416,16 @@ mod specta_tests {
         tauri_specta::Builder::<tauri::Wry>::new()
             .commands(tauri_specta::collect_commands![
                 commands::app::app_cmds::check_config_status,
+                commands::app::app_cmds::close_splashscreen,
                 commands::app::dashboard_cmds::get_dashboard_stats,
                 commands::app::dashboard_cmds::get_active_keybindings,
+                commands::app::workspace_cmds::get_workspace_view_model,
+                commands::app::workspace_cmds::execute_workspace_switch,
                 commands::app::app_cmds::get_logs,
                 commands::app::app_cmds::open_log_folder,
                 commands::app::app_cmds::reset_database,
                 commands::app::app_cmds::check_path_exists_cmd,
+                commands::app::app_cmds::ensure_dir_cmd,
                 commands::app::game_cmds::auto_detect_games,
                 commands::app::game_cmds::add_game_manual,
                 commands::app::game_cmds::save_onboarding_games,
@@ -397,15 +438,12 @@ mod specta_tests {
                 commands::objects::master_db_cmds::search_master_db,
                 commands::objects::master_db_cmds::match_object_with_db,
                 commands::objects::master_db_cmds::pin_object,
-                commands::scanner::scan_cmds::cancel_scan_cmd,
+                commands::scanner::scan_control_cmds::cancel_scan_cmd,
                 commands::scanner::archive_cmds::detect_archives_cmd,
                 commands::scanner::archive_cmds::extract_archive_cmd,
                 commands::scanner::archive_cmds::analyze_archive_cmd,
                 commands::scanner::archive_cmds::match_check_folder_cmd,
                 commands::scanner::archive_cmds::abort_extraction_cmd,
-                commands::scanner::scan_cmds::start_scan,
-                commands::scanner::organize_cmds::auto_organize_mods,
-                commands::scanner::scan_cmds::get_scan_result,
                 commands::scanner::conflict_cmds::detect_conflicts_cmd,
                 commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
                 commands::scanner::watcher_cmds::set_watcher_suppression_cmd,
@@ -413,7 +451,6 @@ mod specta_tests {
                 commands::folder_grid::get_mod_thumbnail,
                 commands::mods::mod_core_cmds::open_in_explorer,
                 commands::mods::mod_core_cmds::reveal_object_in_explorer,
-                commands::mods::mod_core_cmds::toggle_mod,
                 commands::mods::conflict_cmds::resolve_conflict,
                 commands::mods::conflict_cmds::get_conflict_details,
                 commands::mods::conflict_cmds::ignore_object_conflict,
@@ -464,21 +501,18 @@ mod specta_tests {
                 commands::app::theme_cmds::load_custom_theme,
                 commands::app::theme_cmds::save_custom_theme,
                 commands::app::theme_cmds::delete_custom_theme,
-                commands::scanner::conflict_cmds::enable_only_this,
-                commands::scanner::conflict_cmds::check_duplicate_enabled,
                 commands::scanner::conflict_cmds::check_shader_conflicts,
                 commands::objects::object_cmds::get_objects_cmd,
-                commands::objects::object_cmds::sync_objects_cmd,
                 commands::objects::object_cmds::get_category_counts_cmd,
                 commands::objects::object_cmds::create_object_cmd,
                 commands::objects::object_cmds::update_object_cmd,
+                commands::objects::object_cmds::apply_object_match_cmd,
                 commands::objects::object_cmds::pin_object_cmd,
                 commands::objects::object_cmds::delete_object_cmd,
-
-                commands::objects::object_cmds::gc_lost_objects_cmd,
                 commands::collections::cmds::switch_corridor,
                 commands::collections::cmds::preview_corridor_switch,
                 commands::collections::cmds::get_corridor_state,
+                commands::collections::cmds::get_apply_progress,
                 commands::collections::cmds::list_collections,
                 commands::collections::cmds::create_collection,
                 commands::collections::cmds::apply_collection,
@@ -499,11 +533,12 @@ mod specta_tests {
                 commands::collections::cmds::verify_pin,
                 commands::collections::cmds::clear_pin,
                 commands::collections::cmds::get_pin_status,
-                commands::scanner::sync_cmds::sync_database_cmd,
-                commands::scanner::sync_cmds::scan_preview_cmd,
-                commands::scanner::sync_cmds::commit_scan_cmd,
-                commands::scanner::sync_cmds::score_candidates_batch_cmd,
-                commands::scanner::sync_cmds::list_folder_entries_cmd,
+                commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
+                commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
+                commands::scanner::deepmatch_scanner_cmds::commit_scan_cmd,
+                commands::scanner::deepmatch_scanner_cmds::score_candidates_batch_cmd,
+                commands::scanner::deepmatch_scanner_cmds::list_folder_entries_cmd,
+                commands::scanner::disk_reconcile_cmds::reconcile_disk_state_cmd,
                 commands::scanner::watcher_cmds::start_watcher_cmd,
                 commands::scanner::watcher_cmds::stop_watcher_cmd,
                 commands::duplicates::dup_scan_cmds::dup_scan_start,

@@ -2,6 +2,7 @@ import { CheckCircle, Info, AlertTriangle } from 'lucide-react';
 
 /** MasterDB entry for the override search dropdown. */
 export interface MasterDbEntry {
+  matched_entry_key: string;
   name: string;
   object_type: string;
   tags: string[];

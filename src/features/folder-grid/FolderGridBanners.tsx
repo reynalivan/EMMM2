@@ -1,7 +1,7 @@
 import { FolderOpen, AlertTriangle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../stores/useAppStore';
 import type { ConflictGroup } from '../../types/mod';
+import { openWorkspaceConflictDialog } from '../workspace-runtime/state/workspaceDialogs';
 
 export interface FolderGridBannersProps {
   isLoading: boolean;
@@ -85,7 +85,7 @@ export default function FolderGridBanners({
                 const enabled = c.members.find((m) => m.is_enabled);
                 const disabled = c.members.find((m) => !m.is_enabled);
                 if (enabled && disabled) {
-                  useAppStore.getState().openConflictDialog({
+                  openWorkspaceConflictDialog({
                     type: 'RenameConflict',
                     attempted_target: enabled.path,
                     existing_path: disabled.path,

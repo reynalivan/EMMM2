@@ -2,13 +2,55 @@ use sqlx::SqlitePool;
 use std::collections::HashSet;
 use std::path::Path;
 
-use super::helpers::{ensure_game_exists, ensure_object_exists, generate_stable_id};
+use super::helpers::{
+    ensure_game_exists, ensure_object_exists, generate_stable_id,
+    resolve_or_create_object_target_for_match,
+};
 use super::types::{ConfirmedScanItem, SyncResult};
 use crate::database::models::ItemStatus;
-use crate::repo::mod_repo;
+use crate::repo::{mod_repo, object_repo};
 use crate::services::corridor_constants::{
     CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN, DISABLED_REASON_USER,
 };
+
+async fn resolve_temp_target_object_folder(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    mods_path: &str,
+    physical_name_hint: &str,
+    matched_entry_key: Option<&str>,
+    object_type: &str,
+    db_thumbnail: Option<&str>,
+    db_tags_json: &str,
+    db_metadata_json: &str,
+    db_hash_db_json: Option<&str>,
+    db_custom_skins_json: Option<&str>,
+    new_objects_count: &mut usize,
+) -> Result<String, String> {
+    let Some(entry_key) = matched_entry_key else {
+        return Ok("Other".to_string());
+    };
+
+    let resolved = resolve_or_create_object_target_for_match(
+        &mut *conn,
+        game_id,
+        mods_path,
+        physical_name_hint,
+        Some(entry_key),
+        object_type,
+        db_thumbnail,
+        db_tags_json,
+        db_metadata_json,
+        db_hash_db_json,
+        db_custom_skins_json,
+        new_objects_count,
+    )
+    .await?;
+
+    Ok(resolved
+        .map(|target| target.folder_path)
+        .unwrap_or_else(|| "Other".to_string()))
+}
 
 /// Phase 2: Commit user-confirmed scan results to DB (Two-Phase Diffing).
 #[allow(clippy::too_many_arguments)]
@@ -29,6 +71,7 @@ pub async fn commit_scan_results(
     ensure_game_exists(&mut tx, game_id, game_name, game_type, mods_path).await?;
 
     let mut collisions = Vec::new();
+    let mut new_objects_count = 0;
     // Phase 0: Pre-process disk items to resolve `move_from_temp` paths
     let mut disk_entries = Vec::new();
     for item in items {
@@ -38,10 +81,24 @@ pub async fn commit_scan_results(
 
         let mut actual_folder_path = item.folder_path.clone();
         if item.move_from_temp {
-            let obj_name = item.matched_object.as_deref().unwrap_or("Uncategorized");
+            let object_folder = resolve_temp_target_object_folder(
+                &mut tx,
+                game_id,
+                mods_path,
+                &item.display_name,
+                item.matched_entry_key.as_deref(),
+                item.object_type.as_deref().unwrap_or("Other"),
+                item.db_thumbnail.as_deref(),
+                item.tags_json.as_deref().unwrap_or("[]"),
+                item.metadata_json.as_deref().unwrap_or("{}"),
+                item.hash_db_json.as_deref(),
+                item.custom_skins_json.as_deref(),
+                &mut new_objects_count,
+            )
+            .await?;
             let source_path = Path::new(&item.folder_path);
             if let Some(folder_name) = source_path.file_name() {
-                let target_dir = Path::new(mods_path).join(obj_name);
+                let target_dir = Path::new(mods_path).join(&object_folder);
                 let target_path = target_dir.join(folder_name);
 
                 if source_path.exists() {
@@ -53,7 +110,7 @@ pub async fn commit_scan_results(
                             id: generate_stable_id(game_id, &target_path.to_string_lossy()),
                             source_path: item.folder_path.clone(),
                             target_path: target_path.to_string_lossy().into_owned(),
-                            object_name: obj_name.to_string(),
+                            object_name: object_folder.clone(),
                             existing_mod_id: None, // TODO: Look up existing mod ID if mapped
                         });
                         continue;
@@ -191,7 +248,6 @@ pub async fn commit_scan_results(
     // Phase 2: Execution
     let mut new_mods_count = 0;
     let mut updated_mods_count = 0;
-    let mut new_objects_count = 0;
 
     for (disk_idx, (item, actual_folder_path)) in disk_entries.into_iter().enumerate() {
         let current_status = if item.is_disabled {
@@ -245,17 +301,7 @@ pub async fn commit_scan_results(
             // is strictly bound to the physical depth-1 directory it lives in.
             // This prevents "ambercn" from merging into "amber".
             // We only keep tags and meta from the match, not the name.
-            let (final_obj_name, _db_thumb, _tags, _meta) =
-                if let Some(ref _matched_name) = item.matched_object {
-                    (
-                        obj_name.clone(),
-                        item.thumbnail_path.as_deref(),
-                        item.tags_json.as_deref().unwrap_or("[]"),
-                        item.metadata_json.as_deref().unwrap_or("{}"),
-                    )
-                } else {
-                    (obj_name, None, "[]", "{}")
-                };
+            let final_obj_name = obj_name;
 
             let obj_type = item.object_type.as_deref().unwrap_or("Other");
             let object_id = ensure_object_exists(
@@ -272,6 +318,17 @@ pub async fn commit_scan_results(
                 &mut new_objects_count,
             )
             .await?;
+            object_repo::apply_canonical_match(
+                &mut *tx,
+                &object_id,
+                item.matched_entry_key.as_deref(),
+                item.matched_alias_name.as_deref(),
+                item.matched_confidence,
+                item.matched_reason.as_deref(),
+                item.matched_entry_key.as_ref().map(|_| "deepmatch_scanner"),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
             if let Some(&db_idx) = disk_to_db.get(&disk_idx) {
                 let db_mod = &db_mods[db_idx];

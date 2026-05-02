@@ -5,6 +5,7 @@ pub mod collision_resolver;
 pub mod core_ops;
 pub mod info_json;
 pub mod metadata;
+pub mod object_switch;
 pub mod organizer_ext;
 pub mod preview_image;
 pub mod stale_mod_service;

@@ -16,31 +16,18 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
-vi.mock('../../../hooks/useObjects', () => ({
-  useObjects: () => ({ data: [] }),
-}));
-
-vi.mock('../../../hooks/useFolders', () => ({
-  useModFolders: () => ({
-    data: {
-      children: [
-        { name: 'Mod A', path: '/Mod A', folder_name: 'Mod A' },
-        { name: 'Mod B', path: '/Mod B', folder_name: 'Mod B' },
-        { name: 'Mod C', path: '/Mod C', folder_name: 'Mod C' },
-        { name: 'Mod D', path: '/Mod D', folder_name: 'Mod D' },
-      ] as ModFolder[],
-    },
-    isLoading: false,
-  }),
+vi.mock('../../../hooks/folderCache', () => ({
   sortFolders: (f: ModFolder[]) => f,
   folderKeys: { all: [] },
-  useImportMods: () => ({ mutate: vi.fn() }),
-  useToggleMod: () => ({ mutate: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useFolderCoreMutations', () => ({
   useRenameMod: () => ({ mutate: vi.fn() }),
   useDeleteMod: () => ({ mutate: vi.fn() }),
-  useEnableOnlyThis: () => ({ mutate: vi.fn() }),
-  useUpdateInfo: () => ({ mutate: vi.fn() }),
-  useCheckDuplicate: () => ({ mutate: vi.fn() }),
+}));
+
+vi.mock('../../../hooks/useFolderMutations', () => ({
+  useImportMods: () => ({ mutate: vi.fn() }),
   useToggleModSafe: () => ({ mutate: vi.fn() }),
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
@@ -48,8 +35,104 @@ vi.mock('../../../hooks/useFolders', () => ({
   useBulkFavorite: () => ({ mutate: vi.fn() }),
   useBulkPin: () => ({ mutate: vi.fn() }),
   useUpdateModInfo: () => ({ mutate: vi.fn() }),
-  useAutoOrganizeMods: () => ({ mutate: vi.fn() }),
   useActiveConflicts: () => ({ data: [] }),
+}));
+
+vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
+  useWorkspaceViewModel: () => ({
+    data: {
+      explorer: {
+        children: [
+          {
+            name: 'Mod A',
+            display_name: 'Mod A',
+            path: '/Mod A',
+            folder_name: 'Mod A',
+            node_type: 'ContainerFolder',
+            node_kind: 'container',
+            display_mode: 'container_folder',
+            type_chip: null,
+            is_enabled: true,
+            is_effectively_active: true,
+            ancestor_disabled: false,
+            inactive_reason: null,
+            warning_state: 'none',
+            primary_warning: null,
+            can_navigate: true,
+          },
+          {
+            name: 'Mod B',
+            display_name: 'Mod B',
+            path: '/Mod B',
+            folder_name: 'Mod B',
+            node_type: 'ContainerFolder',
+            node_kind: 'container',
+            display_mode: 'container_folder',
+            type_chip: null,
+            is_enabled: true,
+            is_effectively_active: true,
+            ancestor_disabled: false,
+            inactive_reason: null,
+            warning_state: 'none',
+            primary_warning: null,
+            can_navigate: true,
+          },
+          {
+            name: 'Mod C',
+            display_name: 'Mod C',
+            path: '/Mod C',
+            folder_name: 'Mod C',
+            node_type: 'ContainerFolder',
+            node_kind: 'container',
+            display_mode: 'container_folder',
+            type_chip: null,
+            is_enabled: true,
+            is_effectively_active: true,
+            ancestor_disabled: false,
+            inactive_reason: null,
+            warning_state: 'none',
+            primary_warning: null,
+            can_navigate: true,
+          },
+          {
+            name: 'Mod D',
+            display_name: 'Mod D',
+            path: '/Mod D',
+            folder_name: 'Mod D',
+            node_type: 'ContainerFolder',
+            node_kind: 'container',
+            display_mode: 'container_folder',
+            type_chip: null,
+            is_enabled: true,
+            is_effectively_active: true,
+            ancestor_disabled: false,
+            inactive_reason: null,
+            warning_state: 'none',
+            primary_warning: null,
+            can_navigate: true,
+          },
+        ],
+        self_node_type: null,
+        self_node_kind: 'container',
+        self_display_mode: 'unknown',
+        self_type_chip: null,
+        self_is_mod: false,
+        self_is_enabled: false,
+        self_is_effectively_active: false,
+        self_owner_object_id: null,
+        self_owner_object_folder_path: null,
+        self_classification_reasons: [],
+        conflicts: [],
+        ancestor_disabled_by: null,
+        ancestor_disabled_path: null,
+        inactive_reason: null,
+      },
+      objects: [],
+    },
+    isLoading: false,
+    isError: false,
+    isPlaceholderData: false,
+  }),
 }));
 
 vi.mock('../../../hooks/useFileDrop', () => ({
@@ -68,6 +151,7 @@ describe('useFolderGrid array bounds (TC-14)', () => {
   beforeEach(() => {
     useAppStore.setState({
       gridSelection: new Set(),
+      selectedModPath: null,
       safeMode: false,
       explorerSearchQuery: '',
       sortField: 'name',

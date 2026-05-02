@@ -41,7 +41,8 @@ export interface ImportJobItem {
   archive_path: string;
   status: ImportJobStatus;
   match_category: string | null;
-  match_object_id: string | null;
+  match_entry_key: string | null;
+  match_alias_name: string | null;
   match_confidence: number | null;
   match_reason: string | null;
   placed_path: string | null;
@@ -70,7 +71,8 @@ export interface ImportJobUpdateEvent {
   job_id: string;
   status: ImportJobStatus;
   category?: string | null;
-  object_id?: string | null;
+  entry_key?: string | null;
+  alias_name?: string | null;
   confidence?: number | null;
   reason?: string | null;
   placed_path?: string | null;

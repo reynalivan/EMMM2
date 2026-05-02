@@ -33,6 +33,7 @@ import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 import { commands } from '../../lib/bindings';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { formatBytes } from '../../utils/formatters';
+import React from 'react';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,16 +61,7 @@ const LIGHT_PALETTE = {
 
 const getChartColors = (theme: string) => {
   const p = theme === 'onyx' ? ONYX_PALETTE : LIGHT_PALETTE;
-  return [
-    p.primary,
-    p.secondary,
-    p.accent,
-    p.info,
-    p.success,
-    p.warning,
-    p.error,
-    p.neutral,
-  ];
+  return [p.primary, p.secondary, p.accent, p.info, p.success, p.warning, p.error, p.neutral];
 };
 
 // ── SVG Gradients ───────────────────────────────────────────────────────────
@@ -120,28 +112,6 @@ function formatRelativeDate(
   return new Date(then).toLocaleDateString();
 }
 
-// ── Skeleton Loading ────────────────────────────────────────────────────────
-
-function DashboardSkeleton() {
-  return (
-    <div className="p-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Stat tiles skeleton */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton h-28 rounded-2xl" />
-        ))}
-      </div>
-      {/* Charts skeleton */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="skeleton h-72 rounded-2xl" />
-        <div className="skeleton h-72 rounded-2xl" />
-      </div>
-      {/* Activity skeleton */}
-      <div className="skeleton h-48 rounded-2xl" />
-    </div>
-  );
-}
-
 // ── Empty State ─────────────────────────────────────────────────────────────
 
 function EmptyState() {
@@ -173,14 +143,22 @@ function EmptyState() {
 // ── Main Dashboard ──────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(['dashboard', 'common']);
   const setWorkspaceView = useAppStore((s) => s.setWorkspaceView);
   const activeGameId = useAppStore((s) => s.activeGameId);
   const theme = useAppStore((s) => s.theme);
   const colors = getChartColors(theme);
 
   const { data, isLoading, isError, refresh } = useDashboardStats();
-  const { data: activeGame } = useActiveGame();
+  const stats = data?.stats || {
+    total_games: 0,
+    total_mods: 0,
+    enabled_mods: 0,
+    disabled_mods: 0,
+    total_size_bytes: 0,
+    total_collections: 0,
+  };
+  const { activeGame } = useActiveGame();
   const { keybindings, isLoading: kbLoading } = useActiveKeybindings();
 
   // Loading or Error state
@@ -193,10 +171,10 @@ export default function Dashboard() {
   }
 
   // Empty state (no games configured)
-  if (data.stats.total_games === 0) return <EmptyState />;
+  if (data?.stats && data.stats.total_games === 0) return <EmptyState />;
 
-  const { stats, duplicate_waste_bytes, category_distribution, game_distribution } = data;
-  const recent_mods: DashboardPayload['recent_mods'] = data.recent_mods || [];
+  const { duplicate_waste_bytes, category_distribution, game_distribution } = data || {};
+  const recent_mods: DashboardPayload['recent_mods'] = data?.recent_mods || [];
 
   return (
     <div className="h-full overflow-y-auto bg-base-100">
@@ -371,7 +349,7 @@ export default function Dashboard() {
               <h2 className="card-title text-sm font-semibold text-base-content/70">
                 {t('charts.category_title')}
               </h2>
-              {category_distribution.length > 0 ? (
+              {category_distribution && category_distribution.length > 0 ? (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -429,7 +407,7 @@ export default function Dashboard() {
               <h2 className="card-title text-sm font-semibold text-base-content/70">
                 {t('charts.game_title')}
               </h2>
-              {game_distribution.length > 0 ? (
+              {game_distribution && game_distribution.length > 0 ? (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -463,7 +441,7 @@ export default function Dashboard() {
                       />
                       <Bar
                         dataKey="count"
-                        name="Mods"
+                        name={t('charts.series_mods')}
                         radius={[8, 8, 0, 0]}
                         animationBegin={200}
                         animationDuration={1500}
@@ -476,9 +454,7 @@ export default function Dashboard() {
                             'url(#gradientInfo)',
                             'url(#gradientSuccess)',
                           ];
-                          return (
-                            <Cell key={`game-${i}`} fill={gradients[i % gradients.length]} />
-                          );
+                          return <Cell key={`game-${i}`} fill={gradients[i % gradients.length]} />;
                         })}
                       </Bar>
                     </BarChart>
@@ -537,7 +513,7 @@ export default function Dashboard() {
               <h2 className="card-title text-sm font-semibold text-base-content/70">
                 {t('actions.quick_play')}
               </h2>
-              {activeGameId ? (
+              {activeGame ? (
                 <>
                   <div className="my-3">
                     <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
@@ -635,9 +611,15 @@ function StatTile({
   bgGradient: string;
 }) {
   return (
-    <div className={`stat bg-base-200/50 backdrop-blur rounded-2xl border border-base-300 p-4 relative overflow-hidden group hover:bg-base-300/40 transition-colors`}>
-      <div className={`absolute inset-0 bg-linear-to-br ${bgGradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
-      <div className={`stat-figure ${color} relative z-10 scale-100 group-hover:scale-110 transition-transform`}>
+    <div
+      className={`stat bg-base-200/50 backdrop-blur rounded-2xl border border-base-300 p-4 relative overflow-hidden group hover:bg-base-300/40 transition-colors`}
+    >
+      <div
+        className={`absolute inset-0 bg-linear-to-br ${bgGradient} opacity-0 group-hover:opacity-100 transition-opacity`}
+      />
+      <div
+        className={`stat-figure ${color} relative z-10 scale-100 group-hover:scale-110 transition-transform`}
+      >
         {icon}
       </div>
       <div className="stat-title text-xs relative z-10">{title}</div>

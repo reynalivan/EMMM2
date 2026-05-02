@@ -95,15 +95,25 @@
     "important": "Penting",
     "warning": "Menghapus tugas-tugas ini akan memungkinkan Anda mengakses aplikasi kembali. Anda harus mencoba kembali secara manual penerapan koleksi atau perpindahan mode yang terhenti untuk memastikan file game Anda dalam status yang benar.",
     "actions": {
-      "clear": "Gugurkan & Hapus",
-      "clearing": "Menghapus...",
+      "ignore": "Abaikan Tugas",
+      "ignoring": "Mengabaikan...",
+      "rollback": "Rollback",
+      "rolling_back": "Melakukan rollback...",
       "resume": "Lanjutkan Tugas",
       "resuming": "Melanjutkan..."
     },
     "toast": {
-      "cleared": "Tugas yang terinterupsi telah dihapus. Anda dapat mengulangi aksi terakhir Anda.",
+      "ignored": "Tugas yang terinterupsi diabaikan dan ditandai gagal.",
+      "ignore_failed": "Gagal mengabaikan tugas: {{error}}",
+      "rolled_back": "Operasi yang terinterupsi dikembalikan ke status stabil terakhir.",
+      "rollback_failed": "Gagal melakukan rollback: {{error}}",
       "resumed": "Operasi yang terinterupsi berhasil dilanjutkan dan diselesaikan.",
       "resume_failed": "Gagal melanjutkan: {{error}}"
+    },
+    "labels": {
+      "id": "ID:",
+      "type": "Tipe:",
+      "target": "Target:"
     }
   },
   "randomizer": {
@@ -124,5 +134,19 @@
   "mod_row": {
     "unknown": "Mod Tidak Diketahui",
     "nested": "Mod bersarang"
+  },
+  "tree": {
+    "disabled": "Dinonaktifkan",
+    "disabled_by_container": "Dinonaktifkan oleh Container",
+    "inactive_section": "Container Tidak Berdampak",
+    "inactive_section_desc": "Child yang aktif di bawah container yang dinonaktifkan ini tidak memengaruhi loadout aktif.",
+    "uncategorized": "Tanpa Kategori",
+    "object_off": "Objek Nonaktif",
+    "types": {
+      "variant_container": "Kontainer Varian",
+      "mod_pack_root": "Akar Mod Pack",
+      "flat_mod_root": "Akar Mod Flat",
+      "container_folder": "Folder Kontainer"
+    }
   }
 }

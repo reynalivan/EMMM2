@@ -5,12 +5,12 @@
  */
 
 import { useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useImportMods, folderKeys } from '../../../hooks/useFolders';
+import { useImportMods } from '../../../hooks/useFolderMutations';
 import { useFileDrop } from '../../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../../hooks/useDragAutoScroll';
 import { join } from '@tauri-apps/api/path';
 import { classifyDroppedPaths } from '../../object-list/dropUtils';
+import { publishWorkspaceIntent } from '../../workspace-runtime/workspaceIntentBus';
 
 interface FolderGridImportOptions {
   parentRef: React.RefObject<HTMLDivElement | null>;
@@ -23,7 +23,6 @@ export function useFolderGridImport({
   activeModPath,
   explorerSubPath,
 }: FolderGridImportOptions) {
-  const queryClient = useQueryClient();
   const importMods = useImportMods();
 
   const handleImportFiles = useCallback(
@@ -38,19 +37,16 @@ export function useFolderGridImport({
 
       // Archives → dispatch to ObjectList's shared ArchiveModal for preview/extraction
       if (classified.archives.length > 0) {
-        window.dispatchEvent(
-          new CustomEvent('request-archive-import', {
-            detail: {
-              archives: classified.archives,
-              nonArchivePaths: [
-                ...classified.folders,
-                ...classified.iniFiles,
-                ...classified.images,
-              ],
-              targetDir,
-            },
-          }),
-        );
+        publishWorkspaceIntent({
+          type: 'archiveImport',
+          archives: classified.archives,
+          nonArchivePaths: [
+            ...classified.folders,
+            ...classified.iniFiles,
+            ...classified.images,
+          ],
+          targetDir,
+        });
       }
 
       // Non-archive paths → import directly via shared hook
@@ -69,9 +65,5 @@ export function useFolderGridImport({
     dragPosition,
   });
 
-  const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: folderKeys.all });
-  }, [queryClient]);
-
-  return { isDragging, handleImportFiles, handleRefresh };
+  return { isDragging, handleImportFiles };
 }

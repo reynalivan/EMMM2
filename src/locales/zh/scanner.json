@@ -190,16 +190,13 @@
     "actions": {
       "enable": "启用",
       "disable": "禁用",
-      "organize": "自动整理",
       "delete": "删除"
     },
     "status": {
       "enabled": "已启用",
       "disabled": "已禁用"
     },
-    "toast": {
-      "db_load_failed": "无法加载自动整理的数据库: {{error}}"
-    }
+    "mod_preview_alt": "模组预览"
   },
   "dedup": {
     "analyzing": "正在分析模组库...",
@@ -215,5 +212,11 @@
       "resolve_warning": "已解决 {{successful}}/{{total}} 个重复项 ({{failed}} 个失败)",
       "resolve_failed": "解决失败: {{error}}"
     }
+  },
+  "conflict_modal": {
+    "title": "检测到 Shader 冲突",
+    "empty": "未发现冲突。",
+    "description": "这些模组修改了相同的 shader 或 buffer 哈希。若同时启用，可能会导致画面异常或崩溃。",
+    "acknowledge": "知道了"
   }
 }

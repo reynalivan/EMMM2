@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users manage mods for multiple games (Genshin, HSR, ZZZ, WuWa, Endfield) from the same tool, but adding those games manually is error-prone and the app has no way to auto-discover them — leading to misconfigured paths and broken mod loading.
-- **Proposed Solution**: A game management system with auto-detection heuristics, path-validated manual addition, safe removal with state cleanup, a sequenced launch pipeline (loader → game exe), and reactive game switching that restarts the file watcher and re-fetches all queries.
+- **Proposed Solution**: A game management system with auto-detection heuristics, path-validated manual addition, safe removal with state cleanup, a sequenced launch pipeline (loader → game exe), and reactive game switching that restarts the file watcher while the runtime UI refresh path is handled by Disk Reconcile on Mods entry/focus.
 - **Success Criteria**:
   - Auto-detect completes in ≤ 1s when scanning up to 5 drive roots simultaneously.
   - Manual game addition completes in ≤ 300ms from submit to DB record confirmed.
@@ -81,7 +81,7 @@ As a user, I want to switch between configured games from the top bar, so that I
 | ID        | Type        | Criteria                                                                                                                                                                    |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-02.5.1 | ✅ Positive | Given multiple configured games, when switching the active game, then the new `game_id` is persisted to preferences and the `activeGameId` Zustand store updates in ≤ 200ms |
-| AC-02.5.2 | ✅ Positive | Given an active game change, then the file watcher restarts on the new `mods_path` and all React Query caches (`['folders']`, `['objects']`) are invalidated immediately    |
+| AC-02.5.2 | ✅ Positive | Given an active game change, then the file watcher restarts on the new `mods_path`, the Mods workspace runs Disk Reconcile for that game, and dependent runtime queries refresh without invoking Deep Match Scanner |
 | AC-02.5.3 | ❌ Negative | Given `null` or an invalid `game_id` submitted as the active target, then the frontend receives a validation error and the active game state is not changed                 |
 | AC-02.5.4 | ⚠️ Edge     | Given an active game switch triggered while a bulk operation is in progress for the old game, the `OperationLock` is awaited before the watcher restarts on the new path    |
 
@@ -123,6 +123,7 @@ DB tables: games(id, game_type, name, root_path, mods_path, game_exe, loader_exe
 | -------------- | -------------------------------------------------------------------------------- |
 | DB             | `games` table — primary key `UUID`, `UNIQUE(game_type, root_path)` constraint    |
 | File Watcher   | `WatcherState` restarted on `set_active_game` via `init_watcher(new_mods_path)`  |
+| Runtime Refresh| Mods entry / focus then call `reconcile_disk_state_cmd` for the active game       |
 | Frontend State | `useAppStore.activeGameId` + `useGames` React Query invalidated on all mutations |
 | Process Spawn  | `tokio::process::Command` — `spawn()` (detached, no `wait()`)                    |
 | Path Dialog    | `tauri-plugin-dialog` — `open({ directory: true })`                              |

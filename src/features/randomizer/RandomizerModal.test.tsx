@@ -14,6 +14,38 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, vars?: Record<string, unknown>) => {
+      const translations: Record<string, string> = {
+        'randomizer.title': 'Randomizer',
+        'randomizer.safe_mode': 'Safe Mode',
+        'randomizer.desc': 'Pick random mods',
+        'randomizer.consulting': 'Consulting the RNG Gods...',
+        'randomizer.deselect_all': 'Deselect All',
+        'randomizer.select_all': 'Select All',
+        'randomizer.reroll': 'Reroll All',
+        'randomizer.roll': 'Roll Luck',
+        'randomizer.no_eligible': 'No eligible character mods found',
+        'randomizer.empty_desc': 'No results yet',
+        'common:actions.close': 'Close',
+      };
+
+      if (key === 'randomizer.selection_status') {
+        return `${String(vars?.selected ?? 0)} of ${String(vars?.total ?? 0)} selected`;
+      }
+      if (key === 'randomizer.apply') {
+        return `Apply (${String(vars?.count ?? 0)})`;
+      }
+      if (key === 'randomizer.applying') {
+        return 'Applying...';
+      }
+
+      return translations[key] ?? key;
+    },
+  }),
+}));
+
 import { invoke } from '@tauri-apps/api/core';
 
 const mockProposals = [
@@ -152,7 +184,7 @@ describe('RandomizerModal - TC-35', () => {
   });
 
   describe('TC-35-004: Apply Selection', () => {
-    it('calls enable_only_this for each selected proposal', async () => {
+    it('calls execute_workspace_switch for each selected proposal', async () => {
       vi.mocked(invoke).mockResolvedValueOnce(mockProposals);
       vi.mocked(invoke).mockResolvedValue(undefined);
 
@@ -169,13 +201,29 @@ describe('RandomizerModal - TC-35', () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('enable_only_this', {
-          gameId: 'g-1',
-          folderPath: 'E:/Mods/Hu Tao Galaxy',
+        expect(invoke).toHaveBeenCalledWith('execute_workspace_switch', {
+          input: {
+            game_id: 'g-1',
+            target: {
+              kind: 'mod_path',
+              value: 'E:/Mods/Hu Tao Galaxy',
+            },
+            desired_enabled: true,
+            resolution: 'enable_only_this',
+            origin_surface: 'collections',
+          },
         });
-        expect(invoke).toHaveBeenCalledWith('enable_only_this', {
-          gameId: 'g-1',
-          folderPath: 'E:/Mods/Kazuha Samurai',
+        expect(invoke).toHaveBeenCalledWith('execute_workspace_switch', {
+          input: {
+            game_id: 'g-1',
+            target: {
+              kind: 'mod_path',
+              value: 'E:/Mods/Kazuha Samurai',
+            },
+            desired_enabled: true,
+            resolution: 'enable_only_this',
+            origin_surface: 'collections',
+          },
         });
         expect(onClose).toHaveBeenCalled();
       });
@@ -209,6 +257,12 @@ describe('RandomizerModal - TC-35', () => {
       vi.mocked(invoke).mockResolvedValue([]);
 
       render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
+          gameId: 'g-1',
+          isSafe: true,
+        });
+      });
 
       const toggle = screen.getByRole('checkbox', { hidden: true });
       expect(toggle).toBeChecked();

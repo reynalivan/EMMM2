@@ -1,22 +1,36 @@
-import { useState, memo, useCallback } from 'react';
-import { Folder, Star, Copy, Package, Layers, AlertTriangle, PowerOff, Lock } from 'lucide-react';
+import { useState, memo, useCallback, useMemo } from 'react';
+import {
+  Folder,
+  Star,
+  Copy,
+  Package,
+  Layers,
+  AlertTriangle,
+  PowerOff,
+  Lock,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { ModFolder } from '../../types/mod';
-import { isNavigable } from '../../types/mod';
+import type { WorkspaceExplorerNode, WorkspaceTypeChip } from '../../types/workspace';
 import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
 import { useThumbnail } from '../../hooks/useThumbnail';
-import { useDebounceCallback } from '../../hooks/useDebounceCallback';
 import { useAppStore } from '../../stores/useAppStore';
+import { formatWorkspaceWarning } from '../workspace-runtime/workspaceSemantics';
+import { buildWorkspaceSwitchPolicy } from '../workspace-runtime/actions/workspaceSwitchPolicy';
+import { WorkspaceSwitchControl } from '../workspace-runtime/components/WorkspaceSwitchControl';
+import { WorkspaceSwitchLabel } from '../workspace-runtime/components/WorkspaceSwitchLabel';
 
 interface FolderCardProps {
-  folder: ModFolder;
+  folder: WorkspaceExplorerNode;
   isSelected: boolean;
+  isActive?: boolean;
   onNavigate: (name: string) => void;
   toggleSelection: (id: string, multi: boolean, isShift?: boolean) => void;
-  clearSelection: () => void;
-  onToggleEnabled?: (folder: ModFolder) => void;
+  onActivate?: (path: string) => void;
+  onToggleEnabled?: (folder: WorkspaceExplorerNode) => void;
   onToggleFavorite?: (folder: ModFolder) => void;
   onRename?: (folder: ModFolder) => void;
   onDelete?: (folder: ModFolder) => void;
@@ -41,14 +55,47 @@ interface FolderCardProps {
   isLockedByParent?: boolean;
   /** Called when user tries to toggle while locked — opens Enable Parent dialog */
   onRequestEnableParent?: () => void;
+  isSwitchPending?: boolean;
+}
+
+function getTypeChip(
+  typeChip: WorkspaceTypeChip | null,
+  t: ReturnType<typeof useTranslation>['t'],
+): { label: string; className: string; icon: LucideIcon } | null {
+  if (typeChip === 'mod_pack') {
+    return {
+      label: t('card.mod_pack'),
+      className: 'bg-info/90 text-info-content',
+      icon: Package,
+    };
+  }
+
+  if (typeChip === 'variant') {
+    return {
+      label: t('card.variants'),
+      className: 'bg-secondary/90 text-secondary-content',
+      icon: Layers,
+    };
+  }
+
+  if (typeChip === 'flat_mod') {
+    return {
+      label: t('card.flat_mod'),
+      className: 'bg-base-300/90 text-base-content/80',
+      icon: Folder,
+    };
+  }
+
+  return null;
 }
 
 function FolderCardInner({
   folder,
   isSelected,
+  isActive,
   onNavigate,
   toggleSelection,
-  clearSelection,
+  onActivate,
   onToggleEnabled,
   onToggleFavorite,
   onRename,
@@ -72,43 +119,27 @@ function FolderCardInner({
   hasConflict = false,
   isLockedByParent = false,
   onRequestEnableParent,
+  isSwitchPending = false,
 }: FolderCardProps) {
-  const { t } = useTranslation(['grid']);
+  const { t } = useTranslation(['grid', 'common']);
+  const typeChip = getTypeChip(folder.type_chip, t);
+  const primaryWarningText = formatWorkspaceWarning(t, folder.primary_warning);
+  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, folder), [folder, t]);
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [renameValue, setRenameValue] = useState(folder.name);
 
-  // Optimistic local state for toggle to allow rapid clicking visually without backend spam
-  const [localEnabled, setLocalEnabled] = useState(folder.is_enabled);
-  const [prevFolderEnabled, setPrevFolderEnabled] = useState(folder.is_enabled);
-
-  // Sync prop to state without triggering an effect cascade (standard React pattern)
-  if (folder.is_enabled !== prevFolderEnabled) {
-    setPrevFolderEnabled(folder.is_enabled);
-    setLocalEnabled(folder.is_enabled);
-  }
-
-  const commitToggle = useDebounceCallback((f: ModFolder, nextState: boolean) => {
-    // Only invoke backend RPC if state drifted from actual
-    if (f.is_enabled !== nextState) {
-      // Because useToggleMod toggles implicitly, we must ensure we are toggling in the right direction
-      onToggleEnabled?.(f);
-    }
-  }, 400);
-
   const handleToggleClick = useCallback(
     (e?: React.MouseEvent | React.ChangeEvent) => {
       e?.stopPropagation();
-      // If locked by ancestor, open Enable Parent dialog instead of toggling
       if (isLockedByParent) {
         onRequestEnableParent?.();
         return;
       }
-      const nextState = !localEnabled;
-      setLocalEnabled(nextState);
-      commitToggle(folder, nextState);
+
+      onToggleEnabled?.(folder);
     },
-    [localEnabled, folder, commitToggle, isLockedByParent, onRequestEnableParent],
+    [folder, isLockedByParent, onRequestEnableParent, onToggleEnabled],
   );
 
   // Lazy thumbnail: resolved per-card via separate backend command
@@ -146,16 +177,19 @@ function FolderCardInner({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (folder.node_type === 'InternalAssets') {
+    if (folder.display_mode === 'internal_assets') {
       return;
     }
 
-    if (!e.ctrlKey && !e.shiftKey) clearSelection();
-    toggleSelection(folder.path, e.ctrlKey || e.shiftKey, e.shiftKey);
+    if (e.ctrlKey || e.shiftKey) {
+      toggleSelection(folder.path, true, e.shiftKey);
+    } else {
+      onActivate?.(folder.path);
+    }
   };
 
   const handleDoubleClick = () => {
-    if (folder.is_directory && isNavigable(folder)) {
+    if (folder.is_directory && folder.can_navigate) {
       onNavigate(folder.folder_name);
     }
   };
@@ -164,7 +198,7 @@ function FolderCardInner({
     isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
   const hasNamingConflict = !!folder.conflict_state;
 
-  // Visual masking: Hide NSFW mods when Safe Mode is active
+  // Leak guard only: main workspace grid should already be corridor-filtered by the backend.
   const { safeMode } = useAppStore();
   const isHiddenByMask = safeMode && !folder.is_safe;
 
@@ -205,19 +239,21 @@ function FolderCardInner({
         className={`
           group relative flex flex-col rounded-lg overflow-hidden cursor-pointer
           transition-all duration-200 border w-full
-          ${!localEnabled || isLockedByParent ? 'opacity-[0.75] grayscale-[0.8]' : ''}
+          ${!folder.is_effectively_active || isLockedByParent ? 'opacity-[0.75] grayscale-[0.8]' : ''}
           ${
-            hasNamingConflict
-              ? 'border-warning/60 ring-1 ring-warning/40'
-              : isSelected
-                ? 'border-primary/50 bg-base-200 shadow-md ring-1 ring-primary/50'
-                : isFocused
-                  ? 'border-primary/30 bg-base-200 ring-2 ring-primary'
-                  : 'border-transparent bg-base-200 hover:bg-base-300 hover:shadow-lg hover:-translate-y-0.5'
+            isActive
+              ? 'border-primary/60 bg-primary/10 shadow-md ring-1 ring-primary/60'
+              : hasNamingConflict
+                ? 'border-warning/60 ring-1 ring-warning/40'
+                : isSelected
+                  ? 'border-primary/50 bg-base-200 shadow-md ring-1 ring-primary/50'
+                  : isFocused
+                    ? 'border-primary/30 bg-base-200 ring-2 ring-primary'
+                    : 'border-transparent bg-base-200 hover:bg-base-300 hover:shadow-lg hover:-translate-y-0.5'
           }
         `}
         role="gridcell"
-        aria-label={t(localEnabled ? 'card.aria_label_enabled' : 'card.aria_label_disabled', {
+        aria-label={t(switchPolicy.checked ? 'card.aria_label_enabled' : 'card.aria_label_disabled', {
           name: folder.name,
         })}
         tabIndex={0}
@@ -264,21 +300,17 @@ function FolderCardInner({
           )}
 
           {/* Node type badge overlay — only when not locked (avoid badge overlap) */}
-          {!isLockedByParent && folder.node_type === 'ModPackRoot' && (
-            <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-info/90 text-info-content rounded-md z-10 shadow-sm">
-              <Package size={10} />
-              <span className="text-[9px] font-bold uppercase">{t('card.mod_pack')}</span>
-            </div>
-          )}
-          {!isLockedByParent && folder.node_type === 'VariantContainer' && (
-            <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-secondary/90 text-secondary-content rounded-md z-10 shadow-sm">
-              <Layers size={10} />
-              <span className="text-[9px] font-bold uppercase">{t('card.variants')}</span>
+          {!isLockedByParent && typeChip && (
+            <div
+              className={`absolute top-1.5 left-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 shadow-sm z-10 ${typeChip.className}`}
+            >
+              <typeChip.icon size={10} />
+              <span className="text-[9px] font-bold uppercase">{typeChip.label}</span>
             </div>
           )}
 
           {/* Disabled Power Off Overlay */}
-          {!localEnabled && (
+          {!switchPolicy.checked && (
             <div className="absolute inset-0 flex items-center justify-center bg-overlay-mask z-10 pointer-events-none">
               <PowerOff size={24} className="text-base-content/90 drop-shadow-sm" />
             </div>
@@ -342,10 +374,10 @@ function FolderCardInner({
           {!hasNamingConflict && !hasConflict && folder.warnings.length > 0 && (
             <div
               className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-error/90 text-error-content rounded-md z-10 shadow-sm"
-              title={folder.warnings.join('\n') || t('card.corrupt_ini_title')}
+              title={primaryWarningText || folder.warnings.join('\n') || t('card.corrupt_ini_title')}
             >
               <AlertTriangle size={10} />
-              <span className="text-[9px] font-bold uppercase">CORRUPT</span>
+              <span className="text-[9px] font-bold uppercase">{t('badges.corrupt')}</span>
             </div>
           )}
 
@@ -373,8 +405,8 @@ function FolderCardInner({
         <div className="p-2.5 flex-1 flex flex-col justify-between min-h-0">
           <h3
             className={`font-medium text-sm truncate leading-tight select-none transition-colors
-              ${isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}
-              ${!localEnabled ? 'line-through text-base-content/70' : ''}
+              ${isActive || isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}
+              ${!switchPolicy.checked ? 'line-through text-base-content/70' : ''}
               ${isHiddenByMask ? 'blur-xs text-base-content/40' : ''}`}
             title={isHiddenByMask ? t('card.hidden_mod_title') : folder.name}
           >
@@ -407,19 +439,23 @@ function FolderCardInner({
               className="flex items-center gap-1.5 cursor-pointer"
               onClick={(e) => e.stopPropagation()}
             >
-              <input
-                type="checkbox"
-                className={`toggle toggle-xs ${isLockedByParent ? 'toggle-warning opacity-80' : 'toggle-success'}`}
-                checked={localEnabled}
-                onChange={handleToggleClick}
+              <WorkspaceSwitchControl
+                node={folder}
+                policy={switchPolicy}
+                isPending={isSwitchPending}
+                size="xs"
+                ariaLabel={t('common:actions.toggle')}
+                onToggle={() => {
+                  handleToggleClick();
+                }}
               />
               <div className="flex flex-col">
-                <span className="text-[10px] font-semibold text-base-content/60 leading-none">
-                  {isLockedByParent
-                    ? t('card.locked_by_parent')
-                    : t(localEnabled ? 'card.status_enabled' : 'card.status_disabled')}
-                </span>
-                {isLockedByParent && localEnabled && (
+                <WorkspaceSwitchLabel
+                  node={folder}
+                  policy={switchPolicy}
+                  className="text-[10px] font-semibold text-base-content/60 leading-none"
+                />
+                {isLockedByParent && switchPolicy.checked && (
                   <span className="text-[8px] text-warning font-bold animate-pulse mt-0.5 italic flex items-center gap-0.5">
                     <AlertTriangle size={8} />
                     {t('card.inherited_lock_warning')}
@@ -427,7 +463,7 @@ function FolderCardInner({
                 )}
               </div>
             </label>
-            {isNavigable(folder) && (
+            {folder.can_navigate && (
               <span className="text-[9px] text-base-content/20 font-bold tracking-wider">
                 {t('card.dir_label')}
               </span>

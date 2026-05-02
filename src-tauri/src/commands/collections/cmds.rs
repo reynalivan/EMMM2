@@ -2,8 +2,8 @@ use sqlx::SqlitePool;
 use tauri::State;
 
 use crate::domain::collection::{
-    ApplyPreview, ApplyResult, CollectionPreview, CollectionSummary, CreateCollectionInput,
-    UpdateCollectionInput,
+    ApplyPreview, ApplyProgressSnapshot, ApplyResult, CollectionPreview, CollectionSummary,
+    CreateCollectionInput, CreateCollectionMode, UpdateCollectionInput,
 };
 use crate::domain::corridor::{CorridorSnapshot, CorridorSwitchPreview, SwitchResult};
 use crate::domain::errors::AppError;
@@ -28,6 +28,19 @@ pub async fn get_corridor_state(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_apply_progress(
+    config: State<'_, crate::services::config::ConfigService>,
+    game_id: String,
+) -> Result<Option<ApplyProgressSnapshot>, AppError> {
+    let settings = config.get_settings();
+    Ok(crate::services::apply_progress_service::get(
+        &game_id,
+        settings.safe_mode.enabled,
+    ))
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn switch_corridor(
     pool: State<'_, SqlitePool>,
     watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
@@ -42,6 +55,20 @@ pub async fn switch_corridor(
         .await
         .map_err(|e| AppError::Internal(e))?;
     let settings = config.get_settings();
+    if settings.safe_mode.enabled == target_safe {
+        let snapshot =
+            corridor_service::get_corridor_state(pool.inner(), &game_id, target_safe).await?;
+        return Ok(SwitchResult {
+            success: true,
+            active_safe: target_safe,
+            mods_disabled: 0,
+            mods_restored: 0,
+            new_signature: snapshot.current_signature,
+            warnings: Vec::new(),
+            restored_collection_id: snapshot.active_collection_id,
+        });
+    }
+
     let game = settings
         .games
         .iter()
@@ -64,14 +91,9 @@ pub async fn switch_corridor(
         settings,
     )
     .await?;
-
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        config.inner(),
-        watcher_state.suppressor.clone(),
-    )
-    .await;
+    config
+        .set_safe_mode_enabled(result.active_safe)
+        .map_err(AppError::Internal)?;
 
     Ok(result)
 }
@@ -91,9 +113,14 @@ pub async fn preview_corridor_switch(
         .find(|g| g.id == game_id)
         .map(|g| g.mod_path.to_string_lossy().to_string());
 
-    let preview =
-        corridor_service::preview_switch(pool.inner(), &game_id, target_safe, mods_path.as_deref())
-            .await?;
+    let preview = corridor_service::preview_switch(
+        pool.inner(),
+        &game_id,
+        settings.safe_mode.enabled,
+        target_safe,
+        mods_path.as_deref(),
+    )
+    .await?;
     Ok(preview)
 }
 
@@ -105,13 +132,11 @@ pub async fn preview_corridor_switch(
 #[specta::specta]
 pub async fn list_collections(
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
+    is_safe: bool,
 ) -> Result<Vec<CollectionSummary>, AppError> {
-    let settings = config.get_settings();
-    let is_safe = settings.safe_mode.enabled;
-
-    let result = collection_service::list_collections(pool.inner(), &game_id, is_safe).await?;
+    let result =
+        collection_service::list_collections(pool.inner(), &game_id, is_safe, None).await?;
     Ok(result)
 }
 
@@ -122,6 +147,8 @@ pub async fn create_collection(
     config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
     name: String,
+    save_mode: Option<CreateCollectionMode>,
+    source_collection_id: Option<String>,
 ) -> Result<CollectionSummary, AppError> {
     let settings = config.get_settings();
     let is_safe = settings.safe_mode.enabled;
@@ -130,6 +157,8 @@ pub async fn create_collection(
         game_id,
         name,
         is_safe: is_safe,
+        save_mode,
+        source_collection_id,
     };
 
     let result = collection_service::create_collection(pool.inner(), input).await?;
@@ -177,19 +206,14 @@ pub async fn apply_collection(
     )
     .await?;
 
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        config.inner(),
-        watcher_state.suppressor.clone(),
-    )
-    .await;
-
     Ok(result)
 }
 
 #[tauri::command]
 #[specta::specta]
+#[deprecated(
+    note = "Undo collections are being phased out in favor of explicit Collection Snapshot creation"
+)]
 pub async fn undo_collection(
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::services::config::ConfigService>,
@@ -225,14 +249,6 @@ pub async fn undo_collection(
     )
     .await?;
 
-    // Sync in-game overlay artifacts (Req-43)
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        config.inner(),
-        watcher_state.suppressor.clone(),
-    )
-    .await;
-
     Ok(result)
 }
 
@@ -240,20 +256,12 @@ pub async fn undo_collection(
 #[specta::specta]
 pub async fn update_collection(
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::services::config::ConfigService>,
-    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
     game_id: String,
     id: String,
     name: Option<String>,
 ) -> Result<CollectionSummary, AppError> {
     let input = UpdateCollectionInput { id, game_id, name };
     let result = collection_service::update_collection(pool.inner(), input).await?;
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        config.inner(),
-        watcher_state.suppressor.clone(),
-    )
-    .await;
     Ok(result)
 }
 
@@ -261,18 +269,15 @@ pub async fn update_collection(
 #[specta::specta]
 pub async fn delete_collection(
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::services::config::ConfigService>,
-    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
-    _game_id: String,
+    op_lock: State<'_, OperationLock>,
     id: String,
 ) -> Result<(), AppError> {
+    let _guard = op_lock
+        .inner()
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e))?;
     collection_service::delete_collection(pool.inner(), &id).await?;
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-        pool.inner(),
-        config.inner(),
-        watcher_state.suppressor.clone(),
-    )
-    .await;
     Ok(())
 }
 
@@ -307,6 +312,7 @@ pub async fn get_collection_preview(
 
     let result = collection_service::get_collection_preview(
         pool.inner(),
+        &game_id,
         &collection_id,
         mods_path.as_deref(),
     )
@@ -410,27 +416,36 @@ pub async fn resolve_recovery_task(
     config: State<'_, crate::services::config::ConfigService>,
     watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
     task_id: String,
-    action: String, // "CLEANUP", "RETRY", "IGNORE"
+    action: crate::domain::task::RecoveryAction,
 ) -> Result<(), AppError> {
-    log::info!("Resolving recovery task {} with action {}", task_id, action);
+    log::info!(
+        "Resolving recovery task {} with action {:?}",
+        task_id,
+        action
+    );
 
-    if action == "RETRY" {
-        let task = crate::repo::task_repo::get_task_by_id(pool.inner(), &task_id)
-            .await?
-            .ok_or_else(|| AppError::Validation(format!("Task {} not found", task_id)))?;
+    let task = crate::repo::task_repo::get_task_by_id(pool.inner(), &task_id)
+        .await?
+        .ok_or_else(|| AppError::Validation(format!("Task {} not found", task_id)))?;
 
-        let settings = config.get_settings();
-        let game = settings
-            .games
-            .iter()
-            .find(|g| g.id == task.game_id)
-            .ok_or_else(|| AppError::Validation(format!("Game {} not found", task.game_id)))?;
+    let settings = config.get_settings();
+    let game = settings
+        .games
+        .iter()
+        .find(|g| g.id == task.game_id)
+        .ok_or_else(|| AppError::Validation(format!("Game {} not found", task.game_id)))?;
 
-        match task.task_type.as_str() {
-            "apply_collection" => {
-                if let Some(collection_id) = task.target_id {
+    match action {
+        crate::domain::task::RecoveryAction::Retry => {
+            match task.task_type.as_str() {
+                "apply_collection" => {
+                    let Some(collection_id) = task.target_id.as_deref() else {
+                        return Err(AppError::Validation(
+                            "Missing target collection ID".to_string(),
+                        ));
+                    };
                     let collection =
-                        crate::repo::collection_repo::get_by_id(pool.inner(), &collection_id)
+                        crate::repo::collection_repo::get_by_id(pool.inner(), collection_id)
                             .await?
                             .ok_or_else(|| {
                                 AppError::Validation(format!(
@@ -442,19 +457,21 @@ pub async fn resolve_recovery_task(
                     crate::services::collection_service::apply_collection(
                         pool.inner(),
                         &task.game_id,
-                        &collection_id,
+                        collection_id,
                         collection.is_safe,
                         game.mod_path.clone(),
                         watcher_state.suppressor.clone(),
-                        true, // ignore_missing during recovery
+                        true,
                         settings,
                     )
                     .await?;
-                    return Ok(());
                 }
-            }
-            "switch_corridor" => {
-                if let Some(target_safe_str) = task.target_id {
+                "switch_corridor" => {
+                    let Some(target_safe_str) = task.target_id.as_deref() else {
+                        return Err(AppError::Validation(
+                            "Missing target corridor state".to_string(),
+                        ));
+                    };
                     let target_safe = target_safe_str == "true";
                     crate::services::corridor_service::switch_corridor(
                         pool.inner(),
@@ -466,23 +483,137 @@ pub async fn resolve_recovery_task(
                         settings,
                     )
                     .await?;
-                    return Ok(());
+                }
+                _ => {
+                    return Err(AppError::Validation(format!(
+                        "Unsupported task type for retry: {}",
+                        task.task_type
+                    )));
                 }
             }
-            _ => {
-                log::warn!("Unsupported task type for retry: {}", task.task_type);
+
+            crate::repo::task_repo::update_status(
+                pool.inner(),
+                &task_id,
+                crate::domain::task::TaskStatus::Completed,
+            )
+            .await?;
+            Ok(())
+        }
+        crate::domain::task::RecoveryAction::Rollback => {
+            match task.task_type.as_str() {
+                "switch_corridor" => {
+                    let Some(target_safe_str) = task.target_id.as_deref() else {
+                        return Err(AppError::Validation(
+                            "Missing target corridor state".to_string(),
+                        ));
+                    };
+                    let target_safe = target_safe_str == "true";
+                    crate::services::corridor_service::switch_corridor(
+                        pool.inner(),
+                        &task.game_id,
+                        !target_safe,
+                        game.mod_path.clone(),
+                        watcher_state.suppressor.clone(),
+                        &watcher_state,
+                        settings,
+                    )
+                    .await?;
+                }
+                "apply_collection" => {
+                    let Some(collection_id) = task.target_id.as_deref() else {
+                        return Err(AppError::Validation(
+                            "Missing target collection ID".to_string(),
+                        ));
+                    };
+                    let applied_collection =
+                        crate::repo::collection_repo::get_by_id(pool.inner(), collection_id)
+                            .await?
+                            .ok_or_else(|| {
+                                AppError::Validation(format!(
+                                    "Collection {} not found",
+                                    collection_id
+                                ))
+                            })?;
+                    let corridor_state = crate::repo::corridor_repo::get(
+                        pool.inner(),
+                        &task.game_id,
+                        applied_collection.is_safe,
+                    )
+                    .await?;
+
+                    let rollback_collection_id = if let Some(existing_id) = corridor_state
+                        .as_ref()
+                        .and_then(|state| state.undo_collection_id.as_deref())
+                        .or_else(|| {
+                            corridor_state
+                                .as_ref()
+                                .and_then(|state| state.active_collection_id.as_deref())
+                                .filter(|candidate| *candidate != collection_id)
+                        }) {
+                        Some(existing_id.to_string())
+                    } else {
+                        crate::services::corridor_service::resolve_restore_collection(
+                            pool.inner(),
+                            &task.game_id,
+                            applied_collection.is_safe,
+                        )
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|(collection, _)| {
+                            if collection.id == collection_id {
+                                None
+                            } else {
+                                Some(collection.id)
+                            }
+                        })
+                    };
+
+                    let Some(rollback_collection_id) = rollback_collection_id else {
+                        return Err(AppError::Validation(
+                            "No rollback collection is available for this corridor".to_string(),
+                        ));
+                    };
+
+                    crate::services::collection_service::apply_collection(
+                        pool.inner(),
+                        &task.game_id,
+                        &rollback_collection_id,
+                        applied_collection.is_safe,
+                        game.mod_path.clone(),
+                        watcher_state.suppressor.clone(),
+                        true,
+                        settings,
+                    )
+                    .await?;
+                }
+                _ => {
+                    return Err(AppError::Validation(format!(
+                        "Unsupported task type for rollback: {}",
+                        task.task_type
+                    )));
+                }
             }
+
+            crate::repo::task_repo::update_status(
+                pool.inner(),
+                &task_id,
+                crate::domain::task::TaskStatus::Completed,
+            )
+            .await?;
+            Ok(())
+        }
+        crate::domain::task::RecoveryAction::Ignore => {
+            crate::repo::task_repo::update_status(
+                pool.inner(),
+                &task_id,
+                crate::domain::task::TaskStatus::Failed,
+            )
+            .await?;
+            Ok(())
         }
     }
-
-    // Default: mark as failed
-    crate::repo::task_repo::update_status(
-        pool.inner(),
-        &task_id,
-        crate::domain::task::TaskStatus::Failed,
-    )
-    .await?;
-    Ok(())
 }
 
 // ============================================================================

@@ -82,7 +82,7 @@ find_free_suffix(path, suffix) → PathBuf:
 
 | Component   | Detail                                                                                          |
 | ----------- | ----------------------------------------------------------------------------------------------- |
-| Error Catch | `useFolderGridActions.ts` catches `CommandError::PathCollision` → opens `ConflictResolveDialog` |
+| Error Catch | Shared runtime mod actions catch `CommandError::PathCollision` → open `ConflictResolveDialog` through the workspace dialog machine |
 | Dialog Data | `get_collision_info(path_a, path_b)` — shallow folder scan, returns summary structs             |
 | Resolution  | `commands.resolveConflict({ game_id, strategy, ... })` → OperationLock scope                    |
 | Auto-Retry  | After `resolve_conflict` returns Ok, frontend re-calls the original toggle mutation             |

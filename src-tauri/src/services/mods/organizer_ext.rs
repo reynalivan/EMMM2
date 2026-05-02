@@ -2,70 +2,9 @@ use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::mods::bulk::{BulkActionError, BulkResult};
-use crate::services::scanner::deep_matcher::MasterDb;
+use crate::services::mods::core_ops::standardize_prefix;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
-
-pub async fn auto_organize_mods_service(
-    _config: &ConfigService,
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    paths: Vec<String>,
-    db_json: &str,
-    watcher: &WatcherState,
-) -> Result<BulkResult, AppError> {
-    use crate::services::scanner::core::organizer;
-
-    let db = MasterDb::from_json(db_json).map_err(AppError::Io)?;
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
-    let root = Path::new(&mods_path);
-    let mut success = Vec::new();
-    let mut failures = Vec::new();
-
-    for path_str in paths {
-        let path = Path::new(&path_str);
-
-        // Suppress watcher
-        let _guard = SuppressionGuard::new(&watcher.suppressor);
-
-        match organizer::organize_mod(path, root, &db) {
-            Ok(res) => {
-                let new_path = res.new_path.to_string_lossy().to_string();
-                // Sync DB: update folder_path to new location
-                let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-                    pool, &path_str, &new_path, None,
-                )
-                .await;
-                success.push(new_path);
-            }
-            Err(e) => {
-                let error_str = match e {
-                    organizer::OrganizeError::Collision(info) => {
-                        format!(
-                            "COLLISION|{}",
-                            serde_json::to_string(&info).unwrap_or_default()
-                        )
-                    }
-                    organizer::OrganizeError::Generic(msg) => msg,
-                };
-                failures.push(BulkActionError {
-                    path: path_str,
-                    error: AppError::Io(error_str),
-                });
-            }
-        }
-    }
-
-    if !success.is_empty() {
-        let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, true).await;
-        let _ = crate::services::collection_service::handle_dirty_state(pool, game_id, false).await;
-    }
-
-    Ok(BulkResult { success, failures })
-}
 
 /// Move a mod folder to a different object directory, optionally changing its enabled/disabled status.
 ///
@@ -94,6 +33,8 @@ pub async fn move_mod_to_object_service(
 
     let current_path =
         PathGuard::validate_path(config, game_id, folder_path).map_err(AppError::Security)?;
+    let old_object_id =
+        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id).await?;
 
     // 1. Resolve paths from DB
     let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
@@ -247,16 +188,27 @@ pub async fn move_mod_to_object_service(
         }
     }
 
-    Ok(())
-}
+    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+        pool,
+        game_id,
+        &[
+            old_object_id.unwrap_or_default(),
+            target_object_id.to_string(),
+        ],
+        false,
+    )
+    .await?;
 
-/// Normalize a folder name's DISABLED prefix.
-fn standardize_prefix(name: &str, enable: bool) -> String {
-    use crate::services::scanner::core::normalizer::normalize_display_name;
-    let base = normalize_display_name(name);
-    if enable {
-        base
-    } else {
-        format!("{}{}", crate::DISABLED_PREFIX, base)
-    }
+    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        pool,
+        config,
+        watcher.suppressor.clone(),
+        game_id,
+        &[true, false],
+        true,
+        true,
+    )
+    .await;
+
+    Ok(())
 }

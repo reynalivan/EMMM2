@@ -10,19 +10,33 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useCustomThemes } from '../theme/useCustomThemes';
 import { commands, type CustomTheme } from '../../../lib/bindings';
+import { getTauriVersion, getVersion } from '@tauri-apps/api/app';
 import { open, save } from '@tauri-apps/plugin-dialog';
 // Tauri v2 plugin-fs exports. If text-specific ones are missing in the IDE, we handle conversion.
 import { readFile, writeFile } from '@tauri-apps/plugin-fs';
 import { useToastStore } from '../../../stores/useToastStore';
+import { useEffect, useState } from 'react';
 
 export default function GeneralTab() {
   const { autoCloseLauncher, setAutoCloseLauncher } = useAppStore();
   const { settings, updateTheme, updateLanguage } = useSettings();
   const { customThemes, refreshCustomThemes } = useCustomThemes();
   const { addToast } = useToastStore();
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation(['settings', 'common']);
+  const [appVersion, setAppVersion] = useState('');
+  const [tauriVersion, setTauriVersion] = useState('');
 
   const selectedTheme = normalizeThemeSetting(settings?.theme);
+
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(t('common:status.not_set')));
+
+    getTauriVersion()
+      .then(setTauriVersion)
+      .catch(() => setTauriVersion(t('common:status.not_set')));
+  }, [t]);
 
   const handleThemeChange = (value: string) => {
     updateTheme.mutate(normalizeThemeSetting(value as ThemeSetting));
@@ -252,13 +266,13 @@ export default function GeneralTab() {
               <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">
                 {t('general.system.app_version')}
               </span>
-              <span className="font-mono">v0.1.0-alpha</span>
+              <span className="font-mono">{appVersion || t('common:status.not_set')}</span>
             </div>
             <div>
               <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">
                 {t('general.system.tauri_version')}
               </span>
-              <span className="font-mono">v2.0.0</span>
+              <span className="font-mono">{tauriVersion || t('common:status.not_set')}</span>
             </div>
             <div>
               <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">

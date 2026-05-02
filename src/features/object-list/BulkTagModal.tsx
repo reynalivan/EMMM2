@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { X, TagIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface BulkTagModalProps {
   open: boolean;
@@ -17,6 +18,7 @@ export default function BulkTagModal({
   onSubmit,
   onClose,
 }: BulkTagModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const [inputValue, setInputValue] = useState('');
   const [checkedTags, setCheckedTags] = useState<Set<string>>(new Set());
 
@@ -57,7 +59,7 @@ export default function BulkTagModal({
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg flex items-center gap-2">
             <TagIcon size={18} />
-            {mode === 'add' ? 'Add Tags' : 'Remove Tags'}
+            {mode === 'add' ? t('bulk_tags.add_title') : t('bulk_tags.remove_title')}
           </h3>
           <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}>
             <X size={16} />
@@ -67,12 +69,12 @@ export default function BulkTagModal({
         {mode === 'add' ? (
           <>
             <p className="text-sm text-base-content/60 mb-3">
-              Enter tags separated by commas. They will be appended to all selected objects.
+              {t('bulk_tags.add_description')}
             </p>
             <input
               type="text"
               className="input input-bordered w-full"
-              placeholder="e.g. Pyro, 5-star, Swimsuit"
+              placeholder={t('bulk_tags.placeholder')}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
@@ -82,25 +84,25 @@ export default function BulkTagModal({
             />
             <div className="modal-action">
               <button className="btn btn-ghost btn-sm" onClick={onClose}>
-                Cancel
+                {t('common:actions.cancel')}
               </button>
               <button
                 className="btn btn-primary btn-sm"
                 onClick={handleAddSubmit}
                 disabled={!inputValue.trim()}
               >
-                Add Tags
+                {t('bulk_tags.add_submit')}
               </button>
             </div>
           </>
         ) : (
           <>
             <p className="text-sm text-base-content/60 mb-3">
-              Select tags to remove from all selected objects.
+              {t('bulk_tags.remove_description')}
             </p>
             {uniqueTags.length === 0 ? (
               <p className="text-sm text-base-content/40 italic">
-                No tags found on selected objects.
+                {t('bulk_tags.empty')}
               </p>
             ) : (
               <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
@@ -124,21 +126,22 @@ export default function BulkTagModal({
             )}
             <div className="modal-action">
               <button className="btn btn-ghost btn-sm" onClick={onClose}>
-                Cancel
+                {t('common:actions.cancel')}
               </button>
               <button
                 className="btn btn-error btn-sm"
                 onClick={handleRemoveSubmit}
                 disabled={checkedTags.size === 0}
               >
-                Remove {checkedTags.size > 0 ? `(${checkedTags.size})` : ''}
+                {t('common:actions.remove')}
+                {checkedTags.size > 0 ? ` (${checkedTags.size})` : ''}
               </button>
             </div>
           </>
         )}
       </div>
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>close</button>
+        <button onClick={onClose}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

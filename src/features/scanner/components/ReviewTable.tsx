@@ -10,7 +10,6 @@ interface Props {
   onBulkEnable?: (paths: string[]) => void;
   onBulkDisable?: (paths: string[]) => void;
   onBulkDelete?: (paths: string[]) => void;
-  onAutoOrganize?: (paths: string[]) => void;
 }
 
 export default function ReviewTable({
@@ -20,7 +19,6 @@ export default function ReviewTable({
   onBulkEnable,
   onBulkDisable,
   onBulkDelete,
-  onAutoOrganize,
 }: Props) {
   const { t } = useTranslation(['scanner']);
   // logic extracted to useReviewTable to handle React Compiler compatibility
@@ -58,17 +56,6 @@ export default function ReviewTable({
               }}
             >
               {t('scanner:review.actions.disable')}
-            </button>
-          )}
-          {onAutoOrganize && (
-            <button
-              className="btn btn-xs btn-info btn-outline"
-              onClick={() => {
-                onAutoOrganize(selectedPaths);
-                table.resetRowSelection();
-              }}
-            >
-              {t('scanner:review.actions.organize')}
             </button>
           )}
           {onBulkDelete && (

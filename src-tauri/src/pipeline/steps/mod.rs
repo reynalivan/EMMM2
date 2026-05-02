@@ -3,7 +3,6 @@ pub mod batch_rename;
 pub mod compute_diff;
 pub mod resolve_current_state;
 pub mod resolve_target;
-pub mod snapshot_state;
 pub mod update_corridor;
 pub mod validate_corridor;
 pub mod validate_paths;

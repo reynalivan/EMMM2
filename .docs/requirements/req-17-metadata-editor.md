@@ -69,7 +69,8 @@ As a user, I want to provide and open an external mod link (GameBanana, NexusMod
 
 ```
 MetadataSection.tsx
-  └── useModInfo(folderPath) → commands.readModInfo({ folderPath }) → ModInfo
+  └── usePreviewRuntime() / usePreviewPanelState() provide selected folder + metadata drafts
+      └── raw preview query hook → commands.readModInfo({ folderPath }) → ModInfo
       ├── EditableField (name, author, version) → onBlur → useUpdateModInfo.mutate
       ├── TextArea (description) → onBlur → useUpdateModInfo.mutate
       ├── TagsInput (tags[]) → onChange debounced 500ms → useUpdateModInfo.mutate
@@ -89,8 +90,8 @@ Backend:
 
 | Component          | Detail                                                                                                     |
 | ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Read Hook          | `useQuery(['modInfo', folderPath], () => commands.readModInfo({ folderPath }))`                            |
-| Write Hook         | `useMutation(commands.updateModInfo(...))` with `onSuccess: setQueryData(['modInfo', folderPath], result)` |
+| Read Hook          | Raw preview data hooks perform the IPC query; preview-runtime composes selected node + detail state         |
+| Write Hook         | Raw mutation hook performs `update_mod_info`; preview-runtime applies runtime/query effects centrally        |
 | WatcherSuppression | Applied for `folder_path/info.json` — prevents file watcher from triggering grid re-fetch on metadata save |
 | Shell Open         | `commands.openUrl({ url })` → Rust `tauri::api::shell::open(url)` after URL allowlist check                |
 

@@ -12,7 +12,8 @@
     "done": "Done",
     "save": "Save",
     "close": "Close",
-    "edit": "Edit"
+    "edit": "Edit",
+    "more_actions": "More Actions"
   },
   "metadata": {
     "title": "Metadata",
@@ -38,16 +39,43 @@
     "no_preview": "No preview available",
     "broken_image": "Broken image",
     "image_placeholder": "Image placeholder",
+    "image_alt": "Preview image",
+    "maximize_label": "Open fullscreen preview",
     "prev_image": "Previous image",
     "next_image": "Next image",
     "fullscreen": "Fullscreen",
     "slider_label": "Preview image slider",
     "go_to_image": "Go to image {{index}}",
+    "no_image_in_clipboard": "No image found in the clipboard.",
+    "thumbnail_pasted": "Thumbnail pasted.",
+    "paste_error": "Failed to paste thumbnail: {{error}}",
+    "thumbnail_removed": "Thumbnail removed.",
+    "remove_error": "Failed to remove thumbnail: {{error}}",
+    "all_thumbnails_cleared": "All thumbnails cleared.",
+    "clear_all_error": "Failed to clear thumbnails: {{error}}",
+    "remove_confirm_message": "Remove the selected thumbnail?",
+    "clear_all_confirm_message": "Remove all thumbnails from this mod?",
+    "no_thumbnail_selected": "No thumbnail selected.",
+    "no_thumbnails_to_clear": "There are no thumbnails to clear.",
+    "import_error": "Failed to import thumbnail: {{error}}",
     "menu": {
       "paste": "Paste Thumbnail",
       "import": "Import Thumbnail",
       "remove_current": "Remove This Thumbnail",
-      "clear_all": "Clear All Thumbnails"
+      "clear_all": "Clear All Thumbnails",
+      "thumbnail_imported": "Thumbnail imported."
+    }
+  },
+  "modals": {
+    "unsaved": {
+      "title": "Unsaved Changes",
+      "description": "\"{{modName}}\" has unsaved metadata or INI changes.",
+      "this_mod": "This mod",
+      "metadata_edits": "Metadata edits",
+      "ini_edits": "INI edits",
+      "change_title": "From \"{{oldValue}}\" to \"{{newValue}}\"",
+      "empty_value": "(empty)",
+      "saving": "Saving..."
     }
   },
   "ini_editor": {
@@ -72,8 +100,14 @@
     "no_shift": "no_shift",
     "no_ctrl": "no_ctrl",
     "no_alt": "no_alt",
+    "modifier_ctrl": "CTRL",
+    "modifier_alt": "ALT",
+    "modifier_shift": "SHIFT",
     "shift_restriction_disabled": "Shift is part of the combo, cannot restrict.",
     "ctrl_restriction_disabled": "Ctrl is part of the combo, cannot restrict.",
     "alt_restriction_disabled": "Alt is part of the combo, cannot restrict."
+  },
+  "errors": {
+    "open_location_failed": "Failed to open file location: {{error}}"
   }
 }

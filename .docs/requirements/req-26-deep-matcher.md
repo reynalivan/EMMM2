@@ -1,4 +1,4 @@
-# Epic 26: Deep Matcher & Auto-Categorization
+# Epic 26: Deep Match Scanner & Auto-Categorization
 
 ## 1. Executive Summary
 
@@ -118,7 +118,7 @@ As a user, I want to see all proposed auto-categorizations and correct any mista
 ### Non-Goals
 
 - No AI model run locally — only external API calls (OpenAI / Anthropic-compatible providers).
-- No background or continuous categorization — Deep Matcher runs only after a manual full scan.
+- No background or continuous categorization — Deep Match Scanner runs only after an explicit manual scan/import flow.
 - No auto-commit — every scan goes through `ScanReviewModal` before writing to DB.
 - No hash equivalence resolution between different 3DMigoto games (hashes are game-scoped).
 

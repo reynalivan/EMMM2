@@ -13,7 +13,7 @@ describe('useReviewTable', () => {
       path: 'C:\\mods\\Item1',
       rawName: 'Item1Raw',
       displayName: 'Item 1',
-      matchedObject: 'Character',
+      matchedAliasName: 'Character',
       confidence: 'High',
       isDisabled: false,
     } as unknown as import('../../../types/scanner').ScanResultItem,
@@ -28,6 +28,6 @@ describe('useReviewTable', () => {
     const table = result.current;
 
     expect(table.getRowModel().rows).toHaveLength(1);
-    expect(table.getAllColumns()).toHaveLength(8); // select, thumbnail, displayName, matchedObject, detectedSkin, confidence, isDisabled, actions
+    expect(table.getAllColumns()).toHaveLength(8); // select, thumbnail, displayName, matchedAliasName, detectedSkin, confidence, isDisabled, actions
   });
 });

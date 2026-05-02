@@ -11,21 +11,7 @@
 import { X, Check, Edit, AlertTriangle, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-
-/** Shape returned by Rust `match_object_with_db` command. */
-export interface MatchedDbEntry {
-  name: string;
-  object_type: string;
-  tags: string[];
-  metadata: Record<string, unknown> | null;
-  thumbnail_path: string | null;
-  /** Pipeline level: "L1Name" | "L2Token" | "L5Fuzzy" */
-  match_level: string;
-  /** Confidence: "High" | "Medium" | "Low" */
-  match_confidence: string;
-  /** Human-readable match detail */
-  match_detail: string;
-}
+import type { MatchedDbEntry } from '../../lib/bindings';
 
 /** Current object/folder data for diff comparison */
 interface CurrentData {

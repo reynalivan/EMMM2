@@ -17,7 +17,7 @@ EMMM was built with the following core principles to solve these pain points:
 1. **Zero Data Loss & Safety First:** Atomic operations, soft-deletion (Trash system), collision detection, and Safe Mode for privacy.
 2. **The Filesystem is the Source of Truth:** `DISABLED ` folder prefixes are the sole determinant of mod status. EMMM reads what's on disk, ensuring it never desyncs from reality.
 3. **Instant Responsiveness:** Render 10,000+ items without lag. Optimistic UI updates provide immediate feedback before disk I/O completes.
-4. **Intelligent Automation:** The Deep Matcher pipeline auto-categorizes unstructured mod folders into the correct Characters/Weapons without manual tagging.
+4. **Explicit Matching, Not Silent Guessing:** Runtime truth comes from Disk Reconcile. Deep Match Scanner is a separate user-driven flow that can categorize unstructured mod folders when the user explicitly asks for it.
 
 ---
 
@@ -31,12 +31,14 @@ EMMM is built on a robust hybrid architecture that separates physical reality fr
 
 - **Physical Truth (Disk):** Mod status is entirely driven by the `DISABLED ` prefix on folders. Fast, recursive filesystem scanning guarantees true representation.
 - **Logical Truth (DB):** SQLite acts as a _High-Speed Index_. It stores metadata, object hierarchies, and custom tags for instant filtering and searching.
+- **Disk Reconcile:** Watcher, window refocus, Mods-entry, and onboarding finalization use a dedicated Disk Reconcile pipeline to realign the DB projection with the current filesystem.
+- **Runtime Default:** Newly discovered folders stay in the runtime `Other` bucket until the user explicitly starts Deep Match Scanner.
 - **Portable Truth (JSON):** Each mod maintains an `info.json` inside its folder. Metadata (Author, Tags, Element) survives perfectly even if the mod is manually moved to another PC.
 - **Decoupled Compute Layer:** The React Frontend is strictly a presentation layer. Heavy computations like DP-based fuzzy matching and database queries are completely offloaded to optimized Rust Services and a distinct Data Access Layer (Repositories).
 
-### 2. The Deep Matcher Pipeline (The Brain)
+### 2. The Deep Match Scanner Pipeline (Explicit Canonical Matching)
 
-To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`), EMMM uses a staged, deterministic matching engine:
+To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`), EMMM provides a staged, deterministic matching engine that only runs in explicit scan/import flows:
 
 1. **Quick Hash & Alias:** Scans `.ini` file contents and exact folder names against a bundled `schema.json`.
 2. **Deep Content Scan:** Tokenizes subfolders, file stems, and INI keys to build strong evidence.
@@ -46,7 +48,7 @@ To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`)
 ### 3. Bulletproof Operations
 
 - **Transactional Toggles:** Changing the status of a 50-mod Collection (Preset) is atomic. If the filesystem blocks one rename, the entire operation is rolled back.
-- **Background Watchdog:** The app monitors the filesystem for external changes (renames, deletions outside the app) and gracefully updates the UI with built-in loop prevention.
+- **Background Watchdog:** The app monitors the filesystem for external changes (renames, deletions outside the app) and gracefully updates the UI by triggering Disk Reconcile with built-in loop prevention.
 - **Smart Extraction:** Extracts messy `.rar`/`.zip` files natively via Rust, applying smart-flattening to prevent `Nested/Nested/Mod` folder structures.
 
 ### 4. Zero-Compromise UI/UX

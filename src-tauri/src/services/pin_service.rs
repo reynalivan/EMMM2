@@ -4,24 +4,25 @@ use crate::domain::errors::PinError;
 use crate::domain::pin::PinStatus;
 use crate::repo::pin_repo;
 
-// ---------------------------------------------------------------------------
-// pin_service — Business logic for PIN security
-// ---------------------------------------------------------------------------
-
-/// Maximum failed PIN attempts before lockout.
-pub const MAX_FAILED_ATTEMPTS: i32 = 5;
-/// Lockout duration in minutes after max failed attempts.
-const LOCKOUT_MINUTES: i32 = 15;
+const MAX_PIN_ATTEMPTS: u8 = 5;
+const PIN_LOCKOUT_SECONDS: i32 = 60;
 
 /// Get the PIN status (safe for frontend — no hashes).
 pub async fn get_status(pool: &SqlitePool) -> Result<PinStatus, PinError> {
     let config = pin_repo::get(pool).await?;
+    let lockout_seconds_remaining = config.lockout_seconds_remaining();
+    let is_locked = lockout_seconds_remaining > 0;
+    let attempts_remaining = if is_locked {
+        0
+    } else {
+        i32::from(MAX_PIN_ATTEMPTS).saturating_sub(config.failed_attempts)
+    };
 
     Ok(PinStatus {
         has_pin: config.has_pin(),
-        is_locked: config.is_locked(),
-        attempts_remaining: (MAX_FAILED_ATTEMPTS - config.failed_attempts).max(0),
-        lockout_seconds_remaining: config.lockout_seconds_remaining(),
+        is_locked,
+        attempts_remaining,
+        lockout_seconds_remaining,
     })
 }
 
@@ -34,7 +35,9 @@ pub async fn set_pin(
     let pin_hash = hash_pin(pin);
     let recovery_hash = recovery_code.map(hash_pin);
 
-    pin_repo::set_pin(pool, &pin_hash, recovery_hash.as_deref()).await
+    pin_repo::set_pin(pool, &pin_hash, recovery_hash.as_deref()).await?;
+    pin_repo::reset_failed_attempts(pool).await?;
+    Ok(())
 }
 
 /// Verify a PIN attempt. Returns Ok(true) if correct.
@@ -42,26 +45,33 @@ pub async fn set_pin(
 pub async fn verify_pin(pool: &SqlitePool, pin: &str) -> Result<bool, PinError> {
     let config = pin_repo::get(pool).await?;
 
-    // Check lockout
-    if config.is_locked() {
-        return Err(PinError::Locked(config.lockout_until.unwrap_or_default()));
-    }
-
     // No PIN set — verification always passes
     if !config.has_pin() {
+        pin_repo::reset_failed_attempts(pool).await?;
         return Ok(true);
     }
 
-    // Verify against stored hash
-    let is_valid = verify_hash(pin, config.pin_hash.as_deref().unwrap_or_default());
-
-    if is_valid {
-        pin_repo::reset_failed_attempts(pool).await?;
-        Ok(true)
-    } else {
-        pin_repo::record_failed_attempt(pool, MAX_FAILED_ATTEMPTS, LOCKOUT_MINUTES).await?;
-        Ok(false)
+    if config.is_locked() {
+        return Ok(false);
     }
+
+    if config.lockout_until.is_some() {
+        pin_repo::reset_failed_attempts(pool).await?;
+    }
+
+    if verify_hash(pin, config.pin_hash.as_deref().unwrap_or_default()) {
+        pin_repo::reset_failed_attempts(pool).await?;
+        return Ok(true);
+    }
+
+    let failed_attempts = config.failed_attempts.saturating_add(1);
+    if failed_attempts >= i32::from(MAX_PIN_ATTEMPTS) {
+        pin_repo::set_lockout_seconds(pool, PIN_LOCKOUT_SECONDS).await?;
+        return Ok(false);
+    }
+
+    pin_repo::set_failed_attempts(pool, failed_attempts).await?;
+    Ok(false)
 }
 
 /// Verify a recovery code. Same logic as PIN verification.
@@ -86,7 +96,8 @@ pub async fn verify_recovery(pool: &SqlitePool, recovery_code: &str) -> Result<b
 
 /// Clear the PIN (remove protection).
 pub async fn clear_pin(pool: &SqlitePool) -> Result<(), PinError> {
-    pin_repo::clear_pin(pool).await
+    pin_repo::clear_pin(pool).await?;
+    Ok(())
 }
 
 /// Check if a PIN is set.
@@ -101,6 +112,71 @@ pub async fn check_boot_security(pool: &SqlitePool, is_safe_mode: bool) -> Resul
     let config = pin_repo::get(pool).await?;
     // Requirement: IF Unsafe AND PIN is set -> LOCK
     Ok(!is_safe_mode && config.has_pin())
+}
+
+/// Verify a PIN or recovery code against an Argon2 hash.
+fn verify_hash(secret: &str, hash: &str) -> bool {
+    use argon2::{
+        password_hash::{PasswordHash, PasswordVerifier},
+        Argon2,
+    };
+
+    let parsed = match PasswordHash::new(hash) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+
+    Argon2::default()
+        .verify_password(secret.as_bytes(), &parsed)
+        .is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_boot_security, get_status, set_pin, verify_pin};
+    use crate::repo::pin_repo;
+    use crate::test_utils::init_test_db;
+
+    #[tokio::test]
+    async fn verify_pin_persists_sixty_second_lockout_in_db() {
+        let ctx = init_test_db().await;
+
+        set_pin(&ctx.pool, "123456", None).await.expect("set pin");
+
+        for _ in 0..5 {
+            let valid = verify_pin(&ctx.pool, "000000").await.expect("verify pin");
+            assert!(!valid);
+        }
+
+        let status = get_status(&ctx.pool).await.expect("get status");
+        assert!(status.is_locked);
+        assert!(status.lockout_seconds_remaining > 0);
+        assert!(status.lockout_seconds_remaining <= 60);
+
+        let db_status = pin_repo::get(&ctx.pool).await.expect("pin config");
+        assert_eq!(db_status.failed_attempts, 0);
+        assert!(
+            db_status.lockout_until.is_some(),
+            "lockout must survive service restart through pin_config"
+        );
+    }
+
+    #[tokio::test]
+    async fn check_boot_security_locks_only_for_unsafe_with_pin() {
+        let ctx = init_test_db().await;
+
+        set_pin(&ctx.pool, "123456", None).await.expect("set pin");
+
+        let safe_locked = check_boot_security(&ctx.pool, true)
+            .await
+            .expect("safe boot status");
+        let unsafe_locked = check_boot_security(&ctx.pool, false)
+            .await
+            .expect("unsafe boot status");
+
+        assert!(!safe_locked);
+        assert!(unsafe_locked);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -121,21 +197,4 @@ fn hash_pin(pin: &str) -> String {
         .hash_password(pin.as_bytes(), &salt)
         .expect("Argon2 hashing should not fail")
         .to_string()
-}
-
-/// Verify a PIN against an Argon2 hash.
-fn verify_hash(pin: &str, hash: &str) -> bool {
-    use argon2::{
-        password_hash::{PasswordHash, PasswordVerifier},
-        Argon2,
-    };
-
-    let parsed = match PasswordHash::new(hash) {
-        Ok(h) => h,
-        Err(_) => return false,
-    };
-
-    Argon2::default()
-        .verify_password(pin.as_bytes(), &parsed)
-        .is_ok()
 }

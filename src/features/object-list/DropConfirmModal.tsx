@@ -7,6 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, FolderInput, Loader2, SkipForward } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface DropValidation {
   /** Paths being dropped */
@@ -39,6 +40,7 @@ export default function DropConfirmModal({
   onCancel,
   onSkipValidation,
 }: DropConfirmModalProps) {
+  const { t } = useTranslation(['objects', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -64,15 +66,17 @@ export default function DropConfirmModal({
           <div className="flex flex-col items-center gap-4 py-4">
             <Loader2 size={32} className="animate-spin text-primary" />
             <div className="text-center">
-              <p className="text-sm text-base-content/70">Checking match confidence...</p>
+              <p className="text-sm text-base-content/70">{t('drop_confirm.validating')}</p>
               <p className="text-xs text-base-content/40 mt-1">
-                Validating {validation.paths.length} item(s) against &quot;{validation.targetName}
-                &quot;
+                {t('drop_confirm.validating_description', {
+                  count: validation.paths.length,
+                  targetName: validation.targetName,
+                })}
               </p>
             </div>
             <button className="btn btn-sm btn-ghost gap-1.5" onClick={onSkipValidation}>
               <SkipForward size={14} />
-              Skip Validation
+              {t('drop_confirm.skip_validation')}
             </button>
           </div>
         ) : (
@@ -83,26 +87,32 @@ export default function DropConfirmModal({
                 <AlertTriangle size={20} />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-base text-base-content">Low Match Confidence</h3>
+                <h3 className="font-semibold text-base text-base-content">
+                  {t('drop_confirm.title')}
+                </h3>
                 <p className="text-sm text-base-content/60 mt-1 leading-relaxed">
-                  The dropped items may not belong to &quot;{validation.targetName}&quot;
+                  {t('drop_confirm.description', { targetName: validation.targetName })}
                   {validation.targetScore !== undefined && (
                     <span className="text-warning font-medium">
                       {' '}
-                      ({validation.targetScore}% match)
+                      {t('drop_confirm.match_score', { score: validation.targetScore })}
                     </span>
                   )}
                 </p>
                 {hasSuggestion && (
                   <div className="mt-3 p-2.5 rounded-lg bg-primary/5 border border-primary/20">
-                    <p className="text-xs text-base-content/50 mb-1">Suggested target:</p>
+                    <p className="text-xs text-base-content/50 mb-1">
+                      {t('drop_confirm.suggested_target')}
+                    </p>
                     <div className="flex items-center gap-2">
                       <FolderInput size={14} className="text-primary" />
                       <span className="text-sm font-medium text-primary">
                         {validation.suggestedName}
                       </span>
                       <span className="text-xs text-base-content/40">
-                        ({validation.suggestedScore}% match)
+                        {t('drop_confirm.match_score', {
+                          score: validation.suggestedScore ?? 0,
+                        })}
                       </span>
                     </div>
                   </div>
@@ -112,14 +122,14 @@ export default function DropConfirmModal({
 
             <div className="modal-action mt-4 flex-wrap gap-2">
               <button className="btn btn-sm btn-ghost" onClick={onCancel}>
-                Cancel
+                {t('common:actions.cancel')}
               </button>
               <button className="btn btn-sm btn-warning" onClick={onMoveAnyway}>
-                Move Anyway
+                {t('drop_confirm.move_anyway')}
               </button>
               {hasSuggestion && (
                 <button className="btn btn-sm btn-primary" onClick={onMoveToSuggested}>
-                  Move to {validation.suggestedName}
+                  {t('drop_confirm.move_to', { targetName: validation.suggestedName })}
                 </button>
               )}
             </div>
@@ -127,7 +137,7 @@ export default function DropConfirmModal({
         )}
       </div>
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onCancel}>close</button>
+        <button onClick={onCancel}>{t('common:actions.close')}</button>
       </form>
     </dialog>
   );

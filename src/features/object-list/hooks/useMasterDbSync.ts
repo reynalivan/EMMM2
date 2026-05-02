@@ -13,6 +13,7 @@ export interface DbEntryFull {
   object_type: string;
   metadata?: Record<string, unknown> | null;
   thumbnail_path?: string;
+  folder_path?: string | null;
   custom_skins?: {
     name: string;
     aliases?: string[];
@@ -33,6 +34,7 @@ function mapToUiFormat(entries: DbEntry[]): DbEntryFull[] {
     object_type: entry.object_type,
     metadata: entry.metadata,
     thumbnail_path: entry.thumbnail_path || undefined,
+    folder_path: null,
     custom_skins: entry.custom_skins || [],
   }));
 }
@@ -49,7 +51,6 @@ export function useMasterDbSync(
   setIsDbOpen: (open: boolean) => void;
   dbOptions: DbEntryFull[];
   suggestions: (DbEntryFull & { score: number })[];
-  masterDb: null;
   isLoading: boolean;
   error: Error | null;
 } {
@@ -128,7 +129,6 @@ export function useMasterDbSync(
     setIsDbOpen,
     dbOptions,
     suggestions,
-    masterDb: null, // Legacy export, no longer returning full object
     isLoading: isQueryLoading && isSyncMode, // Only load if sync mode active
     error,
   };

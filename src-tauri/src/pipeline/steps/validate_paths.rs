@@ -38,34 +38,31 @@ pub async fn validate(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         }
     }
 
-    if missing_paths.is_empty() {
-        log::info!(
-            "apply_pipeline[validate_paths]: all {} target mods verified on disk",
-            ctx.target_mods.len()
-        );
-        return Ok(());
-    }
-
-    log::warn!(
-        "apply_pipeline[validate_paths]: {} mod(s) missing from disk: {:?}",
-        missing_paths.len(),
-        missing_paths
-    );
-
-    if !ctx.ignore_missing {
+    if !missing_paths.is_empty() && !ctx.ignore_missing {
         return Err(CollectionError::MissingMods {
             count: missing_paths.len(),
             paths: missing_paths,
         });
     }
 
+    if !missing_paths.is_empty() {
+        log::warn!(
+            "apply_pipeline[validate_paths]: {} mod(s) missing from disk: {:?}",
+            missing_paths.len(),
+            missing_paths
+        );
+        ctx.warnings.extend(
+            missing_paths
+                .iter()
+                .map(|path| format!("Missing mod on disk: {path}")),
+        );
+        ctx.target_mods = valid_mods;
+    }
+
     log::info!(
-        "apply_pipeline[validate_paths]: ignore_missing=true, proceeding with {} of {} mods",
-        valid_mods.len(),
+        "apply_pipeline[validate_paths]: proceeding with {} target mods",
         ctx.target_mods.len()
     );
-
-    ctx.target_mods = valid_mods;
 
     Ok(())
 }

@@ -41,11 +41,15 @@
     "bulk_delete_msg": "Are you sure you want to move {{count}} mods to trash?",
     "bulk_delete_confirm_btn": "Move All to Trash"
   },
+  "badges": {
+    "corrupt": "Corrupt"
+  },
   "card": {
     "aria_label_enabled": "{{name}} — enabled",
     "aria_label_disabled": "{{name}} — disabled",
     "mod_pack": "Mod Pack",
     "variants": "Variants",
+    "flat_mod": "Flat Mod",
     "favorite": "Favorite",
     "unfavorite": "Unfavorite",
     "misplaced_title": "Misplaced: Character mismatch detected in info.json",

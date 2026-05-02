@@ -1,17 +1,16 @@
 /**
  * React hooks for Epic 9: Duplicate Scanner.
- * Follows the same pattern as useFolders.ts:
- * - Query key factory (dedupKeys)
- * - useQuery for data fetching
- * - useMutation for commands with proper cache invalidation
+ * Provides dedup query keys plus report and resolution hooks.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
 import { dedupService } from '../../../lib/services/dedupService';
-import { folderKeys, trashKeys } from '../../../hooks/useFolders';
 import { toast } from '../../../stores/useToastStore';
 import type { DupScanReport, ResolutionRequest, DupScanEvent } from '../../../types/scanner';
+import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 /**
  * Query key factory for dedup cache management.
@@ -44,8 +43,8 @@ export function useRemoveIgnoredPair() {
 
   return useMutation({
     mutationFn: (entryId: string) => dedupService.removeIgnoredPair(entryId),
-    onSuccess: (_, _entryId) => {
-      queryClient.invalidateQueries({ queryKey: dedupKeys.all });
+    onSuccess: async (_, _entryId) => {
+      await publishQueryScopes(queryClient, ['dedupAll']);
       toast.success(i18next.t('scanner:dedup.toast.recover_success'));
     },
     onError: (error) => {
@@ -87,9 +86,8 @@ export function useStartDedupScan() {
       onEvent: (event: DupScanEvent) => void;
     }) => dedupService.startDedupScan(params.gameId, params.modsRoot, params.onEvent),
 
-    onSuccess: () => {
-      // Refresh report after scan completes
-      queryClient.invalidateQueries({ queryKey: dedupKeys.report() });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['dedupReport']);
     },
 
     onError: (error) => {
@@ -110,9 +108,8 @@ export function useCancelDedupScan() {
   return useMutation({
     mutationFn: () => dedupService.cancelDedupScan(),
 
-    onSuccess: () => {
-      // Refresh report after cancellation
-      queryClient.invalidateQueries({ queryKey: dedupKeys.report() });
+    onSuccess: async () => {
+      await publishQueryScopes(queryClient, ['dedupReport']);
       toast.info(i18next.t('scanner:dedup.toast.scan_cancelled'));
     },
 
@@ -140,13 +137,14 @@ export function useResolveDuplicates() {
     mutationFn: (params: { requests: ResolutionRequest[]; gameId: string }) =>
       dedupService.resolveBatch(params.requests, params.gameId),
 
-    onSuccess: (summary) => {
-      // Invalidate all caches affected by resolution
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
-      queryClient.invalidateQueries({ queryKey: trashKeys.all });
-      queryClient.invalidateQueries({ queryKey: dedupKeys.all });
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      queryClient.invalidateQueries({ queryKey: ['conflicts'] });
+    onSuccess: async (summary) => {
+      await publishQueryScopes(queryClient, ['folderStructure', 'trash', 'dedupAll']);
+      void publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('scannerConflictState'),
+        'active',
+      );
+      await publishQueryScopes(queryClient, ['conflicts']);
 
       // Show resolution summary
       if (summary.failed === 0) {

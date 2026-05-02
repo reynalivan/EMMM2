@@ -1,8 +1,9 @@
 /**
  * useCorridor — Single query for corridor state.
  *
- * Replaces: useCorridorRuntimeSnapshot + useWorkspaceContext + resolveActiveCollection chain.
- * Backend computes is_dirty, active_  const activeGame = games?.find((g: any) => g.id === activeGameId);
+ * Replaces the older corridor snapshot + active collection resolution chain.
+ * Backend returns a corridor-level snapshot that already includes the active
+ * collection and dirty-state semantics the UI needs.
  */
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query';

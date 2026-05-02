@@ -41,7 +41,8 @@
     "category_title": "Category Distribution",
     "no_mod_data": "No mod data yet",
     "game_title": "Mods per Game",
-    "no_game_data": "No game data yet"
+    "no_game_data": "No game data yet",
+    "series_mods": "Mods"
   },
   "activity": {
     "recent_title": "Recently Added",

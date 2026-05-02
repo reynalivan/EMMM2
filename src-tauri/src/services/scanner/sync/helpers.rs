@@ -1,6 +1,7 @@
 use crate::services::corridor_constants::{CORRIDOR_SOURCE_AUTO_TAGGED, CORRIDOR_SOURCE_UNKNOWN};
 use crate::services::scanner::deep_matcher;
 use sqlx::{Row, SqlitePool};
+use std::path::Path;
 
 /// Generate a deterministic mod ID from `game_id` + `relative_path`.
 /// Uses BLAKE3 hash (first 32 hex chars) so the same folder always gets the same ID.
@@ -23,6 +24,123 @@ pub fn auto_matched_candidate(
         .best
         .as_ref()
         .or_else(|| match_result.candidates_topk.first())
+}
+
+pub fn canonical_entry_key(entry_name: &str) -> String {
+    crate::services::path_key::object_name_key(entry_name)
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedObjectTarget {
+    pub object_id: String,
+    pub folder_path: String,
+}
+
+fn normalize_object_shell_name(physical_name_hint: &str) -> String {
+    let normalized =
+        crate::services::scanner::core::normalizer::normalize_display_name(physical_name_hint);
+    let trimmed = normalized.trim();
+
+    if trimmed.is_empty() {
+        return "Imported Object".to_string();
+    }
+
+    trimmed.to_string()
+}
+
+async fn next_available_object_shell_name(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    mods_path: &str,
+    base_name: &str,
+) -> Result<String, String> {
+    let mut suffix = 1_u32;
+
+    loop {
+        let candidate = if suffix == 1 {
+            base_name.to_string()
+        } else {
+            format!("{base_name} ({suffix})")
+        };
+
+        let existing_object_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM objects WHERE game_id = ? AND folder_path_key = ? LIMIT 1",
+        )
+        .bind(game_id)
+        .bind(crate::services::path_key::folder_path_key(&candidate, None))
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|error| error.to_string())?;
+
+        let exists_on_disk = Path::new(mods_path).join(&candidate).exists();
+        if existing_object_id.is_none() && !exists_on_disk {
+            return Ok(candidate);
+        }
+
+        suffix += 1;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn resolve_or_create_object_target_for_match(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    mods_path: &str,
+    physical_name_hint: &str,
+    matched_entry_key: Option<&str>,
+    object_type: &str,
+    db_thumbnail: Option<&str>,
+    db_tags_json: &str,
+    db_metadata_json: &str,
+    db_hash_db_json: Option<&str>,
+    db_custom_skins_json: Option<&str>,
+    new_objects_count: &mut usize,
+) -> Result<Option<ResolvedObjectTarget>, String> {
+    let Some(entry_key) = matched_entry_key else {
+        return Ok(None);
+    };
+
+    let existing_folder = crate::repo::object_repo::get_object_folder_by_matched_entry_key(
+        &mut *conn, game_id, entry_key,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let existing_id = crate::repo::object_repo::get_object_id_by_matched_entry_key(
+        &mut *conn, game_id, entry_key,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if let (Some(folder_path), Some(object_id)) = (existing_folder, existing_id) {
+        return Ok(Some(ResolvedObjectTarget {
+            object_id,
+            folder_path,
+        }));
+    }
+
+    let base_shell_name = normalize_object_shell_name(physical_name_hint);
+    let shell_name =
+        next_available_object_shell_name(&mut *conn, game_id, mods_path, &base_shell_name).await?;
+
+    let object_id = ensure_object_exists(
+        &mut *conn,
+        game_id,
+        &shell_name,
+        &shell_name,
+        object_type,
+        db_thumbnail,
+        db_tags_json,
+        db_metadata_json,
+        db_hash_db_json,
+        db_custom_skins_json,
+        new_objects_count,
+    )
+    .await?;
+
+    Ok(Some(ResolvedObjectTarget {
+        object_id,
+        folder_path: shell_name,
+    }))
 }
 
 /// One-time startup migration: Stabilize mod IDs and path keys for mods, objects, and collection members.

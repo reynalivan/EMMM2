@@ -60,13 +60,13 @@ fn test_is_disabled_folder() {
     assert!(is_disabled_folder("disabled some_mod"));
     assert!(is_disabled_folder("Disabled some_mod"));
     assert!(is_disabled_folder("DISabled some_mod"));
-    // Separator variants
-    assert!(is_disabled_folder("disabled_some_mod"));
-    assert!(is_disabled_folder("DISABLED-some_mod"));
-    assert!(is_disabled_folder("dis some_mod"));
     // Not disabled
     assert!(!is_disabled_folder("some_mod"));
     assert!(!is_disabled_folder("a_disabled_mod"));
+    assert!(!is_disabled_folder("disabled_some_mod"));
+    assert!(!is_disabled_folder("DISABLED-some_mod"));
+    assert!(!is_disabled_folder("dis some_mod"));
+    assert!(!is_disabled_folder("distance_mod"));
 }
 
 #[test]

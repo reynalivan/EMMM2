@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, useMotionValue, useMotionTemplate, animate, AnimatePresence } from 'motion/react';
 import { Search, Power, HelpCircle } from 'lucide-react';
-import { DEMO_KEYBINDS, usePrefersReducedMotion } from '../demoTypes';
+import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion';
+import { DEMO_KEYBINDS } from '../demoTypes';
 
 export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () => void }) {
   const { t } = useTranslation();

@@ -12,6 +12,54 @@ vi.mock('./hooks/usePreviewPanelState', () => ({
   usePreviewPanelState: vi.fn(),
 }));
 
+const sharedModActionsState = {
+  moveDialog: { open: false, folder: null },
+  renameDialog: { open: false, folder: null },
+  deleteConfirm: { open: false, folder: null },
+  pinSafeDialog: { open: false, folder: null },
+  activeContextDialog: { open: false, folder: null, isProcessing: false },
+  duplicateWarning: { open: false, folder: null, duplicates: [] },
+  syncConfirm: { open: false, folder: null, match: null, isLoading: false, currentData: null },
+  isSwitchPending: false,
+  isFolderSwitchPending: vi.fn(() => false),
+  setDeleteConfirm: vi.fn(),
+  openMoveDialog: vi.fn(),
+  closeMoveDialog: vi.fn(),
+  closeSyncConfirm: vi.fn(),
+  handleToggleEnabled: vi.fn(),
+  handleDuplicateForceEnable: vi.fn(),
+  handleDuplicateEnableOnly: vi.fn(),
+  handleDuplicateCancel: vi.fn(),
+  handleEnableOnlyThis: vi.fn(),
+  handleToggleFavorite: vi.fn(),
+  handleMoveToObject: vi.fn(),
+  handleRenameRequest: vi.fn(),
+  handleRenameSubmit: vi.fn(),
+  handleRenameCancel: vi.fn(),
+  handleDeleteRequest: vi.fn(),
+  handleDeleteConfirm: vi.fn(),
+  handleSyncWithDb: vi.fn(),
+  handleApplySyncMatch: vi.fn(),
+  handleToggleSafeRequest: vi.fn(),
+  handleToggleSafeSubmit: vi.fn(),
+  handleToggleSafeCancel: vi.fn(),
+  handleActiveContextCancel: vi.fn(),
+  handleActiveContextSubmit: vi.fn(),
+  hasPin: true,
+};
+
+vi.mock('../mod-runtime/actions/useSharedModActions', () => ({
+  useSharedModActions: () => sharedModActionsState,
+}));
+
+vi.mock('../mod-runtime/actions/useModContextMenuActions', () => ({
+  useModContextMenuActions: () => ({
+    openExplorer: vi.fn(),
+    pasteThumbnailFromClipboard: vi.fn(),
+    importThumbnail: vi.fn(),
+  }),
+}));
+
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({
     activeGame: { id: 'GIMI', name: 'Genshin Impact' },
@@ -56,39 +104,105 @@ vi.mock('../../stores/useToastStore', () => ({
 const mockUsePreviewPanelState = usePreviewPanelStateModule.usePreviewPanelState as any;
 
 function createDefaultHookState() {
+  const selectedFolder = {
+    path: 'E:/Mods/TestMod',
+    name: 'Test Mod',
+    folder_name: 'TestMod',
+    display_name: 'Test Mod',
+    node_type: 'FlatModRoot',
+    classification_reasons: [],
+    is_enabled: true,
+    is_directory: true,
+    thumbnail_path: null,
+    modified_at: 0,
+    size_bytes: 0,
+    has_info_json: false,
+    is_favorite: false,
+    is_misplaced: false,
+    is_safe: true,
+    metadata: null,
+    category: null,
+    conflict_group_id: null,
+    conflict_state: null,
+    warnings: [],
+    node_kind: 'terminal_mod',
+    display_mode: 'flat_mod',
+    type_chip: 'flat_mod',
+    is_effectively_active: true,
+    ancestor_disabled: false,
+    inactive_reason: null,
+    warning_state: 'none',
+    primary_warning: null,
+    switch_state: 'enabled',
+    switch_reason: null,
+    switch_policy_key: 'mod',
+    can_navigate: false,
+    capabilities: {
+      can_toggle: true,
+      can_rename: true,
+      can_delete: true,
+      can_move: true,
+      can_toggle_safe: true,
+      can_sync: true,
+      can_enable_only_this: false,
+      can_pin: true,
+      can_edit_metadata: false,
+      can_reveal_in_explorer: true,
+      can_move_category: false,
+      can_open_in_explorer: true,
+    },
+  };
+
   return {
     activePath: 'E:/Mods/TestMod',
-    selectedFolder: {
-      path: 'E:/Mods/TestMod',
-      name: 'Test Mod',
-      is_enabled: true,
+    selectedFolder,
+    previewSummary: {
+      selected_path: 'E:/Mods/TestMod',
+      selected_node: selectedFolder,
+      is_flat_mod_root: true,
+      display_title: 'Test Mod',
+      display_subtitle: 'Author • v1.0',
+      mod_info_summary: {
+        actual_name: 'Test Mod',
+        author: 'Author',
+        version: '1.0',
+        description: 'Test Description',
+        is_safe: true,
+        is_favorite: false,
+        has_info_json: false,
+      },
+      ini_summary: { file_count: 0, file_names: [] },
+      image_summary: { image_count: 0, primary_image_path: null },
+      warning_summary: { state: 'none', messages: [] },
     },
+    availableObjects: [],
     images: [],
     currentImageIndex: 0,
     setCurrentImageIndex: vi.fn(),
     titleDraft: 'Test Mod',
+    authorDraft: 'Author',
+    versionDraft: '1.0',
     descriptionDraft: 'Test Description',
     setTitleDraft: vi.fn(),
+    setAuthorDraft: vi.fn(),
+    setVersionDraft: vi.fn(),
     setDescriptionDraft: vi.fn(),
     metadataDirty: false,
-    setActiveIniTab: vi.fn(),
     keyBindSections: [],
     openSectionIds: new Set(),
     draftByField: {},
     fieldErrors: {},
-    keyBindingsError: null,
     conflictingKeys: new Set(),
     hasUnsavedEditorChanges: false,
+    changedIniFields: [],
+    changedMetadataFields: [],
     updateModInfo: { isPending: false, mutateAsync: vi.fn() },
     savePreviewImage: { isPending: false, mutateAsync: vi.fn() },
     removePreviewImage: { isPending: false, mutateAsync: vi.fn() },
     clearPreviewImages: { isPending: false, mutateAsync: vi.fn() },
     writeModIni: { isPending: false, mutateAsync: vi.fn() },
     previewImagesQuery: { isFetching: false, refetch: vi.fn() },
-    toggleMod: { isPending: false, mutate: vi.fn() },
     showUnsavedModal: false,
-    setShowUnsavedModal: vi.fn(),
-    setPendingTransition: vi.fn(),
     pendingTransition: null,
     applyPendingTransition: vi.fn(),
     saveMetadata: vi.fn(),
@@ -97,7 +211,6 @@ function createDefaultHookState() {
     discardEditor: vi.fn(),
     requestToggleSection: vi.fn(),
     updateEditorField: vi.fn(),
-    setActivePath: vi.fn(),
   };
 }
 
@@ -148,27 +261,7 @@ describe('PreviewPanel', () => {
     render(<PreviewPanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('Character Mod')).toBeInTheDocument();
-    });
-  });
-
-  // Covers: TC-6.1-01 (Toggle mod enabled/disabled)
-  it('should toggle mod enabled state via checkbox', async () => {
-    const toggleModMock = vi.fn();
-    const state = createDefaultHookState();
-    state.toggleMod = { isPending: false, mutate: toggleModMock };
-    state.selectedFolder = {
-      path: 'E:/Mods/TestMod',
-      name: 'Test Mod',
-      is_enabled: false,
-    };
-    mockUsePreviewPanelState.mockReturnValue(state);
-
-    render(<PreviewPanel />);
-
-    await waitFor(() => {
-      const checkboxes = screen.getAllByRole('checkbox');
-      expect(checkboxes.length).toBeGreaterThan(0);
+      expect(screen.getByDisplayValue('Character Mod')).toBeInTheDocument();
     });
   });
 
@@ -246,7 +339,7 @@ describe('PreviewPanel', () => {
 
     // Verify component renders without crashing
     await waitFor(() => {
-      expect(screen.getByText('Test Mod')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Test Mod')).toBeInTheDocument();
     });
   });
 
@@ -268,14 +361,12 @@ describe('PreviewPanel', () => {
   });
 
   // Covers: TC-16-011 (Large Header Toggle Switch)
-  it('should trigger toggleMod when large header toggle is clicked', async () => {
-    const toggleModMock = vi.fn();
+  it('should trigger shared switch action when large header toggle is clicked', async () => {
     const state = createDefaultHookState();
-    state.toggleMod = { isPending: false, mutate: toggleModMock };
     state.selectedFolder = {
-      path: 'E:/Mods/TestMod',
-      name: 'Test Mod',
+      ...state.selectedFolder,
       is_enabled: false,
+      switch_state: 'disabled',
     };
     mockUsePreviewPanelState.mockReturnValue(state);
 
@@ -288,7 +379,7 @@ describe('PreviewPanel', () => {
       expect(toggles.length).toBeGreaterThan(0);
       if (toggles[0]) {
         toggles[0].click();
-        expect(toggleModMock).toHaveBeenCalled();
+        expect(sharedModActionsState.handleToggleEnabled).toHaveBeenCalled();
       }
     });
   });

@@ -46,6 +46,7 @@
     "aria_label_disabled": "{{name}} — nonaktif",
     "mod_pack": "Paket Mod",
     "variants": "Varian",
+    "flat_mod": "Mod Flat",
     "favorite": "Favorit",
     "unfavorite": "Batal Favorit",
     "misplaced_title": "Salah Tempat: Ketidakcocokan karakter terdeteksi di info.json",
@@ -121,5 +122,8 @@
     "load_error": "Gagal memuat mod",
     "no_subfolders": "Tidak ada subfolder ditemukan.",
     "preview_hint": "Periksa panel detail untuk informasi mod."
+  },
+  "badges": {
+    "corrupt": "Rusak"
   }
 }

@@ -76,10 +76,12 @@
     "snapshot": "快照",
     "restore": "还原",
     "active_mods": "当前活动的 Mod",
+    "all_disabled": "全部禁用",
     "empty": "{{name}} 是空的（全部禁用）。",
     "target_desc": {
       "active": "上次活动的集合",
-      "none": "无记忆的活动集合"
+      "none": "无记忆的活动集合",
+      "system_fallback": "正在恢复 corridor 系统状态记录的模组。"
     },
     "missing_target": "没有保存的目标状态。所有 Mod 将保持禁用。"
   },

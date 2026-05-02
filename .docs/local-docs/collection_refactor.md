@@ -1,7 +1,17 @@
 # Plan: Simplify Collections & Privacy Systems for Stability
 
 TL;DR
-Your collections system has solid architecture but suffers from complex workspace reconciliation, heuristic signature matching with edge cases, and ambiguous state ownership (FS vs DB vs Cache). The privacy system is missing visual masking and has a PIN lockout persistence bug. This plan restructures both systems around KISS principles: explicit state ownership, deterministic identity matching, and clear error boundaries.
+The collections and privacy systems are now centered on one small runtime mutation engine for `DISABLED ` prefix changes. Filesystem remains the physical truth, DB `mods` is the synchronized projection, collections are saved snapshots, and corridor state owns the active/unsaved pointers. Keep future work focused on deterministic identity, clear error boundaries, and avoiding a generic orchestration layer.
+
+## Current Stabilization Status (May 2026)
+
+- ✅ Collection apply and Safe/Unsafe switch now share `runtime_mutation_engine` for filesystem rename + DB projection.
+- ✅ Missing collection members return `MissingMods` before mutation unless `ignore_missing = true`; skipped members become warnings.
+- ✅ Safe/Unsafe switch returns backend-authoritative `active_safe`, restored collection, and staged warnings.
+- ✅ Safe Mode persistence is backend authoritative through `safe_mode.enabled`.
+- ✅ PIN failed attempts and lockout are DB-backed, so restart does not clear lockout.
+- ✅ Folder card leak guard masks out-of-corridor mod names with `[Hidden Mod]`/blur fallback.
+- ⚠️ Remaining concern: workspace reconciliation/signature matching can still be simplified further, but it should evolve around projected state and stable IDs rather than another frontend fallback chain.
 
 ---
 
@@ -9,19 +19,19 @@ Your collections system has solid architecture but suffers from complex workspac
 
 ### Collections System
 
-1. Workspace reconciliation is convoluted — nested fallback logic in workspaceSelection.ts with 3 row kinds; easy to break on edge cases
-2. Signature matching relies on heuristics — breaks if mods renamed on disk; doesn't use immutable mod IDs
-3. FS↔DB sync is implicit — mod enabled/disabled state tracked via DISABLED prefix; info.json updates fire OUTSIDE transactions (race condition risk)
+1. Workspace reconciliation is still more complex than necessary — keep pressure toward one backend-resolved active/unsaved corridor state.
+2. Signature matching should prefer stable `mod_id` and canonical `folder_path_key`; avoid adding more path-string heuristics.
+3. FS↔DB sync for enabled/disabled state is now explicit through the runtime mutation engine; future manual toggles should use the same boundary.
 4. State scattered across layers — Zustand + TanStack Query + DB cache; no single source of truth
-5. No early validation — safe-mode context checked AFTER expensive preflight ops
-6. No rollback on failures — partial apply failures leave state inconsistent
+5. Early validation exists for collection corridor and missing mods; keep apply/switch validation before disk mutation.
+6. Runtime mutation rollback is best-effort; tests should keep covering DB failure after successful FS rename.
 
 ### Privacy/Safe-Mode System
 
-- ✗ Visual masking NOT implemented ([Hidden Mod] + blur missing when Safe Mode active)
-- ✗ PIN lockout state stored in-memory; resets on app restart
-- ✗ Bulk corridor-switch warnings not surfaced to user
-- ✗ No validation on sub-mod filtering depth
+- ✓ Visual masking implemented as a leak guard in folder cards.
+- ✓ PIN lockout persisted in DB-backed `pin_config`.
+- ✓ Bulk corridor-switch warnings are surfaced in switch result and frontend toast.
+- ✓ Corridor switch depth filtering is explicit enough to avoid top-level Object mutation.
 
 ---
 
@@ -37,22 +47,22 @@ Remove nested fallback logic. Extract into pure function: resolveActiveCollectio
 - Consolidate preferences in one store (no localStorage scatter)
 - Outcome: No ambiguous fallbacks; single decision path
 
-#### 1B. Unify State Ownership (Backend)
+#### 1B. Unify State Ownership (Backend) — Implemented for Enabled/Disabled Mutation
 
 Make explicit: Mod enabled/disabled ↔ FS + DB ALWAYS synchronized.
 
-- Add mods.disabled_reason column (null | 'SYSTEM' | 'USER')
-- mods.status becomes computed from FS state
+- Use `mods.disabled_reason` consistently (`NULL`, `SYSTEM`, `COLLECTION`, user/manual reasons).
+- Keep `mods.status` and `folder_path_key` as DB projection synchronized by the runtime mutation engine.
 - Verify FS↔DB consistency at operation boundaries (spot-check 10 newest mods before ops)
 - Move info.json updates into DB transactions (use watcher suppression)
-- Outcome: FS and DB never diverge; no race conditions
+- Outcome: Apply/switch share one mutation path; future toggle work should join the same engine instead of custom rename logic.
 
 #### 1C. Simplify Signature Matching (Backend)
 
 Replace heuristics with deterministic identity.
 
-- Use immutable mod IDs (SHA1 of relative path, already in rules)
-- Signature = ordered list of (mod_id, object_state) pairs (not paths)
+- Use stable `mod_id` first, with canonical `folder_path_key` as the healing fallback.
+- Signature = ordered list of (`mod_id`, `folder_path_key`, object_state) pairs, not raw display paths.
 - Implement 3-level match: exact, prefix, or no-match
 - Cache signature in DB to avoid rescans
 - Outcome: Renaming mods on disk doesn't break collection identity; no edge cases
@@ -85,20 +95,20 @@ Prevent regressions.
 
 ### Phase 2: Privacy/Safe-Mode Gap Fixes (Quick Wins)
 
-#### 2A. Visual Masking: Implement [Hidden Mod] + Blur
+#### 2A. Visual Masking: Implement [Hidden Mod] + Blur — Implemented
 
 - Add conditional rendering in FolderCard + ObjectList
 - When isSafeMode && !mod.is_safe: Show <span className="blur-[12px]">[Hidden Mod]</span>
 
-#### 2B. PIN Lockout Persistence
+#### 2B. PIN Lockout Persistence — Implemented
 
-- Remove in-memory state; always read/write from DB
+- Remove in-memory state from service behavior; always read/write failed attempts and lockout from DB.
 - Lockout state survives app restart
 
-#### 2C. Bulk-Switch Warning Surface
+#### 2C. Bulk-Switch Warning Surface — Implemented
 
-- Track detailed failures in CorridorSwitchResult
-- Toast shows: "3 mods couldn't be disabled" + expandable list
+- Track staged warnings in `SwitchResult.warnings`.
+- Toast summarizes warning count; detailed warning expansion can be added later only if users need it.
 
 ---
 
@@ -114,7 +124,7 @@ Prevent regressions.
 | collection_cmds.rs                 | Add early safe-mode validation, new resolver command     |
 | src-tauri/src/database/migrations/ | Add mods.disabled_reason column                          |
 | src/components/FolderCard.tsx      | Implement visual masking                                 |
-| pin_guard.rs                       | Remove in-memory lockout state                           |
+| pin_service.rs / pin_repo.rs       | Persist failed attempts and lockout state in DB          |
 
 ---
 
@@ -163,7 +173,7 @@ Excluded: UI refactoring beyond state mgmt, new collection features, dedup integ
 
 ## Key Decisions
 
-1. Mod ID as Identity: Immutable mod IDs (SHA1 of path) replace heuristics → eliminates edge cases, requires migration
+1. Mod identity first: prefer stable `mod_id` and canonical `folder_path_key`; avoid raw display path heuristics.
 2. Early Validation: Check safe-mode context before preflight → fail fast
 3. Explicit State Ownership: Each layer (FS/DB/Cache) has clear responsibility
 4. No Breaking Changes: New resolveWorkspaceContext is additive; phased rollout possible
@@ -198,6 +208,6 @@ Excluded: UI refactoring beyond state mgmt, new collection features, dedup integ
 
 ### Next Implementation Delta
 
-1. Continue backend privacy simplification in `services/privacy/mod.rs` (transaction boundary clarity and deterministic warning propagation under partial restore)
-2. Add/verify cache consistency assertions around the single invalidation path after mode switch
-3. Expand command-level tests for no-op switch guard behavior in settings command layer
+1. Replace remaining manual toggle rename paths with `runtime_mutation_engine` if any still bypass it.
+2. Keep cache consistency assertions around the corridor-explicit collection query key and backend mode result.
+3. Expand command-level tests for no-op switch guard behavior in the collection command layer.

@@ -1,4 +1,4 @@
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use crate::domain::collection::{
     Collection, CollectionMod, CollectionObject, CollectionRoot, CollectionSummary,
@@ -17,7 +17,7 @@ pub async fn list_for_game(
 ) -> Result<Vec<Collection>, CollectionError> {
     let rows = sqlx::query(
         r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
-                  last_active, snapshot_json, signature, root_count, created_at, updated_at
+                  last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at
         FROM collections
         WHERE game_id = ?
         ORDER BY is_unsaved DESC, name ASC"#,
@@ -40,15 +40,18 @@ pub async fn list_for_corridor(
     let unsaved_clause = if include_unsaved {
         ""
     } else {
-        " AND is_unsaved = 0"
+        " AND c.is_unsaved = 0"
     };
 
     let query = format!(
-        r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
-                  last_active, snapshot_json, signature, root_count, created_at, updated_at
-        FROM collections
-        WHERE game_id = ? AND is_safe = ? {}
-        ORDER BY name ASC"#,
+        r#"SELECT c.id, c.game_id, c.name, c.name_key, c.is_safe, c.is_unsaved, c.is_last_unsaved,
+                  c.last_active, c.snapshot_json, c.signature, c.root_count, c.display_mod_count,
+                  c.created_at, c.updated_at,
+                  (SELECT COUNT(*) FROM collection_mods WHERE collection_id = c.id) +
+                  (SELECT COUNT(*) FROM collection_objects WHERE collection_id = c.id) AS member_count_computed
+        FROM collections c
+        WHERE c.game_id = ? AND c.is_safe = ? {}
+        ORDER BY c.name ASC"#,
         unsaved_clause
     );
 
@@ -65,7 +68,9 @@ pub async fn list_for_corridor(
 pub async fn get_by_id(pool: &SqlitePool, id: &str) -> Result<Option<Collection>, CollectionError> {
     let row = sqlx::query(
         r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
-                  last_active, snapshot_json, signature, root_count, created_at, updated_at
+                  last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at,
+                  (SELECT COUNT(*) FROM collection_mods WHERE collection_id = collections.id) +
+                  (SELECT COUNT(*) FROM collection_objects WHERE collection_id = collections.id) AS member_count_computed
         FROM collections
         WHERE id = ?"#,
     )
@@ -128,11 +133,58 @@ pub async fn create(
 
 /// Delete a collection (CASCADE handles members).
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), CollectionError> {
+    let mut tx = pool.begin().await?;
+    delete_tx(&mut *tx, id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn delete_tx(conn: &mut SqliteConnection, id: &str) -> Result<(), CollectionError> {
     sqlx::query("DELETE FROM collections WHERE id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     Ok(())
+}
+
+pub async fn find_unsaved_for_corridor(
+    pool: &SqlitePool,
+    game_id: &str,
+    is_safe: bool,
+    exclude_id: Option<&str>,
+) -> Result<Option<Collection>, CollectionError> {
+    let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
+
+    let row = if let Some(excluded_id) = exclude_id {
+        sqlx::query(
+            r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
+                      last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at
+               FROM collections
+               WHERE game_id = ? AND is_safe = ? AND is_unsaved = 1 AND id != ?
+               ORDER BY updated_at DESC
+               LIMIT 1"#,
+        )
+        .bind(game_id)
+        .bind(is_safe_i32)
+        .bind(excluded_id)
+        .fetch_optional(pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
+                      last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at
+               FROM collections
+               WHERE game_id = ? AND is_safe = ? AND is_unsaved = 1
+               ORDER BY updated_at DESC
+               LIMIT 1"#,
+        )
+        .bind(game_id)
+        .bind(is_safe_i32)
+        .fetch_optional(pool)
+        .await?
+    };
+
+    Ok(row.as_ref().map(row_to_collection))
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +196,8 @@ pub async fn get_mods(
     collection_id: &str,
 ) -> Result<Vec<CollectionMod>, CollectionError> {
     let rows = sqlx::query(
-        r#"SELECT cm.collection_id, cm.mod_id, cm.mod_path, cm.mod_path_key, cm.object_id, 
+        r#"SELECT cm.collection_id, cm.mod_id, cm.mod_path, cm.mod_path_key, cm.object_id,
+                  cm.preview_path, cm.node_type, cm.warnings_json,
                   m.actual_name as display_name
            FROM collection_mods cm
            LEFT JOIN mods m ON cm.mod_id = m.id
@@ -164,6 +217,9 @@ pub async fn get_mods(
             mod_path_key: r.get("mod_path_key"),
             object_id: r.get("object_id"),
             display_name: r.get("display_name"),
+            preview_path: r.get("preview_path"),
+            node_type: r.get("node_type"),
+            warnings: parse_warnings_json(r.try_get("warnings_json").ok()),
             is_enabled: true,
         })
         .collect())
@@ -241,34 +297,64 @@ pub async fn replace_all_state(
     roots: &[CollectionRoot],
     signature: Option<&str>,
     snapshot_json: Option<&str>,
+    display_mod_count: i32,
 ) -> Result<(), CollectionError> {
     let mut tx = pool.begin().await?;
+    replace_all_state_tx(
+        &mut *tx,
+        id,
+        mods,
+        objects,
+        roots,
+        signature,
+        snapshot_json,
+        display_mod_count,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
 
+pub async fn replace_all_state_tx(
+    conn: &mut SqliteConnection,
+    id: &str,
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    roots: &[CollectionRoot],
+    signature: Option<&str>,
+    snapshot_json: Option<&str>,
+    display_mod_count: i32,
+) -> Result<(), CollectionError> {
     // Clear existing
     sqlx::query("DELETE FROM collection_mods WHERE collection_id = ?")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM collection_objects WHERE collection_id = ?")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM collection_roots WHERE collection_id = ?")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
 
     // Insert Mods
     if !mods.is_empty() {
-        let mut qb = sqlx::QueryBuilder::new("INSERT INTO collection_mods (collection_id, mod_id, mod_path, mod_path_key, object_id) ");
+        let mut qb = sqlx::QueryBuilder::new(
+            "INSERT INTO collection_mods (collection_id, mod_id, mod_path, mod_path_key, object_id, preview_path, node_type, warnings_json) ",
+        );
         qb.push_values(mods, |mut b, m| {
             b.push_bind(&m.collection_id)
                 .push_bind(&m.mod_id)
                 .push_bind(&m.mod_path)
                 .push_bind(&m.mod_path_key)
-                .push_bind(&m.object_id);
+                .push_bind(&m.object_id)
+                .push_bind(&m.preview_path)
+                .push_bind(&m.node_type)
+                .push_bind(serialize_warnings_json(&m.warnings));
         });
-        qb.build().execute(&mut *tx).await?;
+        qb.build().execute(&mut *conn).await?;
     }
 
     // Insert Objects
@@ -281,7 +367,7 @@ pub async fn replace_all_state(
                 .push_bind(&o.object_id)
                 .push_bind(if o.is_enabled { 1i32 } else { 0i32 });
         });
-        qb.build().execute(&mut *tx).await?;
+        qb.build().execute(&mut *conn).await?;
     }
 
     // Insert Roots
@@ -302,19 +388,18 @@ pub async fn replace_all_state(
                 .push_bind(&r.thumbnail_hint)
                 .push_bind(&r.corridor_source);
         });
-        qb.build().execute(&mut *tx).await?;
+        qb.build().execute(&mut *conn).await?;
     }
 
     // Update stats
-    sqlx::query("UPDATE collections SET signature = ?, snapshot_json = ?, root_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    sqlx::query("UPDATE collections SET signature = ?, snapshot_json = ?, root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(signature)
         .bind(snapshot_json)
         .bind(roots.len() as i32)
+        .bind(display_mod_count)
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-
-    tx.commit().await?;
     Ok(())
 }
 
@@ -327,11 +412,23 @@ pub async fn update_member_paths(
 ) -> Result<u64, CollectionError> {
     let result = sqlx::query(
         r#"UPDATE collection_mods
-        SET mod_path = ?, object_id = COALESCE(?, object_id)
+        SET mod_path = ?,
+            mod_path_key = ?,
+            object_id = COALESCE(?, object_id),
+            preview_path = CASE
+                WHEN preview_path = ? THEN ?
+                ELSE preview_path
+            END
         WHERE mod_path = ?"#,
     )
     .bind(new_mod_path)
+    .bind(crate::services::path_key::folder_path_key(
+        new_mod_path,
+        None,
+    ))
     .bind(new_object_id)
+    .bind(old_mod_path)
+    .bind(new_mod_path)
     .bind(old_mod_path)
     .execute(conn)
     .await?;
@@ -344,6 +441,7 @@ pub async fn update_member_paths(
 // ---------------------------------------------------------------------------
 
 fn row_to_collection(r: &sqlx::sqlite::SqliteRow) -> Collection {
+    use sqlx::Row;
     Collection {
         id: r.get("id"),
         game_id: r.get("game_id"),
@@ -356,16 +454,29 @@ fn row_to_collection(r: &sqlx::sqlite::SqliteRow) -> Collection {
         snapshot_json: r.get("snapshot_json"),
         signature: r.get("signature"),
         root_count: r.get("root_count"),
+        display_mod_count: r.try_get("display_mod_count").unwrap_or(0),
+        member_count: r.try_get("member_count_computed").ok(),
         created_at: r.get("created_at"),
         updated_at: r.get("updated_at"),
     }
+}
+
+fn parse_warnings_json(raw: Option<String>) -> Vec<String> {
+    let Some(raw_json) = raw else {
+        return Vec::new();
+    };
+
+    serde_json::from_str::<Vec<String>>(&raw_json).unwrap_or_default()
+}
+
+fn serialize_warnings_json(warnings: &[String]) -> String {
+    serde_json::to_string(warnings).unwrap_or_else(|_| "[]".to_string())
 }
 
 pub fn to_summary(
     c: &Collection,
     active_collection_id: Option<&str>,
     undo_collection_id: Option<&str>,
-    member_count: i32,
 ) -> CollectionSummary {
     CollectionSummary {
         id: c.id.clone(),
@@ -374,8 +485,9 @@ pub fn to_summary(
         is_unsaved: c.is_unsaved,
         signature: c.signature.clone(),
         is_active: active_collection_id == Some(c.id.as_str()),
-        is_undo_target: undo_collection_id == Some(c.id.as_str()),
+        is_undo_target: undo_collection_id == Some(c.id.as_str()) && false,
         updated_at: c.updated_at.clone(),
-        member_count,
+        raw_member_count: c.member_count.unwrap_or(0),
+        mod_count: c.display_mod_count,
     }
 }

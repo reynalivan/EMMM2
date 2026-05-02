@@ -3,12 +3,12 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: With hundreds or thousands of objects in the objectlist, users can't find the right character without scrolling — and there's no way to quickly focus on objects that have mods or hide NSFW content in public settings.
-- **Proposed Solution**: A filter toolbar with fuzzy text search (debounced, Web Worker-offloaded), sort options (A-Z, New, Rarity), status filters (Enabled/Disabled), and a Safe Mode filter that runs server-side to isolate content corridors.
+- **Proposed Solution**: A filter toolbar with fuzzy text search (debounced, Web Worker-offloaded), sort options (A-Z, New, Rarity), status filters (Enabled/Disabled), and a corridor-aware runtime read-model. Safe Mode isolates counts, active state, and preview visibility server-side, while ObjectList itself remains a stable navigation surface showing all objects.
 - **Success Criteria**:
   - Filter/search list updates within ≤ 100ms after each keystroke for a dataset of ≤ 10,000 objects.
   - Fuzzy match uses Jaro-Winkler with a score threshold ≥ 0.75; search is offloaded to a Web Worker for multi-threading.
   - Sort preference persists across restarts via `localStorage`.
-  - 0 results returned for any object that contains no mods matching the active safety corridor.
+  - Objects with no mods in the active safety corridor remain visible for navigation, but render corridor-aware inactive/count state without leaking hidden preview content.
 
 ---
 
@@ -58,14 +58,14 @@ As a user, I want to filter the objectlist by status (enabled/disabled) or categ
 
 #### US-08.4: Safe Mode Content Filter
 
-As a privacy-conscious user, I want NSFW-flagged objects to be hidden or masked in the objectlist when Safe Mode is active, so that sensitive content is never visible in public.
+As a privacy-conscious user, I want Safe Mode to isolate unsafe runtime content without collapsing the navigation pane, so that sensitive content is never previewed while ObjectList remains stable.
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                                                   |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-08.4.1 | ✅ Positive | Given Safe Mode is ENABLED, then the `get_objects_cmd` backend query excludes any object where ALL its mods are NSFW (`is_safe = false`) — the object does not appear in the "Safe" corridor list at all                                                                                   |
-| AC-08.4.2 | ✅ Positive | Given Safe Mode is DISABLED (Unsafe Corridor), then only objects with at least one NSFW mod are shown (or all if configured for a mixed view, but current logic enforces corridor isolation)                                                                                               |
-| AC-08.4.3 | ❌ Negative | Given an object contains only mods with explicit `is_safe = false` flags and Safe Mode is ENABLED, it is excluded even if its folder name contains no NSFW keywords                                                                                                                        |
-| AC-08.4.4 | ⚠️ Edge     | Given Safe Mode is toggled via the global toggle mid-session while a sensitive object is currently selected in the objectlist, then within ≤ 100ms: the selected object is deselected, the list re-fetches with the new filter, and no sensitive data remains visible in the preview panel |
+| AC-08.4.1 | ✅ Positive | Given Safe Mode is ENABLED, then ObjectList still shows all objects, but enabled counts and runtime active state are projected only from the Safe corridor                                                                                                                                                |
+| AC-08.4.2 | ✅ Positive | Given Safe Mode is DISABLED (Unsafe Corridor), then ObjectList still shows all objects, but enabled counts and runtime active state are projected only from the Unsafe corridor                                                                                                                  |
+| AC-08.4.3 | ❌ Negative | Given an object contains only unsafe mods, then in Safe Mode it remains visible as an object row for navigation, but shows no active Safe-corridor mod state and cannot reveal unsafe preview content                                                                                         |
+| AC-08.4.4 | ⚠️ Edge     | Given Safe Mode is toggled mid-session while an unsafe mod is selected, then the runtime selection is cleared or rewritten within ≤ 100ms and no sensitive mod detail remains visible in the preview panel                                                                                   |
 
 ---
 
@@ -74,7 +74,7 @@ As a privacy-conscious user, I want NSFW-flagged objects to be hidden or masked 
 - No server-side or remote search; all fuzzy matching runs locally (Web Worker or main thread).
 - No advanced query syntax (e.g., `is:enabled type:weapon`) in this phase — plain text + toggles only.
 - No saved named filter presets.
-- Safe Mode filter is applied at the `get_objects_cmd` query level — not as a post-process mask on the frontend (prevents hidden data traveling over IPC).
+- Safe Mode corridor semantics are enforced in the shared workspace read-model — not as a post-process mask on the frontend.
 
 ---
 
@@ -91,9 +91,9 @@ FilterToolbar (ObjectListToolbar component)
       ├── TypeChips: [All, Characters, Weapons, UI, Other]
       └── MetadataChips: [Dynamic based on schema]
 
-useObjects(gameId, filterState) → React Query
-  └── commands.getObjectsCmd({ gameId, safeMode, hideEmpty, sortBy })
-      └── SQL: WHERE ... ORDER BY ... (sort applied DB-side)
+useWorkspaceViewModel(filterState, selection) → React Query
+  └── commands.getWorkspaceViewModel({ input })
+      └── Backend projects filtered/sorted object rows and explorer semantics in one payload
 
 Fuzzy search (heavy path):
   └── Web Worker: fuzzysort.js OR custom Jaro-Winkler impl
@@ -104,15 +104,15 @@ Fuzzy search (heavy path):
 
 | Component        | Detail                                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Object Query     | `commands.getObjectsCmd({ gameId, hide_empty, safe_mode, sort_by })` — sorting and empty-filter done DB-side via `ORDER BY` and `HAVING` |
+| Object Query     | `commands.getWorkspaceViewModel({ input })` — filtering/sorting applied in the backend runtime projection |
 | Fuzzy Search     | `fuzzysort` npm package (Jaro-Winkler variant) — threshold 0.75, runs in Web Worker for ≥ 500 objects                                    |
 | Sort Persist     | `localStorage['sidebarSort']` — string enum `'az'                                                                                        | 'active_first'` |
-| Safe Mode        | Read from `useAppStore.safeMode` Zustand state → passed as query param to `get_objects_cmd`                                              |
-| Query Invalidate | All filter changes call `queryClient.invalidateQueries(['objects', gameId])` to re-fetch with new params                                 |
+| Safe Mode        | Read from `useAppStore.safeMode` Zustand state → passed into `getWorkspaceViewModel({ input })` corridor-aware runtime projection         |
+| Query Refresh    | Filter changes update workspace query params; runtime refresh uses descriptor scopes instead of direct invalidation                       |
 
 ### Security & Privacy
 
-- **Safe Mode filter is enforced backend-side** in the SQL `WHERE` clause — objects that do not contain mods in the active corridor never travel over the IPC channel.
+- **Safe Mode corridor semantics are enforced backend-side** in the workspace runtime projection — hidden mod detail does not travel over the IPC channel, while object navigation rows remain stable.
 - **Fuzzy search operates on the already-fetched object name array** — no additional IPC call is made with the raw search string; the string never reaches the Rust process.
 - **Sort key deserialization** uses a typed Rust `enum SortBy { Az, ActiveFirst }` — unrecognized values are rejected by `serde` before the query runs.
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'motion/react';
-import { SCENE_DURATION_MS, usePrefersReducedMotion } from './demoTypes';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
+import { SCENE_DURATION_MS } from './demoTypes';
 
 import DemoAutoOrganize from './scenes/DemoAutoOrganize';
 import DemoTogglePreset from './scenes/DemoTogglePreset';
