@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  publishQueryInvalidations,
   publishRuntimeDescriptor,
   runtimeQueryKeys,
 } from './queryRefresh';
@@ -61,6 +62,42 @@ describe('queryRefresh', () => {
     });
   });
 
+  it('does not let none downgrade an active batched refresh', async () => {
+    const queryClient = createQueryClientMock();
+    const activeDescriptor: RuntimeEffectDescriptor = {
+      rewrites: [],
+      invalidatedPaths: [],
+      objectCountDeltas: [],
+      thumbnailPaths: [],
+      removedQueryKeys: [],
+      invalidatedQueryKeys: [],
+      refreshEvents: ['objectRowsChanged'],
+    };
+    const passiveDescriptor: RuntimeEffectDescriptor = {
+      rewrites: [],
+      invalidatedPaths: [],
+      objectCountDeltas: [],
+      thumbnailPaths: [],
+      removedQueryKeys: [],
+      invalidatedQueryKeys: [],
+      refreshEvents: ['dashboardChanged'],
+    };
+
+    await Promise.all([
+      publishRuntimeDescriptor(queryClient as never, activeDescriptor, 'active'),
+      publishRuntimeDescriptor(queryClient as never, passiveDescriptor, 'none'),
+    ]);
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.workspaceViewModel,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.dashboard,
+      refetchType: 'active',
+    });
+  });
+
   it('skips refresh work when descriptor has no refresh events', async () => {
     const queryClient = createQueryClientMock();
     const descriptor: RuntimeEffectDescriptor = {
@@ -76,5 +113,18 @@ describe('queryRefresh', () => {
     await publishRuntimeDescriptor(queryClient as never, descriptor, 'active');
 
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('centralizes dynamic query invalidations and de-duplicates keys', async () => {
+    const queryClient = createQueryClientMock();
+    const key = ['v2-collections', 'list', 'game-1', true] as const;
+
+    await publishQueryInvalidations(queryClient as never, [key, key], 'active');
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: key,
+      refetchType: 'active',
+    });
   });
 });

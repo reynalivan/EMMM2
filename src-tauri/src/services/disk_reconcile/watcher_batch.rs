@@ -25,9 +25,12 @@ pub fn collect_changed_paths(events: &[ModWatchEvent]) -> Vec<String> {
         match event {
             ModWatchEvent::Created(path)
             | ModWatchEvent::Removed(path)
-            | ModWatchEvent::Modified(path)
-            | ModWatchEvent::StatusChanged { path, .. } => {
+            | ModWatchEvent::Modified(path) => {
                 changed_paths.push(path.clone());
+            }
+            ModWatchEvent::StatusChanged { from, to, .. } => {
+                changed_paths.push(from.clone());
+                changed_paths.push(to.clone());
             }
             ModWatchEvent::Renamed { from, to } => {
                 changed_paths.push(from.clone());
@@ -45,8 +48,14 @@ pub fn collect_rename_hints(mods_path: &Path, events: &[ModWatchEvent]) -> Watch
     let mut mod_renames = BTreeSet::new();
 
     for event in events {
-        let ModWatchEvent::Renamed { from, to } = event else {
-            continue;
+        let (from, to) = match event {
+            ModWatchEvent::Renamed { from, to } | ModWatchEvent::StatusChanged { from, to, .. } => {
+                (from, to)
+            }
+            ModWatchEvent::Created(_)
+            | ModWatchEvent::Removed(_)
+            | ModWatchEvent::Modified(_)
+            | ModWatchEvent::Error(_) => continue,
         };
 
         let Some(relative_from) = relative_path(from, mods_path) else {
@@ -97,15 +106,25 @@ mod tests {
     }
 
     #[test]
+    fn collect_changed_paths_keeps_both_status_change_sides() {
+        let paths = collect_changed_paths(&[ModWatchEvent::StatusChanged {
+            from: "E:/Mods/Alice/Blue".to_string(),
+            to: "E:/Mods/Alice/DISABLED Blue".to_string(),
+            from_status: "ENABLED",
+            to_status: "DISABLED",
+        }]);
+
+        assert_eq!(paths.len(), 2);
+        assert!(paths.iter().any(|value| value.ends_with("Alice/Blue")));
+        assert!(paths
+            .iter()
+            .any(|value| value.ends_with("Alice/DISABLED Blue")));
+    }
+
+    #[test]
     fn collect_rename_hints_splits_object_and_mod_renames() {
-        let expected_mod_from = std::path::PathBuf::from("Alice")
-            .join("Old Mod")
-            .to_string_lossy()
-            .to_string();
-        let expected_mod_to = std::path::PathBuf::from("Alice")
-            .join("New Mod")
-            .to_string_lossy()
-            .to_string();
+        let expected_mod_from = "Alice/Old Mod".to_string();
+        let expected_mod_to = "Alice/New Mod".to_string();
         let hints = collect_rename_hints(
             Path::new("E:/Mods"),
             &[
@@ -128,5 +147,23 @@ mod tests {
             hints.mod_renames,
             vec![(expected_mod_from, expected_mod_to)]
         );
+    }
+
+    #[test]
+    fn collect_rename_hints_includes_status_change_renames() {
+        let expected_from = "Alice/Blue".to_string();
+        let expected_to = "Alice/DISABLED Blue".to_string();
+
+        let hints = collect_rename_hints(
+            Path::new("E:/Mods"),
+            &[ModWatchEvent::StatusChanged {
+                from: "E:/Mods/Alice/Blue".to_string(),
+                to: "E:/Mods/Alice/DISABLED Blue".to_string(),
+                from_status: "ENABLED",
+                to_status: "DISABLED",
+            }],
+        );
+
+        assert_eq!(hints.mod_renames, vec![(expected_from, expected_to)]);
     }
 }

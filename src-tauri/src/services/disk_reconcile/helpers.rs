@@ -47,7 +47,7 @@ pub fn classify_runtime_corridor(
 pub fn load_runtime_mod_metadata(
     mod_path: &Path,
     raw_folder_name: &str,
-    object_disabled: bool,
+    _object_disabled: bool,
     safe_mode_keywords: &[String],
     existing_manual_safe: Option<bool>,
 ) -> RuntimeModMetadata {
@@ -87,8 +87,31 @@ pub fn load_runtime_mod_metadata(
         actual_name,
         is_safe: resolved_is_safe,
         corridor_source: resolved_corridor_source,
-        status: ItemStatus::from_is_disabled(
-            object_disabled || is_disabled_runtime_name(raw_folder_name),
-        ),
+        status: ItemStatus::from_is_disabled(is_disabled_runtime_name(raw_folder_name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_runtime_mod_metadata;
+    use crate::database::models::ItemStatus;
+
+    #[test]
+    fn object_disabled_does_not_mutate_child_mod_status() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+
+        let metadata = load_runtime_mod_metadata(temp.path(), "Blue Dress", true, &[], None);
+
+        assert_eq!(metadata.status, ItemStatus::Enabled);
+    }
+
+    #[test]
+    fn disabled_mod_folder_controls_mod_status() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+
+        let metadata =
+            load_runtime_mod_metadata(temp.path(), "DISABLED Blue Dress", false, &[], None);
+
+        assert_eq!(metadata.status, ItemStatus::Disabled);
     }
 }

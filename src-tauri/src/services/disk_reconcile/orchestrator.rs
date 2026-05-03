@@ -4,8 +4,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::services::disk_reconcile::reconcile::reconcile_disk_projection;
-use crate::services::disk_reconcile::types::{DiskReconcileReason, DiskReconcileResult};
-use crate::services::scanner::watcher::ModWatchEvent;
+use crate::services::disk_reconcile::types::{
+    DiskReconcileReason, DiskReconcileResult, DiskReconcileStatus,
+};
+use crate::services::scanner::watcher::{ModWatchEvent, WatcherSuppressor};
 
 const WATCHER_FORCE_FULL_BATCH_SIZE: usize = 128;
 
@@ -15,6 +17,7 @@ struct PendingSyncRequest {
     force_full: bool,
     reason: DiskReconcileReason,
     max_version: u64,
+    watcher_events: Vec<ModWatchEvent>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -50,6 +53,7 @@ impl DiskReconcileState {
         reason: DiskReconcileReason,
         changed_paths: &[String],
         force_full: bool,
+        watcher_events: &[ModWatchEvent],
     ) -> u64 {
         let mut games = self.games.lock().expect("disk reconcile state poisoned");
         let state = games.entry(game_id.to_string()).or_default();
@@ -62,6 +66,9 @@ impl DiskReconcileState {
                 pending.force_full |= force_full;
                 pending.reason = reason;
                 pending.max_version = version;
+                pending
+                    .watcher_events
+                    .extend(watcher_events.iter().cloned());
             }
             None => {
                 state.pending = Some(PendingSyncRequest {
@@ -69,6 +76,7 @@ impl DiskReconcileState {
                     force_full,
                     reason,
                     max_version: version,
+                    watcher_events: watcher_events.to_vec(),
                 });
             }
         }
@@ -120,7 +128,7 @@ impl DiskReconcileState {
 async fn finalize_runtime_effects(
     pool: &sqlx::SqlitePool,
     config: &crate::services::config::ConfigService,
-    watcher_suppressor: Arc<std::sync::atomic::AtomicBool>,
+    watcher_suppressor: Arc<WatcherSuppressor>,
     game_id: &str,
     reason: DiskReconcileReason,
     changed_roots: Vec<String>,
@@ -131,10 +139,13 @@ async fn finalize_runtime_effects(
     cleared_selection_paths: Vec<String>,
     path_updates: Vec<crate::services::disk_reconcile::types::DiskReconcilePathUpdate>,
     change_summary: crate::services::disk_reconcile::types::DiskReconcileChangeSummary,
+    status: DiskReconcileStatus,
+    error_message: Option<String>,
 ) -> DiskReconcileResult {
-    let collections_changed = folders_changed || objects_changed || runtime_file_changed;
+    let collections_changed = status == DiskReconcileStatus::Applied
+        && (folders_changed || objects_changed || runtime_file_changed);
 
-    let overlay_refresh_triggered =
+    let overlay_refresh_triggered = if status == DiskReconcileStatus::Applied {
         match crate::services::app::runtime_effects::finalize_runtime_side_effects(
             pool,
             config,
@@ -155,11 +166,16 @@ async fn finalize_runtime_effects(
                 );
                 false
             }
-        };
+        }
+    } else {
+        false
+    };
 
     DiskReconcileResult {
         game_id: game_id.to_string(),
         reason,
+        status,
+        error_message,
         changed_roots,
         objects_changed,
         folders_changed,
@@ -178,7 +194,7 @@ async fn run_refresh_once(
     _app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     config: &crate::services::config::ConfigService,
-    watcher_suppressor: Arc<std::sync::atomic::AtomicBool>,
+    watcher_suppressor: Arc<WatcherSuppressor>,
     game_id: &str,
     reason: DiskReconcileReason,
     changed_paths: Vec<String>,
@@ -218,6 +234,8 @@ async fn run_refresh_once(
         reconcile.cleared_selection_paths,
         reconcile.path_updates,
         reconcile.change_summary,
+        reconcile.status,
+        reconcile.error_message,
     )
     .await)
 }
@@ -231,7 +249,7 @@ pub async fn reconcile_disk_state(
     pool: &sqlx::SqlitePool,
     config: &crate::services::config::ConfigService,
     disk_reconcile_state: &DiskReconcileState,
-    watcher_suppressor: Arc<std::sync::atomic::AtomicBool>,
+    watcher_suppressor: Arc<WatcherSuppressor>,
     game_id: String,
     reason: DiskReconcileReason,
     changed_paths: Vec<String>,
@@ -260,7 +278,7 @@ pub async fn reconcile_disk_state_from_watcher_batch(
     pool: &sqlx::SqlitePool,
     config: &crate::services::config::ConfigService,
     disk_reconcile_state: &DiskReconcileState,
-    watcher_suppressor: Arc<std::sync::atomic::AtomicBool>,
+    watcher_suppressor: Arc<WatcherSuppressor>,
     game_id: String,
     changed_paths: Vec<String>,
     watcher_events: &[ModWatchEvent],
@@ -288,18 +306,22 @@ async fn reconcile_disk_state_internal(
     pool: &sqlx::SqlitePool,
     config: &crate::services::config::ConfigService,
     disk_reconcile_state: &DiskReconcileState,
-    watcher_suppressor: Arc<std::sync::atomic::AtomicBool>,
+    watcher_suppressor: Arc<WatcherSuppressor>,
     game_id: String,
     reason: DiskReconcileReason,
     changed_paths: Vec<String>,
     force_full: bool,
     watcher_events: Option<&[ModWatchEvent]>,
 ) -> Result<DiskReconcileResult, String> {
-    let requested_version =
-        disk_reconcile_state.enqueue_request(&game_id, reason.clone(), &changed_paths, force_full);
+    let requested_version = disk_reconcile_state.enqueue_request(
+        &game_id,
+        reason.clone(),
+        &changed_paths,
+        force_full,
+        watcher_events.unwrap_or(&[]),
+    );
     let game_lock = disk_reconcile_state.lock_for_game(&game_id);
     let _guard = game_lock.lock().await;
-    let mut watcher_events_for_run = watcher_events;
 
     loop {
         let Some(request) =
@@ -317,7 +339,11 @@ async fn reconcile_disk_state_internal(
             request.reason,
             request.changed_paths.into_iter().collect(),
             request.force_full,
-            watcher_events_for_run.take(),
+            if request.watcher_events.is_empty() {
+                None
+            } else {
+                Some(&request.watcher_events)
+            },
         )
         .await?;
 
@@ -366,6 +392,9 @@ mod tests {
             request.watcher_events[0],
             ModWatchEvent::Renamed { .. }
         ));
-        assert!(matches!(request.watcher_events[1], ModWatchEvent::Created(_)));
+        assert!(matches!(
+            request.watcher_events[1],
+            ModWatchEvent::Created(_)
+        ));
     }
 }

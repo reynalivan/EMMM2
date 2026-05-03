@@ -1,6 +1,11 @@
+pub mod change_summary;
+pub mod disk_snapshot;
 pub mod helpers;
 pub mod orchestrator;
 pub mod path_classifier;
+pub mod path_updates;
+pub mod projection_writer;
 pub mod reconcile;
+pub mod rename_healer;
 pub mod types;
 pub mod watcher_batch;

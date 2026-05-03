@@ -93,6 +93,7 @@ export type DiskReconcileReason =
   | 'InternalMutation';
 
 export type DiskReconcilePathKind = 'Object' | 'Mod';
+export type DiskReconcileStatus = 'Applied' | 'SourceUnavailable';
 
 export interface DiskReconcilePathUpdate {
   from: string;
@@ -118,6 +119,8 @@ export interface DiskReconcileChangeSummary {
 export interface DiskReconcileResult {
   game_id: string;
   reason: DiskReconcileReason;
+  status: DiskReconcileStatus;
+  error_message: string | null;
   changed_roots: string[];
   objects_changed: boolean;
   folders_changed: boolean;

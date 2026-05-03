@@ -110,6 +110,28 @@ fn test_nested_suppression_guards_keep_watcher_suppressed_until_last_drop() {
 }
 
 #[test]
+fn test_manual_unsuppress_does_not_clear_active_suppression_guard() {
+    let state = WatcherState::default();
+    let _guard = SuppressionGuard::new(&state.suppressor);
+
+    state.suppressor.store(false, Ordering::Release);
+
+    assert!(state.suppressor.load(Ordering::Acquire));
+}
+
+#[test]
+fn test_watcher_keeps_deep_directory_events_but_filters_deep_asset_noise() {
+    let root = Path::new(r"E:\Mods");
+    let deep_dir = root.join("Alice").join("Nested").join("Blue Dress");
+    let deep_asset = deep_dir.join("mesh.buf");
+    let runtime_file = deep_dir.join("mod.ini");
+
+    assert!(should_keep_event_path(&deep_dir, root));
+    assert!(should_keep_event_path(&runtime_file, root));
+    assert!(!should_keep_event_path(&deep_asset, root));
+}
+
+#[test]
 fn test_watcher_nonexistent_path() {
     let suppressed = Arc::new(WatcherSuppressor::new(false));
     let result = watch_mod_directory(Path::new("/nonexistent/path"), suppressed);

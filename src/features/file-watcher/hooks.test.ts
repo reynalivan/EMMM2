@@ -19,9 +19,12 @@ vi.mock('../../stores/useAppStore', () => {
     clearGridSelection: vi.fn(),
   };
 
-  const useAppStore = Object.assign(vi.fn(() => null), {
-    getState: vi.fn(() => state),
-  });
+  const useAppStore = Object.assign(
+    vi.fn(() => null),
+    {
+      getState: vi.fn(() => state),
+    },
+  );
 
   return { useAppStore };
 });
@@ -180,6 +183,61 @@ describe('applyDiskReconcileResult', () => {
       'Disk Reconcile mods path is unavailable: E:/Missing',
     );
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('clears unavailable disk source after a successful applied result', async () => {
+    const { useAppStore } = await import('../../stores/useAppStore');
+    const state = useAppStore.getState();
+
+    applyDiskReconcileResult(
+      createResult({ objects_changed: true }),
+      queryClient as unknown as import('@tanstack/react-query').QueryClient,
+      {
+        id: 'game-1',
+        mod_path: 'E:/Mods',
+        game_type: GameType.GIMI,
+        name: 'Genshin',
+        game_exe: 'game.exe',
+        loader_exe: null,
+        launch_args: null,
+      },
+    );
+    await Promise.resolve();
+
+    expect(state.setDiskSourceUnavailable).toHaveBeenCalledWith('game-1', null);
+  });
+
+  it('uses active refresh for collections and dashboard scopes changed by reconcile', async () => {
+    applyDiskReconcileResult(
+      createResult({
+        collections_changed: true,
+        runtime_file_changed: true,
+      }),
+      queryClient as unknown as import('@tanstack/react-query').QueryClient,
+      {
+        id: 'game-1',
+        mod_path: 'E:/Mods',
+        game_type: GameType.GIMI,
+        name: 'Genshin',
+        game_exe: 'game.exe',
+        loader_exe: null,
+        launch_args: null,
+      },
+    );
+    await Promise.resolve();
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.collections,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.dashboard,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.activeKeybindings,
+      refetchType: 'active',
+    });
   });
 });
 

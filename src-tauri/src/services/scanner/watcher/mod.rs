@@ -15,98 +15,19 @@
 use crate::services::path_key::path_file_name_lossy;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde::Serialize;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-// ── Domain Events (internal) ──────────────────────────────────────────
+mod event_filter;
+mod events;
+mod suppressor;
 
-/// Internal events produced by the watcher closure.
-/// Consumed by the lifecycle event loop for DB sync.
-#[derive(Debug, Clone)]
-pub enum ModWatchEvent {
-    /// A directory was created at depth 1 or 2.
-    Created(String),
-    /// A file was modified (content change, metadata).
-    Modified(String),
-    /// A directory was removed at depth 1 or 2.
-    Removed(String),
-    /// A directory was renamed (paired From→To).
-    Renamed { from: String, to: String },
-    /// A rename that changed enable/disable status (DISABLED prefix).
-    StatusChanged {
-        path: String,
-        from_status: &'static str,
-        to_status: &'static str,
-    },
-    /// A watcher error.
-    Error(String),
-}
-
-// ── IPC Payload (Serde-typed, emitted to frontend) ────────────────────
-
-/// Strongly-typed payload emitted to the frontend via `app.emit("mod_watch:event", payload)`.
-/// Uses `#[serde(tag = "type")]` for discriminated union matching on the TS side.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-pub enum WatchEventPayload {
-    Created {
-        path: String,
-    },
-    Modified {
-        path: String,
-    },
-    Removed {
-        path: String,
-    },
-    Renamed {
-        from: String,
-        to: String,
-    },
-    StatusChanged {
-        path: String,
-        from_status: String,
-        to_status: String,
-    },
-    Error {
-        error: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        path: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        retry_count: Option<u32>,
-    },
-}
-
-impl WatchEventPayload {
-    /// Convert an internal `ModWatchEvent` into the IPC payload.
-    pub fn from_event(event: &ModWatchEvent) -> Self {
-        match event {
-            ModWatchEvent::Created(p) => Self::Created { path: p.clone() },
-            ModWatchEvent::Modified(p) => Self::Modified { path: p.clone() },
-            ModWatchEvent::Removed(p) => Self::Removed { path: p.clone() },
-            ModWatchEvent::Renamed { from, to } => Self::Renamed {
-                from: from.clone(),
-                to: to.clone(),
-            },
-            ModWatchEvent::StatusChanged {
-                path,
-                from_status,
-                to_status,
-            } => Self::StatusChanged {
-                path: path.clone(),
-                from_status: from_status.to_string(),
-                to_status: to_status.to_string(),
-            },
-            ModWatchEvent::Error(e) => Self::Error {
-                error: e.clone(),
-                path: None,
-                retry_count: None,
-            },
-        }
-    }
-}
+pub(crate) use event_filter::should_keep_event_path;
+use event_filter::{is_relevant_path, RENAME_PAIR_TIMEOUT};
+pub use events::{ModWatchEvent, WatchEventPayload};
+pub use suppressor::{SuppressionGuard, WatcherSuppressor};
 
 // ── Managed State ─────────────────────────────────────────────────────
 
@@ -128,89 +49,6 @@ impl WatcherState {
 impl Default for WatcherState {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub struct WatcherSuppressor {
-    depth: AtomicUsize,
-}
-
-impl WatcherSuppressor {
-    pub fn new(suppressed: bool) -> Self {
-        Self {
-            depth: AtomicUsize::new(if suppressed { 1 } else { 0 }),
-        }
-    }
-
-    pub fn load(&self, ordering: Ordering) -> bool {
-        self.depth.load(ordering) > 0
-    }
-
-    pub fn store(&self, suppressed: bool, ordering: Ordering) {
-        if suppressed {
-            self.depth.fetch_add(1, ordering);
-            return;
-        }
-
-        self.depth.store(0, ordering);
-    }
-
-    fn increment(&self) {
-        self.depth.fetch_add(1, Ordering::AcqRel);
-    }
-
-    fn decrement(&self) {
-        let _ = self
-            .depth
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                Some(current.saturating_sub(1))
-            });
-    }
-}
-
-/// RAII Guard for watcher suppression.
-pub struct SuppressionGuard {
-    suppressor: Arc<WatcherSuppressor>,
-}
-
-impl SuppressionGuard {
-    pub fn new(suppressor: &Arc<WatcherSuppressor>) -> Self {
-        suppressor.increment();
-        Self {
-            suppressor: suppressor.clone(),
-        }
-    }
-}
-
-impl Drop for SuppressionGuard {
-    fn drop(&mut self) {
-        self.suppressor.decrement();
-    }
-}
-
-// ── Relevance Filter ──────────────────────────────────────────────────
-
-/// Extensions relevant to the mod manager.
-/// Everything else (`.dds`, `.buf`, `.hlsl`, `.blend`, `.dll`) is noise.
-const RELEVANT_EXTENSIONS: &[&str] = &["ini", "json", "png", "jpg", "jpeg", "webp"];
-
-/// Check if a path is relevant to the mod manager.
-/// Directories (no extension) always pass; files must match the allowlist.
-fn is_relevant_path(path: &Path) -> bool {
-    if path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value.eq_ignore_ascii_case("info.json"))
-    {
-        return true;
-    }
-
-    match path.extension().and_then(|e| e.to_str()) {
-        None => true, // No extension = likely a directory
-        Some(ext) => {
-            let lower = ext.to_ascii_lowercase();
-            RELEVANT_EXTENSIONS.contains(&lower.as_str())
-        }
     }
 }
 
@@ -293,49 +131,9 @@ pub fn watch_mod_directory(
                     return;
                 }
 
-                // Pre-filter events based on depth (Opt-3)
-                // We drop events deeper than Mod folder (depth 2) unless they are .ini or images
-                event.paths.retain(|p| {
-                    if let Ok(rel) = p.strip_prefix(&watcher_path) {
-                        let components: Vec<_> = rel.components().collect();
-                        let depth = components.len();
-
-                        // Ignore hidden folders/files
-                        if components
-                            .iter()
-                            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-                        {
-                            return false;
-                        }
-
-                        if depth > 2 {
-                            if p.file_name()
-                                .and_then(|value| value.to_str())
-                                .is_some_and(|value| value.eq_ignore_ascii_case("info.json"))
-                            {
-                                return true;
-                            }
-
-                            if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                                let ext_lower = ext.to_lowercase();
-                                if ext_lower != "ini"
-                                    && ext_lower != "json"
-                                    && ext_lower != "png"
-                                    && ext_lower != "jpg"
-                                    && ext_lower != "jpeg"
-                                    && ext_lower != "webp"
-                                {
-                                    return false; // Drop deep structural items
-                                }
-                            } else {
-                                return false; // Drop deep folders or extensionless files
-                            }
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                });
+                event
+                    .paths
+                    .retain(|p| should_keep_event_path(p, &watcher_path));
 
                 if event.paths.is_empty() {
                     return; // All paths filtered out
@@ -345,7 +143,7 @@ pub fn watch_mod_directory(
                 {
                     let mut pending = pending_clone.lock().unwrap();
                     if let Some((ref from_path, ts)) = *pending {
-                        if ts.elapsed() > Duration::from_millis(100) {
+                        if ts.elapsed() > RENAME_PAIR_TIMEOUT {
                             if is_relevant_path(Path::new(from_path)) {
                                 send(ModWatchEvent::Removed(from_path.clone()));
                             }
@@ -366,7 +164,28 @@ pub fn watch_mod_directory(
                                     send(ModWatchEvent::Removed(old_from.clone()));
                                 }
                             }
-                            *pending = Some((path_str, Instant::now()));
+                            *pending = Some((path_str.clone(), Instant::now()));
+                            let pending_for_timeout = pending_clone.clone();
+                            let tx_for_timeout = tx.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(RENAME_PAIR_TIMEOUT);
+                                let mut pending = pending_for_timeout.lock().unwrap();
+                                let Some((pending_path, pending_at)) = pending.as_ref() else {
+                                    return;
+                                };
+                                if pending_path != &path_str
+                                    || pending_at.elapsed() < RENAME_PAIR_TIMEOUT
+                                {
+                                    return;
+                                }
+
+                                let removed_path = pending_path.clone();
+                                *pending = None;
+                                if is_relevant_path(Path::new(&removed_path)) {
+                                    let _ =
+                                        tx_for_timeout.send(ModWatchEvent::Removed(removed_path));
+                                }
+                            });
                         }
                     }
 
@@ -386,7 +205,8 @@ pub fn watch_mod_directory(
                                         detect_status_change(from_p, to_p)
                                     {
                                         send(ModWatchEvent::StatusChanged {
-                                            path: to_path,
+                                            from: from_path,
+                                            to: to_path,
                                             from_status,
                                             to_status,
                                         });
@@ -420,7 +240,8 @@ pub fn watch_mod_directory(
                                     detect_status_change(from_p, to_p)
                                 {
                                     send(ModWatchEvent::StatusChanged {
-                                        path: to,
+                                        from,
+                                        to,
                                         from_status,
                                         to_status,
                                     });
