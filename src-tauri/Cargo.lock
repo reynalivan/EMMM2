@@ -1339,6 +1339,7 @@ dependencies = [
  "chrono",
  "deunicode",
  "dotenvy",
+ "embed-resource",
  "encoding_rs",
  "enigo",
  "env_logger",

@@ -89,7 +89,9 @@ const baseObject: WorkspaceObjectNode = {
 
 describe('ObjectRowItem', () => {
   it('renders a combined active and total mod count badge', () => {
-    render(<ObjectRowItem obj={baseObject} isSelected={false} isMobile={false} onClick={vi.fn()} />);
+    render(
+      <ObjectRowItem obj={baseObject} isSelected={false} isMobile={false} onClick={vi.fn()} />,
+    );
 
     expect(screen.getByText('2/10')).toBeInTheDocument();
   });

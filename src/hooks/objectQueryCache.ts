@@ -1,5 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { publishRuntimeDescriptor, type QueryRefetchType } from '../features/runtime-sync/queryRefresh';
+import {
+  publishRuntimeDescriptor,
+  type QueryRefetchType,
+} from '../features/runtime-sync/queryRefresh';
 import { buildRuntimeRefreshDescriptor } from '../features/workspace-runtime/optimistic/descriptorBuilders';
 import { workspaceKeys } from '../features/workspace-runtime/useWorkspaceViewModel';
 import type {
@@ -91,7 +94,10 @@ function serializeTags(tags: UpdateObjectInput['tags'], fallback: string): strin
   return JSON.stringify(tags);
 }
 
-export function patchObjectSummary(object: ObjectSummary, updates: UpdateObjectInput): ObjectSummary {
+export function patchObjectSummary(
+  object: ObjectSummary,
+  updates: UpdateObjectInput,
+): ObjectSummary {
   return {
     ...object,
     name: updates.name ?? object.name,
@@ -101,8 +107,7 @@ export function patchObjectSummary(object: ObjectSummary, updates: UpdateObjectI
     metadata: serializeMetadata(updates.metadata, object.metadata),
     tags: serializeTags(updates.tags, object.tags),
     hash_db: updates.hash_db === undefined ? object.hash_db : updates.hash_db,
-    custom_skins:
-      updates.custom_skins === undefined ? object.custom_skins : updates.custom_skins,
+    custom_skins: updates.custom_skins === undefined ? object.custom_skins : updates.custom_skins,
     thumbnail_path:
       updates.thumbnail_path === undefined ? object.thumbnail_path : updates.thumbnail_path,
     is_auto_sync: updates.is_auto_sync ?? object.is_auto_sync,

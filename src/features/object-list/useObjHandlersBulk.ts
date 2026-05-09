@@ -14,9 +14,7 @@ import { runObjectBatchMutation } from '../../hooks/objectQueryCache';
 import { useDeleteCollection as useDeleteObject } from '../collections/hooks/useCollections';
 import { scanService } from '../../lib/services/scanService';
 import { useTranslation } from 'react-i18next';
-import {
-  parseMasterDb,
-} from '../mod-runtime/operations/sharedOperations';
+import { parseMasterDb } from '../mod-runtime/operations/sharedOperations';
 import type { MasterDbEntry } from './scanReviewHelpers';
 import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../workspace-runtime/optimistic/descriptorBuilders';
@@ -174,12 +172,9 @@ export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: Bul
 
       if (failedCount === 0) {
         toast.success(
-          t(
-            successCount === 1 ? 'objects:toasts.enabled_one' : 'objects:toasts.enabled_other',
-            {
-              count: successCount,
-            },
-          ),
+          t(successCount === 1 ? 'objects:toasts.enabled_one' : 'objects:toasts.enabled_other', {
+            count: successCount,
+          }),
         );
         return;
       }
@@ -210,12 +205,9 @@ export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: Bul
 
       if (failedCount === 0) {
         toast.success(
-          t(
-            successCount === 1 ? 'objects:toasts.disabled_one' : 'objects:toasts.disabled_other',
-            {
-              count: successCount,
-            },
-          ),
+          t(successCount === 1 ? 'objects:toasts.disabled_one' : 'objects:toasts.disabled_other', {
+            count: successCount,
+          }),
         );
         return;
       }
@@ -319,35 +311,26 @@ export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: Bul
   const handleBulkAutoOrganize = useCallback(
     async (ids: Set<string>) => {
       if (!activeGame) return;
-      try {
-        const selectedObjects = objects.filter((o) => ids.has(o.id));
-        const responses = await Promise.all(
-          selectedObjects.map((obj) =>
-            commands.listModFolders({
-              gameId: activeGame.id,
-              modsPath: activeGame.mod_path,
-              subPath: obj.folder_path,
-              objectId: null,
-            }),
-          ),
-        );
-        const allModPaths = responses.flatMap((r) => r.children.map((c) => c.path));
+      if (ids.size === 0) {
+        toast.info(t('objects:auto_organize.toast_none'));
+        return;
+      }
 
-        if (allModPaths.length === 0) {
+      try {
+        setIsSyncing(true);
+
+        const previewItems = await scanService.runDeepmatchPreviewForObjects(
+          activeGame.id,
+          activeGame.game_type,
+          activeGame.mod_path,
+          Array.from(ids),
+        );
+
+        if (previewItems.length === 0) {
           toast.info(t('objects:auto_organize.toast_none'));
           return;
         }
 
-        setIsSyncing(true);
-
-        // Deep Match Scanner preview only. This action must not move physical folders directly.
-        const previewItems = await scanService.runDeepmatchPreview(
-          activeGame.id,
-          activeGame.game_type,
-          activeGame.mod_path,
-          undefined,
-          allModPaths,
-        );
         const dbJson = await scanService.getMasterDb(activeGame.game_type);
         const masterEntries = parseMasterDb(dbJson);
 
@@ -364,7 +347,7 @@ export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: Bul
         setIsSyncing(false);
       }
     },
-    [activeGame, objects, setIsSyncing, setScanReview, t],
+    [activeGame, setIsSyncing, setScanReview, t],
   );
 
   const handleBulkFavorite = useCallback(

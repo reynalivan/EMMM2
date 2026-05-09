@@ -39,8 +39,8 @@ describe('DropConfirmModal', () => {
       />,
     );
 
-    expect(screen.getByText(/Checking match confidence/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Skip Validation'));
+    expect(screen.getByText('drop_confirm.validating')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('drop_confirm.skip_validation'));
     expect(onSkipValidation).toHaveBeenCalled();
   });
 
@@ -66,10 +66,10 @@ describe('DropConfirmModal', () => {
       />,
     );
 
-    expect(screen.getByText('Low Match Confidence')).toBeInTheDocument();
+    expect(screen.getByText('drop_confirm.title')).toBeInTheDocument();
     expect(screen.getByText('Target 2')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText(/Move to Target 2/i));
+    fireEvent.click(screen.getByText('drop_confirm.move_to'));
     expect(onMoveToSuggested).toHaveBeenCalled();
   });
 });

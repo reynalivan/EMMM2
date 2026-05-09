@@ -12,10 +12,10 @@ import { useCreateObject } from '../../hooks/useObjectMutations';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { toast } from '../../stores/useToastStore';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands } from '../../lib/bindings';
 import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../workspace-runtime/optimistic/descriptorBuilders';
 import type { DbEntryFull } from './hooks/useMasterDbSync';
+import { withWatcherSuppression } from '../file-watcher/watcherSuppression';
 
 interface AutoSetupModalProps {
   open: boolean;
@@ -103,29 +103,29 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     let failCount = 0;
 
     try {
-      await commands.setWatcherSuppressionCmd({ suppressed: true });
-
-      for (let i = 0; i < entriesToCreate.length; i++) {
-        const entry = entriesToCreate[i];
-        try {
-          await createObject.mutateAsync({
-            game_id: activeGame.id,
-            name: entry.name,
-            folder_path: entry.folder_path ?? null,
-            object_type: entry.object_type,
-            sub_category: null,
-            status: 1,
-            metadata: entry.metadata,
-            thumbnail_url: (entry.thumbnail_path as string | null) ?? null,
-          });
-          successCount++;
-        } catch (err) {
-          console.warn(`Failed to create object ${entry.name}:`, err);
-          // Continue loop even on failure (e.g., duplicates)
-          failCount++;
+      await withWatcherSuppression({ releaseDelayMs: 1000 }, async () => {
+        for (let i = 0; i < entriesToCreate.length; i++) {
+          const entry = entriesToCreate[i];
+          try {
+            await createObject.mutateAsync({
+              game_id: activeGame.id,
+              name: entry.name,
+              folder_path: entry.folder_path ?? null,
+              object_type: entry.object_type,
+              sub_category: null,
+              status: 1,
+              metadata: entry.metadata,
+              thumbnail_url: (entry.thumbnail_path as string | null) ?? null,
+            });
+            successCount++;
+          } catch (err) {
+            console.warn(`Failed to create object ${entry.name}:`, err);
+            // Continue loop even on failure (e.g., duplicates)
+            failCount++;
+          }
+          setProgress(i + 1);
         }
-        setProgress(i + 1);
-      }
+      });
 
       if (failCount > 0) {
         toast.warning(
@@ -143,15 +143,11 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
       setSelectedNames(new Set());
       setSearch('');
     } finally {
-      // Delay disabling suppression to allow backend file watcher debounce (500ms) to clear
-      setTimeout(async () => {
-        await commands.setWatcherSuppressionCmd({ suppressed: false });
-        void publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('workspaceStructure'),
-          'active',
-        );
-      }, 1000);
+      void publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('workspaceStructure'),
+        'active',
+      );
       setIsCreating(false);
     }
   };
@@ -204,7 +200,9 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
                 disabled={isCreating || filteredEntries.length === 0}
               >
                 {isAllSelected ? <Square size={16} /> : <CheckSquare size={16} />}
-                {isAllSelected ? t('auto_setup_modal.deselect_all') : t('auto_setup_modal.select_all')}
+                {isAllSelected
+                  ? t('auto_setup_modal.deselect_all')
+                  : t('auto_setup_modal.select_all')}
               </button>
               <span className="text-sm font-medium text-base-content/70 ml-auto">
                 {t('auto_setup_modal.selection_status', {

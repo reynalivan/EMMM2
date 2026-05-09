@@ -14,7 +14,7 @@ pub enum CommandError {
     #[error("App error: {0}")]
     App(String),
     #[error("Object has {0} mods")]
-    ObjectHasMods(i64),
+    ObjectHasMods(i32),
 }
 
 impl From<sqlx::Error> for CommandError {

@@ -1,15 +1,14 @@
 use super::types::{ArchiveAnalysis, ArchiveEntryInfo, ArchiveFormat};
-
-const MAX_ENTRIES: usize = 500;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-/// Analyze any supported archive without extracting.
+const MAX_ENTRIES: usize = 500;
+
 pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
-    // AC-37.1.4: Block multi-volume archives early to prevent partial extractions
     let file_name = archive_path
         .file_name()
-        .map(|n| n.to_string_lossy().to_lowercase())
+        .map(|name| name.to_string_lossy().to_lowercase())
         .unwrap_or_default();
 
     if file_name.contains(".part")
@@ -31,352 +30,177 @@ pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
 }
 
 fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
-    let file = fs::File::open(archive_path).map_err(|e| format!("Failed to open archive: {e}"))?;
-    let file_size_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP: {e}"))?;
+    let file =
+        fs::File::open(archive_path).map_err(|error| format!("Failed to open archive: {error}"))?;
+    let file_size_bytes = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|error| format!("Failed to read ZIP: {error}"))?;
 
-    let mut has_ini = false;
-    let mut is_encrypted = false;
-    let mut uncompressed_size: u64 = 0;
-    let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut contains_nested_archives = false;
-    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
-
+    let mut summary = ArchiveSummary::new(format, file_size_bytes);
     for i in 0..archive.len() {
         match archive.by_index(i) {
-            Ok(entry) => {
-                let name = entry.name().to_string();
-                let size = entry.size();
-                let is_dir = entry.is_dir();
-                uncompressed_size += size;
-
-                if entries.len() < MAX_ENTRIES {
-                    entries.push(ArchiveEntryInfo {
-                        path: name.clone(),
-                        is_dir,
-                        size,
-                    });
-                }
-
-                if name.to_lowercase().ends_with(".ini") {
-                    has_ini = true;
-                }
-
-                let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
-                if ext == "zip" || ext == "rar" || ext == "7z" {
-                    contains_nested_archives = true;
-                }
-
-                if let Some(first) = name.split('/').next() {
-                    if !first.is_empty() {
-                        root_dirs.insert(first.to_string());
-                    }
-                }
+            Ok(entry) => summary.push_entry(
+                entry.name(),
+                entry.is_dir(),
+                entry.size(),
+                entry.encrypted(),
+            ),
+            Err(error) if is_password_error(&error.to_string()) => {
+                summary.is_encrypted = true;
             }
-            Err(e) => {
-                let msg = e.to_string();
-                // Encrypted entries can't be read without a password at analysis time.
-                if msg.contains("Password") || msg.contains("password") || msg.contains("decrypt") {
-                    is_encrypted = true;
-                    continue;
-                }
-                return Err(format!("Failed to read entry: {e}"));
-            }
+            Err(error) => return Err(format!("Failed to read entry: {error}")),
         }
     }
 
-    Ok(ArchiveAnalysis {
-        format,
-        file_count: archive.len(),
-        has_ini,
-        uncompressed_size,
-        file_size_bytes,
-        single_root_folder: if root_dirs.len() == 1 {
-            root_dirs.into_iter().next()
-        } else {
-            None
-        },
-        is_encrypted,
-        contains_nested_archives,
-        entries,
-    })
+    summary.file_count = archive.len();
+    Ok(summary.finish())
 }
 
 fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
-    let mut has_ini = false;
-    let mut file_count: usize = 0;
-    let mut uncompressed_size: u64 = 0;
-    let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut is_encrypted = false;
-    let mut contains_nested_archives = false;
-    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
-
-    let file_size_bytes = fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
-
-    let result = sevenz_rust::decompress_with_extract_fn(
-        fs::File::open(archive_path).map_err(|e| format!("Failed to open 7z: {e}"))?,
-        ".",
-        |entry, _, _| {
-            let name = entry.name().to_string();
-            let size = entry.size();
-            let is_dir = entry.has_stream();
-            file_count += 1;
-            uncompressed_size += size;
-
-            if entries.len() < MAX_ENTRIES {
-                entries.push(ArchiveEntryInfo {
-                    path: name.clone(),
-                    is_dir: !is_dir, // has_stream = is a file, so invert
-                    size,
-                });
-            }
-
-            if name.to_lowercase().ends_with(".ini") {
-                has_ini = true;
-            }
-
-            let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
-            if ext == "zip" || ext == "rar" || ext == "7z" {
-                contains_nested_archives = true;
-            }
-
-            // Normalize path separators for root detection
-            let normalized = name.replace('\\', "/");
-            if let Some(first) = normalized.split('/').next() {
-                if !first.is_empty() {
-                    root_dirs.insert(first.to_string());
-                }
-            }
-            Ok(true) // skip actual extraction
-        },
-    );
-
-    if let Err(e) = result {
-        let msg = e.to_string();
-        if msg.contains("password") || msg.contains("Password") || msg.contains("decrypt") {
-            is_encrypted = true;
-            // Return partial analysis with encryption flag
-        } else {
-            return Err(format!("Failed to analyze 7z: {e}"));
+    let file_size_bytes = fs::metadata(archive_path)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    let mut file =
+        fs::File::open(archive_path).map_err(|error| format!("Failed to open 7z: {error}"))?;
+    let archive = match sevenz_rust::Archive::read(&mut file, file_size_bytes, &[]) {
+        Ok(archive) => archive,
+        Err(error) if is_password_error(&error.to_string()) => {
+            return Ok(encrypted_analysis(format, file_size_bytes));
         }
+        Err(error) => return Err(format!("Failed to analyze 7z: {error}")),
+    };
+
+    let mut summary = ArchiveSummary::new(format, file_size_bytes);
+    for entry in archive.files {
+        summary.push_entry(entry.name(), entry.is_directory(), entry.size(), false);
     }
 
-    Ok(ArchiveAnalysis {
-        format,
-        file_count,
-        has_ini,
-        uncompressed_size,
-        file_size_bytes,
-        single_root_folder: if root_dirs.len() == 1 {
-            root_dirs.into_iter().next()
-        } else {
-            None
-        },
-        is_encrypted,
-        contains_nested_archives,
-        entries,
-    })
-}
-
-fn analyze_rar_cli(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
-    use std::process::Command;
-    // 7z l -slt <path>
-    let output = Command::new("7z")
-        .arg("l")
-        .arg("-slt")
-        .arg(archive_path)
-        .output()
-        .map_err(|e| format!("7z CLI not found or failed: {e}"))?;
-
-    if !output.status.success() {
-        return Err("7z CLI execution failed".into());
-    }
-
-    let file_size_bytes = fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut has_ini = false;
-    let mut file_count = 0;
-    let mut uncompressed_size = 0;
-    let mut root_dirs = std::collections::HashSet::new();
-    let mut is_encrypted = false;
-    let mut contains_nested_archives = false;
-    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
-
-    let mut pending_name: Option<String> = None;
-    let mut pending_size: u64 = 0;
-    let mut pending_is_dir = false;
-
-    for line in stdout.lines() {
-        if line.starts_with("Encrypted = +") {
-            is_encrypted = true;
-        } else if let Some(stripped) = line.strip_prefix("Path = ") {
-            // Flush previous entry
-            if let Some(prev_name) = pending_name.take() {
-                if entries.len() < MAX_ENTRIES {
-                    entries.push(ArchiveEntryInfo {
-                        path: prev_name,
-                        is_dir: pending_is_dir,
-                        size: pending_size,
-                    });
-                }
-            }
-            pending_size = 0;
-            pending_is_dir = false;
-
-            let name = &stripped.trim();
-            if !name.is_empty() && *name != archive_path.to_string_lossy().as_ref() {
-                file_count += 1;
-                pending_name = Some(name.to_string());
-                if name.to_lowercase().ends_with(".ini") {
-                    has_ini = true;
-                }
-                let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
-                if ext == "zip" || ext == "rar" || ext == "7z" {
-                    contains_nested_archives = true;
-                }
-
-                let normalized = name.replace('\\', "/");
-                if let Some(first) = normalized.split('/').next() {
-                    if !first.is_empty() {
-                        root_dirs.insert(first.to_string());
-                    }
-                }
-            }
-        } else if let Some(stripped) = line.strip_prefix("Size = ") {
-            if let Ok(size) = stripped.trim().parse::<u64>() {
-                uncompressed_size += size;
-                pending_size = size;
-            }
-        } else if line.starts_with("Folder = +") {
-            pending_is_dir = true;
-        }
-    }
-    // Flush last entry
-    if let Some(prev_name) = pending_name.take() {
-        if entries.len() < MAX_ENTRIES {
-            entries.push(ArchiveEntryInfo {
-                path: prev_name,
-                is_dir: pending_is_dir,
-                size: pending_size,
-            });
-        }
-    }
-
-    Ok(ArchiveAnalysis {
-        format,
-        file_count,
-        has_ini,
-        uncompressed_size,
-        file_size_bytes,
-        single_root_folder: if root_dirs.len() == 1 {
-            root_dirs.into_iter().next()
-        } else {
-            None
-        },
-        is_encrypted,
-        contains_nested_archives,
-        entries,
-    })
+    Ok(summary.finish())
 }
 
 fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
-    // 1. FAST PATH: Use 7z CLI if available on system (Sub-millisecond header read, 0 bytes extracted)
-    if let Ok(fast_analysis) = analyze_rar_cli(archive_path, format) {
-        return Ok(fast_analysis);
-    }
-
-    // 2. SLOW FALLBACK: Use `rar` crate (Forces full temp extraction to read contents)
     let path_str = archive_path
         .to_str()
         .ok_or("RAR path contains invalid UTF-8")?;
-
-    // First try without password to detect encryption
     let temp_dir = tempfile::tempdir()
-        .map_err(|e| format!("Failed to create temp dir for RAR analysis: {e}"))?;
+        .map_err(|error| format!("Failed to create temp dir for RAR analysis: {error}"))?;
     let temp_str = temp_dir
         .path()
         .to_str()
         .ok_or("Temp path contains invalid UTF-8")?;
+    let file_size_bytes = fs::metadata(archive_path)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
 
-    let file_size_bytes = fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
-
-    let mut is_encrypted = false;
-
-    let archive_result = rar::Archive::extract_all(path_str, temp_str, "");
-    let archive = match archive_result {
-        Ok(a) => a,
-        Err(e) => {
-            let msg = format!("{e:?}");
-            if msg.contains("password") || msg.contains("Password") || msg.contains("encrypted") {
-                is_encrypted = true;
-                // Return partial analysis with encryption flag
-                return Ok(ArchiveAnalysis {
-                    format,
-                    file_count: 0,
-                    has_ini: false,
-                    uncompressed_size: 0,
-                    file_size_bytes,
-                    single_root_folder: None,
-                    is_encrypted,
-                    contains_nested_archives: false,
-                    entries: Vec::new(),
-                });
-            }
-            return Err(format!("Failed to parse RAR: {e:?}"));
+    let archive = match rar::Archive::extract_all(path_str, temp_str, "") {
+        Ok(archive) => archive,
+        Err(error) if is_password_error(&format!("{error:?}")) => {
+            return Ok(encrypted_analysis(format, file_size_bytes));
         }
+        Err(error) => return Err(format!("Failed to parse RAR: {error:?}")),
     };
 
-    let mut has_ini = false;
-    let mut file_count: usize = 0;
-    let mut uncompressed_size: u64 = 0;
-    let mut root_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut contains_nested_archives = false;
-    let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
-
-    for entry in &archive.files {
+    let mut summary = ArchiveSummary::new(format, file_size_bytes);
+    for entry in archive.files {
         let name = entry.name.to_string();
-        file_count += 1;
-        uncompressed_size += entry.unpacked_size;
+        let is_dir = name.ends_with('/') || name.ends_with('\\');
+        summary.push_entry(&name, is_dir, entry.unpacked_size, false);
+    }
 
-        if entries.len() < MAX_ENTRIES {
-            entries.push(ArchiveEntryInfo {
-                path: name.clone(),
-                is_dir: name.ends_with('/') || name.ends_with('\\'),
-                size: entry.unpacked_size,
+    Ok(summary.finish())
+}
+
+struct ArchiveSummary {
+    format: ArchiveFormat,
+    file_count: usize,
+    has_ini: bool,
+    uncompressed_size: u64,
+    file_size_bytes: u64,
+    root_dirs: HashSet<String>,
+    is_encrypted: bool,
+    contains_nested_archives: bool,
+    entries: Vec<ArchiveEntryInfo>,
+}
+
+impl ArchiveSummary {
+    fn new(format: ArchiveFormat, file_size_bytes: u64) -> Self {
+        Self {
+            format,
+            file_count: 0,
+            has_ini: false,
+            uncompressed_size: 0,
+            file_size_bytes,
+            root_dirs: HashSet::new(),
+            is_encrypted: false,
+            contains_nested_archives: false,
+            entries: Vec::new(),
+        }
+    }
+
+    fn push_entry(&mut self, name: &str, is_dir: bool, size: u64, is_encrypted: bool) {
+        self.file_count += 1;
+        self.uncompressed_size += size;
+        self.is_encrypted |= is_encrypted;
+        self.has_ini |= name.to_lowercase().ends_with(".ini");
+        self.contains_nested_archives |= is_nested_archive_name(name);
+
+        if self.entries.len() < MAX_ENTRIES {
+            self.entries.push(ArchiveEntryInfo {
+                path: name.to_string(),
+                is_dir,
+                size,
             });
-        }
-
-        if name.to_lowercase().ends_with(".ini") {
-            has_ini = true;
-        }
-
-        let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
-        if ext == "zip" || ext == "rar" || ext == "7z" {
-            contains_nested_archives = true;
         }
 
         let normalized = name.replace('\\', "/");
         if let Some(first) = normalized.split('/').next() {
             if !first.is_empty() {
-                root_dirs.insert(first.to_string());
+                self.root_dirs.insert(first.to_string());
             }
         }
     }
 
-    Ok(ArchiveAnalysis {
+    fn finish(self) -> ArchiveAnalysis {
+        ArchiveAnalysis {
+            format: self.format,
+            file_count: self.file_count,
+            has_ini: self.has_ini,
+            uncompressed_size: self.uncompressed_size,
+            file_size_bytes: self.file_size_bytes,
+            single_root_folder: if self.root_dirs.len() == 1 {
+                self.root_dirs.into_iter().next()
+            } else {
+                None
+            },
+            is_encrypted: self.is_encrypted,
+            contains_nested_archives: self.contains_nested_archives,
+            entries: self.entries,
+        }
+    }
+}
+
+fn encrypted_analysis(format: ArchiveFormat, file_size_bytes: u64) -> ArchiveAnalysis {
+    ArchiveAnalysis {
         format,
-        file_count,
-        has_ini,
-        uncompressed_size,
+        file_count: 0,
+        has_ini: false,
+        uncompressed_size: 0,
         file_size_bytes,
-        single_root_folder: if root_dirs.len() == 1 {
-            root_dirs.into_iter().next()
-        } else {
-            None
-        },
-        is_encrypted,
-        contains_nested_archives,
-        entries,
-    })
+        single_root_folder: None,
+        is_encrypted: true,
+        contains_nested_archives: false,
+        entries: Vec::new(),
+    }
+}
+
+fn is_password_error(message: &str) -> bool {
+    message.contains("password")
+        || message.contains("Password")
+        || message.contains("decrypt")
+        || message.contains("encrypted")
+}
+
+fn is_nested_archive_name(name: &str) -> bool {
+    let ext = name.split('.').next_back().unwrap_or("").to_lowercase();
+    ext == "zip" || ext == "rar" || ext == "7z"
 }

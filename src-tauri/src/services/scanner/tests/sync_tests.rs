@@ -1,7 +1,7 @@
 use super::*;
 use crate::services::scanner::deep_matcher;
 use crate::services::scanner::sync::helpers::{
-    canonical_entry_key, resolve_or_create_object_target_for_match,
+    canonical_entry_key, resolve_or_create_object_target_for_match, ResolveObjectTargetInput,
 };
 use serde_json::json;
 
@@ -119,17 +119,17 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
         move_from_temp: false,
     }];
 
-    let _result = commit_scan_results(
-        &pool,
-        "g1",
-        "Game One",
-        "gimi",
-        &temp_dir.path().to_string_lossy(),
+    let _result = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game One",
+        game_type: "gimi",
+        mods_path: &temp_dir.path().to_string_lossy(),
         items,
-        None,
-        &[],
-        false,
-    )
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
     .await
     .unwrap();
 
@@ -185,17 +185,17 @@ async fn test_ensure_object_case_insensitive_merge() {
         move_from_temp: false,
     }];
 
-    let _r1 = commit_scan_results(
-        &pool,
-        "g1",
-        "Game",
-        "srmi",
-        &temp_dir.path().to_string_lossy(),
-        items_unmatched,
-        None,
-        &[],
-        false,
-    )
+    let _r1 = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "srmi",
+        mods_path: &temp_dir.path().to_string_lossy(),
+        items: items_unmatched,
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
     .await
     .unwrap();
 
@@ -228,17 +228,17 @@ async fn test_ensure_object_case_insensitive_merge() {
         move_from_temp: false,
     }];
 
-    let _r2 = commit_scan_results(
-        &pool,
-        "g1",
-        "Game",
-        "srmi",
-        &temp_dir.path().to_string_lossy(),
-        items_matched,
-        None,
-        &[],
-        false,
-    )
+    let _r2 = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "srmi",
+        mods_path: &temp_dir.path().to_string_lossy(),
+        items: items_matched,
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
     .await
     .unwrap();
 
@@ -322,17 +322,17 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
         move_from_temp: false,
     }];
 
-    let result = commit_scan_results(
-        &pool,
-        "g1",
-        "Game",
-        "gimi",
-        &temp_dir.path().to_string_lossy(),
+    let result = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &temp_dir.path().to_string_lossy(),
         items,
-        None,
-        &[],
-        false,
-    )
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
     .await
     .unwrap();
 
@@ -376,16 +376,18 @@ async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physi
 
     let created = resolve_or_create_object_target_for_match(
         &mut *tx,
-        "g1",
-        &mods_path,
-        "Navia Import Pack",
-        Some(&matched_entry_key),
-        "Character",
-        None,
-        "[]",
-        "{}",
-        None,
-        None,
+        ResolveObjectTargetInput {
+            game_id: "g1",
+            mods_path: &mods_path,
+            physical_name_hint: "Navia Import Pack",
+            matched_entry_key: Some(&matched_entry_key),
+            object_type: "Character",
+            db_thumbnail: None,
+            db_tags_json: "[]",
+            db_metadata_json: "{}",
+            db_hash_db_json: None,
+            db_custom_skins_json: None,
+        },
         &mut new_objects_count,
     )
     .await
@@ -412,16 +414,18 @@ async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physi
     let mut second_new_objects_count = 0_usize;
     let reused = resolve_or_create_object_target_for_match(
         &mut *tx,
-        "g1",
-        &mods_path,
-        "Another Physical Name",
-        Some(&matched_entry_key),
-        "Character",
-        None,
-        "[]",
-        "{}",
-        None,
-        None,
+        ResolveObjectTargetInput {
+            game_id: "g1",
+            mods_path: &mods_path,
+            physical_name_hint: "Another Physical Name",
+            matched_entry_key: Some(&matched_entry_key),
+            object_type: "Character",
+            db_thumbnail: None,
+            db_tags_json: "[]",
+            db_metadata_json: "{}",
+            db_hash_db_json: None,
+            db_custom_skins_json: None,
+        },
         &mut second_new_objects_count,
     )
     .await
@@ -501,17 +505,17 @@ async fn test_commit_rolls_back_on_failure() {
         },
     ];
 
-    let result = commit_scan_results(
-        &pool,
-        "g1",
-        "Game",
-        "gimi",
-        &temp_dir.path().to_string_lossy(),
+    let result = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &temp_dir.path().to_string_lossy(),
         items,
-        None,
-        &[],
-        false,
-    )
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
     .await;
 
     // Should return Err due to missing temp folder rename
@@ -563,17 +567,17 @@ async fn test_commit_garbage_collects_ghost_objects() {
     assert_eq!(obj_count_before, 1, "Ghost object must exist initially");
 
     // Run an empty commit pass (triggering the GC hook at the end of commit_scan_results)
-    let _ = commit_scan_results(
-        &pool,
-        "g1",
-        "Game",
-        "gimi",
-        &temp_dir.path().to_string_lossy(),
-        vec![],
-        None,
-        &[],
-        false,
-    )
+    let _ = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &temp_dir.path().to_string_lossy(),
+        items: vec![],
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
     .await
     .unwrap();
 

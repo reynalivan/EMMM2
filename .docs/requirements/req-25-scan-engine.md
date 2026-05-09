@@ -34,11 +34,11 @@ As a user, I want the app to scan my entire mods directory, so that it finds and
 
 As a user, I want to stop a long-running scan, so that I can regain control of the application.
 
-| ID        | Type        | Criteria                                                                                                                                                                                   |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-25.2.1 | ✅ Positive | Given a scan is running, when `commands.cancelScan()` is called, then the `CancellationToken` is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled`            |
+| ID        | Type        | Criteria                                                                                                                                                                                                           |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-25.2.1 | ✅ Positive | Given a scan is running, when `commands.cancelScan()` is called, then the `CancellationToken` is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled`                                    |
 | AC-25.2.2 | ✅ Positive | Given cancellation, the partial scan results collected so far are NOT discarded — they remain available to the explicit scan pipeline for diagnostic or partial-review use without becoming a runtime refresh path |
-| AC-25.2.3 | ⚠️ Edge     | Given `cancel_scan` is called after the scan has already `Completed`, then the command returns an `AlreadyCompleted` status — no error thrown                                              |
+| AC-25.2.3 | ⚠️ Edge     | Given `cancel_scan` is called after the scan has already `Completed`, then the command returns an `AlreadyCompleted` status — no error thrown                                                                      |
 
 ---
 
@@ -89,15 +89,15 @@ cancel_scan() → (): cancel the active explicit scan UI flow
 
 ### Integration Points
 
-| Component         | Detail                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------------------------- |
-| Walker            | `walkdir` crate — `WalkDir::new(mods_path).max_depth(8).follow_links(false)`                                |
-| Cancellation      | `tokio_util::CancellationToken` — stored in `Arc` alongside `ScanState`                                     |
-| Signal Extraction | `services/scanner/signals.rs::extract_folder_signals` — uses GameSchema stopwords (Epic 09)                 |
-| Progress Events   | `window.emit('scan_progress', payload)` every 50 entries; includes `elapsedMs` and `etaMs`                  |
-| Frontend          | User-facing Deep Match UI uses `deepmatch_preview_cmd` / `commit_scan_cmd`; legacy generic scan commands are retired |
-| Deep Match Scanner | Consumes `Vec<ScanResult>` (Epic 26)                                                                       |
-| Archive Detection | `detect_archives` scans for `.zip`, `.7z`, `.rar` in root mods directory before full scan                   |
+| Component          | Detail                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Walker             | `walkdir` crate — `WalkDir::new(mods_path).max_depth(8).follow_links(false)`                                         |
+| Cancellation       | `tokio_util::CancellationToken` — stored in `Arc` alongside `ScanState`                                              |
+| Signal Extraction  | `services/scanner/signals.rs::extract_folder_signals` — uses GameSchema stopwords (Epic 09)                          |
+| Progress Events    | `window.emit('scan_progress', payload)` every 50 entries; includes `elapsedMs` and `etaMs`                           |
+| Frontend           | User-facing Deep Match UI uses `deepmatch_preview_cmd` / `commit_scan_cmd`; legacy generic scan commands are retired |
+| Deep Match Scanner | Consumes `Vec<ScanResult>` (Epic 26)                                                                                 |
+| Archive Detection  | `detect_archives` scans for `.zip`, `.7z`, `.rar` in root mods directory before full scan                            |
 
 ### Security & Privacy
 

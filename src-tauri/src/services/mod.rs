@@ -25,4 +25,5 @@ pub mod runtime_projection_service;
 pub mod scanner;
 pub mod update;
 pub mod validation;
+pub mod workspace_read_model;
 pub mod workspace_service;

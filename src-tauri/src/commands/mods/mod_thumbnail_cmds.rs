@@ -19,15 +19,18 @@ async fn emit_internal_disk_reconcile(
     changed_paths: Vec<String>,
 ) -> Result<(), AppError> {
     let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        app,
-        pool,
-        config,
-        disk_reconcile_state,
-        watcher.suppressor.clone(),
-        game_id.to_string(),
-        DiskReconcileReason::InternalMutation,
-        changed_paths,
-        false,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool,
+            config,
+            state: disk_reconcile_state,
+            watcher_suppressor: watcher.suppressor.clone(),
+        },
+        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id.to_string(),
+            DiskReconcileReason::InternalMutation,
+            changed_paths,
+            false,
+        ),
     )
     .await
     .map_err(AppError::Internal)?;
@@ -38,6 +41,7 @@ async fn emit_internal_disk_reconcile(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn update_mod_thumbnail(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
@@ -91,6 +95,7 @@ pub async fn get_thumbnail(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn paste_thumbnail(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,

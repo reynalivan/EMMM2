@@ -6,12 +6,8 @@ import { updateFolderCache } from '../../../hooks/folderCache';
 import type { GameConfig } from '../../../types/game';
 import type { MasterDbEntry } from '../../object-list/scanReviewHelpers';
 import type { MatchedDbEntry } from '../../../lib/bindings';
-import {
-  dispatchWorkspaceRuntimeEvent,
-} from '../../workspace-runtime/state/workspaceStoreBridge';
-import {
-  applyRuntimeMutationResult,
-} from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
+import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
+import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
 import { formatAppError } from '../../../lib/appError';
 
 export function syncExplorerAfterRename(modPath: string, oldPath: string, newPath: string): void {
@@ -53,8 +49,7 @@ export function parseMasterDb(dbJson: string): MasterDbEntry[] {
     }
 
     return parsed.map((entry: Record<string, unknown>) => ({
-      matched_entry_key:
-        typeof entry.matched_entry_key === 'string' ? entry.matched_entry_key : '',
+      matched_entry_key: typeof entry.matched_entry_key === 'string' ? entry.matched_entry_key : '',
       name: String(entry.name ?? ''),
       object_type: String(entry.object_type ?? 'Other'),
       tags: Array.isArray(entry.tags) ? (entry.tags as string[]) : [],

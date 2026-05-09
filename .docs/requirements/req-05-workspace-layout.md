@@ -81,7 +81,7 @@ MainLayout (React)
       ├── GameSelector → commands.setActiveGame({ gameId }) + invalidateQueries
       └── [children route outlet]
 
-ResizableWorkspace (react-resizable-panels)
+ResizableWorkspace (custom pointer-driven split shell)
   ├── Panel: ObjectList → ObjectList (Epic 06/07)
   ├── PanelResizeHandle (divider)
   ├── Panel: Explorer → FolderGrid (Epic 12)
@@ -97,15 +97,15 @@ LaunchBar
 
 ### Integration Points
 
-| Component         | Detail                                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Panel Persistence | `react-resizable-panels` `onLayout` callback → debounced `localStorage.setItem('panelLayout', JSON.stringify(sizes))` |
-| Panel Restore     | `defaultLayout` prop reads `localStorage.getItem('panelLayout')` on mount                                             |
-| Game Switch       | `commands.setActiveGame({ gameId })` (Epic 02) + `queryClient.invalidateQueries()`                                    |
-| Launch            | `commands.launchGame({ gameId })` (Epic 02)                                                                           |
-| Conflicts         | Conflict count read from `useActiveConflicts` hook; modal displays `ConflictModal`                                    |
-| Randomizer        | Opens `RandomizerModal` (Epic 35) directly from button                                                                |
-| Routing           | React Router v6 — `useNavigate()` — no full page reloads                                                              |
+| Component         | Detail                                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Panel Persistence | `ResizableWorkspace` pointer drag state → debounced persisted layout values in Zustand/localStorage                     |
+| Panel Restore     | `defaultLayout` prop reads `localStorage.getItem('panelLayout')` on mount                                               |
+| Game Switch       | `commands.setActiveGame({ gameId })` (Epic 02) + watcher restart + Mods-entry Disk Reconcile/runtime descriptor refresh |
+| Launch            | `commands.launchGame({ gameId })` (Epic 02)                                                                             |
+| Conflicts         | Conflict count read from `useActiveConflicts` hook; modal displays `ConflictModal`                                      |
+| Randomizer        | Opens `RandomizerModal` (Epic 35) directly from button                                                                  |
+| Routing           | React Router v6 — `useNavigate()` — no full page reloads                                                                |
 
 ### Security & Privacy
 

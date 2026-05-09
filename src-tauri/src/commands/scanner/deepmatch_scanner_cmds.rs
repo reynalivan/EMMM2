@@ -3,8 +3,17 @@
 use crate::services::scanner::core::types;
 use crate::services::scanner::deep_matcher::MasterDb;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, Manager, State};
+
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DeepmatchPreviewForObjectsInput {
+    pub game_id: String,
+    pub mods_path: String,
+    pub db_json: String,
+    pub object_ids: Vec<String>,
+}
 
 /// Deep Match Scanner command.
 /// This path performs canonical matching/import against MasterDB.
@@ -13,7 +22,7 @@ use tauri::{ipc::Channel, Manager, State};
 /// # Covers: US-3.5 (Sync)
 #[tauri::command]
 #[specta::specta]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing scanner IPC payload stable.
 pub async fn deepmatch_scanner_cmd(
     app: tauri::AppHandle,
     state: State<'_, WatcherState>,
@@ -79,17 +88,17 @@ pub async fn deepmatch_scanner_cmd(
         .keywords;
 
     // 3. Commit the results to DB
-    let result = sync::commit_scan_results(
-        &pool,
-        &game_id,
-        &game_name,
-        &game_type,
-        &mods_path,
-        confirmed_items,
-        resource_dir.as_deref(),
-        &keywords,
+    let result = sync::commit_scan_results(sync::CommitScanRequest {
+        pool: &pool,
+        game_id: &game_id,
+        game_name: &game_name,
+        game_type: &game_type,
+        mods_path: &mods_path,
+        items: confirmed_items,
+        resource_dir: resource_dir.as_deref(),
+        safe_mode_keywords: &keywords,
         preserve_existing_mappings,
-    )
+    })
     .await?;
 
     Ok(result)
@@ -140,12 +149,112 @@ pub async fn deepmatch_preview_cmd(
     .await
 }
 
+/// Deep Match Scanner preview for object IDs already selected in the workspace UI.
+/// Backend resolves DB paths and filters stale or escaped paths before scanning.
+#[tauri::command]
+#[specta::specta]
+pub async fn deepmatch_preview_for_objects_cmd(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+    input: DeepmatchPreviewForObjectsInput,
+    on_progress: Channel<types::ScanEvent>,
+) -> Result<Vec<crate::services::scanner::sync::ScanPreviewItem>, String> {
+    use crate::services::scanner::sync;
+
+    let mods = Path::new(&input.mods_path);
+    if !mods.exists() {
+        return Err(format!("Mods path does not exist: {}", input.mods_path));
+    }
+
+    let object_paths =
+        resolve_object_preview_paths(&pool, &input.game_id, mods, &input.object_ids).await?;
+    if object_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let master_db = MasterDb::from_json(&input.db_json)?;
+    let resource_dir = app.path().resource_dir().ok();
+
+    sync::scan_preview(
+        &pool,
+        &input.game_id,
+        mods,
+        &master_db,
+        resource_dir.as_deref(),
+        Some(on_progress),
+        Some(object_paths),
+    )
+    .await
+}
+
+async fn resolve_object_preview_paths(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    mods_path: &Path,
+    object_ids: &[String],
+) -> Result<Vec<PathBuf>, String> {
+    if object_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let canonical_root = mods_path
+        .canonicalize()
+        .map_err(|error| format!("Failed to canonicalize mods root: {}", error))?;
+
+    let mut query_builder =
+        sqlx::QueryBuilder::new("SELECT folder_path FROM mods WHERE game_id = ");
+    query_builder.push_bind(game_id);
+    query_builder.push(" AND object_id IN (");
+    let mut separated = query_builder.separated(", ");
+    for object_id in object_ids {
+        separated.push_bind(object_id);
+    }
+    separated.push_unseparated(") ORDER BY id");
+
+    let folder_paths = query_builder
+        .build_query_scalar::<String>()
+        .fetch_all(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut resolved_paths = Vec::with_capacity(folder_paths.len());
+    for folder_path in folder_paths {
+        let raw_path = Path::new(&folder_path);
+        let candidate_path = if raw_path.is_absolute() {
+            raw_path.to_path_buf()
+        } else {
+            canonical_root.join(raw_path)
+        };
+
+        let Ok(canonical_candidate) = candidate_path.canonicalize() else {
+            continue;
+        };
+
+        if !canonical_candidate.is_dir() {
+            continue;
+        }
+
+        if !canonical_candidate.starts_with(&canonical_root) {
+            log::warn!(
+                "Skipping object preview path outside mods root: {}",
+                canonical_candidate.display()
+            );
+            continue;
+        }
+
+        resolved_paths.push(canonical_candidate);
+    }
+
+    Ok(resolved_paths)
+}
+
 /// Phase 2: Commit user-confirmed scan results to DB.
 /// Called after the user reviews and confirms/overrides matches in the review modal.
 ///
 /// # Covers: US-2.3 (Review & Organize UI — Confirm)
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn commit_scan_cmd(
     app: tauri::AppHandle,
     state: State<'_, WatcherState>,
@@ -168,17 +277,17 @@ pub async fn commit_scan_cmd(
         .safe_mode
         .keywords;
 
-    let result = sync::commit_scan_results(
-        &pool,
-        &game_id,
-        &game_name,
-        &game_type,
-        &mods_path,
+    let result = sync::commit_scan_results(sync::CommitScanRequest {
+        pool: &pool,
+        game_id: &game_id,
+        game_name: &game_name,
+        game_type: &game_type,
+        mods_path: &mods_path,
         items,
-        resource_dir.as_deref(),
-        &keywords,
-        false, // Interactive review uses explicit matches/unmatches, do not preserve blindly
-    )
+        resource_dir: resource_dir.as_deref(),
+        safe_mode_keywords: &keywords,
+        preserve_existing_mappings: false,
+    })
     .await?;
 
     Ok(result)

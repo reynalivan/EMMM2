@@ -34,13 +34,13 @@ As a user, I want to save my currently active mods as a permanent collection, so
 
 As a user, I want to activate a preset and have the app automatically disable all other mods, while warning me if any saved mods have gone missing from my disk.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                         |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-31.2.1 | ✅ Positive | Given a collection is clicked, the system runs a Pre-Apply Validation. If all physical mod paths exist, the system proceeds to the Exclusive Swap automatically.                                                                                 |
-| AC-31.2.2 | ❌ Negative | Given some mods in the collection are physically missing from the disk and `ignore_missing = false`, the backend returns a `MissingModsError` array before any rename. The React UI intercepts this and displays a "Missing Mods" dialog listing the lost paths. |
-| AC-31.2.3 | ✅ Positive | Given the Missing Mods dialog, if the user clicks "Skip & Apply", the frontend re-triggers the apply command with `ignore_missing = true`, skipping the lost mods, returning skip warnings, and proceeding with the swap. |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                        |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.2.1 | ✅ Positive | Given a collection is clicked, the system runs a Pre-Apply Validation. If all physical mod paths exist, the system proceeds to the Exclusive Swap automatically.                                                                                                                                |
+| AC-31.2.2 | ❌ Negative | Given some mods in the collection are physically missing from the disk and `ignore_missing = false`, the backend returns a `MissingModsError` array before any rename. The React UI intercepts this and displays a "Missing Mods" dialog listing the lost paths.                                |
+| AC-31.2.3 | ✅ Positive | Given the Missing Mods dialog, if the user clicks "Skip & Apply", the frontend re-triggers the apply command with `ignore_missing = true`, skipping the lost mods, returning skip warnings, and proceeding with the swap.                                                                       |
 | AC-31.2.4 | ✅ Positive | Given the swap executes, it acquires an `OperationLock`, suppresses the Watcher, and delegates all enabled/disabled filesystem rename plus DB projection updates to the shared runtime mutation engine, setting `disabled_reason = 'COLLECTION'` for disabled mods and `NULL` for enabled mods. |
-| AC-31.2.5 | ⚠️ Edge     | Given the collection contains multiple active mods for the same Object (e.g., two skins for Albedo), the automated apply ignores/bypasses standard duplicate hash warnings and applies them simultaneously.                                      |
+| AC-31.2.5 | ⚠️ Edge     | Given the collection contains multiple active mods for the same Object (e.g., two skins for Albedo), the automated apply ignores/bypasses standard duplicate hash warnings and applies them simultaneously.                                                                                     |
 
 ---
 
@@ -48,14 +48,14 @@ As a user, I want to activate a preset and have the app automatically disable al
 
 As a user, I want the system to recognize when I manually modify an active preset, so that my changes are tracked and my Topbar reflects the "Unsaved" status.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                               |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.3.1 | ✅ Positive | Given a saved Collection is active, when I toggle a mod manually OR Disk Reconcile detects an external rename/move/INI/info change, the state becomes "Dirty".                                                             |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.3.1 | ✅ Positive | Given a saved Collection is active, when I toggle a mod manually OR Disk Reconcile detects an external rename/move/INI/info change, the state becomes "Dirty".                                                                                                          |
 | AC-31.3.2 | ✅ Positive | Given a Dirty event, the backend automatically upserts ONE `is_unsaved = true` collection for the current corridor, snapshots the currently enabled mods into it, and keeps any internal timestamp/raw DB name implementation detail hidden from the user-facing label. |
-| AC-31.3.3 | ✅ Positive | Given the Unsaved Collection is created, Collection List, Topbar trigger, Topbar dropdown/context panel, Collection Preview, and switcher dialog all render the same canonical display name for that corridor-scoped unsaved state. |
-| AC-31.3.4 | ⚠️ Edge     | Given the user manually switches back to the original saved Collection via the Topbar, the system applies it, overriding the Unsaved changes, and updates the Topbar to the clean state.                               |
-| AC-31.3.5 | ✅ Positive | Given the active collection is shown in the Topbar dropdown, clicking that same active collection does NOT open an Apply dialog and does NOT trigger a self-apply operation.                                            |
-| AC-31.3.6 | ✅ Positive | Given the active corridor state is unsaved, the canonical user-facing labels are corridor-aware: `Unsaved SAFE Preset` for the Safe corridor and `Unsaved UNSAFE Preset` for the Unsafe corridor.                         |
+| AC-31.3.3 | ✅ Positive | Given the Unsaved Collection is created, Collection List, Topbar trigger, Topbar dropdown/context panel, Collection Preview, and switcher dialog all render the same canonical display name for that corridor-scoped unsaved state.                                     |
+| AC-31.3.4 | ⚠️ Edge     | Given the user manually switches back to the original saved Collection via the Topbar, the system applies it, overriding the Unsaved changes, and updates the Topbar to the clean state.                                                                                |
+| AC-31.3.5 | ✅ Positive | Given the active collection is shown in the Topbar dropdown, clicking that same active collection does NOT open an Apply dialog and does NOT trigger a self-apply operation.                                                                                            |
+| AC-31.3.6 | ✅ Positive | Given the active corridor state is unsaved, the canonical user-facing labels are corridor-aware: `Unsaved SAFE Preset` for the Safe corridor and `Unsaved UNSAFE Preset` for the Unsafe corridor.                                                                       |
 
 ---
 
@@ -88,10 +88,10 @@ As a system, I want to track mass I/O operations, so that if the app is killed f
 
 As a user, I want to delete a preset I no longer need without it altering the physical mods that are currently active in my game.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                            |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.6.1 | ✅ Positive | Given the user deletes a Collection that is currently NOT active, the DB record is deleted and nothing else changes.                                                                                                |
-| AC-31.6.2 | ✅ Positive | Given the user deletes the currently active Collection, the physical disk is NOT altered (no mods are disabled).                                                                                                    |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                     |
+| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.6.1 | ✅ Positive | Given the user deletes a Collection that is currently NOT active, the DB record is deleted and nothing else changes.                                                                                                                         |
+| AC-31.6.2 | ✅ Positive | Given the user deletes the currently active Collection, the physical disk is NOT altered (no mods are disabled).                                                                                                                             |
 | AC-31.6.3 | ✅ Positive | Given the active collection is deleted, the backend immediately snapshots the current active disk state into a new corridor-scoped Unsaved collection and sets it as active in the same request, avoiding any transient `NULL` active state. |
 
 ---
@@ -100,24 +100,24 @@ As a user, I want to delete a preset I no longer need without it altering the ph
 
 As a user, I want collection previews to reflect the real active hierarchy of my folders, so that I can understand which active mods will resolve, which branches are blocked by disabled parents, and how many active mods the preset effectively contains.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                           |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-31.7.1 | ✅ Positive | Given a collection preview is rendered, Object folders appear as the root level in the treeview, and any relevant `ContainerFolder` ancestors are rendered in full depth so the user can understand the hierarchy. |
-| AC-31.7.2 | ✅ Positive | Given an active snapshot path resolves to a `VariantContainer`, the preview renders only the main `VariantContainer` row and stops there; child variant folders or leaf mods under that container are not shown in the tree. |
-| AC-31.7.3 | ✅ Positive | Given an active snapshot path resolves to a `ModPackRoot`, the preview renders only the main mod-pack folder row; internal asset subfolders are not shown in the tree. |
-| AC-31.7.4 | ✅ Positive | Given an active snapshot path resolves to a `FlatModRoot`, the preview renders a terminal leaf using the flat mod file/folder name only, without expanding artificial subfolder noise below the Object root. |
-| AC-31.7.5 | ✅ Positive | Given an enabled child mod exists under a disabled ancestor `ContainerFolder`, that branch is moved into a dedicated bottom section (for non-impactful/inactive-container branches), the first disabling parent shows a disabled-state chip + warning tooltip, and enabled descendants show `Disabled by Container`. |
-| AC-31.7.6 | ✅ Positive | Given a terminal preview node is corrupt (for example a `VariantContainer` with a 0 KB root `.ini`), the preview renders a single terminal node only once, preserves its terminal type chip, and shows a warning icon/tooltip instead of duplicating subfolders or sibling rows. |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.7.1 | ✅ Positive | Given a collection preview is rendered, Object folders appear as the root level in the treeview, and any relevant `ContainerFolder` ancestors are rendered in full depth so the user can understand the hierarchy.                                                                                                                      |
+| AC-31.7.2 | ✅ Positive | Given an active snapshot path resolves to a `VariantContainer`, the preview renders only the main `VariantContainer` row and stops there; child variant folders or leaf mods under that container are not shown in the tree.                                                                                                            |
+| AC-31.7.3 | ✅ Positive | Given an active snapshot path resolves to a `ModPackRoot`, the preview renders only the main mod-pack folder row; internal asset subfolders are not shown in the tree.                                                                                                                                                                  |
+| AC-31.7.4 | ✅ Positive | Given an active snapshot path resolves to a `FlatModRoot`, the preview renders a terminal leaf using the flat mod file/folder name only, without expanding artificial subfolder noise below the Object root.                                                                                                                            |
+| AC-31.7.5 | ✅ Positive | Given an enabled child mod exists under a disabled ancestor `ContainerFolder`, that branch is moved into a dedicated bottom section (for non-impactful/inactive-container branches), the first disabling parent shows a disabled-state chip + warning tooltip, and enabled descendants show `Disabled by Container`.                    |
+| AC-31.7.6 | ✅ Positive | Given a terminal preview node is corrupt (for example a `VariantContainer` with a 0 KB root `.ini`), the preview renders a single terminal node only once, preserves its terminal type chip, and shows a warning icon/tooltip instead of duplicating subfolders or sibling rows.                                                        |
 | AC-31.7.7 | ✅ Positive | Given a collection contains nested `ContainerFolder` chains, `VariantContainer` roots, and `ModPackRoot` roots, the displayed mod count uses preview-tree semantics: terminal `Mod` leaves count as 1, visible `VariantContainer` rows count as 1, visible `ModPackRoot` rows count as 1, and parent `ContainerFolder` rows count as 0. |
-| AC-31.7.8 | ❌ Negative | Given the raw snapshot stores multiple child rows under one `VariantContainer` or `ModPackRoot`, the list/grid/topbar must NOT display the raw snapshot row count; all collection counts must be derived from the collapsed preview tree representation. |
-| AC-31.7.9 | ✅ Positive | Given collections are saved to disk, `collection_mods` persists enough preview metadata (`preview_path`, `node_type`, `warnings_json`) so variant/mod-pack/flat preview semantics can be reconstructed without relying solely on live path reclassification. |
+| AC-31.7.8 | ❌ Negative | Given the raw snapshot stores multiple child rows under one `VariantContainer` or `ModPackRoot`, the list/grid/topbar must NOT display the raw snapshot row count; all collection counts must be derived from the collapsed preview tree representation.                                                                                |
+| AC-31.7.9 | ✅ Positive | Given collections are saved to disk, `collection_mods` persists enough preview metadata (`preview_path`, `node_type`, `warnings_json`) so variant/mod-pack/flat preview semantics can be reconstructed without relying solely on live path reclassification.                                                                            |
 
 ---
 
 ### Non-Goals
 
 - No multi-level Undo history (Undo is implicitly handled by re-selecting a previous collection).
-- `undo_collection` may remain as a compatibility IPC, but it is not part of the supported UX path and may return `NoUndoAvailable`.
+- The legacy collection undo IPC is removed; `undo_collection_id` remains only as corridor state metadata for recovery and preview semantics.
 - No cross-game collections (collections are strictly scoped to `game_id`).
 - No writing collection names into the portable `info.json` (collections are purely DB-driven for faster I/O).
 - Collection apply and corridor switch must keep `WorkspaceViewModel.explorer` and Preview aligned to the active corridor; applying a collection must never surface mods from the opposite corridor in the main runtime grid/panel.
@@ -178,27 +178,27 @@ build_collection_preview_tree(objects, mods, mods_path):
 
 ### Integration Points
 
-| Component | Detail |
-| --- | --- |
-| Topbar State Sync | Commands return `active_collection_id`; React binds Topbar Dropdown value directly to `activeCollectionId` Zustand state. Active collection rows in the Topbar dropdown are non-applicable and must not open self-apply dialogs. |
+| Component               | Detail                                                                                                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Topbar State Sync       | Commands return `active_collection_id`; React binds Topbar Dropdown value directly to `activeCollectionId` Zustand state. Active collection rows in the Topbar dropdown are non-applicable and must not open self-apply dialogs.                                    |
 | Collection Display Name | Collection List, Topbar trigger, Topbar dropdown/context panel, Collection Preview, and switcher dialog must all use the same shared unsaved display-name resolver. User-facing unsaved names are corridor-aware (`Unsaved SAFE Preset` / `Unsaved UNSAFE Preset`). |
-| Collection List Count | `CollectionSummary.mod_count` MUST be derived from preview-tree semantics, not raw `collection_mods` row count, so list numbers match the preview hierarchy. |
-| Preview Panel Payload | Collection preview, apply preview, and corridor switch preview MUST expose ready-to-render tree payloads rather than requiring the frontend to infer hierarchy from flat member rows. |
-| Snapshot Persistence | `collection_mods` persists `preview_path`, `node_type`, and `warnings_json` so saved collection previews remain stable for flat/mod-pack/variant semantics and warning badges. |
-| ObjectList Payload | Backend queries MUST return `active_mod_paths: string[]` per Object so the UI Preview Panel correctly highlights active mods. |
-| Disk Reconcile Hook | Disk Reconcile results map to `handle_dirty_state` to immediately mark manual Explorer changes as Unsaved. |
-| Move/Rename Hook | `move_mod` command directly calls `UPDATE collection_mods SET mod_path...` to ensure Auto-Healing. |
+| Collection List Count   | `CollectionSummary.mod_count` MUST be derived from preview-tree semantics, not raw `collection_mods` row count, so list numbers match the preview hierarchy.                                                                                                        |
+| Preview Panel Payload   | Collection preview, apply preview, and corridor switch preview MUST expose ready-to-render tree payloads rather than requiring the frontend to infer hierarchy from flat member rows.                                                                               |
+| Snapshot Persistence    | `collection_mods` persists `preview_path`, `node_type`, and `warnings_json` so saved collection previews remain stable for flat/mod-pack/variant semantics and warning badges.                                                                                      |
+| ObjectList Payload      | Backend queries MUST return `active_mod_paths: string[]` per Object so the UI Preview Panel correctly highlights active mods.                                                                                                                                       |
+| Disk Reconcile Hook     | Disk Reconcile results map to `handle_dirty_state` to immediately mark manual Explorer changes as Unsaved.                                                                                                                                                          |
+| Move/Rename Hook        | `move_mod` command directly calls `UPDATE collection_mods SET mod_path...` to ensure Auto-Healing.                                                                                                                                                                  |
 
 ### Runtime Dirty-State Trigger Matrix
 
-| Trigger | Owner | Marks Collection Dirty | Emits `disk_reconcile:result` |
-| --- | --- | --- | --- |
-| Watcher / external rename-move-add-delete-enable-disable | Disk Reconcile | Yes | Yes |
-| Window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile | Yes when runtime state changed | Yes |
-| `write_mod_ini` / `update_mod_info` | Disk Reconcile (`InternalMutation`) | Yes | Yes |
-| Explicit toggle / rename / move / delete mod from UI | Explicit runtime mutation service | Yes | No |
-| Explicit restore from trash | Watcher + Disk Reconcile | Yes if runtime state changed | Yes |
-| Thumbnail-only mutation | Disk Reconcile (`InternalMutation`) | No | Yes |
+| Trigger                                                                 | Owner                               | Marks Collection Dirty         | Emits `disk_reconcile:result` |
+| ----------------------------------------------------------------------- | ----------------------------------- | ------------------------------ | ----------------------------- |
+| Watcher / external rename-move-add-delete-enable-disable                | Disk Reconcile                      | Yes                            | Yes                           |
+| Window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile                      | Yes when runtime state changed | Yes                           |
+| `write_mod_ini` / `update_mod_info`                                     | Disk Reconcile (`InternalMutation`) | Yes                            | Yes                           |
+| Explicit toggle / rename / move / delete mod from UI                    | Explicit runtime mutation service   | Yes                            | No                            |
+| Explicit restore from trash                                             | Watcher + Disk Reconcile            | Yes if runtime state changed   | Yes                           |
+| Thumbnail-only mutation                                                 | Disk Reconcile (`InternalMutation`) | No                             | Yes                           |
 
 ### Security & Privacy
 

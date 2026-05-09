@@ -3,12 +3,12 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users who organize mods in Windows Explorer while EMMM is open expect the app to reflect external changes instantly — without this, the UI shows stale data until a manual refresh, and bulk operations that fire filesystem events trigger unnecessary grid re-renders.
-- **Proposed Solution**: A `notify`-crate watcher running as a background Tauri-managed service, watching the active game's `mods_path` recursively. It uses a global `SuppressionGuard` (AtomicBool) to silence internally-generated events, batches filesystem events, and delegates all runtime truth updates to **Disk Reconcile** (`reconcile_disk_state_cmd`) before emitting typed result payloads to the frontend.
+- **Proposed Solution**: A `notify`-crate watcher running as a background Tauri-managed service, watching the active game's `mods_path` recursively. It uses a ref-counted `SuppressionGuard` to silence internally-generated events, batches filesystem events, preserves rename hints through coalesced reconcile requests, and delegates all runtime truth updates to **Disk Reconcile** (`reconcile_disk_state_cmd`) before emitting typed result payloads to the frontend.
 - **Success Criteria**:
   - [x] External folder creation appears in the grid within ≤ 500ms of the OS delivering the `Create` event.
   - [x] External folder deletion disappears from the grid within ≤ 500ms.
-  - [x] Internal operations (toggle, rename, bulk move) trigger 0 watcher-sourced grid re-fetches via `suppressor` flag.
-  - [x] Automatic GC (Garbage Collection) of lost objects runs whenever a watcher is initialized.
+  - [x] Internal operations (toggle, rename, bulk move) trigger 0 watcher-sourced grid re-fetches while the ref-counted suppressor is active.
+  - [x] Startup, Mods view entry, refocus, watcher batches, internal mutation completion, and manual repair all converge through Disk Reconcile.
   - [x] Watcher switches to the new `mods_path` within ≤ 1s of a game switch (old watcher stopped, new one started).
 
 ---
@@ -21,13 +21,13 @@
 
 As a user, I want the app to instantly update when I add, delete, or rename a mod folder in Windows Explorer, so that I don't have to manually press "Refresh".
 
-| ID        | Type        | Criteria                                                                                                                                                                                              |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-28.1.1 | ✅ Positive | Given the app is open, when I create a new folder in `mods_path/Characters/` via Windows Explorer, then the new folder appears in the `FolderGrid` within ≤ 500ms                                     |
-| AC-28.1.2 | ✅ Positive | Given a folder is deleted externally, then its `FolderCard` disappears from the grid within ≤ 500ms                                                                                                   |
-| AC-28.1.3 | ✅ Positive | Given a folder is renamed externally, then Disk Reconcile updates the DB projection, heals dependent collection paths, and the old card disappears while the new-name card appears within ≤ 500ms      |
-| AC-28.1.5 | ✅ Positive | Given watcher reconciliation reports `folders_changed` or `path_updates`, then ObjectList refreshes immediately because object counts, disabled visuals, and selection paths may have changed                                                     |
-| AC-28.1.4 | ❌ Negative | Given the `mods_path` itself is deleted externally while the watcher is active, then the watcher logs a `warn` and sends a `fs-path-gone` event — the frontend shows a "Mods folder not found" banner |
+| ID        | Type        | Criteria                                                                                                                                                                                                                  |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-28.1.1 | ✅ Positive | Given the app is open, when I create a new folder in `mods_path/Characters/` via Windows Explorer, then the new folder appears in the `FolderGrid` within ≤ 500ms                                                         |
+| AC-28.1.2 | ✅ Positive | Given a folder is deleted externally, then its `FolderCard` disappears from the grid within ≤ 500ms                                                                                                                       |
+| AC-28.1.3 | ✅ Positive | Given a folder is renamed externally, then Disk Reconcile updates the DB projection, heals dependent collection paths, and the old card disappears while the new-name card appears within ≤ 500ms                         |
+| AC-28.1.5 | ✅ Positive | Given watcher reconciliation reports `folders_changed` or `path_updates`, then ObjectList refreshes immediately because object counts, disabled visuals, and selection paths may have changed                             |
+| AC-28.1.4 | ❌ Negative | Given the `mods_path` itself is deleted externally while the watcher is active, then Disk Reconcile returns `status = SourceUnavailable`, performs no DB deletes, and the frontend shows a "Mods folder not found" banner |
 
 ---
 
@@ -35,10 +35,11 @@ As a user, I want the app to instantly update when I add, delete, or rename a mo
 
 As a system, I want the watcher to ignore changes caused by the app's own internal operations, so that bulk actions don't trigger cascading UI re-fetches.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                                       |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-28.2.1 | ✅ Positive | Given an internal operation (bulk toggle) holds a `SuppressionGuard`, when a filesystem event occurs, the watcher checks `suppressor` flag and discards the event — 0 Disk Reconcile watcher-trigger runs are emitted.                                                           |
-| AC-28.2.2 | ✅ Positive | Given an internal operation panics or completes, the RAII `SuppressionGuard` drops and resets the flag to `false` automatically.                                                                                                                                               |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                           |
+| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-28.2.1 | ✅ Positive | Given an internal operation (bulk toggle) holds a `SuppressionGuard`, when a filesystem event occurs, the watcher checks suppressor depth and discards the event — 0 Disk Reconcile watcher-trigger runs are emitted.                              |
+| AC-28.2.2 | ✅ Positive | Given nested internal operations hold multiple guards, watcher events remain suppressed until the last guard drops.                                                                                                                                |
+| AC-28.2.4 | ❌ Negative | Given a manual compatibility call clears suppression while an inner guard still exists, production mutations still prefer scoped RAII guards; unscoped boolean suppression must not be used as the primary production flow.                        |
 | AC-28.2.3 | ⚠️ Edge     | Given a path is legitimately changed externally at the exact same time as an internal operation suppresses it, then that exact event may be skipped — the next window refocus, Mods-entry refresh, or manual Disk Reconcile repairs the projection |
 
 ---
@@ -58,7 +59,7 @@ As a system, I want the watcher to ignore changes caused by the app's own intern
 
 ```
 WatcherState (Tauri managed state):
-  suppressor: Arc<AtomicBool>
+  suppressor: Arc<WatcherSuppressor>  // AtomicUsize depth
   watcher: Mutex<Option<RecommendedWatcher>>
 
 init_watcher(game_id) → ():
@@ -79,8 +80,13 @@ init_watcher(game_id) → ():
        app_handle.emit('mod_watch:events_batch', batch)   [informational only]
 
 WatcherSuppression (RAII):
-  struct SuppressionGuard { suppressor: Arc<AtomicBool> }
-  impl Drop: suppressor.store(false)
+  SuppressionGuard::new(): suppressor.depth += 1
+  impl Drop: suppressor.depth -= 1 with saturating guard
+
+Disk Reconcile unavailable source:
+  if mods_path is missing, unreadable, or not a directory:
+    return DiskReconcileResult { status: SourceUnavailable, error_message, ... }
+    do not write projection deletes
 
 Frontend:
   RuntimeSyncCoordinator / ExternalChangeHandler.tsx
@@ -93,19 +99,21 @@ Frontend:
 
 ### Integration Points
 
-| Component         | Detail                                                                                               |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| notify Crate      | `notify::RecommendedWatcher` (ReadDirectoryChangesWatcher on Windows)                                |
-| Debounce          | Watcher batches events before dispatch to Disk Reconcile                                              |
-| Suppression       | `Arc<AtomicBool>` shared between watcher and internal file mutations                                  |
+| Component         | Detail                                                                                                                                                                                                               |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| notify Crate      | `notify::RecommendedWatcher` (ReadDirectoryChangesWatcher on Windows)                                                                                                                                                |
+| Debounce          | Watcher batches events before dispatch to Disk Reconcile                                                                                                                                                             |
+| Suppression       | `Arc<WatcherSuppressor>` shared between watcher and internal file mutations; nested guards use ref-count semantics                                                                                                   |
 | Frontend Listener | `listen('disk_reconcile:result', handler)` — registered in the runtime coordinator on mount; applies `path_updates`, then refreshes ObjectList on `objects_changed`, `folders_changed`, or `path_updates.length > 0` |
-| Game Switch       | On `set_active_game` → watcher restarts for new `mods_path`; Mods view then runs `reconcileDiskState` |
+| Game Switch       | On `set_active_game` → watcher restarts for new `mods_path`; Mods view then runs `reconcileDiskState`                                                                                                                |
+| Rename Hints      | Coalesced watcher batches preserve `Renamed { from, to }` hints while an older reconcile is running, so collection/path healing is not lost                                                                          |
 
 ### Security & Privacy
 
 - **`mods_path` is the sole watch root** — the watcher never observes paths outside the game's mod directory.
 - **Modify events are classified, not ignored** — `.ini` / `info.json` feed dirty-state + keyviewer refresh; thumbnail changes invalidate thumbnail queries so ObjectList row images repaint without manual refresh.
 - **Watcher is trigger-only** — canonical runtime truth comes from Disk Reconcile, not from raw watcher events.
+- **Watcher never runs Deep Match Scanner** — MasterDB enrichment is explicit user/import workflow only.
 
 ---
 

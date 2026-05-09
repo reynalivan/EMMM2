@@ -134,7 +134,7 @@ pub async fn create(
 /// Delete a collection (CASCADE handles members).
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), CollectionError> {
     let mut tx = pool.begin().await?;
-    delete_tx(&mut *tx, id).await?;
+    delete_tx(&mut tx, id).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -289,6 +289,7 @@ pub async fn get_roots(
 }
 
 /// Replace all members in a single transaction.
+#[allow(clippy::too_many_arguments)] // Snapshot replacement keeps collection member groups explicit at the repo boundary.
 pub async fn replace_all_state(
     pool: &SqlitePool,
     id: &str,
@@ -301,7 +302,7 @@ pub async fn replace_all_state(
 ) -> Result<(), CollectionError> {
     let mut tx = pool.begin().await?;
     replace_all_state_tx(
-        &mut *tx,
+        &mut tx,
         id,
         mods,
         objects,
@@ -315,6 +316,7 @@ pub async fn replace_all_state(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Transactional snapshot replacement mirrors replace_all_state without changing callers.
 pub async fn replace_all_state_tx(
     conn: &mut SqliteConnection,
     id: &str,
@@ -478,6 +480,8 @@ pub fn to_summary(
     active_collection_id: Option<&str>,
     undo_collection_id: Option<&str>,
 ) -> CollectionSummary {
+    let is_undo_target = undo_collection_id == Some(c.id.as_str());
+
     CollectionSummary {
         id: c.id.clone(),
         name: c.name.clone(),
@@ -485,7 +489,7 @@ pub fn to_summary(
         is_unsaved: c.is_unsaved,
         signature: c.signature.clone(),
         is_active: active_collection_id == Some(c.id.as_str()),
-        is_undo_target: undo_collection_id == Some(c.id.as_str()) && false,
+        is_undo_target,
         updated_at: c.updated_at.clone(),
         raw_member_count: c.member_count.unwrap_or(0),
         mod_count: c.display_mod_count,

@@ -30,10 +30,7 @@ export function useSettings() {
     mutationFn: (newSettings: AppSettings) => commands.saveSettings({ settings: newSettings }),
     onSuccess: (_, newSettings) => {
       queryClient.setQueryData(settingsKeys.all, newSettings);
-      addToast(
-        'success',
-        t('settings:toast.save_success'),
-      );
+      addToast('success', t('settings:toast.save_success'));
     },
     onError: (err) => {
       console.error(err);
@@ -50,10 +47,7 @@ export function useSettings() {
     mutationFn: (pin: string) => commands.setPin({ pin, recoveryCode: undefined }),
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['settings']);
-      addToast(
-        'success',
-        t('settings:toast.pin_success'),
-      );
+      addToast('success', t('settings:toast.pin_success'));
     },
     onError: (err) => {
       console.error(err);
@@ -162,10 +156,7 @@ export function useSettings() {
     },
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['settings']);
-      addToast(
-        'success',
-        t('settings:toast.theme_success'),
-      );
+      addToast('success', t('settings:toast.theme_success'));
     },
     onError: (err) => {
       console.error(err);
@@ -207,10 +198,7 @@ export function useSettings() {
       },
       onSuccess: async () => {
         await publishQueryScopes(queryClient, ['settings']);
-        addToast(
-          'success',
-          t('settings:toast.lang_success'),
-        );
+        addToast('success', t('settings:toast.lang_success'));
       },
       onError: (err) => {
         console.error(err);

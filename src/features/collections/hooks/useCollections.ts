@@ -1,9 +1,9 @@
-/**
+﻿/**
  * v2 Collection hooks — Query + Mutation hooks for the greenfield collection system.
  *
  * Replaces: useCollections, useCollectionRuntimePreview, useCreateCollection,
  *           useSaveCurrentAsCollection, useSaveSnapshotCollectionAsNamed,
- *           useUpdateCollection, useDeleteCollection, useApplyCollection, useUndoCollection.
+ *           useUpdateCollection, useDeleteCollection, useApplyCollection.
  *
  * Collection queries are corridor-explicit so frontend cache keys match the
  * backend command inputs.
@@ -19,7 +19,10 @@ import {
   extractMissingModsPayload,
   formatAppError,
 } from '../../../lib/appError';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import {
+  publishQueryInvalidations,
+  publishRuntimeDescriptor,
+} from '../../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
 import { openWorkspaceFileInUseDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import type {
@@ -55,10 +58,7 @@ async function refetchCollectionList(
   gameId: string,
   isSafe: boolean,
 ): Promise<void> {
-  await queryClient.invalidateQueries({
-    queryKey: collectionKeys.list(gameId, isSafe),
-    refetchType: 'active',
-  });
+  await publishQueryInvalidations(queryClient, [collectionKeys.list(gameId, isSafe)], 'active');
 }
 
 async function refetchCollectionPreview(
@@ -66,10 +66,11 @@ async function refetchCollectionPreview(
   collectionId: string,
   gameId: string,
 ): Promise<void> {
-  await queryClient.invalidateQueries({
-    queryKey: [...collectionKeys.preview(collectionId), gameId],
-    refetchType: 'active',
-  });
+  await publishQueryInvalidations(
+    queryClient,
+    [[...collectionKeys.preview(collectionId), gameId]],
+    'active',
+  );
 }
 
 // ── Query Hooks ────────────────────────────────────────────────────────────
@@ -286,47 +287,6 @@ export function useApplyCollection() {
       }
 
       if (extractMissingModsPayload(err)) {
-        return;
-      }
-
-      toast.error(formatAppError(err));
-    },
-  });
-
-  return mutation;
-}
-
-/** Undo the last collection application. */
-export function useUndoCollection() {
-  const queryClient = useQueryClient();
-  const safeMode = useAppStore((state) => state.safeMode);
-
-  const mutation = useMutation({
-    mutationFn: ({ gameId }: { gameId: string }) => commands.undoCollection({ gameId }),
-
-    onSuccess: async (result: ApplyResult, variables) => {
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('collectionsState'),
-        'active',
-      );
-      await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId, safeMode),
-        refetchCollectionList(queryClient, variables.gameId, safeMode),
-      ]);
-
-      const total = result.mods_enabled + result.mods_disabled;
-      toast.success(`Undid collection application (${total} changes reverted)`);
-    },
-
-    onError: (err: unknown, variables) => {
-      const fileInUse = extractFileInUsePayload(err);
-      if (fileInUse) {
-        openWorkspaceFileInUseDialog({
-          path: fileInUse.path,
-          processes: fileInUse.processes,
-          onRetry: () => mutation.mutate(variables),
-        });
         return;
       }
 

@@ -22,9 +22,7 @@ export function EditObjectTabThumbnail({
 
   return (
     <div className="flex w-full shrink-0 flex-col items-center gap-2 md:w-32">
-      <span className="label-text self-center font-medium">
-        {t('edit_modal.thumbnail.label')}
-      </span>
+      <span className="label-text self-center font-medium">{t('edit_modal.thumbnail.label')}</span>
       <div className="w-32 h-32 rounded-xl bg-base-300 overflow-hidden flex items-center justify-center border border-base-content/10 relative shadow-inner">
         {displayThumbnail ? (
           <img
@@ -63,9 +61,7 @@ export function EditObjectTabThumbnail({
         </div>
       )}
       {thumbnailAction === 'delete' && (
-        <div className="text-xs text-error opacity-70">
-          {t('edit_modal.thumbnail.will_delete')}
-        </div>
+        <div className="text-xs text-error opacity-70">{t('edit_modal.thumbnail.will_delete')}</div>
       )}
     </div>
   );

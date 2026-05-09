@@ -95,13 +95,13 @@ Backend:
 
 ### Integration Points
 
-| Component            | Detail                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| Selection State      | `useAppStore.gridSelection: Set<string>` (folder_paths).                                    |
-| `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock.               |
-| Progress Events      | Tauri `Window::emit("bulk-progress", {current, total, label, active})`.                     |
+| Component            | Detail                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Selection State      | `useAppStore.gridSelection: Set<string>` (folder_paths).                                                                                  |
+| `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock.                                                             |
+| Progress Events      | Tauri `Window::emit("bulk-progress", {current, total, label, active})`.                                                                   |
 | Runtime Refresh      | Bulk mutation results map to centralized runtime descriptors / `WorkspaceImpact`; feature code does not call raw query invalidation APIs. |
-| `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes |
+| `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes                                               |
 
 ### Security & Privacy
 

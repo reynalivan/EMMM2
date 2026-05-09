@@ -40,11 +40,7 @@ export function useFolderGridImport({
         publishWorkspaceIntent({
           type: 'archiveImport',
           archives: classified.archives,
-          nonArchivePaths: [
-            ...classified.folders,
-            ...classified.iniFiles,
-            ...classified.images,
-          ],
+          nonArchivePaths: [...classified.folders, ...classified.iniFiles, ...classified.images],
           targetDir,
         });
       }

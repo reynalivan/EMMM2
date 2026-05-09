@@ -32,6 +32,7 @@ pub enum NewlineStyle {
 pub struct IniVariable {
     pub name: String,
     pub value: String,
+    #[specta(type = f64)]
     pub line_idx: usize,
 }
 
@@ -40,7 +41,9 @@ pub struct KeyBinding {
     pub section_name: String,
     pub key: Option<String>,
     pub back: Option<String>,
+    #[specta(type = f64)]
     pub key_line_idx: Option<usize>,
+    #[specta(type = f64)]
     pub back_line_idx: Option<usize>,
 }
 

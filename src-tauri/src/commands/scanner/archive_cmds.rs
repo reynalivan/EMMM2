@@ -52,6 +52,7 @@ pub async fn detect_archives_cmd(mods_path: String) -> Result<Vec<ArchiveInfo>, 
 /// # Covers: TC-2.1-01, TC-2.1-04, TC-2.1-05, EC-2.06
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn extract_archive_cmd(
     archive_path: String,
     mods_dir: String,

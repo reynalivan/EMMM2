@@ -16,7 +16,7 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
     let cancelled = false;
 
     const init = async () => {
-      await commands.stopWatcherCmd().catch(() => {});
+      await commands.stopWatcher().catch(() => {});
       if (cancelled) {
         return;
       }
@@ -26,7 +26,7 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
       }
 
       await commands
-        .startWatcherCmd({
+        .startWatcher({
           path: activeGame.mod_path,
           gameId: activeGame.id,
         })
@@ -39,7 +39,7 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
 
     return () => {
       cancelled = true;
-      commands.stopWatcherCmd().catch(() => {});
+      commands.stopWatcher().catch(() => {});
     };
   }, [activeGame?.id, activeGame?.mod_path]);
 }

@@ -15,6 +15,7 @@ use std::path::Path;
 /// 4. Rename (move) the folder.
 /// 5. Update the DB `mods` table (path, status, object_id).
 /// 6. If `status == "only-enable"`, disable all sibling mods in the target.
+#[allow(clippy::too_many_arguments)] // Move service keeps validated context and move target fields explicit.
 pub async fn move_mod_to_object_service(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,

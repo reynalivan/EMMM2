@@ -35,14 +35,14 @@ As a first-time user, I want to see a welcoming introduction screen, so that I u
 
 As a first-time user, I want to select my XXMI launcher folder and have games detected automatically, so that setup is fast without entering paths manually.
 
-| ID        | Type        | Criteria                                                                                                                                                                                               |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-03.2.1 | ✅ Positive | Given the user clicks "Auto-Detect" and selects a valid XXMI root via the OS folder dialog, then detected games are listed with name, type, and path within ≤ 1s                                       |
-| AC-03.2.2 | ✅ Positive | Given detected games are listed, then the user can remove individual games from the list before confirming                                                                                             |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                  |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-03.2.1 | ✅ Positive | Given the user clicks "Auto-Detect" and selects a valid XXMI root via the OS folder dialog, then detected games are listed with name, type, and path within ≤ 1s                                                                          |
+| AC-03.2.2 | ✅ Positive | Given detected games are listed, then the user can remove individual games from the list before confirming                                                                                                                                |
 | AC-03.2.3 | ✅ Positive | Given ≥ 1 games remain in the list, when the user clicks "Confirm & Continue", then all games are saved, Disk Reconcile runs for runtime projection truth, the first is set as `active_game_id`, and the router navigates to `/dashboard` |
-| AC-03.2.4 | ❌ Negative | Given the selected folder contains no recognized game subfolders, when auto-detect finishes, then "No games found in this folder" message is displayed and the user can try a different path           |
-| AC-03.2.5 | ❌ Negative | Given the user cancels the native folder dialog (presses Escape or closes it), then the welcome screen state is unchanged — no error is shown                                                          |
-| AC-03.2.6 | ⚠️ Edge     | Given the scanner encounters a symlink loop or extreme nesting (> 5 levels), then the heuristic bails out after the depth limit and returns any valid games found so far — no UI freeze or crash       |
+| AC-03.2.4 | ❌ Negative | Given the selected folder contains no recognized game subfolders, when auto-detect finishes, then "No games found in this folder" message is displayed and the user can try a different path                                              |
+| AC-03.2.5 | ❌ Negative | Given the user cancels the native folder dialog (presses Escape or closes it), then the welcome screen state is unchanged — no error is shown                                                                                             |
+| AC-03.2.6 | ⚠️ Edge     | Given the scanner encounters a symlink loop or extreme nesting (> 5 levels), then the heuristic bails out after the depth limit and returns any valid games found so far — no UI freeze or crash                                          |
 
 ---
 

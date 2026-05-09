@@ -16,11 +16,12 @@ pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         Some(mods_path.as_str()),
     )
     .await?;
-    let (mods, objects, _) = crate::services::collection_service::collection_members_from_projected_state(
-        &ctx.collection_id,
-        collection.is_safe,
-        &snapshot,
-    );
+    let (mods, objects, _) =
+        crate::services::collection_service::collection_members_from_projected_state(
+            &ctx.collection_id,
+            collection.is_safe,
+            &snapshot,
+        );
     ctx.target_mods = mods;
     ctx.target_objects = objects;
 

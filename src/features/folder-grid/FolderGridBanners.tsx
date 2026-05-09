@@ -20,6 +20,7 @@ export interface FolderGridBannersProps {
   ancestorDisabledBy: string | null;
   /** Open the EnableParent confirmation dialog with impact preview */
   onOpenEnableParentDialog: () => void;
+  diskSourceUnavailableMessage: string | null;
 }
 
 export default function FolderGridBanners({
@@ -37,6 +38,7 @@ export default function FolderGridBanners({
   handleToggleSelf,
   ancestorDisabledBy,
   onOpenEnableParentDialog,
+  diskSourceUnavailableMessage,
 }: FolderGridBannersProps) {
   const { t } = useTranslation(['grid']);
 
@@ -48,6 +50,13 @@ export default function FolderGridBanners({
 
   return (
     <>
+      {diskSourceUnavailableMessage && (
+        <div className="mb-3 flex items-center gap-2 bg-error/10 border border-error/20 rounded-lg px-3 py-2">
+          <AlertTriangle size={16} className="text-error shrink-0" />
+          <span className="text-xs text-error flex-1">{diskSourceUnavailableMessage}</span>
+        </div>
+      )}
+
       {/* ── Parent-Disabled Notice (compact, topmost) ─────────────────────── */}
       {ancestorDisabledBy && (
         <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 bg-warning/10 border-b border-warning/20 px-3 py-1.5 -mx-4 -mt-4 shadow-sm backdrop-blur-md">

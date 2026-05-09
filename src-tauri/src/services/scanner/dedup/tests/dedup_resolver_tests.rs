@@ -1,8 +1,8 @@
 use super::{resolve_batch, ResolutionAction, ResolutionRequest};
 use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::scanner::watcher::WatcherSuppressor;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::services::scanner::watcher::WatcherSuppressor;
 use std::sync::Arc;
 use tempfile::TempDir;
 

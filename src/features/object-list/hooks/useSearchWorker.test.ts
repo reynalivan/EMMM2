@@ -44,4 +44,3 @@ describe('useSearchWorker', () => {
     expect(result.current.filteredIds).toBeNull();
   });
 });
-

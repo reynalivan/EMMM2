@@ -136,7 +136,9 @@ async fn test_create_object_cmd_inner_does_not_leave_db_row_when_folder_creation
         custom_skins: None,
     };
 
-    let err = create_object_cmd_inner(&pool, None, input).await.unwrap_err();
+    let err = create_object_cmd_inner(&pool, None, input)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("Failed to create object folder"));
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")

@@ -142,9 +142,7 @@ export function extractFileInUsePayload(error: unknown): FileInUsePayload | null
     return null;
   }
 
-  const processes = payload.processes.filter(
-    (entry): entry is string => typeof entry === 'string',
-  );
+  const processes = payload.processes.filter((entry): entry is string => typeof entry === 'string');
 
   return {
     path: payload.path,

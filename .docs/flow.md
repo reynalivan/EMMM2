@@ -79,14 +79,14 @@ Rules:
 
 Runtime ownership matrix:
 
-| Trigger | Owner | Collections Dirty | KeyViewer Refresh | Emits `disk_reconcile:result` |
-| --- | --- | --- | --- | --- |
-| watcher batch / external filesystem | Disk Reconcile | Yes | Yes | Yes |
-| window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile | Yes when runtime changed | Yes when runtime changed | Yes |
-| explicit toggle / rename / move / delete mod | explicit runtime service | Yes | Yes | No |
-| internal `info.json` / `.ini` mutation | Disk Reconcile (`InternalMutation`) | Yes | Yes | Yes |
-| thumbnail-only mutation | Disk Reconcile (`InternalMutation`) | No | No | Yes |
-| object focus / folder navigation | Workspace state only | No | No | No |
+| Trigger                                                                 | Owner                               | Collections Dirty        | KeyViewer Refresh        | Emits `disk_reconcile:result` |
+| ----------------------------------------------------------------------- | ----------------------------------- | ------------------------ | ------------------------ | ----------------------------- |
+| watcher batch / external filesystem                                     | Disk Reconcile                      | Yes                      | Yes                      | Yes                           |
+| window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile                      | Yes when runtime changed | Yes when runtime changed | Yes                           |
+| explicit toggle / rename / move / delete mod                            | explicit runtime service            | Yes                      | Yes                      | No                            |
+| internal `info.json` / `.ini` mutation                                  | Disk Reconcile (`InternalMutation`) | Yes                      | Yes                      | Yes                           |
+| thumbnail-only mutation                                                 | Disk Reconcile (`InternalMutation`) | No                       | No                       | Yes                           |
+| object focus / folder navigation                                        | Workspace state only                | No                       | No                       | No                            |
 
 ### B. Deep Match Scanner
 
@@ -330,11 +330,11 @@ User explicitly starts Scan / Import / Review flow
 
 ## 9\. Query Key Strategy
 
-| Hook / Read Model      | Key                                                                  | Refreshed By                  |
-| ---------------------- | -------------------------------------------------------------------- | ----------------------------- |
-| `useWorkspaceViewModel` | `workspaceKeys.detail({ gameId, safeMode, filters, selection })`     | Runtime descriptor refresh bus |
-| `useCollections`        | `['v2-collections', gameId, safeMode]`                               | CRUD, dirty state, Disk Reconcile |
-| `useDashboardStats`     | `['dashboard-stats', safeMode]`                                      | Disk Reconcile, collection changes |
+| Hook / Read Model       | Key                                                              | Refreshed By                       |
+| ----------------------- | ---------------------------------------------------------------- | ---------------------------------- |
+| `useWorkspaceViewModel` | `workspaceKeys.detail({ gameId, safeMode, filters, selection })` | Runtime descriptor refresh bus     |
+| `useCollections`        | `['v2-collections', gameId, safeMode]`                           | CRUD, dirty state, Disk Reconcile  |
+| `useDashboardStats`     | `['dashboard-stats', safeMode]`                                  | Disk Reconcile, collection changes |
 
 Export to Sheets
 

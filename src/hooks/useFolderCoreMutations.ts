@@ -32,13 +32,8 @@ async function runDiskRepairRecovery(
       forceFull: true,
     });
     const settings = await commands.getSettings();
-    const activeGame: GameConfig | null =
-      settings.games.find((game) => game.id === gameId) ?? null;
-    applyDiskReconcileResult(
-      result,
-      queryClient,
-      activeGame,
-    );
+    const activeGame: GameConfig | null = settings.games.find((game) => game.id === gameId) ?? null;
+    applyDiskReconcileResult(result, queryClient, activeGame);
     toast.success('Sync complete', 2000);
   } catch (error) {
     console.error('Disk repair recovery failed:', error);

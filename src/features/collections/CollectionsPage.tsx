@@ -18,11 +18,7 @@ import ModeSwitchConfirmModal from '../safe-mode/ModeSwitchConfirmModal';
 import PinEntryModal from '../safe-mode/PinEntryModal';
 
 import { useCorridor } from './hooks/useCorridor';
-import {
-  useCollections,
-  useDeleteCollection,
-  useUpdateCollection,
-} from './hooks/useCollections';
+import { useCollections, useDeleteCollection, useUpdateCollection } from './hooks/useCollections';
 import { CollectionList } from './components/CollectionList';
 import { CollectionPreviewPanel } from './components/CollectionPreviewPanel';
 import { SaveCollectionModal } from './components/SaveCollectionModal';
@@ -333,10 +329,7 @@ export default function CollectionsPage() {
         />
       )}
       {applyTargetId && (
-        <ApplyCollectionModal
-          collectionId={applyTargetId}
-          onClose={() => setApplyTargetId(null)}
-        />
+        <ApplyCollectionModal collectionId={applyTargetId} onClose={() => setApplyTargetId(null)} />
       )}
     </div>
   );

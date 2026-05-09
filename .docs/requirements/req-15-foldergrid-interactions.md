@@ -40,7 +40,7 @@ As a user, I want to right-click empty grid space to access global grid actions,
 | ID        | Type        | Criteria                                                                                                                                                          |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-15.2.1 | ✅ Positive | Given a right-click precisely on the grid background (not on any card), then a context menu shows: "Refresh", "Select All", "Open Folder in Explorer"             |
-| AC-15.2.2 | ✅ Positive | Given "Refresh" is clicked, then the shared runtime refresh path publishes a folder/workspace refresh descriptor and the grid reloads without a full page refresh     |
+| AC-15.2.2 | ✅ Positive | Given "Refresh" is clicked, then the shared runtime refresh path publishes a folder/workspace refresh descriptor and the grid reloads without a full page refresh |
 | AC-15.2.3 | ❌ Negative | Given "Select All" is clicked when the grid has 0 items, then the action is disabled (menu item is grayed out) — `selectedItems` stays empty                      |
 
 ---
@@ -107,14 +107,14 @@ Keyboard Navigation:
 
 ### Integration Points
 
-| Component       | Detail                                                                                                                                 |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Component       | Detail                                                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Context Menu    | Custom React component — `onContextMenu` event captured on card and grid background, with policy-only menu descriptors and dedicated action hooks |
-| Clipboard       | `tauri-plugin-clipboard-manager` — `readImageBase64()` → decode → `writeFile('preview.png')`                                           |
-| Shell Open      | Explorer open action lives in mod action hooks; policy/menu builders do not call commands directly                                      |
-| Lasso           | `useRef` for overlay `<div>`, `getBoundingClientRect()` intersection per virtual row rect                                              |
-| DnD             | `@dnd-kit/core` `DndContext`, `useDraggable`, `useDroppable`, `DragOverlay`                                                            |
-| Bulk Move (DnD) | Delegates to Epic 14 `bulk_move` on `onDragEnd`                                                                                        |
+| Clipboard       | `tauri-plugin-clipboard-manager` — `readImageBase64()` → decode → `writeFile('preview.png')`                                                      |
+| Shell Open      | Explorer open action lives in mod action hooks; policy/menu builders do not call commands directly                                                |
+| Lasso           | `useRef` for overlay `<div>`, `getBoundingClientRect()` intersection per virtual row rect                                                         |
+| DnD             | `@dnd-kit/core` `DndContext`, `useDraggable`, `useDroppable`, `DragOverlay`                                                                       |
+| Bulk Move (DnD) | Delegates to Epic 14 `bulk_move` on `onDragEnd`                                                                                                   |
 
 ### Security & Privacy
 

@@ -20,6 +20,7 @@ import {
 } from '../mod-runtime/operations/sharedOperations';
 import type { ObjectSummary } from '../../types/object';
 import type { MasterDbEntry } from './scanReviewHelpers';
+import { withWatcherSuppression } from '../file-watcher/watcherSuppression';
 
 interface ArchiveDeps {
   objects: ObjectSummary[];
@@ -154,176 +155,179 @@ export function useObjHandlersArchive({
         error: null,
         extractProgress: { current: 0, total: 0 },
       }));
-      await commands.setWatcherSuppressionCmd({ suppressed: true });
-
       try {
-        const extractTarget =
-          pendingDropContext.type === 'auto-organize'
-            ? `${activeGame.mod_path}\\.emmm_temp`
-            : activeGame.mod_path;
+        await withWatcherSuppression({ releaseDelayMs: null }, async () => {
+          const extractTarget =
+            pendingDropContext.type === 'auto-organize'
+              ? `${activeGame.mod_path}\\.emmm_temp`
+              : activeGame.mod_path;
 
-        if (pendingDropContext.type === 'auto-organize') {
-          await ensureDirectoryExists(extractTarget);
-        }
+          if (pendingDropContext.type === 'auto-organize') {
+            await ensureDirectoryExists(extractTarget);
+          }
 
-        const totalArchives = selectedPaths.length;
-        setArchiveModal((prev) => ({
-          ...prev,
-          extractProgress: { current: 0, total: totalArchives },
-        }));
-
-        // A1: Use shared batch extraction utility
-        const batchResult = await scanService.extractArchiveBatch(
-          selectedPaths,
-          archives,
-          extractTarget,
-          passwords,
-          options,
-          (current, total) => {
-            setArchiveModal((prev) => ({
-              ...prev,
-              extractProgress: { current, total },
-              fileProgress: null, // reset file progress between archives
-            }));
-          },
-          (event) => {
-            if (event.event === 'fileProgress') {
-              setArchiveModal((prev) => ({
-                ...prev,
-                fileProgress: event.data,
-              }));
-            }
-          },
-        );
-
-        const extractedFolders = batchResult.extractedPaths;
-        const isAbortedLocally = batchResult.aborted;
-
-        if (batchResult.isPasswordError && batchResult.failedPath) {
-          // #5: Password error → keep modal open for retry
+          const totalArchives = selectedPaths.length;
           setArchiveModal((prev) => ({
             ...prev,
-            isExtracting: false,
-            passwordError: { path: batchResult.failedPath!, message: batchResult.error! },
+            extractProgress: { current: 0, total: totalArchives },
           }));
-          return;
-        }
 
-        // #2: Queue summary — show toast for partial failures
-        const done = batchResult.results.filter((r) => r.status === 'done').length;
-        const failed = batchResult.results.filter((r) => r.status === 'failed').length;
-        const skipped = batchResult.results.filter((r) => r.status === 'skipped').length;
+          // A1: Use shared batch extraction utility
+          const batchResult = await scanService.extractArchiveBatch(
+            selectedPaths,
+            archives,
+            extractTarget,
+            passwords,
+            options,
+            (current, total) => {
+              setArchiveModal((prev) => ({
+                ...prev,
+                extractProgress: { current, total },
+                fileProgress: null, // reset file progress between archives
+              }));
+            },
+            (event) => {
+              if (event.event === 'fileProgress') {
+                setArchiveModal((prev) => ({
+                  ...prev,
+                  fileProgress: event.data,
+                }));
+              }
+            },
+          );
 
-        if (failed > 0 && !isAbortedLocally) {
-          const failedNames = batchResult.results
-            .filter((r) => r.status === 'failed')
-            .map((r) => r.path.split('\\').pop() || r.path)
-            .join(', ');
-          const parts: string[] = [];
-          if (done > 0) parts.push(`${done} extracted`);
-          parts.push(`${failed} failed`);
-          if (skipped > 0) parts.push(`${skipped} skipped`);
-          toast.warning(`${parts.join(', ')}\nFailed: ${failedNames}`);
-        }
+          const extractedFolders = batchResult.extractedPaths;
+          const isAbortedLocally = batchResult.aborted;
 
-        setArchiveModal((prev) => ({
-          ...prev,
-          open: false,
-          isExtracting: false,
-          extractProgress: null,
-          fileProgress: null,
-        }));
-
-        // Resume flow depending on context
-        if (pendingDropContext.type === 'item' || pendingDropContext.type === 'new-object') {
-          const obj = objects.find((o) => o.id === pendingDropContext.targetObjectId);
-          const pathsToIngest = [...pendingDropContext.pathsToIngest, ...extractedFolders];
-          const isNewObject = pendingDropContext.type === 'new-object';
-
-          if (pathsToIngest.length === 0) {
-            toast.info('No items to import.');
+          if (batchResult.isPasswordError && batchResult.failedPath) {
+            // #5: Password error → keep modal open for retry
+            setArchiveModal((prev) => ({
+              ...prev,
+              isExtracting: false,
+              passwordError: { path: batchResult.failedPath!, message: batchResult.error! },
+            }));
             return;
           }
 
-          await executeImportAndInvalidate(
-            pathsToIngest,
-            pendingDropContext.targetFolder!,
-            queryClient,
-            { isNewObject, objectName: obj?.name },
-          );
+          // #2: Queue summary — show toast for partial failures
+          const done = batchResult.results.filter((r) => r.status === 'done').length;
+          const failed = batchResult.results.filter((r) => r.status === 'failed').length;
+          const skipped = batchResult.results.filter((r) => r.status === 'skipped').length;
 
-          // Post-extraction match check for archives dropped on a specific object
-          if (pendingDropContext.type === 'item' && obj?.name && extractedFolders.length > 0) {
-            try {
-              let mismatches = 0;
-              let firstMismatchMsg = '';
-              const mismatchedPaths: string[] = [];
-              for (const folder of extractedFolders) {
-                const check = await scanService.matchCheckFolder(
-                  folder,
-                  obj.name,
-                  activeGame.game_type,
-                );
-                if (!check.isMatch) {
-                  mismatches++;
-                  mismatchedPaths.push(folder);
-                  if (!firstMismatchMsg) {
-                    firstMismatchMsg = `${folder.split('\\').pop()}: Best match is ${check.matchedName || 'Unknown'} (${check.matchScorePct}%)`;
+          if (failed > 0 && !isAbortedLocally) {
+            const failedNames = batchResult.results
+              .filter((r) => r.status === 'failed')
+              .map((r) => r.path.split('\\').pop() || r.path)
+              .join(', ');
+            const parts: string[] = [];
+            if (done > 0) parts.push(`${done} extracted`);
+            parts.push(`${failed} failed`);
+            if (skipped > 0) parts.push(`${skipped} skipped`);
+            toast.warning(`${parts.join(', ')}\nFailed: ${failedNames}`);
+          }
+
+          setArchiveModal((prev) => ({
+            ...prev,
+            open: false,
+            isExtracting: false,
+            extractProgress: null,
+            fileProgress: null,
+          }));
+
+          // Resume flow depending on context
+          if (pendingDropContext.type === 'item' || pendingDropContext.type === 'new-object') {
+            const obj = objects.find((o) => o.id === pendingDropContext.targetObjectId);
+            const pathsToIngest = [...pendingDropContext.pathsToIngest, ...extractedFolders];
+            const isNewObject = pendingDropContext.type === 'new-object';
+
+            if (pathsToIngest.length === 0) {
+              toast.info('No items to import.');
+              return;
+            }
+
+            await executeImportAndInvalidate(
+              pathsToIngest,
+              pendingDropContext.targetFolder!,
+              queryClient,
+              { isNewObject, objectName: obj?.name },
+            );
+
+            // Post-extraction match check for archives dropped on a specific object
+            if (pendingDropContext.type === 'item' && obj?.name && extractedFolders.length > 0) {
+              try {
+                let mismatches = 0;
+                let firstMismatchMsg = '';
+                const mismatchedPaths: string[] = [];
+                for (const folder of extractedFolders) {
+                  const check = await scanService.matchCheckFolder(
+                    folder,
+                    obj.name,
+                    activeGame.game_type,
+                  );
+                  if (!check.isMatch) {
+                    mismatches++;
+                    mismatchedPaths.push(folder);
+                    if (!firstMismatchMsg) {
+                      firstMismatchMsg = `${folder.split('\\').pop()}: Best match is ${check.matchedName || 'Unknown'} (${check.matchScorePct}%)`;
+                    }
                   }
                 }
+                if (mismatches > 0) {
+                  toast.withAction(
+                    'warning',
+                    `${mismatches} of ${extractedFolders.length} archive(s) may not match ${obj.name}\n→ ${firstMismatchMsg}`,
+                    {
+                      label: 'Fix',
+                      onClick: () => setMismatchConfirm(mismatchedPaths),
+                    },
+                    9999999,
+                  );
+                }
+              } catch (err) {
+                console.warn('Post-extraction match check failed:', err);
               }
-              if (mismatches > 0) {
-                toast.withAction(
-                  'warning',
-                  `${mismatches} of ${extractedFolders.length} archive(s) may not match ${obj.name}\n→ ${firstMismatchMsg}`,
-                  {
-                    label: 'Fix',
-                    onClick: () => setMismatchConfirm(mismatchedPaths),
-                  },
-                  9999999,
-                );
-              }
-            } catch (err) {
-              console.warn('Post-extraction match check failed:', err);
             }
-          }
-        } else if (pendingDropContext.type === 'auto-organize') {
-          const folderPaths = [...(pendingDropContext.baseFolderPaths || []), ...extractedFolders];
-          const looseFiles = pendingDropContext.baseLooseFiles || [];
+          } else if (pendingDropContext.type === 'auto-organize') {
+            const folderPaths = [
+              ...(pendingDropContext.baseFolderPaths || []),
+              ...extractedFolders,
+            ];
+            const looseFiles = pendingDropContext.baseLooseFiles || [];
 
-          if (looseFiles.length > 0) {
-            const ingestResult: IngestResult = await commands.ingestDroppedFolders({
-              paths: looseFiles,
-              modsPath: extractTarget,
-              gameId: activeGame.id,
-              gameName: activeGame.name,
-              gameType: getGameTypeKey(activeGame.game_type),
+            if (looseFiles.length > 0) {
+              const ingestResult: IngestResult = await commands.ingestDroppedFolders({
+                paths: looseFiles,
+                modsPath: extractTarget,
+                gameId: activeGame.id,
+                gameName: activeGame.name,
+                gameType: getGameTypeKey(activeGame.game_type),
+              });
+              folderPaths.push(...ingestResult.moved);
+            }
+
+            setIsSyncing(true);
+            const previewItemsRaw = await scanService.runDeepmatchPreview(
+              activeGame.id,
+              activeGame.game_type,
+              activeGame.mod_path,
+              undefined,
+              folderPaths,
+            );
+            const previewItems = previewItemsRaw.map((item) => ({
+              ...item,
+              moveFromTemp: folderPaths.includes(item.folderPath),
+            }));
+            const dbJson = await scanService.getMasterDb(activeGame.game_type);
+            const masterEntries = parseMasterDb(dbJson);
+
+            setScanReview({
+              open: true,
+              items: previewItems,
+              masterDbEntries: masterEntries,
+              isCommitting: false,
             });
-            folderPaths.push(...ingestResult.moved);
           }
-
-          setIsSyncing(true);
-          const previewItemsRaw = await scanService.runDeepmatchPreview(
-            activeGame.id,
-            activeGame.game_type,
-            activeGame.mod_path,
-            undefined,
-            folderPaths,
-          );
-          const previewItems = previewItemsRaw.map((item) => ({
-            ...item,
-            moveFromTemp: folderPaths.includes(item.folderPath),
-          }));
-          const dbJson = await scanService.getMasterDb(activeGame.game_type);
-          const masterEntries = parseMasterDb(dbJson);
-
-          setScanReview({
-            open: true,
-            items: previewItems,
-            masterDbEntries: masterEntries,
-            isCommitting: false,
-          });
-        }
+        });
       } catch (e: unknown) {
         console.error('Extraction flow failed:', e);
         setArchiveModal((prev) => ({
@@ -332,7 +336,6 @@ export function useObjHandlersArchive({
           error: e instanceof Error ? e.message : String(e),
         }));
       } finally {
-        await commands.setWatcherSuppressionCmd({ suppressed: false });
         if (pendingDropContext.type === 'auto-organize') setIsSyncing(false);
       }
     },
@@ -372,18 +375,17 @@ export function useObjHandlersArchive({
       }
 
       try {
-        await commands.setWatcherSuppressionCmd({ suppressed: true });
-        await executeImportAndInvalidate(
-          pendingDropContext.pathsToIngest,
-          pendingDropContext.targetFolder!,
-          queryClient,
-          { isNewObject, objectName: obj?.name },
-        );
+        await withWatcherSuppression({ releaseDelayMs: null }, async () => {
+          await executeImportAndInvalidate(
+            pendingDropContext.pathsToIngest,
+            pendingDropContext.targetFolder!,
+            queryClient,
+            { isNewObject, objectName: obj?.name },
+          );
+        });
       } catch (e) {
         console.error('Drop on item failed after skipping archives:', e);
         toast.error('Failed to import items');
-      } finally {
-        await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     } else if (pendingDropContext.type === 'auto-organize') {
       try {
@@ -396,47 +398,46 @@ export function useObjHandlersArchive({
         }
 
         setIsSyncing(true);
-        await commands.setWatcherSuppressionCmd({ suppressed: true });
+        await withWatcherSuppression({ releaseDelayMs: null }, async () => {
+          const extractTarget = `${activeGame.mod_path}\\.emmm_temp`;
+          if (looseFiles.length > 0) {
+            await ensureDirectoryExists(extractTarget);
+            const ingestResult: IngestResult = await commands.ingestDroppedFolders({
+              paths: looseFiles,
+              modsPath: extractTarget,
+              gameId: activeGame.id,
+              gameName: activeGame.name,
+              gameType: getGameTypeKey(activeGame.game_type),
+            });
+            folderPaths.push(...ingestResult.moved);
+          }
 
-        const extractTarget = `${activeGame.mod_path}\\.emmm_temp`;
-        if (looseFiles.length > 0) {
-          await ensureDirectoryExists(extractTarget);
-          const ingestResult: IngestResult = await commands.ingestDroppedFolders({
-            paths: looseFiles,
-            modsPath: extractTarget,
-            gameId: activeGame.id,
-            gameName: activeGame.name,
-            gameType: getGameTypeKey(activeGame.game_type),
+          const previewItemsRaw = await scanService.runDeepmatchPreview(
+            activeGame.id,
+            activeGame.game_type,
+            activeGame.mod_path,
+            undefined,
+            folderPaths,
+          );
+          const previewItems = previewItemsRaw.map((item) => ({
+            ...item,
+            moveFromTemp: folderPaths.includes(item.folderPath),
+          }));
+          const dbJson = await scanService.getMasterDb(activeGame.game_type);
+          const masterEntries = parseMasterDb(dbJson);
+
+          setScanReview({
+            open: true,
+            items: previewItems,
+            masterDbEntries: masterEntries,
+            isCommitting: false,
           });
-          folderPaths.push(...ingestResult.moved);
-        }
-
-        const previewItemsRaw = await scanService.runDeepmatchPreview(
-          activeGame.id,
-          activeGame.game_type,
-          activeGame.mod_path,
-          undefined,
-          folderPaths,
-        );
-        const previewItems = previewItemsRaw.map((item) => ({
-          ...item,
-          moveFromTemp: folderPaths.includes(item.folderPath),
-        }));
-        const dbJson = await scanService.getMasterDb(activeGame.game_type);
-        const masterEntries = parseMasterDb(dbJson);
-
-        setScanReview({
-          open: true,
-          items: previewItems,
-          masterDbEntries: masterEntries,
-          isCommitting: false,
         });
       } catch (e: unknown) {
         console.error('Auto-organize failed post-skip:', e);
         toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setIsSyncing(false);
-        await commands.setWatcherSuppressionCmd({ suppressed: false });
       }
     }
   }, [

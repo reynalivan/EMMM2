@@ -51,7 +51,7 @@ As a user, I want to edit the INI text in-place and save with Ctrl+S or a Save b
 | ID        | Type        | Criteria                                                                                                                                                                                                                       |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-18.3.1 | ✅ Positive | Given I edit any text in the editor, then a "Save" button appears and the editor area shows a "Unsaved changes" indicator                                                                                                      |
-| AC-18.3.2 | ✅ Positive | Given unsaved changes, when I press Ctrl+S or click Save, then `write_mod_ini` is invoked; the file is overwritten on disk in ≤ 300ms; Disk Reconcile runs with `InternalMutation`; the "Unsaved" indicator disappears |
+| AC-18.3.2 | ✅ Positive | Given unsaved changes, when I press Ctrl+S or click Save, then `write_mod_ini` is invoked; the file is overwritten on disk in ≤ 300ms; Disk Reconcile runs with `InternalMutation`; the "Unsaved" indicator disappears         |
 | AC-18.3.3 | ❌ Negative | Given the `.ini` file is locked by another process (the game is running), when Save is clicked, then `write_mod_ini` returns an IO error and a toast shows "Save failed: file locked" — the editor retains the unsaved content |
 | AC-18.3.4 | ⚠️ Edge     | Given I switch to a different mod file while there are unsaved changes, then a "Discard changes?" confirmation dialog appears — the editor does not silently lose the user's edits                                             |
 | AC-18.3.5 | ✅ Positive | Given the INI text contains `[Key...]` bindings or `$variable = value` patterns, a "Quick Actions" header parses these and provides dedicated UI inputs (cycle buttons, key inputs) that auto-update the raw text on change    |
@@ -98,13 +98,13 @@ Backend:
 
 ### Integration Points
 
-| Component           | Detail                                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| File List Query     | Raw preview data query hooks load INI file lists; preview-runtime owns invalidation/effect mapping           |
-| File Content Query  | Raw preview data query hooks load file content keyed by `folderPath` and selected file                       |
-| Syntax Engine       | CodeMirror 6 with a custom `StreamLanguage` definition for 3DMigoto INI dialect                              |
+| Component           | Detail                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| File List Query     | Raw preview data query hooks load INI file lists; preview-runtime owns invalidation/effect mapping                               |
+| File Content Query  | Raw preview data query hooks load file content keyed by `folderPath` and selected file                                           |
+| Syntax Engine       | CodeMirror 6 with a custom `StreamLanguage` definition for 3DMigoto INI dialect                                                  |
 | WatcherSuppression  | Applied for the specific `.ini` file path — prevents internal save loops while Disk Reconcile performs the authoritative refresh |
-| Read/Write Commands | `preview_cmds.rs` — `list_mod_ini_files`, `read_mod_ini`, `write_mod_ini`                                    |
+| Read/Write Commands | `preview_cmds.rs` — `list_mod_ini_files`, `read_mod_ini`, `write_mod_ini`                                                        |
 
 ### Security & Privacy
 

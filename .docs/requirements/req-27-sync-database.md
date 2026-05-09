@@ -2,13 +2,13 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: After a scan + Deep Match Scanner produces approved `ScoredCandidate` mappings, the SQLite DB must be updated atomically — creating new Objects if needed, updating `folder_path → object_id` associations, and purging "orphaned" DB rows whose physical folders no longer exist.
-- **Proposed Solution**: A `commit_scan` backend command that runs a single SQLite transaction: upserts `folders` rows from the approved candidate list, runs BLAKE3 identity matching to detect moved folders (path changed, content is the same), then calls `repair_orphan_mods` to delete rows with non-existent paths.
+- **Problem Statement**: After an explicit scan + Deep Match Scanner review produces approved mappings, SQLite must be updated atomically with canonical enrichment metadata. Passive filesystem projection is owned by Disk Reconcile, not by scan commit.
+- **Proposed Solution**: A `commit_scan` backend command that runs a single SQLite transaction for explicit enrichment: upserts object/mod mappings from the approved candidate list, applies user-approved canonical metadata, and leaves physical add/remove/rename/status projection to Disk Reconcile.
 - **Success Criteria**:
   - `commit_scan` for 500 approved candidates completes in ≤ 3s (bounded by SQLite batch insert performance).
   - Zero duplicate DB rows after commit — `INSERT OR REPLACE` ensures idempotency.
   - BLAKE3 identity match correctly detects moved folders in ≥ 95% of test cases (50-folder benchmark).
-  - `repair_orphan_mods` removes all DB rows with non-existent `folder_path` in ≤ 500ms for a DB with ≤ 2,000 rows.
+  - Scan commit does not act as the continuous filesystem sync path; watcher/startup/refocus/manual repair use Disk Reconcile for passive projection cleanup.
   - A partial DB write failure (interrupted transaction) leaves the DB in its pre-commit state — no half-applied changes.
 
 ---
@@ -31,15 +31,15 @@ As a system, I want to safely write approved scan mappings to the DB, so that th
 
 ---
 
-#### US-27.2: Repair Orphaned Mods
+#### US-27.2: Explicit Commit Cleanup Boundary
 
-As a user, I want the app to clean up DB entries for folders I deleted externally, so that my library doesn't show "ghost" mods.
+As a system, I want scan commit and passive filesystem reconcile to have separate responsibilities, so user-approved MasterDB enrichment never becomes a background auto-matcher.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                               |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-27.2.1 | ✅ Positive | Given `repair_orphan_mods` runs after commit, then any `folders` row whose `folder_path` does not exist on disk is deleted — the objectlist counts update on next React Query fetch                                    |
-| AC-27.2.2 | ✅ Positive | Given N orphans were removed, then the commit result includes `{added, updated, removed}` counts — a toast shows "Scan complete: N added, M updated, K removed"                                                        |
-| AC-27.2.3 | ⚠️ Edge     | Given the filesystem check for each row's existence is slow (network drive), then `repair_orphan_mods` runs with a 10s timeout — partial results are still committed, unverified rows are left as-is with a `warn` log |
+| ID        | Type        | Criteria                                                                                                                                                                                     |
+| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-27.2.1 | ✅ Positive | Given scan commit runs, then it writes only the approved enrichment/mapping changes in one transaction; passive deletion of missing physical folders remains Disk Reconcile's responsibility |
+| AC-27.2.2 | ✅ Positive | Given N orphans were removed, then the commit result includes `{added, updated, removed}` counts — a toast shows "Scan complete: N added, M updated, K removed"                              |
+| AC-27.2.3 | ⚠️ Edge     | Given the filesystem source is unavailable, scan commit must not mass-delete DB rows; Disk Reconcile returns a no-write unavailable-source result instead                                    |
 
 ---
 
@@ -47,7 +47,7 @@ As a user, I want the app to clean up DB entries for folders I deleted externall
 
 - No bi-directional sync — only scan results drive DB updates; the DB does not back-propagate to the filesystem.
 - No versioning or history of DB state changes — commit is always applied to the current state.
-- Orphan repair is post-scan only — it does not run continuously in the background (that is Epic 28, File Watcher).
+- Orphan repair is not the continuous sync mechanism. Disk Reconcile owns passive filesystem projection from startup, Mods entry, refocus, watcher, internal mutation completion, and manual repair triggers.
 
 ---
 
@@ -64,26 +64,24 @@ commit_scan(game_id, candidates: Vec<ApprovedCandidate>) → CommitResult:
         → SELECT folder_path FROM folders WHERE content_hash = ? AND game_id = ?
         → if found: UPDATE folder_path (moved folder) else INSERT new row
      c. INSERT OR REPLACE INTO folders (folder_path, object_id, game_id, is_enabled, ...)
-  3. repair_orphan_mods(game_id):
-     → SELECT folder_path FROM folders WHERE game_id = ?
-     → for each: if !folder_path.exists(): DELETE FROM folders WHERE folder_path = ?
-  4. Commit transaction
+  3. Commit transaction
+  4. Trigger projection refresh for affected objects/mods
   5. Return CommitResult { added: u32, updated: u32, removed: u32 }
 
 Frontend:
   ScanReviewModal → "Commit to Library" button
     → commands.commitScan({ game_id, candidates })
-    → queryClient.invalidateQueries()  (all caches)
+    → publish runtime-sync descriptors for object/folder/preview refresh
 ```
 
 ### Integration Points
 
-| Component        | Detail                                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------- |
-| DB               | `sqlx` SQLite with `BEGIN EXCLUSIVE / COMMIT` for atomic batch upsert                                    |
-| BLAKE3           | `blake3::hash(ini_content_bytes)` — computed at commit time for moved-folder detection                   |
-| Frontend         | `ScanReviewModal.tsx` — "Commit to Library" → `useMutation(commands.commitScan())`                       |
-| Cache Invalidate | `queryClient.invalidateQueries()` on success — refreshes objectlist `['objects']` and grid `['folders']` |
+| Component     | Detail                                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| DB            | `sqlx` SQLite with `BEGIN EXCLUSIVE / COMMIT` for atomic batch upsert                                                  |
+| BLAKE3        | `blake3::hash(ini_content_bytes)` — computed at commit time for moved-folder detection                                 |
+| Frontend      | `ScanReviewModal.tsx` — "Commit to Library" → `useMutation(commands.commitScan())`                                     |
+| Cache Refresh | Uses descriptor/runtime refresh coordination on success; feature code should not reintroduce ad-hoc broad invalidation |
 
 ### Security & Privacy
 

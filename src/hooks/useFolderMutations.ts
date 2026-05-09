@@ -30,6 +30,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
 import { extractFileInUsePayload, formatAppError } from '../lib/appError';
 import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
+import { withWatcherSuppression } from '../features/file-watcher/watcherSuppression';
 
 // ── Trash ───────────────────────────────────────────────────────
 
@@ -415,15 +416,12 @@ export function useImportMods() {
       strategy: ImportStrategy;
       dbJson?: string | null;
     }) => {
-      await commands.setWatcherSuppression({ suppressed: true });
-      try {
-        return await commands.importModsFromPaths({
+      return withWatcherSuppression({ releaseDelayMs: null }, async () => {
+        return commands.importModsFromPaths({
           ...params,
           dbJson: params.dbJson ?? undefined,
         });
-      } finally {
-        await commands.setWatcherSuppression({ suppressed: false });
-      }
+      });
     },
     onSuccess: (result) => {
       void publishRuntimeDescriptor(

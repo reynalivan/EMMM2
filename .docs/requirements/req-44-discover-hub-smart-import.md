@@ -417,15 +417,15 @@ On `DownloadEvent::Requested`:
 
 ## 12. UI Surfaces (Summary)
 
-| Surface                    | Description                                                                                                        |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Discover Hub**           | Search, filters (game, category, sort), card grid with thumbnail, "Open" + "Download" CTAs.                        |
-| **Browser Window**         | Tab bar, address bar, nav controls, URL/homepage input, download badge icon.                                       |
-| **Download Manager Panel** | Slide-in panel. Lists all items with status, progress, checkboxes for multi-select, "Import Selected" bulk action. |
-| **Game Picker Dialog**     | Modal to select target game before import. Auto-skipped for single game or remembered choice.                      |
-| **Import Queue**           | Live list of Import Jobs: `Queued` → `Extracting` → `Matching` → `NeedsReview` → `Done` / `Failed`.                |
+| Surface                    | Description                                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Discover Hub**           | Search, filters (game, category, sort), card grid with thumbnail, "Open" + "Download" CTAs.                                            |
+| **Browser Window**         | Tab bar, address bar, nav controls, URL/homepage input, download badge icon.                                                           |
+| **Download Manager Panel** | Slide-in panel. Lists all items with status, progress, checkboxes for multi-select, "Import Selected" bulk action.                     |
+| **Game Picker Dialog**     | Modal to select target game before import. Auto-skipped for single game or remembered choice.                                          |
+| **Import Queue**           | Live list of Import Jobs: `Queued` → `Extracting` → `Matching` → `NeedsReview` → `Done` / `Failed`.                                    |
 | **Needs Review Modal**     | Appears for low-confidence matches. Shows canonical suggestion, manual game/category selection, and optional physical object override. |
-| **Import Result Toast**    | On `Done`: summary + "Open mod folder", "Edit metadata". Does **not** auto-enable the mod.                         |
+| **Import Result Toast**    | On `Done`: summary + "Open mod folder", "Edit metadata". Does **not** auto-enable the mod.                                             |
 
 ---
 
@@ -455,24 +455,24 @@ On `DownloadEvent::Requested`:
 
 ## 15. Acceptance Criteria (Testable)
 
-| #        | Criteria                                                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-44.01 | Clicking "Download" in Discover Hub opens a new browser tab pointing to the GameBanana mod profile URL.                                          |
-| AC-44.02 | A `.zip` downloaded from any in-app browser tab is saved to `BrowserDownloadsRoot`, not the Windows Downloads folder.                            |
-| AC-44.03 | The `Finished` download item appears in the Download Manager with status `✅ Finished` and an enabled "Import" button.                           |
-| AC-44.04 | Single-selecting a `Finished` item and clicking "Import" shows the Game Picker dialog (if multiple games exist).                                 |
-| AC-44.05 | Multi-selecting 3 `Finished` items and clicking "Import Selected" shows the Game Picker once and creates 3 Import Jobs for the same target game. |
-| AC-44.06 | When only 1 game is configured, the Game Picker is skipped and import proceeds automatically.                                                    |
-| AC-44.07 | A new `+` tab loads the configured Browser Homepage (default: `https://www.google.com`).                                                         |
-| AC-44.08 | Changing the Browser Homepage URL in Settings to `https://gamebanana.com` → next new tab loads that URL.                                         |
-| AC-44.09 | Entering `file:///C:/Windows` in the address bar shows an inline error and blocks navigation.                                                    |
-| AC-44.10 | Successfully imported mods appear in the target game's workspace with status `DISABLED`.                                                         |
-| AC-44.11 | Opening ≥5 tabs, switching between them, and closing all — no crash occurs.                                                                      |
-| AC-44.12 | Corrupted archive → Import Job status is `Failed: InvalidArchive`. UI offers "Retry" and "Open file location".                                   |
-| AC-44.13 | Low-confidence match (< 0.70) → Import Job is suspended; Needs Review modal appears with candidate list.                                         |
+| #        | Criteria                                                                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-44.01 | Clicking "Download" in Discover Hub opens a new browser tab pointing to the GameBanana mod profile URL.                                             |
+| AC-44.02 | A `.zip` downloaded from any in-app browser tab is saved to `BrowserDownloadsRoot`, not the Windows Downloads folder.                               |
+| AC-44.03 | The `Finished` download item appears in the Download Manager with status `✅ Finished` and an enabled "Import" button.                              |
+| AC-44.04 | Single-selecting a `Finished` item and clicking "Import" shows the Game Picker dialog (if multiple games exist).                                    |
+| AC-44.05 | Multi-selecting 3 `Finished` items and clicking "Import Selected" shows the Game Picker once and creates 3 Import Jobs for the same target game.    |
+| AC-44.06 | When only 1 game is configured, the Game Picker is skipped and import proceeds automatically.                                                       |
+| AC-44.07 | A new `+` tab loads the configured Browser Homepage (default: `https://www.google.com`).                                                            |
+| AC-44.08 | Changing the Browser Homepage URL in Settings to `https://gamebanana.com` → next new tab loads that URL.                                            |
+| AC-44.09 | Entering `file:///C:/Windows` in the address bar shows an inline error and blocks navigation.                                                       |
+| AC-44.10 | Successfully imported mods appear in the target game's workspace with status `DISABLED`.                                                            |
+| AC-44.11 | Opening ≥5 tabs, switching between them, and closing all — no crash occurs.                                                                         |
+| AC-44.12 | Corrupted archive → Import Job status is `Failed: InvalidArchive`. UI offers "Retry" and "Open file location".                                      |
+| AC-44.13 | Low-confidence match (< 0.70) → Import Job is suspended; Needs Review modal appears with candidate list.                                            |
 | AC-44.16 | Confirming Needs Review keeps the stored canonical relation (`match_entry_key`, `match_alias_name`) and only changes the physical placement target. |
-| AC-44.14 | Remote web page inside a browser tab cannot invoke any EMMM Tauri command (IPC is isolated).                                                     |
-| AC-44.15 | Duplicate archive (same `archive_hash`) → flagged as duplicate; auto-mode keeps both with suffix `(2)`.                                          |
+| AC-44.14 | Remote web page inside a browser tab cannot invoke any EMMM Tauri command (IPC is isolated).                                                        |
+| AC-44.15 | Duplicate archive (same `archive_hash`) → flagged as duplicate; auto-mode keeps both with suffix `(2)`.                                             |
 
 ---
 

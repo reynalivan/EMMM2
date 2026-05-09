@@ -21,6 +21,7 @@ pub struct IniFileEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub struct IniLineUpdate {
+    #[specta(type = f64)]
     pub line_idx: usize,
     pub content: String,
 }
@@ -204,15 +205,18 @@ async fn emit_internal_disk_reconcile(
     changed_paths: Vec<String>,
 ) -> Result<(), AppError> {
     let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        app,
-        pool,
-        config,
-        disk_reconcile_state,
-        watcher.suppressor.clone(),
-        game_id.to_string(),
-        DiskReconcileReason::InternalMutation,
-        changed_paths,
-        false,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool,
+            config,
+            state: disk_reconcile_state,
+            watcher_suppressor: watcher.suppressor.clone(),
+        },
+        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id.to_string(),
+            DiskReconcileReason::InternalMutation,
+            changed_paths,
+            false,
+        ),
     )
     .await
     .map_err(AppError::Internal)?;
@@ -248,6 +252,7 @@ pub async fn read_mod_ini(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn write_mod_ini(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
@@ -291,6 +296,7 @@ pub async fn list_mod_preview_images(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn save_mod_preview_image(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
@@ -331,6 +337,7 @@ pub async fn save_mod_preview_image(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn remove_mod_preview_image(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
@@ -362,6 +369,7 @@ pub async fn remove_mod_preview_image(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn clear_mod_preview_images(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,

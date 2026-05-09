@@ -42,26 +42,28 @@ pub struct ApplyContext {
     pub objects_toggled: usize,
 }
 
+pub struct ApplyContextInput {
+    pub pool: SqlitePool,
+    pub game_id: String,
+    pub collection_id: String,
+    pub is_safe: bool,
+    pub mods_path: PathBuf,
+    pub suppressor: std::sync::Arc<WatcherSuppressor>,
+    pub ignore_missing: bool,
+    pub settings: AppSettings,
+}
+
 impl ApplyContext {
-    pub fn new(
-        pool: SqlitePool,
-        game_id: String,
-        collection_id: String,
-        is_safe: bool,
-        mods_path: PathBuf,
-        suppressor: std::sync::Arc<WatcherSuppressor>,
-        ignore_missing: bool,
-        settings: AppSettings,
-    ) -> Self {
+    pub fn new(input: ApplyContextInput) -> Self {
         Self {
-            pool,
-            game_id,
-            collection_id,
-            is_safe,
-            mods_path,
-            suppressor,
-            ignore_missing,
-            settings,
+            pool: input.pool,
+            game_id: input.game_id,
+            collection_id: input.collection_id,
+            is_safe: input.is_safe,
+            mods_path: input.mods_path,
+            suppressor: input.suppressor,
+            ignore_missing: input.ignore_missing,
+            settings: input.settings,
             track_task: true,
             target_mods: Vec::new(),
             target_objects: Vec::new(),
@@ -136,17 +138,35 @@ pub async fn execute(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionEr
 }
 
 async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionError> {
-    crate::services::apply_progress_service::update(&ctx.game_id, ctx.is_safe, "preparing", 0, 0, None);
+    crate::services::apply_progress_service::update(
+        &ctx.game_id,
+        ctx.is_safe,
+        "preparing",
+        0,
+        0,
+        None,
+    );
     // Step 1: Validate corridor match
     super::steps::validate_corridor::validate(ctx).await?;
 
     // Step 2: Resolve target members from the collection
-    crate::services::apply_progress_service::update(&ctx.game_id, ctx.is_safe, "diffing", 0, 0, None);
+    crate::services::apply_progress_service::update(
+        &ctx.game_id,
+        ctx.is_safe,
+        "diffing",
+        0,
+        0,
+        None,
+    );
     super::steps::resolve_target::resolve(ctx).await?;
 
     // Step 3: Pre-apply disk validation (checks physical paths)
     super::steps::validate_paths::validate(ctx).await?;
-    crate::services::apply_progress_service::set_warnings(&ctx.game_id, ctx.is_safe, ctx.warnings.clone());
+    crate::services::apply_progress_service::set_warnings(
+        &ctx.game_id,
+        ctx.is_safe,
+        ctx.warnings.clone(),
+    );
 
     // Step 4: Resolve currently-enabled mod state
     super::steps::resolve_current_state::resolve(ctx).await?;

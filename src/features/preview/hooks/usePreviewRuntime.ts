@@ -34,6 +34,7 @@ interface PreviewRuntimeState {
   previewSummary: WorkspacePreview | null;
   resolvedTitle: string | null;
   resolvedSubtitle: string | null;
+  sourceUnavailableMessage: string | null;
   availableObjects: WorkspaceViewModel['objects'];
   iniFiles: IniFileEntry[];
   iniDocuments: PreviewIniDocument[];
@@ -54,6 +55,10 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const selectedNode = workspace?.preview.selected_node ?? null;
   const selectedFolder = isWorkspaceExplorerNode(selectedNode) ? selectedNode : null;
   const availableObjects = workspace?.objects ?? [];
+  const sourceUnavailableMessage =
+    workspace?.runtime?.source_state?.status === 'unavailable'
+      ? workspace.runtime.source_state.message
+      : null;
   const resolvedTitle = workspace?.preview.display_title ?? selectedFolder?.display_name ?? null;
   const resolvedSubtitle = workspace?.preview.display_subtitle ?? null;
 
@@ -172,6 +177,7 @@ export function usePreviewRuntime(): PreviewRuntimeState {
     previewSummary,
     resolvedTitle,
     resolvedSubtitle,
+    sourceUnavailableMessage,
     availableObjects,
     iniFiles,
     iniDocuments,

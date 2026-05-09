@@ -95,4 +95,64 @@ describe('workspaceReducer', () => {
     expect(nextState.currentPath).toEqual(['AMBERCN', 'Presets']);
     expect(nextState.selectedModPath).toBe('E:/Mods/AMBERCN/Presets/School/mod.ini');
   });
+
+  it('reconciles stale runtime selection from the workspace read model', () => {
+    const nextState = reduceWorkspaceRuntimeState(
+      {
+        ...baseState,
+        selectedObjectFolderPath: 'STALE_OBJECT',
+        explorerSubPath: 'STALE_OBJECT/Deleted',
+        currentPath: ['STALE_OBJECT', 'Deleted'],
+        selectedModPath: 'E:/Mods/STALE_OBJECT/Deleted',
+        previewDirty: true,
+        previewTransition: {
+          kind: 'pending',
+          pendingTarget: { kind: 'selectMod', path: 'E:/Mods/Other' },
+        },
+        dialogState: { kind: 'previewUnsavedChanges' },
+      },
+      {
+        type: 'SELECTION_RECONCILED',
+        selectedObjectFolderPath: null,
+        explorerSubPath: undefined,
+        selectedModPath: null,
+        currentPath: [],
+        reconciliationStatus: 'cleared',
+        reconciliationReason: 'missing_object_root',
+        affectedPaths: ['STALE_OBJECT'],
+      },
+    );
+
+    expect(nextState.selectedObjectFolderPath).toBeNull();
+    expect(nextState.explorerSubPath).toBeUndefined();
+    expect(nextState.currentPath).toEqual([]);
+    expect(nextState.selectedModPath).toBeNull();
+    expect(nextState.previewDirty).toBe(false);
+    expect(nextState.previewTransition.kind).toBe('idle');
+    expect(nextState.dialogState.kind).toBe('none');
+  });
+
+  it('clears dirty preview when disk invalidates the selected target', () => {
+    const nextState = reduceWorkspaceRuntimeState(
+      {
+        ...baseState,
+        selectedObjectFolderPath: 'ALBEDO',
+        explorerSubPath: 'ALBEDO',
+        currentPath: ['ALBEDO'],
+        selectedModPath: 'E:/Mods/ALBEDO/Deleted',
+        previewDirty: true,
+        dialogState: { kind: 'previewUnsavedChanges' },
+      },
+      {
+        type: 'TARGETS_INVALIDATED',
+        paths: ['E:/Mods/ALBEDO/Deleted'],
+        resetExplorer: true,
+      },
+    );
+
+    expect(nextState.selectedModPath).toBeNull();
+    expect(nextState.previewDirty).toBe(false);
+    expect(nextState.previewTransition.kind).toBe('idle');
+    expect(nextState.dialogState.kind).toBe('none');
+  });
 });

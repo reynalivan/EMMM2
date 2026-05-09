@@ -165,6 +165,44 @@ describe('scanService', () => {
     });
   });
 
+  describe('runDeepmatchPreviewForObjects', () => {
+    it('should fetch master db and invoke deepmatch_preview_for_objects_cmd', async () => {
+      vi.mocked(invoke).mockImplementation(async (cmd) => {
+        if (cmd === 'get_master_db') return '[]';
+        return [];
+      });
+
+      const onEvent = vi.fn();
+      await scanService.runDeepmatchPreviewForObjects(
+        'g1',
+        GameType.GIMI,
+        '/mods',
+        ['obj1', 'obj2'],
+        onEvent,
+      );
+
+      const previewCallArgs = vi
+        .mocked(invoke)
+        .mock.calls.find((c) => c[0] === 'deepmatch_preview_for_objects_cmd')?.[1] as Record<
+        string,
+        unknown
+      >;
+      expect(previewCallArgs.input).toEqual({
+        gameId: 'g1',
+        modsPath: '/mods',
+        dbJson: '[]',
+        objectIds: ['obj1', 'obj2'],
+      });
+      expect(previewCallArgs.onProgress).toBeInstanceOf(Channel);
+
+      const channel = previewCallArgs.onProgress as import('@tauri-apps/api/core').Channel<{
+        type: string;
+      }>;
+      channel.onmessage({ type: 'progress' });
+      expect(onEvent).toHaveBeenCalledWith({ type: 'progress' });
+    });
+  });
+
   describe('commitScan', () => {
     it('should invoke commit_scan_cmd', async () => {
       const items = [

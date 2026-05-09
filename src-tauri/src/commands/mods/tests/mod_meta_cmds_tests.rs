@@ -1,3 +1,4 @@
+use super::set_object_mods_category_inner;
 use crate::services::mods::info_json;
 use crate::test_utils::{
     insert_test_game, insert_test_mod, insert_test_object, TestGameFixture, TestModFixture,
@@ -9,6 +10,96 @@ use tempfile::TempDir;
 
 async fn setup_test_db() -> sqlx::SqlitePool {
     crate::test_utils::init_test_db().await.pool
+}
+
+async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
+    let pool = setup_test_db().await;
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_object_mods",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/Mods",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    for (id, name, folder_path) in [
+        ("obj1", "Hu Tao", "Hu Tao"),
+        ("obj2", "Kazuha", "Kazuha"),
+        ("obj3", "Raiden", "Raiden"),
+    ] {
+        insert_test_object(
+            &pool,
+            &TestObjectFixture {
+                id,
+                game_id: "g_object_mods",
+                name,
+                folder_path: Some(folder_path),
+                object_type: "Character",
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    for (id, object_id, actual_name, folder_path) in [
+        ("m1", Some("obj1"), "Hu Tao Skin 1", "/Mods/Hu Tao/Skin1"),
+        ("m2", Some("obj1"), "Hu Tao Skin 2", "/Mods/Hu Tao/Skin2"),
+        ("m3", Some("obj2"), "Kazuha Skin", "/Mods/Kazuha/Skin"),
+        ("m4", Some("obj3"), "Raiden Skin", "/Mods/Raiden/Skin"),
+        ("m5", None, "Loose Mod", "/Mods/Loose/Skin"),
+    ] {
+        insert_test_mod(
+            &pool,
+            &TestModFixture {
+                id,
+                game_id: "g_object_mods",
+                object_id,
+                actual_name,
+                folder_path,
+                status: crate::database::models::ItemStatus::Disabled,
+                is_safe: true,
+                object_type: Some("Other"),
+                mods_path: Some("/Mods"),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    pool
+}
+
+#[tokio::test]
+async fn test_set_object_mods_category_inner_updates_only_target_object_mods() {
+    let pool = setup_object_mods_fixture().await;
+
+    let updated = set_object_mods_category_inner(&pool, "g_object_mods", "obj1", "Weapon")
+        .await
+        .unwrap();
+
+    assert_eq!(updated, 2);
+
+    let categories: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, object_type FROM mods ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(
+        categories,
+        vec![
+            ("m1".to_string(), "Weapon".to_string()),
+            ("m2".to_string(), "Weapon".to_string()),
+            ("m3".to_string(), "Other".to_string()),
+            ("m4".to_string(), "Other".to_string()),
+            ("m5".to_string(), "Other".to_string()),
+        ]
+    );
 }
 
 // ── TC-40: pin_mod updates DB ──────────────────────────────────────────────

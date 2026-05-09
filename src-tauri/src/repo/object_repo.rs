@@ -222,7 +222,10 @@ pub async fn get_filtered_objects(
         _ => qb.push(" ORDER BY o.is_pinned DESC, o.object_type, o.name ASC"),
     };
 
-    let mut rows = qb.build_query_as::<ObjectSummaryRow>().fetch_all(pool).await?;
+    let mut rows = qb
+        .build_query_as::<ObjectSummaryRow>()
+        .fetch_all(pool)
+        .await?;
     if rows.is_empty() {
         return Ok(Vec::new());
     }
@@ -277,7 +280,8 @@ pub async fn get_filtered_objects(
             build_terminal_counts(&fallback_objects, &count_candidates, mods_path.as_deref());
 
         for row in &mut rows {
-            let Some((mod_count, enabled_count, active_paths)) = counts_by_object.get(&row.id) else {
+            let Some((mod_count, enabled_count, active_paths)) = counts_by_object.get(&row.id)
+            else {
                 continue;
             };
             row.mod_count = *mod_count;
@@ -333,7 +337,10 @@ pub async fn get_filtered_objects(
     Ok(objects)
 }
 
-async fn load_game_mods_path(pool: &SqlitePool, game_id: &str) -> Result<Option<String>, sqlx::Error> {
+async fn load_game_mods_path(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Option<String>, sqlx::Error> {
     sqlx::query_scalar("SELECT mods_path FROM games WHERE id = ?")
         .bind(game_id)
         .fetch_optional(pool)
@@ -365,7 +372,9 @@ async fn load_object_count_candidates(
     qb.push(")");
     append_corridor_visibility_filter(&mut qb, safe_mode);
 
-    qb.build_query_as::<ObjectCountCandidate>().fetch_all(pool).await
+    qb.build_query_as::<ObjectCountCandidate>()
+        .fetch_all(pool)
+        .await
 }
 
 fn append_corridor_visibility_filter(qb: &mut QueryBuilder<Sqlite>, safe_mode: bool) {
@@ -386,8 +395,10 @@ fn build_terminal_counts(
     candidates: &[ObjectCountCandidate],
     mods_path: Option<&str>,
 ) -> HashMap<String, (i64, i64, Option<String>)> {
-    let object_lookup: HashMap<&str, &ObjectSummary> =
-        objects.iter().map(|object| (object.id.as_str(), object)).collect();
+    let object_lookup: HashMap<&str, &ObjectSummary> = objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect();
     let mut totals_by_object: HashMap<String, HashSet<String>> = HashMap::new();
     let mut enabled_by_object: HashMap<String, HashSet<String>> = HashMap::new();
     let mut active_paths_by_object: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -450,8 +461,12 @@ fn resolve_terminal_descriptor(
     candidate: &ObjectCountCandidate,
     mods_path: Option<&str>,
 ) -> Option<TerminalDescriptor> {
-    let relative_segments =
-        relative_segments_for_path(&object.folder_path, &object.name, &candidate.folder_path, &candidate.actual_name);
+    let relative_segments = relative_segments_for_path(
+        &object.folder_path,
+        &object.name,
+        &candidate.folder_path,
+        &candidate.actual_name,
+    );
     if relative_segments.is_empty() {
         return None;
     }
@@ -662,6 +677,7 @@ pub struct CreateObjectInput {
     pub custom_skins: Option<crate::database::models::CustomSkinsPayload>,
 }
 
+#[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
 pub async fn create_object(
     pool: &SqlitePool,
     id: &str,
@@ -1091,21 +1107,35 @@ pub async fn set_is_pinned(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct EnsureObjectInput<'a> {
+    pub game_id: &'a str,
+    pub folder_path: &'a str,
+    pub obj_name: &'a str,
+    pub obj_type: &'a str,
+    pub db_thumbnail: Option<&'a str>,
+    pub db_tags_json: &'a str,
+    pub db_metadata_json: &'a str,
+    pub db_hash_db_json: Option<&'a str>,
+    pub db_custom_skins_json: Option<&'a str>,
+}
+
 pub async fn ensure_object_exists(
     conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    folder_path: &str,
-    obj_name: &str,
-    obj_type: &str,
-    db_thumbnail: Option<&str>,
-    db_tags_json: &str,
-    db_metadata_json: &str,
-    db_hash_db_json: Option<&str>,
-    db_custom_skins_json: Option<&str>,
+    input: EnsureObjectInput<'_>,
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
     use sqlx::Row;
+    let EnsureObjectInput {
+        game_id,
+        folder_path,
+        obj_name,
+        obj_type,
+        db_thumbnail,
+        db_tags_json,
+        db_metadata_json,
+        db_hash_db_json,
+        db_custom_skins_json,
+    } = input;
     let name_key = object_name_key(obj_name);
     let folder_key = folder_path_key(folder_path, None);
 
@@ -1407,7 +1437,7 @@ where
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Canonical match patch mirrors nullable DB columns at the repo boundary.
 pub async fn apply_canonical_match<'c, E>(
     executor: E,
     object_id: &str,

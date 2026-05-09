@@ -42,7 +42,9 @@ const INITIAL_DIALOG_STATE: SharedModDialogState = {
   },
 };
 
-export function selectSharedModDialogState(dialogState: WorkspaceDialogState): SharedModDialogState {
+export function selectSharedModDialogState(
+  dialogState: WorkspaceDialogState,
+): SharedModDialogState {
   if (dialogState.kind === 'modMove') {
     return { ...INITIAL_DIALOG_STATE, moveDialog: { open: true, folder: dialogState.folder } };
   }
@@ -157,10 +159,7 @@ export function openModActiveContextDialog(folder: ModFolder): void {
   });
 }
 
-export function updateModActiveContextDialog(
-  folder: ModFolder,
-  isProcessing: boolean,
-): void {
+export function updateModActiveContextDialog(folder: ModFolder, isProcessing: boolean): void {
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_UPDATED',
     dialog: { kind: 'modActiveContext', folder, isProcessing },

@@ -182,7 +182,7 @@ pub struct IngestResult {
 
 #[specta::specta]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps dropped-folder import payload stable.
 pub async fn ingest_dropped_folders(
     _app: tauri::AppHandle,
     _pool: tauri::State<'_, sqlx::SqlitePool>,

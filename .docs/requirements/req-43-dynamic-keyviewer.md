@@ -132,14 +132,14 @@ The EMMM Overlay System is a **hybrid architecture** where EMMM handles the comp
 
 ### Runtime Regeneration Trigger Matrix
 
-| Trigger | Owner | Regenerates KeyViewer | Emits `disk_reconcile:result` |
-| --- | --- | --- | --- |
-| Watcher / external rename-move-add-delete-enable-disable | Disk Reconcile | Yes | Yes |
-| Window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile | Yes when runtime state changed | Yes |
-| Explicit toggle / rename / move / delete mod from UI | Explicit runtime mutation service | Yes | No |
-| `write_mod_ini` / `update_mod_info` | Disk Reconcile (`InternalMutation`) | Yes | Yes |
-| Preview image / thumbnail-only mutation | Disk Reconcile (`InternalMutation`) | No | Yes |
-| Safe mode / collection apply / corridor switch | Apply-switch pipeline | Yes | No |
+| Trigger                                                                 | Owner                               | Regenerates KeyViewer          | Emits `disk_reconcile:result` |
+| ----------------------------------------------------------------------- | ----------------------------------- | ------------------------------ | ----------------------------- |
+| Watcher / external rename-move-add-delete-enable-disable                | Disk Reconcile                      | Yes                            | Yes                           |
+| Window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile                      | Yes when runtime state changed | Yes                           |
+| Explicit toggle / rename / move / delete mod from UI                    | Explicit runtime mutation service   | Yes                            | No                            |
+| `write_mod_ini` / `update_mod_info`                                     | Disk Reconcile (`InternalMutation`) | Yes                            | Yes                           |
+| Preview image / thumbnail-only mutation                                 | Disk Reconcile (`InternalMutation`) | No                             | Yes                           |
+| Safe mode / collection apply / corridor switch                          | Apply-switch pipeline               | Yes                            | No                            |
 
 ---
 

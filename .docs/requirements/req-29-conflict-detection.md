@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: 3DMigoto uses `hash = <hex>` keys in `.ini` files to intercept specific draw calls — two enabled mods with overlapping hashes produce visual glitches or game crashes; users have no in-app tool to detect these conflicts before launching.
-- **Proposed Solution**: Three-tier conflict system: (1) **Implicit Variant Swap**: Toggling a variant within the same `VariantContainer` (same parent folder) disables the previous variant without warning; (2) **Try-First Duplicate Warning**: The `toggle_mod` command returns a `DuplicateConflict` error if non-variant siblings are enabled, triggering an `ObjectConflictModal` for resolution or "Ignore Warning" persistence; (3) **Deep Hash Scanner**: A multi-threaded scanner parsers `.ini` files for exact `hash = <hex>` collisions.
+- **Proposed Solution**: Three-tier conflict system: (1) **Implicit Variant Swap**: Toggling a variant within the same `VariantContainer` (same parent folder) disables the previous variant without warning; (2) **Try-First Duplicate Warning**: the workspace switch command/service returns a `DuplicateConflict` error if non-variant siblings are enabled, triggering an `ObjectConflictModal` for resolution or "Ignore Warning" persistence; (3) **Deep Hash Scanner**: A multi-threaded scanner parsers `.ini` files for exact `hash = <hex>` collisions.
 - **Success Criteria**:
-  - Duplicate Object check via `toggle_mod` completes in ≤ 100ms (SQL index optimized).
+  - Duplicate Object check via workspace switch completes in ≤ 100ms (SQL index optimized).
   - Toggling a mod with "Enable Only Selected" resolution completes in ≤ 500ms (atomic transaction).
   - "Ignore Warning" persists the specific mod combination to the `ignored_object_conflicts` table.
   - Variant detection has 100% accuracy for mods inside a `VariantContainer` folder.
@@ -20,14 +20,14 @@
 
 As a user, I want to be warned when I try to enable a second mod for the same Object, so that I don't accidentally cause visual overlap.
 
-| ID        | Type        | Criteria                                                                                                                                                                                   |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-29.1.1 | ✅ Positive | Given Object "Keqing" has one mod already enabled, when I toggle a second mod for "Keqing" on, then `toggle_mod` returns a `DuplicateConflict` error containing the enabled mod's metadata |
-| AC-29.1.2 | ✅ Positive | Given a `DuplicateConflict` error, then `ObjectConflictModal` shows: "Mod X is already enabled — Keep Only Selected (atomically disables siblings), or Ignore Warning (both stay on)"      |
-| AC-29.1.3 | ✅ Positive | Given "Ignore Warning" is selected, then the specific `(object_id, mod_ids)` combination is persisted to the DB; subsequent toggles of this set skip the warning                           |
-| AC-29.1.4 | ✅ Positive | Given a mod is inside a `VariantContainer` (Epic 11), when it is toggled while a sibling variant is enabled, then the sibling is disabled _silently_ without a conflict prompt             |
-| AC-29.1.5 | ❌ Negative | Given any mod combination is "Ignored", then the user can view and revoke this status in the `IgnoreManagementModal` (Settings > Advanced > Ignored Conflicts)                             |
-| AC-29.1.4 | ⚠️ Edge     | Given an Object has 3 mods enabled (e.g., from a past bulk import), when a 4th is toggled with "Enable Only This", then all 3 are disabled atomically and only the 4th is enabled          |
+| ID        | Type        | Criteria                                                                                                                                                                                                   |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-29.1.1 | ✅ Positive | Given Object "Keqing" has one mod already enabled, when I toggle a second mod for "Keqing" on, then the workspace switch command returns a `DuplicateConflict` error containing the enabled mod's metadata |
+| AC-29.1.2 | ✅ Positive | Given a `DuplicateConflict` error, then `ObjectConflictModal` shows: "Mod X is already enabled — Keep Only Selected (atomically disables siblings), or Ignore Warning (both stay on)"                      |
+| AC-29.1.3 | ✅ Positive | Given "Ignore Warning" is selected, then the specific `(object_id, mod_ids)` combination is persisted to the DB; subsequent toggles of this set skip the warning                                           |
+| AC-29.1.4 | ✅ Positive | Given a mod is inside a `VariantContainer` (Epic 11), when it is toggled while a sibling variant is enabled, then the sibling is disabled _silently_ without a conflict prompt                             |
+| AC-29.1.5 | ❌ Negative | Given any mod combination is "Ignored", then the user can view and revoke this status in the `IgnoreManagementModal` (Settings > Advanced > Ignored Conflicts)                                             |
+| AC-29.1.4 | ⚠️ Edge     | Given an Object has 3 mods enabled (e.g., from a past bulk import), when a 4th is toggled with "Enable Only This", then all 3 are disabled atomically and only the 4th is enabled                          |
 
 ---
 
@@ -85,14 +85,14 @@ Frontend:
 
 ### Integration Points
 
-| Component         | Detail                                                                              |
-| ----------------- | ----------------------------------------------------------------------------------- |
-| Duplicate Check   | Embedded in `toggle_mod` flow — returns error if non-variant duplicates are enabled |
-| Persistent Ignore | `ignored_object_conflicts` table stores (game_id, object_id, mod_ids_hash)          |
-| Variant Support   | Backend detects shared `VariantContainer` folders and performs implicit swapping    |
-| INI Parser        | `services/ini/document.rs` (Epic 18) — reused for hash extraction                   |
-| Deep Scan         | `conflict_cmds.rs::check_shader_conflicts` → multi-threaded Tokio task              |
-| Frontend          | `useAppStore` handles `DuplicateConflict` globally → opening `ObjectConflictModal`  |
+| Component         | Detail                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| Duplicate Check   | Embedded in workspace switch flow — returns error if non-variant duplicates are enabled |
+| Persistent Ignore | `ignored_object_conflicts` table stores (game_id, object_id, mod_ids_hash)              |
+| Variant Support   | Backend detects shared `VariantContainer` folders and performs implicit swapping        |
+| INI Parser        | `services/ini/document.rs` (Epic 18) — reused for hash extraction                       |
+| Deep Scan         | `conflict_cmds.rs::check_shader_conflicts` → multi-threaded Tokio task                  |
+| Frontend          | `useAppStore` handles `DuplicateConflict` globally → opening `ObjectConflictModal`      |
 
 ### Security & Privacy
 

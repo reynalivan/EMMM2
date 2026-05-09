@@ -58,9 +58,7 @@ export default function UnsavedIniChangesModal({
   return (
     <dialog ref={dialogRef} className="modal modal-bottom sm:modal-middle" onClose={onCancel}>
       <div className="modal-box w-full max-w-lg border border-base-content/10 bg-base-100 p-5 shadow-2xl">
-        <h3 className="text-base font-semibold text-base-content">
-          {t('modals.unsaved.title')}
-        </h3>
+        <h3 className="text-base font-semibold text-base-content">{t('modals.unsaved.title')}</h3>
         <p className="mt-2 text-sm text-base-content/70">
           {t('modals.unsaved.description', {
             modName: modName || t('modals.unsaved.this_mod'),

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import {
-  moveModToObjectAndRefresh,
-  syncExplorerAfterRename,
-} from './sharedOperations';
+import { moveModToObjectAndRefresh, syncExplorerAfterRename } from './sharedOperations';
 
 const moveModToObject = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
@@ -71,11 +68,7 @@ describe('shared mod runtime operations', () => {
   });
 
   it('rewrites explorer selection when rename touches current explorer path', () => {
-    syncExplorerAfterRename(
-      'E:/Mods',
-      'E:/Mods/Objects/Diluc',
-      'E:/Mods/Objects/Diluc_Renamed',
-    );
+    syncExplorerAfterRename('E:/Mods', 'E:/Mods/Objects/Diluc', 'E:/Mods/Objects/Diluc_Renamed');
 
     expect(dispatchWorkspaceRuntimeEvent).toHaveBeenCalledWith({
       type: 'PATHS_REWRITTEN',

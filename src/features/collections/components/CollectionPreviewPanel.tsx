@@ -84,11 +84,11 @@ export function CollectionPreviewPanel({
                   {t('collections:list.item.active')}
                 </span>
               </h2>
-                <span className="text-[10px] text-base-content/50 truncate">
-                  {t('collections:preview.stats.mods', {
-                    count: corridorSnapshot.projected_state.summary.active_root_count,
-                  })}
-                </span>
+              <span className="text-[10px] text-base-content/50 truncate">
+                {t('collections:preview.stats.mods', {
+                  count: corridorSnapshot.projected_state.summary.active_root_count,
+                })}
+              </span>
             </div>
           </div>
         </div>

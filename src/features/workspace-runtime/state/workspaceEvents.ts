@@ -1,4 +1,8 @@
 import type {
+  WorkspaceSelectionReconciliationReason,
+  WorkspaceSelectionReconciliationStatus,
+} from '../../../types/workspace';
+import type {
   WorkspaceDialogState,
   WorkspaceMobilePane,
   WorkspaceTransitionTarget,
@@ -19,6 +23,16 @@ export type WorkspaceRuntimeEvent =
       mobilePane?: WorkspaceMobilePane;
       clearObjectSelection?: boolean;
       force?: boolean;
+    }
+  | {
+      type: 'SELECTION_RECONCILED';
+      selectedObjectFolderPath: string | null;
+      explorerSubPath?: string;
+      selectedModPath: string | null;
+      currentPath: string[];
+      reconciliationStatus: WorkspaceSelectionReconciliationStatus;
+      reconciliationReason: WorkspaceSelectionReconciliationReason | null;
+      affectedPaths: string[];
     }
   | {
       type: 'PATHS_REWRITTEN';

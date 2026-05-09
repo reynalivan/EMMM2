@@ -220,6 +220,13 @@ export interface RandomModProposal {
   folder_path: string;
 }
 
+export interface DeepmatchPreviewForObjectsInput {
+  gameId: string;
+  modsPath: string;
+  dbJson: string;
+  objectIds: string[];
+}
+
 // ----- COMMANDS REGISTRY -----
 export const commands = {
   // App & System
@@ -327,6 +334,8 @@ export const commands = {
     category: string;
     gameId?: string;
   }) => invoke<void>('set_mod_category', params),
+  setObjectModsCategory: (params: { gameId: string; objectId: string; category: string }) =>
+    invoke<number>('set_object_mods_category', params),
   toggleModSafe: (params: {
     gameId?: string;
     id?: string;
@@ -449,6 +458,10 @@ export const commands = {
     onProgress: Channel<ScanEvent>;
     specificPaths?: string[];
   }) => invoke<ScanPreviewItem[]>('deepmatch_preview_cmd', params),
+  runDeepmatchPreviewForObjects: (params: {
+    input: DeepmatchPreviewForObjectsInput;
+    onProgress: Channel<ScanEvent>;
+  }) => invoke<ScanPreviewItem[]>('deepmatch_preview_for_objects_cmd', params),
   commitScan: (params: {
     gameId?: string;
     gameName?: string;
@@ -520,16 +533,10 @@ export const commands = {
   removeIgnoredPair: (params: { entryId: string }) => invoke<number>('remove_ignored_pair', params),
 
   // Watcher
-  startWatcher: (params?: { gameId?: string; path?: string }) =>
-    invoke<void>('start_watcher_cmd', params),
-  startWatcherCmd: (params?: { gameId?: string; path?: string }) =>
-    invoke<void>('start_watcher_cmd', params),
-  stopWatcher: () => invoke<void>('stop_watcher_cmd'),
-  stopWatcherCmd: () => invoke<void>('stop_watcher_cmd'),
-  setWatcherSuppression: (params: { suppressed: boolean; gameId?: string }) =>
-    invoke<void>('set_watcher_suppression_cmd', params),
-  setWatcherSuppressionCmd: (params: { suppressed: boolean; gameId?: string }) =>
-    invoke<void>('set_watcher_suppression_cmd', params),
+  startWatcher: (params: { gameId: string; path: string }) => invoke<void>('start_watcher', params),
+  stopWatcher: () => invoke<void>('stop_watcher'),
+  setWatcherSuppression: (params: { suppressed: boolean }) =>
+    invoke<void>('set_watcher_suppression', params),
   getWatcherState: () => invoke<WatcherState>('get_file_watcher_state'),
 
   // Collections
@@ -553,8 +560,7 @@ export const commands = {
     saveMode?: 'save_current_state' | 'clone_snapshot';
     sourceCollectionId?: string | null;
     description?: string;
-  }) =>
-    invoke<CollectionSummary>('create_collection', params),
+  }) => invoke<CollectionSummary>('create_collection', params),
   updateCollection: (params: { id?: string; gameId?: string; name?: string }) =>
     invoke<CollectionSummary>('update_collection', params),
   deleteCollection: (params: { id?: string; collectionId?: string; gameId?: string }) =>
@@ -565,7 +571,6 @@ export const commands = {
     gameId?: string;
     ignoreMissing?: boolean;
   }) => invoke<ApplyResult>('apply_collection', params),
-  undoCollection: (params: { gameId?: string }) => invoke<ApplyResult>('undo_collection', params),
   switchCorridor: (params: { gameId?: string; targetSafe?: boolean }) =>
     invoke<SwitchResult>('switch_corridor', params),
   previewCorridorSwitch: (params: { gameId?: string; targetSafe?: boolean }) =>

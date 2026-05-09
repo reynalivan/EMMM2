@@ -2,8 +2,9 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn reconcile_disk_state_cmd(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     game_id: String,
     reason: crate::services::disk_reconcile::types::DiskReconcileReason,
     changed_paths: Option<Vec<String>>,
@@ -17,15 +18,18 @@ pub async fn reconcile_disk_state_cmd(
     >,
 ) -> Result<crate::services::disk_reconcile::types::DiskReconcileResult, String> {
     crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        &app,
-        pool.inner(),
-        &config,
-        &disk_reconcile_state,
-        watcher.suppressor.clone(),
-        game_id,
-        reason,
-        changed_paths.unwrap_or_default(),
-        force_full.unwrap_or(false),
+        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool: pool.inner(),
+            config: config.inner(),
+            state: disk_reconcile_state.inner(),
+            watcher_suppressor: watcher.suppressor.clone(),
+        },
+        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id,
+            reason,
+            changed_paths.unwrap_or_default(),
+            force_full.unwrap_or(false),
+        ),
     )
     .await
 }

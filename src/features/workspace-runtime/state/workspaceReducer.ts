@@ -250,6 +250,37 @@ function closeDialogIfTargetRemoved(
   return INITIAL_WORKSPACE_DIALOG_STATE;
 }
 
+function pathTouchesTarget(targetPath: string, affectedPaths: string[]): boolean {
+  const normalizedTargetPath = targetPath.replace(/\\/g, '/');
+  return affectedPaths.some((path) => {
+    const normalizedPath = path.replace(/\\/g, '/');
+    return (
+      normalizedTargetPath === normalizedPath ||
+      normalizedTargetPath.startsWith(`${normalizedPath}/`) ||
+      normalizedPath.startsWith(`${normalizedTargetPath}/`)
+    );
+  });
+}
+
+function shouldResetDirtyPreviewForReconciliation(
+  state: WorkspaceRuntimeState,
+  event: Extract<WorkspaceRuntimeEvent, { type: 'SELECTION_RECONCILED' }>,
+): boolean {
+  if (!state.previewDirty || event.reconciliationStatus === 'unchanged') {
+    return false;
+  }
+
+  if (!state.selectedModPath) {
+    return false;
+  }
+
+  if (state.selectedModPath !== event.selectedModPath) {
+    return true;
+  }
+
+  return pathTouchesTarget(state.selectedModPath, event.affectedPaths);
+}
+
 export function reduceWorkspaceRuntimeState(
   state: WorkspaceRuntimeState,
   event: WorkspaceRuntimeEvent,
@@ -338,6 +369,23 @@ export function reduceWorkspaceRuntimeState(
     };
   }
 
+  if (event.type === 'SELECTION_RECONCILED') {
+    const resetDirtyPreview = shouldResetDirtyPreviewForReconciliation(state, event);
+    return {
+      ...state,
+      selectedObjectFolderPath: event.selectedObjectFolderPath,
+      explorerSubPath: event.explorerSubPath,
+      currentPath: event.currentPath,
+      selectedModPath: event.selectedModPath,
+      previewDirty: resetDirtyPreview ? false : state.previewDirty,
+      previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
+      dialogState:
+        resetDirtyPreview || state.dialogState.kind === 'previewUnsavedChanges'
+          ? INITIAL_WORKSPACE_DIALOG_STATE
+          : state.dialogState,
+    };
+  }
+
   if (event.type === 'PATHS_REWRITTEN') {
     const selectedObjectFolderPath =
       rewritePathValue(state.selectedObjectFolderPath, event.rewrites) ?? null;
@@ -367,15 +415,19 @@ export function reduceWorkspaceRuntimeState(
       invalidPaths.some(
         (path) => normalizedModPath === path || normalizedModPath.startsWith(`${path}/`),
       );
+    const previewTargetInvalid = objectInvalid || modInvalid;
 
     return {
       ...state,
       selectedObjectFolderPath: objectInvalid ? null : state.selectedObjectFolderPath,
-      selectedModPath: modInvalid ? null : state.selectedModPath,
+      selectedModPath: previewTargetInvalid ? null : state.selectedModPath,
       explorerSubPath: objectInvalid && event.resetExplorer ? undefined : state.explorerSubPath,
       currentPath: objectInvalid && event.resetExplorer ? [] : state.currentPath,
+      previewDirty: previewTargetInvalid ? false : state.previewDirty,
       previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-      dialogState: closeDialogIfTargetRemoved(state, invalidPaths),
+      dialogState: previewTargetInvalid
+        ? INITIAL_WORKSPACE_DIALOG_STATE
+        : closeDialogIfTargetRemoved(state, invalidPaths),
     };
   }
 

@@ -37,9 +37,9 @@ As a system, I want to analyze the archive name and contents, so that I can plac
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                          |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-23.2.1 | ✅ Positive | Given a file named `Keqing_Neon_Skin_v2.zip`, when imported, then the Deep Match Scanner tokenizes the filename, resolves "Keqing" to the canonical Object, and places the extracted folder in the `Characters/Keqing/` directory                  |
+| AC-23.2.1 | ✅ Positive | Given a file named `Keqing_Neon_Skin_v2.zip`, when imported, then the Deep Match Scanner tokenizes the filename, resolves "Keqing" to the canonical Object, and places the extracted folder in the `Characters/Keqing/` directory                 |
 | AC-23.2.2 | ✅ Positive | Given the archive contains an extra wrapper folder (e.g., unzip produces `Keqing_Neon_Skin_v2/Keqing_Neon_Skin/` with the actual mod inside), then the normalizer detects and strips the wrapper — the final placed folder is the actual mod root |
-| AC-23.2.3 | ❌ Negative | Given the Deep Match Scanner cannot find a strong match (score below threshold), then the mod is placed in the "Uncategorized" object and marked with `auto_category = false` — never silently dropped                                             |
+| AC-23.2.3 | ❌ Negative | Given the Deep Match Scanner cannot find a strong match (score below threshold), then the mod is placed in the "Uncategorized" object and marked with `auto_category = false` — never silently dropped                                            |
 | AC-23.2.4 | ⚠️ Edge     | Given the archive extracts to a path that already exists in the target object directory (collision), then the import pauses and a `ConflictResolveDialog` appears for that item — other archives in the batch continue                            |
 
 ---
@@ -70,14 +70,14 @@ import_mod_batch(input):
 
 ### Integration Points
 
-| Component            | Detail                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------ |
-| Import Bridge        | Frontend runtime surfaces publish import intents through the shared workspace import bridge |
-| Extraction           | Rust import services handle `.zip`, `.rar`, `.7z`, and folder ingestion                    |
-| Deep Match Scanner   | Scanner review / matching decides target object and review flow                            |
-| Progress Events      | Import batch emits progress events for queue/review UI                                      |
-| Runtime Impact       | Import completion refreshes runtime surfaces through centralized descriptor / impact mapping |
-| Collision            | `ConflictResolveDialog.tsx` or scanner review flow resolves per-archive conflicts           |
+| Component          | Detail                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| Import Bridge      | Frontend runtime surfaces publish import intents through the shared workspace import bridge  |
+| Extraction         | Rust import services handle `.zip`, `.rar`, `.7z`, and folder ingestion                      |
+| Deep Match Scanner | Scanner review / matching decides target object and review flow                              |
+| Progress Events    | Import batch emits progress events for queue/review UI                                       |
+| Runtime Impact     | Import completion refreshes runtime surfaces through centralized descriptor / impact mapping |
+| Collision          | `ConflictResolveDialog.tsx` or scanner review flow resolves per-archive conflicts            |
 
 ### Security & Privacy
 
@@ -92,4 +92,7 @@ import_mod_batch(input):
 
 - **Blocked by**: Epic 09 (Object Schema + Master DB — Deep Match Scanner uses aliases), Epic 26 (Deep Match Scanner — auto-categorization logic), Epic 24 (Conflict Resolution — per-archive conflict dialog).
 - **Blocks**: Nothing — import is an entry point into the mod lifecycle, not a prerequisite.
+
+```
+
 ```

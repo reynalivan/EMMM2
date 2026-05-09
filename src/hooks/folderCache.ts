@@ -1,10 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type {
-  FolderGridResponse,
-  ModFolder,
-  SortField,
-  SortOrder,
-} from '../types/mod';
+import type { FolderGridResponse, ModFolder, SortField, SortOrder } from '../types/mod';
 import { workspaceKeys } from '../features/workspace-runtime/useWorkspaceViewModel';
 import {
   isWorkspaceExplorerNode,
@@ -39,7 +34,9 @@ export function updateFolderCache(
     const updatedChildren = remove
       ? data.children.filter((folder) => !pathsToUpdate.includes(folder.path))
       : updater
-        ? data.children.map((folder) => (pathsToUpdate.includes(folder.path) ? updater(folder) : folder))
+        ? data.children.map((folder) =>
+            pathsToUpdate.includes(folder.path) ? updater(folder) : folder,
+          )
         : data.children;
 
     queryClient.setQueryData(queryKey, {

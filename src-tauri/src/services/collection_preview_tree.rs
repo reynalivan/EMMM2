@@ -351,7 +351,7 @@ fn ensure_mod_node(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Tree construction keeps node identity, type, status, and path explicit.
 fn ensure_folder_node<'a>(
     children: &'a mut Vec<PreviewTreeNode>,
     raw_segment: &str,

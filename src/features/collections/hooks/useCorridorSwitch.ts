@@ -11,7 +11,10 @@ import { toast } from '../../../stores/useToastStore';
 import { collectionKeys, corridorKeys } from '../queryKeys';
 import { commands } from '../../../lib/bindings';
 import { formatAppError } from '../../../lib/appError';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import {
+  publishQueryInvalidations,
+  publishRuntimeDescriptor,
+} from '../../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
 
 export function useCorridorSwitch() {
@@ -47,18 +50,16 @@ export function useCorridorSwitch() {
       });
       queryClient.setQueryData(corridorKeys.state(gameId, activeSafe), corridorState);
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: collectionKeys.list(gameId, activeSafe),
-          refetchType: 'active',
-        }),
-        queryClient.invalidateQueries({
-          queryKey: collectionKeys.list(gameId, previousSafe),
-          refetchType: 'active',
-        }),
-        queryClient.invalidateQueries({
-          queryKey: corridorKeys.switchPreview(gameId, previousSafe, targetSafe),
-          refetchType: 'all',
-        }),
+        publishQueryInvalidations(
+          queryClient,
+          [collectionKeys.list(gameId, activeSafe), collectionKeys.list(gameId, previousSafe)],
+          'active',
+        ),
+        publishQueryInvalidations(
+          queryClient,
+          [corridorKeys.switchPreview(gameId, previousSafe, targetSafe)],
+          'all',
+        ),
       ]);
 
       // Build toast message

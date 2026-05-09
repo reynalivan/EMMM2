@@ -76,7 +76,7 @@ pub async fn update_pointers(
 ) -> Result<(), CorridorError> {
     let mut tx = pool.begin().await?;
     update_pointers_tx(
-        &mut *tx,
+        &mut tx,
         game_id,
         is_safe,
         active_collection_id,
@@ -119,7 +119,7 @@ pub async fn clear_collection_references(
     collection_id: &str,
 ) -> Result<(), CorridorError> {
     let mut tx = pool.begin().await?;
-    clear_collection_references_tx(&mut *tx, collection_id).await?;
+    clear_collection_references_tx(&mut tx, collection_id).await?;
     tx.commit().await?;
     Ok(())
 }

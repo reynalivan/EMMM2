@@ -98,7 +98,7 @@ pub fn config_to_game_row(config: &GameConfig) -> game_repo::GameRow {
     game_repo::GameRow {
         id: config.id.clone(),
         name: config.name.clone(),
-        game_type: config.game_type.clone(),
+        game_type: config.game_type,
         path: config.game_exe.to_string_lossy().to_string(),
         mods_path: Some(config.mod_path.to_string_lossy().to_string()),
         game_exe: Some(config.game_exe.to_string_lossy().to_string()),

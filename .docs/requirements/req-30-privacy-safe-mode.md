@@ -22,14 +22,14 @@
 
 As a user, I want a quick toggle to switch between my Safe and Unsafe mods, restoring my exact loadout for that specific corridor automatically.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                          |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-30.1.1 | ✅ Positive | Given the Safe Mode shield icon is clicked, the system acquires an `OperationLock` and writes a `PENDING` status to the `tasks` table before touching the filesystem.                                             |
-| AC-30.1.2 | ✅ Positive | Given the switch initiates, the backend disables the leaving corridor by prepending `DISABLED ` to all currently ENABLED mods where `is_safe != target_safe_mode`, setting their DB `disabled_reason = 'SYSTEM'`. |
+| ID        | Type        | Criteria                                                                                                                                                                                                                    |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-30.1.1 | ✅ Positive | Given the Safe Mode shield icon is clicked, the system acquires an `OperationLock` and writes a `PENDING` status to the `tasks` table before touching the filesystem.                                                       |
+| AC-30.1.2 | ✅ Positive | Given the switch initiates, the backend disables the leaving corridor by prepending `DISABLED ` to all currently ENABLED mods where `is_safe != target_safe_mode`, setting their DB `disabled_reason = 'SYSTEM'`.           |
 | AC-30.1.3 | ✅ Positive | Given the leaving corridor is disabled, the system restores the target corridor by resolving its own target state in priority order: valid `active_collection_id` -> corridor-scoped Unsaved collection -> SYSTEM fallback. |
-| AC-30.1.4 | ⚠️ Edge     | Given the target corridor has no valid active or unsaved collection, the system falls back to manually enabling mods where `disabled_reason == 'SYSTEM'` and `is_safe == target_safe_mode`. |
-| AC-30.1.5 | ✅ Positive | Given the handoff completes, the backend persists `safe_mode.enabled`, updates the `tasks` table to `COMPLETED`, and returns `active_safe`, `restored_collection_id`, and `warnings` so React syncs from backend state. |
-| AC-30.1.6 | ✅ Positive | Given both corridors are currently unsaved, the switch preview dialog and Topbar surfaces use the same canonical labels: `Unsaved SAFE Preset` for Safe and `Unsaved UNSAFE Preset` for Unsafe.                     |
+| AC-30.1.4 | ⚠️ Edge     | Given the target corridor has no valid active or unsaved collection, the system falls back to manually enabling mods where `disabled_reason == 'SYSTEM'` and `is_safe == target_safe_mode`.                                 |
+| AC-30.1.5 | ✅ Positive | Given the handoff completes, the backend persists `safe_mode.enabled`, updates the `tasks` table to `COMPLETED`, and returns `active_safe`, `restored_collection_id`, and `warnings` so React syncs from backend state.     |
+| AC-30.1.6 | ✅ Positive | Given both corridors are currently unsaved, the switch preview dialog and Topbar surfaces use the same canonical labels: `Unsaved SAFE Preset` for Safe and `Unsaved UNSAFE Preset` for Unsafe.                             |
 
 ---
 
@@ -41,7 +41,7 @@ As a user, I want my privacy to be protected even if I close the app while Unsaf
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-30.2.1 | ✅ Positive | Given the app is launched, the backend reads the last active Safe Mode state from `app_settings`. If the state is Unsafe Mode AND a PIN is configured, the backend emits a `LOCK_UI` event.                                 |
 | AC-30.2.2 | ✅ Positive | Given the `LOCK_UI` event, the React frontend renders a full-screen `PinEntryModal` and blurs/hides the main workspace. The grid does not load until `verify_pin()` returns `true`.                                         |
-| AC-30.2.3 | ❌ Negative | Given 5 consecutive incorrect PIN attempts, the PIN entry locks for 60 seconds using DB-backed `pin_config.failed_attempts` and `pin_config.lockout_until`, so restart does not reset the lockout. |
+| AC-30.2.3 | ❌ Negative | Given 5 consecutive incorrect PIN attempts, the PIN entry locks for 60 seconds using DB-backed `pin_config.failed_attempts` and `pin_config.lockout_until`, so restart does not reset the lockout.                          |
 | AC-30.2.4 | ✅ Positive | Given the app boots, if it finds a `status = 'PENDING'` record in the `tasks` table (indicating a crash during a previous mode switch or collection apply), it emits `RECOVERY_REQUIRED` to prompt the user for resolution. |
 
 ---
@@ -118,21 +118,23 @@ pub async fn switch_mode(pool: &SqlitePool, target_safe_mode: bool) -> Result<Sw
 ```
 
 ### Integration Points
-| Component | Detail |
-| --- | --- |
-| Boot Guard | React `App.tsx` checks backend payload on mount. Halts render and mounts `PinEntryModal` if `LOCK_UI` is true. |
-| Topbar State | `SwitchResult.restored_collection_id` is sent to React, updating Zustand `activeCollectionId` to sync the Dropdown. Unsaved corridor display names shown after the switch must come from the same shared label source used by Collections. |
-| Workspace Runtime | `WorkspaceViewModel.explorer` is corridor-filtered backend-side. `ObjectList` stays all-objects, while `Preview` must drop stale `selected_mod_path` values that no longer belong to the active corridor. |
-| Task Recovery | Next boot checks `tasks` table. If `status == 'PENDING'`, it halts UI and shows the "Recovery Action" dialog (Resume / Rollback). |
-| PIN Hashing | Uses `argon2` crate with constant-time verification. Failed attempts and lockout expiry are persisted in `pin_config`. |
 
+| Component         | Detail                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Boot Guard        | React `App.tsx` checks backend payload on mount. Halts render and mounts `PinEntryModal` if `LOCK_UI` is true.                                                                                                                             |
+| Topbar State      | `SwitchResult.restored_collection_id` is sent to React, updating Zustand `activeCollectionId` to sync the Dropdown. Unsaved corridor display names shown after the switch must come from the same shared label source used by Collections. |
+| Workspace Runtime | `WorkspaceViewModel.explorer` is corridor-filtered backend-side. `ObjectList` stays all-objects, while `Preview` must drop stale `selected_mod_path` values that no longer belong to the active corridor.                                  |
+| Task Recovery     | Next boot checks `tasks` table. If `status == 'PENDING'`, it halts UI and shows the "Recovery Action" dialog (Resume / Rollback).                                                                                                          |
+| PIN Hashing       | Uses `argon2` crate with constant-time verification. Failed attempts and lockout expiry are persisted in `pin_config`.                                                                                                                     |
 
 ### Security & Privacy
+
 - **Strict Corridor Enforcement**: Mods with `is_safe != current_mode` cannot be physically enabled. Dual Guard ensures they are both physically renamed and excluded from SQL counts.
 - **Fail-Safe Startup**: By recording the corridor switch in the `tasks` table, any power loss during the mass-rename process will be caught and resolved on the next launch, preventing corrupted physical states.
 
 ---
 
 ## 4. Dependencies
+
 - **Blocked by**: Epic 13 (Core Mod Ops - `rename` logic), Epic 14 (OperationLock), Epic 31 (Collections - `apply_collection` logic).
 - **Blocks**: None.

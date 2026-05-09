@@ -43,10 +43,9 @@ export default function ActiveModContextDialog({
           <p className="text-sm mb-2">
             {t('context_dialog.move_message', {
               modName,
-              target:
-                targetSafeStatus
-                  ? t('context_dialog.target_safe')
-                  : t('context_dialog.target_unsafe'),
+              target: targetSafeStatus
+                ? t('context_dialog.target_safe')
+                : t('context_dialog.target_unsafe'),
             })}
           </p>
           <p className="text-sm text-base-content/70">{t('context_dialog.active_warning')}</p>

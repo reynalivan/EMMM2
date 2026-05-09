@@ -127,15 +127,17 @@ pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usiz
         let mut new_objects_count = 0;
         let object_id = crate::repo::object_repo::ensure_object_exists(
             &mut tx,
-            game_id,
-            &obj_folder,
-            &clean_name,
-            "Other",
-            None,
-            "[]",
-            "{}",
-            None,
-            None,
+            crate::repo::object_repo::EnsureObjectInput {
+                game_id,
+                folder_path: &obj_folder,
+                obj_name: &clean_name,
+                obj_type: "Other",
+                db_thumbnail: None,
+                db_tags_json: "[]",
+                db_metadata_json: "{}",
+                db_hash_db_json: None,
+                db_custom_skins_json: None,
+            },
             &mut new_objects_count,
         )
         .await

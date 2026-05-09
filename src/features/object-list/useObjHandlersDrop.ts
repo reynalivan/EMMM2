@@ -18,6 +18,7 @@ import {
 import { classifyDroppedPaths } from './dropUtils';
 import type { ObjectSummary } from '../../types/object';
 import type { MasterDbEntry } from './scanReviewHelpers';
+import { withWatcherSuppression } from '../file-watcher/watcherSuppression';
 
 interface PendingDropContext {
   type: 'item' | 'auto-organize' | 'new-object';
@@ -88,57 +89,56 @@ export function useObjHandlersDrop({
         return;
       }
 
-      await commands.setWatcherSuppression({ suppressed: true });
       try {
-        if (pathsToIngest.length === 0) {
-          toast.info('No items to import.');
-          return;
-        }
+        await withWatcherSuppression({ releaseDelayMs: null }, async () => {
+          if (pathsToIngest.length === 0) {
+            toast.info('No items to import.');
+            return;
+          }
 
-        await executeImportAndInvalidate(pathsToIngest, objectFolderPath, queryClient, {
-          isNewObject: false,
-          objectName: obj.name,
-        });
+          await executeImportAndInvalidate(pathsToIngest, objectFolderPath, queryClient, {
+            isNewObject: false,
+            objectName: obj.name,
+          });
 
-        if (classified.folders.length > 0) {
-          try {
-            let mismatches = 0;
-            let firstMismatchMsg = '';
-            const mismatchedPaths: string[] = [];
-            for (const folder of classified.folders) {
-              const check = await scanService.matchCheckFolder(
-                folder,
-                obj.name,
-                activeGame.game_type,
-              );
-              if (!check.isMatch) {
-                mismatches++;
-                mismatchedPaths.push(folder);
-                if (!firstMismatchMsg) {
-                  firstMismatchMsg = `${folder.split('\\').pop()}: Best match is ${check.matchedName || 'Unknown'} (${check.matchScorePct}%)`;
+          if (classified.folders.length > 0) {
+            try {
+              let mismatches = 0;
+              let firstMismatchMsg = '';
+              const mismatchedPaths: string[] = [];
+              for (const folder of classified.folders) {
+                const check = await scanService.matchCheckFolder(
+                  folder,
+                  obj.name,
+                  activeGame.game_type,
+                );
+                if (!check.isMatch) {
+                  mismatches++;
+                  mismatchedPaths.push(folder);
+                  if (!firstMismatchMsg) {
+                    firstMismatchMsg = `${folder.split('\\').pop()}: Best match is ${check.matchedName || 'Unknown'} (${check.matchScorePct}%)`;
+                  }
                 }
               }
+              if (mismatches > 0) {
+                toast.withAction(
+                  'warning',
+                  `${mismatches} of ${classified.folders.length} dropped folder(s) may not match ${obj.name}\n→ ${firstMismatchMsg}`,
+                  {
+                    label: 'Fix',
+                    onClick: () => setMismatchConfirm(mismatchedPaths),
+                  },
+                  9999999,
+                );
+              }
+            } catch (err) {
+              console.warn('Post-drop match check failed:', err);
             }
-            if (mismatches > 0) {
-              toast.withAction(
-                'warning',
-                `${mismatches} of ${classified.folders.length} dropped folder(s) may not match ${obj.name}\n→ ${firstMismatchMsg}`,
-                {
-                  label: 'Fix',
-                  onClick: () => setMismatchConfirm(mismatchedPaths),
-                },
-                9999999,
-              );
-            }
-          } catch (err) {
-            console.warn('Post-drop match check failed:', err);
           }
-        }
+        });
       } catch (e) {
         console.error('Drop on item failed:', e);
         toast.error('Failed to import dropped items');
-      } finally {
-        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     [activeGame, objects, queryClient, handleArchivesInteractively, setMismatchConfirm],
@@ -165,52 +165,52 @@ export function useObjHandlersDrop({
         return;
       }
 
-      await commands.setWatcherSuppression({ suppressed: true });
       try {
-        const tempPath = `${activeGame.mod_path}\\.emmm_temp`;
-        if (looseFiles.length > 0) {
-          await ensureDirectoryExists(tempPath);
-        }
+        await withWatcherSuppression({ releaseDelayMs: null }, async () => {
+          const tempPath = `${activeGame.mod_path}\\.emmm_temp`;
+          if (looseFiles.length > 0) {
+            await ensureDirectoryExists(tempPath);
+          }
 
-        if (looseFiles.length > 0) {
-          const ingestResult: IngestResult = await commands.ingestDroppedFolders({
-            paths: looseFiles,
-            modsPath: tempPath,
-            gameId: activeGame.id,
-            gameName: activeGame.name,
-            gameType: getGameTypeKey(activeGame.game_type),
+          if (looseFiles.length > 0) {
+            const ingestResult: IngestResult = await commands.ingestDroppedFolders({
+              paths: looseFiles,
+              modsPath: tempPath,
+              gameId: activeGame.id,
+              gameName: activeGame.name,
+              gameType: getGameTypeKey(activeGame.game_type),
+            });
+            folderPaths.push(...ingestResult.moved);
+          }
+
+          setIsSyncing(true);
+          const previewItemsRaw = await scanService.runDeepmatchPreview(
+            activeGame.id,
+            activeGame.game_type,
+            activeGame.mod_path,
+            undefined,
+            folderPaths,
+          );
+          const previewItems = previewItemsRaw.map((item) => ({
+            ...item,
+            moveFromTemp: folderPaths.includes(item.folderPath),
+          }));
+
+          const dbJson = await scanService.getMasterDb(activeGame.game_type);
+          const masterEntries = parseMasterDb(dbJson);
+
+          setScanReview({
+            open: true,
+            items: previewItems,
+            masterDbEntries: masterEntries,
+            isCommitting: false,
           });
-          folderPaths.push(...ingestResult.moved);
-        }
-
-        setIsSyncing(true);
-        const previewItemsRaw = await scanService.runDeepmatchPreview(
-          activeGame.id,
-          activeGame.game_type,
-          activeGame.mod_path,
-          undefined,
-          folderPaths,
-        );
-        const previewItems = previewItemsRaw.map((item) => ({
-          ...item,
-          moveFromTemp: folderPaths.includes(item.folderPath),
-        }));
-
-        const dbJson = await scanService.getMasterDb(activeGame.game_type);
-        const masterEntries = parseMasterDb(dbJson);
-
-        setScanReview({
-          open: true,
-          items: previewItems,
-          masterDbEntries: masterEntries,
-          isCommitting: false,
         });
       } catch (e) {
         console.error('Auto organize failed:', e);
         toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setIsSyncing(false);
-        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     [activeGame, handleArchivesInteractively, setScanReview, setIsSyncing],
@@ -245,22 +245,21 @@ export function useObjHandlersDrop({
         return;
       }
 
-      await commands.setWatcherSuppression({ suppressed: true });
       try {
-        if (pathsToIngest.length === 0) {
-          toast.success(`Created ${objectName} successfully (no items imported).`);
-          return;
-        }
+        await withWatcherSuppression({ releaseDelayMs: null }, async () => {
+          if (pathsToIngest.length === 0) {
+            toast.success(`Created ${objectName} successfully (no items imported).`);
+            return;
+          }
 
-        await executeImportAndInvalidate(pathsToIngest, objectFolderPath, queryClient, {
-          isNewObject: true,
-          objectName,
+          await executeImportAndInvalidate(pathsToIngest, objectFolderPath, queryClient, {
+            isNewObject: true,
+            objectName,
+          });
         });
       } catch (e) {
         console.error('Drop on new object failed:', e);
         toast.error('Failed to import dropped items');
-      } finally {
-        await commands.setWatcherSuppression({ suppressed: false });
       }
     },
     [activeGame, queryClient, handleArchivesInteractively],

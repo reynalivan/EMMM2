@@ -102,8 +102,8 @@ Backend:
 | File Discovery   | `commands.listModPreviewImages({ folderPath })` → `preview_cmds.rs`                       |
 | Asset Protocol   | Tauri `asset:` protocol — configured in `tauri.conf.json` `allowlist.protocol.asset`      |
 | Image URL        | `convertFileSrc(absolutePath)` from `@tauri-apps/api/tauri`                               |
-| Set Thumbnail    | Raw preview mutation hooks save/copy images for the selected mod folder                    |
-| Cache Invalidate | Preview-runtime applies thumbnail/runtime refresh via shared runtime effect mapping         |
+| Set Thumbnail    | Raw preview mutation hooks save/copy images for the selected mod folder                   |
+| Cache Invalidate | Preview-runtime applies thumbnail/runtime refresh via shared runtime effect mapping       |
 | Lazy Loading     | `<img loading="lazy">` — browser native, no additional virtualizer needed for ≤ 50 images |
 
 ### Security & Privacy

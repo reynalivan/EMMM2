@@ -324,7 +324,6 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
           objectId: id,
           category,
           itemType,
-          objects: options.objects,
           queryClient,
           updateObject,
         });
@@ -332,7 +331,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
         console.error('Failed to move category:', error);
       }
     },
-    [activeGame, options.objects, queryClient, updateObject],
+    [activeGame, queryClient, updateObject],
   );
 
   const toggleObjectMods = useCallback(

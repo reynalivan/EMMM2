@@ -71,6 +71,10 @@ export function useFolderGrid() {
   const ancestorDisabledBy = rawResponse?.ancestor_disabled_by ?? null;
   const ancestorDisabledPath = rawResponse?.ancestor_disabled_path ?? null;
   const objects = useMemo(() => workspace?.objects ?? [], [workspace?.objects]);
+  const sourceAvailable = workspace?.runtime?.source_state?.status !== 'unavailable';
+  const sourceUnavailableMessage = sourceAvailable
+    ? null
+    : (workspace?.runtime?.source_state?.message ?? null);
 
   const nav = useFolderGridNav({
     currentPath,
@@ -104,6 +108,7 @@ export function useFolderGrid() {
     rawFolders,
     objects,
     clearGridSelection,
+    sourceAvailable,
   });
 
   const bulk = useFolderGridBulk({
@@ -113,21 +118,22 @@ export function useFolderGrid() {
     openMoveDialog: actions.openMoveDialog,
   });
 
-  const { focusedId, handleKeyDown, handleToggleSelection, handleActivateItem } = useFolderGridSelection({
-    sortedFolders,
-    gridSelection,
-    setGridSelection,
-    currentPath,
-    isGridView,
-    columnCount,
-    isMobile,
-    scrollToIndex,
-    selectMod: runtime.selectMod,
-    handleNavigate: nav.handleNavigate,
-    handleBreadcrumbClick: nav.handleBreadcrumbClick,
-    handleDeleteRequest: actions.handleDeleteRequest,
-    handleRenameRequest: actions.handleRenameRequest,
-  });
+  const { focusedId, handleKeyDown, handleToggleSelection, handleActivateItem } =
+    useFolderGridSelection({
+      sortedFolders,
+      gridSelection,
+      setGridSelection,
+      currentPath,
+      isGridView,
+      columnCount,
+      isMobile,
+      scrollToIndex,
+      selectMod: runtime.selectMod,
+      handleNavigate: nav.handleNavigate,
+      handleBreadcrumbClick: nav.handleBreadcrumbClick,
+      handleDeleteRequest: actions.handleDeleteRequest,
+      handleRenameRequest: actions.handleRenameRequest,
+    });
 
   const { isDragging, handleImportFiles } = useFolderGridImport({
     parentRef,
@@ -150,6 +156,7 @@ export function useFolderGrid() {
     selfReasons,
     conflicts,
     ancestorDisabledBy,
+    sourceUnavailableMessage,
     enableParentDialogOpen: enableParentDialog.open,
     enableParentDialogAncestorName: enableParentDialog.ancestorName,
     enableParentDialogWillActivate: enableParentDialog.willActivate,

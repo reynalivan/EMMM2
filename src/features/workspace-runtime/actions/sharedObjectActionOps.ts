@@ -42,7 +42,6 @@ export async function applyObjectCategoryAndRefresh(params: {
   objectId: string;
   category: string;
   itemType: 'object' | 'folder';
-  objects: WorkspaceObjectNode[];
   queryClient: QueryClient;
   updateObject: UpdateObjectMutationLike;
 }): Promise<void> {
@@ -58,25 +57,11 @@ export async function applyObjectCategoryAndRefresh(params: {
       updates: { object_type: params.category },
     });
 
-    const object = params.objects.find((candidate) => candidate.id === params.objectId);
-    if (!object) {
-      return;
-    }
-
-    const response = await commands.listModFolders({
+    await commands.setObjectModsCategory({
       gameId: params.activeGame.id,
-      modsPath: params.activeGame.mod_path,
-      subPath: object.folder_path,
-      objectId: object.id,
+      objectId: params.objectId,
+      category: params.category,
     });
-
-    for (const child of response.children) {
-      await commands.setModCategory({
-        gameId: params.activeGame.id,
-        folderPath: child.path,
-        category: params.category,
-      });
-    }
   }
 
   await publishRuntimeDescriptor(

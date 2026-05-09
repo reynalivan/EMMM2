@@ -51,7 +51,9 @@ fn find_matching_object_root(mods_path: &Path, object_name: &str) -> Option<Stri
             continue;
         }
 
-        let Some(folder_name) = path.file_name().map(|value| value.to_string_lossy().to_string())
+        let Some(folder_name) = path
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
         else {
             continue;
         };
@@ -103,7 +105,7 @@ async fn heal_object_root_path(
 
     let mut tx = pool.begin().await?;
     crate::services::collection_service::handle_object_renamed_tx(
-        &mut *tx,
+        &mut tx,
         old_folder_path,
         new_folder_path,
     )
@@ -288,7 +290,7 @@ pub async fn toggle_object_root_service(
     )
     .await?;
     crate::repo::mod_repo::update_child_paths_tx(
-        &mut *tx,
+        &mut tx,
         game_id,
         &format!("{old_relative_path}\\"),
         &format!("{new_relative_path}\\"),
@@ -296,7 +298,7 @@ pub async fn toggle_object_root_service(
     )
     .await?;
     crate::repo::mod_repo::update_child_paths_tx(
-        &mut *tx,
+        &mut tx,
         game_id,
         &format!("{old_relative_path}/"),
         &format!("{new_relative_path}/"),
@@ -304,7 +306,7 @@ pub async fn toggle_object_root_service(
     )
     .await?;
     crate::repo::mod_repo::update_status_and_reason_for_object(
-        &mut *tx,
+        &mut tx,
         game_id,
         &new_relative_path,
         if enable {
@@ -330,7 +332,7 @@ pub async fn toggle_object_root_service(
     )
     .await?;
     crate::services::collection_service::handle_object_renamed_tx(
-        &mut *tx,
+        &mut tx,
         &old_relative_path,
         &new_relative_path,
     )

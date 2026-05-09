@@ -53,7 +53,7 @@ pub async fn switch_corridor(
         .inner()
         .acquire()
         .await
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
     let settings = config.get_settings();
     if settings.safe_mode.enabled == target_safe {
         let snapshot =
@@ -156,7 +156,7 @@ pub async fn create_collection(
     let input = CreateCollectionInput {
         game_id,
         name,
-        is_safe: is_safe,
+        is_safe,
         save_mode,
         source_collection_id,
     };
@@ -180,7 +180,7 @@ pub async fn apply_collection(
         .inner()
         .acquire()
         .await
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
     let settings = config.get_settings();
     let is_safe = settings.safe_mode.enabled;
     let game = settings
@@ -194,59 +194,16 @@ pub async fn apply_collection(
         })?;
     let mods_path = game.mod_path.clone();
 
-    let result = collection_service::apply_collection(
-        pool.inner(),
-        &game_id,
-        &collection_id,
+    let result = collection_service::apply_collection(collection_service::ApplyCollectionRequest {
+        pool: pool.inner(),
+        game_id: &game_id,
+        collection_id: &collection_id,
         is_safe,
         mods_path,
-        watcher_state.suppressor.clone(),
-        ignore_missing.unwrap_or(false),
+        suppressor: watcher_state.suppressor.clone(),
+        ignore_missing: ignore_missing.unwrap_or(false),
         settings,
-    )
-    .await?;
-
-    Ok(result)
-}
-
-#[tauri::command]
-#[specta::specta]
-#[deprecated(
-    note = "Undo collections are being phased out in favor of explicit Collection Snapshot creation"
-)]
-pub async fn undo_collection(
-    pool: State<'_, SqlitePool>,
-    config: State<'_, crate::services::config::ConfigService>,
-    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
-    op_lock: State<'_, OperationLock>,
-    game_id: String,
-) -> Result<ApplyResult, AppError> {
-    let _guard = op_lock
-        .inner()
-        .acquire()
-        .await
-        .map_err(|e| AppError::Internal(e))?;
-    let settings = config.get_settings();
-    let is_safe = settings.safe_mode.enabled;
-    let game = settings
-        .games
-        .iter()
-        .find(|g| g.id == game_id)
-        .ok_or_else(|| {
-            AppError::Corridor(crate::domain::errors::CorridorError::GameNotFound {
-                game_id: game_id.clone(),
-            })
-        })?;
-    let mods_path = game.mod_path.clone();
-
-    let result = collection_service::undo_collection(
-        pool.inner(),
-        &game_id,
-        is_safe,
-        mods_path,
-        watcher_state.suppressor.clone(),
-        settings,
-    )
+    })
     .await?;
 
     Ok(result)
@@ -276,7 +233,7 @@ pub async fn delete_collection(
         .inner()
         .acquire()
         .await
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
     collection_service::delete_collection(pool.inner(), &id).await?;
     Ok(())
 }
@@ -455,14 +412,16 @@ pub async fn resolve_recovery_task(
                             })?;
 
                     crate::services::collection_service::apply_collection(
-                        pool.inner(),
-                        &task.game_id,
-                        collection_id,
-                        collection.is_safe,
-                        game.mod_path.clone(),
-                        watcher_state.suppressor.clone(),
-                        true,
-                        settings,
+                        crate::services::collection_service::ApplyCollectionRequest {
+                            pool: pool.inner(),
+                            game_id: &task.game_id,
+                            collection_id,
+                            is_safe: collection.is_safe,
+                            mods_path: game.mod_path.clone(),
+                            suppressor: watcher_state.suppressor.clone(),
+                            ignore_missing: true,
+                            settings,
+                        },
                     )
                     .await?;
                 }
@@ -577,14 +536,16 @@ pub async fn resolve_recovery_task(
                     };
 
                     crate::services::collection_service::apply_collection(
-                        pool.inner(),
-                        &task.game_id,
-                        &rollback_collection_id,
-                        applied_collection.is_safe,
-                        game.mod_path.clone(),
-                        watcher_state.suppressor.clone(),
-                        true,
-                        settings,
+                        crate::services::collection_service::ApplyCollectionRequest {
+                            pool: pool.inner(),
+                            game_id: &task.game_id,
+                            collection_id: &rollback_collection_id,
+                            is_safe: applied_collection.is_safe,
+                            mods_path: game.mod_path.clone(),
+                            suppressor: watcher_state.suppressor.clone(),
+                            ignore_missing: true,
+                            settings,
+                        },
                     )
                     .await?;
                 }

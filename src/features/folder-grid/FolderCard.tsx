@@ -253,9 +253,12 @@ function FolderCardInner({
           }
         `}
         role="gridcell"
-        aria-label={t(switchPolicy.checked ? 'card.aria_label_enabled' : 'card.aria_label_disabled', {
-          name: folder.name,
-        })}
+        aria-label={t(
+          switchPolicy.checked ? 'card.aria_label_enabled' : 'card.aria_label_disabled',
+          {
+            name: folder.name,
+          },
+        )}
         tabIndex={0}
       >
         {/* Thumbnail area — 3:4 portrait ratio */}
@@ -374,7 +377,9 @@ function FolderCardInner({
           {!hasNamingConflict && !hasConflict && folder.warnings.length > 0 && (
             <div
               className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-error/90 text-error-content rounded-md z-10 shadow-sm"
-              title={primaryWarningText || folder.warnings.join('\n') || t('card.corrupt_ini_title')}
+              title={
+                primaryWarningText || folder.warnings.join('\n') || t('card.corrupt_ini_title')
+              }
             >
               <AlertTriangle size={10} />
               <span className="text-[9px] font-bold uppercase">{t('badges.corrupt')}</span>

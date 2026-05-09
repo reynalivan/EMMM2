@@ -31,18 +31,18 @@ impl ArchiveFormat {
         if let Ok(mut file) = std::fs::File::open(path) {
             use std::io::Read;
             if let Ok(bytes_read) = file.read(&mut header) {
-                if bytes_read >= 4 && &header[0..4] == &[0x50, 0x4B, 0x03, 0x04] {
+                if bytes_read >= 4 && header[0..4] == [0x50, 0x4B, 0x03, 0x04] {
                     return Some(Self::Zip);
                 }
-                if bytes_read >= 6 && &header[0..6] == &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] {
+                if bytes_read >= 6 && header[0..6] == [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] {
                     return Some(Self::SevenZ);
                 }
-                if bytes_read >= 7 && &header[0..7] == &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00] {
+                if bytes_read >= 7 && header[0..7] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00] {
                     return Some(Self::Rar);
                 }
                 // RAR 5+ magic signature
                 if bytes_read >= 8
-                    && &header[0..8] == &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]
+                    && header[0..8] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]
                 {
                     return Some(Self::Rar);
                 }

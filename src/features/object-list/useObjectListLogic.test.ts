@@ -48,13 +48,16 @@ const appStoreState: {
 };
 
 vi.mock('../../stores/useAppStore', () => ({
-  useAppStore: Object.assign(vi.fn(() => appStoreState), {
-    getState: vi.fn(() => ({
-      explorerSubPath: '',
-      setExplorerSubPath: vi.fn(),
-      setCurrentPath: vi.fn(),
-    })),
-  }),
+  useAppStore: Object.assign(
+    vi.fn(() => appStoreState),
+    {
+      getState: vi.fn(() => ({
+        explorerSubPath: '',
+        setExplorerSubPath: vi.fn(),
+        setCurrentPath: vi.fn(),
+      })),
+    },
+  ),
 }));
 
 const useGameSchemaMock = vi.fn<() => { data: unknown }>(() => ({ data: undefined }));
@@ -164,7 +167,9 @@ describe('useObjectListLogic', () => {
     appStoreState.objectMetaFilters = { element: ['Fire'] };
     setObjectMetaFilters.mockClear();
 
-    const { result: rerendered } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
+    const { result: rerendered } = renderHook(() => useObjectListLogic(), {
+      wrapper: createWrapper(),
+    });
     act(() => {
       rerendered.current.filters.handleClearFilters();
     });

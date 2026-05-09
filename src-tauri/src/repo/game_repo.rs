@@ -51,7 +51,7 @@ pub async fn upsert_game(pool: &SqlitePool, game: &GameRow) -> Result<(), sqlx::
     )
     .bind(&game.id)
     .bind(&game.name)
-    .bind(&game.game_type)
+    .bind(game.game_type)
     .bind(&game.path)
     .bind(&game.mods_path)
     .bind(&game.game_exe)

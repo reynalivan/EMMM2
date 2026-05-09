@@ -100,10 +100,7 @@ const runtimeEventScopes: Record<RuntimeRefreshEvent, RuntimeRefreshScope[]> = {
 
 const pendingRuntimeRefreshes = new WeakMap<QueryClient, PendingRuntimeRefresh>();
 
-function mergeRefetchType(
-  current: QueryRefetchType,
-  next: QueryRefetchType,
-): QueryRefetchType {
+function mergeRefetchType(current: QueryRefetchType, next: QueryRefetchType): QueryRefetchType {
   if (current === next) {
     return current;
   }
@@ -226,6 +223,30 @@ export async function publishQueryScopes(
     scopes,
     refetchType,
   });
+}
+
+export async function publishQueryInvalidations(
+  queryClient: QueryClient,
+  queryKeys: Array<readonly unknown[]>,
+  refetchType: QueryRefetchType,
+): Promise<void> {
+  if (queryKeys.length === 0) {
+    return;
+  }
+
+  const uniqueKeys = new Map<string, readonly unknown[]>();
+  for (const queryKey of queryKeys) {
+    uniqueKeys.set(JSON.stringify(queryKey), queryKey);
+  }
+
+  await Promise.all(
+    [...uniqueKeys.values()].map((queryKey) =>
+      queryClient.invalidateQueries({
+        queryKey,
+        refetchType,
+      }),
+    ),
+  );
 }
 
 export async function publishRuntimeDescriptor(

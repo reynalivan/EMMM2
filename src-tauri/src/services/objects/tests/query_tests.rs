@@ -1,5 +1,7 @@
 use crate::database::models::GameType;
-use crate::services::disk_reconcile::reconcile::reconcile_disk_projection;
+use crate::services::disk_reconcile::reconcile::{
+    reconcile_disk_projection, ReconcileDiskProjectionRequest,
+};
 use crate::services::disk_reconcile::types::{DiskReconcileReason, DiskReconcileStatus};
 use crate::services::objects::query::{get_category_counts_service, get_object_by_id_service};
 use crate::test_utils::{insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture};
@@ -15,16 +17,16 @@ async fn run_full_disk_reconcile(
     game_id: &str,
     mods_path: &std::path::Path,
 ) {
-    reconcile_disk_projection(
+    reconcile_disk_projection(ReconcileDiskProjectionRequest {
         pool,
         game_id,
         mods_path,
-        &[],
-        &DiskReconcileReason::ManualRepair,
-        &[],
-        true,
-        None,
-    )
+        safe_mode_keywords: &[],
+        reason: &DiskReconcileReason::ManualRepair,
+        changed_paths: &[],
+        force_full: true,
+        watcher_events: None,
+    })
     .await
     .expect("Disk Reconcile should succeed in test");
 }
@@ -270,16 +272,16 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
     .await
     .unwrap();
 
-    let outcome = reconcile_disk_projection(
-        &pool,
-        "g_missing_path",
-        &missing_mod_path,
-        &[],
-        &DiskReconcileReason::ManualRepair,
-        &[],
-        true,
-        None,
-    )
+    let outcome = reconcile_disk_projection(ReconcileDiskProjectionRequest {
+        pool: &pool,
+        game_id: "g_missing_path",
+        mods_path: &missing_mod_path,
+        safe_mode_keywords: &[],
+        reason: &DiskReconcileReason::ManualRepair,
+        changed_paths: &[],
+        force_full: true,
+        watcher_events: None,
+    })
     .await
     .expect("missing source should return a typed no-write result");
 

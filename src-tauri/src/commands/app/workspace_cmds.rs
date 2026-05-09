@@ -56,13 +56,11 @@ async fn resolve_mod_target_path(
         .unwrap_or_else(|| target_value.to_string());
 
     let mut changed_object_ids = Vec::new();
-    if let Some((_, object_id, _)) =
+    if let Some((_, Some(object_id), _)) =
         crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, &relative_path, game_id)
             .await?
     {
-        if let Some(value) = object_id {
-            changed_object_ids.push(value);
-        }
+        changed_object_ids.push(object_id);
     }
 
     Ok((target_value.to_string(), changed_object_ids))
@@ -203,8 +201,8 @@ pub async fn execute_workspace_switch(
             impact: build_switch_impact(
                 Some(&original_path),
                 Some(&next_path),
-                &[next_path.clone()],
-                &[object_id.clone()],
+                std::slice::from_ref(&next_path),
+                std::slice::from_ref(&object_id),
                 false,
             ),
         });
@@ -273,7 +271,7 @@ pub async fn execute_workspace_switch(
         impact: build_switch_impact(
             Some(&target_path),
             Some(&next_path),
-            &[next_path.clone()],
+            std::slice::from_ref(&next_path),
             &changed_object_ids,
             false,
         ),

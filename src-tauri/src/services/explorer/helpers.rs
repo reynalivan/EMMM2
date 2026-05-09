@@ -129,11 +129,9 @@ pub fn apply_runtime_corridor_filter_to_response(
     mut response: crate::services::explorer::types::FolderGridResponse,
     safe_mode: bool,
 ) -> crate::services::explorer::types::FolderGridResponse {
-    response.children = response
+    response
         .children
-        .into_iter()
-        .filter(|folder| folder.is_safe == safe_mode)
-        .collect();
+        .retain(|folder| folder.is_safe == safe_mode);
     let visible_paths = response
         .children
         .iter()

@@ -78,12 +78,12 @@ As a user, I want to launch my game with mod injections active, so that I can pl
 
 As a user, I want to switch between configured games from the top bar, so that I can manage mods for different games in the same session.
 
-| ID        | Type        | Criteria                                                                                                                                                                    |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-02.5.1 | ✅ Positive | Given multiple configured games, when switching the active game, then the new `game_id` is persisted to preferences and the `activeGameId` Zustand store updates in ≤ 200ms |
+| ID        | Type        | Criteria                                                                                                                                                                                                            |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-02.5.1 | ✅ Positive | Given multiple configured games, when switching the active game, then the new `game_id` is persisted to preferences and the `activeGameId` Zustand store updates in ≤ 200ms                                         |
 | AC-02.5.2 | ✅ Positive | Given an active game change, then the file watcher restarts on the new `mods_path`, the Mods workspace runs Disk Reconcile for that game, and dependent runtime queries refresh without invoking Deep Match Scanner |
-| AC-02.5.3 | ❌ Negative | Given `null` or an invalid `game_id` submitted as the active target, then the frontend receives a validation error and the active game state is not changed                 |
-| AC-02.5.4 | ⚠️ Edge     | Given an active game switch triggered while a bulk operation is in progress for the old game, the `OperationLock` is awaited before the watcher restarts on the new path    |
+| AC-02.5.3 | ❌ Negative | Given `null` or an invalid `game_id` submitted as the active target, then the frontend receives a validation error and the active game state is not changed                                                         |
+| AC-02.5.4 | ⚠️ Edge     | Given an active game switch triggered while a bulk operation is in progress for the old game, the `OperationLock` is awaited before the watcher restarts on the new path                                            |
 
 ---
 
@@ -119,14 +119,14 @@ DB tables: games(id, game_type, name, root_path, mods_path, game_exe, loader_exe
 
 ### Integration Points
 
-| Component      | Detail                                                                           |
-| -------------- | -------------------------------------------------------------------------------- |
-| DB             | `games` table — primary key `UUID`, `UNIQUE(game_type, root_path)` constraint    |
-| File Watcher   | `WatcherState` restarted on `set_active_game` via `init_watcher(new_mods_path)`  |
-| Runtime Refresh| Mods entry / focus then call `reconcile_disk_state_cmd` for the active game       |
-| Frontend State | `useAppStore.activeGameId` + `useGames` React Query invalidated on all mutations |
-| Process Spawn  | `tokio::process::Command` — `spawn()` (detached, no `wait()`)                    |
-| Path Dialog    | `tauri-plugin-dialog` — `open({ directory: true })`                              |
+| Component       | Detail                                                                           |
+| --------------- | -------------------------------------------------------------------------------- |
+| DB              | `games` table — primary key `UUID`, `UNIQUE(game_type, root_path)` constraint    |
+| File Watcher    | `WatcherState` restarted on `set_active_game` via `init_watcher(new_mods_path)`  |
+| Runtime Refresh | Mods entry / focus then call `reconcile_disk_state_cmd` for the active game      |
+| Frontend State  | `useAppStore.activeGameId` + `useGames` React Query invalidated on all mutations |
+| Process Spawn   | `tokio::process::Command` — `spawn()` (detached, no `wait()`)                    |
+| Path Dialog     | `tauri-plugin-dialog` — `open({ directory: true })`                              |
 
 ### Security & Privacy
 

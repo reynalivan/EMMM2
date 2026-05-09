@@ -100,10 +100,7 @@ describe('useSettings', () => {
 
     await result.current.saveSettingsAsync({ theme: 'dark' } as never);
     expect(invoke).toHaveBeenCalledWith('save_settings', { settings: { theme: 'dark' } });
-    expect(mockAddToast).toHaveBeenCalledWith(
-      'success',
-      expect.any(String),
-    );
+    expect(mockAddToast).toHaveBeenCalledWith('success', expect.any(String));
   });
 
   it('updateTheme merges with current settings and invokes save_settings', async () => {

@@ -24,6 +24,7 @@ interface UseFolderGridActionsOptions {
   rawFolders: WorkspaceExplorerNode[];
   objects: ObjectSummary[];
   clearGridSelection: () => void;
+  sourceAvailable: boolean;
 }
 
 export function useFolderGridActions({
@@ -35,6 +36,7 @@ export function useFolderGridActions({
   rawFolders,
   objects,
   clearGridSelection,
+  sourceAvailable,
 }: UseFolderGridActionsOptions) {
   const queryClient = useQueryClient();
   const actions = useSharedModActions({
@@ -66,13 +68,13 @@ export function useFolderGridActions({
   }, [dialogState]);
 
   const currentAbsPath = useMemo(() => {
-    if (!activeGame?.mod_path) {
+    if (!sourceAvailable || !activeGame?.mod_path) {
       return null;
     }
 
     const parts = [activeGame.mod_path, ...currentPath.filter(Boolean)];
     return parts.join('\\');
-  }, [activeGame, currentPath]);
+  }, [activeGame, currentPath, sourceAvailable]);
 
   const handleRefresh = useCallback(() => {
     void applyRuntimeMutationResult(queryClient, 'workspaceStructure');
@@ -115,7 +117,7 @@ export function useFolderGridActions({
 
   const handleToggleSelf = useCallback(
     async (enable: boolean) => {
-      if (!activeGame?.id || !activeGame.mod_path || !explorerSubPath) {
+      if (!sourceAvailable || !activeGame?.id || !activeGame.mod_path || !explorerSubPath) {
         return;
       }
 
@@ -124,7 +126,7 @@ export function useFolderGridActions({
         syncExplorerPath: true,
       });
     },
-    [activeGame, explorerSubPath, switchActions],
+    [activeGame, explorerSubPath, sourceAvailable, switchActions],
   );
 
   const openEnableParentDialog = useCallback(() => {

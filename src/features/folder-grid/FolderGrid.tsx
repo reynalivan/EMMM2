@@ -36,6 +36,7 @@ export default function FolderGrid() {
     selfIsEffectivelyActive,
     selfReasons,
     conflicts: nameConflicts,
+    sourceUnavailableMessage,
     isGridView,
     isMobile,
     currentPath,
@@ -163,6 +164,12 @@ export default function FolderGrid() {
   const isFlatModRoot = selfDisplayMode === 'flat_mod' || selfIsMod;
 
   const activePane = useAppStore((state) => state.activePane);
+  const activeGameId = useAppStore((state) => state.activeGameId);
+  const diskSourceUnavailableMessage = useAppStore((state) =>
+    activeGameId ? (state.diskSourceUnavailableByGame[activeGameId] ?? null) : null,
+  );
+  const workspaceSourceUnavailableMessage =
+    sourceUnavailableMessage ?? diskSourceUnavailableMessage;
   const setActivePane = useAppStore((state) => state.setActivePane);
   const isIgnoreManagementOpen = useAppStore((state) => state.isIgnoreManagementOpen);
   const setIsIgnoreManagementOpen = useAppStore((state) => state.setIgnoreManagementOpen);
@@ -214,6 +221,7 @@ export default function FolderGrid() {
         ancestorDisabledBy={ancestorDisabledBy}
         currentPath={currentPath}
         onOpenEnableParentDialog={openEnableParentDialog}
+        diskSourceUnavailableMessage={workspaceSourceUnavailableMessage}
       />
 
       <FolderGridToolbar
@@ -353,9 +361,7 @@ export default function FolderGrid() {
                           hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
                           isLockedByParent={!!ancestorDisabledBy}
                           onRequestEnableParent={openEnableParentDialog}
-                          isSwitchPending={
-                            isSwitchPending || isFolderSwitchPending(folder)
-                          }
+                          isSwitchPending={isSwitchPending || isFolderSwitchPending(folder)}
                         />
                       </div>
                     ))}
@@ -401,9 +407,7 @@ export default function FolderGrid() {
                     onToggleSafe={() => handleToggleSafeRequest(folder)}
                     onSyncWithDb={handleSyncWithDb}
                     hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
-                    isSwitchPending={
-                      isSwitchPending || isFolderSwitchPending(folder)
-                    }
+                    isSwitchPending={isSwitchPending || isFolderSwitchPending(folder)}
                   />
                 </div>
               );

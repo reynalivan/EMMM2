@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Each supported game (Genshin, HSR, ZZZ, WuWa, Endfield) has different mod category taxonomies and official character/weapon names in multiple languages — without a schema-driven system, the UI would hardcode game-specific logic and break for any new game addition.
-- **Proposed Solution**: A bundled `schema.json` per game that defines mod categories, stopwords, and aliases — loaded at startup into memory. A complementary Master Database (bundled JSON) maps raw folder name tokens to canonical entity names, used during scan and folder listing to normalize object identities.
+- **Proposed Solution**: A bundled `schema.json` per game that defines mod categories, stopwords, and aliases — loaded at startup into memory. A complementary Master Database (bundled JSON) maps raw folder name tokens to canonical entity names for explicit scan/import and user-driven sync workflows. Passive Disk Reconcile does not run MasterDB matching.
 - **Success Criteria**:
   - Schema file loads and validates in ≤ 100ms at app boot for any supported game.
   - Object category renders correctly for 100% of schema-defined categories across all 5 games in the test suite.
@@ -45,12 +45,14 @@ As a system, I want to resolve raw folder name tokens to canonical official enti
 
 | Scan Engine | Passes raw folder name tokens through `matcher.rs` during Epic 25 scan (used in Epic 26) |
 | Frontend Hook | `useGameSchema(gameType)` → React Query → `commands.getSchema()` — invalidated on game switch |
+| Disk Reconcile | Uses schema defaults only for projection fallbacks such as `Other`; it never auto-enriches canonical matches during passive filesystem refresh |
 
 ### Security & Privacy
 
 - **Schema files are bundled read-only assets** — no schema is loaded from user-writable file system paths; no path injection risk.
 - **Alias lookup uses a read-only `HashMap`** — no user input mutates the Master DB in memory; only the scan process queries it.
 - **Ambiguous alias disambiguation** presents a list of resolution options to the user — no file is auto-moved to an incorrect object folder based on a heuristic guess.
+- **No passive matching**: MasterDB lookup is explicit; watcher/startup/refocus Disk Reconcile must not silently rewrite object identity from aliases.
 
 ---
 

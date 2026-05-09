@@ -241,7 +241,7 @@ pub(crate) async fn persist_corridor_runtime_snapshot(
     let (mods, objects) = load_live_corridor_state(pool, game_id, is_safe).await?;
     let mut tx = pool.begin().await?;
     let collection_id = write_corridor_runtime_snapshot_tx(
-        &mut *tx,
+        &mut tx,
         game_id,
         is_safe,
         mods_path.as_deref(),
@@ -291,7 +291,7 @@ async fn write_corridor_runtime_snapshot_tx(
         .first()
         .cloned()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let name_key = crate::services::path_key::collection_name_key(&timestamp_name);
+    let name_key = crate::services::path_key::collection_name_key(timestamp_name);
 
     if unsaved_ids.is_empty() {
         sqlx::query(
@@ -462,15 +462,15 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str) -> Result<(), Collec
     };
 
     let mut tx = pool.begin().await?;
-    corridor_repo::clear_collection_references_tx(&mut *tx, id)
+    corridor_repo::clear_collection_references_tx(&mut tx, id)
         .await
         .map_err(CollectionError::Corridor)?;
-    collection_repo::delete_tx(&mut *tx, id).await?;
+    collection_repo::delete_tx(&mut tx, id).await?;
 
     if was_active {
         if let Some(fallback_active_id) = fallback_active.as_deref() {
             corridor_repo::update_pointers_tx(
-                &mut *tx,
+                &mut tx,
                 &collection.game_id,
                 collection.is_safe,
                 Some(fallback_active_id),
@@ -480,7 +480,7 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str) -> Result<(), Collec
             .map_err(CollectionError::Corridor)?;
         } else {
             write_corridor_runtime_snapshot_tx(
-                &mut *tx,
+                &mut tx,
                 &collection.game_id,
                 collection.is_safe,
                 mods_path.as_deref(),
@@ -524,7 +524,7 @@ pub async fn handle_mod_moved_or_renamed(
 ) -> Result<u64, CollectionError> {
     let mut tx = pool.begin().await?;
     let count =
-        handle_mod_moved_or_renamed_tx(&mut *tx, old_mod_path, new_mod_path, new_object_id).await?;
+        handle_mod_moved_or_renamed_tx(&mut tx, old_mod_path, new_mod_path, new_object_id).await?;
     tx.commit().await?;
     Ok(count)
 }
@@ -867,65 +867,54 @@ fn parse_warnings_json(raw: Option<String>) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&raw_json).unwrap_or_default()
 }
 
+pub struct ApplyCollectionRequest<'a> {
+    pub pool: &'a SqlitePool,
+    pub game_id: &'a str,
+    pub collection_id: &'a str,
+    pub is_safe: bool,
+    pub mods_path: std::path::PathBuf,
+    pub suppressor: std::sync::Arc<crate::services::scanner::watcher::WatcherSuppressor>,
+    pub ignore_missing: bool,
+    pub settings: crate::services::config::AppSettings,
+}
+
 pub async fn apply_collection(
-    pool: &SqlitePool,
-    game_id: &str,
-    collection_id: &str,
-    is_safe: bool,
-    mods_path: std::path::PathBuf,
-    suppressor: std::sync::Arc<crate::services::scanner::watcher::WatcherSuppressor>,
-    ignore_missing: bool,
-    settings: crate::services::config::AppSettings,
+    request: ApplyCollectionRequest<'_>,
 ) -> Result<ApplyResult, CollectionError> {
     let mut ctx = crate::pipeline::apply_pipeline::ApplyContext::new(
-        pool.clone(),
-        game_id.to_string(),
-        collection_id.to_string(),
-        is_safe,
-        mods_path,
-        suppressor,
-        ignore_missing,
-        settings,
+        crate::pipeline::apply_pipeline::ApplyContextInput {
+            pool: request.pool.clone(),
+            game_id: request.game_id.to_string(),
+            collection_id: request.collection_id.to_string(),
+            is_safe: request.is_safe,
+            mods_path: request.mods_path,
+            suppressor: request.suppressor,
+            ignore_missing: request.ignore_missing,
+            settings: request.settings,
+        },
     );
 
     crate::pipeline::apply_pipeline::execute(&mut ctx).await
 }
 
 pub async fn apply_collection_internal(
-    pool: &SqlitePool,
-    game_id: &str,
-    collection_id: &str,
-    is_safe: bool,
-    mods_path: std::path::PathBuf,
-    suppressor: std::sync::Arc<crate::services::scanner::watcher::WatcherSuppressor>,
-    ignore_missing: bool,
-    settings: crate::services::config::AppSettings,
+    request: ApplyCollectionRequest<'_>,
 ) -> Result<ApplyResult, CollectionError> {
     let mut ctx = crate::pipeline::apply_pipeline::ApplyContext::new(
-        pool.clone(),
-        game_id.to_string(),
-        collection_id.to_string(),
-        is_safe,
-        mods_path,
-        suppressor,
-        ignore_missing,
-        settings,
+        crate::pipeline::apply_pipeline::ApplyContextInput {
+            pool: request.pool.clone(),
+            game_id: request.game_id.to_string(),
+            collection_id: request.collection_id.to_string(),
+            is_safe: request.is_safe,
+            mods_path: request.mods_path,
+            suppressor: request.suppressor,
+            ignore_missing: request.ignore_missing,
+            settings: request.settings,
+        },
     )
     .without_task();
 
     crate::pipeline::apply_pipeline::execute(&mut ctx).await
-}
-
-pub async fn undo_collection(
-    pool: &SqlitePool,
-    game_id: &str,
-    is_safe: bool,
-    mods_path: std::path::PathBuf,
-    suppressor: std::sync::Arc<crate::services::scanner::watcher::WatcherSuppressor>,
-    settings: crate::services::config::AppSettings,
-) -> Result<ApplyResult, CollectionError> {
-    let _ = (pool, game_id, is_safe, mods_path, suppressor, settings);
-    Err(CollectionError::NoUndoAvailable)
 }
 
 #[cfg(test)]
@@ -933,6 +922,7 @@ mod tests {
     use super::{
         apply_collection, create_collection, delete_collection, get_collection_preview,
         handle_dirty_state, handle_mod_moved_or_renamed, preview_apply, update_collection,
+        ApplyCollectionRequest,
     };
     use crate::database::models::{GameType, ItemStatus};
     use crate::domain::collection::{
@@ -943,11 +933,11 @@ mod tests {
     use crate::repo::{collection_repo, corridor_repo};
     use crate::services::config::AppSettings;
     use crate::services::projected_state_service;
+    use crate::services::scanner::watcher::WatcherSuppressor;
     use crate::test_utils::{
         init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
         TestModFixture, TestObjectFixture,
     };
-    use crate::services::scanner::watcher::WatcherSuppressor;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -1382,16 +1372,16 @@ mod tests {
         .await
         .expect("persist collection state");
 
-        let result = apply_collection(
-            &ctx.pool,
-            "game-1",
-            &collection.id,
-            true,
-            mods_root.path().to_path_buf(),
-            Arc::new(WatcherSuppressor::new(false)),
-            false,
-            AppSettings::default(),
-        )
+        let result = apply_collection(ApplyCollectionRequest {
+            pool: &ctx.pool,
+            game_id: "game-1",
+            collection_id: &collection.id,
+            is_safe: true,
+            mods_path: mods_root.path().to_path_buf(),
+            suppressor: Arc::new(WatcherSuppressor::new(false)),
+            ignore_missing: false,
+            settings: AppSettings::default(),
+        })
         .await;
 
         match result {

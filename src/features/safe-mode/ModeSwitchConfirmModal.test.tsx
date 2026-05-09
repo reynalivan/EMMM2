@@ -14,7 +14,8 @@ vi.mock('react-i18next', () => ({
         'layout:context.unsaved_unsafe': 'Unsaved UNSAFE Preset',
         'safe_mode:switch.title_safe': 'Switch to SAFE Mode',
         'safe_mode:switch.title_unsafe': 'Switch to UNSAFE Mode',
-        'safe_mode:switch.desc': 'Review the changes to your active loadout before switching corridors.',
+        'safe_mode:switch.desc':
+          'Review the changes to your active loadout before switching corridors.',
         'safe_mode:switch.loading': 'Loading preview...',
         'safe_mode:switch.snapshot': 'Snapshot',
         'safe_mode:switch.restore': 'Restore',
@@ -69,9 +70,8 @@ vi.mock('../collections/hooks/useCorridor', () => ({
 }));
 
 vi.mock('@tanstack/react-query', async () => {
-  const actual = await vi.importActual<typeof import('@tanstack/react-query')>(
-    '@tanstack/react-query',
-  );
+  const actual =
+    await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
 
   return {
     ...actual,

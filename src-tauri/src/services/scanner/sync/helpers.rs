@@ -36,6 +36,19 @@ pub struct ResolvedObjectTarget {
     pub folder_path: String,
 }
 
+pub struct ResolveObjectTargetInput<'a> {
+    pub game_id: &'a str,
+    pub mods_path: &'a str,
+    pub physical_name_hint: &'a str,
+    pub matched_entry_key: Option<&'a str>,
+    pub object_type: &'a str,
+    pub db_thumbnail: Option<&'a str>,
+    pub db_tags_json: &'a str,
+    pub db_metadata_json: &'a str,
+    pub db_hash_db_json: Option<&'a str>,
+    pub db_custom_skins_json: Option<&'a str>,
+}
+
 fn normalize_object_shell_name(physical_name_hint: &str) -> String {
     let normalized =
         crate::services::scanner::core::normalizer::normalize_display_name(physical_name_hint);
@@ -81,32 +94,26 @@ async fn next_available_object_shell_name(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn resolve_or_create_object_target_for_match(
     conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    mods_path: &str,
-    physical_name_hint: &str,
-    matched_entry_key: Option<&str>,
-    object_type: &str,
-    db_thumbnail: Option<&str>,
-    db_tags_json: &str,
-    db_metadata_json: &str,
-    db_hash_db_json: Option<&str>,
-    db_custom_skins_json: Option<&str>,
+    input: ResolveObjectTargetInput<'_>,
     new_objects_count: &mut usize,
 ) -> Result<Option<ResolvedObjectTarget>, String> {
-    let Some(entry_key) = matched_entry_key else {
+    let Some(entry_key) = input.matched_entry_key else {
         return Ok(None);
     };
 
     let existing_folder = crate::repo::object_repo::get_object_folder_by_matched_entry_key(
-        &mut *conn, game_id, entry_key,
+        &mut *conn,
+        input.game_id,
+        entry_key,
     )
     .await
     .map_err(|error| error.to_string())?;
     let existing_id = crate::repo::object_repo::get_object_id_by_matched_entry_key(
-        &mut *conn, game_id, entry_key,
+        &mut *conn,
+        input.game_id,
+        entry_key,
     )
     .await
     .map_err(|error| error.to_string())?;
@@ -118,21 +125,28 @@ pub async fn resolve_or_create_object_target_for_match(
         }));
     }
 
-    let base_shell_name = normalize_object_shell_name(physical_name_hint);
-    let shell_name =
-        next_available_object_shell_name(&mut *conn, game_id, mods_path, &base_shell_name).await?;
+    let base_shell_name = normalize_object_shell_name(input.physical_name_hint);
+    let shell_name = next_available_object_shell_name(
+        &mut *conn,
+        input.game_id,
+        input.mods_path,
+        &base_shell_name,
+    )
+    .await?;
 
     let object_id = ensure_object_exists(
         &mut *conn,
-        game_id,
-        &shell_name,
-        &shell_name,
-        object_type,
-        db_thumbnail,
-        db_tags_json,
-        db_metadata_json,
-        db_hash_db_json,
-        db_custom_skins_json,
+        crate::repo::object_repo::EnsureObjectInput {
+            game_id: input.game_id,
+            folder_path: &shell_name,
+            obj_name: &shell_name,
+            obj_type: input.object_type,
+            db_thumbnail: input.db_thumbnail,
+            db_tags_json: input.db_tags_json,
+            db_metadata_json: input.db_metadata_json,
+            db_hash_db_json: input.db_hash_db_json,
+            db_custom_skins_json: input.db_custom_skins_json,
+        },
         new_objects_count,
     )
     .await?;
@@ -285,31 +299,10 @@ pub async fn ensure_game_exists(
 
 pub async fn ensure_object_exists(
     conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    folder_path: &str,
-    obj_name: &str,
-    obj_type: &str,
-    db_thumbnail: Option<&str>,
-    db_tags_json: &str,
-    db_metadata_json: &str,
-    db_hash_db_json: Option<&str>,
-    db_custom_skins_json: Option<&str>,
+    input: crate::repo::object_repo::EnsureObjectInput<'_>,
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
-    crate::repo::object_repo::ensure_object_exists(
-        conn,
-        game_id,
-        folder_path,
-        obj_name,
-        obj_type,
-        db_thumbnail,
-        db_tags_json,
-        db_metadata_json,
-        db_hash_db_json,
-        db_custom_skins_json,
-        new_objects_count,
-    )
-    .await
+    crate::repo::object_repo::ensure_object_exists(conn, input, new_objects_count).await
 }
 
 pub fn classify_corridor(

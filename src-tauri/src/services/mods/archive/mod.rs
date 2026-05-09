@@ -5,7 +5,11 @@
 
 mod analyze;
 pub mod classify;
+mod destination;
 mod extract;
+mod extractors;
+mod progress;
+mod staging;
 mod types;
 
 // Re-export public API

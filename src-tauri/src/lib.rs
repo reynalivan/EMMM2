@@ -1,4 +1,6 @@
+#[cfg(not(test))]
 use tauri::Manager;
+#[cfg(not(test))]
 use tauri_plugin_log::{Target, TargetKind};
 
 pub mod commands;
@@ -15,6 +17,7 @@ pub mod types;
 pub const DISABLED_PREFIX: &str = "DISABLED ";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(test))]
 pub fn run() {
     let builder =
         tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
@@ -49,7 +52,7 @@ pub fn run() {
             commands::scanner::archive_cmds::abort_extraction_cmd,
             commands::scanner::conflict_cmds::detect_conflicts_cmd,
             commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
-            commands::scanner::watcher_cmds::set_watcher_suppression_cmd,
+            commands::scanner::watcher_cmds::set_watcher_suppression,
             commands::folder_grid::list_mod_folders,
             commands::folder_grid::get_mod_thumbnail,
             commands::mods::mod_core_cmds::open_in_explorer,
@@ -77,6 +80,7 @@ pub fn run() {
             commands::mods::mod_meta_cmds::read_mod_info,
             commands::mods::mod_meta_cmds::update_mod_info,
             commands::mods::mod_meta_cmds::set_mod_category,
+            commands::mods::mod_meta_cmds::set_object_mods_category,
             commands::mods::mod_meta_cmds::move_mod_to_object,
             commands::mods::mod_thumbnail_cmds::update_mod_thumbnail,
             commands::mods::mod_thumbnail_cmds::get_thumbnail,
@@ -119,7 +123,6 @@ pub fn run() {
             commands::collections::cmds::list_collections,
             commands::collections::cmds::create_collection,
             commands::collections::cmds::apply_collection,
-            commands::collections::cmds::undo_collection,
             commands::collections::cmds::update_collection,
             commands::collections::cmds::delete_collection,
             commands::collections::cmds::handle_dirty_state,
@@ -138,12 +141,13 @@ pub fn run() {
             commands::collections::cmds::get_pin_status,
             commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
             commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
+            commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_for_objects_cmd,
             commands::scanner::deepmatch_scanner_cmds::commit_scan_cmd,
             commands::scanner::deepmatch_scanner_cmds::score_candidates_batch_cmd,
             commands::scanner::deepmatch_scanner_cmds::list_folder_entries_cmd,
             commands::scanner::disk_reconcile_cmds::reconcile_disk_state_cmd,
-            commands::scanner::watcher_cmds::start_watcher_cmd,
-            commands::scanner::watcher_cmds::stop_watcher_cmd,
+            commands::scanner::watcher_cmds::start_watcher,
+            commands::scanner::watcher_cmds::stop_watcher,
             commands::duplicates::dup_scan_cmds::dup_scan_start,
             commands::duplicates::dup_scan_cmds::dup_scan_cancel,
             commands::duplicates::dup_scan_cmds::dup_scan_get_report,
@@ -317,7 +321,7 @@ pub fn run() {
             let hotkey_config = config_ref.get_settings().hotkeys;
             match services::hotkeys::manager::HotkeyManager::new(&hotkey_config) {
                 Ok(hk_manager) => {
-                    let _ = hk_manager.update_bindings(&app_handle, &hotkey_config);
+                    let _ = hk_manager.update_bindings(app_handle, &hotkey_config);
                     app.manage(hk_manager);
                 }
                 Err(_) => {
@@ -339,8 +343,6 @@ pub fn run() {
                     '_,
                     services::disk_reconcile::orchestrator::DiskReconcileState,
                 > = app.state();
-                let app_handle_clone = app_handle.clone();
-
                 use tauri::async_runtime::block_on;
                 block_on(async {
                     match sqlx::query("DELETE FROM tasks WHERE created_at < datetime('now', '-7 days')")
@@ -371,15 +373,18 @@ pub fn run() {
                     }
 
                     match services::disk_reconcile::orchestrator::reconcile_disk_state(
-                        &app_handle_clone,
-                        &pool_clone,
-                        config_svc.inner(),
-                        &disk_reconcile_state,
-                        watcher_state.suppressor.clone(),
-                        game.id.clone(),
-                        services::disk_reconcile::types::DiskReconcileReason::StartupBoot,
-                        Vec::new(),
-                        true,
+                        services::disk_reconcile::orchestrator::DiskReconcileContext {
+                            pool: &pool_clone,
+                            config: config_svc.inner(),
+                            state: &disk_reconcile_state,
+                            watcher_suppressor: watcher_state.suppressor.clone(),
+                        },
+                        services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+                            game.id.clone(),
+                            services::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+                            Vec::new(),
+                            true,
+                        ),
                     )
                     .await
                     {
@@ -408,11 +413,15 @@ pub fn run() {
 }
 
 #[cfg(test)]
+pub fn run() {}
+
+#[cfg(test)]
 mod specta_tests {
     use super::*;
 
     #[test]
     fn export_bindings() {
+        let output_path = std::path::Path::new("target").join("specta-bindings.generated.ts");
         tauri_specta::Builder::<tauri::Wry>::new()
             .commands(tauri_specta::collect_commands![
                 commands::app::app_cmds::check_config_status,
@@ -446,7 +455,7 @@ mod specta_tests {
                 commands::scanner::archive_cmds::abort_extraction_cmd,
                 commands::scanner::conflict_cmds::detect_conflicts_cmd,
                 commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
-                commands::scanner::watcher_cmds::set_watcher_suppression_cmd,
+                commands::scanner::watcher_cmds::set_watcher_suppression,
                 commands::folder_grid::list_mod_folders,
                 commands::folder_grid::get_mod_thumbnail,
                 commands::mods::mod_core_cmds::open_in_explorer,
@@ -474,6 +483,7 @@ mod specta_tests {
                 commands::mods::mod_meta_cmds::read_mod_info,
                 commands::mods::mod_meta_cmds::update_mod_info,
                 commands::mods::mod_meta_cmds::set_mod_category,
+                commands::mods::mod_meta_cmds::set_object_mods_category,
                 commands::mods::mod_meta_cmds::move_mod_to_object,
                 commands::mods::mod_thumbnail_cmds::update_mod_thumbnail,
                 commands::mods::mod_thumbnail_cmds::get_thumbnail,
@@ -516,7 +526,6 @@ mod specta_tests {
                 commands::collections::cmds::list_collections,
                 commands::collections::cmds::create_collection,
                 commands::collections::cmds::apply_collection,
-                commands::collections::cmds::undo_collection,
                 commands::collections::cmds::update_collection,
                 commands::collections::cmds::delete_collection,
                 commands::collections::cmds::handle_dirty_state,
@@ -535,12 +544,13 @@ mod specta_tests {
                 commands::collections::cmds::get_pin_status,
                 commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
                 commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
+                commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_for_objects_cmd,
                 commands::scanner::deepmatch_scanner_cmds::commit_scan_cmd,
                 commands::scanner::deepmatch_scanner_cmds::score_candidates_batch_cmd,
                 commands::scanner::deepmatch_scanner_cmds::list_folder_entries_cmd,
                 commands::scanner::disk_reconcile_cmds::reconcile_disk_state_cmd,
-                commands::scanner::watcher_cmds::start_watcher_cmd,
-                commands::scanner::watcher_cmds::stop_watcher_cmd,
+                commands::scanner::watcher_cmds::start_watcher,
+                commands::scanner::watcher_cmds::stop_watcher,
                 commands::duplicates::dup_scan_cmds::dup_scan_start,
                 commands::duplicates::dup_scan_cmds::dup_scan_cancel,
                 commands::duplicates::dup_scan_cmds::dup_scan_get_report,
@@ -572,8 +582,9 @@ mod specta_tests {
                 commands::scanner::collision_cmds::resolve_folder_collision,
             ])
             .export(
-                specta_typescript::Typescript::default(),
-                "../src/lib/bindings.ts",
+                specta_typescript::Typescript::default()
+                    .bigint(specta_typescript::BigIntExportBehavior::Number),
+                output_path,
             )
             .expect("The types could not be exported");
     }

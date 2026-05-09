@@ -21,15 +21,11 @@ pub enum GameType {
     Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq, specta::Type, sqlx::Type,
 )]
 #[repr(i64)]
+#[derive(Default)]
 pub enum ItemStatus {
     Disabled = 0,
+    #[default]
     Enabled = 1,
-}
-
-impl Default for ItemStatus {
-    fn default() -> Self {
-        Self::Enabled
-    }
 }
 
 impl ItemStatus {

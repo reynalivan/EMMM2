@@ -3,9 +3,12 @@ use crate::pipeline::apply_pipeline::ApplyContext;
 
 /// Step 3: Resolve the currently-enabled mod path_keys in this corridor.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let (mods, objects) =
-        crate::services::collection_service::load_live_corridor_state(&ctx.pool, &ctx.game_id, ctx.is_safe)
-            .await?;
+    let (mods, objects) = crate::services::collection_service::load_live_corridor_state(
+        &ctx.pool,
+        &ctx.game_id,
+        ctx.is_safe,
+    )
+    .await?;
     let projected_state =
         crate::services::projected_state_service::build_projected_state(&mods, &objects, None);
     ctx.currently_enabled_path_keys = projected_state

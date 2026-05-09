@@ -8,7 +8,9 @@ use crate::services::scanner::core::walker::ModCandidate;
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::{match_folder_phased, MasterDb};
-use crate::services::scanner::sync::helpers::resolve_or_create_object_target_for_match;
+use crate::services::scanner::sync::helpers::{
+    resolve_or_create_object_target_for_match, ResolveObjectTargetInput,
+};
 
 /// DTO returned to the frontend for import queue display.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -308,17 +310,19 @@ async fn place_mod(
 
     let match_target = if selected_target.is_none() {
         resolve_or_create_object_target_for_match(
-            &mut *tx,
-            &game_id,
-            &mods_path,
-            &mod_name,
-            match_result.entry_key.as_deref(),
-            match_result.category.as_deref().unwrap_or("Other"),
-            None,
-            "[]",
-            "{}",
-            None,
-            None,
+            &mut tx,
+            ResolveObjectTargetInput {
+                game_id: &game_id,
+                mods_path: &mods_path,
+                physical_name_hint: &mod_name,
+                matched_entry_key: match_result.entry_key.as_deref(),
+                object_type: match_result.category.as_deref().unwrap_or("Other"),
+                db_thumbnail: None,
+                db_tags_json: "[]",
+                db_metadata_json: "{}",
+                db_hash_db_json: None,
+                db_custom_skins_json: None,
+            },
             &mut shell_objects_created,
         )
         .await?
@@ -479,15 +483,18 @@ async fn emit_internal_disk_reconcile(
         .ok_or_else(|| "DiskReconcileState missing for browser import".to_string())?;
 
     let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        app,
-        pool,
-        &config,
-        &disk_reconcile_state,
-        watcher.suppressor.clone(),
-        game_id.to_string(),
-        crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
-        changed_paths,
-        false,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool,
+            config: config.inner(),
+            state: disk_reconcile_state.inner(),
+            watcher_suppressor: watcher.suppressor.clone(),
+        },
+        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id.to_string(),
+            crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            changed_paths,
+            false,
+        ),
     )
     .await?;
 

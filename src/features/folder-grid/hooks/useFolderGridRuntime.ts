@@ -26,13 +26,7 @@ export function useFolderGridRuntime({
 }: UseFolderGridRuntimeOptions) {
   const { isMobile } = useResponsive();
   const parentRef = useRef<HTMLDivElement>(null);
-  const {
-    data: workspace,
-    isLoading,
-    isError,
-    error,
-    isPlaceholderData,
-  } = useWorkspaceViewModel();
+  const { data: workspace, isLoading, isError, error, isPlaceholderData } = useWorkspaceViewModel();
 
   const rawResponse = workspace?.explorer;
   const rawFolders = useMemo(

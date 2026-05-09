@@ -23,9 +23,7 @@ import ArchiveModal from '../scanner/components/ArchiveModal';
 import BulkTagModal from './BulkTagModal';
 import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
-import { useWorkspaceRuntime } from '../workspace-runtime/state/workspaceStoreBridge';
 import { openWorkspaceConflictDialog } from '../workspace-runtime/state/workspaceDialogs';
-import { useObjectSelectionRepair } from './hooks/useObjectSelectionRepair';
 import { useObjectListEffects } from './hooks/useObjectListEffects';
 
 export default function ObjectList() {
@@ -55,8 +53,6 @@ export default function ObjectList() {
     sidebarSearchQuery,
     setSidebarSearch,
   } = nav;
-  const { clearSelection } = useWorkspaceRuntime();
-
   const {
     parentRef,
     rowVirtualizer,
@@ -119,17 +115,6 @@ export default function ObjectList() {
   } = handlers;
 
   const activeGameId = activeGame?.id ?? null;
-
-  const clearObjectSelection = useCallback(() => {
-    clearSelection({ resetExplorer: true, clearObjectSelection: true });
-  }, [clearSelection]);
-
-  useObjectSelectionRepair({
-    modRootPath: activeGame?.mod_path ?? null,
-    selectedObjectFolderPath,
-    clearSelection: clearObjectSelection,
-    requestRepairSync: handleBackgroundSync,
-  });
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [autoSetupOpen, setAutoSetupOpen] = useState(false);

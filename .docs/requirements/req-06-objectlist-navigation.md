@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The objectlist is the primary navigation hub for the entire 3-panel workspace — without min/max constraints and persistent sizing, users resize it past usable bounds or lose their layout on restart.
-- **Proposed Solution**: A resizable objectlist panel (180px–600px) powered by `react-resizable-panels`, with a flat virtualized list of objects grouped by categories (non-collapsible for scroll stability), persistent width via `localStorage`, and a responsive overlay drawer for viewports < 768px.
+- **Proposed Solution**: A resizable objectlist panel (180px–600px) powered by the existing custom `ResizableWorkspace` shell, with a flat virtualized list of objects grouped by categories (non-collapsible for scroll stability), persistent width via Zustand/localStorage, and a responsive overlay drawer for viewports < 768px.
 - **Success Criteria**:
   - ObjectList drag resize renders at ≥ 60fps (≤ 16ms/frame) measured via Chrome DevTools Performance tab.
   - ObjectList width persisted within ≤ 200ms of drag-end and restored on next launch in ≤ 50ms.
@@ -69,7 +69,7 @@ As a small-viewport user, I want the objectlist to become a slide-out drawer, so
 ### Architecture Overview
 
 ```
-ObjectList (react-resizable-panels Panel)
+ObjectList (ResizableWorkspace left panel)
   ├── width: [180px, 600px] — persisted as fraction in localStorage['panelLayout']
   └── ObjectList (Epic 07)
       ├── ObjectListContent (flat virtualized list)
@@ -84,12 +84,12 @@ Mobile (viewport < 768px):
 
 ### Integration Points
 
-| Component      | Detail                                                                                                          |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| Panel Width    | `react-resizable-panels` `Panel` with `minSize`, `maxSize` props; `onLayout` → debounced `localStorage.setItem` |
-| Game Schema    | `useGameSchema()` hook — reads from React Query cache seeded by Epic 09                                         |
+| Component      | Detail                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Panel Width    | `ResizableWorkspace` enforces min/max pixel bounds and persists layout through the app store's debounced storage |
+| Game Schema    | `useGameSchema()` hook — reads from React Query cache seeded by Epic 09                                          |
 | Object List    | `useWorkspaceViewModel()` hook — reads runtime object rows from the shared workspace read-model                  |
-| Virtualization | `@tanstack/react-virtual` — single instance for the entire sidebar scroll container                             |
+| Virtualization | `@tanstack/react-virtual` — single instance for the entire sidebar scroll container                              |
 
 ### Security & Privacy
 
@@ -101,5 +101,5 @@ Mobile (viewport < 768px):
 
 ## 4. Dependencies
 
-- **Blocked by**: Epic 01 (App Bootstrap — state stores), Epic 05 (Workspace Layout — `react-resizable-panels` shell), Epic 07 (Object List), Epic 09 (Game Schema — category definitions).
+- **Blocked by**: Epic 01 (App Bootstrap — state stores), Epic 05 (Workspace Layout — custom `ResizableWorkspace` shell), Epic 07 (Object List), Epic 09 (Game Schema — category definitions).
 - **Blocks**: Nothing directly — objectlist is a consumer of data from other epics.

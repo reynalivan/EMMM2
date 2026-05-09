@@ -10,6 +10,7 @@ use tauri::{AppHandle, State};
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn bulk_toggle_mods(
     app: AppHandle,
     config: State<'_, ConfigService>,

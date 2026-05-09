@@ -47,7 +47,6 @@ export function CollectionList({
     null,
   );
 
-
   const startEdit = (collectionId: string, name: string) => {
     setEditingId(collectionId);
     setEditName(name);

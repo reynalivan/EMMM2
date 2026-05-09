@@ -19,6 +19,7 @@ use crate::services::fs_utils::guard::PathGuard;
 /// - `separate`: Rename one folder's base name to make them unique
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn resolve_conflict(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
@@ -188,7 +189,9 @@ pub struct FolderDetail {
     pub path: String,
     pub folder_name: String,
     pub is_enabled: bool,
+    #[specta(type = f64)]
     pub total_size: u64,
+    #[specta(type = f64)]
     pub file_count: usize,
     pub files: Vec<FileEntry>,
     pub thumbnail_path: Option<String>,
@@ -197,6 +200,7 @@ pub struct FolderDetail {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct FileEntry {
     pub name: String,
+    #[specta(type = f64)]
     pub size: u64,
     pub is_ini: bool,
 }

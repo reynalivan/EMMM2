@@ -42,4 +42,3 @@ describe('useAppStore object-list setters', () => {
     unsubscribe();
   });
 });
-

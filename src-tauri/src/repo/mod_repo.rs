@@ -630,6 +630,7 @@ pub async fn get_enabled_duplicates(
     .await
 }
 
+#[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
 pub async fn insert_new_mod<'c, E>(
     executor: E,
     id: &str,
@@ -653,7 +654,7 @@ where
     .bind(object_id)
     .bind(actual_name)
     .bind(folder_path)
-    .bind(folder_path_key(folder_path, mods_path.as_deref()))
+    .bind(folder_path_key(folder_path, mods_path))
     .bind(status as i64)
     .bind(is_safe)
     .bind(corridor_source)
@@ -686,7 +687,7 @@ where
     )
         .bind(new_id)
         .bind(new_folder_path)
-        .bind(folder_path_key(new_folder_path, mods_path.as_deref()))
+        .bind(folder_path_key(new_folder_path, mods_path))
         .bind(new_actual_name)
         .bind(new_status as i64)
         .bind(disabled_reason)
@@ -696,6 +697,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Transactional identity update mirrors the mod row fields being rewritten.
 pub async fn update_mod_identity_tx(
     conn: &mut sqlx::SqliteConnection,
     new_id: &str,
@@ -719,7 +721,7 @@ pub async fn update_mod_identity_tx(
     )
         .bind(new_id)
         .bind(new_folder_path)
-        .bind(folder_path_key(new_folder_path, mods_path.as_deref()))
+        .bind(folder_path_key(new_folder_path, mods_path))
         .bind(new_actual_name)
         .bind(new_status as i64)
         .bind(new_is_safe)
@@ -741,7 +743,7 @@ where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
     sqlx::query("DELETE FROM mods WHERE folder_path_key = ? AND game_id = ?")
-        .bind(folder_path_key(folder_path, mods_path.as_deref()))
+        .bind(folder_path_key(folder_path, mods_path))
         .bind(game_id)
         .execute(executor)
         .await?;
@@ -829,6 +831,7 @@ pub async fn update_mod_status_and_reason_tx(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
 pub async fn insert_mod_with_reason_tx(
     conn: &mut sqlx::SqliteConnection,
     id: &str,
@@ -852,7 +855,7 @@ pub async fn insert_mod_with_reason_tx(
     .bind(object_id)
     .bind(actual_name)
     .bind(folder_path)
-    .bind(folder_path_key(folder_path, mods_path.as_deref()))
+    .bind(folder_path_key(folder_path, mods_path))
     .bind(status as i64)
     .bind(object_type)
     .bind(is_favorite)
@@ -995,7 +998,7 @@ pub async fn get_all_mods_mapping(
             .fetch_all(pool)
             .await?;
 
-    Ok(rows.into_iter().map(|(path, id)| (path, id)).collect())
+    Ok(rows.into_iter().collect())
 }
 
 pub async fn get_mod_id_and_status_by_path_any(

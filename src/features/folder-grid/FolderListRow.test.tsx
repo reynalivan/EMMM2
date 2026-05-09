@@ -91,11 +91,7 @@ describe('FolderListRow', () => {
     const toggleSelection = vi.fn();
 
     render(
-      <FolderListRow
-        item={dummyFolder}
-        isSelected={false}
-        toggleSelection={toggleSelection}
-      />,
+      <FolderListRow item={dummyFolder} isSelected={false} toggleSelection={toggleSelection} />,
     );
 
     expect(screen.getByText('Folder 1')).toBeInTheDocument();

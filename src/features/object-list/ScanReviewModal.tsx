@@ -123,6 +123,7 @@ export default function ScanReviewModal({
         customSkinsJson: item.customSkinsJson,
         dbThumbnail: item.dbThumbnail,
         skip: isSkipped,
+        moveFromTemp: item.moveFromTemp,
       };
     });
     onConfirm(confirmed);

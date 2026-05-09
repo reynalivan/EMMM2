@@ -13,7 +13,19 @@ export interface WorkspaceSelection {
   explorer_sub_path: string | null;
   selected_mod_path: string | null;
   current_path: string[];
+  reconciliation_status: WorkspaceSelectionReconciliationStatus;
+  reconciliation_reason: WorkspaceSelectionReconciliationReason | null;
+  affected_paths: string[];
 }
+
+export type WorkspaceSelectionReconciliationStatus = 'unchanged' | 'fallback' | 'cleared';
+
+export type WorkspaceSelectionReconciliationReason =
+  | 'missing_object_root'
+  | 'missing_explorer_path'
+  | 'missing_mod_path'
+  | 'corridor_mismatch'
+  | 'source_unavailable';
 
 export type WorkspaceNodeKind = 'object' | 'container' | 'terminal_mod' | 'inactive_branch';
 
@@ -167,6 +179,14 @@ export interface WorkspacePreview {
 export interface WorkspaceRuntime {
   game_id: string;
   safe_mode: boolean;
+  source_state: WorkspaceSourceState;
+}
+
+export type WorkspaceSourceStatus = 'available' | 'unavailable';
+
+export interface WorkspaceSourceState {
+  status: WorkspaceSourceStatus;
+  message: string | null;
 }
 
 export type WorkspaceSwitchTargetKind = 'mod_path' | 'object_id';

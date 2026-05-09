@@ -60,7 +60,13 @@ pub async fn create_object_cmd(
     input: CreateObjectInput,
     pool: State<'_, sqlx::SqlitePool>,
     app: tauri::AppHandle,
+    watcher: State<'_, crate::services::scanner::watcher::WatcherState>,
+    op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
 ) -> CommandResult<String> {
+    let _lock = op_lock.acquire().await.map_err(|error| {
+        crate::types::errors::CommandError::Io(format!("Operation in progress: {error}"))
+    })?;
+    let _guard = crate::services::scanner::watcher::SuppressionGuard::new(&watcher.suppressor);
     create_object_cmd_inner(input, &pool, Some(&app)).await
 }
 

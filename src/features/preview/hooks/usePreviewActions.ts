@@ -159,13 +159,7 @@ export function usePreviewActions({
     } catch (error) {
       toast.error(t('preview:gallery.remove_error', { error: toErrorMessage(error) }));
     }
-  }, [
-    activePath,
-    currentImagePath,
-    removePreviewImage,
-    setCurrentImageIndex,
-    t,
-  ]);
+  }, [activePath, currentImagePath, removePreviewImage, setCurrentImageIndex, t]);
 
   const requestClearAllImages = useCallback(() => {
     if (images.length === 0) {

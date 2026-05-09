@@ -1,11 +1,15 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { commands } from '../../lib/bindings';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useAppStore } from '../../stores/useAppStore';
+import { toast } from '../../stores/useToastStore';
 import { ItemStatus, type ObjectFilter } from '../../types/object';
 import type { WorkspaceViewModel } from '../../types/workspace';
-import { useWorkspaceRuntimeSelector } from './state/workspaceStoreBridge';
+import {
+  dispatchWorkspaceRuntimeEvent,
+  useWorkspaceRuntimeSelector,
+} from './state/workspaceStoreBridge';
 
 export interface WorkspaceViewModelFilterInput {
   gameId: string | null;
@@ -72,6 +76,14 @@ export function buildWorkspaceViewModelInput(
   };
 }
 
+function buildReconciliationMessage(reason: string | null): string {
+  if (reason === 'source_unavailable') {
+    return 'Workspace source is unavailable. Selection was cleared.';
+  }
+
+  return 'Workspace target changed on disk. Selection was updated.';
+}
+
 export function useWorkspaceSelectionInput(): WorkspaceViewModelSelectionInput {
   const selectedObjectFolderPath = useWorkspaceRuntimeSelector(
     (state) => state.selectedObjectFolderPath,
@@ -105,7 +117,7 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
 
   const filter = buildWorkspaceViewModelFilter(filterInput);
 
-  return useQuery<WorkspaceViewModel>({
+  const query = useQuery<WorkspaceViewModel>({
     // ObjectList and FolderGrid must read the same workspace snapshot.
     // Focus/navigation changes only reshape the query key; they must not trigger Disk Reconcile.
     queryKey: workspaceKeys.viewModel(
@@ -123,4 +135,45 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     refetchOnWindowFocus: false,
     placeholderData: keepPreviousData,
   });
+
+  useEffect(() => {
+    if (!query.data || query.isPlaceholderData) {
+      return;
+    }
+
+    const reconciledSelection = query.data.selection;
+    const nextExplorerSubPath = reconciledSelection.explorer_sub_path ?? undefined;
+    const selectionMatches =
+      selection.selectedObjectFolderPath === reconciledSelection.selected_object_folder_path &&
+      selection.explorerSubPath === nextExplorerSubPath &&
+      selection.selectedModPath === reconciledSelection.selected_mod_path;
+
+    const reconciliationChanged = reconciledSelection.reconciliation_status !== 'unchanged';
+
+    if (selectionMatches && !reconciliationChanged) {
+      return;
+    }
+
+    dispatchWorkspaceRuntimeEvent({
+      type: 'SELECTION_RECONCILED',
+      selectedObjectFolderPath: reconciledSelection.selected_object_folder_path,
+      explorerSubPath: nextExplorerSubPath,
+      selectedModPath: reconciledSelection.selected_mod_path,
+      currentPath: reconciledSelection.current_path,
+      reconciliationStatus: reconciledSelection.reconciliation_status,
+      reconciliationReason: reconciledSelection.reconciliation_reason,
+      affectedPaths: reconciledSelection.affected_paths,
+    });
+    if (reconciliationChanged) {
+      toast.info(buildReconciliationMessage(reconciledSelection.reconciliation_reason), 4000);
+    }
+  }, [
+    query.data,
+    query.isPlaceholderData,
+    selection.explorerSubPath,
+    selection.selectedModPath,
+    selection.selectedObjectFolderPath,
+  ]);
+
+  return query;
 }

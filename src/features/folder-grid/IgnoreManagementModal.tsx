@@ -60,9 +60,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
               <h3 className="font-bold text-lg text-base-content">
                 {t('ignore_management.title')}
               </h3>
-              <p className="text-xs text-base-content/60">
-                {t('ignore_management.subtitle')}
-              </p>
+              <p className="text-xs text-base-content/60">{t('ignore_management.subtitle')}</p>
             </div>
           </div>
           <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>

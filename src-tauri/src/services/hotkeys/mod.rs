@@ -48,6 +48,7 @@ pub struct HotkeyConfig {
     /// Whether hotkeys are globally enabled.
     pub enabled: bool,
     /// Cooldown between successive hotkey triggers (milliseconds).
+    #[specta(type = f64)]
     pub cooldown_ms: u64,
     /// Key binding strings (e.g. "F5", "Shift+F6").
     pub toggle_safe_mode: String,

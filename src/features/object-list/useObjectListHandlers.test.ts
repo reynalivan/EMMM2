@@ -44,13 +44,58 @@ vi.mock('../../stores/useToastStore', () => ({
 }));
 
 vi.mock('../../stores/useAppStore', () => ({
-  useAppStore: {
-    getState: vi.fn(() => ({
-      explorerSubPath: '',
-      setExplorerSubPath: vi.fn(),
-      setCurrentPath: vi.fn(),
-    })),
-  },
+  useAppStore: Object.assign(
+    vi.fn(
+      (
+        selector?: (state: {
+          selectedObjectFolderPath: string | null;
+          explorerSubPath: string | undefined;
+          currentPath: string[];
+          selectedModPath: string | null;
+          mobileActivePane: 'sidebar' | 'grid' | 'details';
+          workspacePreviewDirty: boolean;
+          workspacePreviewTransition: { kind: 'idle'; pendingTarget: null };
+          workspaceDialogState: { kind: 'none' };
+          setExplorerSubPath: ReturnType<typeof vi.fn>;
+          setCurrentPath: ReturnType<typeof vi.fn>;
+        }) => unknown,
+      ) => {
+        const state = {
+          selectedObjectFolderPath: null,
+          explorerSubPath: '',
+          currentPath: [],
+          selectedModPath: null,
+          mobileActivePane: 'sidebar' as const,
+          workspacePreviewDirty: false,
+          workspacePreviewTransition: { kind: 'idle' as const, pendingTarget: null },
+          workspaceDialogState: { kind: 'none' as const },
+          setExplorerSubPath: vi.fn(),
+          setCurrentPath: vi.fn(),
+        };
+
+        if (!selector) {
+          return state;
+        }
+
+        return selector(state);
+      },
+    ),
+    {
+      getState: vi.fn(() => ({
+        selectedObjectFolderPath: null,
+        explorerSubPath: '',
+        currentPath: [],
+        selectedModPath: null,
+        mobileActivePane: 'sidebar',
+        workspacePreviewDirty: false,
+        workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
+        workspaceDialogState: { kind: 'none' },
+        setExplorerSubPath: vi.fn(),
+        setCurrentPath: vi.fn(),
+      })),
+      setState: vi.fn(),
+    },
+  ),
 }));
 
 const createWrapper = () => {

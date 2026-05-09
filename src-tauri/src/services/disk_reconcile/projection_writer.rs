@@ -70,18 +70,30 @@ fn root_key_for_folder_path(folder_path: &str) -> Option<String> {
     Some(root_key(&first.as_os_str().to_string_lossy()))
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct ProjectionWriteRequest<'a> {
+    pub game_id: &'a str,
+    pub mods_path: &'a Path,
+    pub safe_mode_keywords: &'a [String],
+    pub projection: &'a DiskProjection,
+    pub changed_roots: &'a [String],
+    pub force_full: bool,
+    pub path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
+    pub change_summary: &'a mut ChangeSummaryBuilder,
+}
+
 pub(crate) async fn reconcile_projection_in_tx(
     conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    mods_path: &Path,
-    safe_mode_keywords: &[String],
-    projection: &DiskProjection,
-    changed_roots: &[String],
-    force_full: bool,
-    path_updates: &mut Vec<DiskReconcilePathUpdate>,
-    change_summary: &mut ChangeSummaryBuilder,
+    request: ProjectionWriteRequest<'_>,
 ) -> Result<(bool, bool), String> {
+    let game_id = request.game_id;
+    let mods_path = request.mods_path;
+    let safe_mode_keywords = request.safe_mode_keywords;
+    let projection = request.projection;
+    let changed_roots = request.changed_roots;
+    let force_full = request.force_full;
+    let path_updates = request.path_updates;
+    let change_summary = request.change_summary;
+
     let db_objects = load_db_objects(&mut *conn, game_id).await?;
     let db_mods = load_db_mods(&mut *conn, game_id).await?;
     let db_objects_by_key = db_objects
@@ -163,15 +175,17 @@ pub(crate) async fn reconcile_projection_in_tx(
         let mut new_objects_count = 0usize;
         let object_id = crate::repo::object_repo::ensure_object_exists(
             &mut *conn,
-            game_id,
-            &disk_object.folder_path,
-            &disk_object.name,
-            "Other",
-            None,
-            "[]",
-            "{}",
-            None,
-            None,
+            crate::repo::object_repo::EnsureObjectInput {
+                game_id,
+                folder_path: &disk_object.folder_path,
+                obj_name: &disk_object.name,
+                obj_type: "Other",
+                db_thumbnail: None,
+                db_tags_json: "[]",
+                db_metadata_json: "{}",
+                db_hash_db_json: None,
+                db_custom_skins_json: None,
+            },
             &mut new_objects_count,
         )
         .await?;

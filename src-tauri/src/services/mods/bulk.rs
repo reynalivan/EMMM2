@@ -35,6 +35,7 @@ pub struct BulkResult {
 ///
 /// `mods_path` must be provided and already validated by the caller (command layer).
 /// Paths in `paths` are absolute; DB updates use relative paths computed from `mods_path`.
+#[allow(clippy::too_many_arguments)] // Bulk service needs app/config/pool/watcher context plus explicit user selection.
 pub async fn bulk_toggle(
     app: &AppHandle,
     config: &crate::services::config::ConfigService,

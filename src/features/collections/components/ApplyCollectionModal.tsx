@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useApplyCollectionPreview, useApplyCollection, useApplyProgress } from '../hooks/useCollections';
+import {
+  useApplyCollectionPreview,
+  useApplyCollection,
+  useApplyProgress,
+} from '../hooks/useCollections';
 import { useAppStore } from '../../../stores/useAppStore';
 import { CollectionTreeView } from './CollectionTreeView';
 import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
@@ -14,13 +18,7 @@ interface ApplyCollectionModalProps {
   onClose: () => void;
 }
 
-function SummaryStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
+function SummaryStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-base-content/8 bg-base-300/20 px-3 py-2">
       <div className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">{label}</div>
@@ -288,11 +286,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
         )}
 
         <div className="p-4 border-t border-base-content/5 bg-base-300 shrink-0 flex justify-end gap-2">
-          <button
-            className="btn btn-ghost"
-            onClick={onClose}
-            disabled={applyMutation.isPending}
-          >
+          <button className="btn btn-ghost" onClick={onClose} disabled={applyMutation.isPending}>
             {result
               ? t('common:actions.close')
               : missingPaths
@@ -319,10 +313,10 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
             >
               {applyMutation.isPending ? (
                 <Loader2 size={16} className="animate-spin" />
+              ) : missingPaths ? (
+                t('collections:apply.missing.confirm', 'Skip & Apply')
               ) : (
-                missingPaths
-                  ? t('collections:apply.missing.confirm', 'Skip & Apply')
-                  : t('collections:apply.actions.confirm')
+                t('collections:apply.actions.confirm')
               )}
             </button>
           )}

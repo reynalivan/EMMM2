@@ -21,7 +21,11 @@ export function isSameOrDescendantPath(candidatePath: string, rootPath: string):
   );
 }
 
-export function rewritePath(candidatePath: string, fromPath: string, toPath: string): string | null {
+export function rewritePath(
+  candidatePath: string,
+  fromPath: string,
+  toPath: string,
+): string | null {
   const normalizedCandidate = normalizePath(candidatePath);
   const normalizedFrom = normalizePath(fromPath);
   const normalizedTo = normalizePath(toPath);

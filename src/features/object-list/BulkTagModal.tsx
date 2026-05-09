@@ -68,9 +68,7 @@ export default function BulkTagModal({
 
         {mode === 'add' ? (
           <>
-            <p className="text-sm text-base-content/60 mb-3">
-              {t('bulk_tags.add_description')}
-            </p>
+            <p className="text-sm text-base-content/60 mb-3">{t('bulk_tags.add_description')}</p>
             <input
               type="text"
               className="input input-bordered w-full"
@@ -97,13 +95,9 @@ export default function BulkTagModal({
           </>
         ) : (
           <>
-            <p className="text-sm text-base-content/60 mb-3">
-              {t('bulk_tags.remove_description')}
-            </p>
+            <p className="text-sm text-base-content/60 mb-3">{t('bulk_tags.remove_description')}</p>
             {uniqueTags.length === 0 ? (
-              <p className="text-sm text-base-content/40 italic">
-                {t('bulk_tags.empty')}
-              </p>
+              <p className="text-sm text-base-content/40 italic">{t('bulk_tags.empty')}</p>
             ) : (
               <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
                 {uniqueTags.map((tag) => (

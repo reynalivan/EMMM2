@@ -92,9 +92,9 @@ fn build_mod_folder_with_path(
         .unwrap_or(0);
     let size_bytes = entry_meta.map(|m| m.len()).unwrap_or(0);
 
-    let info = analyze_mod_metadata(&path, sub_path);
+    let info = analyze_mod_metadata(path, sub_path);
     let (node_type, classification_reasons, warnings) =
-        crate::services::explorer::classifier::classify_folder(&path);
+        crate::services::explorer::classifier::classify_folder(path);
 
     Some(ModFolder {
         node_type: node_type.as_str().to_string(),
@@ -288,9 +288,7 @@ pub async fn list_mod_folders_inner(
         // target may not exist yet if renamed; fall back to the raw path.
         let canonical_target = target.canonicalize().unwrap_or_else(|_| target.clone());
         if !canonical_target.starts_with(&canonical_base) {
-            return Err(format!(
-                "PathEscapeError: sub_path resolves outside of mods_path"
-            ));
+            return Err("PathEscapeError: sub_path resolves outside of mods_path".to_string());
         }
     }
 

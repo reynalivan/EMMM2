@@ -17,45 +17,62 @@ pub async fn create_object_cmd_inner(
         .unwrap_or_else(|| "{}".to_string());
 
     let folder_path = input.folder_path.unwrap_or_else(|| input.name.clone());
+    validate_relative_object_folder(&folder_path)?;
 
     let mut thumbnail_abs_path: Option<String> = None;
     let mut pending_thumbnail_copy = None;
-    let mut pending_folder_creation = None;
 
     use sqlx::Row;
-    // Lookup the game path (this is the mods root)
     let game_row = sqlx::query("SELECT mods_path FROM games WHERE id = ?")
         .bind(&input.game_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| CommandError::Database(e.to_string()))?;
 
-    if let Some(game) = game_row {
-        if let Some(mods_path) = game.get::<Option<String>, _>("mods_path") {
-            let target_dir = std::path::Path::new(&mods_path).join(&folder_path);
+    let game = game_row.ok_or_else(|| CommandError::NotFound(input.game_id.clone()))?;
+    let mods_path = game
+        .get::<Option<String>, _>("mods_path")
+        .ok_or_else(|| CommandError::NotFound("Game mods path not configured".to_string()))?;
+    let target_dir = std::path::Path::new(&mods_path).join(&folder_path);
 
-            pending_folder_creation = Some(target_dir.clone());
+    if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
+        if let Ok(res_dir) = app.path().resource_dir() {
+            let source_thumb: std::path::PathBuf = res_dir.join("databases").join(thumb);
+            if source_thumb.exists() {
+                let ext = source_thumb.extension().unwrap_or_default();
+                let dest_thumb = target_dir.join(format!("preview.{}", ext.to_string_lossy()));
 
-            // Determine if thumbnail_url is provided so we can derive the future dest path
-            if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
-                if let Ok(res_dir) = app.path().resource_dir() {
-                    let source_thumb: std::path::PathBuf = res_dir.join("databases").join(thumb);
-                    if source_thumb.exists() {
-                        let ext = source_thumb.extension().unwrap_or_default();
-                        let dest_thumb =
-                            target_dir.join(format!("preview.{}", ext.to_string_lossy()));
-
-                        thumbnail_abs_path = Some(dest_thumb.to_string_lossy().to_string());
-                        pending_thumbnail_copy = Some((source_thumb, dest_thumb));
-                    }
-                }
+                thumbnail_abs_path = Some(dest_thumb.to_string_lossy().to_string());
+                pending_thumbnail_copy = Some((source_thumb, dest_thumb));
             }
         }
     }
 
-    // 1. Insert to database FIRST to prevent race condition with filesystem watcher.
-    // If the watcher triggers immediately after folder creation, it will find the DB record
-    // and won't insert an "Other" category default placeholder.
+    let created_folder = !target_dir.exists();
+    std::fs::create_dir_all(&target_dir).map_err(|error| {
+        CommandError::Io(format!(
+            "Failed to create object folder '{}': {error}",
+            target_dir.display()
+        ))
+    })?;
+
+    if !target_dir.is_dir() {
+        return Err(CommandError::Io(format!(
+            "Failed to create object folder '{}': target is not a directory",
+            target_dir.display()
+        )));
+    }
+
+    if let Some((src, dest)) = &pending_thumbnail_copy {
+        std::fs::copy(src, dest).map_err(|error| {
+            cleanup_created_object_folder(&target_dir, created_folder);
+            CommandError::Io(format!(
+                "Failed to copy object thumbnail to '{}': {error}",
+                dest.display()
+            ))
+        })?;
+    }
+
     let res = crate::repo::object_repo::create_object(
         pool,
         &id,
@@ -74,18 +91,6 @@ pub async fn create_object_cmd_inner(
 
     match res {
         Ok(_) => {
-            // 2. Safely create folder now that the DB has the correct object logic
-            if let Some(target_dir) = pending_folder_creation {
-                if !target_dir.exists() {
-                    let _ = std::fs::create_dir_all(&target_dir);
-                }
-            }
-
-            // 3. Copy thumbnail if needed
-            if let Some((src, dest)) = pending_thumbnail_copy {
-                let _ = std::fs::copy(&src, &dest);
-            }
-
             crate::services::runtime_projection_service::refresh_object_projection(
                 pool,
                 &input.game_id,
@@ -97,6 +102,7 @@ pub async fn create_object_cmd_inner(
             Ok(id)
         }
         Err(e) => {
+            cleanup_created_object_folder(&target_dir, created_folder);
             let msg = e.to_string().to_lowercase();
             if msg.contains("unique constraint failed") || msg.contains("idx_objects_game_name") {
                 Err(CommandError::Database(format!(
@@ -107,6 +113,49 @@ pub async fn create_object_cmd_inner(
                 Err(e.into())
             }
         }
+    }
+}
+
+fn validate_relative_object_folder(folder_path: &str) -> Result<(), CommandError> {
+    let trimmed = folder_path.trim();
+    if trimmed.is_empty() {
+        return Err(CommandError::App(
+            "Object folder path cannot be empty".to_string(),
+        ));
+    }
+
+    let path = std::path::Path::new(trimmed);
+    if path.is_absolute() {
+        return Err(CommandError::App(
+            "Object folder path must be relative".to_string(),
+        ));
+    }
+
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            _ => {
+                return Err(CommandError::App(
+                    "Object folder path contains invalid components".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn cleanup_created_object_folder(path: &std::path::Path, created_folder: bool) {
+    if !created_folder {
+        return;
+    }
+
+    if let Err(error) = std::fs::remove_dir(path) {
+        log::warn!(
+            "Failed to remove object folder '{}' after create failure: {}",
+            path.display(),
+            error
+        );
     }
 }
 
@@ -197,7 +246,7 @@ pub async fn delete_object(
     // 1.5. Safety Guard: Check if the object has any mods
     let count = crate::repo::object_repo::get_mod_count_for_object(pool, id).await?;
     if count > 0 && !force {
-        return Err(CommandError::ObjectHasMods(count));
+        return Err(CommandError::ObjectHasMods(count as i32));
     }
 
     // 2. Move folder to trash (if it exists on disk)

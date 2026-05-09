@@ -104,15 +104,18 @@ pub async fn delete_mod_thumbnail(
     }
 
     let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        &app,
-        pool.inner(),
-        &config,
-        &disk_reconcile_state,
-        watcher.suppressor.clone(),
-        game_id,
-        DiskReconcileReason::InternalMutation,
-        changed_paths,
-        false,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool: pool.inner(),
+            config: config.inner(),
+            state: disk_reconcile_state.inner(),
+            watcher_suppressor: watcher.suppressor.clone(),
+        },
+        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id,
+            DiskReconcileReason::InternalMutation,
+            changed_paths,
+            false,
+        ),
     )
     .await?;
 

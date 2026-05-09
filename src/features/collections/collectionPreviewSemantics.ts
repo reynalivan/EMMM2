@@ -16,9 +16,12 @@ const NODE_TYPE_LABEL_KEYS: Record<string, string> = {
 
 export function buildCollectionPreviewNodeSemantics(
   t: TFunction,
-  node: Pick<PreviewTreeNode, 'node_type' | 'status_kind' | 'show_inactive_chip' | 'warnings' | 'inactive_reason'>,
+  node: Pick<
+    PreviewTreeNode,
+    'node_type' | 'status_kind' | 'show_inactive_chip' | 'warnings' | 'inactive_reason'
+  >,
 ): CollectionPreviewNodeSemantics {
-  const typeLabelKey = node.node_type ? NODE_TYPE_LABEL_KEYS[node.node_type] ?? null : null;
+  const typeLabelKey = node.node_type ? (NODE_TYPE_LABEL_KEYS[node.node_type] ?? null) : null;
   const statusLabel = getCollectionNodeStatusLabel(t, node);
   const warningTitle = getCollectionNodeWarningTitle(node);
 

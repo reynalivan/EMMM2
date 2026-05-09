@@ -31,7 +31,7 @@ impl CollectionKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_db_value(s: &str) -> Self {
         match s {
             "undo_snapshot" => Self::UndoSnapshot,
             "unsaved" => Self::Unsaved,
@@ -61,7 +61,7 @@ impl MemberKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_db_value(s: &str) -> Self {
         match s {
             "nested" => Self::Nested,
             "object" => Self::Object,

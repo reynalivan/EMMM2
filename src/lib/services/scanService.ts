@@ -285,6 +285,32 @@ export const scanService = {
   },
 
   /**
+   * Deep Match Scanner preview for selected workspace objects.
+   */
+  async runDeepmatchPreviewForObjects(
+    gameId: string,
+    gameType: GameType,
+    modsPath: string,
+    objectIds: string[],
+    onEvent?: (event: ScanEvent) => void,
+  ): Promise<ScanPreviewItem[]> {
+    const channel = new Channel<ScanEvent>();
+    if (onEvent) {
+      channel.onmessage = onEvent;
+    }
+    const dbJson = await this.getMasterDb(gameType);
+    return commands.runDeepmatchPreviewForObjects({
+      input: {
+        gameId,
+        modsPath,
+        dbJson,
+        objectIds,
+      },
+      onProgress: channel,
+    });
+  },
+
+  /**
    * Phase 2: Commit user-confirmed scan results to DB.
    */
   async commitScan(

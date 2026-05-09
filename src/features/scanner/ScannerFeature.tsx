@@ -13,6 +13,7 @@ import type { ArchiveInfo } from '../../types/scanner';
 import { toast } from '../../stores/useToastStore';
 import type { ScanResultItem } from '../../types/scanner';
 import { publishQueryScopes } from '../runtime-sync/queryRefresh';
+import { withWatcherSuppression } from '../file-watcher/watcherSuppression';
 
 import ArchiveModal from './components/ArchiveModal';
 import ScanOverlay from './components/ScanOverlay';
@@ -80,10 +81,7 @@ export default function ScannerFeature() {
     }) => {
       if (!activeGame) throw new Error(t('common:errors.no_active_game'));
 
-      // B3: Suppress watcher for the entire batch
-      await commands.setWatcherSuppressionCmd({ suppressed: true });
-
-      try {
+      await withWatcherSuppression({ releaseDelayMs: null }, async () => {
         setPasswordError(null);
         const result = await scanService.extractArchiveBatch(
           paths,
@@ -101,10 +99,7 @@ export default function ScannerFeature() {
           }
           throw new Error(result.error);
         }
-      } finally {
-        // B3: Always unsuppress after archive extraction batch
-        await commands.setWatcherSuppressionCmd({ suppressed: false });
-      }
+      });
     },
     onSuccess: () => {
       if (passwordError) return; // modal still open for retry

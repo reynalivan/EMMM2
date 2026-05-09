@@ -102,11 +102,12 @@ async fn process_event_loop(
 
         // Disk Reconcile only. Watcher must never invoke the Deep Match Scanner pipeline.
         match crate::services::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
-            &app,
-            &pool,
-            &config,
-            &disk_reconcile_state,
-            suppressor.clone(),
+            crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+                pool: &pool,
+                config: config.inner(),
+                state: disk_reconcile_state.inner(),
+                watcher_suppressor: suppressor.clone(),
+            },
             game_id.clone(),
             changed_paths,
             &batch,

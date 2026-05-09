@@ -39,9 +39,9 @@ describe('FilterPanel Component', () => {
       />,
     );
     // Status row (All / Enabled / Disabled) should always render
-    expect(screen.getByText('All')).toBeInTheDocument();
-    expect(screen.getByText('Enabled')).toBeInTheDocument();
-    expect(screen.getByText('Disabled')).toBeInTheDocument();
+    expect(screen.getByText('filter.status_all')).toBeInTheDocument();
+    expect(screen.getByText('filter.status_active')).toBeInTheDocument();
+    expect(screen.getByText('filter.status_disabled')).toBeInTheDocument();
   });
 
   it('renders filter buttons correctly', () => {

@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (optimistic UI), be safe (suppress file watcher, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.
-- **Proposed Solution**: A shared runtime action engine that routes toggle through the public workspace switch command (`execute_workspace_switch`) and delegates physical enabled/disabled folder mutation to the same runtime mutation engine used by Collections and Safe Mode switch. Rename/delete remain dedicated backend commands, with `OperationLock` + `WatcherSuppression`, structured errors, `WorkspaceImpact` refresh semantics, and optimistic runtime descriptors that roll back on failure.
+- **Proposed Solution**: A shared runtime action engine that routes toggle through the public workspace switch command (`execute_workspace_switch`) and delegates physical enabled/disabled folder mutation to the same runtime mutation engine used by Collections and Safe Mode switch. Rename/delete remain dedicated backend commands, with `OperationLock` + ref-counted `WatcherSuppression`, structured errors, targeted Disk Reconcile/projection refresh completion, and optimistic runtime descriptors that roll back on failure.
 - **Success Criteria**:
   - [x] Toggle UI optimistic update applies in ≤ 16ms (one frame); backend confirms within ≤ 300ms on SSD.
   - [x] Rename completes (disk + metadata sync) in ≤ 500ms for a flat mod folder.
@@ -81,7 +81,8 @@ execute_workspace_switch(input):
   2. Compute target path / duplicate strategy / parent-enable resolution.
   3. Validate current corridor parity, path traversal, missing source path, and target collision before disk mutation.
   4. Delegate enabled/disabled filesystem rename and DB projection (`status`, `folder_path`, `folder_path_key`, `disabled_reason`) to `runtime_mutation_engine`.
-  5. Return structured switch result + WorkspaceImpact.
+  5. Finish through targeted Disk Reconcile or the shared runtime projection effect path.
+  6. Return structured switch result + WorkspaceImpact.
 
 rename_mod(old_path, new_name):
   1. Acquire OperationLock + Suppress Watcher.
@@ -98,14 +99,15 @@ delete_mod(path):
 
 ### Integration Points
 
-| Component                 | Detail                                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `OperationLock`           | Shared mutex per game workspace; serializes all filesystem mutations.                                              |
-| `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                   |
-| `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                             |
-| `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects. |
+| Component                 | Detail                                                                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `OperationLock`           | Shared mutex per game workspace; serializes all filesystem mutations.                                                            |
+| `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                                 |
+| `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                                           |
+| `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects.               |
 | `Runtime Mutation Engine` | Single backend boundary for `DISABLED ` prefix changes used by manual toggle, collection apply, and Safe/Unsafe corridor switch. |
-| `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code does not call raw `invalidateQueries`.  |
+| `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code does not call raw `invalidateQueries`.                |
+| Disk Reconcile            | Internal filesystem mutations suppress watcher noise, then complete through one intentional runtime refresh path.                |
 
 ### Security & Privacy
 

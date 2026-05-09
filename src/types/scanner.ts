@@ -97,6 +97,7 @@ export type ScanPreviewItem = {
   hashDbJson: string | null;
   customSkinsJson: string | null;
   dbThumbnail: string | null;
+  moveFromTemp?: boolean;
 };
 
 export interface SyncResult {

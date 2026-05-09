@@ -18,15 +18,18 @@ async fn emit_internal_disk_reconcile(
     changed_paths: Vec<String>,
 ) -> Result<(), AppError> {
     let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        app,
-        pool,
-        config,
-        disk_reconcile_state,
-        watcher.suppressor.clone(),
-        game_id.to_string(),
-        DiskReconcileReason::InternalMutation,
-        changed_paths,
-        false,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool,
+            config,
+            state: disk_reconcile_state,
+            watcher_suppressor: watcher.suppressor.clone(),
+        },
+        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id.to_string(),
+            DiskReconcileReason::InternalMutation,
+            changed_paths,
+            false,
+        ),
     )
     .await
     .map_err(AppError::Internal)?;
@@ -45,7 +48,7 @@ pub async fn repair_orphan_mods(
 ) -> Result<usize, AppError> {
     let repaired = metadata::repair_orphan_mods(pool.inner(), &game_id)
         .await
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
 
     if repaired > 0 {
         let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
@@ -128,7 +131,7 @@ pub async fn suggest_random_mods(
 ) -> Result<Vec<metadata::RandomModProposal>, AppError> {
     metadata::suggest_random_mods(pool.inner(), &game_id, is_safe)
         .await
-        .map_err(|e| AppError::Internal(e))
+        .map_err(AppError::Internal)
 }
 
 #[specta::specta]
@@ -139,7 +142,7 @@ pub async fn get_active_mod_conflicts(
 ) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, AppError> {
     metadata::get_active_mod_conflicts(pool.inner(), &game_id)
         .await
-        .map_err(|e| AppError::Internal(e))
+        .map_err(AppError::Internal)
 }
 
 #[specta::specta]
@@ -156,6 +159,7 @@ pub async fn read_mod_info(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn update_mod_info(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
@@ -212,6 +216,51 @@ pub async fn set_mod_category(
 
 #[specta::specta]
 #[tauri::command]
+pub async fn set_object_mods_category(
+    config: tauri::State<'_, ConfigService>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    state: tauri::State<'_, WatcherState>,
+    game_id: String,
+    object_id: String,
+    category: String,
+) -> Result<usize, AppError> {
+    let updated =
+        set_object_mods_category_inner(pool.inner(), &game_id, &object_id, &category).await?;
+
+    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        &pool,
+        &config,
+        state.suppressor.clone(),
+        &game_id,
+        &[],
+        false,
+        true,
+    )
+    .await;
+
+    Ok(updated)
+}
+
+async fn set_object_mods_category_inner(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    object_id: &str,
+    category: &str,
+) -> Result<usize, AppError> {
+    let result = sqlx::query("UPDATE mods SET object_type = ? WHERE game_id = ? AND object_id = ?")
+        .bind(category)
+        .bind(game_id)
+        .bind(object_id)
+        .execute(pool)
+        .await
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+
+    Ok(result.rows_affected() as usize)
+}
+
+#[specta::specta]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn move_mod_to_object(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,

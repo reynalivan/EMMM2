@@ -85,7 +85,7 @@ pub async fn resolve_collision_service(
             // Merge is complex, requirement says "if both are folders".
             // For now, let's treat it as Overwrite but we should ideally merge files.
             // Requirement 39.2.1 mentions Merge. Let's do a simple recursive copy/move.
-            merge_folders(src, tgt).map_err(|e| AppError::Io(e))?;
+            merge_folders(src, tgt).map_err(AppError::Io)?;
 
             // Sync DB: src is gone
             let _ = crate::repo::mod_repo::delete_mod_by_path(pool, &collision.source_path).await;

@@ -11,7 +11,7 @@
   - Dashboard JSON payload ≤ 5KB per response.
   - Dashboard renders fully within ≤ 500ms of navigation (first paint + data fetch).
   - Missing or unreadable `d3dx.ini` shows a graceful empty state — no crash.
-  - Dashboard statistics auto-refresh after bulk ops via `staleTime` expiry or `invalidateQueries`.
+  - Dashboard statistics auto-refresh after bulk ops via `staleTime` expiry or runtime-sync descriptors.
 
 ---
 
@@ -76,12 +76,12 @@ As a user, I want to see which keybinds my currently active mods define, so that
 
 As a system, I want dashboard data to be cached and refreshable, so that the UI stays fast during normal browsing but updates are visible after bulk operations.
 
-| ID        | Type        | Criteria                                                                                                                                                    |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-33.5.1 | ✅ Positive | Given Dashboard stats/distributions, they are cached with `staleTime: 30s` for rapid navigation access.                                                     |
-| AC-33.5.2 | ✅ Positive | Given active keybindings, they are cached with `staleTime: 60s` due to the intensive filesystem scan required for .ini parsing.                             |
-| AC-33.5.3 | ✅ Positive | Given a manual "Refresh" button, when clicked, then `invalidateQueries` fires and fresh data loads (skeleton shimmer visible during load).                  |
-| AC-33.5.3 | ❌ Negative | Given a DB aggregation query fails (DB locked), then the dashboard shows a skeleton loader + "Refresh" button — no white screen or unhandled error boundary |
+| ID        | Type        | Criteria                                                                                                                                                                  |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-33.5.1 | ✅ Positive | Given Dashboard stats/distributions, they are cached with `staleTime: 30s` for rapid navigation access.                                                                   |
+| AC-33.5.2 | ✅ Positive | Given active keybindings, they are cached with `staleTime: 60s` due to the intensive filesystem scan required for .ini parsing.                                           |
+| AC-33.5.3 | ✅ Positive | Given a manual "Refresh" button, when clicked, then the dashboard query refetches through its refresh helper and fresh data loads (skeleton shimmer visible during load). |
+| AC-33.5.3 | ❌ Negative | Given a DB aggregation query fails (DB locked), then the dashboard shows a skeleton loader + "Refresh" button — no white screen or unhandled error boundary               |
 
 ---
 
@@ -153,7 +153,7 @@ Charts: Recharts PieChart + BarChart
 | Duplicate Banner | `duplicate_waste_bytes` from dedup cache (Epic 32) — if > 0 shows banner                                   |
 | Quick Play       | `commands.launchGame({ game_id: last_played_game_id })` — reuses Epic 01 launch logic                      |
 | Demo Scenes      | Integrated `SmartDemoStrip`, `DemoKeybindSpotlight`, and `DemoTogglePreset` for landing/onboarding visuals |
-| Cache            | React Query `staleTime: 30_000ms`; `invalidateQueries(['dashboardStats'])` after bulk ops                  |
+| Cache            | React Query `staleTime: 30_000ms`; runtime-sync descriptors after bulk ops                                 |
 
 ### Security & Privacy
 

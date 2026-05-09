@@ -25,11 +25,11 @@ As a user, I want to select unorganized mod folders and have the app move them t
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | AC-38.1.1 | ✅ Positive | Given a selection of mods with known `object_id`, when I trigger "Auto-Organize", then each mod is moved to `mods_path/{category}/{object_name}/{folder_name}` — folder name is preserved, only its parent changes |
 | AC-38.1.2 | ✅ Positive | Given a successful move, then the `folders` DB row's `folder_path` is updated to the new path in the same DB transaction as the metadata update — no orphaned rows                                                 |
-| AC-38.1.3 | ✅ Positive | Given the batch completes, then a toast shows "Organized N mods" and `queryClient.invalidateQueries()` refreshes the grid                                                                                          |
+| AC-38.1.3 | ✅ Positive | Given the batch completes, then a toast shows "Organized N mods" and runtime-sync descriptors refresh the grid                                                                                                     |
 | AC-38.1.4 | ❌ Negative | Given the target destination `mods_path/{category}/{object_name}/{folder_name}` already exists, then that mod is skipped — logged as "DUPLICATE" in `BulkResult.errors`; the original folder is NOT moved          |
 | AC-38.1.5 | ❌ Negative | Given a mod has `object_id = NULL` (uncategorized), then it is also skipped with status "NO_OBJECT" — organize cannot place what has no owner                                                                      |
 | AC-38.1.6 | ⚠️ Edge     | Given the mod is currently enabled (`is_enabled = true`), then the rename/move still proceeds (the new path retains the filename without "DISABLED " prefix) — the enabled state is preserved correctly            |
-| AC-38.1.7 | ✅ Positive | Given the object has a canonical Deep Match relation, Auto Organize still preserves the physical object folder name/path; canonical alias data is enrichment only and does not rename folders                       |
+| AC-38.1.7 | ✅ Positive | Given the object has a canonical Deep Match relation, Auto Organize still preserves the physical object folder name/path; canonical alias data is enrichment only and does not rename folders                      |
 
 ---
 
@@ -66,14 +66,14 @@ Frontend:
 
 ### Integration Points
 
-| Component                          | Detail                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------------------ |
-| OperationLock + WatcherSuppression | Scoped to the entire batch — prevents intermediate FS events                               |
-| DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename` |
-| Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)           |
-| Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize       |
+| Component                          | Detail                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| OperationLock + WatcherSuppression | Scoped to the entire batch — prevents intermediate FS events                                                                                    |
+| DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename`                                                      |
+| Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)                                                                |
+| Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize                                                            |
 | Canonical Relation                 | Uses physical object ownership; `matched_entry_key` / `matched_alias_name` stay as enrichment and never rewrite the physical target folder name |
-| Frontend                           | Context menu "Auto-Organize" on bulk selection → Deep Match Scanner preview + commit        |
+| Frontend                           | Context menu "Auto-Organize" on bulk selection → Deep Match Scanner preview + commit                                                            |
 
 ### Security & Privacy
 

@@ -16,6 +16,27 @@ pub struct WorkspaceSelection {
     pub explorer_sub_path: Option<String>,
     pub selected_mod_path: Option<String>,
     pub current_path: Vec<String>,
+    pub reconciliation_status: WorkspaceSelectionReconciliationStatus,
+    pub reconciliation_reason: Option<WorkspaceSelectionReconciliationReason>,
+    pub affected_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceSelectionReconciliationStatus {
+    Unchanged,
+    Fallback,
+    Cleared,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceSelectionReconciliationReason {
+    MissingObjectRoot,
+    MissingExplorerPath,
+    MissingModPath,
+    CorridorMismatch,
+    SourceUnavailable,
 }
 
 #[derive(Clone, Serialize, specta::Type)]
@@ -246,6 +267,20 @@ pub struct WorkspacePreview {
 pub struct WorkspaceRuntime {
     pub game_id: String,
     pub safe_mode: bool,
+    pub source_state: WorkspaceSourceState,
+}
+
+#[derive(Clone, Serialize, specta::Type)]
+pub struct WorkspaceSourceState {
+    pub status: WorkspaceSourceStatus,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceSourceStatus {
+    Available,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

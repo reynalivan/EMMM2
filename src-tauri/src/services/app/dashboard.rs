@@ -60,6 +60,7 @@ pub async fn get_active_keybindings_service(
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct DashboardPayload {
     pub stats: crate::repo::dashboard_repo::DashboardStats,
+    #[specta(type = f64)]
     pub duplicate_waste_bytes: i64,
     pub category_distribution: Vec<crate::repo::dashboard_repo::CategorySlice>,
     pub game_distribution: Vec<crate::repo::dashboard_repo::GameSlice>,

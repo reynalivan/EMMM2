@@ -22,9 +22,7 @@ import { useAppStore } from '../../stores/useAppStore';
 import { useModContextMenuItems } from '../../hooks/useModContextMenuItems';
 import { useModContextMenuActions } from '../mod-runtime/actions/useModContextMenuActions';
 
-import {
-  ContextMenu,
-} from '../../components/ui/ContextMenu';
+import { ContextMenu } from '../../components/ui/ContextMenu';
 import { useThumbnail } from '../../hooks/useThumbnail';
 import {
   formatWorkspaceReason,
@@ -202,9 +200,7 @@ function FolderListRowInner({
                   <button
                     type="button"
                     className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
-                      contextItem.danger
-                        ? 'text-error hover:bg-error/10'
-                        : 'hover:bg-base-200'
+                      contextItem.danger ? 'text-error hover:bg-error/10' : 'hover:bg-base-200'
                     }`}
                     onClick={contextItem.onClick}
                   >

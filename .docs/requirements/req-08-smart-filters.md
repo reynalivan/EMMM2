@@ -60,12 +60,12 @@ As a user, I want to filter the objectlist by status (enabled/disabled) or categ
 
 As a privacy-conscious user, I want Safe Mode to isolate unsafe runtime content without collapsing the navigation pane, so that sensitive content is never previewed while ObjectList remains stable.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                   |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-08.4.1 | ✅ Positive | Given Safe Mode is ENABLED, then ObjectList still shows all objects, but enabled counts and runtime active state are projected only from the Safe corridor                                                                                                                                                |
-| AC-08.4.2 | ✅ Positive | Given Safe Mode is DISABLED (Unsafe Corridor), then ObjectList still shows all objects, but enabled counts and runtime active state are projected only from the Unsafe corridor                                                                                                                  |
-| AC-08.4.3 | ❌ Negative | Given an object contains only unsafe mods, then in Safe Mode it remains visible as an object row for navigation, but shows no active Safe-corridor mod state and cannot reveal unsafe preview content                                                                                         |
-| AC-08.4.4 | ⚠️ Edge     | Given Safe Mode is toggled mid-session while an unsafe mod is selected, then the runtime selection is cleared or rewritten within ≤ 100ms and no sensitive mod detail remains visible in the preview panel                                                                                   |
+| ID        | Type        | Criteria                                                                                                                                                                                                   |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-08.4.1 | ✅ Positive | Given Safe Mode is ENABLED, then ObjectList still shows all objects, but enabled counts and runtime active state are projected only from the Safe corridor                                                 |
+| AC-08.4.2 | ✅ Positive | Given Safe Mode is DISABLED (Unsafe Corridor), then ObjectList still shows all objects, but enabled counts and runtime active state are projected only from the Unsafe corridor                            |
+| AC-08.4.3 | ❌ Negative | Given an object contains only unsafe mods, then in Safe Mode it remains visible as an object row for navigation, but shows no active Safe-corridor mod state and cannot reveal unsafe preview content      |
+| AC-08.4.4 | ⚠️ Edge     | Given Safe Mode is toggled mid-session while an unsafe mod is selected, then the runtime selection is cleared or rewritten within ≤ 100ms and no sensitive mod detail remains visible in the preview panel |
 
 ---
 
@@ -102,13 +102,13 @@ Fuzzy search (heavy path):
 
 ### Integration Points
 
-| Component        | Detail                                                                                                                                   |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Object Query     | `commands.getWorkspaceViewModel({ input })` — filtering/sorting applied in the backend runtime projection |
-| Fuzzy Search     | `fuzzysort` npm package (Jaro-Winkler variant) — threshold 0.75, runs in Web Worker for ≥ 500 objects                                    |
-| Sort Persist     | `localStorage['sidebarSort']` — string enum `'az'                                                                                        | 'active_first'` |
-| Safe Mode        | Read from `useAppStore.safeMode` Zustand state → passed into `getWorkspaceViewModel({ input })` corridor-aware runtime projection         |
-| Query Refresh    | Filter changes update workspace query params; runtime refresh uses descriptor scopes instead of direct invalidation                       |
+| Component     | Detail                                                                                                                            |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Object Query  | `commands.getWorkspaceViewModel({ input })` — filtering/sorting applied in the backend runtime projection                         |
+| Fuzzy Search  | `fuzzysort` npm package (Jaro-Winkler variant) — threshold 0.75, runs in Web Worker for ≥ 500 objects                             |
+| Sort Persist  | `localStorage['sidebarSort']` — string enum `'az'                                                                                 | 'active_first'` |
+| Safe Mode     | Read from `useAppStore.safeMode` Zustand state → passed into `getWorkspaceViewModel({ input })` corridor-aware runtime projection |
+| Query Refresh | Filter changes update workspace query params; runtime refresh uses descriptor scopes instead of direct invalidation               |
 
 ### Security & Privacy
 

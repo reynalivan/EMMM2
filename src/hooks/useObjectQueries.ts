@@ -3,7 +3,12 @@ import { commands } from '../lib/bindings';
 import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
 import { getCategoryCounts } from '../lib/services/objectService';
-import { buildObjectListRefreshDescriptor, objectKeys, type CategoryCount, type GameSchema } from './objectQueryCache';
+import {
+  buildObjectListRefreshDescriptor,
+  objectKeys,
+  type CategoryCount,
+  type GameSchema,
+} from './objectQueryCache';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import type { GameType } from '../types/game';
 

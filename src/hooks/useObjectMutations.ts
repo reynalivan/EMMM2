@@ -33,11 +33,7 @@ export function useUpdateObject() {
       restoreObjectListQueries(queryClient, context.previousQueries);
     },
     onSuccess: async () => {
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildObjectListRefreshDescriptor({}),
-        'active',
-      );
+      await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
     },
   });
 }
@@ -48,11 +44,7 @@ export function useDeleteObject() {
   return useMutation({
     mutationFn: ({ id, force }: { id: string; force: boolean }) => deleteObject(id, force),
     onSuccess: async () => {
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildObjectListRefreshDescriptor({}),
-        'active',
-      );
+      await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
     },
   });
 }
@@ -63,11 +55,7 @@ export function useCreateObject() {
   return useMutation({
     mutationFn: (input: CreateObjectInput) => createObject(input),
     onSuccess: async () => {
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildObjectListRefreshDescriptor({}),
-        'active',
-      );
+      await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
     },
   });
 }

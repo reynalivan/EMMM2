@@ -134,15 +134,17 @@ async fn ensure_object_exists_matches_unicode_names_without_duplicate_rows() {
     let mut new_objects_count = 0;
     let object_id = ensure_object_exists(
         &mut tx,
-        "g_unicode",
-        "한글mod",
-        "preset_日本語",
-        "Character",
-        None,
-        "[]",
-        "{}",
-        None,
-        None,
+        EnsureObjectInput {
+            game_id: "g_unicode",
+            folder_path: "한글mod",
+            obj_name: "preset_日本語",
+            obj_type: "Character",
+            db_thumbnail: None,
+            db_tags_json: "[]",
+            db_metadata_json: "{}",
+            db_hash_db_json: None,
+            db_custom_skins_json: None,
+        },
         &mut new_objects_count,
     )
     .await

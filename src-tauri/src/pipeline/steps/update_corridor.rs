@@ -4,8 +4,10 @@ use crate::repo::corridor_repo;
 
 /// Step 8: Update corridor pointers to reflect the applied collection.
 pub async fn update(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let signature =
-        crate::services::collection_service::compute_signature(&ctx.target_mods, &ctx.target_objects);
+    let signature = crate::services::collection_service::compute_signature(
+        &ctx.target_mods,
+        &ctx.target_objects,
+    );
     ctx.new_signature = signature.clone();
     let previous_state = corridor_repo::get(&ctx.pool, &ctx.game_id, ctx.is_safe).await?;
     let previous_active_collection_id = previous_state

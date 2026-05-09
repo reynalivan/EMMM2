@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::helpers::{
     ensure_game_exists, ensure_object_exists, generate_stable_id,
-    resolve_or_create_object_target_for_match,
+    resolve_or_create_object_target_for_match, ResolveObjectTargetInput,
 };
 use super::types::{ConfirmedScanItem, SyncResult};
 use crate::database::models::ItemStatus;
@@ -13,39 +13,29 @@ use crate::services::corridor_constants::{
     CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN, DISABLED_REASON_USER,
 };
 
+pub struct CommitScanRequest<'a> {
+    pub pool: &'a SqlitePool,
+    pub game_id: &'a str,
+    pub game_name: &'a str,
+    pub game_type: &'a str,
+    pub mods_path: &'a str,
+    pub items: Vec<ConfirmedScanItem>,
+    pub resource_dir: Option<&'a Path>,
+    pub safe_mode_keywords: &'a [String],
+    pub preserve_existing_mappings: bool,
+}
+
 async fn resolve_temp_target_object_folder(
     conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    mods_path: &str,
-    physical_name_hint: &str,
-    matched_entry_key: Option<&str>,
-    object_type: &str,
-    db_thumbnail: Option<&str>,
-    db_tags_json: &str,
-    db_metadata_json: &str,
-    db_hash_db_json: Option<&str>,
-    db_custom_skins_json: Option<&str>,
+    input: ResolveObjectTargetInput<'_>,
     new_objects_count: &mut usize,
 ) -> Result<String, String> {
-    let Some(entry_key) = matched_entry_key else {
+    if input.matched_entry_key.is_none() {
         return Ok("Other".to_string());
-    };
+    }
 
-    let resolved = resolve_or_create_object_target_for_match(
-        &mut *conn,
-        game_id,
-        mods_path,
-        physical_name_hint,
-        Some(entry_key),
-        object_type,
-        db_thumbnail,
-        db_tags_json,
-        db_metadata_json,
-        db_hash_db_json,
-        db_custom_skins_json,
-        new_objects_count,
-    )
-    .await?;
+    let resolved =
+        resolve_or_create_object_target_for_match(&mut *conn, input, new_objects_count).await?;
 
     Ok(resolved
         .map(|target| target.folder_path)
@@ -53,18 +43,16 @@ async fn resolve_temp_target_object_folder(
 }
 
 /// Phase 2: Commit user-confirmed scan results to DB (Two-Phase Diffing).
-#[allow(clippy::too_many_arguments)]
-pub async fn commit_scan_results(
-    pool: &SqlitePool,
-    game_id: &str,
-    game_name: &str,
-    game_type: &str,
-    mods_path: &str,
-    items: Vec<ConfirmedScanItem>,
-    resource_dir: Option<&Path>,
-    safe_mode_keywords: &[String],
-    preserve_existing_mappings: bool,
-) -> Result<SyncResult, String> {
+pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncResult, String> {
+    let pool = request.pool;
+    let game_id = request.game_id;
+    let game_name = request.game_name;
+    let game_type = request.game_type;
+    let mods_path = request.mods_path;
+    let items = request.items;
+    let resource_dir = request.resource_dir;
+    let safe_mode_keywords = request.safe_mode_keywords;
+    let preserve_existing_mappings = request.preserve_existing_mappings;
     let _ = resource_dir; // reserved for future thumbnail resolution
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -81,18 +69,24 @@ pub async fn commit_scan_results(
 
         let mut actual_folder_path = item.folder_path.clone();
         if item.move_from_temp {
+            let object_thumbnail = item
+                .db_thumbnail
+                .as_deref()
+                .or(item.thumbnail_path.as_deref());
             let object_folder = resolve_temp_target_object_folder(
                 &mut tx,
-                game_id,
-                mods_path,
-                &item.display_name,
-                item.matched_entry_key.as_deref(),
-                item.object_type.as_deref().unwrap_or("Other"),
-                item.db_thumbnail.as_deref(),
-                item.tags_json.as_deref().unwrap_or("[]"),
-                item.metadata_json.as_deref().unwrap_or("{}"),
-                item.hash_db_json.as_deref(),
-                item.custom_skins_json.as_deref(),
+                ResolveObjectTargetInput {
+                    game_id,
+                    mods_path,
+                    physical_name_hint: &item.display_name,
+                    matched_entry_key: item.matched_entry_key.as_deref(),
+                    object_type: item.object_type.as_deref().unwrap_or("Other"),
+                    db_thumbnail: object_thumbnail,
+                    db_tags_json: item.tags_json.as_deref().unwrap_or("[]"),
+                    db_metadata_json: item.metadata_json.as_deref().unwrap_or("{}"),
+                    db_hash_db_json: item.hash_db_json.as_deref(),
+                    db_custom_skins_json: item.custom_skins_json.as_deref(),
+                },
                 &mut new_objects_count,
             )
             .await?;
@@ -163,15 +157,15 @@ pub async fn commit_scan_results(
 
     // Phase 1: Heuristic Linking
     // Pass A: Exact Match (folder_path == folder_path)
-    for disk_idx in 0..disk_entries.len() {
+    for (disk_idx, (_, disk_path)) in disk_entries.iter().enumerate() {
         if disk_to_db.contains_key(&disk_idx) {
             continue;
         }
-        for db_idx in 0..db_mods.len() {
+        for (db_idx, db_mod) in db_mods.iter().enumerate() {
             if db_matched.contains(&db_idx) {
                 continue;
             }
-            if db_mods[db_idx].1 == disk_entries[disk_idx].1 {
+            if db_mod.1 == *disk_path {
                 disk_to_db.insert(disk_idx, db_idx);
                 db_matched.insert(db_idx);
                 break;
@@ -180,18 +174,18 @@ pub async fn commit_scan_results(
     }
 
     // Pass B: Toggle Match (ignore "DISABLED " prefix)
-    for disk_idx in 0..disk_entries.len() {
+    for (disk_idx, (_, disk_path)) in disk_entries.iter().enumerate() {
         if disk_to_db.contains_key(&disk_idx) {
             continue;
         }
-        let (disk_parent, disk_name) = get_parent_and_name(&disk_entries[disk_idx].1);
+        let (disk_parent, disk_name) = get_parent_and_name(disk_path);
         let disk_clean = clean_folder(&disk_name);
 
-        for db_idx in 0..db_mods.len() {
+        for (db_idx, db_mod) in db_mods.iter().enumerate() {
             if db_matched.contains(&db_idx) {
                 continue;
             }
-            let (db_parent, db_name) = get_parent_and_name(&db_mods[db_idx].1);
+            let (db_parent, db_name) = get_parent_and_name(&db_mod.1);
             let db_clean = clean_folder(&db_name);
 
             if disk_parent == db_parent && disk_clean == db_clean {
@@ -205,11 +199,11 @@ pub async fn commit_scan_results(
     // Pass C: 1:1 Rename Match (isolated unmatched item in same parent directory)
     let mut unmatched_disk_by_parent: std::collections::HashMap<String, Vec<usize>> =
         std::collections::HashMap::new();
-    for disk_idx in 0..disk_entries.len() {
+    for (disk_idx, (_, disk_path)) in disk_entries.iter().enumerate() {
         if disk_to_db.contains_key(&disk_idx) {
             continue;
         }
-        let (parent, _) = get_parent_and_name(&disk_entries[disk_idx].1);
+        let (parent, _) = get_parent_and_name(disk_path);
         unmatched_disk_by_parent
             .entry(parent)
             .or_default()
@@ -218,13 +212,13 @@ pub async fn commit_scan_results(
 
     let mut unmatched_db_by_parent: std::collections::HashMap<String, Vec<usize>> =
         std::collections::HashMap::new();
-    for db_idx in 0..db_mods.len() {
+    for (db_idx, db_mod) in db_mods.iter().enumerate() {
         if db_matched.contains(&db_idx) {
             continue;
         }
-        let (parent, _) = get_parent_and_name(&db_mods[db_idx].1);
+        let (parent, _) = get_parent_and_name(&db_mod.1);
         // Ensure this DB mod isn't physically on disk anymore before considering it renamed
-        if !Path::new(&db_mods[db_idx].1).exists() {
+        if !Path::new(&db_mod.1).exists() {
             unmatched_db_by_parent
                 .entry(parent)
                 .or_default()
@@ -304,17 +298,23 @@ pub async fn commit_scan_results(
             let final_obj_name = obj_name;
 
             let obj_type = item.object_type.as_deref().unwrap_or("Other");
+            let object_thumbnail = item
+                .db_thumbnail
+                .as_deref()
+                .or(item.thumbnail_path.as_deref());
             let object_id = ensure_object_exists(
                 &mut tx,
-                game_id,
-                &object_folder_path,
-                &final_obj_name,
-                obj_type,
-                item.db_thumbnail.as_deref(),
-                item.tags_json.as_deref().unwrap_or("[]"),
-                item.metadata_json.as_deref().unwrap_or("{}"),
-                item.hash_db_json.as_deref(),
-                item.custom_skins_json.as_deref(),
+                crate::repo::object_repo::EnsureObjectInput {
+                    game_id,
+                    folder_path: &object_folder_path,
+                    obj_name: &final_obj_name,
+                    obj_type,
+                    db_thumbnail: object_thumbnail,
+                    db_tags_json: item.tags_json.as_deref().unwrap_or("[]"),
+                    db_metadata_json: item.metadata_json.as_deref().unwrap_or("{}"),
+                    db_hash_db_json: item.hash_db_json.as_deref(),
+                    db_custom_skins_json: item.custom_skins_json.as_deref(),
+                },
                 &mut new_objects_count,
             )
             .await?;

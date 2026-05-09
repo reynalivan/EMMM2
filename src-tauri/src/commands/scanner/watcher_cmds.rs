@@ -9,7 +9,7 @@ use tauri::State;
 /// # Covers: EC-2.06
 #[tauri::command]
 #[specta::specta]
-pub async fn set_watcher_suppression_cmd(
+pub async fn set_watcher_suppression(
     suppressed: bool,
     watcher: State<'_, WatcherState>,
 ) -> Result<(), String> {
@@ -24,7 +24,7 @@ pub async fn set_watcher_suppression_cmd(
 /// `services::scanner::watcher::lifecycle::start_watcher`.
 #[tauri::command]
 #[specta::specta]
-pub async fn start_watcher_cmd(
+pub async fn start_watcher(
     app: tauri::AppHandle,
     path: String,
     game_id: String,
@@ -44,7 +44,7 @@ pub async fn start_watcher_cmd(
 /// # Covers: req-05 AC-05.2.2, req-28 (Game Switch → stop → init)
 #[tauri::command]
 #[specta::specta]
-pub async fn stop_watcher_cmd(watcher: State<'_, WatcherState>) -> Result<(), String> {
+pub async fn stop_watcher(watcher: State<'_, WatcherState>) -> Result<(), String> {
     let mut w = watcher.watcher.lock().unwrap();
     if w.is_some() {
         log::info!("Stopping watcher via command");

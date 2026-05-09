@@ -18,10 +18,7 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function areFieldMapsEqual(
-  left: Record<string, string>,
-  right: Record<string, string>,
-): boolean {
+function areFieldMapsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
   if (leftKeys.length !== rightKeys.length) {
@@ -52,6 +49,7 @@ export function usePreviewPanelState() {
     previewSummary,
     resolvedTitle,
     resolvedSubtitle,
+    sourceUnavailableMessage,
     availableObjects,
     iniDocuments,
     images,
@@ -135,7 +133,6 @@ export function usePreviewPanelState() {
     setCurrentImageIndex(0);
   }, [activePath, images.length]);
 
-  const fieldIds = useMemo(() => allKeyBindFields.map((f) => f.id).join('\0'), [allKeyBindFields]);
   useEffect(() => {
     if (hasUnsavedEditorChanges) {
       return;
@@ -145,9 +142,8 @@ export function usePreviewPanelState() {
     setInitialByField((prev) => (areFieldMapsEqual(prev, nextInitialMap) ? prev : nextInitialMap));
     setDraftByField((prev) => (areFieldMapsEqual(prev, nextInitialMap) ? prev : nextInitialMap));
     setFieldErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-  }, [fieldIds, hasUnsavedEditorChanges]);
+  }, [allKeyBindFields, hasUnsavedEditorChanges]);
 
-  const sectionIds = useMemo(() => keyBindSections.map((s) => s.id).join('\0'), [keyBindSections]);
   useEffect(() => {
     const validIds = new Set(keyBindSections.map((section) => section.id));
     setOpenSectionIds((prev) => {
@@ -157,7 +153,7 @@ export function usePreviewPanelState() {
       }
       return areStringSetsEqual(prev, next) ? prev : next;
     });
-  }, [sectionIds]);
+  }, [keyBindSections]);
 
   const pendingTransition =
     previewTransition.kind === 'pending' &&
@@ -276,6 +272,7 @@ export function usePreviewPanelState() {
     previewSummary,
     resolvedTitle,
     resolvedSubtitle,
+    sourceUnavailableMessage,
     availableObjects,
     images,
     currentImageIndex,

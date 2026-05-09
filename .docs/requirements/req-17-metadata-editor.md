@@ -90,8 +90,8 @@ Backend:
 
 | Component          | Detail                                                                                                     |
 | ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Read Hook          | Raw preview data hooks perform the IPC query; preview-runtime composes selected node + detail state         |
-| Write Hook         | Raw mutation hook performs `update_mod_info`; preview-runtime applies runtime/query effects centrally        |
+| Read Hook          | Raw preview data hooks perform the IPC query; preview-runtime composes selected node + detail state        |
+| Write Hook         | Raw mutation hook performs `update_mod_info`; preview-runtime applies runtime/query effects centrally      |
 | WatcherSuppression | Applied for `folder_path/info.json` — prevents file watcher from triggering grid re-fetch on metadata save |
 | Shell Open         | `commands.openUrl({ url })` → Rust `tauri::api::shell::open(url)` after URL allowlist check                |
 

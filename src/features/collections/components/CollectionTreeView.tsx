@@ -184,9 +184,7 @@ function InactiveSection({ node }: { node: PreviewTreeNode }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning/80">
             {t('tree.inactive_section')}
           </p>
-          <p className="text-[10px] text-base-content/50">
-            {t('tree.inactive_section_desc')}
-          </p>
+          <p className="text-[10px] text-base-content/50">{t('tree.inactive_section_desc')}</p>
         </div>
       </div>
       <div className="p-2">
@@ -223,9 +221,7 @@ function ObjectRow({ node, colorClass }: { node: PreviewTreeNode; colorClass: st
             node.is_enabled ? 'text-base-content/92' : 'text-base-content/40'
           }`}
         >
-          {node.id === '__uncategorized__'
-            ? t('tree.uncategorized')
-            : node.name}
+          {node.id === '__uncategorized__' ? t('tree.uncategorized') : node.name}
         </span>
         {!node.is_enabled && (
           <span className="badge badge-xs badge-neutral h-4 text-[9px] opacity-60">

@@ -7,7 +7,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::LazyLock;
-// use std::fs;
 
 static DISABLED_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^disabled\s+").unwrap());
 
@@ -106,6 +105,7 @@ pub async fn toggle_mod_inner_service(
     .await
 }
 
+#[allow(clippy::too_many_arguments)] // Service boundary kept stable to preserve toggle and duplicate-resolution callers.
 pub async fn toggle_mod_inner_service_with_duplicate_policy(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
@@ -132,12 +132,10 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
         .to_string_lossy()
         .to_string();
     let mut changed_object_ids = Vec::new();
-    if let Some((_, object_id, _)) =
+    if let Some((_, Some(object_id), _)) =
         crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, &rel_path, game_id).await?
     {
-        if let Some(value) = object_id {
-            changed_object_ids.push(value);
-        }
+        changed_object_ids.push(object_id);
     }
 
     // AC-29.1: Conflict Detection

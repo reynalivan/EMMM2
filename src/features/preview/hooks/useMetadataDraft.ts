@@ -67,13 +67,7 @@ export function useMetadataDraft({
     setSyncedAuthor(sourceAuthor);
     setSyncedVersion(sourceVersion);
     setSyncedDescription(sourceDescription);
-  }, [
-    activePath,
-    sourceAuthor,
-    sourceDescription,
-    sourceTitle,
-    sourceVersion,
-  ]);
+  }, [activePath, sourceAuthor, sourceDescription, sourceTitle, sourceVersion]);
 
   const metadataDirty = useMemo(
     () =>

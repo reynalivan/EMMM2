@@ -75,9 +75,7 @@ export function buildModContextMenuItems(
       icon: Zap,
       onClick: handlers.enableOnlyThis ?? (() => undefined),
       hidden:
-        folder.is_enabled ||
-        !handlers.enableOnlyThis ||
-        !folder.capabilities.can_enable_only_this,
+        folder.is_enabled || !handlers.enableOnlyThis || !folder.capabilities.can_enable_only_this,
     },
     {
       id: 'toggle-favorite',
@@ -123,9 +121,7 @@ export function buildModContextMenuItems(
       icon: FolderOpen,
       onClick: handlers.navigateModPack ?? (() => undefined),
       hidden:
-        folder.node_type !== 'ModPackRoot' ||
-        !handlers.navigateModPack ||
-        !folder.can_navigate,
+        folder.node_type !== 'ModPackRoot' || !handlers.navigateModPack || !folder.can_navigate,
       separatorBefore: true,
     },
     {

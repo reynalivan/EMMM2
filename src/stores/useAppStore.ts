@@ -76,8 +76,10 @@ export interface AppState {
   // Disk Reconcile bookkeeping
   lastDiskReconcileAtByGame: Record<string, number>;
   pendingDiskReconcileByGame: Record<string, boolean>;
+  diskSourceUnavailableByGame: Record<string, string | null>;
   setDiskReconcileTimestamp: (gameId: string, timestamp: number) => void;
   markDiskReconcilePending: (gameId: string, dirty: boolean) => void;
+  setDiskSourceUnavailable: (gameId: string, message: string | null) => void;
 
   // Context-Aware Selection
   activePane: 'objectList' | 'folderGrid';
@@ -204,6 +206,7 @@ export const useAppStore = create<AppState>()(
       // Disk Reconcile bookkeeping
       lastDiskReconcileAtByGame: {},
       pendingDiskReconcileByGame: {},
+      diskSourceUnavailableByGame: {},
       setDiskReconcileTimestamp: (gameId, timestamp) =>
         set((state) => ({
           lastDiskReconcileAtByGame: {
@@ -214,12 +217,27 @@ export const useAppStore = create<AppState>()(
             ...state.pendingDiskReconcileByGame,
             [gameId]: false,
           },
+          diskSourceUnavailableByGame: {
+            ...state.diskSourceUnavailableByGame,
+            [gameId]: null,
+          },
         })),
       markDiskReconcilePending: (gameId, dirty) =>
         set((state) => ({
           pendingDiskReconcileByGame: {
             ...state.pendingDiskReconcileByGame,
             [gameId]: dirty,
+          },
+        })),
+      setDiskSourceUnavailable: (gameId, message) =>
+        set((state) => ({
+          diskSourceUnavailableByGame: {
+            ...state.diskSourceUnavailableByGame,
+            [gameId]: message,
+          },
+          pendingDiskReconcileByGame: {
+            ...state.pendingDiskReconcileByGame,
+            [gameId]: false,
           },
         })),
 

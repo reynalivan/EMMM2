@@ -8,7 +8,12 @@ pub async fn compute(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let target_keys: HashSet<String> = ctx
         .target_mods
         .iter()
-        .filter_map(|member| member.mod_path_key.clone().or_else(|| Some(member.mod_path.clone())))
+        .filter_map(|member| {
+            member
+                .mod_path_key
+                .clone()
+                .or_else(|| Some(member.mod_path.clone()))
+        })
         .collect();
 
     // To enable: in target but not currently enabled

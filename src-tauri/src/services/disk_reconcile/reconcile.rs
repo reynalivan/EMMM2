@@ -11,7 +11,9 @@ use crate::services::disk_reconcile::helpers::normalize_runtime_name;
 use crate::services::disk_reconcile::path_classifier::{
     collect_changed_roots, collect_thumbnail_roots, is_runtime_relevant_file,
 };
-use crate::services::disk_reconcile::projection_writer::reconcile_projection_in_tx;
+use crate::services::disk_reconcile::projection_writer::{
+    reconcile_projection_in_tx, ProjectionWriteRequest,
+};
 use crate::services::disk_reconcile::rename_healer::apply_watcher_rename_hints;
 use crate::services::disk_reconcile::types::{
     DiskReconcileChangeSummary, DiskReconcilePathUpdate, DiskReconcileReason, DiskReconcileStatus,
@@ -30,6 +32,17 @@ pub struct ReconcileOutcome {
     pub cleared_selection_paths: Vec<String>,
     pub path_updates: Vec<DiskReconcilePathUpdate>,
     pub change_summary: DiskReconcileChangeSummary,
+}
+
+pub struct ReconcileDiskProjectionRequest<'a> {
+    pub pool: &'a sqlx::SqlitePool,
+    pub game_id: &'a str,
+    pub mods_path: &'a Path,
+    pub safe_mode_keywords: &'a [String],
+    pub reason: &'a DiskReconcileReason,
+    pub changed_paths: &'a [String],
+    pub force_full: bool,
+    pub watcher_events: Option<&'a [ModWatchEvent]>,
 }
 
 fn should_run_scoped_disk_reconcile(
@@ -129,19 +142,20 @@ fn record_runtime_modifications(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Disk Reconcile updates the runtime projection from filesystem reality only.
 /// Runtime-discovered folders remain `Other` until the explicit Deep Match Scanner runs.
 pub async fn reconcile_disk_projection(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    mods_path: &Path,
-    safe_mode_keywords: &[String],
-    reason: &DiskReconcileReason,
-    changed_paths: &[String],
-    force_full: bool,
-    watcher_events: Option<&[ModWatchEvent]>,
+    request: ReconcileDiskProjectionRequest<'_>,
 ) -> Result<ReconcileOutcome, String> {
+    let pool = request.pool;
+    let game_id = request.game_id;
+    let mods_path = request.mods_path;
+    let safe_mode_keywords = request.safe_mode_keywords;
+    let reason = request.reason;
+    let changed_paths = request.changed_paths;
+    let force_full = request.force_full;
+    let watcher_events = request.watcher_events;
+
     let mut changed_roots = collect_changed_roots(mods_path, changed_paths);
     let thumbnail_roots = collect_thumbnail_roots(mods_path, changed_paths);
     let runtime_file_changed = collect_runtime_file_changed(changed_paths);
@@ -205,7 +219,7 @@ pub async fn reconcile_disk_projection(
 
         if let Some(events) = watcher_events {
             apply_watcher_rename_hints(
-                &mut *tx,
+                &mut tx,
                 game_id,
                 mods_path,
                 safe_mode_keywords,
@@ -217,15 +231,17 @@ pub async fn reconcile_disk_projection(
         }
 
         let (objects_changed_tx, folders_changed_tx) = reconcile_projection_in_tx(
-            &mut *tx,
-            game_id,
-            mods_path,
-            safe_mode_keywords,
-            &projection,
-            &changed_roots,
-            force_full,
-            &mut path_updates,
-            &mut change_summary,
+            &mut tx,
+            ProjectionWriteRequest {
+                game_id,
+                mods_path,
+                safe_mode_keywords,
+                projection: &projection,
+                changed_roots: &changed_roots,
+                force_full,
+                path_updates: &mut path_updates,
+                change_summary: &mut change_summary,
+            },
         )
         .await?;
 

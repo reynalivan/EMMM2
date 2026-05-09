@@ -17,6 +17,9 @@ import {
   type ObjectMetaFilters,
 } from './objectFilterState';
 
+const EMPTY_OBJECT_META_FILTERS: ObjectMetaFilters = {};
+const EMPTY_WORKSPACE_OBJECTS: WorkspaceObjectNode[] = [];
+
 /**
  * useObjectListLogic — Top-level logic for the ObjectList component.
  * Composes filtering, sorting, virtualization, and action handlers.
@@ -49,7 +52,7 @@ export function useObjectListLogic() {
     setObjectStatusFilter,
   } = useAppStore();
   const { focusObject } = useWorkspaceRuntime();
-  const activeFiltersState = objectMetaFilters ?? {};
+  const activeFiltersState = objectMetaFilters ?? EMPTY_OBJECT_META_FILTERS;
   const activeSortBy = objectSortBy ?? 'name';
   const activeStatusFilter = objectStatusFilter ?? 'all';
 
@@ -89,7 +92,7 @@ export function useObjectListLogic() {
       objectMetaFilters: effectiveObjectMetaFilters,
     },
   });
-  const allObjects = (workspace?.objects ?? []) as WorkspaceObjectNode[];
+  const allObjects = workspace?.objects ?? EMPTY_WORKSPACE_OBJECTS;
 
   // Fix 2: Memoize search items outside the effect to avoid redundant array creation.
   const searchItems = useMemo(
@@ -137,20 +140,23 @@ export function useObjectListLogic() {
     setMismatchConfirm,
   });
 
-  const handleFilterChange = useCallback((key: string, values: string[]) => {
-    const nextFilters: ObjectMetaFilters = { ...effectiveObjectMetaFilters };
-    if (values.length === 0) {
-      delete nextFilters[key];
-    } else {
-      nextFilters[key] = values;
-    }
+  const handleFilterChange = useCallback(
+    (key: string, values: string[]) => {
+      const nextFilters: ObjectMetaFilters = { ...effectiveObjectMetaFilters };
+      if (values.length === 0) {
+        delete nextFilters[key];
+      } else {
+        nextFilters[key] = values;
+      }
 
-    if (areObjectMetaFiltersEqual(activeFiltersState, nextFilters)) {
-      return;
-    }
+      if (areObjectMetaFiltersEqual(activeFiltersState, nextFilters)) {
+        return;
+      }
 
-    setObjectMetaFilters(nextFilters);
-  }, [activeFiltersState, effectiveObjectMetaFilters, setObjectMetaFilters]);
+      setObjectMetaFilters(nextFilters);
+    },
+    [activeFiltersState, effectiveObjectMetaFilters, setObjectMetaFilters],
+  );
 
   const handleClearFilters = useCallback(() => {
     if (Object.keys(activeFiltersState).length === 0) {

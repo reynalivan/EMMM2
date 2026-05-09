@@ -373,7 +373,7 @@ async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<(), String> 
 
     crate::services::corridor_service::switch_corridor(
         pool_state.inner(),
-        &game_id,
+        game_id,
         target_enabled,
         std::path::PathBuf::from(&game.mod_path),
         watcher_state.suppressor.clone(),
@@ -391,7 +391,7 @@ async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<(), String> 
     };
     write_runtime_status(
         pool_state.inner(),
-        &game_id,
+        game_id,
         &status,
         &settings_after.hotkeys,
     )
@@ -431,7 +431,7 @@ async fn execute_cycle_preset(
 
     let collections = crate::services::collection_service::list_collections(
         pool_state.inner(),
-        &game_id,
+        game_id,
         safe_mode_enabled,
         None,
     )
@@ -444,7 +444,7 @@ async fn execute_cycle_preset(
             preset_name: Some("No presets configured".to_string()),
             ..Default::default()
         };
-        write_runtime_status(pool_state.inner(), &game_id, &status, &settings.hotkeys).await?;
+        write_runtime_status(pool_state.inner(), game_id, &status, &settings.hotkeys).await?;
         return Ok("No presets available".to_string());
     }
 
@@ -452,7 +452,7 @@ async fn execute_cycle_preset(
         .iter()
         .map(|collection| collection.name.clone())
         .collect();
-    let corridor = crate::repo::corridor_repo::get(pool_state.inner(), &game_id, safe_mode_enabled)
+    let corridor = crate::repo::corridor_repo::get(pool_state.inner(), game_id, safe_mode_enabled)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -481,14 +481,16 @@ async fn execute_cycle_preset(
         .ok_or_else(|| "No active game selected".to_string())?;
 
     let apply_result = crate::services::collection_service::apply_collection(
-        pool_state.inner(),
-        &game_id,
-        &target.id,
-        safe_mode_enabled,
-        game.mod_path.clone(),
-        watcher_state.suppressor.clone(),
-        true, // ignore_missing during hotkey-triggered preset cycling
-        settings.clone(),
+        crate::services::collection_service::ApplyCollectionRequest {
+            pool: pool_state.inner(),
+            game_id,
+            collection_id: &target.id,
+            is_safe: safe_mode_enabled,
+            mods_path: game.mod_path.clone(),
+            suppressor: watcher_state.suppressor.clone(),
+            ignore_missing: true,
+            settings: settings.clone(),
+        },
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -497,7 +499,7 @@ async fn execute_cycle_preset(
 
     write_runtime_status(
         pool_state.inner(),
-        &game_id,
+        game_id,
         &planner.status,
         &settings.hotkeys,
     )

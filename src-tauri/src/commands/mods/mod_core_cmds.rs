@@ -130,9 +130,13 @@ pub async fn rename_mod_folder(
 pub struct FolderContentInfo {
     pub path: String,
     pub name: String,
+    #[specta(type = f64)]
     pub item_count: usize,
+    #[specta(type = f64)]
     pub ini_count: usize,
+    #[specta(type = f64)]
     pub image_count: usize,
+    #[specta(type = f64)]
     pub nested_folder_count: usize,
     #[specta(type = f64)]
     pub total_size_bytes: u64,

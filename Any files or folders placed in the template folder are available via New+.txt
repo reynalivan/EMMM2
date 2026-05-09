@@ -1,0 +1,61 @@
+{
+  "mcpServers": {
+    "mcp-deepwiki": {
+      "command": "npx",
+      "args": ["-y", "mcp-deepwiki@latest"]
+    },
+    "vitest": {
+      "command": "npx",
+      "args": ["-y", "@djankies/vitest-mcp"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "disabled": true
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "disabled": true
+    },
+    "daisyui": {
+      "command": "E:/Dev/#mcp/daisyui-mcp/venv/Scripts/python.exe",
+      "args": ["E:/Dev/#mcp/daisyui-mcp/mcp_server.py"]
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "exa": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.exa.ai/mcp?exaApiKey=fbdb8d0a-6c5a-40c0-bb1a-d076293a199c]"
+      ]
+    },
+    "supermemory-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://api.supermemory.ai/mcp",
+        "Bearer sm_AMEXgL7n3LMfRh1MJGtUjh_AQeacvKPeyWIHscktfHeRHuFhSwVNfeLTFhtNpPHacqxBWIuaneMYYgKImKSvKsh"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.context7.com/mcp",
+        "--header",
+        "CONTEXT7_API_KEY: ctx7sk-ac951721-e826-45d6-9604-f771e76ceb6a"
+      ]
+    }
+  }
+}

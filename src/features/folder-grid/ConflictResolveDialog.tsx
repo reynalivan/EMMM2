@@ -22,9 +22,7 @@ import {
 
 import { toast } from '../../stores/useToastStore';
 import { applyRuntimeMutationResult } from '../workspace-runtime/actions/sharedRuntimeResultMapper';
-import {
-  closeWorkspaceDialog,
-} from '../workspace-runtime/state/workspaceDialogs';
+import { closeWorkspaceDialog } from '../workspace-runtime/state/workspaceDialogs';
 import { useWorkspaceRuntimeSelector } from '../workspace-runtime/state/workspaceStoreBridge';
 
 import type { ConflictDetails, FolderDetail } from '../../types/scanner';
@@ -211,7 +209,9 @@ export default function ConflictResolveDialog() {
 
       {/* Backdrop */}
       <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-sm">
-        <button onClick={() => closeWorkspaceDialog('conflict')}>{t('common:actions.close')}</button>
+        <button onClick={() => closeWorkspaceDialog('conflict')}>
+          {t('common:actions.close')}
+        </button>
       </form>
     </dialog>
   );

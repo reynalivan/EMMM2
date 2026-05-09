@@ -49,21 +49,28 @@ async fn load_existing_manual_safe(
     }))
 }
 
+struct ModRenameHintsRequest<'a> {
+    game_id: &'a str,
+    mods_path: &'a Path,
+    mods_root: &'a str,
+    safe_mode_keywords: &'a [String],
+    hints: &'a WatcherRenameHints,
+    path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
+    change_summary: &'a mut ChangeSummaryBuilder,
+}
+
 async fn apply_mod_rename_hints(
     conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    mods_path: &Path,
-    mods_root: &str,
-    safe_mode_keywords: &[String],
-    hints: &WatcherRenameHints,
-    path_updates: &mut Vec<DiskReconcilePathUpdate>,
-    change_summary: &mut ChangeSummaryBuilder,
+    request: ModRenameHintsRequest<'_>,
 ) -> Result<(), String> {
-    for (old_relative, new_relative) in &hints.mod_renames {
-        let mod_exists =
-            crate::repo::mod_repo::get_mod_id_and_status_by_path(&mut *conn, old_relative, game_id)
-                .await
-                .map_err(|error| error.to_string())?;
+    for (old_relative, new_relative) in &request.hints.mod_renames {
+        let mod_exists = crate::repo::mod_repo::get_mod_id_and_status_by_path(
+            &mut *conn,
+            old_relative,
+            request.game_id,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
         let Some((old_id, _object_id, _status)) = mod_exists else {
             continue;
         };
@@ -75,32 +82,36 @@ async fn apply_mod_rename_hints(
 
         let object_folder = components[0].as_os_str().to_string_lossy().to_string();
         let mod_folder = components[1].as_os_str().to_string_lossy().to_string();
+        let object_name = normalize_runtime_name(&object_folder);
         let mut new_objects_count = 0usize;
         let object_id = crate::repo::object_repo::ensure_object_exists(
             &mut *conn,
-            game_id,
-            &object_folder,
-            &normalize_runtime_name(&object_folder),
-            "Other",
-            None,
-            "[]",
-            "{}",
-            None,
-            None,
+            crate::repo::object_repo::EnsureObjectInput {
+                game_id: request.game_id,
+                folder_path: &object_folder,
+                obj_name: &object_name,
+                obj_type: "Other",
+                db_thumbnail: None,
+                db_tags_json: "[]",
+                db_metadata_json: "{}",
+                db_hash_db_json: None,
+                db_custom_skins_json: None,
+            },
             &mut new_objects_count,
         )
         .await?;
         let object_type = load_object_type(&mut *conn, &object_id).await?;
         let existing_manual_safe =
-            load_existing_manual_safe(&mut *conn, game_id, old_relative, mods_root).await?;
+            load_existing_manual_safe(&mut *conn, request.game_id, old_relative, request.mods_root)
+                .await?;
         let metadata = load_runtime_mod_metadata(
-            &mods_path.join(new_relative),
+            &request.mods_path.join(new_relative),
             &mod_folder,
             is_disabled_runtime_name(&object_folder),
-            safe_mode_keywords,
+            request.safe_mode_keywords,
             existing_manual_safe,
         );
-        let new_id = generate_stable_mod_id(game_id, new_relative);
+        let new_id = generate_stable_mod_id(request.game_id, new_relative);
 
         crate::repo::mod_repo::update_mod_identity_tx(
             &mut *conn,
@@ -111,7 +122,7 @@ async fn apply_mod_rename_hints(
             metadata.is_safe,
             metadata.corridor_source,
             &old_id,
-            Some(mods_root),
+            Some(request.mods_root),
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -135,12 +146,14 @@ async fn apply_mod_rename_hints(
         .map_err(|error| format!("Failed to heal mod rename in collections: {error}"))?;
 
         push_path_update(
-            path_updates,
+            &mut *request.path_updates,
             DiskReconcilePathKind::Mod,
             old_relative,
             new_relative,
         );
-        change_summary.record_mod_renamed(&metadata.actual_name);
+        request
+            .change_summary
+            .record_mod_renamed(&metadata.actual_name);
     }
 
     Ok(())
@@ -216,13 +229,15 @@ pub(crate) async fn apply_watcher_rename_hints(
     let mods_root = mods_path.to_string_lossy().to_string();
     apply_mod_rename_hints(
         &mut *conn,
-        game_id,
-        mods_path,
-        &mods_root,
-        safe_mode_keywords,
-        &hints,
-        path_updates,
-        change_summary,
+        ModRenameHintsRequest {
+            game_id,
+            mods_path,
+            mods_root: &mods_root,
+            safe_mode_keywords,
+            hints: &hints,
+            path_updates,
+            change_summary,
+        },
     )
     .await?;
     apply_object_rename_hints(
