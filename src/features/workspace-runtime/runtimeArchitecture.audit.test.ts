@@ -298,12 +298,19 @@ describe('mods runtime architecture audit', () => {
       .filter(
         (file) =>
           file.source.includes('useObjectSelectionRepair(') ||
-          file.source.includes('checkPathExistsCmd(') ||
+          file.source.includes('checkPathExists(') ||
           file.source.includes('requestRepairSync'),
       )
       .map((file) => file.path);
 
     expect(offenders).toEqual([]);
+  });
+
+  it('does not expose frontend command wrapper aliases ending in Cmd', () => {
+    const bindingsSource = readFileSync(join(WORKSPACE_ROOT, 'src/lib/bindings.ts'), 'utf8');
+    const aliasMatches = bindingsSource.match(/\b[a-zA-Z][a-zA-Z0-9]*Cmd\s*:/g) ?? [];
+
+    expect(aliasMatches).toEqual([]);
   });
 
   it('does not call listModFolders from workspace consumer code', () => {

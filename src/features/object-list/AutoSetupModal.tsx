@@ -59,15 +59,22 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     );
   }, [dbEntries, search]);
 
+  const allEntryNames = useMemo(() => dbEntries.map((entry) => entry.name), [dbEntries]);
+
   // Default: check all entries when modal opens or dbEntries changes (if empty)
   useEffect(() => {
-    if (open && selectedNames.size === 0 && filteredEntries.length > 0) {
-      const allNames = new Set(filteredEntries.map((e) => e.name));
-      setSelectedNames(allNames);
+    if (!open || allEntryNames.length === 0) {
+      return;
     }
-    // Only run when open state changes (resetting selection logic could be annoying if they're typing)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, dbEntries.length]);
+
+    setSelectedNames((currentSelection) => {
+      if (currentSelection.size > 0) {
+        return currentSelection;
+      }
+
+      return new Set(allEntryNames);
+    });
+  }, [allEntryNames, open]);
 
   if (!open || !activeGame) return null;
 
@@ -158,7 +165,8 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     onClose();
   };
 
-  const isAllSelected = filteredEntries.length > 0 && selectedNames.size === filteredEntries.length;
+  const isAllSelected =
+    filteredEntries.length > 0 && filteredEntries.every((entry) => selectedNames.has(entry.name));
 
   return (
     <div className={`modal modal-open`}>

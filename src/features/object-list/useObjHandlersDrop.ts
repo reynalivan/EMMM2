@@ -45,7 +45,7 @@ interface DropDeps {
 }
 
 async function ensureDirectoryExists(path: string) {
-  if (await commands.checkPathExistsCmd({ path })) {
+  if (await commands.checkPathExists({ path })) {
     return;
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from '../../../stores/useToastStore';
 
 export interface MetadataDraftValues {
@@ -137,7 +137,7 @@ export function useMetadataDraft({
     versionDraft,
   ]);
 
-  const saveMetadata = async () => {
+  const saveMetadata = useCallback(async () => {
     if (!activePath || !metadataDirty) {
       return;
     }
@@ -162,7 +162,7 @@ export function useMetadataDraft({
     } catch (error) {
       toast.error(`Cannot save metadata: ${toErrorMessage(error)}`);
     }
-  };
+  }, [activePath, authorDraft, descriptionDraft, metadataDirty, onSave, titleDraft, versionDraft]);
 
   // Auto-save with long debounce
   useEffect(() => {
@@ -180,15 +180,14 @@ export function useMetadataDraft({
     }, 2500); // 2.5 seconds duration to allow reverting back
 
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePath, metadataDirty, titleDraft, authorDraft, versionDraft, descriptionDraft]);
+  }, [activePath, metadataDirty, saveMetadata, titleDraft]);
 
-  const discardMetadata = () => {
+  const discardMetadata = useCallback(() => {
     setTitleDraft(syncedTitle);
     setAuthorDraft(syncedAuthor);
     setVersionDraft(syncedVersion);
     setDescriptionDraft(syncedDescription);
-  };
+  }, [syncedAuthor, syncedDescription, syncedTitle, syncedVersion]);
 
   return {
     titleDraft,

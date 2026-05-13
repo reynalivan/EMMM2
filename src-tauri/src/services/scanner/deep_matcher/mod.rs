@@ -18,31 +18,15 @@ pub mod golden_corpus;
 #[path = "tests/required_tests.rs"]
 mod required_tests;
 
-// Public types used by commands and sync
-pub use models::types::{Candidate, Evidence, MatchStatus, Reason, StagedMatchResult};
-pub use models::types::{Confidence, CustomSkin, DbEntry};
-
-// Internal re-exports consumed by submodules via `crate::services::scanner::deep_matcher::*`
-#[allow(unused_imports)]
-pub(crate) use analysis::indexes::{idf_lite, MatcherIndexes};
-#[allow(unused_imports)]
-pub(crate) use analysis::scoring::{
-    apply_alias_contribution, apply_deep_token_contribution,
-    apply_direct_name_support_contribution, apply_hash_contribution, apply_ini_token_contribution,
-    apply_token_overlap_contribution, cap_evidence, has_primary_evidence,
-};
-#[allow(unused_imports)]
-pub(crate) use models::types::{
-    sort_candidates_deterministic, MatchMode, ScoreState, MAX_EVIDENCE_HASHES,
-    MAX_EVIDENCE_SECTIONS, MAX_EVIDENCE_TOKENS, MAX_REASONS_PER_CANDIDATE,
-};
-#[allow(unused_imports)]
-pub(crate) use pipeline::full_pipeline::{match_folder_full, score_forced_candidates};
-#[allow(unused_imports)]
-pub(crate) use pipeline::quick_pipeline::match_folder_quick;
-
-// Public re-exports used by commands
+// Public types and matcher entrypoints used by commands and sync services.
 pub use analysis::skin_resolver::detect_skin_for_staged;
+pub use models::types::{
+    sort_candidates_deterministic, Candidate, Confidence, CustomSkin, DbEntry, Evidence, MatchMode,
+    MatchStatus, Reason, ScoreState, StagedMatchResult, MAX_EVIDENCE_HASHES, MAX_EVIDENCE_SECTIONS,
+    MAX_EVIDENCE_TOKENS, MAX_REASONS_PER_CANDIDATE,
+};
+pub use pipeline::full_pipeline::{match_folder_full, score_forced_candidates};
+pub use pipeline::quick_pipeline::match_folder_quick;
 pub use state::master_db::MasterDb;
 
 use super::core::walker::{FolderContent, ModCandidate};

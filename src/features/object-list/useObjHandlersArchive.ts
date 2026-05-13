@@ -46,7 +46,7 @@ export type PendingDropContext = {
 };
 
 async function ensureDirectoryExists(path: string) {
-  if (await commands.checkPathExistsCmd({ path })) {
+  if (await commands.checkPathExists({ path })) {
     return;
   }
 
@@ -88,7 +88,7 @@ export function useObjHandlersArchive({
       const archiveInfos = await Promise.all(
         archivePaths.map(async (path) => {
           try {
-            const analysis = await commands.analyzeArchiveCmd({
+            const analysis = await commands.analyzeArchive({
               archivePath: path,
             });
             const name = await basename(path);
@@ -353,7 +353,7 @@ export function useObjHandlersArchive({
 
   const handleStopExtraction = useCallback(async () => {
     try {
-      await commands.abortExtractionCmd();
+      await commands.abortExtraction();
     } catch (e) {
       console.error('Failed to abort extraction:', e);
     }

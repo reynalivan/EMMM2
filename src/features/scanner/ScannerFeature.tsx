@@ -241,7 +241,7 @@ export default function ScannerFeature() {
           passwordError={passwordError}
           onStop={async () => {
             try {
-              await commands.abortExtractionCmd();
+              await commands.abortExtraction();
             } catch (e) {
               console.error('Failed to abort scan extraction', e);
             }

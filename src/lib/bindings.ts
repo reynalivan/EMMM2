@@ -244,8 +244,6 @@ export const commands = {
   resetDatabase: () => invoke<void>('reset_database'),
   fetchMissingAsset: (params: { assetName: string }) => invoke<void>('fetch_missing_asset', params),
   checkPathExists: (params: { path: string }) => invoke<boolean>('check_path_exists_cmd', params),
-  checkPathExistsCmd: (params: { path: string }) =>
-    invoke<boolean>('check_path_exists_cmd', params),
   ensureDir: (params: { path: string }) => invoke<void>('ensure_dir_cmd', params),
   getSettings: () => invoke<AppSettings>('get_settings'),
   saveSettings: (params: { settings: AppSettings }) => invoke<void>('save_settings', params),
@@ -430,18 +428,14 @@ export const commands = {
   }) => invoke<ExtractionResult>('extract_archive_cmd', params),
   analyzeArchive: (params: { archivePath: string }) =>
     invoke<ArchiveAnalysis>('analyze_archive_cmd', params),
-  analyzeArchiveCmd: (params: { archivePath: string }) =>
-    invoke<ArchiveAnalysis>('analyze_archive_cmd', params),
   matchCheckFolder: (params: { folderPath: string; targetObjectName: string; dbJson: string }) =>
     invoke<MatchCheckResult>('match_check_folder_cmd', params),
-  listFolderEntriesCmd: (params: { folderPath: string; gameId: string }) =>
+  listFolderEntries: (params: { folderPath: string; gameId: string }) =>
     invoke<FolderEntry[]>('list_folder_entries_cmd', params),
   abortExtraction: () => invoke<void>('abort_extraction_cmd'),
-  abortExtractionCmd: () => invoke<void>('abort_extraction_cmd'),
 
   // Scanner (General)
   cancelScan: () => invoke<void>('cancel_scan_cmd'),
-  cancelScanCmd: () => invoke<void>('cancel_scan_cmd'),
   runDeepmatchScanner: (params: {
     gameId?: string;
     gameName?: string;
@@ -521,10 +515,7 @@ export const commands = {
   dupScanStart: (params: { gameId: string; modsRoot: string; onEvent: Channel<DupScanEvent> }) =>
     invoke<void>('dup_scan_start', params),
   dupScanCancel: () => invoke<void>('dup_scan_cancel'),
-  dupScanCancelCmd: () => invoke<void>('dup_scan_cancel'),
   dupScanGetReport: (params: { pin?: string }) =>
-    invoke<DupScanReport | null>('dup_scan_get_report', params),
-  dupScanGetReportCmd: (params: { pin?: string }) =>
     invoke<DupScanReport | null>('dup_scan_get_report', params),
   dupResolveBatch: (params: { gameId: string; requests: ResolutionRequest[] }) =>
     invoke<ResolutionSummary>('dup_resolve_batch', params),

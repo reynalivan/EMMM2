@@ -1,8 +1,23 @@
 import { AlertCircle, CheckCircle, Info, Trash2 } from 'lucide-react';
+import type { CSSProperties } from 'react';
 
 import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
 import { formatSize } from '../../../utils/formatters';
 import { useTranslation } from 'react-i18next';
+
+type RadialProgressStyle = CSSProperties & {
+  '--value': number;
+  '--size': string;
+  '--thickness': string;
+};
+
+function createRadialProgressStyle(value: number): RadialProgressStyle {
+  return {
+    '--value': value,
+    '--size': '2.5rem',
+    '--thickness': '3px',
+  };
+}
 
 interface Props {
   groups: DupScanGroup[];
@@ -108,12 +123,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                     <div className="flex items-center gap-2">
                       <div
                         className={`radial-progress text-primary bg-base-300 border-4 border-base-300`}
-                        style={{
-                          // @ts-expect-error - radial progress custom props
-                          '--value': group.confidenceScore,
-                          '--size': '2.5rem',
-                          '--thickness': '3px',
-                        }}
+                        style={createRadialProgressStyle(group.confidenceScore)}
                         role="progressbar"
                         aria-valuenow={group.confidenceScore}
                         aria-valuemin={0}

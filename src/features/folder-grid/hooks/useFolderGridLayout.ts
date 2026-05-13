@@ -46,7 +46,6 @@ export function useFolderGridLayout({
   const rowCount = isGridView ? Math.ceil(itemCount / columnCount) : itemCount;
 
   // ── ResizeObserver ────────────────────────────────────────────────────────
-  // parentRef is a stable ref — intentionally omitted from deps
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
@@ -55,7 +54,7 @@ export function useFolderGridLayout({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [parentRef]);
 
   // ── Virtualizer ───────────────────────────────────────────────────────────
   /**
