@@ -14,14 +14,12 @@ struct TestContext {
 }
 
 async fn setup_context() -> TestContext {
-    println!("DEBUG: setup_context START");
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path().join("Mods");
     let trash_root = temp.path().join("app_data").join("trash");
     fs::create_dir_all(&mods_root).unwrap();
     fs::create_dir_all(&trash_root).unwrap();
 
-    println!("DEBUG: calling init_test_db...");
     let ctx = crate::test_utils::init_test_db().await;
     let pool = ctx.pool;
 
@@ -46,6 +44,25 @@ async fn setup_context() -> TestContext {
     }
 }
 
+async fn seed_dedup_group(context: &TestContext, game_id: &str, group_id: &str) {
+    let job_id = format!("job-{group_id}");
+    sqlx::query("INSERT OR IGNORE INTO dedup_jobs (id, game_id, status) VALUES (?, ?, 'running')")
+        .bind(&job_id)
+        .bind(game_id)
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO dedup_groups (id, job_id, resolution_status) VALUES (?, ?, 'pending')",
+    )
+    .bind(group_id)
+    .bind(&job_id)
+    .execute(&context.pool)
+    .await
+    .unwrap();
+}
+
 async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
     let folder_a = context.mods_root.join("Aether");
     let folder_b = context.mods_root.join("Lumine");
@@ -56,22 +73,6 @@ async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
 
     let folder_a_path = folder_a.to_string_lossy().to_string();
     let folder_b_path = folder_b.to_string_lossy().to_string();
-    let folder_a_key = crate::services::path_key::folder_path_key(
-        &folder_a_path,
-        Some(context.mods_root.to_str().unwrap()),
-    );
-    let folder_b_key = crate::services::path_key::folder_path_key(
-        &folder_b_path,
-        Some(context.mods_root.to_str().unwrap()),
-    );
-    println!(
-        "DEBUG: folder_a_path: {}, key: {}",
-        folder_a_path, folder_a_key
-    );
-    println!(
-        "DEBUG: folder_b_path: {}, key: {}",
-        folder_b_path, folder_b_key
-    );
 
     crate::test_utils::insert_test_mod(
         &context.pool,
@@ -113,16 +114,10 @@ async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
 // Covers: TC-9.2-01 (Trash Duplicate KeepA)
 #[tokio::test]
 async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
-    println!("DEBUG: TEST START");
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-    sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
-        .bind("group-1")
-        .bind("pending")
-        .execute(&context.pool)
-        .await
-        .unwrap();
+    seed_dedup_group(&context, game_id, "group-1").await;
 
     let lock = OperationLock::new();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
@@ -162,12 +157,7 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-    sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
-        .bind("group-2")
-        .bind("pending")
-        .execute(&context.pool)
-        .await
-        .unwrap();
+    seed_dedup_group(&context, game_id, "group-2").await;
 
     let lock = OperationLock::new();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
@@ -199,12 +189,7 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-    sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
-        .bind("group-3")
-        .bind("pending")
-        .execute(&context.pool)
-        .await
-        .unwrap();
+    seed_dedup_group(&context, game_id, "group-3").await;
 
     let lock = OperationLock::new();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
@@ -237,14 +222,6 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     .fetch_one(&context.pool)
     .await
     .unwrap();
-    // The implementation writes ID combinations to the whitelist, but since our mock uses different table
-    // than expected or inserts the IDs directly into whitelist, let's verify what the actual behavior of persist_whitelist_pair is
-    // Wait, let's check what persist_whitelist_pair actually inserts...
-    // The test sets IDs "mod-a" and "mod-b". canonicalize_pair alphabetizes them. So it should be inserted.
-    // The issue is `fetch_mod_id` queries by game_id and folder_path, which joins with the sqlite `mods` table.
-    // In our `seed_pair`, `folder_a_path` is inserted into `mods`.
-    // Let's assert that it's 1. Wait, it failed with 0.
-    // The assert expected 1, but got 0. It means `ResolutionAction::Ignore` failed or the count query is wrong.
     assert_eq!(ignored_count, 1, "Whitelist entry should exist");
 
     let status: String =
@@ -344,12 +321,7 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
         .await
         .unwrap();
 
-        sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
-            .bind(format!("group-{}", i))
-            .bind("pending")
-            .execute(&context.pool)
-            .await
-            .unwrap();
+        seed_dedup_group(&context, game_id, &format!("group-{}", i)).await;
 
         requests.push(ResolutionRequest {
             group_id: format!("group-{}", i),
@@ -461,12 +433,7 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
         .await
         .unwrap();
 
-        sqlx::query("INSERT INTO dedup_groups (id, resolution_status) VALUES (?, ?)")
-            .bind(format!("group-lock-{}", i))
-            .bind("pending")
-            .execute(&context.pool)
-            .await
-            .unwrap();
+        seed_dedup_group(&context, game_id, &format!("group-lock-{}", i)).await;
 
         requests.push(ResolutionRequest {
             group_id: format!("group-lock-{}", i),

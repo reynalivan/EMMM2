@@ -10,11 +10,10 @@ mod tests {
 
         let json = serde_json::to_string(&err).expect("Failed to serialize CommandError");
 
-        // It should serialize to a string exactly matching its Display representation
-        assert_eq!(json, "\"Not found: Mod folder 'Amber' not found\"");
+        assert_eq!(json, "{\"NotFound\":\"Mod folder 'Amber' not found\"}");
 
         let db_err = CommandError::Database("duplicate target".into());
         let db_json = serde_json::to_string(&db_err).unwrap();
-        assert_eq!(db_json, "\"Database error: duplicate target\"");
+        assert_eq!(db_json, "{\"Database\":\"duplicate target\"}");
     }
 }

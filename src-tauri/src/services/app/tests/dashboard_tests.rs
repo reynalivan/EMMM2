@@ -48,7 +48,7 @@ async fn test_get_dashboard_payload_populated() {
             id: "obj1",
             game_id: "g1",
             name: "Obj 1",
-            folder_path: Some("folder"),
+            folder_path: "folder",
             object_type: "Character",
         },
     )

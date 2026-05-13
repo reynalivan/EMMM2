@@ -47,7 +47,15 @@ fn get_key_string_maps_correctly() {
 fn list_bindings_returns_correct_count() {
     let config = HotkeyConfig::default();
     let bindings = list_bindings(&config);
-    assert_eq!(bindings.len(), 4);
+    assert_eq!(bindings.len(), 6);
+    assert_eq!(
+        get_key_string(&config, HotkeyAction::NextVariantFolder),
+        "F8"
+    );
+    assert_eq!(
+        get_key_string(&config, HotkeyAction::PrevVariantFolder),
+        "Shift+F8"
+    );
 }
 
 // ... existing conflict and debounce tests ...

@@ -41,6 +41,19 @@ pub(crate) async fn load_projected_collection_state(
 ) -> Result<ProjectedCollectionState, CollectionError> {
     if let Some(snapshot_json) = collection.snapshot_json.as_deref() {
         if let Some(snapshot) = projected_state_service::parse_snapshot_json(snapshot_json) {
+            let active_root_count = snapshot.summary.active_root_count as i32;
+            if collection.root_count != active_root_count
+                || collection.display_mod_count != active_root_count
+            {
+                sqlx::query(
+                    "UPDATE collections SET root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                )
+                .bind(active_root_count)
+                .bind(active_root_count)
+                .bind(&collection.id)
+                .execute(pool)
+                .await?;
+            }
             return Ok(snapshot);
         }
     }
@@ -220,7 +233,20 @@ pub async fn create_collection(
         .await?
         .ok_or_else(|| CollectionError::NotFound { id: id.clone() })?;
 
-    Ok(collection_repo::to_summary(&collection, Some(&id), None))
+    let active_collection_id = if matches!(save_mode, CreateCollectionMode::SaveCurrentState) {
+        Some(id.clone())
+    } else {
+        corridor_repo::get(pool, &input.game_id, input.is_safe)
+            .await
+            .map_err(CollectionError::Corridor)?
+            .and_then(|state| state.active_collection_id)
+    };
+
+    Ok(collection_repo::to_summary(
+        &collection,
+        active_collection_id.as_deref(),
+        None,
+    ))
 }
 
 pub async fn handle_dirty_state(
@@ -507,6 +533,13 @@ pub async fn update_collection(
             .execute(pool)
             .await?;
     }
+    let collection = collection_repo::get_by_id(pool, &input.id)
+        .await?
+        .ok_or_else(|| CollectionError::NotFound {
+            id: input.id.clone(),
+        })?;
+    let mods_path = load_game_mods_path(pool, &input.game_id).await?;
+    let _ = load_projected_collection_state(pool, &collection, mods_path.as_deref()).await?;
     let collection = collection_repo::get_by_id(pool, &input.id)
         .await?
         .ok_or_else(|| CollectionError::NotFound {
@@ -971,8 +1004,12 @@ mod tests {
         )
         .await
         .expect("create unsaved");
+        let undo =
+            collection_repo::create(&ctx.pool, "undo-1", "game-1", "Undo Snapshot", true, false)
+                .await
+                .expect("create undo");
 
-        corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&active.id), Some("stale"))
+        corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&active.id), Some(&undo.id))
             .await
             .expect("set pointers");
 
@@ -1015,7 +1052,7 @@ mod tests {
                 id: "object-1",
                 game_id: "game-1",
                 name: "AINOZ",
-                folder_path: Some("AINOZ"),
+                folder_path: "AINOZ",
                 object_type: "Character",
             },
         )
@@ -1115,7 +1152,7 @@ mod tests {
                 id: "object-1",
                 game_id: "game-1",
                 name: "AINOZ",
-                folder_path: Some("AINOZ"),
+                folder_path: "AINOZ",
                 object_type: "Character",
             },
         )
@@ -1313,7 +1350,7 @@ mod tests {
                 id: "object-1",
                 game_id: "game-1",
                 name: "AINOZ",
-                folder_path: Some("AINOZ"),
+                folder_path: "AINOZ",
                 object_type: "Character",
             },
         )
@@ -1333,8 +1370,8 @@ mod tests {
             mod_path_key: Some("ainoz/missing mod".to_string()),
             object_id: "object-1".to_string(),
             display_name: Some("Missing Mod".to_string()),
-            preview_path: None,
-            node_type: None,
+            preview_path: Some("AINOZ/Missing Mod".to_string()),
+            node_type: Some("FlatModRoot".to_string()),
             warnings: Vec::new(),
             is_enabled: true,
         };
@@ -1445,8 +1482,16 @@ mod tests {
                     id: game_id,
                     name: "Test Game",
                     game_type: GameType::GIMI,
-                    path: "E:/Games/TestGame",
-                    mods_path: Some("E:/Mods"),
+                    path: if game_id == "game-1" {
+                        "E:/Games/TestGame1"
+                    } else {
+                        "E:/Games/TestGame2"
+                    },
+                    mods_path: if game_id == "game-1" {
+                        Some("E:/Mods1")
+                    } else {
+                        Some("E:/Mods2")
+                    },
                 },
             )
             .await
@@ -1490,7 +1535,7 @@ mod tests {
                 id: "object-1",
                 game_id: "game-1",
                 name: "AINOZ",
-                folder_path: Some("AINOZ"),
+                folder_path: "AINOZ",
                 object_type: "Character",
             },
         )

@@ -72,11 +72,10 @@ fn format_keybind_line(kb: &KeyBinding) -> String {
     }
 
     if parts.is_empty() {
-        return format!("Toggle: {} (no key assigned)", kb.section_name);
+        return format!("[{}] No key assigned", kb.section_name);
     }
 
-    parts.push(format!("Toggle: {}", kb.section_name));
-    parts.join("\n")
+    format!("[{}] {}", kb.section_name, parts.join(" | "))
 }
 
 /// Generate keybind text content for a single object, possibly from multiple mods.
@@ -189,19 +188,27 @@ pub fn generate_status_text(
 ) -> String {
     let safe_label = if fields.safe_mode { "On" } else { "Off" };
     let f5_key = hotkey_config.toggle_safe_mode.to_uppercase();
-    let left_side = format!("Safe: {} [{}]", safe_label, f5_key);
-    let right_side = if let Some(ref preset) = fields.preset_name {
+    let mut segments = vec![format!("Safe: {} [{}]", safe_label, f5_key)];
+
+    if let Some(ref preset) = fields.preset_name {
         let shift_f6 = hotkey_config.prev_preset.to_uppercase();
         let f6 = hotkey_config.next_preset.to_uppercase();
-        format!("Preset: {} [{}] [{}]", preset, shift_f6, f6)
-    } else {
-        "".to_string()
-    };
-    if right_side.is_empty() {
-        left_side
-    } else {
-        format!("{}  |  {}", left_side, right_side)
+        segments.push(format!("Preset: {} [{}] [{}]", preset, shift_f6, f6));
     }
+
+    if let Some(ref folder) = fields.folder_name {
+        segments.push(format!("Folder: {}", folder));
+    }
+
+    if let Some(ref scope) = fields.scope_name {
+        segments.push(format!("Scope: {}", scope));
+    }
+
+    if let Some(conflict_count) = fields.conflict_count.filter(|count| *count > 0) {
+        segments.push(format!("Conflicts: {}", conflict_count));
+    }
+
+    segments.join("  |  ")
 }
 
 /// Write status banner atomically. Returns the path written.

@@ -15,7 +15,7 @@ static RE_FORBIDDEN_CHARS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"[\\/:*?"<>|]"#).expect("Invalid regex"));
 
 /// Common noise prefixes to strip from folder names before matching.
-const NOISE_PREFIXES: &[&str] = &["[mod]", "[skin]", "[fix]", "[update]", "disabled "];
+const NOISE_PREFIXES: &[&str] = &["[mod]", "[skin]", "[fix]", "[update]"];
 
 /// Preprocess text into a normalized token set.
 ///
@@ -39,7 +39,12 @@ pub fn preprocess_text(text: &str) -> HashSet<String> {
 ///
 /// Strips prefixes like `[Mod]`, `DISABLED `, `[Skin]` etc.
 pub fn strip_noise_prefixes(name: &str) -> String {
-    let mut result = name.to_string();
+    let disabled_stripped = strip_disabled_prefix(name);
+    if disabled_stripped != name.trim() {
+        return disabled_stripped;
+    }
+
+    let mut result = name.trim().to_string();
     let lower = result.to_lowercase();
 
     for prefix in NOISE_PREFIXES {
@@ -61,15 +66,23 @@ pub fn sanitize_filename(name: &str) -> String {
     RE_FORBIDDEN_CHARS.replace_all(name, "_").to_string()
 }
 
-/// Regex matching the canonical DISABLED folder prefix.
+/// Regex matching canonical and legacy DISABLED folder prefixes.
 static DISABLED_DETECT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^disabled\s+").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^disabled[\s_-]+").unwrap());
+
+/// Strip canonical or legacy DISABLED prefix variants.
+pub fn strip_disabled_prefix(name: &str) -> String {
+    DISABLED_DETECT_RE
+        .replace(name.trim(), "")
+        .trim()
+        .to_string()
+}
 
 /// Normalize a folder name for UI display.
 ///
 /// Strips the canonical DISABLED prefix and trims whitespace.
 pub fn normalize_display_name(name: &str) -> String {
-    DISABLED_DETECT_RE.replace(name, "").trim().to_string()
+    strip_disabled_prefix(name)
 }
 
 /// Check if a folder is disabled based on the canonical DISABLED prefix.

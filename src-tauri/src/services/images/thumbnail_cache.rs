@@ -52,9 +52,13 @@ impl ThumbnailCache {
 
     pub fn init(app_data_dir: &Path) {
         let mut cache = Self::get_instance().lock().unwrap();
-        let cache_dir = app_data_dir.join("cache").join("thumbnails");
+        let cache_dir = thumbnail_cache_dir(app_data_dir);
         if !cache_dir.exists() {
             let _ = fs::create_dir_all(&cache_dir);
+        }
+        if cache.base_dir.as_ref() != Some(&cache_dir) {
+            cache.folder_cache.clear();
+            cache.image_cache.clear();
         }
         cache.base_dir = Some(cache_dir);
     }
@@ -192,6 +196,8 @@ impl ThumbnailCache {
 
         let hash = blake3::hash(original_str.as_bytes()).to_string();
         let cached_path = base_dir.join(format!("{}.webp", hash));
+        fs::create_dir_all(&base_dir)
+            .map_err(|e| format!("Failed to create thumbnail cache directory: {}", e))?;
 
         // L2 disk hit — validate mtime
         if cached_path.exists() {
@@ -209,7 +215,16 @@ impl ThumbnailCache {
             .write_to(&mut Cursor::new(&mut bytes), ImageFormat::WebP)
             .map_err(|e| format!("Failed to encode WebP: {}", e))?;
 
-        fs::write(&cached_path, &bytes).map_err(|e| format!("Failed to save thumbnail: {}", e))?;
+        if let Err(first_error) = fs::write(&cached_path, &bytes) {
+            fs::create_dir_all(&base_dir)
+                .map_err(|e| format!("Failed to recreate thumbnail cache directory: {}", e))?;
+            fs::write(&cached_path, &bytes).map_err(|second_error| {
+                format!(
+                    "Failed to save thumbnail: {} (first attempt: {})",
+                    second_error, first_error
+                )
+            })?;
+        }
 
         Ok(cached_path)
     }
@@ -227,6 +242,7 @@ impl ThumbnailCache {
     pub fn prune_orphans(valid_paths: &[String]) -> Result<usize, String> {
         let cache = Self::get_instance().lock().unwrap();
         let base_dir = cache.base_dir.as_ref().ok_or("Cache not initialized")?;
+        fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
 
         let mut keep_hashes = std::collections::HashSet::new();
         for path in valid_paths {
@@ -261,6 +277,7 @@ impl ThumbnailCache {
     pub fn clear_old_cache(max_age_days: u64) -> Result<usize, String> {
         let cache = Self::get_instance().lock().unwrap();
         let base_dir = cache.base_dir.as_ref().ok_or("Cache not initialized")?;
+        fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
 
         let cutoff = SystemTime::now()
             .checked_sub(std::time::Duration::from_secs(max_age_days * 86400))
@@ -287,6 +304,21 @@ impl ThumbnailCache {
         }
         Ok(deleted_count)
     }
+}
+
+#[cfg(not(test))]
+fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("cache").join("thumbnails")
+}
+
+#[cfg(test)]
+fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
+    let key = blake3::hash(app_data_dir.to_string_lossy().as_bytes()).to_string();
+    std::env::temp_dir()
+        .join("emmm-thumbnail-cache-tests")
+        .join(key)
+        .join("cache")
+        .join("thumbnails")
 }
 
 #[cfg(test)]

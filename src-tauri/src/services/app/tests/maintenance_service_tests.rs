@@ -21,10 +21,6 @@ async fn test_run_maintenance() {
 
     let (pruned, purged) = run_maintenance_counts(&pool, app_data_dir).await.unwrap();
     assert_eq!(pruned, 0); // Initially empty
-    assert_eq!(purged, 1); // cleanup_old_empty_trash_entries scenario... wait, it was just setup.
-                           // Actually, in the test setup on line 16, trash dir is empty.
-                           // So both should be 0.
-    assert_eq!(pruned, 0);
     assert_eq!(purged, 0);
 }
 

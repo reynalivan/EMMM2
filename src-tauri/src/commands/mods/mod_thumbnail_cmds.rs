@@ -131,9 +131,6 @@ pub async fn paste_thumbnail_inner(
     use image::ImageFormat;
     const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
-    let path = PathGuard::validate_path(config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
-
     if image_data.len() > MAX_IMAGE_BYTES {
         return Err(AppError::Metadata(
             crate::domain::errors::MetadataError::Validation(
@@ -141,6 +138,9 @@ pub async fn paste_thumbnail_inner(
             ),
         ));
     }
+
+    let path = PathGuard::validate_path(config, &game_id, &folder_path)
+        .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
 
     let img = image::load_from_memory(&image_data).map_err(|e| {
         AppError::Metadata(crate::domain::errors::MetadataError::Validation(format!(

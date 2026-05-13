@@ -5,7 +5,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn paste_thumbnail_rejects_oversize() {
     let pool = crate::test_utils::init_test_db().await.pool;
-    let config = crate::services::config::ConfigService::new_for_test(pool);
+    let config = crate::services::config::ConfigService::new_for_test_async(pool).await;
 
     let tmp = TempDir::new().unwrap();
     let mod_dir = tmp.path().join("ModThumb");

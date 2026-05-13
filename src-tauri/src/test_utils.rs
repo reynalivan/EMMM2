@@ -2,6 +2,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Pool, Sqlite};
 use std::sync::Once;
 
+use crate::domain::collection::ProjectedCollectionState;
 use crate::repo::game_repo::{upsert_game, GameRow};
 use crate::services::path_key::{collection_name_key, folder_path_key, object_name_key};
 
@@ -23,7 +24,7 @@ pub struct TestObjectFixture<'a> {
     pub id: &'a str,
     pub game_id: &'a str,
     pub name: &'a str,
-    pub folder_path: Option<&'a str>,
+    pub folder_path: &'a str,
     pub object_type: &'a str,
 }
 
@@ -54,7 +55,6 @@ pub struct TestCollectionObjectStateFixture<'a> {
 }
 
 pub async fn init_test_db() -> TestContext {
-    println!("DEBUG: init_test_db START");
     INIT.call_once(|| {
         // Initialize logger only once
         let _ = env_logger::builder().is_test(true).try_init();
@@ -70,14 +70,11 @@ pub async fn init_test_db() -> TestContext {
 
     // Run migrations (force cache bust)
     let m = sqlx::migrate!("./migrations");
-    println!("DEBUG: Running migrations...");
     m.run(&pool).await.expect("Failed to run migrations");
-    println!("DEBUG: Backfilling unicode keys...");
     crate::repo::unicode_keys::ensure_unicode_keys(&pool)
         .await
         .expect("Failed to backfill unicode keys");
 
-    println!("DEBUG: init_test_db DONE");
     TestContext { pool }
 }
 
@@ -104,11 +101,6 @@ pub async fn insert_test_object(
     pool: &Pool<Sqlite>,
     fixture: &TestObjectFixture<'_>,
 ) -> Result<(), sqlx::Error> {
-    let folder_path = fixture.folder_path.map(ToString::to_string);
-    let folder_path_key = folder_path
-        .as_deref()
-        .map(|path| folder_path_key(path, None));
-
     sqlx::query(
         "INSERT INTO objects (id, game_id, name, name_key, folder_path, folder_path_key, object_type, tags, metadata)
          VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}')",
@@ -117,8 +109,8 @@ pub async fn insert_test_object(
     .bind(fixture.game_id)
     .bind(fixture.name)
     .bind(object_name_key(fixture.name))
-    .bind(folder_path)
-    .bind(folder_path_key)
+    .bind(fixture.folder_path)
+    .bind(folder_path_key(fixture.folder_path, None))
     .bind(fixture.object_type)
     .execute(pool)
     .await?;
@@ -146,6 +138,67 @@ pub async fn insert_test_mod(
     .bind(fixture.is_safe)
     .execute(pool)
     .await?;
+
+    Ok(())
+}
+
+pub async fn set_test_collection_snapshot(
+    pool: &Pool<Sqlite>,
+    collection_id: &str,
+    state: &ProjectedCollectionState,
+) -> Result<(), sqlx::Error> {
+    let snapshot_json = crate::services::projected_state_service::serialize_snapshot_json(state)
+        .unwrap_or_else(|| {
+            "{\"object_states\":[],\"active_roots\":[],\"summary\":{\"object_count\":0,\"enabled_object_count\":0,\"active_root_count\":0,\"missing_root_count\":0}}".to_string()
+        });
+    let signature = crate::services::projected_state_service::signature_for_projected_state(state);
+    let active_root_count = state.summary.active_root_count as i32;
+
+    sqlx::query(
+        "UPDATE collections SET snapshot_json = ?, signature = ?, root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .bind(snapshot_json)
+    .bind(signature)
+    .bind(active_root_count)
+    .bind(active_root_count)
+    .bind(collection_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_test_corridor_pointers_unchecked(
+    pool: &Pool<Sqlite>,
+    game_id: &str,
+    is_safe: bool,
+    active_collection_id: Option<&str>,
+    undo_collection_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(pool)
+        .await?;
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO corridor_state (game_id, is_safe, active_collection_id, undo_collection_id)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(game_id, is_safe) DO UPDATE SET
+            active_collection_id = excluded.active_collection_id,
+            undo_collection_id = excluded.undo_collection_id
+        "#,
+    )
+    .bind(game_id)
+    .bind(is_safe_i32)
+    .bind(active_collection_id)
+    .bind(undo_collection_id)
+    .execute(pool)
+    .await;
+
+    let restore_result = sqlx::query("PRAGMA foreign_keys = ON").execute(pool).await;
+    result?;
+    restore_result?;
 
     Ok(())
 }

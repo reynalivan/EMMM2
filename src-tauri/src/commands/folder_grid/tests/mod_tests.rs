@@ -224,7 +224,7 @@ async fn test_get_filtered_objects_unsafe() {
             id: "obj1",
             game_id: "test_game",
             name: "Object 1",
-            folder_path: Some("Obj1"),
+            folder_path: "Obj1",
             object_type: "Character",
         },
     )

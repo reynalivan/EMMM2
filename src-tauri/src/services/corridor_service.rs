@@ -365,8 +365,10 @@ mod tests {
     use super::{get_corridor_state, preview_switch, resolve_restore_collection};
     use crate::database::models::{GameType, ItemStatus};
     use crate::repo::{collection_repo, corridor_repo};
+    use crate::services::projected_state_service;
     use crate::test_utils::{
-        init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
+        init_test_db, insert_test_game, insert_test_mod, insert_test_object,
+        set_test_collection_snapshot, set_test_corridor_pointers_unchecked, TestGameFixture,
         TestModFixture, TestObjectFixture,
     };
 
@@ -393,7 +395,7 @@ mod tests {
                 id: "object-1",
                 game_id: "game-1",
                 name: "AINOZ",
-                folder_path: Some("AINOZ"),
+                folder_path: "AINOZ",
                 object_type: "Character",
             },
         )
@@ -479,9 +481,15 @@ mod tests {
         .await
         .expect("create unsaved");
 
-        corridor_repo::update_pointers(&ctx.pool, "game-1", false, Some("missing-active"), None)
-            .await
-            .expect("set stale active pointer");
+        set_test_corridor_pointers_unchecked(
+            &ctx.pool,
+            "game-1",
+            false,
+            Some("missing-active"),
+            None,
+        )
+        .await
+        .expect("set stale active pointer");
 
         let resolved = resolve_restore_collection(&ctx.pool, "game-1", false)
             .await
@@ -513,6 +521,13 @@ mod tests {
             collection_repo::create(&ctx.pool, "unsaved-1", "game-1", "202603251217", true, true)
                 .await
                 .expect("create unsaved");
+        set_test_collection_snapshot(
+            &ctx.pool,
+            &unsaved.id,
+            &projected_state_service::empty_projected_state(),
+        )
+        .await
+        .expect("seed unsaved snapshot");
 
         corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&unsaved.id), None)
             .await
@@ -567,6 +582,13 @@ mod tests {
         )
         .await
         .expect("create unsafe unsaved");
+        let empty_state = projected_state_service::empty_projected_state();
+        set_test_collection_snapshot(&ctx.pool, &safe_unsaved.id, &empty_state)
+            .await
+            .expect("seed safe unsaved snapshot");
+        set_test_collection_snapshot(&ctx.pool, &unsafe_unsaved.id, &empty_state)
+            .await
+            .expect("seed unsafe unsaved snapshot");
 
         corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&safe_unsaved.id), None)
             .await

@@ -172,7 +172,7 @@ async fn test_toggle_pin_object() {
             id: "o1",
             game_id: "g1",
             name: "Obj1",
-            folder_path: Some("path"),
+            folder_path: "path",
             object_type: "Char",
         },
     )
@@ -219,7 +219,7 @@ async fn test_update_object() {
             id: "o1",
             game_id: "g1",
             name: "Obj1",
-            folder_path: Some("path"),
+            folder_path: "path",
             object_type: "Char",
         },
     )
@@ -277,7 +277,7 @@ async fn test_delete_object_empty() {
             id: "o1",
             game_id: "g1",
             name: "Obj1",
-            folder_path: Some("path"),
+            folder_path: "path",
             object_type: "Char",
         },
     )
@@ -323,7 +323,7 @@ async fn test_delete_object_cascade_mods() {
             id: "o1",
             game_id: "g1",
             name: "Obj1",
-            folder_path: Some("path"),
+            folder_path: "path",
             object_type: "Char",
         },
     )

@@ -38,7 +38,7 @@ async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
                 id,
                 game_id: "g_object_mods",
                 name,
-                folder_path: Some(folder_path),
+                folder_path,
                 object_type: "Character",
             },
         )
@@ -253,7 +253,7 @@ async fn test_suggest_random_mods() {
                 id,
                 game_id: "g1",
                 name,
-                folder_path: Some(folder_path),
+                folder_path,
                 object_type,
             },
         )

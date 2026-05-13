@@ -18,7 +18,6 @@ fn test_command_error_from_sqlx() {
 fn test_command_error_serialization() {
     let err = CommandError::NotFound("Item X not found".to_string());
 
-    // CommandError serializes as just its Display string
     let serialized = serde_json::to_string(&err).unwrap();
-    assert_eq!(serialized, "\"Not found: Item X not found\"");
+    assert_eq!(serialized, "{\"NotFound\":\"Item X not found\"}");
 }

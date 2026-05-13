@@ -160,7 +160,7 @@ fn status_text_safe_mode_on() {
         ..Default::default()
     };
     let text = generate_status_text(&fields, &crate::services::hotkeys::HotkeyConfig::default());
-    assert!(text.contains("Safe: ON"));
+    assert!(text.contains("Safe: On"));
     assert!(text.contains("Preset: Default"));
 }
 
@@ -174,7 +174,7 @@ fn status_text_safe_mode_off_with_folder() {
         conflict_count: Some(0),
     };
     let text = generate_status_text(&fields, &crate::services::hotkeys::HotkeyConfig::default());
-    assert!(text.contains("Safe: OFF"));
+    assert!(text.contains("Safe: Off"));
     assert!(text.contains("Folder: Cape"));
     assert!(text.contains("Scope: Albedo"));
 }
@@ -210,7 +210,7 @@ fn write_status_file_atomic() {
     .unwrap();
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
-    assert!(content.contains("Safe: ON"));
+    assert!(content.contains("Safe: On"));
 }
 
 #[test]

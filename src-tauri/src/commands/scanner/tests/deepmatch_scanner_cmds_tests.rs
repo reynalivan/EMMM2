@@ -36,7 +36,7 @@ async fn setup_object_preview_fixture(
                 id: object_id,
                 game_id: "g_preview_objects",
                 name: object_name,
-                folder_path: Some(object_name),
+                folder_path: object_name,
                 object_type: "Character",
             },
         )

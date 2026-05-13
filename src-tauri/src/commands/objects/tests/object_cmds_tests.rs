@@ -47,7 +47,7 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
             id: "obj_disabled",
             game_id: &game_id,
             name: "MyFallbackMod",
-            folder_path: Some(folder_name),
+            folder_path: folder_name,
             object_type: "Other",
         },
     )
@@ -102,7 +102,7 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
             id: obj_id,
             game_id: &game_id,
             name: "NSFW_Mod",
-            folder_path: Some("NSFW_Mod_Folder"),
+            folder_path: "NSFW_Mod_Folder",
             object_type: "Character",
         },
     )
@@ -220,7 +220,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
             id: obj_id,
             game_id: &game_id,
             name: "OldName",
-            folder_path: Some("test_obj_folder"),
+            folder_path: "test_obj_folder",
             object_type: "Other",
         },
     )
@@ -280,7 +280,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
             id: empty_obj_id,
             game_id: &game_id,
             name: "Empty",
-            folder_path: None,
+            folder_path: "Empty",
             object_type: "Character",
         },
     )
@@ -295,7 +295,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
             id: full_obj_id,
             game_id: &game_id,
             name: "Full",
-            folder_path: None,
+            folder_path: "Full",
             object_type: "Weapon",
         },
     )
@@ -374,7 +374,7 @@ async fn test_pin_object_cmd() -> CommandResult<()> {
             id: obj_id,
             game_id: &game_id,
             name: "Normal",
-            folder_path: Some("test_obj_pin_folder"),
+            folder_path: "test_obj_pin_folder",
             object_type: "Character",
         },
     )
@@ -421,7 +421,7 @@ async fn test_apply_object_match_cmd() -> CommandResult<()> {
             id: obj_id,
             game_id: &game_id,
             name: "PhysicalName",
-            folder_path: Some("test_obj_match_folder"),
+            folder_path: "test_obj_match_folder",
             object_type: "Other",
         },
     )
@@ -473,7 +473,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             id: "obj_terminal_counts",
             game_id: &game_id,
             name: "Albedo",
-            folder_path: Some(object_folder),
+            folder_path: object_folder,
             object_type: "Character",
         },
     )

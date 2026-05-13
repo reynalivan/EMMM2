@@ -3,7 +3,9 @@ use std::path::Path;
 use crate::database::models::ItemStatus;
 use crate::domain::errors::AppError;
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::mods::core_ops::standardize_prefix;
+use crate::services::mods::core_ops::{
+    find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
+};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 
 pub struct ObjectSwitchOutcome {
@@ -114,22 +116,6 @@ async fn heal_object_root_path(
     tx.commit().await?;
 
     Ok(())
-}
-
-fn build_rename_conflict_error(old_name: &str, attempted_path: &Path) -> AppError {
-    let base_name = crate::services::scanner::core::normalizer::normalize_display_name(old_name);
-    AppError::Io(format!(
-        r#"{{"type":"RenameConflict","attempted_target":"{}","existing_path":"{}","base_name":"{}"}}"#,
-        attempted_path
-            .to_string_lossy()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\""),
-        attempted_path
-            .to_string_lossy()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\""),
-        base_name.replace('"', "\\\"")
-    ))
 }
 
 fn map_toggle_error(path: &Path, source_path: &str, error: std::io::Error) -> AppError {
@@ -259,8 +245,16 @@ pub async fn toggle_object_root_service(
         .parent()
         .ok_or_else(|| AppError::Io("Invalid object root path".to_string()))?;
     let next_absolute_path = parent.join(&new_name);
-    if next_absolute_path.exists() {
-        return Err(build_rename_conflict_error(&old_name, &next_absolute_path));
+    if let Some(existing_path) =
+        find_existing_sibling_case_insensitive(parent, &new_name, current_path)
+    {
+        let base_name =
+            crate::services::scanner::core::normalizer::normalize_display_name(&old_name);
+        return Err(rename_conflict_error(
+            &next_absolute_path,
+            &existing_path,
+            &base_name,
+        ));
     }
 
     crate::services::fs_utils::file_utils::rename_cross_drive_fallback(

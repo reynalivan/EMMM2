@@ -53,7 +53,7 @@ async fn test_get_object_by_id_service() {
             id: "o1",
             game_id: "g_get_obj",
             name: "MyObj",
-            folder_path: Some("my_folder"),
+            folder_path: "my_folder",
             object_type: "Character",
         },
     )
@@ -102,7 +102,7 @@ async fn test_get_category_counts_service() {
                 id,
                 game_id: "g_cat_counts",
                 name,
-                folder_path: Some(folder_path),
+                folder_path,
                 object_type,
             },
         )
@@ -163,7 +163,7 @@ async fn test_disk_reconcile_removes_missing_object_rows() {
             id: "o2",
             game_id: "g_gc_lost",
             name: "Obj2",
-            folder_path: Some("clean_folder"),
+            folder_path: "clean_folder",
             object_type: "Character",
         },
     )
@@ -177,7 +177,7 @@ async fn test_disk_reconcile_removes_missing_object_rows() {
             id: "o3",
             game_id: "g_gc_lost",
             name: "MissingObj",
-            folder_path: Some("deleted_folder"),
+            folder_path: "deleted_folder",
             object_type: "Character",
         },
     )
@@ -223,7 +223,7 @@ async fn test_disk_reconcile_keeps_unicode_folder_with_ascii_case_variants() {
             id: "o_unicode",
             game_id: "g_gc_unicode",
             name: "한국 Character",
-            folder_path: Some("한국character"),
+            folder_path: "한국character",
             object_type: "Character",
         },
     )
@@ -265,7 +265,7 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
             id: "o_missing_path",
             game_id: "g_missing_path",
             name: "Obj",
-            folder_path: Some("existing_index_row"),
+            folder_path: "existing_index_row",
             object_type: "Character",
         },
     )

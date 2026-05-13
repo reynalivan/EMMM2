@@ -238,6 +238,20 @@ pub async fn list_mod_folders_inner(
     log::debug!("Listing mods at base: {}", base.display());
 
     // Resolve target directory (base + optional sub_path).
+    if let Some(sp) = &sub_path {
+        let requested = Path::new(sp);
+        if requested.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        }) {
+            return Err("PathEscapeError: sub_path resolves outside of mods_path".to_string());
+        }
+    }
+
     let target = match &sub_path {
         Some(sp) if !sp.is_empty() => base.join(sp),
         _ => base.to_path_buf(),
@@ -285,8 +299,13 @@ pub async fn list_mod_folders_inner(
         let canonical_base = base
             .canonicalize()
             .map_err(|e| format!("Cannot canonicalize mods_path: {e}"))?;
-        // target may not exist yet if renamed; fall back to the raw path.
-        let canonical_target = target.canonicalize().unwrap_or_else(|_| target.clone());
+        let canonical_target = if target.exists() {
+            target.canonicalize().unwrap_or_else(|_| target.clone())
+        } else if let Some(sp) = sub_path.as_deref().filter(|value| !value.is_empty()) {
+            canonical_base.join(sp)
+        } else {
+            canonical_base.clone()
+        };
         if !canonical_target.starts_with(&canonical_base) {
             return Err("PathEscapeError: sub_path resolves outside of mods_path".to_string());
         }

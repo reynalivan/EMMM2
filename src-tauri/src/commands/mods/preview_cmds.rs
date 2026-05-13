@@ -102,6 +102,12 @@ fn resolve_image_path(mod_root: &Path, image_path: &str) -> Result<PathBuf, AppE
         mod_root.join(raw)
     };
 
+    let canonical_root = mod_root.canonicalize().map_err(|e| {
+        AppError::Metadata(MetadataError::NotFound(format!(
+            "Failed to resolve mod folder: {e}"
+        )))
+    })?;
+
     // Use canonicalize to resolve symlinks and '..' if any (though PathGuard should prevent escaping)
     let canonical_target = candidate.canonicalize().map_err(|e| {
         AppError::Metadata(MetadataError::NotFound(format!(
@@ -109,7 +115,7 @@ fn resolve_image_path(mod_root: &Path, image_path: &str) -> Result<PathBuf, AppE
         )))
     })?;
 
-    if !canonical_target.starts_with(mod_root) {
+    if !canonical_target.starts_with(&canonical_root) {
         return Err(AppError::Metadata(MetadataError::Security(
             "Image path escapes mod folder".to_string(),
         )));

@@ -167,7 +167,7 @@ mod tests {
                 id: "dummy_obj",
                 game_id,
                 name: "Dummy Object",
-                folder_path: Some("Dummy"),
+                folder_path: "Dummy",
                 object_type: "Other",
             },
         )

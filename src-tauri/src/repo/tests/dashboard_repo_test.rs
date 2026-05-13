@@ -29,7 +29,7 @@ async fn seed_game(pool: &SqlitePool, id: &str, name: &str) {
             id: &format!("obj_{}", id),
             game_id: id,
             name: "Default Object",
-            folder_path: Some(&format!("/dummy/obj/{}", id)),
+            folder_path: &format!("/dummy/obj/{}", id),
             object_type: "Other",
         },
     )

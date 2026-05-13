@@ -55,7 +55,7 @@ async fn setup_workspace_fixture(
             id: "obj_workspace",
             game_id: "game_workspace",
             name: object_folder,
-            folder_path: Some(object_folder),
+            folder_path: object_folder,
             object_type: "Character",
         },
     )

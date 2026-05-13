@@ -3,17 +3,14 @@ use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-use std::sync::LazyLock;
-
-static DISABLED_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^disabled\s+").unwrap());
+use std::path::{Path, PathBuf};
 
 pub fn standardize_prefix(folder_name: &str, target_enabled: bool) -> String {
-    let clean_name = DISABLED_RE.replace(folder_name, "").trim().to_string();
+    let clean_name =
+        crate::services::scanner::core::normalizer::normalize_display_name(folder_name);
     let valid_name = if clean_name.is_empty() {
-        folder_name
+        folder_name.trim()
     } else {
         &clean_name
     };
@@ -23,6 +20,47 @@ pub fn standardize_prefix(folder_name: &str, target_enabled: bool) -> String {
     }
 
     format!("DISABLED {valid_name}")
+}
+
+pub(crate) fn find_existing_sibling_case_insensitive(
+    parent: &Path,
+    target_name: &str,
+    source_path: &Path,
+) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(parent).ok()?;
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        if entry_path == source_path {
+            continue;
+        }
+
+        let entry_name = entry.file_name();
+        if entry_name
+            .to_string_lossy()
+            .eq_ignore_ascii_case(target_name)
+        {
+            return Some(entry_path);
+        }
+    }
+
+    None
+}
+
+pub(crate) fn rename_conflict_error(
+    attempted_path: &Path,
+    existing_path: &Path,
+    base_name: &str,
+) -> AppError {
+    AppError::Io(
+        serde_json::json!({
+            "type": "RenameConflict",
+            "message": "Target already exists",
+            "attempted_target": attempted_path.to_string_lossy(),
+            "existing_path": existing_path.to_string_lossy(),
+            "base_name": base_name,
+        })
+        .to_string(),
+    )
 }
 
 pub async fn toggle_mod_inner(
@@ -52,20 +90,9 @@ pub async fn toggle_mod_inner(
     let new_path = parent.join(&new_name);
 
     // Guard: target already exists → rename collision (both X and DISABLED X on disk)
-    if new_path.exists() {
+    if let Some(existing_path) = find_existing_sibling_case_insensitive(parent, &new_name, src) {
         let base = crate::services::scanner::core::normalizer::normalize_display_name(&old_name);
-        return Err(AppError::Io(format!(
-            r#"{{"type":"RenameConflict","attempted_target":"{}","existing_path":"{}","base_name":"{}"}}"#,
-            new_path
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-            new_path
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-            base.replace('"', "\\\""),
-        )));
+        return Err(rename_conflict_error(&new_path, &existing_path, &base));
     }
 
     crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &new_path).map_err(
@@ -394,21 +421,12 @@ pub async fn rename_mod_folder_inner(
         };
 
     let new_path = parent.join(&new_folder_name);
-    if new_path.exists() {
+    if let Some(existing_path) =
+        find_existing_sibling_case_insensitive(parent, &new_folder_name, path)
+    {
         let base_name =
             crate::services::scanner::core::normalizer::normalize_display_name(&old_folder_name);
-        return Err(AppError::Io(format!(
-            r#"{{"type":"RenameConflict","attempted_target":"{}","existing_path":"{}","base_name":"{}"}}"#,
-            new_path
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-            new_path
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-            base_name.replace('"', "\\\"")
-        )));
+        return Err(rename_conflict_error(&new_path, &existing_path, &base_name));
     }
 
     crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path).map_err(

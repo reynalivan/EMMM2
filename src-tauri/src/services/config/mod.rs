@@ -55,6 +55,17 @@ impl ConfigService {
         }
     }
 
+    /// Async test constructor for current-thread tokio tests that cannot use block_in_place.
+    pub async fn new_for_test_async(pool: SqlitePool) -> Self {
+        Self::ensure_tables(&pool).await;
+        let settings = Self::load_from_db(&pool).await;
+
+        Self {
+            pool,
+            settings: Mutex::new(settings),
+        }
+    }
+
     /// Create tables and apply ad-hoc schema patches if they don't exist (idempotent).
     async fn ensure_tables(pool: &SqlitePool) {
         // Games table (matches 001_init.sql + 012 ALTER extensions)

@@ -49,6 +49,8 @@ fn test_sanitize_filename() {
 #[test]
 fn test_normalize_display_name() {
     assert_eq!(normalize_display_name("DISABLED raiden_mod"), "raiden_mod");
+    assert_eq!(normalize_display_name("disabled_raiden_mod"), "raiden_mod");
+    assert_eq!(normalize_display_name("DISABLED-raiden_mod"), "raiden_mod");
     assert_eq!(normalize_display_name("raiden_mod"), "raiden_mod");
 }
 
@@ -60,11 +62,12 @@ fn test_is_disabled_folder() {
     assert!(is_disabled_folder("disabled some_mod"));
     assert!(is_disabled_folder("Disabled some_mod"));
     assert!(is_disabled_folder("DISabled some_mod"));
+    // Legacy malformed variants are repaired by toggle/rename paths.
+    assert!(is_disabled_folder("disabled_some_mod"));
+    assert!(is_disabled_folder("DISABLED-some_mod"));
     // Not disabled
     assert!(!is_disabled_folder("some_mod"));
     assert!(!is_disabled_folder("a_disabled_mod"));
-    assert!(!is_disabled_folder("disabled_some_mod"));
-    assert!(!is_disabled_folder("DISABLED-some_mod"));
     assert!(!is_disabled_folder("dis some_mod"));
     assert!(!is_disabled_folder("distance_mod"));
 }

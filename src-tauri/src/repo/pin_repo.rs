@@ -35,12 +35,23 @@ pub async fn get(pool: &SqlitePool) -> Result<PinConfig, PinError> {
         }))
 }
 
+async fn ensure_config_row(pool: &SqlitePool) -> Result<(), PinError> {
+    sqlx::query(
+        r#"INSERT OR IGNORE INTO pin_config (id, failed_attempts, updated_at)
+        VALUES (1, 0, CURRENT_TIMESTAMP)"#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Set the PIN hash (and optional recovery hash).
 pub async fn set_pin(
     pool: &SqlitePool,
     pin_hash: &str,
     recovery_hash: Option<&str>,
 ) -> Result<(), PinError> {
+    ensure_config_row(pool).await?;
     sqlx::query(
         r#"UPDATE pin_config SET
             pin_hash = ?,
@@ -59,6 +70,7 @@ pub async fn set_pin(
 
 /// Clear the PIN (remove protection).
 pub async fn clear_pin(pool: &SqlitePool) -> Result<(), PinError> {
+    ensure_config_row(pool).await?;
     sqlx::query(
         r#"UPDATE pin_config SET
             pin_hash = NULL,
@@ -79,6 +91,7 @@ pub async fn record_failed_attempt(
     max_attempts: i32,
     lockout_minutes: i32,
 ) -> Result<i32, PinError> {
+    ensure_config_row(pool).await?;
     sqlx::query(
         r#"UPDATE pin_config SET
             failed_attempts = failed_attempts + 1,
@@ -103,6 +116,7 @@ pub async fn record_failed_attempt(
 }
 
 pub async fn set_failed_attempts(pool: &SqlitePool, failed_attempts: i32) -> Result<(), PinError> {
+    ensure_config_row(pool).await?;
     sqlx::query(
         r#"UPDATE pin_config SET
             failed_attempts = ?,
@@ -116,6 +130,7 @@ pub async fn set_failed_attempts(pool: &SqlitePool, failed_attempts: i32) -> Res
 }
 
 pub async fn set_lockout_seconds(pool: &SqlitePool, seconds: i32) -> Result<(), PinError> {
+    ensure_config_row(pool).await?;
     sqlx::query(
         r#"UPDATE pin_config SET
             failed_attempts = 0,
@@ -131,6 +146,7 @@ pub async fn set_lockout_seconds(pool: &SqlitePool, seconds: i32) -> Result<(), 
 
 /// Reset failed attempts (after successful verification).
 pub async fn reset_failed_attempts(pool: &SqlitePool) -> Result<(), PinError> {
+    ensure_config_row(pool).await?;
     sqlx::query(
         r#"UPDATE pin_config SET
             failed_attempts = 0,

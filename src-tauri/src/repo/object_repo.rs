@@ -262,7 +262,7 @@ pub async fn get_filtered_objects(
                 created_at: row.created_at.clone(),
                 mod_count: 0,
                 enabled_count: 0,
-                is_object_disabled: row.is_object_disabled,
+                is_object_disabled: fallback_object_disabled(row),
                 has_naming_conflict: row.has_naming_conflict,
                 active_mod_paths: None,
             })
@@ -299,31 +299,39 @@ pub async fn get_filtered_objects(
 
     let mut objects: Vec<ObjectSummary> = rows
         .into_iter()
-        .map(|row| ObjectSummary {
-            id: row.id,
-            name: row.name,
-            folder_path: row.folder_path,
-            matched_entry_key: row.matched_entry_key,
-            matched_alias_name: row.matched_alias_name,
-            matched_confidence: row.matched_confidence,
-            matched_reason: row.matched_reason,
-            matched_source: row.matched_source,
-            object_type: row.object_type,
-            sub_category: row.sub_category,
-            status: row.status,
-            metadata: row.metadata,
-            tags: row.tags,
-            hash_db: row.hash_db,
-            custom_skins: row.custom_skins,
-            is_pinned: row.is_pinned,
-            is_auto_sync: row.is_auto_sync,
-            thumbnail_path: row.thumbnail_path,
-            created_at: row.created_at,
-            mod_count: row.mod_count,
-            enabled_count: row.enabled_count,
-            is_object_disabled: row.is_object_disabled,
-            has_naming_conflict: row.has_naming_conflict,
-            active_mod_paths: row.active_mod_paths,
+        .map(|row| {
+            let is_object_disabled = if row.projection_available == 0 {
+                fallback_object_disabled(&row)
+            } else {
+                row.is_object_disabled
+            };
+
+            ObjectSummary {
+                id: row.id,
+                name: row.name,
+                folder_path: row.folder_path,
+                matched_entry_key: row.matched_entry_key,
+                matched_alias_name: row.matched_alias_name,
+                matched_confidence: row.matched_confidence,
+                matched_reason: row.matched_reason,
+                matched_source: row.matched_source,
+                object_type: row.object_type,
+                sub_category: row.sub_category,
+                status: row.status,
+                metadata: row.metadata,
+                tags: row.tags,
+                hash_db: row.hash_db,
+                custom_skins: row.custom_skins,
+                is_pinned: row.is_pinned,
+                is_auto_sync: row.is_auto_sync,
+                thumbnail_path: row.thumbnail_path,
+                created_at: row.created_at,
+                mod_count: row.mod_count,
+                enabled_count: row.enabled_count,
+                is_object_disabled,
+                has_naming_conflict: row.has_naming_conflict,
+                active_mod_paths: row.active_mod_paths,
+            }
         })
         .collect();
 
@@ -335,6 +343,13 @@ pub async fn get_filtered_objects(
     }
 
     Ok(objects)
+}
+
+fn fallback_object_disabled(row: &ObjectSummaryRow) -> bool {
+    row.is_object_disabled
+        || split_segments(&row.folder_path)
+            .iter()
+            .any(|segment| is_disabled_folder(segment))
 }
 
 async fn load_game_mods_path(
