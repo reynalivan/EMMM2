@@ -78,23 +78,23 @@ describe('ObjectContextMenu', () => {
       />,
     );
 
-    expect(screen.getByText('context.edit_meta')).toBeInTheDocument();
-    expect(screen.getByText('context.reveal_explorer')).toBeInTheDocument();
-    expect(screen.getByText('context.pin_top')).toBeInTheDocument();
-    expect(screen.getByText('context.disable')).toBeInTheDocument();
-    expect(screen.queryByText('context.enable')).toBeNull();
-    expect(screen.getByText('context.move_category')).toBeInTheDocument();
+    expect(screen.getByText('Edit Metadata')).toBeInTheDocument();
+    expect(screen.getByText('Reveal in File Explorer')).toBeInTheDocument();
+    expect(screen.getByText('Pin to Top')).toBeInTheDocument();
+    expect(screen.getByText('Disable')).toBeInTheDocument();
+    expect(screen.queryByText('Enable')).toBeNull();
+    expect(screen.getByText('Move Category...')).toBeInTheDocument();
     expect(screen.getByText('Characters')).toBeInTheDocument();
-    expect(screen.getByText('context.sync_db')).toBeInTheDocument();
-    expect(screen.getByText('context.delete_object')).toBeInTheDocument();
+    expect(screen.getByText('Sync with DB')).toBeInTheDocument();
+    expect(screen.getByText('Delete Object')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('context.edit_meta'));
-    fireEvent.click(screen.getByText('context.reveal_explorer'));
-    fireEvent.click(screen.getByText('context.pin_top'));
-    fireEvent.click(screen.getByText('context.disable'));
+    fireEvent.click(screen.getByText('Edit Metadata'));
+    fireEvent.click(screen.getByText('Reveal in File Explorer'));
+    fireEvent.click(screen.getByText('Pin to Top'));
+    fireEvent.click(screen.getByText('Disable'));
     fireEvent.click(screen.getByText('Characters'));
-    fireEvent.click(screen.getByText('context.sync_db'));
-    fireEvent.click(screen.getByText('context.delete_object'));
+    fireEvent.click(screen.getByText('Sync with DB'));
+    fireEvent.click(screen.getByText('Delete Object'));
 
     expect(handlers.onEditObject).toHaveBeenCalledWith('1');
     expect(handlers.onRevealInExplorer).toHaveBeenCalledWith('1');
@@ -129,11 +129,11 @@ describe('ObjectContextMenu', () => {
       />,
     );
 
-    expect(screen.getByText('context.unpin')).toBeInTheDocument();
-    expect(screen.getByText('context.enable')).toBeInTheDocument();
-    expect(screen.queryByText('context.disable')).toBeNull();
+    expect(screen.getByText('Unpin Objects')).toBeInTheDocument();
+    expect(screen.getByText('Enable')).toBeInTheDocument();
+    expect(screen.queryByText('Disable')).toBeNull();
 
-    fireEvent.click(screen.getByText('context.enable'));
+    fireEvent.click(screen.getByText('Enable'));
     expect(handlers.onEnableObject).toHaveBeenCalledWith('2');
   });
 
@@ -156,7 +156,7 @@ describe('ObjectContextMenu', () => {
       <ObjectContextMenu item={itemTarget} isSyncing categories={dummyCategories} {...handlers} />,
     );
 
-    const syncButton = screen.getByRole('button', { name: 'context.syncing' });
+    const syncButton = screen.getByRole('button', { name: 'Syncing...' });
     expect(syncButton).toBeDisabled();
     fireEvent.click(syncButton);
     expect(handlers.onSyncWithDb).not.toHaveBeenCalled();

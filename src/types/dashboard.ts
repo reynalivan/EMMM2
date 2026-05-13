@@ -1,5 +1,3 @@
-import type { ModFolder } from './object';
-
 export interface DashboardStats {
   total_mods: number;
   enabled_mods: number;
@@ -9,16 +7,29 @@ export interface DashboardStats {
   total_collections: number;
 }
 
-export interface ChartData {
+export interface CategorySlice {
+  category: string;
+  count: number;
+}
+
+export interface GameSlice {
+  game_id: string;
+  game_name: string;
+  count: number;
+}
+
+export interface RecentMod {
+  id: string;
   name: string;
-  value: number;
-  color?: string;
+  game_name: string;
+  object_name: string | null;
+  indexed_at: string | null;
 }
 
 export interface DashboardPayload {
   stats: DashboardStats;
   duplicate_waste_bytes?: number;
-  category_distribution: ChartData[];
-  game_distribution: ChartData[];
-  recent_mods: ModFolder[];
+  category_distribution: CategorySlice[];
+  game_distribution: GameSlice[];
+  recent_mods: RecentMod[];
 }

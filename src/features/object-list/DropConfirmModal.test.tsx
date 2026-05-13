@@ -39,8 +39,8 @@ describe('DropConfirmModal', () => {
       />,
     );
 
-    expect(screen.getByText('drop_confirm.validating')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('drop_confirm.skip_validation'));
+    expect(screen.getByText('Validating folder target...')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Skip validation'));
     expect(onSkipValidation).toHaveBeenCalled();
   });
 
@@ -66,10 +66,10 @@ describe('DropConfirmModal', () => {
       />,
     );
 
-    expect(screen.getByText('drop_confirm.title')).toBeInTheDocument();
+    expect(screen.getByText('Move Folder?')).toBeInTheDocument();
     expect(screen.getByText('Target 2')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('drop_confirm.move_to'));
+    fireEvent.click(screen.getByText('Move to Target 2'));
     expect(onMoveToSuggested).toHaveBeenCalled();
   });
 });

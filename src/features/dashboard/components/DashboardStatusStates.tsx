@@ -10,6 +10,23 @@ export function DashboardLoadingState() {
   );
 }
 
+export function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation(['dashboard']);
+
+  return (
+    <div className="h-full flex items-center justify-center bg-base-100">
+      <div className="alert alert-error max-w-md">
+        <div>
+          <h3 className="font-bold">{t('error.message')}</h3>
+          <button className="btn btn-sm btn-outline mt-3" onClick={onRetry}>
+            {t('error.retry')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardEmptyState() {
   const { t } = useTranslation(['dashboard']);
   const { setWorkspaceView } = useAppStore();

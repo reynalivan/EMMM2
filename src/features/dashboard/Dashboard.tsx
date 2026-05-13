@@ -10,7 +10,11 @@ import { DashboardActivity } from './components/DashboardActivity';
 import { DashboardCharts } from './components/DashboardCharts';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { DashboardStats } from './components/DashboardStats';
-import { DashboardEmptyState, DashboardLoadingState } from './components/DashboardStatusStates';
+import {
+  DashboardEmptyState,
+  DashboardErrorState,
+  DashboardLoadingState,
+} from './components/DashboardStatusStates';
 
 const EMPTY_STATS = {
   total_games: 0,
@@ -30,8 +34,12 @@ export default function Dashboard() {
   const { activeGame } = useActiveGame();
   const { keybindings, isLoading: keybindingsLoading } = useActiveKeybindings();
 
-  if (isLoading || isError || !data) {
+  if (isLoading) {
     return <DashboardLoadingState />;
+  }
+
+  if (isError || !data) {
+    return <DashboardErrorState onRetry={refresh} />;
   }
 
   if (data.stats.total_games === 0) {

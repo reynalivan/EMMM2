@@ -16,14 +16,14 @@ vi.mock('@tauri-apps/api/core', () => ({
 // Mock recharts to avoid canvas rendering issues in jsdom
 vi.mock('recharts', () => ({
   PieChart: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="pie-chart">{children}</div>
+    <svg data-testid="pie-chart">{children}</svg>
   ),
-  Pie: () => <div data-testid="pie" />,
+  Pie: () => <g data-testid="pie" />,
   Cell: () => null,
   BarChart: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="bar-chart">{children}</div>
+    <svg data-testid="bar-chart">{children}</svg>
   ),
-  Bar: () => <div data-testid="bar" />,
+  Bar: () => <g data-testid="bar" />,
   XAxis: () => null,
   YAxis: () => null,
   Tooltip: () => null,
@@ -72,34 +72,21 @@ const mockFullStats = {
   },
   duplicate_waste_bytes: 0,
   category_distribution: [
-    { name: 'Character', value: 25 },
-    { name: 'Weapon', value: 10 },
-    { name: 'UI', value: 7 },
+    { category: 'Character', count: 25 },
+    { category: 'Weapon', count: 10 },
+    { category: 'UI', count: 7 },
   ],
   game_distribution: [
-    { name: 'Genshin Impact', value: 30 },
-    { name: 'HSR', value: 12 },
+    { game_id: 'g-1', game_name: 'Genshin Impact', count: 30 },
+    { game_id: 'g-2', game_name: 'HSR', count: 12 },
   ],
   recent_mods: [
     {
       id: 'mod-1',
       name: 'Hu Tao Quantum Mod',
-      folder_name: 'Hu Tao Quantum Mod',
-      path: 'E:/Mods/HuTao/Quantum',
-      is_enabled: true,
-      is_directory: true,
-      thumbnail_path: null,
-      modified_at: Date.now(),
-      size_bytes: 1024,
-      has_info_json: false,
-      is_favorite: false,
-      is_misplaced: false,
-      is_safe: true,
-      metadata: null,
-      category: 'Character',
-      node_type: 'mod',
-      classification_reasons: [],
-      warnings: [],
+      game_name: 'Genshin Impact',
+      object_name: 'Character',
+      indexed_at: '2026-05-13T00:00:00',
     },
   ],
 };
@@ -128,8 +115,7 @@ describe('Dashboard - TC-33', () => {
 
       render(<Dashboard />);
 
-      // DashboardSkeleton renders animate-pulse
-      expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
+      expect(document.querySelector('.loading-spinner')).toBeInTheDocument();
     });
   });
 
@@ -216,8 +202,7 @@ describe('Dashboard - TC-33', () => {
       render(<Dashboard />);
 
       expect(screen.getByText('Storage')).toBeInTheDocument();
-      // 1 GB
-      expect(screen.getByText('1.0 GB')).toBeInTheDocument();
+      expect(screen.getByText('1 GB')).toBeInTheDocument();
     });
 
     it('renders Collections stat tile', () => {
@@ -243,7 +228,7 @@ describe('Dashboard - TC-33', () => {
       render(<Dashboard />);
 
       expect(screen.getByText(/duplicate waste detected/i)).toBeInTheDocument();
-      expect(screen.getByText(/500\.0 MB wasted/i)).toBeInTheDocument();
+      expect(screen.getByText(/500 MB wasted/i)).toBeInTheDocument();
     });
 
     it('does not show waste alert when no duplicates', () => {
@@ -407,7 +392,7 @@ describe('Dashboard - TC-33', () => {
 
       render(<Dashboard />);
 
-      expect(screen.getByText(/dashboard\.mods_per_game/i)).toBeInTheDocument();
+      expect(screen.getByText(/mods per game/i)).toBeInTheDocument();
       expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
     });
   });

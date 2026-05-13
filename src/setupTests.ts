@@ -1,6 +1,20 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 import React from 'react';
+import browserEn from './locales/en/browser.json';
+import collectionsEn from './locales/en/collections.json';
+import commonEn from './locales/en/common.json';
+import dashboardEn from './locales/en/dashboard.json';
+import folderGridEn from './locales/en/folder_grid.json';
+import gridEn from './locales/en/grid.json';
+import layoutEn from './locales/en/layout.json';
+import objectsEn from './locales/en/objects.json';
+import onboardingEn from './locales/en/onboarding.json';
+import previewEn from './locales/en/preview.json';
+import safeModeEn from './locales/en/safe_mode.json';
+import scannerEn from './locales/en/scanner.json';
+import settingsEn from './locales/en/settings.json';
+import welcomeEn from './locales/en/welcome.json';
 
 // Mock Tauri API globally
 vi.mock('@tauri-apps/api/core', () => ({
@@ -108,10 +122,119 @@ if (typeof HTMLDialogElement !== 'undefined') {
   });
 }
 
-// Mock react-i18next
+type TranslationNode =
+  | string
+  | number
+  | boolean
+  | null
+  | TranslationNode[]
+  | { readonly [key: string]: TranslationNode };
+
+type TranslationOptions = Record<string, string | number | boolean | null | undefined>;
+type NamespaceInput = string | readonly string[] | undefined;
+
+const englishResources: Record<string, TranslationNode> = {
+  browser: browserEn,
+  collections: collectionsEn,
+  common: commonEn,
+  dashboard: dashboardEn,
+  folder_grid: folderGridEn,
+  grid: gridEn,
+  layout: layoutEn,
+  objects: objectsEn,
+  onboarding: onboardingEn,
+  preview: previewEn,
+  safe_mode: safeModeEn,
+  scanner: scannerEn,
+  settings: settingsEn,
+  welcome: welcomeEn,
+};
+
+function normalizeNamespaces(namespace: NamespaceInput): string[] {
+  if (Array.isArray(namespace)) {
+    return [...namespace];
+  }
+
+  if (typeof namespace === 'string' && namespace.length > 0) {
+    return [namespace];
+  }
+
+  return ['common'];
+}
+
+function resolveTranslationPath(resource: TranslationNode, path: string): string | null {
+  const value = path.split('.').reduce<TranslationNode | undefined>((current, segment) => {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined;
+    }
+
+    return current[segment];
+  }, resource);
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return null;
+}
+
+function interpolateTranslation(text: string, options: TranslationOptions | undefined): string {
+  if (!options) {
+    return text;
+  }
+
+  return text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key: string) => {
+    const value = options[key];
+    return value === undefined || value === null ? match : String(value);
+  });
+}
+
+function candidateKeys(key: string, options: TranslationOptions | undefined): string[] {
+  if (typeof options?.count === 'number' && options.count !== 1) {
+    return [`${key}_plural`, key];
+  }
+
+  return [key];
+}
+
+function translateKey(
+  key: string,
+  namespaces: readonly string[],
+  options?: TranslationOptions,
+): string {
+  const separatorIndex = key.indexOf(':');
+  const explicitNamespace = separatorIndex >= 0 ? key.slice(0, separatorIndex) : null;
+  const explicitKey = separatorIndex >= 0 ? key.slice(separatorIndex + 1) : key;
+  const searchNamespaces = explicitNamespace
+    ? [explicitNamespace]
+    : [...namespaces, 'common', ...Object.keys(englishResources)];
+
+  for (const namespace of searchNamespaces) {
+    const resource = englishResources[namespace];
+    if (!resource) {
+      continue;
+    }
+
+    for (const candidateKey of candidateKeys(explicitKey, options)) {
+      const value = resolveTranslationPath(resource, candidateKey);
+      if (value !== null) {
+        return interpolateTranslation(value, options);
+      }
+    }
+  }
+
+  return key;
+}
+
+// Mock react-i18next with English resources so component tests assert user-facing copy.
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
+  useTranslation: (namespace?: NamespaceInput) => ({
+    t: (key: string, options?: TranslationOptions) =>
+      translateKey(key, normalizeNamespaces(namespace), options),
     i18n: {
       changeLanguage: () => Promise.resolve(),
       language: 'en',
@@ -121,49 +244,45 @@ vi.mock('react-i18next', () => ({
     type: '3rdParty',
     init: () => {},
   },
+  Trans: ({
+    i18nKey,
+    values,
+    children,
+  }: {
+    i18nKey?: string;
+    values?: TranslationOptions;
+    children?: React.ReactNode;
+  }) =>
+    React.createElement(
+      React.Fragment,
+      null,
+      children ?? translateKey(i18nKey ?? '', ['common'], values),
+    ),
 }));
+
+type MockMotionProps = {
+  children?: React.ReactNode;
+  layout?: unknown;
+} & Record<string, unknown>;
+
+function createMockMotionElement(tag: string) {
+  return ({ children, layout: _layout, ...props }: MockMotionProps) =>
+    React.createElement(tag, props, children);
+}
 
 // Mock motion/react to avoid animation issues in jsdom
 vi.mock('motion/react', () => ({
   motion: {
-    div: ({
-      children,
-      layout: _layout,
-      ...props
-    }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('div', props as any, children),
-    button: ({
-      children,
-      layout: _layout,
-      ...props
-    }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('button', props as any, children),
-    span: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('span', props as any, children),
-    h1: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('h1', props as any, children),
-    h2: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('h2', props as any, children),
-    p: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('p', props as any, children),
-    section: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('section', props as any, children),
-    article: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('article', props as any, children),
-    ul: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('ul', props as any, children),
-    li: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('li', props as any, children),
+    div: createMockMotionElement('div'),
+    button: createMockMotionElement('button'),
+    span: createMockMotionElement('span'),
+    h1: createMockMotionElement('h1'),
+    h2: createMockMotionElement('h2'),
+    p: createMockMotionElement('p'),
+    section: createMockMotionElement('section'),
+    article: createMockMotionElement('article'),
+    ul: createMockMotionElement('ul'),
+    li: createMockMotionElement('li'),
   },
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
   useAnimation: () => ({
@@ -171,15 +290,7 @@ vi.mock('motion/react', () => ({
     stop: vi.fn(),
   }),
   Reorder: {
-    Group: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('div', props as any, children),
-    Item: ({
-      children,
-      layout: _layout,
-      ...props
-    }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement('div', props as any, children),
+    Group: createMockMotionElement('div'),
+    Item: createMockMotionElement('div'),
   },
 }));

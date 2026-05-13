@@ -53,6 +53,8 @@ export default function DropConfirmModal({
   if (!validation) return null;
 
   const isValidating = validation.status === 'validating';
+  const validationFolderLabel =
+    validation.paths.length === 1 ? validation.paths[0] : `${validation.paths.length} folders`;
   const hasSuggestion =
     validation.suggestedId &&
     validation.suggestedId !== validation.targetId &&
@@ -69,8 +71,7 @@ export default function DropConfirmModal({
               <p className="text-sm text-base-content/70">{t('drop_confirm.validating')}</p>
               <p className="text-xs text-base-content/40 mt-1">
                 {t('drop_confirm.validating_description', {
-                  count: validation.paths.length,
-                  targetName: validation.targetName,
+                  folderName: validationFolderLabel,
                 })}
               </p>
             </div>

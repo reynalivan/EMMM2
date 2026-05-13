@@ -21,7 +21,6 @@ vi.mock('../../lib/services/scanService', () => ({
     getExtractionProgress: vi.fn().mockResolvedValue(null),
     runDeepmatchPreview: vi.fn(),
     detectConflictsInFolder: vi.fn().mockResolvedValue([]),
-    // Add other methods if needed
   },
 }));
 
@@ -32,12 +31,15 @@ vi.mock('./components/ArchiveModal', () => ({
     onExtract,
   }: {
     error?: string | null;
-    onExtract: (paths: string[], pw?: string) => void;
+    onExtract: (paths: string[], passwords: Record<string, string>) => void;
   }) => (
     <div data-testid="archive-modal">
       Archive Modal
       {error && <div data-testid="archive-modal-error">{error}</div>}
-      <button onClick={() => onExtract(['/path.zip'], 'wrong-pass')} data-testid="mock-extract-btn">
+      <button
+        onClick={() => onExtract(['/path.zip'], { '/path.zip': 'wrong-pass' })}
+        data-testid="mock-extract-btn"
+      >
         Extract
       </button>
     </div>
@@ -71,8 +73,7 @@ describe('ScannerFeature', () => {
 
   it('renders correctly with active game', () => {
     render(<ScannerFeature />);
-    expect(screen.getByText('scanner:start_button')).toBeInTheDocument();
-    // expect(screen.getByText('Last Scan:')).toBeInTheDocument(); // Depends on scanResults?
+    expect(screen.getByRole('button', { name: /Start Scan/i })).toBeInTheDocument();
   });
 
   it('renders "No active game" when no game selected', () => {
@@ -83,10 +84,7 @@ describe('ScannerFeature', () => {
     });
 
     render(<ScannerFeature />);
-    // Might need to check if it shows an error or just disables buttons.
-    // Based on code: it shows "No active game selected" in error message if clicked.
-    // But initially it might just render generic UI.
-    expect(screen.getByText('scanner:start_button')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Start Scan/i })).toBeInTheDocument();
   });
 
   it('starts scan when button clicked', async () => {
@@ -101,7 +99,7 @@ describe('ScannerFeature', () => {
       },
     );
 
-    const scanButton = screen.getByText('scanner:start_button');
+    const scanButton = screen.getByRole('button', { name: /Start Scan/i });
     fireEvent.click(scanButton);
 
     await waitFor(() => {
@@ -131,7 +129,7 @@ describe('ScannerFeature', () => {
 
     render(<ScannerFeature />);
 
-    fireEvent.click(screen.getByText('scanner:start_button'));
+    fireEvent.click(screen.getByRole('button', { name: /Start Scan/i }));
 
     // Check if toast appears
     // ConflictToast renders if conflicts > 0.
@@ -141,7 +139,6 @@ describe('ScannerFeature', () => {
   });
 
   it('displays error in ArchiveModal when extraction fails', async () => {
-    // Setup: Detect archives to show modal
     (scanService.detectArchives as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         path: '/archive.zip',
@@ -152,7 +149,6 @@ describe('ScannerFeature', () => {
       },
     ]);
 
-    // Setup: Extraction fails with specific error
     const errorMsg = 'Password required for archive';
     (scanService.extractArchiveBatch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error(errorMsg),
@@ -160,22 +156,16 @@ describe('ScannerFeature', () => {
 
     render(<ScannerFeature />);
 
-    // Trigger detection
-    fireEvent.click(screen.getByText('scanner:start_button'));
+    fireEvent.click(screen.getByRole('button', { name: /Start Scan/i }));
 
-    // Wait for modal (mocked)
     await waitFor(() => {
       expect(screen.getByTestId('archive-modal')).toBeInTheDocument();
     });
 
-    // Clean previous mocks to ensure we track new calls
     vi.clearAllMocks();
 
-    // Trigger extract from within the mock (simulating user click in modal)
     fireEvent.click(screen.getByTestId('mock-extract-btn'));
 
-    // Expect the error to appear inside the modal (via the prop we mocked)
-    // This will FAIL initially because ScannerFeature doesn't pass the 'error' prop
     await waitFor(() => {
       expect(screen.getByTestId('archive-modal-error')).toHaveTextContent(errorMsg);
     });

@@ -29,19 +29,19 @@ describe('ObjectListStates', () => {
 
   it('renders no game state', () => {
     render(<ObjectListStates {...defaultProps} hasNoGame={true} />);
-    expect(screen.getByText('states.select_game')).toBeInTheDocument();
+    expect(screen.getByText('Select a game from the top bar to get started')).toBeInTheDocument();
   });
 
   it('renders empty state without filters', () => {
     render(<ObjectListStates {...defaultProps} isEmpty={true} />);
-    expect(screen.getByText('states.empty_hint')).toBeInTheDocument();
-    expect(screen.getByText('states.add_folder')).toBeInTheDocument();
-    expect(screen.getByText('states.auto_setup')).toBeInTheDocument();
+    expect(screen.getByText('Drag mod folders here or create an object')).toBeInTheDocument();
+    expect(screen.getByText('Add New Folder')).toBeInTheDocument();
+    expect(screen.getByText('Auto Setup Folder')).toBeInTheDocument();
   });
 
   it('renders empty state with filters', () => {
     render(<ObjectListStates {...defaultProps} isEmpty={true} activeFilters={{ cat: ['1'] }} />);
-    expect(screen.getByText('states.no_filter_results')).toBeInTheDocument();
+    expect(screen.getByText('No objects match filter')).toBeInTheDocument();
     expect(screen.getByTestId('clear-filters-btn')).toBeInTheDocument();
   });
 });

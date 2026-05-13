@@ -4,12 +4,11 @@
  * Tests main container logic, state management, user interactions.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../testing/test-utils';
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
-import type { DupScanReport, DupScanGroup } from '../../../types/scanner';
+import type { DupScanReport, DupScanGroup, ResolutionAction } from '../../../types/scanner';
 
 // Mock the hooks
 vi.mock('../hooks/useDedup', () => ({
@@ -27,6 +26,16 @@ vi.mock('../../../stores/useToastStore', () => ({
   },
 }));
 
+vi.mock('../../../hooks/useSettings', () => ({
+  useSettings: () => ({
+    settings: {
+      safe_mode: {
+        enabled: false,
+      },
+    },
+  }),
+}));
+
 // Mock child components
 vi.mock('./DuplicateTable', () => ({
   default: ({
@@ -35,30 +44,51 @@ vi.mock('./DuplicateTable', () => ({
     disabled,
   }: {
     groups: DupScanGroup[];
-    onSelectionChange: (groupId: string, action: string) => void;
+    onSelectionChange: (groupId: string, action: ResolutionAction) => void;
     disabled: boolean;
-  }) => (
-    <div data-testid="duplicate-table">
-      {groups.map((g) => (
-        <div key={g.groupId} data-testid={`group-${g.groupId}`}>
-          <button
-            data-testid={`keep-a-${g.groupId}`}
-            onClick={() => onSelectionChange(g.groupId, 'KeepA')}
-            disabled={disabled}
-          >
-            Keep A
-          </button>
-          <button
-            data-testid={`keep-b-${g.groupId}`}
-            onClick={() => onSelectionChange(g.groupId, 'KeepB')}
-            disabled={disabled}
-          >
-            Keep B
-          </button>
-        </div>
-      ))}
-    </div>
-  ),
+  }) => {
+    return (
+      <div data-testid="duplicate-table">
+        {groups.map((g) => {
+          const firstMember = g.members[0];
+          const secondMember = g.members[1];
+
+          return (
+            <div key={g.groupId} data-testid={`group-${g.groupId}`}>
+              <button
+                data-testid={`keep-a-${g.groupId}`}
+                onClick={() => {
+                  if (firstMember) {
+                    onSelectionChange(g.groupId, {
+                      type: 'Keep',
+                      targetPath: firstMember.folderPath,
+                    });
+                  }
+                }}
+                disabled={disabled || !firstMember}
+              >
+                Keep A
+              </button>
+              <button
+                data-testid={`keep-b-${g.groupId}`}
+                onClick={() => {
+                  if (secondMember) {
+                    onSelectionChange(g.groupId, {
+                      type: 'Keep',
+                      targetPath: secondMember.folderPath,
+                    });
+                  }
+                }}
+                disabled={disabled || !secondMember}
+              >
+                Keep B
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  },
 }));
 
 vi.mock('./ResolutionModal', () => ({
@@ -110,6 +140,17 @@ const mockReport: DupScanReport = {
   groups: [mockGroup],
 };
 
+type DedupReportHookResult = ReturnType<typeof hooks.useDedupReport>;
+type ResolveDuplicatesHookResult = ReturnType<typeof hooks.useResolveDuplicates>;
+
+function mockDedupReport(result: Partial<DedupReportHookResult>) {
+  vi.mocked(hooks.useDedupReport).mockReturnValue(result as DedupReportHookResult);
+}
+
+function mockResolveDuplicates(result: Partial<ResolveDuplicatesHookResult>) {
+  vi.mocked(hooks.useResolveDuplicates).mockReturnValue(result as ResolveDuplicatesHookResult);
+}
+
 describe('DuplicateReport', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -117,18 +158,18 @@ describe('DuplicateReport', () => {
 
   describe('Loading state', () => {
     it('displays loader while fetching report', () => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: true,
         isSuccess: false,
         isError: false,
         error: null,
         data: undefined,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -140,18 +181,18 @@ describe('DuplicateReport', () => {
     it('displays error alert on fetch failure', () => {
       const error = new Error('Failed to load');
 
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: false,
         isError: true,
         error,
         data: undefined,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -161,18 +202,18 @@ describe('DuplicateReport', () => {
 
   describe('Empty state', () => {
     it('displays message when no report exists', () => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: null,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -187,18 +228,18 @@ describe('DuplicateReport', () => {
         groups: [],
       };
 
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: emptyReport,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -208,18 +249,18 @@ describe('DuplicateReport', () => {
 
   describe('Main content rendering', () => {
     it('displays report with duplicate groups', () => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: mockReport,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -228,18 +269,18 @@ describe('DuplicateReport', () => {
     });
 
     it('renders duplicate table component', () => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: mockReport,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -249,52 +290,60 @@ describe('DuplicateReport', () => {
 
   describe('User interactions', () => {
     beforeEach(() => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: mockReport,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
     });
 
     it('filters groups based on confidence score when activeFilter prop changes', () => {
-      // High filter (score >= 100)
+      const filterReport: DupScanReport = {
+        ...mockReport,
+        totalGroups: 3,
+        totalMembers: 6,
+        groups: [
+          { ...mockGroup, groupId: 'group-high', confidenceScore: 100 },
+          { ...mockGroup, groupId: 'group-medium', confidenceScore: 95 },
+          { ...mockGroup, groupId: 'group-low', confidenceScore: 50 },
+        ],
+      };
+      mockDedupReport({
+        isLoading: false,
+        isSuccess: true,
+        isError: false,
+        error: null,
+        data: filterReport,
+      });
+
       const { rerender } = render(<DuplicateReport activeFilter="high" />);
-      // Both mock groups are < 100
-      expect(screen.getByText(/No duplicates found/i)).toBeInTheDocument();
+      expect(screen.getByTestId('group-group-high')).toBeInTheDocument();
+      expect(screen.queryByTestId('group-group-medium')).not.toBeInTheDocument();
 
-      // Medium filter (score >= 70)
       rerender(<DuplicateReport activeFilter="medium" />);
-      expect(screen.getByText('Mod A - Original')).toBeInTheDocument();
-      expect(screen.getByText('Mod C')).toBeInTheDocument();
+      expect(screen.queryByTestId('group-group-high')).not.toBeInTheDocument();
+      expect(screen.getByTestId('group-group-medium')).toBeInTheDocument();
 
-      // Low filter (score < 70)
       rerender(<DuplicateReport activeFilter="low" />);
-      expect(screen.queryByText('Mod A - Original')).not.toBeInTheDocument();
+      expect(screen.getByTestId('group-group-low')).toBeInTheDocument();
+      expect(screen.queryByTestId('group-group-medium')).not.toBeInTheDocument();
     });
 
-    it('updates selection when child table triggers onSelectionChange', async () => {
+    it('updates selection when child table triggers onSelectionChange', () => {
       render(<DuplicateReport activeFilter="all" />);
 
-      // Find the first select (Resolution Action)
-      const selects = screen.getAllByRole('combobox', { name: /Resolution Action/i });
+      fireEvent.click(screen.getByTestId('keep-a-group-1'));
 
-      // Select "Keep A" for group 1
-      fireEvent.change(selects[0], { target: { value: '/path/mod-a' } });
-
-      // Click Apply button
       fireEvent.click(screen.getByRole('button', { name: /Apply 1 Action/i }));
 
-      // Modal should show summary
-      expect(screen.getByText(/Resolution Summary/i)).toBeInTheDocument();
-      expect(screen.getByText('KEEP:')).toBeInTheDocument();
-      expect(screen.getByText('Mod A - Original')).toBeInTheDocument();
+      expect(screen.getByTestId('resolution-modal')).toHaveStyle('display: block');
     });
 
     it('disables Apply All button when no selections', () => {
@@ -307,26 +356,25 @@ describe('DuplicateReport', () => {
     it('enables Apply All button when selections exist', async () => {
       render(<DuplicateReport activeFilter="all" />);
 
-      const selects = screen.getAllByRole('combobox', { name: /Resolution Action/i });
-      fireEvent.change(selects[0], { target: { value: '/path/mod-a' } });
+      fireEvent.click(screen.getByTestId('keep-a-group-1'));
 
       expect(screen.getByText(/Apply 1 Action/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Apply 1 Action/i })).not.toBeDisabled();
     });
 
     it('shows warning toast when Apply All clicked with no selections', () => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: mockReport,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -356,10 +404,10 @@ describe('DuplicateReport', () => {
     it('triggers mutation on modal confirm', async () => {
       const mockMutate = vi.fn();
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: false,
         mutate: mockMutate,
-      } as any);
+      });
 
       render(<DuplicateReport />);
 
@@ -382,18 +430,18 @@ describe('DuplicateReport', () => {
 
   describe('Pending state', () => {
     it('disables interactions during resolution', () => {
-      vi.mocked(hooks.useDedupReport).mockReturnValue({
+      mockDedupReport({
         isLoading: false,
         isSuccess: true,
         isError: false,
         error: null,
         data: mockReport,
-      } as any);
+      });
 
-      vi.mocked(hooks.useResolveDuplicates).mockReturnValue({
+      mockResolveDuplicates({
         isPending: true,
         mutate: vi.fn(),
-      } as any);
+      });
 
       render(<DuplicateReport />);
 

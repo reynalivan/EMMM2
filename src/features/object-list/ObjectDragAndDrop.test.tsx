@@ -54,7 +54,7 @@ describe('DropConfirmModal (Drag and Drop Validation)', () => {
       />,
     );
 
-    expect(screen.getByText('drop_confirm.validating')).toBeInTheDocument();
+    expect(screen.getByText('Validating folder target...')).toBeInTheDocument();
   });
 
   it('renders warning state for low confidence match (TC-07-11)', () => {
@@ -76,11 +76,10 @@ describe('DropConfirmModal (Drag and Drop Validation)', () => {
       />,
     );
 
-    expect(screen.getByText('drop_confirm.title')).toBeInTheDocument();
-    expect(screen.getByText('drop_confirm.match_score')).toBeInTheDocument();
+    expect(screen.getByText('Move Folder?')).toBeInTheDocument();
+    expect(screen.getByText(/Match score: 30%/)).toBeInTheDocument();
 
-    // Suggestion box should not be visible since there's no suggestion
-    expect(screen.queryByText('drop_confirm.suggested_target')).not.toBeInTheDocument();
+    expect(screen.queryByText('Suggested target')).not.toBeInTheDocument();
   });
 
   it('renders suggested target when available (TC-07-10)', () => {
@@ -107,10 +106,10 @@ describe('DropConfirmModal (Drag and Drop Validation)', () => {
       />,
     );
 
-    expect(screen.getByText('drop_confirm.suggested_target')).toBeInTheDocument();
+    expect(screen.getByText('Suggested target')).toBeInTheDocument();
     expect(screen.getByText('Hu Tao')).toBeInTheDocument();
 
-    const moveBtn = screen.getByRole('button', { name: 'drop_confirm.move_to' });
+    const moveBtn = screen.getByRole('button', { name: 'Move to Hu Tao' });
     fireEvent.click(moveBtn);
     expect(mockMoveSuggested).toHaveBeenCalled();
   });
@@ -136,7 +135,7 @@ describe('DropConfirmModal (Drag and Drop Validation)', () => {
       />,
     );
 
-    const moveBtn = screen.getByRole('button', { name: 'drop_confirm.move_anyway' });
+    const moveBtn = screen.getByRole('button', { name: 'Move Anyway' });
     fireEvent.click(moveBtn);
     expect(mockMoveAnyway).toHaveBeenCalled();
   });

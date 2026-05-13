@@ -51,7 +51,7 @@ describe('ScanReviewModal', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /confirm_button_label/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Confirm 1 Items/i }));
 
     expect(onConfirm).toHaveBeenCalledWith([
       expect.objectContaining({

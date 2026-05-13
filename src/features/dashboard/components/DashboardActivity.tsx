@@ -50,13 +50,13 @@ function RecentModsCard({ recentMods }: { recentMods: DashboardPayload['recent_m
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{mod.name}</p>
                   <p className="text-xs text-base-content/50">
-                    {mod.category
-                      ? t('activity.category', { category: mod.category })
+                    {mod.object_name
+                      ? t('activity.category', { category: mod.object_name })
                       : t('activity.uncategorized')}
                   </p>
                 </div>
                 <span className="text-xs text-base-content/40 whitespace-nowrap ml-3">
-                  {formatRelativeDate(mod.modified_at, t)}
+                  {formatRelativeDate(mod.indexed_at, t)}
                 </span>
               </li>
             ))}

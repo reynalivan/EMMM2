@@ -18,7 +18,6 @@ describe('FilterPanel Component', () => {
   const mockOnFilterChange = vi.fn();
   const mockOnClearAll = vi.fn();
 
-  /** Shared default props for the new category/sort fields */
   const defaultCategorySortProps = {
     selectedCategory: null as string | null,
     onSelectCategory: vi.fn(),
@@ -38,10 +37,9 @@ describe('FilterPanel Component', () => {
         {...defaultCategorySortProps}
       />,
     );
-    // Status row (All / Enabled / Disabled) should always render
-    expect(screen.getByText('filter.status_all')).toBeInTheDocument();
-    expect(screen.getByText('filter.status_active')).toBeInTheDocument();
-    expect(screen.getByText('filter.status_disabled')).toBeInTheDocument();
+    expect(screen.getByText('All')).toBeInTheDocument();
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.getByText('Disabled')).toBeInTheDocument();
   });
 
   it('renders filter buttons correctly', () => {
@@ -73,14 +71,11 @@ describe('FilterPanel Component', () => {
       />,
     );
 
-    // Initially dropdown content not visible
     expect(screen.queryByText('Pyro')).not.toBeInTheDocument();
 
-    // Click to expand
     fireEvent.click(screen.getByText('Element'));
     expect(screen.getByText('Pyro')).toBeInTheDocument();
 
-    // Click again to collapse
     fireEvent.click(screen.getByText('Element'));
     expect(screen.queryByText('Pyro')).not.toBeInTheDocument();
   });
@@ -98,8 +93,8 @@ describe('FilterPanel Component', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Element')); // Expand
-    fireEvent.click(screen.getByText('Pyro')); // Select
+    fireEvent.click(screen.getByText('Element'));
+    fireEvent.click(screen.getByText('Pyro'));
 
     expect(mockOnFilterChange).toHaveBeenCalledWith('element', ['Pyro']);
   });
@@ -117,19 +112,6 @@ describe('FilterPanel Component', () => {
       />,
     );
 
-    // Check main badge count (2 active filters total)
-    // The main badge is in the header "Filters (2)" logic?
-    // FilterPanel implementation: sum of all active values length.
-    // 2 items active.
-
-    // Implementation details:
-    // <span className="badge badge-xs badge-primary">{activeCount}</span>
-    // Check main badge count and button badge (multiple "2"s)
-
-    // Check button badge
-    // Also inside the button for specific filter
-    // We expect another '2' inside the element button
-    // It might be ambiguous, so check existence
     const badges = screen.getAllByText('2');
     expect(badges.length).toBeGreaterThanOrEqual(1);
   });

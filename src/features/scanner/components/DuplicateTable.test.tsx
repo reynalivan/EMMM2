@@ -90,7 +90,7 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      expect(screen.getByRole('table', { name: /Duplicate groups/i })).toBeInTheDocument();
+      expect(screen.getByRole('table', { name: /Duplicate Scan Results/i })).toBeInTheDocument();
       expect(screen.getByText('Mod A - Original')).toBeInTheDocument();
       expect(screen.getByText('Mod D')).toBeInTheDocument();
     });
@@ -106,9 +106,9 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      expect(screen.getByText('Confidence')).toBeInTheDocument();
-      expect(screen.getByText('Match Reason')).toBeInTheDocument();
-      expect(screen.getByText('Members')).toBeInTheDocument();
+      expect(screen.getByText('Group')).toBeInTheDocument();
+      expect(screen.getByText('Duplicate Members')).toBeInTheDocument();
+      expect(screen.getByText('Reason & Confidence')).toBeInTheDocument();
       expect(screen.getByText('Action')).toBeInTheDocument();
     });
 
@@ -171,7 +171,7 @@ describe('DuplicateTable', () => {
         <DuplicateTable groups={[]} selections={new Map()} onSelectionChange={onSelectionChange} />,
       );
 
-      expect(screen.getByText(/No duplicate groups found/i)).toBeInTheDocument();
+      expect(screen.getByText(/No duplicates found in this category/i)).toBeInTheDocument();
     });
   });
 
@@ -187,7 +187,7 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const selects = screen.getAllByRole('combobox', { name: /Resolution Action/i });
+      const selects = screen.getAllByRole('combobox', { name: /Action/i });
       expect(selects).toHaveLength(2);
     });
 
@@ -219,7 +219,7 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const select = screen.getByRole('combobox', { name: /Resolution Action/i });
+      const select = screen.getByRole('combobox', { name: /Action/i });
       fireEvent.change(select, { target: { value: '/path/mod-a' } });
 
       expect(onSelectionChange).toHaveBeenCalledWith('group-1', {
@@ -239,7 +239,7 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const select = screen.getByRole('combobox', { name: /Resolution Action/i });
+      const select = screen.getByRole('combobox', { name: /Action/i });
       fireEvent.change(select, { target: { value: 'ignore' } });
 
       expect(onSelectionChange).toHaveBeenCalledWith('group-1', { type: 'Ignore' });
@@ -260,8 +260,8 @@ describe('DuplicateTable', () => {
       );
 
       // We check for the visual indicator (CheckCircle for keep, Trash2 for others)
-      expect(screen.getByTestId('check-circle-icon')).toBeInTheDocument();
-      expect(screen.getByTestId('trash-icon')).toBeInTheDocument();
+      expect(screen.getByTestId('icon-checkcircle')).toBeInTheDocument();
+      expect(screen.getAllByTestId('icon-trash2').length).toBeGreaterThan(0);
     });
   });
 
@@ -278,7 +278,7 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      const select = screen.getByRole('combobox', { name: /Resolution Action/i });
+      const select = screen.getByRole('combobox', { name: /Action/i });
       expect(select).toBeDisabled();
     });
   });
@@ -317,7 +317,7 @@ describe('DuplicateTable', () => {
       expect(screen.getByText('Mod B - Duplicate')).toBeInTheDocument();
       expect(screen.getByText('Mod E')).toBeInTheDocument();
 
-      fireEvent.change(screen.getByRole('combobox', { name: /Resolution Action/i }), {
+      fireEvent.change(screen.getByRole('combobox', { name: /Action/i }), {
         target: { value: '/path/mod-e' },
       });
 

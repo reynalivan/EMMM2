@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { thumbnailKeys } from '../../../hooks/useThumbnail';
+import { publishQueryInvalidations } from '../../runtime-sync/queryRefresh';
 import {
   patchObjectEnabledCount,
   restoreObjectListQueries,
@@ -55,12 +56,7 @@ export function applyOptimisticEffects(
     queryClient.removeQueries({ queryKey });
   }
 
-  for (const queryKey of descriptor.invalidatedQueryKeys) {
-    void queryClient.invalidateQueries({
-      queryKey,
-      refetchType: 'active',
-    });
-  }
+  void publishQueryInvalidations(queryClient, descriptor.invalidatedQueryKeys, 'active');
 
   return snapshot;
 }
@@ -96,12 +92,7 @@ export function applyRuntimeEffects(
     queryClient.removeQueries({ queryKey });
   }
 
-  for (const queryKey of descriptor.invalidatedQueryKeys) {
-    void queryClient.invalidateQueries({
-      queryKey,
-      refetchType: 'active',
-    });
-  }
+  void publishQueryInvalidations(queryClient, descriptor.invalidatedQueryKeys, 'active');
 }
 
 export function rollbackOptimisticEffects(

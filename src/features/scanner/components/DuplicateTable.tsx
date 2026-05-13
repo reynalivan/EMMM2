@@ -40,7 +40,10 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
 
   return (
     <div className="overflow-x-auto rounded-xl border border-base-300 bg-base-100 shadow-sm">
-      <table className="table table-zebra w-full border-separate border-spacing-0">
+      <table
+        className="table table-zebra w-full border-separate border-spacing-0"
+        aria-label={t('scanner:report.title')}
+      >
         <thead className="bg-base-200/50">
           <tr>
             <th className="w-16 text-center">{t('scanner:table.header.group')}</th>

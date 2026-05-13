@@ -105,7 +105,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    debug: import.meta.env.DEV,
+    debug: false,
     interpolation: {
       escapeValue: false,
     },
@@ -122,6 +122,7 @@ i18n
       'safe_mode',
       'collections',
       'settings',
+      'folder_grid',
       'preview',
     ],
     defaultNS: 'common',
@@ -140,6 +141,7 @@ export const namespaces = [
   'safe_mode',
   'collections',
   'settings',
+  'folder_grid',
   'preview',
 ] as const;
 
