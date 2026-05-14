@@ -2,9 +2,9 @@
 
 ## 1. Executive Summary
 
-- **Proposed Solution**: A backend listing command (`list_mod_folders`) that performs recursive classification per folder to distinguish between containers, terminal mod roots, and internal assets. The folder classifier is shared as the source of truth for listing and Disk Reconcile so container-only/internal asset folders are not blindly indexed as terminal mods. It employs a single-pass `fs::read_dir` strategy to identify 3DMigoto project structures, calculates folder sizes and modified timestamps, and normalizes display names by stripping "DISABLED " prefixes.
+- **Proposed Solution**: A backend explorer projection owned by `WorkspaceViewModel` performs recursive classification per folder to distinguish between containers, terminal mod roots, and internal assets. The folder classifier is shared as the source of truth for listing and Disk Reconcile so container-only/internal asset folders are not blindly indexed as terminal mods. It employs a single-pass `fs::read_dir` strategy to identify 3DMigoto project structures, calculates folder sizes and modified timestamps, and normalizes display names by stripping "DISABLED " prefixes. There is no standalone frontend folder-list IPC; workspace UI consumes `WorkspaceViewModel.explorer.children`.
 - **Success Criteria**:
-  - [x] Command returns in ≤ 200ms for 500 top-level folders on an SSD.
+  - [x] Explorer projection returns in ≤ 200ms for 500 top-level folders on an SSD.
   - [x] Correctly identifies `ModPackRoot` (has ini + mod sections).
   - [x] Strips `DISABLED ` prefix variants (`dis-`, `disable_`, `dis_`) from display names.
   - [x] Identifies "InternalAssets" (folders referenced by `filename=` in a parent mod's INI).
@@ -26,12 +26,12 @@
 
 As a user, I want the app to read my mods directory, so that I can see all my installed mods in the grid.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                    |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-11.1.1 | ✅ Positive | Given an active game with a valid `mods_path`, when `list_folders` is invoked with `sub_path = ""` (root level), then all immediate top-level object folder entries are returned as a flat array in ≤ 200ms |
-| AC-11.1.2 | ✅ Positive | Given `sub_path = "Characters/Albedo"`, when invoked, then only the mod folders immediately inside that path are returned — not recursive grandchildren                                                     |
-| AC-11.1.3 | ❌ Negative | Given a `mods_path` that no longer exists on disk, when `list_folders` is called, then an `IO: NotFound` error is returned — not a Rust panic, and the frontend shows a "Path not found" banner             |
-| AC-11.1.4 | ⚠️ Edge     | Given a directory with ≥ 10,000 sub-folders, then `list_folders` returns results without panic or OOM — using `rayon` parallel iteration with bounded memory; result may be paginated at ≥ 500 items        |
+| ID        | Type        | Criteria                                                                                                                                                                                                                            |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-11.1.1 | ✅ Positive | Given an active game with a valid `mods_path`, when `WorkspaceViewModel` is requested with `explorer_sub_path = ""` (root level), then all immediate top-level object folder entries are returned as `explorer.children` in ≤ 200ms |
+| AC-11.1.2 | ✅ Positive | Given `explorer_sub_path = "Characters/Albedo"`, when `WorkspaceViewModel` is requested, then only the mod folders immediately inside that path are returned — not recursive grandchildren                                          |
+| AC-11.1.3 | ❌ Negative | Given a `mods_path` that no longer exists on disk, when `WorkspaceViewModel` is requested, then `source_state.status = "unavailable"` and the frontend shows a source unavailable banner — not a Rust panic                         |
+| AC-11.1.4 | ⚠️ Edge     | Given a directory with ≥ 10,000 sub-folders, then explorer projection returns results without panic or OOM — using bounded memory; result may be paginated at ≥ 500 items                                                           |
 
 ---
 

@@ -40,27 +40,6 @@ async fn emit_internal_disk_reconcile(
 
 #[specta::specta]
 #[tauri::command]
-pub async fn toggle_favorite(
-    config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    watcher: tauri::State<'_, WatcherState>,
-    game_id: String,
-    folder_path: String,
-    favorite: bool,
-) -> Result<(), AppError> {
-    Ok(metadata::toggle_favorite(
-        &config,
-        pool.inner(),
-        &watcher,
-        &game_id,
-        &folder_path,
-        favorite,
-    )
-    .await?)
-}
-
-#[specta::specta]
-#[tauri::command]
 pub async fn toggle_mod_safe(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,

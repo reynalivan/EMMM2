@@ -105,7 +105,7 @@ As a user, I want to switch between configured games from the top bar, so that I
 commands/games/
   ├── auto_detect_games(root_path)  → Vec<GameConfig>
   ├── add_game(game_type, path)     → GameRecord
-  ├── remove_game(game_id)          → ()
+  ├── save_settings(games[])        → add/remove game list changes
   ├── launch_game(game_id)          → ()
   └── set_active_game(game_id)      → ()
 

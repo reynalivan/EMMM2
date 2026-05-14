@@ -1,4 +1,4 @@
-use crate::commands::folder_grid::listing::list_mod_folders_inner;
+use crate::services::explorer::listing::list_mod_folders_inner;
 use std::fs;
 use tempfile::TempDir;
 

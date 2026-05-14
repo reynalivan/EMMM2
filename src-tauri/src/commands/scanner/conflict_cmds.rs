@@ -7,22 +7,6 @@ use crate::domain::errors::AppError;
 use crate::services::scanner::conflict::ConflictInfo;
 use std::path::{Path, PathBuf};
 
-/// Check shader/buffer hash conflicts between a mod and its siblings.
-/// Returns conflicts involving the target mod folder.
-///
-/// # Covers: US-5.7 (Shader Conflict Warning)
-#[specta::specta]
-#[tauri::command]
-pub async fn check_shader_conflicts(folder_path: String) -> Result<Vec<ConflictInfo>, AppError> {
-    let target = PathBuf::from(&folder_path);
-    let parent = target
-        .parent()
-        .ok_or_else(|| AppError::Internal("Invalid folder path".to_string()))?;
-
-    crate::services::scanner::conflict::detect::detect_conflicts_for_mod_service(&target, parent)
-        .map_err(AppError::Internal)
-}
-
 /// Detect shader/buffer hash conflicts across INI files.
 ///
 /// # Covers: US-2.Z, TC-2.4-01

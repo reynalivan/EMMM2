@@ -156,10 +156,10 @@ async fn test_mod_pin_flag_updates_db() {
     assert!(row.0, "Expected is_pinned to be TRUE after pin");
 }
 
-// ── TC-40: toggle_favorite writes info.json ────────────────────────────────
+// ── TC-40: info.json favorite flag writes ──────────────────────────────────
 
 #[tokio::test]
-async fn test_toggle_favorite_writes_info_json() {
+async fn test_info_json_favorite_flag_writes() {
     let tmp = TempDir::new().unwrap();
     let mod_dir = tmp.path().join("TestMod");
     fs::create_dir(&mod_dir).unwrap();

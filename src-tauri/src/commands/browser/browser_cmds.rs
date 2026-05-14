@@ -33,13 +33,6 @@ pub async fn browser_reload_tab(label: String, app: AppHandle) -> Result<(), Str
     browser_service::reload_tab(app, &label).await
 }
 
-/// Close a browser tab and clean up its resources.
-#[tauri::command]
-#[specta::specta]
-pub async fn browser_close_tab(label: String, app: AppHandle) -> Result<(), String> {
-    browser_service::close_webview(app, &label).await
-}
-
 /// Clear cookies and cache for a specific browser tab.
 #[tauri::command]
 #[specta::specta]

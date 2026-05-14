@@ -402,17 +402,6 @@ pub async fn clear_data(app: AppHandle, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Close a webview.
-pub async fn close_webview(app: AppHandle, label: &str) -> Result<(), String> {
-    let window = app.get_window("main").ok_or("Main window not found")?;
-    if let Some(webview) = window.get_webview(label) {
-        webview
-            .close()
-            .map_err(|e| format!("Failed to close webview: {e}"))?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

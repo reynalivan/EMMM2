@@ -14,7 +14,7 @@ import type {
 } from './object';
 import type { BulkActionError, BulkResult, ConflictInfo, TrashMetadata } from './scanner';
 
-/** A single mod folder entry from `list_mod_folders` backend command. */
+/** A single mod folder entry from the WorkspaceViewModel explorer projection. */
 export type { ModFolder };
 
 /** Possible folder classification values from the backend classifier. */
@@ -25,7 +25,7 @@ export type NodeType =
   | 'InternalAssets'
   | 'FlatModRoot';
 
-/** Response from the `list_mod_folders` backend command. */
+/** Response from the backend explorer projection. */
 export type { FolderGridResponse };
 
 /** A single member of a conflict group. */

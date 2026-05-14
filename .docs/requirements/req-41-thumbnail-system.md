@@ -90,7 +90,7 @@ get_or_generate_thumbnail(folder_path: PathBuf) → Option<String>:
 
 Frontend Hybrid Logic:
   useThumbnail(folder_path)
-    → res = commands.getThumbnail(folder_path)
+    → res = commands.getModThumbnail({ gameId, folderPath })
     → return res ? convertFileSrc(res) : null
 ```
 

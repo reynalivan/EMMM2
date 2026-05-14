@@ -97,40 +97,6 @@ pub fn update_mod_thumbnail(
     Ok(new_thumbnail_path.to_string_lossy().to_string())
 }
 
-pub async fn toggle_favorite(
-    config: &ConfigService,
-    pool: &SqlitePool,
-    watcher: &WatcherState,
-    game_id: &str,
-    folder_path: &str,
-    favorite: bool,
-) -> Result<(), MetadataError> {
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
-    let full_path =
-        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
-
-    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await?
-        .ok_or_else(|| MetadataError::NotFound("Game not found or has no mods_path".to_string()))?;
-
-    let base = std::path::Path::new(&game_mod_path);
-    let rel_path = full_path
-        .strip_prefix(base)
-        .unwrap_or(&full_path)
-        .to_string_lossy()
-        .to_string();
-
-    crate::repo::mod_repo::set_favorite_by_path(pool, game_id, &rel_path, favorite).await?;
-
-    let update = crate::services::mods::info_json::ModInfoUpdate {
-        is_favorite: Some(favorite),
-        ..Default::default()
-    };
-    let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
-
-    Ok(())
-}
-
 pub async fn toggle_mod_safe(
     config: &ConfigService,
     pool: &SqlitePool,

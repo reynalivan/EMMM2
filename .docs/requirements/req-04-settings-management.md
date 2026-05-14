@@ -126,7 +126,7 @@ Settings Page (React)
   │   ├── list → useQuery('games', get_games)
   │   ├── add → AddGameModal (Epic 02)
   │   ├── rescan → commands.triggerScan({ game_id })
-  │   └── remove → commands.removeGame({ game_id })
+  │   └── remove → save_settings({ games: games_without_removed_entry })
   ├── Tab: Privacy
   │   ├── PIN set/change → commands.setPin({ plain_pin }) → Argon2 hash stored
   │   ├── keywords list → commands.setSafeModeKeywords({ keywords })
@@ -176,5 +176,5 @@ Weekly Scheduled Maintenance (Tokio interval, 7 days):
 
 ## 4. Dependencies
 
-- **Blocked by**: Epic 01 (App Bootstrap — DB pool, preferences table), Epic 02 (Game Management — `add_game`, `remove_game`).
+- **Blocked by**: Epic 01 (App Bootstrap — DB pool, preferences table), Epic 02 (Game Management — `add_game`, settings-backed game list persistence).
 - **Blocks**: Nothing directly — settings are consumed by most other epics (active game, theme, auto-close, safe mode config).

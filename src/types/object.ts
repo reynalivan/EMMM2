@@ -216,10 +216,3 @@ export interface GetObjectsResult {
   objects: ObjectSummary[];
   lost_objects: string[];
 }
-
-export interface FolderContentInfo {
-  path: string;
-  name: string;
-  item_count: number;
-  is_empty: boolean;
-}

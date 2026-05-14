@@ -6,37 +6,12 @@ use tauri::Emitter;
 
 pub mod classifier;
 pub mod helpers;
-pub mod listing;
 #[cfg(test)]
 #[path = "tests/mod_tests.rs"]
 mod tests;
 pub mod types;
 
 pub use types::ModFolder;
-
-/// List mod folders at a given path, optionally navigating into a sub_path.
-///
-/// - `mods_path`: The root mods directory for the game.
-/// - `sub_path`: Optional relative sub-path for deep navigation (e.g., "Raiden/Set1").
-///
-/// Returns folder entries with enabled/disabled state, thumbnails, metadata.
-/// Covers: TC-4.1-01 (Deep Navigation), TC-4.1-02 (Sort by Date)
-#[tauri::command]
-#[specta::specta]
-pub async fn list_mod_folders(
-    config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    game_id: String,
-    mods_path: String,
-    sub_path: Option<String>,
-    _object_id: Option<String>,
-) -> Result<types::FolderGridResponse, String> {
-    let response =
-        listing::list_mod_folders_for_game(pool.inner(), &game_id, mods_path, sub_path).await?;
-    Ok(helpers::apply_safe_mode_filter_to_response(
-        response, &config,
-    ))
-}
 
 /// Lazily resolve thumbnail for a single mod folder.
 /// Called per-card from the frontend after the folder list is rendered.

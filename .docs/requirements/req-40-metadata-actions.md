@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users frequently need three quick organizational actions — pinning high-priority Characters/Objects to the top of the objectlist, favoriting individual mod cards for quick filtering, and moving a mis-categorized mod to its correct Object — all of which require both filesystem and DB coordination.
-- **Proposed Solution**: Three backend commands: `pin_object` (DB-only, flips `is_pinned` on the Object row), `toggle_favorite` (DB-only, flips `is_favorite` on the folder row), and `move_mod_to_object` (filesystem `fs::rename` + `info.json` update + DB `folder_path` update under `OperationLock` + `SuppressionGuard`).
+- **Proposed Solution**: Three canonical backend paths: `pin_object` (DB-only, flips `is_pinned` on the Object row), `bulk_toggle_favorite` (single or multi-folder favorite updates through one bulk path), and `move_mod_to_object` (filesystem `fs::rename` + `info.json` update + DB `folder_path` update under `OperationLock` + `SuppressionGuard`).
 - **Success Criteria**:
-  - `pin_object` and `toggle_favorite` reflect in the UI in ≤ 150ms (DB-only, cache invalidation only).
+  - `pin_object` and `bulk_toggle_favorite` reflect in the UI in ≤ 150ms for single-row updates.
   - `move_mod_to_object` completes in ≤ 1s for a typical mod folder (SSD) and ≤ 5s for large folders (10GB network drive).
   - Move is atomic: DB `folder_path` is updated in the same SQLite transaction as `info.json` write; filesystem rename is the last step — no orphan rows possible.
   - Collision detection fires before any filesystem operation — zero moved files that overlap with existing targets.
@@ -71,8 +71,8 @@ As a user, I want to move a mis-categorized mod to its correct Object without us
 pin_object(game_id, object_id, is_pinned: bool) → ():
   UPDATE objects SET is_pinned = ? WHERE id = ? AND game_id = ?
 
-toggle_favorite(game_id, folder_path, is_favorite: bool) → ():
-  UPDATE folders SET is_favorite = ? WHERE folder_path = ? AND game_id = ?
+bulk_toggle_favorite(game_id, folder_paths[], is_favorite: bool) → BulkResult:
+  UPDATE mods SET is_favorite = ? WHERE folder_path IN (...) AND game_id = ?
 
 move_mod_to_object(game_id, folder_path, target_object_id) → ():
   1. Resolve target: SELECT o.name, c.name FROM objects WHERE id = target_object_id

@@ -3,8 +3,6 @@ use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::WatcherState;
-use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::Path;
 use tauri::State;
 
@@ -124,114 +122,6 @@ pub async fn rename_mod_folder(
     .await?;
 
     Ok(result)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-pub struct FolderContentInfo {
-    pub path: String,
-    pub name: String,
-    #[specta(type = f64)]
-    pub item_count: usize,
-    #[specta(type = f64)]
-    pub ini_count: usize,
-    #[specta(type = f64)]
-    pub image_count: usize,
-    #[specta(type = f64)]
-    pub nested_folder_count: usize,
-    #[specta(type = f64)]
-    pub total_size_bytes: u64,
-    pub is_empty: bool,
-}
-
-/// Walk a mod folder and collect rich content statistics.
-/// Bounded at MAX_ENTRIES to avoid performance issues on very large folders (AC-21.2.3).
-const MAX_ENTRIES: usize = 1_000;
-
-static IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "gif", "dds"];
-
-pub fn check_folder_contents(path: &Path) -> Result<FolderContentInfo, String> {
-    if !path.exists() || !path.is_dir() {
-        return Err(format!(
-            "Path does not exist or is not a directory: {}",
-            path.display()
-        ));
-    }
-
-    let name = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let mut item_count: usize = 0;
-    let mut ini_count: usize = 0;
-    let mut image_count: usize = 0;
-    let mut nested_folder_count: usize = 0;
-    let mut total_size_bytes: u64 = 0;
-
-    // Walk with depth limit + entry cap (AC-21.2.3: return estimate if too slow/large)
-    let mut stack = vec![path.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        if item_count >= MAX_ENTRIES {
-            break;
-        }
-        let entries = match fs::read_dir(&dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            if item_count >= MAX_ENTRIES {
-                break;
-            }
-            let meta = entry.metadata().ok();
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-
-            item_count += 1;
-            total_size_bytes += size;
-
-            if is_dir {
-                nested_folder_count += 1;
-                stack.push(entry.path());
-            } else {
-                let ext = entry
-                    .path()
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_lowercase())
-                    .unwrap_or_default();
-                if ext == "ini" {
-                    ini_count += 1;
-                } else if IMAGE_EXTS.contains(&ext.as_str()) {
-                    image_count += 1;
-                }
-            }
-        }
-    }
-
-    Ok(FolderContentInfo {
-        path: path.to_string_lossy().to_string(),
-        name,
-        item_count,
-        ini_count,
-        image_count,
-        nested_folder_count,
-        total_size_bytes,
-        is_empty: item_count == 0,
-    })
-}
-
-#[specta::specta]
-#[tauri::command]
-pub async fn pre_delete_check(
-    config: State<'_, ConfigService>,
-    _pool: tauri::State<'_, sqlx::SqlitePool>,
-    game_id: String,
-    path: String,
-) -> Result<FolderContentInfo, AppError> {
-    let canonical_path =
-        PathGuard::validate_path(&config, &game_id, &path).map_err(AppError::Security)?;
-
-    check_folder_contents(&canonical_path).map_err(AppError::Io)
 }
 
 #[cfg(test)]

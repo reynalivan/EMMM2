@@ -315,8 +315,11 @@ describe('mods runtime architecture audit', () => {
   });
 
   it('does not call listModFolders from workspace consumer code', () => {
+    const listFoldersWrapperPattern = new RegExp(
+      ['commands', 'listModFolders'].join('\\s*\\.\\s*'),
+    );
     const offenders = readRuntimeConsumerSources()
-      .filter((file) => file.source.includes('commands.listModFolders('))
+      .filter((file) => listFoldersWrapperPattern.test(file.source))
       .map((file) => file.path);
 
     expect(offenders).toEqual([]);

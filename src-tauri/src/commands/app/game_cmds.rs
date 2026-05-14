@@ -172,17 +172,6 @@ pub async fn save_onboarding_games_inner(
     Ok(())
 }
 
-/// Remove a game from the database.
-/// Used during onboarding if a user wants to discard an auto-detected game.
-#[specta::specta]
-#[tauri::command]
-pub async fn remove_game(
-    state: tauri::State<'_, ConfigService>,
-    game_id: String,
-) -> Result<(), String> {
-    crate::services::game::game_service::remove_game_service(&state, &game_id).await
-}
-
 /// Get all configured games.
 #[specta::specta]
 #[tauri::command]

@@ -140,10 +140,8 @@ import type {
   GameSchema,
   ObjectSummary,
   CategoryCount,
-  FolderGridResponse,
   ModInfo,
   RenameResult,
-  FolderContentInfo,
   ObjectFilter,
   CreateObjectInput,
   UpdateObjectInput,
@@ -266,7 +264,6 @@ export const commands = {
     invoke<GameConfig>('add_game_manual', params),
   saveOnboardingGames: (params: { games: GameConfig[] }) =>
     invoke<void>('save_onboarding_games', params),
-  removeGame: (params: { id?: string; gameId?: string }) => invoke<void>('remove_game', params),
   launchGame: (params: { id?: string; gameId?: string }) => invoke<void>('launch_game', params),
   setActiveGame: (params: { gameId?: string | null; id?: string | null }) =>
     invoke<void>('set_active_game', params),
@@ -298,13 +295,6 @@ export const commands = {
     invoke<MatchedDbEntry | null>('match_object_with_db', params),
 
   // Mod Management (Core)
-  listModFolders: (params: {
-    gameId?: string;
-    id?: string;
-    modsPath: string;
-    subPath?: string;
-    objectId?: string | null;
-  }) => invoke<FolderGridResponse>('list_mod_folders', params),
   renameModFolder: (params: {
     folderPath?: string;
     path?: string;
@@ -313,8 +303,6 @@ export const commands = {
   }) => invoke<RenameResult>('rename_mod_folder', params),
   deleteMod: (params: { path?: string; folderPath?: string; gameId?: string }) =>
     invoke<void>('delete_mod', params),
-  preDeleteCheck: (params: { path?: string }) =>
-    invoke<FolderContentInfo>('pre_delete_check', params),
   openInExplorer: (params: { gameId: string; path: string }) =>
     invoke<void>('open_in_explorer', params),
   revealObjectInExplorer: (params: { gameId: string; objectId: string; objectName: string }) =>
@@ -336,12 +324,6 @@ export const commands = {
     folderPath?: string;
     safe?: boolean;
   }) => invoke<void>('toggle_mod_safe', params),
-  toggleFavorite: (params: {
-    path?: string;
-    folderPath?: string;
-    favorite?: boolean;
-    gameId?: string;
-  }) => invoke<void>('toggle_favorite', params),
   getActiveModConflicts: (params: { gameId?: string }) =>
     invoke<ConflictInfo[]>('get_active_mod_conflicts', params),
   suggestRandomMods: (params: { gameId: string; isSafe: boolean }) =>
@@ -385,8 +367,6 @@ export const commands = {
     invoke<string[]>('clear_mod_preview_images', params),
 
   // Thumbnails
-  getThumbnail: (params: { folderPath?: string; path?: string }) =>
-    invoke<string | null>('get_thumbnail', params),
   getModThumbnail: (params: { gameId: string; folderPath: string }) =>
     invoke<string | null>('get_mod_thumbnail', params),
   updateModThumbnail: (params: { folderPath?: string; path?: string; sourcePath: string }) =>
@@ -484,8 +464,6 @@ export const commands = {
     dbJson?: string;
   }) => invoke<IngestResult>('ingest_dropped_folders', params),
   // Conflicts & Duplicates
-  checkShaderConflicts: (params: { folderPath: string }) =>
-    invoke<ConflictInfo[]>('check_shader_conflicts', params),
   detectConflicts: (params: { iniPaths: string[] }) =>
     invoke<ConflictInfo[]>('detect_conflicts_cmd', params),
   detectConflictsInFolder: (params: { modsPath: string }) =>
@@ -560,7 +538,6 @@ export const commands = {
     invoke<SwitchResult>('switch_corridor', params),
   previewCorridorSwitch: (params: { gameId?: string; targetSafe?: boolean }) =>
     invoke<CorridorSwitchPreview>('preview_corridor_switch', params),
-  clearPendingTasks: (params?: { gameId?: string }) => invoke<void>('clear_pending_tasks', params),
   resolveRecoveryTask: (params: { taskId: string; action: RecoveryAction }) =>
     invoke<void>('resolve_recovery_task', params),
 
@@ -579,8 +556,6 @@ export const commands = {
     invoke<void>('browser_navigate', params),
   browserReloadTab: (params: { id?: string; label?: string }) =>
     invoke<void>('browser_reload_tab', params),
-  browserCloseTab: (params: { id?: string; label?: string }) =>
-    invoke<void>('browser_close_tab', params),
   browserClearData: (params: { id?: string; label?: string }) =>
     invoke<void>('browser_clear_data', params),
   browserGetHomepage: () => invoke<string>('browser_get_homepage'),

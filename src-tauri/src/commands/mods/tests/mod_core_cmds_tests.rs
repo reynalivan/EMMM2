@@ -4,32 +4,6 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
-fn check_folder_contents_non_empty() {
-    let tmp = TempDir::new().unwrap();
-    let folder = tmp.path().join("TestMod");
-    fs::create_dir(&folder).unwrap();
-    fs::write(folder.join("file1.ini"), "data").unwrap();
-    fs::write(folder.join("file2.buf"), "data").unwrap();
-    fs::create_dir(folder.join("subfolder")).unwrap();
-
-    let info = check_folder_contents(&folder).unwrap();
-
-    assert_eq!(info.name, "TestMod");
-    assert_eq!(info.item_count, 3);
-    assert!(!info.is_empty);
-}
-
-#[test]
-fn check_folder_contents_empty() {
-    let tmp = TempDir::new().unwrap();
-    let folder = tmp.path().join("EmptyMod");
-    fs::create_dir(&folder).unwrap();
-    let info = check_folder_contents(&folder).unwrap();
-    assert_eq!(info.item_count, 0);
-    assert!(info.is_empty);
-}
-
-#[test]
 fn rename_rejects_case_insensitive_duplicate() {
     let tmp = TempDir::new().unwrap();
     let raiden = tmp.path().join("Raiden");
@@ -263,20 +237,4 @@ fn rename_updates_info_json_preserves_other_keys() {
     assert_eq!(parsed["author"], "TestAuthor");
     assert_eq!(parsed["description"], "Don't touch this");
     assert_eq!(parsed["is_favorite"], true);
-}
-
-#[test]
-fn test_open_in_explorer_rejects_escape() {
-    let tmp = TempDir::new().unwrap();
-
-    // Build a traversal path that does NOT exist under the temp dir:
-    // e.g. /tmp/abc123/../../nonexistent
-    let escape_path = tmp.path().join("..\\..\\nonexistent_escape_path_xyz");
-
-    // check_folder_contents is the guard function — it rejects non-existent paths.
-    // The open_in_explorer command's path-cap guard (canonicalize + starts_with) is
-    // tested at the integration level since it requires Tauri's ConfigService state.
-    let result = check_folder_contents(&escape_path);
-
-    assert!(result.is_err(), "Expected Err for escape path, got Ok");
 }

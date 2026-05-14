@@ -311,21 +311,6 @@ pub async fn check_boot_security(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn clear_pending_tasks(pool: State<'_, SqlitePool>) -> Result<(), AppError> {
-    let tasks = crate::repo::task_repo::get_all_pending_tasks_global(pool.inner()).await?;
-    for task in tasks {
-        crate::repo::task_repo::update_status(
-            pool.inner(),
-            &task.id,
-            crate::domain::task::TaskStatus::Failed,
-        )
-        .await?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn resolve_recovery_task(
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::services::config::ConfigService>,

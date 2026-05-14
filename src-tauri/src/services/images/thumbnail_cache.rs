@@ -32,8 +32,6 @@ struct CachedEntry {
 pub struct ThumbnailCache {
     /// Folder-path → CachedEntry (used by `resolve()`)
     folder_cache: LruCache<String, CachedEntry>,
-    /// Original-image-path → CachedEntry (used by legacy `get_thumbnail()`)
-    image_cache: LruCache<String, CachedEntry>,
     base_dir: Option<PathBuf>,
 }
 
@@ -41,7 +39,6 @@ impl ThumbnailCache {
     fn new() -> Self {
         Self {
             folder_cache: LruCache::new(NonZeroUsize::new(500).unwrap()),
-            image_cache: LruCache::new(NonZeroUsize::new(500).unwrap()),
             base_dir: None,
         }
     }
@@ -58,7 +55,6 @@ impl ThumbnailCache {
         }
         if cache.base_dir.as_ref() != Some(&cache_dir) {
             cache.folder_cache.clear();
-            cache.image_cache.clear();
         }
         cache.base_dir = Some(cache_dir);
     }
@@ -119,7 +115,7 @@ impl ThumbnailCache {
     }
 
     /// Cold path: find_thumbnail → generate/read disk cache → insert L1.
-    fn resolve_cold(folder_path: &Path, _folder_key: &str) -> Result<Option<String>, String> {
+    fn resolve_cold(folder_path: &Path, folder_key: &str) -> Result<Option<String>, String> {
         use crate::services::scanner::core::thumbnail::find_thumbnail;
 
         let original = match find_thumbnail(folder_path) {
@@ -138,6 +134,17 @@ impl ThumbnailCache {
             e
         })?;
 
+        {
+            let mut cache = Self::get_instance().lock().unwrap();
+            cache.folder_cache.put(
+                folder_key.to_string(),
+                CachedEntry {
+                    webp_path: webp_path.clone(),
+                    cached_at: Instant::now(),
+                },
+            );
+        }
+
         Ok(Some(webp_path.to_string_lossy().to_string()))
     }
 
@@ -147,40 +154,14 @@ impl ThumbnailCache {
         cache.folder_cache.pop(folder_path);
     }
 
-    // ─── Legacy API: Image-path-keyed (mod_cmds, preview_image, metadata) ─
-
-    /// Invalidate by original image path (backward compat).
-    /// Also clears the parent folder from `folder_cache`.
+    /// Invalidate the parent folder cache for a changed image path.
     pub fn invalidate(original_path: &Path) {
         let mut cache = Self::get_instance().lock().unwrap();
-        let key = original_path.to_string_lossy().to_string();
-        cache.image_cache.pop(&key);
-        // Also clear parent folder so the grid picks up changes
         if let Some(parent) = original_path.parent() {
             cache
                 .folder_cache
                 .pop(&parent.to_string_lossy().to_string());
         }
-    }
-
-    /// Get/generate thumbnail by original image path (backward compat).
-    pub fn get_thumbnail(_game_id: &str, original_path: &Path) -> Result<String, String> {
-        let key = original_path.to_string_lossy().to_string();
-
-        // Check image-keyed L1 with TTL
-        {
-            let mut cache = Self::get_instance().lock().unwrap();
-            if let Some(entry) = cache.image_cache.get(&key) {
-                if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists()
-                {
-                    return Ok(entry.webp_path.to_string_lossy().to_string());
-                }
-                cache.image_cache.pop(&key);
-            }
-        }
-
-        let webp_path = Self::generate(original_path)?;
-        Ok(webp_path.to_string_lossy().to_string())
     }
 
     // ─── Shared internals ─────────────────────────────────────────────
@@ -248,7 +229,6 @@ impl ThumbnailCache {
             let mut cache = Self::get_instance().lock().unwrap();
             if cache.base_dir.as_ref() != Some(&cache_dir) {
                 cache.folder_cache.clear();
-                cache.image_cache.clear();
             }
             cache.base_dir = Some(cache_dir.clone());
         }

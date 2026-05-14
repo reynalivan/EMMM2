@@ -32,15 +32,15 @@ As a user, I want to rename my mod folder to better reflect its contents, so tha
 
 ---
 
-#### US-21.2: Pre-Delete Check (Content Audit)
+#### US-21.2: Rename Preflight
 
-As a system, I want to audit a mod folder's file contents before any rename/delete, so that the UI can warn users about rich folders that may take longer or have special handling.
+As a system, I want rename validation to happen before any filesystem mutation, so invalid names, collisions, and unsafe paths are rejected predictably.
 
-| ID        | Type        | Criteria                                                                                                                                                                                        |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-21.2.1 | ✅ Positive | Given a rename request is initiated, when `pre_delete_check(folderPath)` runs, then it returns `FolderContentInfo { ini_count, image_count, nested_folder_count, total_size_bytes }` in ≤ 200ms |
-| AC-21.2.2 | ✅ Positive | Given `ini_count > 0`, then the rename confirmation dialog shows "This folder contains {N} INI files — 3DMigoto references may need updating" as a non-blocking warning                         |
-| AC-21.2.3 | ⚠️ Edge     | Given a folder with ≥ 1,000 nested files, then `pre_delete_check` returns in ≤ 500ms (bounded by a timeout — returns an estimate if filesystem is too slow)                                     |
+| ID        | Type        | Criteria                                                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-21.2.1 | ✅ Positive | Given a rename request is initiated, then `rename_mod_folder` validates path containment, reserved characters, and case-insensitive sibling collisions before calling filesystem rename |
+| AC-21.2.2 | ✅ Positive | Given the target name conflicts with an existing sibling after disabled-prefix normalization, then the command returns a structured rename conflict containing `already exists`         |
+| AC-21.2.3 | ⚠️ Edge     | Given a folder with many nested files, rename validation remains bounded to the parent/sibling path checks and does not recursively audit folder contents                               |
 
 ---
 

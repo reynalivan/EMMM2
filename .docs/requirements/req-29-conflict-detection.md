@@ -91,7 +91,7 @@ Frontend:
 | Persistent Ignore | `ignored_object_conflicts` table stores (game_id, object_id, mod_ids_hash)              |
 | Variant Support   | Backend detects shared `VariantContainer` folders and performs implicit swapping        |
 | INI Parser        | `services/ini/document.rs` (Epic 18) — reused for hash extraction                       |
-| Deep Scan         | `conflict_cmds.rs::check_shader_conflicts` → multi-threaded Tokio task                  |
+| Deep Scan         | `conflict_cmds.rs::detect_conflicts_in_folder_cmd` → explicit folder scan task          |
 | Frontend          | `useAppStore` handles `DuplicateConflict` globally → opening `ObjectConflictModal`      |
 
 ### Security & Privacy

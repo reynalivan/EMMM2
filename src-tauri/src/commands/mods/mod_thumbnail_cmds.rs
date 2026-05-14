@@ -5,7 +5,6 @@ use crate::services::disk_reconcile::types::DiskReconcileReason;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
 use crate::services::mods::metadata;
-use crate::services::scanner::core::thumbnail::find_thumbnail;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use tauri::Emitter;
 
@@ -67,30 +66,6 @@ pub async fn update_mod_thumbnail(
 
     // Return the absolute path directly
     Ok(abs_path)
-}
-
-#[specta::specta]
-#[tauri::command]
-pub async fn get_thumbnail(
-    config: tauri::State<'_, ConfigService>,
-    game_id: String,
-    folder_path: String,
-) -> Result<Option<String>, AppError> {
-    let path = PathGuard::validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
-
-    if let Some(original) = find_thumbnail(&path) {
-        match ThumbnailCache::get_thumbnail(&game_id, &original) {
-            Ok(path) => Ok(Some(path)), // Now returns absolute path
-
-            Err(e) => {
-                log::warn!("Thumbnail cache failed, using un-resized asset: {}", e);
-                Ok(Some(original.to_string_lossy().to_string()))
-            }
-        }
-    } else {
-        Ok(None)
-    }
 }
 
 #[specta::specta]

@@ -121,15 +121,14 @@ Keep unless a follow-up proves no live caller:
 - `settings_repo.rs` deprecated table safeguard.
 - `commands/objects/master_db_cmds.rs` array JSON compatibility.
 
-Investigate:
+Completed:
 
-- `services/images/thumbnail_cache.rs` original-path compatibility APIs.
-  - `ThumbnailCache::get_thumbnail` is still used by `commands/mods/mod_thumbnail_cmds.rs`.
-  - Do not remove until frontend command usage is audited.
+- `services/images/thumbnail_cache.rs` original-path compatibility API.
+  - `ThumbnailCache::get_thumbnail` and the legacy `get_thumbnail` IPC were removed after frontend command usage audit proved no active caller.
 - `commands/mods/mod_core_cmds.rs` backward-compat re-export for tests.
   - Candidate to remove after tests import concrete service functions.
-- `services/scanner/sync/commit.rs` TODO for existing mod ID lookup.
-  - This is not dead code; it is a correctness gap for collision metadata.
+- `services/scanner/sync/commit.rs` collision metadata.
+  - `existing_mod_id` is now populated when a target path maps to an existing DB mod row.
 
 ## Recommended Next Phases
 

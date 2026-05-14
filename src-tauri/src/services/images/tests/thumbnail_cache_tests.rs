@@ -11,32 +11,6 @@ fn create_dummy_image(path: &std::path::Path) {
     img.save(path).unwrap();
 }
 
-#[test]
-fn test_get_thumbnail_generates_webp() {
-    // Setup temp app data dir
-    let tmp_dir = TempDir::new().unwrap();
-    let tmp = tmp_dir.path().to_path_buf();
-    let app_data = tmp.join("app_data");
-    fs::create_dir_all(&app_data).unwrap();
-
-    // Init cache
-    ThumbnailCache::init(&app_data);
-
-    // Create dummy source image
-    let src_dir = tmp.join("Source");
-    fs::create_dir(&src_dir).unwrap();
-    let src_img = src_dir.join("test.png");
-    create_dummy_image(&src_img);
-
-    // Call get_thumbnail
-    let result = ThumbnailCache::get_thumbnail("game1", &src_img);
-    assert!(result.is_ok());
-
-    let path_str = result.unwrap();
-    assert!(std::path::Path::new(&path_str).is_absolute());
-    assert!(path_str.ends_with(".webp"));
-}
-
 // Covers: TC-41-002 (8K Source handled via spawn_blocking without panic)
 #[tokio::test]
 async fn test_resolve_large_8k_image_without_blocking() {

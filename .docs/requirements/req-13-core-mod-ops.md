@@ -56,7 +56,7 @@ As a user, I want to delete a mod by moving it to the OS Trash, so that I can re
 | AC-13.3.1 | ✅ Positive | Given I select "Delete" from the context menu and confirm in the dialog, then the mod folder is moved to the Internal App Trash (`app_data/trash/{uuid}/`) within ≤ 500ms.                                      |
 | AC-13.3.2 | ✅ Positive | Given a successful delete of an enabled mod, then the parent object's `enabled_count` decrements optimistically in the objectlist and the card disappears from the grid in ≤ 100ms.                             |
 | AC-13.3.3 | ❌ Negative | Given a folder where some nested files are locked by permissions, when delete is attempted, then the backend returns a `PartialDeleteError` listing affected paths — the original folder is NOT moved to Trash. |
-| AC-13.3.4 | ✅ Positive | Given I initiate a delete, the system runs `pre_delete_check` to report folder item count; if >0, a confirmation dialog warns "Folder contains N items. Delete to trash?" before proceeding.                    |
+| AC-13.3.4 | ✅ Positive | Given I initiate a delete, the UI asks for explicit confirmation before `delete_mod` moves the folder to Internal App Trash; no standalone pre-delete IPC is required.                                          |
 
 ---
 
@@ -99,15 +99,15 @@ delete_mod(path):
 
 ### Integration Points
 
-| Component                 | Detail                                                                                                                           |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `OperationLock`           | Shared mutex per game workspace; serializes all filesystem mutations.                                                            |
-| `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                                 |
-| `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                                           |
-| `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects.               |
-| `Runtime Mutation Engine` | Single backend boundary for `DISABLED ` prefix changes used by manual toggle, collection apply, and Safe/Unsafe corridor switch. |
+| Component                 | Detail                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OperationLock`           | Shared mutex per game workspace; serializes all filesystem mutations.                                                                        |
+| `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                                             |
+| `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                                                       |
+| `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects.                           |
+| `Runtime Mutation Engine` | Single backend boundary for `DISABLED ` prefix changes used by manual toggle, collection apply, and Safe/Unsafe corridor switch.             |
 | `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code uses runtime-sync descriptors instead of raw query refresh calls. |
-| Disk Reconcile            | Internal filesystem mutations suppress watcher noise, then complete through one intentional runtime refresh path.                |
+| Disk Reconcile            | Internal filesystem mutations suppress watcher noise, then complete through one intentional runtime refresh path.                            |
 
 ### Security & Privacy
 
