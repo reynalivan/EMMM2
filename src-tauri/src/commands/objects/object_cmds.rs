@@ -170,18 +170,6 @@ pub async fn delete_object_cmd(
         .await
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn pin_object_cmd(
-    id: String,
-    pin: bool,
-    pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<()> {
-    crate::services::objects::mutate::toggle_pin_object(&pool, &id, pin)
-        .await
-        .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))
-}
-
 #[cfg(test)]
 #[path = "tests/object_cmds_tests.rs"]
 mod tests;

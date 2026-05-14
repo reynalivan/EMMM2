@@ -361,53 +361,6 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
 }
 
 #[tokio::test]
-async fn test_pin_object_cmd() -> CommandResult<()> {
-    let (_tmp, pool, game_id) = setup_test_db().await;
-
-    let obj_id = "test_obj_pin";
-    let mods_path = _tmp.path().join("Mods");
-    std::fs::create_dir_all(mods_path.join("test_obj_pin_folder")).unwrap();
-
-    insert_test_object(
-        &pool,
-        &TestObjectFixture {
-            id: obj_id,
-            game_id: &game_id,
-            name: "Normal",
-            folder_path: "test_obj_pin_folder",
-            object_type: "Character",
-        },
-    )
-    .await
-    .unwrap();
-
-    // Use raw query for pin since it is in mods/object_cmds.rs (we just verify the schema works)
-    sqlx::query("UPDATE objects SET is_pinned = ? WHERE id = ?")
-        .bind(true)
-        .bind(obj_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let filter = ObjectFilter {
-        game_id: game_id.clone(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
-    };
-    let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
-    assert_eq!(
-        objects[0].is_pinned, true,
-        "TC-10-09: Object should be pinned"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_apply_object_match_cmd() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
 

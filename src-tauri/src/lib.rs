@@ -114,7 +114,6 @@ pub fn run() {
             commands::objects::object_cmds::create_object_cmd,
             commands::objects::object_cmds::update_object_cmd,
             commands::objects::object_cmds::apply_object_match_cmd,
-            commands::objects::object_cmds::pin_object_cmd,
             commands::objects::object_cmds::delete_object_cmd,
             commands::collections::cmds::switch_corridor,
             commands::collections::cmds::preview_corridor_switch,
@@ -517,7 +516,6 @@ mod specta_tests {
                 commands::objects::object_cmds::create_object_cmd,
                 commands::objects::object_cmds::update_object_cmd,
                 commands::objects::object_cmds::apply_object_match_cmd,
-                commands::objects::object_cmds::pin_object_cmd,
                 commands::objects::object_cmds::delete_object_cmd,
                 commands::collections::cmds::switch_corridor,
                 commands::collections::cmds::preview_corridor_switch,
@@ -579,7 +577,6 @@ mod specta_tests {
                 commands::browser::browser_cmds::browser_confirm_import,
                 commands::browser::browser_cmds::browser_cancel_import,
                 commands::browser::browser_cmds::create_download_session,
-                commands::scanner::collision_cmds::resolve_folder_collision,
             ])
             .export(
                 specta_typescript::Typescript::default()

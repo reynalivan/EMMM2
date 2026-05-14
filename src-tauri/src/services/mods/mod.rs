@@ -1,6 +1,5 @@
 pub mod archive;
 pub mod bulk;
-pub mod collision_resolver;
 pub mod core_ops;
 pub mod info_json;
 pub mod metadata;

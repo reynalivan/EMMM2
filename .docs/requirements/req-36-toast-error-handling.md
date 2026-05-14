@@ -8,7 +8,7 @@
   - Success toasts appear in ≤ 100ms after an operation completes.
   - Error toasts include the specific `CommandError` type and human-readable message — never a raw Rust backtrace or `[object Object]`.
   - `ErrorBoundary` catches 100% of React render exceptions (by test suite coverage).
-  - `get_log_lines` returns the last 200 log lines in ≤ 500ms.
+  - `get_logs` returns the last 200 log lines in <= 500ms.
   - Zero unhandled promise rejections from IPC calls — all `commands.*()` calls have `onError` handlers.
 
 ---
@@ -48,7 +48,7 @@ As a power user or developer, I want to read internal logs from within the UI, s
 
 | ID        | Type        | Criteria                                                                                                                                                                                |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-36.3.1 | ✅ Positive | Given the Settings > Logs tab, when opened, then `get_log_lines(200)` fetches the last 200 lines from `{app_data_dir}/logs/emmm.log` and renders them in a monospaced, scrollable panel |
+| AC-36.3.1 | ✅ Positive | Given the Settings > Logs tab, when opened, then `get_logs({ limit: 200 })` fetches the last 200 lines from `{app_data_dir}/logs/emmm.log` and renders them in a monospaced, scrollable panel |
 | AC-36.3.2 | ✅ Positive | Given the Logs tab is open, when I click "Open Log Folder", then `open_log_folder()` opens Windows Explorer to `{app_data_dir}/logs` via `tauri::api::shell::open`                      |
 | AC-36.3.3 | ❌ Negative | Given the log file doesn't exist yet (first launch), then the Logs panel shows "No logs yet" — no crash, no empty-path error                                                            |
 
@@ -87,7 +87,7 @@ ErrorBoundary (class component):
   componentDidCatch(error, info): log to Tauri log + set error state
   render: if hasError → fallback UI else children
 
-get_log_lines(n: usize) → Vec<String>:
+get_logs(limit: usize) -> Vec<String>:
   tail last n lines from app_data_dir/logs/emmm.log
 
 open_log_folder() → ():
@@ -106,7 +106,7 @@ open_log_folder() → ():
 ### Security & Privacy
 
 - **Log files contain path info but no user passwords or PIN hashes** — PIN is never logged.
-- **`get_log_lines` path is hardcoded to `app_data_dir/logs/emmm.log`** — no user-supplied path injection.
+- **`get_logs` path is hardcoded to `app_data_dir/logs/emmm.log`** - no user-supplied path injection.
 - **ErrorBoundary output includes component name only** — no user file content in error screens.
 
 ---

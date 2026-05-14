@@ -1,5 +1,4 @@
 pub mod archive_cmds;
-pub mod collision_cmds;
 pub mod conflict_cmds;
 pub mod deepmatch_scanner_cmds;
 pub mod disk_reconcile_cmds;

@@ -81,7 +81,6 @@ export interface ApplyObjectMatchInput {
   matched_source?: string | null;
 }
 
-export type WatcherState = { status: string; path: string | null; game_id: string | null };
 export type DiskReconcileReason =
   | 'StartupBoot'
   | 'OnboardingCompleted'
@@ -238,8 +237,6 @@ export const commands = {
   closeSplashscreen: () => invoke<void>('close_splashscreen'),
   getLogs: (params: { count?: number; limit?: number; offset?: number }) =>
     invoke<string[]>('get_logs', params),
-  getLogLines: (params: { count?: number; limit?: number; offset?: number }) =>
-    invoke<string[]>('get_logs', params),
   openLogFolder: () => invoke<void>('open_log_folder'),
   resetDatabase: () => invoke<void>('reset_database'),
   fetchMissingAsset: (params: { assetName: string }) => invoke<void>('fetch_missing_asset', params),
@@ -283,9 +280,6 @@ export const commands = {
     invoke<{ score: number; item: DbEntry }[]>('search_master_db', params),
   getObject: (params: { id?: string; gameId?: string }) =>
     invoke<ObjectSummary>('get_object', params),
-  // Note: getGame doesn't exist explicitly in lib.rs registry as _cmd, likely using get_games or a plugin.
-  // Reverting to get_game if it was intended to exist via specta.
-  getGame: (params: { id?: string; gameId?: string }) => invoke<GameConfig>('get_game', params),
   getObjects: (params?: { filter?: ObjectFilter } | { gameId?: string; safeMode?: boolean }) =>
     invoke<{ objects: ObjectSummary[]; lost_objects: string[] }>('get_objects_cmd', params),
   getCategoryCounts: (params?: { gameId?: string; safeMode?: boolean }) =>
@@ -528,7 +522,6 @@ export const commands = {
   stopWatcher: () => invoke<void>('stop_watcher'),
   setWatcherSuppression: (params: { suppressed: boolean }) =>
     invoke<void>('set_watcher_suppression', params),
-  getWatcherState: () => invoke<WatcherState>('get_file_watcher_state'),
 
   // Collections
   getCorridorState: (params: { gameId: string; isSafe: boolean }) =>
