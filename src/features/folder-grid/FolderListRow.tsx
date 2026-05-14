@@ -1,22 +1,8 @@
-/**
- * FolderListRow — List view row for a mod folder.
- * Used by FolderGrid in list mode.
- */
-
 import { memo, useState, useEffect, useMemo } from 'react';
-import {
-  Folder,
-  File,
-  Copy,
-  Package,
-  Layers,
-  AlertTriangle,
-  Star,
-  type LucideIcon,
-} from 'lucide-react';
+import { Folder, File, Copy, AlertTriangle, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../types/mod';
-import type { WorkspaceExplorerNode, WorkspaceTypeChip } from '../../types/workspace';
+import type { WorkspaceExplorerNode } from '../../types/workspace';
 import BulkContextMenu from './BulkContextMenu';
 import { useAppStore } from '../../stores/useAppStore';
 import { useModContextMenuItems } from '../../hooks/useModContextMenuItems';
@@ -31,6 +17,8 @@ import {
 import { buildWorkspaceSwitchPolicy } from '../workspace-runtime/actions/workspaceSwitchPolicy';
 import { WorkspaceSwitchControl } from '../workspace-runtime/components/WorkspaceSwitchControl';
 import { WorkspaceSwitchLabel } from '../workspace-runtime/components/WorkspaceSwitchLabel';
+import { maskWorkspaceNodeCapabilities } from '../workspace-runtime/actions/workspaceActionAvailability';
+import { getFolderTypeChip } from './FolderTypeChip';
 
 interface FolderListRowProps {
   item: WorkspaceExplorerNode;
@@ -56,37 +44,7 @@ interface FolderListRowProps {
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
   isSwitchPending?: boolean;
-}
-
-function getTypeChip(
-  typeChip: WorkspaceTypeChip | null,
-  t: ReturnType<typeof useTranslation>['t'],
-): { label: string; className: string; icon: LucideIcon } | null {
-  if (typeChip === 'mod_pack') {
-    return {
-      label: t('card.mod_pack'),
-      className: 'bg-info/20 text-info',
-      icon: Package,
-    };
-  }
-
-  if (typeChip === 'variant') {
-    return {
-      label: t('card.variants'),
-      className: 'bg-secondary/20 text-secondary',
-      icon: Layers,
-    };
-  }
-
-  if (typeChip === 'flat_mod') {
-    return {
-      label: t('card.flat_mod'),
-      className: 'bg-base-300 text-base-content/70',
-      icon: Folder,
-    };
-  }
-
-  return null;
+  mutationsDisabled?: boolean;
 }
 
 function FolderListRowInner({
@@ -113,12 +71,17 @@ function FolderListRowInner({
   onSyncWithDb,
   hasConflict = false,
   isSwitchPending = false,
+  mutationsDisabled = false,
 }: FolderListRowProps) {
   const { t } = useTranslation(['grid', 'common']);
-  const typeChip = getTypeChip(item.type_chip, t);
+  const typeChip = getFolderTypeChip(item.type_chip, t, 'row');
   const inactiveReasonText = formatWorkspaceReason(t, item.inactive_reason);
   const primaryWarningText = formatWorkspaceWarning(t, item.primary_warning);
-  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, item), [item, t]);
+  const actionItem = useMemo(
+    () => maskWorkspaceNodeCapabilities(item, mutationsDisabled),
+    [item, mutationsDisabled],
+  );
+  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, actionItem), [actionItem, t]);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(
     activeGameId || '',
@@ -130,18 +93,19 @@ function FolderListRowInner({
   const isBulkSelection =
     isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
   const contextItems = useModContextMenuItems({
-    folder: item,
-    onRename: () => onRename?.(item),
-    onDelete: () => onDelete?.(item),
-    onToggleEnabled: () => onToggleEnabled?.(item),
-    onToggleFavorite: () => onToggleFavorite?.(item),
-    onEnableOnlyThis: onEnableOnlyThis ? () => onEnableOnlyThis(item) : undefined,
-    onOpenMoveDialog,
-    onToggleSafe,
-    onSyncWithDb: onSyncWithDb ? () => onSyncWithDb(item) : undefined,
+    folder: actionItem,
+    onRename: () => !mutationsDisabled && onRename?.(item),
+    onDelete: () => !mutationsDisabled && onDelete?.(item),
+    onToggleEnabled: () => !mutationsDisabled && onToggleEnabled?.(item),
+    onToggleFavorite: () => !mutationsDisabled && onToggleFavorite?.(item),
+    onEnableOnlyThis:
+      onEnableOnlyThis && !mutationsDisabled ? () => onEnableOnlyThis(item) : undefined,
+    onOpenMoveDialog: mutationsDisabled ? undefined : onOpenMoveDialog,
+    onToggleSafe: mutationsDisabled ? undefined : onToggleSafe,
+    onSyncWithDb: onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(item) : undefined,
     onOpenExplorer: contextActions.openExplorer,
-    onPasteThumbnail: contextActions.pasteThumbnailFromClipboard,
-    onImportThumbnail: contextActions.importThumbnail,
+    onPasteThumbnail: mutationsDisabled ? undefined : contextActions.pasteThumbnailFromClipboard,
+    onImportThumbnail: mutationsDisabled ? undefined : contextActions.importThumbnail,
   });
 
   // Reset error state when thumbnail path changes
@@ -179,13 +143,13 @@ function FolderListRowInner({
         isBulkSelection ? (
           <BulkContextMenu
             count={selectionSize}
-            onToggle={onBulkToggle}
-            onDelete={onBulkDelete}
-            onTag={onBulkTag}
-            onFavorite={onBulkFavorite}
-            onSafe={onBulkSafe}
-            onPin={onBulkPin}
-            onMoveToObject={onBulkMoveToObject}
+            onToggle={mutationsDisabled ? undefined : onBulkToggle}
+            onDelete={mutationsDisabled ? undefined : onBulkDelete}
+            onTag={mutationsDisabled ? undefined : onBulkTag}
+            onFavorite={mutationsDisabled ? undefined : onBulkFavorite}
+            onSafe={mutationsDisabled ? undefined : onBulkSafe}
+            onPin={mutationsDisabled ? undefined : onBulkPin}
+            onMoveToObject={mutationsDisabled ? undefined : onBulkMoveToObject}
           />
         ) : (
           <>
@@ -315,6 +279,9 @@ function FolderListRowInner({
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                if (mutationsDisabled) {
+                  return;
+                }
                 onToggleFavorite?.(item);
               }}
               className={`p-1 rounded-full transition-all duration-200
@@ -325,6 +292,7 @@ function FolderListRowInner({
                  }
                `}
               title={t(item.is_favorite ? 'card.unfavorite' : 'card.favorite')}
+              disabled={mutationsDisabled}
             >
               <Star
                 size={16}
@@ -336,17 +304,19 @@ function FolderListRowInner({
               onClick={(e) => e.stopPropagation()}
             >
               <WorkspaceSwitchControl
-                node={item}
+                node={actionItem}
                 policy={switchPolicy}
-                isPending={isSwitchPending}
+                isPending={isSwitchPending || mutationsDisabled}
                 size="xs"
                 ariaLabel={t('common:actions.toggle')}
                 onToggle={() => {
-                  onToggleEnabled?.(item);
+                  if (!mutationsDisabled) {
+                    onToggleEnabled?.(item);
+                  }
                 }}
               />
               <WorkspaceSwitchLabel
-                node={item}
+                node={actionItem}
                 policy={switchPolicy}
                 className="text-[10px] font-semibold text-base-content/40 hidden sm:inline"
               />

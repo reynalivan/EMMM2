@@ -155,4 +155,59 @@ describe('workspaceReducer', () => {
     expect(nextState.previewTransition.kind).toBe('idle');
     expect(nextState.dialogState.kind).toBe('none');
   });
+
+  it('clears dirty preview when source unavailable reconciliation removes selected target', () => {
+    const nextState = reduceWorkspaceRuntimeState(
+      {
+        ...baseState,
+        selectedObjectFolderPath: 'ALBEDO',
+        explorerSubPath: 'ALBEDO',
+        currentPath: ['ALBEDO'],
+        selectedModPath: 'E:/Mods/ALBEDO',
+        previewDirty: true,
+        dialogState: { kind: 'previewUnsavedChanges' },
+      },
+      {
+        type: 'SELECTION_RECONCILED',
+        selectedObjectFolderPath: null,
+        explorerSubPath: undefined,
+        selectedModPath: null,
+        currentPath: [],
+        reconciliationStatus: 'cleared',
+        reconciliationReason: 'source_unavailable',
+        affectedPaths: ['E:/Mods'],
+      },
+    );
+
+    expect(nextState.selectedModPath).toBeNull();
+    expect(nextState.previewDirty).toBe(false);
+    expect(nextState.previewTransition.kind).toBe('idle');
+    expect(nextState.dialogState.kind).toBe('none');
+  });
+
+  it('preserves dirty preview when reconciled paths do not touch selected target', () => {
+    const nextState = reduceWorkspaceRuntimeState(
+      {
+        ...baseState,
+        selectedObjectFolderPath: 'ALBEDO',
+        explorerSubPath: 'ALBEDO',
+        currentPath: ['ALBEDO'],
+        selectedModPath: 'E:/Mods/ALBEDO',
+        previewDirty: true,
+      },
+      {
+        type: 'SELECTION_RECONCILED',
+        selectedObjectFolderPath: 'ALBEDO',
+        explorerSubPath: 'ALBEDO',
+        selectedModPath: 'E:/Mods/ALBEDO',
+        currentPath: ['ALBEDO'],
+        reconciliationStatus: 'fallback',
+        reconciliationReason: 'missing_explorer_path',
+        affectedPaths: ['E:/Mods/AMBER'],
+      },
+    );
+
+    expect(nextState.selectedModPath).toBe('E:/Mods/ALBEDO');
+    expect(nextState.previewDirty).toBe(true);
+  });
 });

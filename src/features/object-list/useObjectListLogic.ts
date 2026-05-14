@@ -10,6 +10,7 @@ import { useSearchWorker } from './hooks/useSearchWorker';
 import type { FilterDef } from '../../types/object';
 import type { WorkspaceObjectNode } from '../../types/workspace';
 import { useWorkspaceViewModel } from '../workspace-runtime/useWorkspaceViewModel';
+import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../workspace-runtime/actions/workspaceActionAvailability';
 import { useWorkspaceRuntime } from '../workspace-runtime/state/workspaceStoreBridge';
 import {
   areObjectMetaFiltersEqual,
@@ -93,6 +94,12 @@ export function useObjectListLogic() {
     },
   });
   const allObjects = workspace?.objects ?? EMPTY_WORKSPACE_OBJECTS;
+  const sourceState = workspace?.runtime?.source_state;
+  const sourceUnavailableMessage =
+    sourceState?.status === 'unavailable'
+      ? (sourceState.message ?? DEFAULT_SOURCE_UNAVAILABLE_MESSAGE)
+      : null;
+  const sourceAvailable = sourceState?.status !== 'unavailable';
 
   // Fix 2: Memoize search items outside the effect to avoid redundant array creation.
   const searchItems = useMemo(
@@ -187,6 +194,8 @@ export function useObjectListLogic() {
       activeGame,
       isMobile,
       isSyncing: handlers.isSyncing,
+      sourceAvailable,
+      sourceUnavailableMessage,
     }),
     [
       objects,
@@ -197,6 +206,8 @@ export function useObjectListLogic() {
       activeGame,
       isMobile,
       handlers.isSyncing,
+      sourceAvailable,
+      sourceUnavailableMessage,
     ],
   );
 

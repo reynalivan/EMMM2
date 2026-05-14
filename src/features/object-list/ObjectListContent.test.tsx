@@ -195,4 +195,50 @@ describe('ObjectListContent', () => {
       isPinned: true,
     });
   });
+
+  it('masks object mutation capabilities when source is unavailable', () => {
+    const mockVirtualizerFactory = () => ({
+      getTotalSize: () => 70,
+      getVirtualItems: () => [{ index: 0, size: 70, start: 0 }],
+    });
+
+    render(
+      <ObjectListContent
+        parentRef={{ current: null }}
+        rowVirtualizer={
+          mockVirtualizerFactory() as unknown as import('@tanstack/react-virtual').Virtualizer<
+            HTMLDivElement,
+            Element
+          >
+        }
+        flatObjectItems={[{ type: 'row', obj: objectRow }]}
+        selectedObjectFolderPath={null}
+        selectedObjectType={null}
+        onSelectObject={vi.fn()}
+        setSelectedObjectType={vi.fn()}
+        isMobile={false}
+        stickyPosition={null}
+        selectedIndex={-1}
+        scrollToSelected={vi.fn()}
+        mutationsDisabled
+        contextMenuProps={{
+          isSyncing: false,
+          categoryNames: [{ name: 'Character', label: 'Characters' }],
+          handleEdit: vi.fn(),
+          handleSyncWithDb: vi.fn(),
+          handleDeleteObject: vi.fn(),
+          handlePin: vi.fn(),
+          handleMoveCategory: vi.fn(),
+          handleRevealInExplorer: vi.fn(),
+          handleEnableObject: vi.fn(),
+          handleDisableObject: vi.fn(),
+        }}
+      />,
+    );
+
+    const target = JSON.parse(screen.getByTestId('object-context-target').textContent ?? '{}');
+    expect(target.capabilities.can_toggle).toBe(false);
+    expect(target.capabilities.can_delete).toBe(false);
+    expect(target.capabilities.can_sync).toBe(false);
+  });
 });

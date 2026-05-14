@@ -208,6 +208,26 @@ describe('FolderCard', () => {
     expect(screen.getAllByRole('checkbox', { hidden: true })[1]).not.toBeChecked();
   });
 
+  it('disables switch mutations when source is unavailable', () => {
+    const onToggleEnabled = vi.fn();
+
+    render(
+      <FolderCard
+        folder={mockFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+        onToggleEnabled={onToggleEnabled}
+        mutationsDisabled
+      />,
+    );
+
+    const switchControl = screen.getAllByRole('checkbox', { hidden: true })[1];
+    expect(switchControl).toBeDisabled();
+    fireEvent.click(switchControl);
+    expect(onToggleEnabled).not.toHaveBeenCalled();
+  });
+
   it('renders naming conflict warning styles (TC-13)', () => {
     const conflictFolder = { ...mockFolder, conflict_state: 'both' } as WorkspaceExplorerNode;
     render(

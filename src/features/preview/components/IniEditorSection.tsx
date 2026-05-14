@@ -1,5 +1,5 @@
 import { Edit2, ExternalLink, Keyboard, TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-shell';
 import type { KeyBindSectionGroup } from '../previewPanelUtils';
@@ -15,6 +15,7 @@ interface IniEditorSectionProps {
   conflictingKeys: Set<string>;
   editorDirty: boolean;
   isSaving: boolean;
+  canEdit?: boolean;
   onToggleSection: (sectionId: string) => void;
   onFieldChange: (fieldId: string, value: string) => void;
   onSave: () => Promise<boolean | void> | void;
@@ -32,6 +33,7 @@ export default function IniEditorSection({
   conflictingKeys,
   editorDirty,
   isSaving,
+  canEdit = true,
   onToggleSection,
   onFieldChange,
   onSave,
@@ -41,7 +43,11 @@ export default function IniEditorSection({
   const [isEditing, setIsEditing] = useState(false);
   const [advancedKeybindFieldId, setAdvancedKeybindFieldId] = useState<string | null>(null);
 
-  // Manual save mode: no auto-save timer.
+  useEffect(() => {
+    if (!canEdit && isEditing) {
+      setIsEditing(false);
+    }
+  }, [canEdit, isEditing]);
 
   return (
     <div className="mb-6 relative">
@@ -55,6 +61,7 @@ export default function IniEditorSection({
               className="btn btn-ghost btn-xs"
               onClick={() => setIsEditing(true)}
               title={t('preview:ini_editor.edit_keybinds')}
+              disabled={!canEdit}
             >
               <Edit2 size={13} />
               {t('preview:actions.edit')}
@@ -71,7 +78,7 @@ export default function IniEditorSection({
             <>
               <button
                 className="btn btn-ghost btn-xs text-error"
-                disabled={isSaving}
+                disabled={isSaving || !canEdit}
                 onClick={() => {
                   onDiscard();
                   setIsEditing(false);
@@ -82,7 +89,7 @@ export default function IniEditorSection({
               </button>
               <button
                 className="btn btn-primary btn-xs"
-                disabled={isSaving || Object.keys(fieldErrors).length > 0}
+                disabled={isSaving || !canEdit || Object.keys(fieldErrors).length > 0}
                 onClick={async () => {
                   await onSave();
                   setIsEditing(false);
@@ -96,7 +103,7 @@ export default function IniEditorSection({
         </div>
       </div>
 
-      <div className="space-y-4" onDoubleClick={() => setIsEditing(true)}>
+      <div className="space-y-4" onDoubleClick={() => canEdit && setIsEditing(true)}>
         {sections.length === 0 && (
           <div className="text-xs text-base-content/50">{t('preview:ini_editor.no_sections')}</div>
         )}
@@ -122,8 +129,9 @@ export default function IniEditorSection({
                       title={t('preview:ini_editor.open_in_editor')}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (activePath) open(`${activePath}\\${fileGroup.fileName}`);
+                        if (activePath && canEdit) open(`${activePath}\\${fileGroup.fileName}`);
                       }}
+                      disabled={!canEdit}
                     >
                       <ExternalLink size={12} className="opacity-70" />
                     </button>
@@ -181,6 +189,7 @@ export default function IniEditorSection({
                                       onChange={(e) =>
                                         onFieldChange(field.id, e.target.value.toUpperCase())
                                       }
+                                      disabled={!canEdit}
                                       placeholder={t('preview:ini_editor.enter_field', {
                                         label: field.label,
                                       })}
@@ -199,6 +208,7 @@ export default function IniEditorSection({
                                       className={`btn btn-xs btn-square ${isPrimary ? 'btn-ghost text-primary hover:bg-primary/20' : 'btn-ghost text-base-content/50 hover:text-primary hover:bg-primary/10'}`}
                                       title={t('preview:ini_editor.auto_detect')}
                                       onClick={() => setAdvancedKeybindFieldId(field.id)}
+                                      disabled={!canEdit}
                                     >
                                       <Keyboard size={14} />
                                     </button>

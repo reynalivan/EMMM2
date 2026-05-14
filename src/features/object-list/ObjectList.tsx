@@ -1,37 +1,36 @@
-/**
- * Epic 3: ObjectList — main sidebar component for browsing game objects/folders.
- * Thin orchestrator composing: Toolbar, States, Content, Modals, StatusBar.
- * Includes zone-aware DnD with 3 drop targets:
- *   - Top (toolbar area): Auto Organize
- *   - Middle (item rows): Move to specific object
- *   - Bottom (status bar): Append as new object folder
- */
-
 import { useState, useCallback, useRef, useMemo } from 'react';
-import { FolderPlus, FolderInput, AlertTriangle } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { useObjectListLogic } from './useObjectListLogic';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
 import ObjectListToolbar from './ObjectListToolbar';
-import ObjectListStates from './ObjectListStates';
 import ObjectListContent from './ObjectListContent';
-import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
 import { useObjectListDropZones } from './useObjectListDropZones';
-import DropConfirmModal from './DropConfirmModal';
-import ArchiveModal from '../scanner/components/ArchiveModal';
-import BulkTagModal from './BulkTagModal';
 import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
-import { openWorkspaceConflictDialog } from '../workspace-runtime/state/workspaceDialogs';
 import { useObjectListEffects } from './hooks/useObjectListEffects';
+import ObjectListConflictBanner from './ObjectListConflictBanner';
+import ObjectListDropIndicators from './ObjectListDropIndicators';
+import ObjectListAuxiliaryModals from './ObjectListAuxiliaryModals';
+import { useObjectListBulkToolbarProps } from './useObjectListBulkToolbarProps';
+import { useObjectListKeyboard } from './useObjectListKeyboard';
+import ObjectListPrimaryModals from './ObjectListPrimaryModals';
+import ObjectListStateHost from './ObjectListStateHost';
+import { useObjectListContextMenuProps } from './useObjectListContextMenuProps';
 
 export default function ObjectList() {
-  const { t } = useTranslation(['objects']);
-  // Fix 4: Destructure from semantic namespaces rather than flat spread.
   const { state, filters, nav, virtualizer, modals, handlers, bulkSelect } = useObjectListLogic();
 
-  const { objects, isLoading, isError, objectsErrorInfo, activeGame, isMobile, isSyncing } = state;
+  const {
+    objects,
+    isLoading,
+    isError,
+    objectsErrorInfo,
+    activeGame,
+    isMobile,
+    isSyncing,
+    sourceAvailable,
+  } = state;
+  const mutationsDisabled = !sourceAvailable;
 
   const {
     activeFilters,
@@ -62,27 +61,10 @@ export default function ObjectList() {
     scrollToSelected,
   } = virtualizer;
 
-  const {
-    deleteObjectDialog,
-    setDeleteObjectDialog,
-    forceDeleteObjectDialog,
-    setForceDeleteObjectDialog,
-    editObject,
-    setEditObject,
-    syncConfirm,
-    setSyncConfirm,
-    scanReview,
-    archiveModal,
-    bulkTagModal,
-    setBulkTagModal,
-    mismatchConfirm,
-    setMismatchConfirm,
-  } = modals;
+  const { archiveModal, bulkTagModal, setBulkTagModal } = modals;
 
   const {
     handleDeleteObject,
-    confirmDeleteObject,
-    confirmForceDeleteObject,
     handleEdit,
     handlePin,
     handleMoveCategory,
@@ -93,12 +75,8 @@ export default function ObjectList() {
     handleSync,
     handleBackgroundSync,
     handleSyncWithDb,
-    handleApplySyncMatch,
-    handleCommitScan,
-    handleCloseScanReview,
     handleDropOnItem,
     handleDropAutoOrganize,
-    handleDropOnNewObjectSubmit,
     handleArchivesInteractively,
     handleArchiveExtractSubmit,
     handleArchiveExtractSkip,
@@ -118,11 +96,8 @@ export default function ObjectList() {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [autoSetupOpen, setAutoSetupOpen] = useState(false);
-  /** Pending paths for the "create new object with pre-selected files" flow */
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
-  // mismatchConfirm/setMismatchConfirm now come from modals namespace (useObjectListLogic)
 
-  // --- Refs for zone hit-testing ---
   const toolbarRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -152,7 +127,7 @@ export default function ObjectList() {
     onDrop,
     onDragOver: handleDragOver,
     onDragStateChange: handleDragStateChange,
-    enabled: !!activeGame,
+    enabled: !!activeGame && sourceAvailable,
   });
 
   useDragAutoScroll({
@@ -162,7 +137,6 @@ export default function ObjectList() {
     threshold: 50,
   });
 
-  /** Modal callbacks */
   const handleConfirmMoveAnyway = useCallback(() => {
     if (!dropValidation) return;
     const { targetId, paths } = dropValidation;
@@ -205,76 +179,47 @@ export default function ObjectList() {
   const hasNoGame = !activeGame;
   const showContent = !isLoading && !isError && !isEmpty && !hasNoGame;
   const showFilterPanel = !!activeGame;
-  // Fix 1: memoize to avoid re-filtering on every render
   const conflictObjects = useMemo(() => objects.filter((o) => o.has_naming_conflict), [objects]);
 
-  // Fix 3: memoize to prevent ObjectListContent cascade re-renders on every ObjectList render
-  const contextMenuProps = useMemo(
-    () => ({
-      isSyncing,
-      categoryNames,
-      handleEdit,
-      handleSyncWithDb,
-      handleDeleteObject,
-      handlePin,
-      handleMoveCategory,
-      handleRevealInExplorer,
-      handleEnableObject,
-      handleDisableObject,
-    }),
-    [
-      isSyncing,
-      categoryNames,
-      handleEdit,
-      handleSyncWithDb,
-      handleDeleteObject,
-      handlePin,
-      handleMoveCategory,
-      handleRevealInExplorer,
-      handleEnableObject,
-      handleDisableObject,
-    ],
-  );
+  const contextMenuProps = useObjectListContextMenuProps({
+    isSyncing,
+    categoryNames,
+    handleEdit,
+    handleSyncWithDb,
+    handleDeleteObject,
+    handlePin,
+    handleMoveCategory,
+    handleRevealInExplorer,
+    handleEnableObject,
+    handleDisableObject,
+  });
 
   const activePane = useAppStore((state) => state.activePane);
   const setActivePane = useAppStore((state) => state.setActivePane);
 
-  // Fix 4: memoize bulkSelect prop object to prevent Toolbar re-renders when selection count unchanged
-  const bulkSelectToolbarProps = useMemo(
-    () => ({
-      isAnySelected: activePane === 'objectList' && bulkSelect.isAnySelected,
-      selectionCount: bulkSelect.selectionCount,
-      onDelete: () => handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-      onPin: (pin: boolean) =>
-        handleBulkPin(bulkSelect.selectedIds, pin).then(bulkSelect.clearSelection),
-      onEnable: () => handleBulkEnable(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-      onDisable: () => handleBulkDisable(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-      onAddTags: () => setBulkTagModal({ open: true, mode: 'add' }),
-      onRemoveTags: () => setBulkTagModal({ open: true, mode: 'remove' }),
-      onAutoOrganize: () =>
-        handleBulkAutoOrganize(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-      onFavorite: (fav: boolean) =>
-        handleBulkFavorite(bulkSelect.selectedIds, fav).then(bulkSelect.clearSelection),
-      onMarkSafe: (safe: boolean) =>
-        handleBulkSafe(bulkSelect.selectedIds, safe).then(bulkSelect.clearSelection),
-      onClear: bulkSelect.clearSelection,
-    }),
-    [
-      activePane,
-      bulkSelect.isAnySelected,
-      bulkSelect.selectionCount,
-      bulkSelect.selectedIds,
-      bulkSelect.clearSelection,
-      handleBulkDelete,
-      handleBulkPin,
-      handleBulkEnable,
-      handleBulkDisable,
-      handleBulkAutoOrganize,
-      handleBulkFavorite,
-      handleBulkSafe,
-      setBulkTagModal,
-    ],
-  );
+  const bulkSelectToolbarProps = useObjectListBulkToolbarProps({
+    activePane,
+    mutationsDisabled,
+    bulkSelect,
+    setBulkTagModal,
+    handleBulkDelete,
+    handleBulkPin,
+    handleBulkEnable,
+    handleBulkDisable,
+    handleBulkAutoOrganize,
+    handleBulkFavorite,
+    handleBulkSafe,
+  });
+  const keyboardHandlers = useObjectListKeyboard({
+    activePane,
+    mutationsDisabled,
+    selectedObjectFolderPath,
+    objects,
+    bulkSelect,
+    setActivePane,
+    handleBulkDelete,
+    handleDeleteObject,
+  });
 
   return (
     <div
@@ -283,42 +228,9 @@ export default function ObjectList() {
         activePane === 'objectList' && 'ring-1 ring-inset ring-primary/20',
       )}
       tabIndex={-1}
-      onFocus={(e) => {
-        // Prevent setting focus if clicking inside a modal or portal that bubbles up
-        if (!e.defaultPrevented) setActivePane('objectList');
-      }}
-      onKeyDown={(e) => {
-        if (activePane !== 'objectList') return;
-
-        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-          e.preventDefault();
-          bulkSelect.selectAll();
-          return;
-        }
-
-        if (e.key === 'Escape') {
-          if (bulkSelect.isAnySelected) {
-            e.preventDefault();
-            bulkSelect.clearSelection();
-            return;
-          }
-        }
-
-        if (e.key === 'Delete') {
-          if (bulkSelect.isAnySelected) {
-            e.preventDefault();
-            handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection);
-            return;
-          } else if (selectedObjectFolderPath) {
-            e.preventDefault();
-            const objToDel = objects.find((o) => o.folder_path === selectedObjectFolderPath);
-            if (objToDel) handleDeleteObject(objToDel.id);
-            return;
-          }
-        }
-      }}
+      onFocus={keyboardHandlers.onFocus}
+      onKeyDown={keyboardHandlers.onKeyDown}
     >
-      {/* Toolbar: search, category selector, sort, actions — also Auto Organize drop zone */}
       <div ref={toolbarRef}>
         <ObjectListToolbar
           sidebarSearchQuery={sidebarSearchQuery}
@@ -341,53 +253,17 @@ export default function ObjectList() {
           onStatusFilterChange={setStatusFilter}
           isDragging={isDragging}
           isActiveZone={activeDropZone === 'auto-organize'}
+          mutationsDisabled={mutationsDisabled}
           bulkSelect={bulkSelectToolbarProps}
         />
       </div>
 
-      {/* Naming Conflict Warning */}
-      {conflictObjects.length > 0 && (
-        <div className="mx-2 mt-1 mb-0.5 flex items-center gap-1.5 bg-warning/10 border border-warning/20 rounded-md px-2 py-1">
-          <AlertTriangle size={12} className="text-warning shrink-0" />
-          <span className="text-[10px] text-warning flex-1 truncate">
-            {t('item.naming_conflict', { count: conflictObjects.length })}
-          </span>
-          <button
-            className="text-[10px] text-warning font-semibold hover:underline shrink-0"
-            onClick={() => {
-              const obj = conflictObjects[0];
-              if (activeGame?.mod_path && obj.folder_path) {
-                const baseName = obj.name;
-                const modPath = activeGame.mod_path.replace(/\\/g, '/');
-                const enabledPath = `${modPath}/${obj.folder_path}`;
-                const disabledPath = `${modPath}/DISABLED ${baseName}`;
-                openWorkspaceConflictDialog({
-                  type: 'RenameConflict',
-                  attempted_target: enabledPath,
-                  existing_path: disabledPath,
-                  base_name: baseName,
-                });
-              }
-            }}
-          >
-            {t('item.resolve')}
-          </button>
-        </div>
-      )}
+      <ObjectListConflictBanner conflictObjects={conflictObjects} activeGame={activeGame} />
 
-      {/* Conditional states: loading / error / no-game / empty */}
-      <ObjectListStates
+      <ObjectListStateHost
         isLoading={isLoading}
         isError={isError}
-        errorMessage={
-          objectsErrorInfo
-            ? objectsErrorInfo instanceof Error
-              ? objectsErrorInfo.message
-              : typeof objectsErrorInfo === 'object' && objectsErrorInfo !== null
-                ? Object.values(objectsErrorInfo).join(': ')
-                : String(objectsErrorInfo)
-            : undefined
-        }
+        errorInfo={objectsErrorInfo}
         hasNoGame={hasNoGame}
         isEmpty={isEmpty}
         sidebarSearchQuery={sidebarSearchQuery}
@@ -398,7 +274,6 @@ export default function ObjectList() {
         onAutoSetup={() => setAutoSetupOpen(true)}
       />
 
-      {/* Virtualized list (objects or folders) — item drop zone */}
       <div ref={contentRef} className="flex-1 min-h-0 flex flex-col">
         {showContent && (
           <ObjectListContent
@@ -419,170 +294,55 @@ export default function ObjectList() {
             isAnyBulkSelected={bulkSelect.isAnySelected}
             isBulkSelected={bulkSelect.isSelected}
             onToggleBulkSelect={bulkSelect.toggleSelection}
+            mutationsDisabled={mutationsDisabled}
           />
         )}
       </div>
 
-      {/* Floating tooltip for per-item drop target */}
-      {isDragging &&
-        activeDropZone === 'item' &&
-        hoveredItemId &&
-        (() => {
-          const obj = objects.find((o) => o.id === hoveredItemId);
-          return obj ? (
-            <div
-              className="absolute right-4 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-content shadow-xl pointer-events-none"
-              style={{ top: tooltipTop }}
-            >
-              <FolderInput size={14} />
-              <span className="text-xs font-semibold whitespace-nowrap">
-                {t('item.move_to', { name: obj.name })}
-              </span>
-            </div>
-          ) : null;
-        })()}
+      <ObjectListDropIndicators
+        isDragging={isDragging}
+        activeDropZone={activeDropZone}
+        hoveredItemId={hoveredItemId}
+        tooltipTop={tooltipTop}
+        objects={objects}
+        selectedObjectType={selectedObjectType}
+        objectCount={objects.length}
+        onShowAll={() => setSelectedObjectType(null)}
+        bottomRef={bottomRef}
+      />
 
-      {/* Bottom zone: status bar or "Append as New Object" drop zone */}
-      <div
-        ref={bottomRef}
-        className={`px-3 border-t transition-all duration-200 relative z-30 ${
-          isDragging
-            ? activeDropZone === 'new-object'
-              ? 'py-5 border-primary bg-primary/15 border-dashed border-t-2'
-              : 'py-5 border-base-300/50 bg-base-200/70 border-dashed border-t-2'
-            : 'py-1.5 border-base-300/20'
-        }`}
-        style={isDragging ? { animation: 'slideUp 200ms ease-out' } : undefined}
-      >
-        {isDragging ? (
-          <div
-            className={`flex items-center justify-center gap-2 ${
-              activeDropZone === 'new-object' ? 'text-primary' : 'text-base-content/50'
-            }`}
-          >
-            <FolderPlus
-              size={18}
-              className={activeDropZone === 'new-object' ? 'animate-pulse' : ''}
-            />
-            <span className="text-xs font-medium">{t('item.append_new')}</span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-base-content/30">
-              {t('item.object_count', { count: objects.length })}
-            </span>
-            <div className="flex items-center gap-3">
-              {selectedObjectType && (
-                <button
-                  className="text-[10px] text-primary/60 hover:text-primary transition-colors"
-                  onClick={() => setSelectedObjectType(null)}
-                >
-                  {t('item.show_all')}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Modals: delete, edit, sync, create */}
-      <ObjectListModals
+      <ObjectListPrimaryModals
         activeGame={activeGame}
-        editObject={editObject}
-        onCloseEdit={() => setEditObject(null)}
-        syncConfirm={syncConfirm}
-        onApplySyncMatch={handleApplySyncMatch}
-        onEditManually={() => {
-          const obj = objects.find((o) => o.id === syncConfirm.objectId);
-          setSyncConfirm(SYNC_CONFIRM_RESET);
-          if (obj) setEditObject(obj);
-        }}
-        onCloseSyncConfirm={() => setSyncConfirm(SYNC_CONFIRM_RESET)}
-        scanReview={scanReview}
-        onCommitScan={handleCommitScan}
-        onCloseScanReview={handleCloseScanReview}
+        objects={objects}
+        modals={modals}
+        handlers={handlers}
         createModalOpen={createModalOpen}
         pendingPaths={pendingPaths}
-        onImportDropped={async (newObjId, newObjName, paths) => {
-          await handleDropOnNewObjectSubmit(newObjId, newObjName, paths);
-          setCreateModalOpen(false);
-          setPendingPaths(null);
-        }}
+        autoSetupOpen={autoSetupOpen}
         onCloseCreate={() => {
           setCreateModalOpen(false);
           setPendingPaths(null);
         }}
-        autoSetupOpen={autoSetupOpen}
         onCloseAutoSetup={() => setAutoSetupOpen(false)}
-        deleteObjectDialog={deleteObjectDialog}
-        onConfirmDeleteObject={confirmDeleteObject}
-        onCancelDeleteObject={() => setDeleteObjectDialog({ open: false, id: '', name: '' })}
-        forceDeleteObjectDialog={forceDeleteObjectDialog}
-        onConfirmForceDeleteObject={confirmForceDeleteObject}
-        onCancelForceDeleteObject={() =>
-          setForceDeleteObjectDialog({ open: false, id: '', name: '', count: 0 })
-        }
-        mismatchConfirm={mismatchConfirm}
-        onConfirmMismatchHandler={() => {
-          if (mismatchConfirm) {
-            handleDropAutoOrganize(mismatchConfirm);
-          }
-          setMismatchConfirm(null);
-        }}
-        onCancelMismatchHandler={() => setMismatchConfirm(null)}
       />
 
-      {/* Pre-drop validation modal */}
-      <DropConfirmModal
-        validation={dropValidation}
+      <ObjectListAuxiliaryModals
+        dropValidation={dropValidation}
         onMoveAnyway={handleConfirmMoveAnyway}
         onMoveToSuggested={handleConfirmMoveToSuggested}
-        onCancel={handleCancelDrop}
+        onCancelDrop={handleCancelDrop}
         onSkipValidation={handleSkipValidation}
-      />
-
-      {/* Archive extraction modal triggered during DnD */}
-      <ArchiveModal
-        key={archiveModal.archives.length > 0 ? archiveModal.archives[0].path : 'empty'}
-        isOpen={archiveModal.open}
-        archives={archiveModal.archives}
-        isExtracting={archiveModal.isExtracting}
-        error={archiveModal.error}
-        passwordError={archiveModal.passwordError}
-        extractProgress={archiveModal.extractProgress}
-        fileProgress={archiveModal.fileProgress}
-        onExtract={handleArchiveExtractSubmit}
-        onSkip={handleArchiveExtractSkip}
-        onStop={handleStopExtraction}
-        targetObjectName={
-          archiveModal.pendingDropContext?.targetObjectId
-            ? objects.find((o) => o.id === archiveModal.pendingDropContext?.targetObjectId)?.name
-            : undefined
-        }
-      />
-
-      {/* Bulk tag modal */}
-      <BulkTagModal
-        open={bulkTagModal.open}
-        mode={bulkTagModal.mode}
-        existingTags={[...bulkSelect.selectedIds]
-          .map((id) => objects.find((o) => o.id === id))
-          .filter(Boolean)
-          .flatMap((obj) => {
-            try {
-              return JSON.parse(obj!.tags || '[]') as string[];
-            } catch {
-              return [];
-            }
-          })}
-        onSubmit={(tags) => {
-          if (bulkTagModal.mode === 'add') {
-            handleBulkAddTags(bulkSelect.selectedIds, tags).then(bulkSelect.clearSelection);
-          } else {
-            handleBulkRemoveTags(bulkSelect.selectedIds, tags).then(bulkSelect.clearSelection);
-          }
-        }}
-        onClose={() => setBulkTagModal({ open: false, mode: 'add' })}
+        archiveModal={archiveModal}
+        objects={objects}
+        onArchiveExtractSubmit={handleArchiveExtractSubmit}
+        onArchiveExtractSkip={handleArchiveExtractSkip}
+        onStopExtraction={handleStopExtraction}
+        bulkTagModal={bulkTagModal}
+        selectedIds={bulkSelect.selectedIds}
+        onBulkAddTags={handleBulkAddTags}
+        onBulkRemoveTags={handleBulkRemoveTags}
+        onCloseBulkTagModal={() => setBulkTagModal({ open: false, mode: 'add' })}
+        onClearBulkSelection={bulkSelect.clearSelection}
       />
     </div>
   );

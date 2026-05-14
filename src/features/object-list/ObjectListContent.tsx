@@ -12,6 +12,7 @@ import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
 import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { FlatItem } from './useObjectListVirtualizer';
+import { maskWorkspaceNodeCapabilities } from '../workspace-runtime/actions/workspaceActionAvailability';
 
 interface ContentProps {
   parentRef: RefObject<HTMLDivElement | null>;
@@ -35,6 +36,7 @@ interface ContentProps {
   isAnyBulkSelected?: boolean;
   isBulkSelected?: (id: string) => boolean;
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
+  mutationsDisabled?: boolean;
 }
 
 /** Shared props for building ObjectContextMenu */
@@ -87,6 +89,7 @@ export default function ObjectListContent({
   hoveredItemId,
   isBulkSelected,
   onToggleBulkSelect,
+  mutationsDisabled = false,
 }: ContentProps) {
   const ctx = contextMenuProps;
 
@@ -156,7 +159,12 @@ export default function ObjectListContent({
                 }}
               >
                 <ContextMenu
-                  content={renderContextMenu(buildObjectContextMenuTarget(item.obj), ctx)}
+                  content={renderContextMenu(
+                    buildObjectContextMenuTarget(
+                      maskWorkspaceNodeCapabilities(item.obj, mutationsDisabled),
+                    ),
+                    ctx,
+                  )}
                 >
                   <ObjectRowItem
                     obj={item.obj}
@@ -185,6 +193,7 @@ export default function ObjectListContent({
         flatObjectItems={flatObjectItems}
         isMobile={isMobile}
         contextMenuProps={ctx}
+        mutationsDisabled={mutationsDisabled}
       />
     </div>
   );
@@ -199,6 +208,7 @@ interface StickyRowProps {
   flatObjectItems: FlatItem[];
   isMobile: boolean;
   contextMenuProps: ContextMenuHandlerProps;
+  mutationsDisabled: boolean;
 }
 
 function StickyRow({
@@ -208,6 +218,7 @@ function StickyRow({
   flatObjectItems,
   isMobile,
   contextMenuProps: ctx,
+  mutationsDisabled,
 }: StickyRowProps) {
   if (!stickyPosition || selectedIndex < 0) return null;
 
@@ -227,7 +238,14 @@ function StickyRow({
       onClick={scrollToSelected}
     >
       <div className="bg-base-100/95 backdrop-blur-md rounded-lg relative">
-        <ContextMenu content={renderContextMenu(buildObjectContextMenuTarget(item.obj), ctx)}>
+        <ContextMenu
+          content={renderContextMenu(
+            buildObjectContextMenuTarget(
+              maskWorkspaceNodeCapabilities(item.obj, mutationsDisabled),
+            ),
+            ctx,
+          )}
+        >
           <ObjectRowItem obj={item.obj} isSelected isMobile={isMobile} onClick={scrollToSelected} />
         </ContextMenu>
         {/* Direction indicator */}

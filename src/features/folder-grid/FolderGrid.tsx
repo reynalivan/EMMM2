@@ -1,35 +1,23 @@
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import FolderGridToolbar from './FolderGridToolbar';
 import FolderGridBanners from './FolderGridBanners';
-import FolderGridEmpty from './FolderGridEmpty';
 import FolderGridModals from './FolderGridModals';
-import FolderCard from './FolderCard';
-import FolderListRow from './FolderListRow';
 import DragOverlay from './DragOverlay';
 import EnableParentDialog from './EnableParentDialog';
-import { Loader2, RefreshCw, CheckSquare, FolderOpen } from 'lucide-react';
 import BulkProgressBar from './BulkProgressBar';
 import BulkActionBar from './BulkActionBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
-import { useActiveConflicts } from '../../hooks/useFolderMutations';
-import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
-import {
-  ContextMenu,
-  ContextMenuItem,
-  ContextMenuSeparator,
-} from '../../components/ui/ContextMenu';
+import { useFolderGridViewModel } from './useFolderGridViewModel';
+import FolderGridStateViews from './FolderGridStateViews';
+import FolderGridContent from './FolderGridContent';
 
 export default function FolderGrid() {
-  const { t } = useTranslation(['grid']);
+  const folderGrid = useFolderGrid();
   const {
-    // Data & State
     sortedFolders,
     isLoading,
     isError,
     error,
-    isPlaceholderData,
     selfDisplayMode,
     selfIsMod,
     selfIsEnabled,
@@ -37,23 +25,12 @@ export default function FolderGrid() {
     selfReasons,
     conflicts: nameConflicts,
     sourceUnavailableMessage,
-    isGridView,
     isMobile,
     currentPath,
     explorerSearchQuery,
     sortOrder,
     sortLabel,
     viewMode,
-
-    // Virtualization
-    parentRef,
-    virtualItems,
-    totalSize,
-    columnCount,
-    cardWidth,
-
-    // Navigation
-    handleNavigate,
     handleBreadcrumbClick,
     handleGoHome,
     setMobilePane,
@@ -61,29 +38,14 @@ export default function FolderGrid() {
     setExplorerSearch,
     handleSortToggle,
     handleKeyDown,
-    focusedId,
     handleRefresh,
-    currentAbsPath,
-    handleOpenCurrentFolderInExplorer,
-
-    // Selection
     gridSelection,
-    toggleGridSelection,
-    activateGridItem,
     clearGridSelection,
-    selectedModPath,
-
-    // Actions
     handleToggleSelf,
-    handleToggleFavorite,
-    handleEnableOnlyThis,
     handleMoveToObject,
     moveDialog,
-    openMoveDialog,
     closeMoveDialog,
     objects,
-
-    // Parent-disabled lock state
     ancestorDisabledBy,
     enableParentDialogOpen,
     enableParentDialogAncestorName,
@@ -92,25 +54,11 @@ export default function FolderGrid() {
     openEnableParentDialog,
     closeEnableParentDialog,
     handleEnableParent,
-    handleToggleEnabledGuarded,
-
-    // Rename
-    renamingId,
-    handleRenameRequest,
-    handleRenameSubmit,
-    handleRenameCancel,
-
-    // Delete
     deleteConfirm,
     setDeleteConfirm,
-    handleDeleteRequest,
     handleDeleteConfirm,
-
-    // Epic 5
     isPreviewOpen,
     togglePreview,
-
-    // Bulk
     bulkTagOpen,
     setBulkTagOpen,
     bulkDeleteConfirm,
@@ -122,61 +70,31 @@ export default function FolderGrid() {
     handleBulkFavorite,
     handleBulkSafe,
     handleBulkPin,
-    handleBulkMoveToObject,
-
     pinSafeDialog,
-    handleToggleSafeRequest,
     handleToggleSafeSubmit,
     handleToggleSafeCancel,
-
     activeContextDialog,
     handleActiveContextCancel,
     handleActiveContextSubmit,
-
-    // Sync with DB
     syncConfirm,
-    handleSyncWithDb,
     closeSyncConfirm,
     handleApplySyncMatch,
-    isSwitchPending,
-    isFolderSwitchPending,
-
     isDragging,
     handleImportFiles,
-  } = useFolderGrid();
-
-  // Duplicate / Conflict Detection Visual
-  const { data: conflicts = [] } = useActiveConflicts();
-  const conflictPathSet = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of conflicts) {
-      // Only flag as conflict if 2+ mods share the same hash
-      if (c.mod_paths.length > 1) {
-        for (const p of c.mod_paths) s.add(p.replace(/\\/g, '/'));
-      }
-    }
-    return s;
-  }, [conflicts]);
-
-  // WorkspaceViewModel explorer payload is already corridor-filtered in the backend.
-  const visibleFolders = sortedFolders;
+  } = folderGrid;
 
   const isFlatModRoot = selfDisplayMode === 'flat_mod' || selfIsMod;
-
-  const activePane = useAppStore((state) => state.activePane);
-  const activeGameId = useAppStore((state) => state.activeGameId);
-  const diskSourceUnavailableMessage = useAppStore((state) =>
-    activeGameId ? (state.diskSourceUnavailableByGame[activeGameId] ?? null) : null,
-  );
-  const workspaceSourceUnavailableMessage =
-    sourceUnavailableMessage ?? diskSourceUnavailableMessage;
-  const setActivePane = useAppStore((state) => state.setActivePane);
-  const isIgnoreManagementOpen = useAppStore((state) => state.isIgnoreManagementOpen);
-  const setIsIgnoreManagementOpen = useAppStore((state) => state.setIgnoreManagementOpen);
-
-  const handleSelectAll = () => {
-    useAppStore.getState().setGridSelection(new Set(visibleFolders.map((f) => f.path)));
-  };
+  const {
+    visibleFolders,
+    conflictPathSet,
+    activePane,
+    setActivePane,
+    isIgnoreManagementOpen,
+    setIsIgnoreManagementOpen,
+    workspaceSourceUnavailableMessage,
+    mutationsDisabled,
+    handleSelectAll,
+  } = useFolderGridViewModel({ sortedFolders, sourceUnavailableMessage });
 
   return (
     <div
@@ -193,7 +111,7 @@ export default function FolderGrid() {
           return;
         }
 
-        if (e.key === 'Delete' && gridSelection.size > 0) {
+        if (e.key === 'Delete' && gridSelection.size > 0 && !mutationsDisabled) {
           e.preventDefault();
           handleBulkDeleteRequest();
           return;
@@ -241,180 +159,26 @@ export default function FolderGrid() {
         handleRefresh={handleRefresh}
       />
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 size={24} className="animate-spin text-primary/50" />
-        </div>
-      )}
+      <FolderGridStateViews
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+        visibleCount={visibleFolders.length}
+        isFlatModRoot={isFlatModRoot}
+        explorerSearchQuery={explorerSearchQuery}
+        currentPath={currentPath}
+        setExplorerSearch={setExplorerSearch}
+        handleBreadcrumbClick={handleBreadcrumbClick}
+        handleImportFiles={handleImportFiles}
+      />
 
-      {/* Error */}
-      {isError && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4">
-          <p className="text-xs text-error/60">
-            {error instanceof Error ? error.message : String(error) || t('status.load_error')}
-          </p>
-        </div>
-      )}
-
-      {/* Empty state (only if NOT flat mod root) */}
-      {!isLoading && !isError && visibleFolders.length === 0 && !isFlatModRoot && (
-        <FolderGridEmpty
-          explorerSearchQuery={explorerSearchQuery}
-          currentPath={currentPath}
-          setExplorerSearch={setExplorerSearch}
-          handleBreadcrumbClick={handleBreadcrumbClick}
-          handleImportFiles={handleImportFiles}
-        />
-      )}
-
-      {/* Empty state for Flat Mod Root (prevents completely blank layout) */}
-      {!isLoading && !isError && visibleFolders.length === 0 && isFlatModRoot && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-base-content/40">
-          <p className="text-sm font-medium">{t('status.no_subfolders')}</p>
-          <p className="text-xs text-center">{t('status.preview_hint')}</p>
-        </div>
-      )}
-
-      {/* Virtualized Grid/List Content — wrapped in a background context menu */}
-      <ContextMenu
-        content={
-          <>
-            <ContextMenuItem icon={RefreshCw} onClick={handleRefresh}>
-              {t('context.refresh')}
-            </ContextMenuItem>
-            <ContextMenuItem
-              icon={CheckSquare}
-              onClick={handleSelectAll}
-              disabled={visibleFolders.length === 0}
-            >
-              {t('context.select_all')}
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              icon={FolderOpen}
-              onClick={() => {
-                void handleOpenCurrentFolderInExplorer();
-              }}
-              disabled={!currentAbsPath}
-            >
-              {t('context.open_explorer')}
-            </ContextMenuItem>
-          </>
-        }
-      >
-        <div
-          ref={parentRef}
-          className={cn(
-            'flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40 transition-opacity duration-150',
-            isPlaceholderData ? 'opacity-70 pointer-events-none select-none' : 'opacity-100',
-            !isLoading && !isError && visibleFolders.length > 0 ? 'block' : 'hidden',
-          )}
-        >
-          <div className="relative w-full" style={{ height: `${totalSize}px` }}>
-            {virtualItems.map((virtualRow) => {
-              if (isGridView) {
-                // Grid mode: each virtual row = N columns
-                const fromIndex = virtualRow.index * columnCount;
-                const toIndex = Math.min(fromIndex + columnCount, visibleFolders.length);
-                const rowItems = visibleFolders.slice(fromIndex, toIndex);
-
-                return (
-                  <div
-                    key={virtualRow.index}
-                    className="absolute top-0 left-0 w-full grid gap-3 justify-center"
-                    style={{
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                      gridTemplateColumns: `repeat(${columnCount}, ${cardWidth}px)`,
-                    }}
-                  >
-                    {rowItems.map((folder) => (
-                      <div key={folder.path} className="min-w-0">
-                        <FolderCard
-                          folder={folder}
-                          isSelected={gridSelection.has(folder.path)}
-                          isActive={selectedModPath === folder.path}
-                          onNavigate={handleNavigate}
-                          onActivate={activateGridItem}
-                          toggleSelection={toggleGridSelection}
-                          onToggleEnabled={handleToggleEnabledGuarded}
-                          onToggleFavorite={handleToggleFavorite}
-                          onEnableOnlyThis={handleEnableOnlyThis}
-                          isRenaming={renamingId === folder.path}
-                          onRenameSubmit={handleRenameSubmit}
-                          onRenameCancel={handleRenameCancel}
-                          onRename={() => handleRenameRequest(folder)}
-                          onDelete={() => handleDeleteRequest(folder)}
-                          isFocused={focusedId === folder.path}
-                          selectionSize={gridSelection.size}
-                          onBulkToggle={handleBulkToggle}
-                          onBulkDelete={handleBulkDeleteRequest}
-                          onBulkTag={handleBulkTagRequest}
-                          onBulkFavorite={handleBulkFavorite}
-                          onBulkSafe={handleBulkSafe}
-                          onBulkPin={handleBulkPin}
-                          onBulkMoveToObject={handleBulkMoveToObject}
-                          onOpenMoveDialog={openMoveDialog}
-                          onToggleSafe={() => handleToggleSafeRequest(folder)}
-                          onSyncWithDb={handleSyncWithDb}
-                          hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
-                          isLockedByParent={!!ancestorDisabledBy}
-                          onRequestEnableParent={openEnableParentDialog}
-                          isSwitchPending={isSwitchPending || isFolderSwitchPending(folder)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                );
-              }
-
-              // List mode: each virtual row = 1 item
-              const folder = visibleFolders[virtualRow.index];
-              if (!folder) return null;
-
-              return (
-                <div
-                  key={folder.path}
-                  className="absolute top-0 left-0 w-full"
-                  style={{
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  <FolderListRow
-                    item={folder}
-                    isSelected={gridSelection.has(folder.path)}
-                    isActive={selectedModPath === folder.path}
-                    onActivate={activateGridItem}
-                    toggleSelection={(id: string, multi: boolean, isShift?: boolean) =>
-                      toggleGridSelection(id, multi, isShift)
-                    }
-                    onToggleEnabled={handleToggleEnabledGuarded}
-                    selectionSize={gridSelection.size}
-                    onBulkToggle={handleBulkToggle}
-                    onBulkDelete={handleBulkDeleteRequest}
-                    onBulkTag={handleBulkTagRequest}
-                    onBulkFavorite={handleBulkFavorite}
-                    onBulkSafe={handleBulkSafe}
-                    onBulkPin={handleBulkPin}
-                    onBulkMoveToObject={handleBulkMoveToObject}
-                    onRename={() => handleRenameRequest(folder)}
-                    onDelete={() => handleDeleteRequest(folder)}
-                    onToggleFavorite={handleToggleFavorite}
-                    onEnableOnlyThis={handleEnableOnlyThis}
-                    onOpenMoveDialog={openMoveDialog}
-                    onToggleSafe={() => handleToggleSafeRequest(folder)}
-                    onSyncWithDb={handleSyncWithDb}
-                    hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
-                    isSwitchPending={isSwitchPending || isFolderSwitchPending(folder)}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </ContextMenu>
+      <FolderGridContent
+        model={folderGrid}
+        visibleFolders={visibleFolders}
+        conflictPathSet={conflictPathSet}
+        mutationsDisabled={mutationsDisabled}
+        onSelectAll={handleSelectAll}
+      />
 
       <FolderGridModals
         moveDialog={moveDialog}
@@ -468,6 +232,7 @@ export default function FolderGrid() {
         onFavorite={handleBulkFavorite}
         onMarkSafe={handleBulkSafe}
         onUpdateInfo={handleBulkTagRequest}
+        mutationsDisabled={mutationsDisabled}
       />
 
       {/* Drag Overlay */}

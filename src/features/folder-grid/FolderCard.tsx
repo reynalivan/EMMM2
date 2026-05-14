@@ -1,19 +1,9 @@
 import { useState, memo, useCallback, useMemo } from 'react';
-import {
-  Folder,
-  Star,
-  Copy,
-  Package,
-  Layers,
-  AlertTriangle,
-  PowerOff,
-  Lock,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ContextMenu } from '../../components/ui/ContextMenu';
 import type { ModFolder } from '../../types/mod';
-import type { WorkspaceExplorerNode, WorkspaceTypeChip } from '../../types/workspace';
+import type { WorkspaceExplorerNode } from '../../types/workspace';
 import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
 import { useThumbnail } from '../../hooks/useThumbnail';
@@ -22,6 +12,9 @@ import { formatWorkspaceWarning } from '../workspace-runtime/workspaceSemantics'
 import { buildWorkspaceSwitchPolicy } from '../workspace-runtime/actions/workspaceSwitchPolicy';
 import { WorkspaceSwitchControl } from '../workspace-runtime/components/WorkspaceSwitchControl';
 import { WorkspaceSwitchLabel } from '../workspace-runtime/components/WorkspaceSwitchLabel';
+import { maskWorkspaceNodeCapabilities } from '../workspace-runtime/actions/workspaceActionAvailability';
+import { getFolderTypeChip } from './FolderTypeChip';
+import FolderCardThumbnail from './FolderCardThumbnail';
 
 interface FolderCardProps {
   folder: WorkspaceExplorerNode;
@@ -56,37 +49,7 @@ interface FolderCardProps {
   /** Called when user tries to toggle while locked — opens Enable Parent dialog */
   onRequestEnableParent?: () => void;
   isSwitchPending?: boolean;
-}
-
-function getTypeChip(
-  typeChip: WorkspaceTypeChip | null,
-  t: ReturnType<typeof useTranslation>['t'],
-): { label: string; className: string; icon: LucideIcon } | null {
-  if (typeChip === 'mod_pack') {
-    return {
-      label: t('card.mod_pack'),
-      className: 'bg-info/90 text-info-content',
-      icon: Package,
-    };
-  }
-
-  if (typeChip === 'variant') {
-    return {
-      label: t('card.variants'),
-      className: 'bg-secondary/90 text-secondary-content',
-      icon: Layers,
-    };
-  }
-
-  if (typeChip === 'flat_mod') {
-    return {
-      label: t('card.flat_mod'),
-      className: 'bg-base-300/90 text-base-content/80',
-      icon: Folder,
-    };
-  }
-
-  return null;
+  mutationsDisabled?: boolean;
 }
 
 function FolderCardInner({
@@ -120,11 +83,19 @@ function FolderCardInner({
   isLockedByParent = false,
   onRequestEnableParent,
   isSwitchPending = false,
+  mutationsDisabled = false,
 }: FolderCardProps) {
   const { t } = useTranslation(['grid', 'common']);
-  const typeChip = getTypeChip(folder.type_chip, t);
+  const typeChip = getFolderTypeChip(folder.type_chip, t, 'card');
+  const actionFolder = useMemo(
+    () => maskWorkspaceNodeCapabilities(folder, mutationsDisabled),
+    [folder, mutationsDisabled],
+  );
   const primaryWarningText = formatWorkspaceWarning(t, folder.primary_warning);
-  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, folder), [folder, t]);
+  const switchPolicy = useMemo(
+    () => buildWorkspaceSwitchPolicy(t, actionFolder),
+    [actionFolder, t],
+  );
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [renameValue, setRenameValue] = useState(folder.name);
@@ -132,6 +103,10 @@ function FolderCardInner({
   const handleToggleClick = useCallback(
     (e?: React.MouseEvent | React.ChangeEvent) => {
       e?.stopPropagation();
+      if (mutationsDisabled) {
+        return;
+      }
+
       if (isLockedByParent) {
         onRequestEnableParent?.();
         return;
@@ -139,7 +114,7 @@ function FolderCardInner({
 
       onToggleEnabled?.(folder);
     },
-    [folder, isLockedByParent, onRequestEnableParent, onToggleEnabled],
+    [folder, isLockedByParent, mutationsDisabled, onRequestEnableParent, onToggleEnabled],
   );
 
   // Lazy thumbnail: resolved per-card via separate backend command
@@ -208,26 +183,34 @@ function FolderCardInner({
         isBulkSelection ? (
           <BulkContextMenu
             count={selectionSize}
-            onToggle={onBulkToggle}
-            onDelete={onBulkDelete}
-            onTag={onBulkTag}
-            onFavorite={onBulkFavorite}
-            onSafe={onBulkSafe}
-            onPin={onBulkPin}
-            onMoveToObject={onBulkMoveToObject}
+            onToggle={mutationsDisabled ? undefined : onBulkToggle}
+            onDelete={mutationsDisabled ? undefined : onBulkDelete}
+            onTag={mutationsDisabled ? undefined : onBulkTag}
+            onFavorite={mutationsDisabled ? undefined : onBulkFavorite}
+            onSafe={mutationsDisabled ? undefined : onBulkSafe}
+            onPin={mutationsDisabled ? undefined : onBulkPin}
+            onMoveToObject={mutationsDisabled ? undefined : onBulkMoveToObject}
           />
         ) : (
           <FolderCardContextMenu
-            folder={folder}
-            onRename={() => onRename?.(folder)}
-            onDelete={() => onDelete?.(folder)}
-            onToggle={handleToggleClick}
-            onToggleFavorite={() => onToggleFavorite?.(folder)}
-            onEnableOnlyThis={onEnableOnlyThis ? () => onEnableOnlyThis(folder) : undefined}
-            onOpenMoveDialog={onOpenMoveDialog}
+            folder={actionFolder}
+            onRename={() => !mutationsDisabled && onRename?.(folder)}
+            onDelete={() => !mutationsDisabled && onDelete?.(folder)}
+            onToggle={() => {
+              if (!mutationsDisabled) {
+                handleToggleClick();
+              }
+            }}
+            onToggleFavorite={() => !mutationsDisabled && onToggleFavorite?.(folder)}
+            onEnableOnlyThis={
+              onEnableOnlyThis && !mutationsDisabled ? () => onEnableOnlyThis(folder) : undefined
+            }
+            onOpenMoveDialog={mutationsDisabled ? undefined : onOpenMoveDialog}
             onNavigate={onNavigate}
-            onToggleSafe={onToggleSafe}
-            onSyncWithDb={onSyncWithDb ? () => onSyncWithDb(folder) : undefined}
+            onToggleSafe={mutationsDisabled ? undefined : onToggleSafe}
+            onSyncWithDb={
+              onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(folder) : undefined
+            }
           />
         )
       }
@@ -261,150 +244,30 @@ function FolderCardInner({
         )}
         tabIndex={0}
       >
-        {/* Thumbnail area — 3:4 portrait ratio */}
-        <div className="aspect-square bg-base-300/50 relative group overflow-hidden flex items-center justify-center">
-          {/* Skeleton Shimmer — visible while thumbnail is loading or image hasn't decoded */}
-          {(thumbLoading || (thumbnailSrc && !imgLoaded && !imgError)) && (
-            <div className="absolute inset-0 skeleton bg-base-300" />
-          )}
-
-          {thumbnailSrc ? (
-            <img
-              src={thumbnailSrc}
-              alt=""
-              decoding="async"
-              className={`w-full h-full object-cover transition-all duration-500
-                ${isSelected ? 'scale-105' : 'scale-100 group-hover:scale-105'}
-                ${imgLoaded ? (isSelected ? 'opacity-100' : 'opacity-85 group-hover:opacity-100') : 'opacity-0'}
-                ${isHiddenByMask ? 'blur-xl' : ''}
-              `}
-              draggable={false}
-              onError={() => setImgError(true)}
-              onLoad={() => setImgLoaded(true)}
-            />
-          ) : (
-            <Folder
-              size={40}
-              className={`transition-colors duration-300
-                ${isSelected ? 'text-primary' : 'text-base-content/15 group-hover:text-base-content/30'}
-                ${isHiddenByMask ? 'blur-lg' : ''}`}
-            />
-          )}
-
-          {/* LOCKED badge — shown when an ancestor folder is disabled */}
-          {isLockedByParent && (
-            <div
-              className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/85 text-warning-content rounded-md z-10 shadow-sm"
-              title={t('card.locked_by_parent')}
-            >
-              <Lock size={10} />
-              <span className="text-[9px] font-bold">{t('card.locked_badge')}</span>
-            </div>
-          )}
-
-          {/* Node type badge overlay — only when not locked (avoid badge overlap) */}
-          {!isLockedByParent && typeChip && (
-            <div
-              className={`absolute top-1.5 left-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 shadow-sm z-10 ${typeChip.className}`}
-            >
-              <typeChip.icon size={10} />
-              <span className="text-[9px] font-bold uppercase">{typeChip.label}</span>
-            </div>
-          )}
-
-          {/* Disabled Power Off Overlay */}
-          {!switchPolicy.checked && (
-            <div className="absolute inset-0 flex items-center justify-center bg-overlay-mask z-10 pointer-events-none">
-              <PowerOff size={24} className="text-base-content/90 drop-shadow-sm" />
-            </div>
-          )}
-
-          {/* Favorite star overlay — shifted left slightly to make room for checkbox in top-right */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
+        <FolderCardThumbnail
+          folder={folder}
+          typeChip={typeChip}
+          thumbnailSrc={thumbnailSrc}
+          thumbLoading={thumbLoading}
+          imgLoaded={imgLoaded}
+          imgError={imgError}
+          isSelected={isSelected}
+          isHiddenByMask={isHiddenByMask}
+          isLockedByParent={isLockedByParent}
+          isSwitchChecked={switchPolicy.checked}
+          hasConflict={hasConflict}
+          hasNamingConflict={hasNamingConflict}
+          primaryWarningText={primaryWarningText}
+          mutationsDisabled={mutationsDisabled}
+          onImageError={() => setImgError(true)}
+          onImageLoaded={() => setImgLoaded(true)}
+          onToggleFavorite={() => {
+            if (!mutationsDisabled) {
               onToggleFavorite?.(folder);
-            }}
-            className={`absolute top-1.5 right-8 p-1 rounded-full transition-all duration-200 z-10
-               ${
-                 folder.is_favorite
-                   ? 'text-warning opacity-100 hover:scale-110'
-                   : 'text-base-content/20 opacity-0 group-hover:opacity-100 hover:text-warning hover:scale-110'
-               }
-             `}
-            title={t(folder.is_favorite ? 'card.unfavorite' : 'card.favorite')}
-          >
-            <Star
-              size={16}
-              className={`drop-shadow-sm ${folder.is_favorite ? 'fill-current' : ''}`}
-            />
-          </button>
-
-          {/* Misplaced Warning */}
-          {folder.is_misplaced && (
-            <div
-              className="absolute bottom-1.5 right-1.5 p-1 bg-error/90 text-error-content rounded-full z-10 shadow-sm"
-              title={t('card.misplaced_title')}
-            >
-              <div className="w-2 h-2 rounded-full bg-current animate-ping absolute inset-0 opacity-75"></div>
-              <span className="text-[10px] font-bold px-1">!</span>
-            </div>
-          )}
-
-          {/* Duplicate / Conflict Badge */}
-          {hasConflict && (
-            <div
-              className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm"
-              title={t('card.hash_conflict_title')}
-            >
-              <Copy size={10} />
-              <span className="text-[9px] font-bold">{t('card.conflict')}</span>
-            </div>
-          )}
-
-          {/* Naming Conflict Badge (DISABLED X / X both present) */}
-          {hasNamingConflict && !hasConflict && (
-            <div
-              className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm animate-pulse"
-              title={t('card.name_conflict_title')}
-            >
-              <AlertTriangle size={10} />
-              <span className="text-[9px] font-bold">{t('card.name_conflict')}</span>
-            </div>
-          )}
-
-          {/* Corrupt INI Warning Badge */}
-          {!hasNamingConflict && !hasConflict && folder.warnings.length > 0 && (
-            <div
-              className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-error/90 text-error-content rounded-md z-10 shadow-sm"
-              title={
-                primaryWarningText || folder.warnings.join('\n') || t('card.corrupt_ini_title')
-              }
-            >
-              <AlertTriangle size={10} />
-              <span className="text-[9px] font-bold uppercase">{t('badges.corrupt')}</span>
-            </div>
-          )}
-
-          {/* Bulk Multi-Select Checkbox Overlay: positioned in top-right corner */}
-          <div
-            className={`absolute top-1.5 right-1.5 transition-all duration-200 z-20
-              ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100'}`}
-          >
-            <input
-              type="checkbox"
-              className="checkbox checkbox-primary border-2 shadow-sm bg-base-100"
-              checked={isSelected}
-              onChange={(e) => {
-                e.stopPropagation();
-                const isShift =
-                  e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey;
-                toggleSelection(folder.path, true, isShift);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        </div>
+            }
+          }}
+          onToggleSelection={(isShift) => toggleSelection(folder.path, true, isShift)}
+        />
 
         {/* Info area */}
         <div className="p-2.5 flex-1 flex flex-col justify-between min-h-0">
@@ -445,9 +308,9 @@ function FolderCardInner({
               onClick={(e) => e.stopPropagation()}
             >
               <WorkspaceSwitchControl
-                node={folder}
+                node={actionFolder}
                 policy={switchPolicy}
-                isPending={isSwitchPending}
+                isPending={isSwitchPending || mutationsDisabled}
                 size="xs"
                 ariaLabel={t('common:actions.toggle')}
                 onToggle={() => {
@@ -456,7 +319,7 @@ function FolderCardInner({
               />
               <div className="flex flex-col">
                 <WorkspaceSwitchLabel
-                  node={folder}
+                  node={actionFolder}
                   policy={switchPolicy}
                   className="text-[10px] font-semibold text-base-content/60 leading-none"
                 />

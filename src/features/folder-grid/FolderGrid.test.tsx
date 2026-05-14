@@ -241,6 +241,33 @@ describe('FolderGrid', () => {
     expect(screen.getByText('Mod A')).toBeInTheDocument();
   });
 
+  it('renders only folders supplied by the workspace view model', () => {
+    const visibleFolder = {
+      name: 'Visible Corridor Mod',
+      path: '/mods/Visible Corridor Mod',
+      is_directory: true,
+    } as unknown as ModFolder;
+    const hiddenFolder = {
+      name: 'Hidden Outside Corridor',
+      path: '/mods/Hidden Outside Corridor',
+      is_directory: true,
+    } as unknown as ModFolder;
+
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      rawFolders: [visibleFolder, hiddenFolder],
+      sortedFolders: [visibleFolder],
+      virtualItems: [{ index: 0, start: 0, size: 200, key: '0' }],
+      totalSize: 200,
+      columnCount: 1,
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+
+    expect(screen.getByText('Visible Corridor Mod')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Outside Corridor')).not.toBeInTheDocument();
+  });
+
   it('TC-12-01: renders Grid layout correctly', () => {
     mockUseFolderGrid.mockReturnValue({
       ...defaultHookReturn,

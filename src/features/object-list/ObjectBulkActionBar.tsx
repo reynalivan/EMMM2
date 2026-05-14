@@ -29,6 +29,7 @@ interface ObjectBulkActionBarProps {
   onFavorite: (fav: boolean) => void;
   onMarkSafe: (safe: boolean) => void;
   onClear: () => void;
+  mutationsDisabled?: boolean;
 }
 
 export default function ObjectBulkActionBar({
@@ -43,6 +44,7 @@ export default function ObjectBulkActionBar({
   onFavorite,
   onMarkSafe,
   onClear,
+  mutationsDisabled = false,
 }: ObjectBulkActionBarProps) {
   const { t } = useTranslation(['objects']);
   const safeMode = useAppStore((state) => state.safeMode);
@@ -71,6 +73,7 @@ export default function ObjectBulkActionBar({
           className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={onDelete}
           title={t('bulk.delete_selected')}
+          disabled={mutationsDisabled}
         >
           <Trash2 size={15} />
         </button>
@@ -79,6 +82,7 @@ export default function ObjectBulkActionBar({
           className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={() => onPin(true)}
           title={t('bulk.pin_selected')}
+          disabled={mutationsDisabled}
         >
           <Pin size={15} />
         </button>
@@ -87,6 +91,7 @@ export default function ObjectBulkActionBar({
           className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={() => onFavorite(true)}
           title={t('bulk.favorite')}
+          disabled={mutationsDisabled}
         >
           <Star size={15} />
         </button>
@@ -97,6 +102,7 @@ export default function ObjectBulkActionBar({
             className="btn btn-xs btn-ghost btn-circle text-warning hover:bg-primary-content/20"
             onClick={() => onMarkSafe(false)}
             title={t('bulk.mark_unsafe')}
+            disabled={mutationsDisabled}
           >
             <ShieldAlert size={15} />
           </button>
@@ -105,6 +111,7 @@ export default function ObjectBulkActionBar({
             className="btn btn-xs btn-ghost btn-circle text-success hover:bg-primary-content/20"
             onClick={() => onMarkSafe(true)}
             title={t('bulk.mark_safe')}
+            disabled={mutationsDisabled}
           >
             <ShieldCheck size={15} />
           </button>
@@ -117,6 +124,7 @@ export default function ObjectBulkActionBar({
             role="button"
             className="btn btn-xs btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
             title={t('bulk.more_actions')}
+            aria-disabled={mutationsDisabled}
           >
             <MoreHorizontal size={15} />
           </div>
@@ -128,6 +136,7 @@ export default function ObjectBulkActionBar({
               <button
                 className="flex items-center gap-2 text-xs py-1.5"
                 onClick={() => onPin(false)}
+                disabled={mutationsDisabled}
               >
                 <PinOff size={14} className="opacity-70" />
                 {t('bulk.unpin')}
@@ -138,6 +147,7 @@ export default function ObjectBulkActionBar({
               <button
                 className="flex items-center gap-2 text-xs py-1.5 text-success"
                 onClick={onEnable}
+                disabled={mutationsDisabled}
               >
                 <Power size={14} className="opacity-70" />
                 {t('bulk.enable')}
@@ -147,6 +157,7 @@ export default function ObjectBulkActionBar({
               <button
                 className="flex items-center gap-2 text-xs py-1.5 text-warning"
                 onClick={onDisable}
+                disabled={mutationsDisabled}
               >
                 <PowerOff size={14} className="opacity-70" />
                 {t('bulk.disable')}
@@ -157,6 +168,7 @@ export default function ObjectBulkActionBar({
               <button
                 className="flex items-center gap-2 text-xs py-1.5 text-info"
                 onClick={onAutoOrganize}
+                disabled={mutationsDisabled}
               >
                 <Sparkles size={14} className="opacity-70" />
                 {t('bulk.auto_organize')}
@@ -166,6 +178,7 @@ export default function ObjectBulkActionBar({
               <button
                 className="flex items-center gap-2 text-xs py-1.5"
                 onClick={() => onFavorite(false)}
+                disabled={mutationsDisabled}
               >
                 <StarOff size={14} className="opacity-70" />
                 {t('bulk.unfavorite')}
@@ -173,7 +186,11 @@ export default function ObjectBulkActionBar({
             </li>
             <div className="divider my-0.5"></div>
             <li>
-              <button className="flex items-center gap-2 text-xs py-1.5" onClick={onAddTags}>
+              <button
+                className="flex items-center gap-2 text-xs py-1.5"
+                onClick={onAddTags}
+                disabled={mutationsDisabled}
+              >
                 <TagIcon size={14} className="opacity-70" />
                 {t('bulk.add_tags')}
               </button>
@@ -182,6 +199,7 @@ export default function ObjectBulkActionBar({
               <button
                 className="flex items-center gap-2 text-xs py-1.5 text-error"
                 onClick={onRemoveTags}
+                disabled={mutationsDisabled}
               >
                 <Tags size={14} className="opacity-70" />
                 {t('bulk.remove_tags')}

@@ -34,10 +34,12 @@ interface ToolbarProps {
   isDragging?: boolean;
   /** True when files are being specifically dragged over this toolbar zone */
   isActiveZone?: boolean;
+  mutationsDisabled?: boolean;
   /** Bulk selection state and handlers */
   bulkSelect?: {
     isAnySelected: boolean;
     selectionCount: number;
+    mutationsDisabled?: boolean;
     onDelete: () => void;
     onPin: (pin: boolean) => void;
     onEnable: () => void;
@@ -72,6 +74,7 @@ export default function ObjectListToolbar({
   showFilterPanel,
   isDragging,
   isActiveZone,
+  mutationsDisabled = false,
   bulkSelect,
 }: ToolbarProps) {
   const { t } = useTranslation(['objects']);
@@ -165,7 +168,7 @@ export default function ObjectListToolbar({
               className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
               onClick={onSync}
               title={t('toolbar.auto_reorganize')}
-              disabled={isSyncing}
+              disabled={isSyncing || mutationsDisabled}
             >
               <RefreshCw size={16} />
             </button>
@@ -173,6 +176,7 @@ export default function ObjectListToolbar({
               className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
               onClick={onCreateNew}
               title={t('toolbar.create_new')}
+              disabled={mutationsDisabled}
             >
               <Plus size={16} />
             </button>

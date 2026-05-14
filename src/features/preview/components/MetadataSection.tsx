@@ -8,6 +8,7 @@ interface MetadataSectionProps {
   versionDraft: string;
   descriptionDraft: string;
   metadataDirty: boolean;
+  canEdit?: boolean;
   onAuthorChange: (value: string) => void;
   onVersionChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
@@ -20,6 +21,7 @@ export default function MetadataSection({
   versionDraft,
   descriptionDraft,
   metadataDirty,
+  canEdit = true,
   onAuthorChange,
   onVersionChange,
   onDescriptionChange,
@@ -42,6 +44,12 @@ export default function MetadataSection({
     return () => clearTimeout(timer);
   }, [metadataDirty]);
 
+  useEffect(() => {
+    if (!canEdit && isEditing) {
+      setIsEditing(false);
+    }
+  }, [canEdit, isEditing]);
+
   if (!isEditing) {
     return (
       <div className="mb-6 flex flex-col">
@@ -60,7 +68,7 @@ export default function MetadataSection({
               className="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content"
               onClick={() => setIsEditing(true)}
               title={t('preview:metadata.edit_title')}
-              disabled={!activePath}
+              disabled={!activePath || !canEdit}
             >
               <Pencil size={14} /> {t('preview:actions.edit')}
             </button>
@@ -70,7 +78,7 @@ export default function MetadataSection({
         <div
           className="flex-1 cursor-pointer rounded-lg hover:bg-base-content/5 p-2 -mx-2 transition-colors group"
           onDoubleClick={() => {
-            if (activePath) setIsEditing(true);
+            if (activePath && canEdit) setIsEditing(true);
           }}
           title={activePath ? t('preview:metadata.double_click_edit') : undefined}
         >
@@ -144,7 +152,7 @@ export default function MetadataSection({
               className="input input-bordered w-full bg-transparent text-sm"
               placeholder={t('preview:metadata.author_placeholder')}
               value={authorDraft}
-              disabled={!activePath}
+              disabled={!activePath || !canEdit}
               onChange={(event) => onAuthorChange(event.target.value)}
             />
           </div>
@@ -159,7 +167,7 @@ export default function MetadataSection({
               className="input input-bordered w-full bg-transparent text-sm"
               placeholder={t('preview:metadata.version_placeholder')}
               value={versionDraft}
-              disabled={!activePath}
+              disabled={!activePath || !canEdit}
               onChange={(event) => onVersionChange(event.target.value)}
             />
           </div>
@@ -174,7 +182,7 @@ export default function MetadataSection({
           className="textarea textarea-bordered h-24 w-full resize-none bg-transparent text-sm"
           placeholder={t('preview:metadata.description_placeholder')}
           value={descriptionDraft}
-          disabled={!activePath}
+          disabled={!activePath || !canEdit}
           onChange={(event) => onDescriptionChange(event.target.value)}
         />
       </div>

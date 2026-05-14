@@ -5,11 +5,12 @@ import { useActiveGame } from '../../hooks/useActiveGame';
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
 import { ItemStatus, type ObjectFilter } from '../../types/object';
-import type { WorkspaceViewModel } from '../../types/workspace';
+import type { WorkspaceSelection, WorkspaceViewModel } from '../../types/workspace';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntimeSelector,
 } from './state/workspaceStoreBridge';
+import type { WorkspaceRuntimeEvent } from './state/workspaceEvents';
 
 export interface WorkspaceViewModelFilterInput {
   gameId: string | null;
@@ -73,6 +74,21 @@ export function buildWorkspaceViewModelInput(
     selected_object_folder_path: selection.selectedObjectFolderPath,
     explorer_sub_path: selection.explorerSubPath ?? null,
     selected_mod_path: selection.selectedModPath,
+  };
+}
+
+export function buildSelectionReconciledEvent(
+  selection: WorkspaceSelection,
+): Extract<WorkspaceRuntimeEvent, { type: 'SELECTION_RECONCILED' }> {
+  return {
+    type: 'SELECTION_RECONCILED',
+    selectedObjectFolderPath: selection.selected_object_folder_path,
+    explorerSubPath: selection.explorer_sub_path ?? undefined,
+    selectedModPath: selection.selected_mod_path,
+    currentPath: selection.current_path,
+    reconciliationStatus: selection.reconciliation_status,
+    reconciliationReason: selection.reconciliation_reason,
+    affectedPaths: selection.affected_paths,
   };
 }
 
@@ -154,16 +170,7 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
       return;
     }
 
-    dispatchWorkspaceRuntimeEvent({
-      type: 'SELECTION_RECONCILED',
-      selectedObjectFolderPath: reconciledSelection.selected_object_folder_path,
-      explorerSubPath: nextExplorerSubPath,
-      selectedModPath: reconciledSelection.selected_mod_path,
-      currentPath: reconciledSelection.current_path,
-      reconciliationStatus: reconciledSelection.reconciliation_status,
-      reconciliationReason: reconciledSelection.reconciliation_reason,
-      affectedPaths: reconciledSelection.affected_paths,
-    });
+    dispatchWorkspaceRuntimeEvent(buildSelectionReconciledEvent(reconciledSelection));
     if (reconciliationChanged) {
       toast.info(buildReconciliationMessage(reconciledSelection.reconciliation_reason), 4000);
     }

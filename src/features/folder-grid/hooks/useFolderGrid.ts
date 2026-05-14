@@ -8,6 +8,7 @@ import { useWorkspaceRuntime } from '../../workspace-runtime/state/workspaceStor
 import { useFolderGridRuntime } from './useFolderGridRuntime';
 import { useFolderGridActions } from './useFolderGridActions';
 import { useFolderGridSelection } from './useFolderGridSelection';
+import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../../workspace-runtime/actions/workspaceActionAvailability';
 
 export function useFolderGrid() {
   const {
@@ -74,7 +75,7 @@ export function useFolderGrid() {
   const sourceAvailable = workspace?.runtime?.source_state?.status !== 'unavailable';
   const sourceUnavailableMessage = sourceAvailable
     ? null
-    : (workspace?.runtime?.source_state?.message ?? null);
+    : (workspace?.runtime?.source_state?.message ?? DEFAULT_SOURCE_UNAVAILABLE_MESSAGE);
 
   const nav = useFolderGridNav({
     currentPath,

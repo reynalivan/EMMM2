@@ -24,6 +24,7 @@ interface BulkActionBarProps {
   onFavorite: (favorite: boolean) => void;
   onMarkSafe: (safe: boolean) => void;
   onUpdateInfo: () => void;
+  mutationsDisabled?: boolean;
 }
 
 export default function BulkActionBar({
@@ -35,6 +36,7 @@ export default function BulkActionBar({
   onFavorite,
   onMarkSafe,
   onUpdateInfo,
+  mutationsDisabled = false,
 }: BulkActionBarProps) {
   const { t } = useTranslation(['grid']);
   const safeMode = useAppStore((state) => state.safeMode);
@@ -69,6 +71,7 @@ export default function BulkActionBar({
             <button
               className="btn btn-xs join-item btn-ghost text-success hover:bg-success hover:text-success-content border-none h-7 px-3"
               onClick={() => onToggle(true)}
+              disabled={mutationsDisabled}
             >
               <Power size={14} className="mr-1" />
               {t('bulk.enable')}
@@ -77,6 +80,7 @@ export default function BulkActionBar({
             <button
               className="btn btn-xs join-item btn-ghost text-warning hover:bg-warning hover:text-warning-content border-none h-7 px-3"
               onClick={() => onToggle(false)}
+              disabled={mutationsDisabled}
             >
               <PowerOff size={14} className="mr-1" />
               {t('bulk.disable')}
@@ -88,6 +92,7 @@ export default function BulkActionBar({
           className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={() => onPin(true)}
           title={t('bulk.pin_title')}
+          disabled={mutationsDisabled}
         >
           <Pin size={18} />
         </button>
@@ -96,6 +101,7 @@ export default function BulkActionBar({
           className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
           onClick={() => onFavorite(true)}
           title={t('bulk.fav_title')}
+          disabled={mutationsDisabled}
         >
           <Star size={18} />
         </button>
@@ -106,6 +112,7 @@ export default function BulkActionBar({
             className="btn btn-sm btn-ghost btn-circle text-warning hover:bg-warning hover:text-warning-content border-none"
             onClick={() => onMarkSafe(false)}
             title={t('bulk.unsafe_title')}
+            disabled={mutationsDisabled}
           >
             <ShieldAlert size={18} />
           </button>
@@ -114,6 +121,7 @@ export default function BulkActionBar({
             className="btn btn-sm btn-ghost btn-circle text-success hover:bg-success hover:text-success-content border-none"
             onClick={() => onMarkSafe(true)}
             title={t('bulk.safe_title')}
+            disabled={mutationsDisabled}
           >
             <ShieldCheck size={18} />
           </button>
@@ -129,6 +137,7 @@ export default function BulkActionBar({
             tabIndex={0}
             role="button"
             className="btn btn-sm btn-ghost btn-circle text-primary-content hover:bg-primary-content/20"
+            aria-disabled={mutationsDisabled}
           >
             <MoreHorizontal size={18} />
           </div>
@@ -140,26 +149,34 @@ export default function BulkActionBar({
               {t('bulk.ops_title')}
             </li>
             <li>
-              <button className="py-2" onClick={onUpdateInfo}>
+              <button className="py-2" onClick={onUpdateInfo} disabled={mutationsDisabled}>
                 <Edit size={16} className="opacity-70" />
                 {t('bulk.edit_metadata')}
               </button>
             </li>
             <li>
-              <button className="py-2" onClick={() => onPin(false)}>
+              <button className="py-2" onClick={() => onPin(false)} disabled={mutationsDisabled}>
                 <PinOff size={16} className="opacity-70" />
                 {t('bulk.unpin_title')}
               </button>
             </li>
             <li>
-              <button className="py-2" onClick={() => onFavorite(false)}>
+              <button
+                className="py-2"
+                onClick={() => onFavorite(false)}
+                disabled={mutationsDisabled}
+              >
                 <StarOff size={16} className="opacity-70" />
                 {t('bulk.unfav_title')}
               </button>
             </li>
             <div className="divider my-0 opacity-50"></div>
             <li>
-              <button className="py-2 text-error hover:bg-error/10" onClick={onDelete}>
+              <button
+                className="py-2 text-error hover:bg-error/10"
+                onClick={onDelete}
+                disabled={mutationsDisabled}
+              >
                 <Trash2 size={16} className="opacity-70" />
                 {t('bulk.move_trash')}
               </button>

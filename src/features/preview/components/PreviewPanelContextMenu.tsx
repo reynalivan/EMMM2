@@ -13,7 +13,7 @@ interface PreviewPanelContextMenuProps {
   onToggle: (folder: ModFolder) => void;
   onToggleFavorite: (folder: ModFolder) => void;
   onEnableOnlyThis: (folder: ModFolder) => void;
-  onOpenMoveDialog: (folder: ModFolder) => void;
+  onOpenMoveDialog?: (folder: ModFolder) => void;
   onToggleSafe: (folder: ModFolder) => void;
 }
 

@@ -156,6 +156,7 @@ function createDefaultHookState() {
   return {
     activePath: 'E:/Mods/TestMod',
     selectedFolder,
+    sourceUnavailableMessage: null as string | null,
     previewSummary: {
       selected_path: 'E:/Mods/TestMod',
       selected_node: selectedFolder,
@@ -263,6 +264,18 @@ describe('PreviewPanel', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('Character Mod')).toBeInTheDocument();
     });
+  });
+
+  it('disables preview mutation controls when source is unavailable', async () => {
+    const state = createDefaultHookState();
+    state.sourceUnavailableMessage = 'Mods folder unavailable';
+    mockUsePreviewPanelState.mockReturnValue(state);
+
+    render(<PreviewPanel />);
+
+    expect(screen.getByText('Mods folder unavailable')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Test Mod')).toBeDisabled();
+    expect(screen.getAllByRole('checkbox')[0]).toBeDisabled();
   });
 
   // Covers: NC-6.1-01 (Error handling - no mod selected)

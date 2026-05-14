@@ -1,27 +1,24 @@
 import { useCallback, useState } from 'react';
-import { ChevronRight, Info, X, FolderOpen, FileArchive, FolderPlus } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/useAppStore';
-import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import UnsavedIniChangesModal from './components/UnsavedIniChangesModal';
 import GallerySection from './components/GallerySection';
 import MetadataSection from './components/MetadataSection';
 import IniEditorSection from './components/IniEditorSection';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { usePreviewPanelState } from './hooks/usePreviewPanelState';
 import PreviewPanelModals from './components/PreviewPanelModals';
-import PreviewPanelContextMenu from './components/PreviewPanelContextMenu';
 import { useSharedModActions } from '../mod-runtime/actions/useSharedModActions';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntime,
 } from '../workspace-runtime/state/workspaceStoreBridge';
 import { formatWorkspaceWarning } from '../workspace-runtime/workspaceSemantics';
-import { buildWorkspaceSwitchPolicy } from '../workspace-runtime/actions/workspaceSwitchPolicy';
-import { WorkspaceSwitchControl } from '../workspace-runtime/components/WorkspaceSwitchControl';
-import { WorkspaceSwitchLabel } from '../workspace-runtime/components/WorkspaceSwitchLabel';
 import { usePreviewActions } from './hooks/usePreviewActions';
 import { usePreviewEffects } from './hooks/usePreviewEffects';
+import PreviewEmptyState from './components/PreviewEmptyState';
+import PreviewConfirmDialogs from './components/PreviewConfirmDialogs';
+import PreviewHeader from './components/PreviewHeader';
 
 export default function PreviewPanel() {
   const { t } = useTranslation(['preview', 'common']);
@@ -75,7 +72,7 @@ export default function PreviewPanel() {
     removeFromCurrentView: true,
     switchSurface: 'preview',
   });
-  const switchPolicy = buildWorkspaceSwitchPolicy(t, selectedFolder);
+  const canEdit = Boolean(activePath) && !sourceUnavailableMessage;
 
   const boundedImageIndex = Math.min(currentImageIndex, Math.max(images.length - 1, 0));
   const currentImagePath = images[boundedImageIndex] ?? null;
@@ -83,6 +80,11 @@ export default function PreviewPanel() {
   const primaryWarningText = warningSummary?.messages[0]
     ? formatWorkspaceWarning(t, warningSummary.messages[0])
     : null;
+  const warningTooltip =
+    warningSummary?.messages
+      .map((entry) => formatWorkspaceWarning(t, entry) ?? '')
+      .filter(Boolean)
+      .join('\n') || null;
 
   const [isScrolled, setIsScrolled] = useState(false);
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -122,42 +124,15 @@ export default function PreviewPanel() {
 
   if (!activePath) {
     return (
-      <div className="mx-auto flex h-full w-full max-w-140 flex-col items-center justify-center p-6 text-center border-l border-base-content/5 bg-base-100/30 backdrop-blur-md">
-        <div className="mb-6 text-base-content/50">
-          {sourceUnavailableMessage && (
-            <div className="mb-4 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-              {sourceUnavailableMessage}
-            </div>
-          )}
-          <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-          <p className="text-xl font-bold text-base-content mb-2">
-            {t('preview:empty.no_mod_selected')}
-          </p>
-          <p className="text-sm">{t('preview:empty.select_folder')}</p>
-        </div>
-        <div className="flex w-full max-w-xs flex-col gap-3">
-          <button
-            className="btn btn-outline btn-primary gap-2"
-            disabled={!!sourceUnavailableMessage}
-            onClick={() => {
-              void requestImportArchives();
-            }}
-          >
-            <FileArchive size={18} />
-            {t('preview:actions.import_archives')}
-          </button>
-          <button
-            className="btn btn-outline btn-primary gap-2"
-            disabled={!!sourceUnavailableMessage}
-            onClick={() => {
-              void requestImportFolders();
-            }}
-          >
-            <FolderPlus size={18} />
-            {t('preview:actions.import_folders')}
-          </button>
-        </div>
-      </div>
+      <PreviewEmptyState
+        sourceUnavailableMessage={sourceUnavailableMessage}
+        onImportArchives={() => {
+          void requestImportArchives();
+        }}
+        onImportFolders={() => {
+          void requestImportFolders();
+        }}
+      />
     );
   }
 
@@ -176,170 +151,64 @@ export default function PreviewPanel() {
         }}
       />
 
-      <ConfirmDialog
-        open={confirmRemoveOpen}
-        title={t('preview:gallery.menu.remove_current')}
-        message={t('preview:gallery.remove_confirm_message')}
-        confirmLabel={t('common:actions.remove')}
-        cancelLabel={t('common:actions.cancel')}
-        danger
-        onCancel={() => setConfirmRemoveOpen(false)}
-        onConfirm={() => {
-          void confirmRemoveCurrentImage();
-        }}
-      />
-
-      <ConfirmDialog
-        open={confirmClearOpen}
-        title={t('preview:gallery.menu.clear_all')}
-        message={t('preview:gallery.clear_all_confirm_message')}
-        confirmLabel={t('preview:gallery.menu.clear_all')}
-        cancelLabel={t('common:actions.cancel')}
-        danger
-        onCancel={() => setConfirmClearOpen(false)}
-        onConfirm={() => {
-          void confirmClearAllImages();
-        }}
-      />
-
-      <UnsavedIniChangesModal
-        open={showUnsavedModal}
+      <PreviewConfirmDialogs
+        confirmRemoveOpen={confirmRemoveOpen}
+        confirmClearOpen={confirmClearOpen}
+        showUnsavedModal={showUnsavedModal}
         isSaving={writeModIni.isPending}
         modName={titleDraft || selectedFolder?.name}
         categoryName={selectedFolder?.category ?? undefined}
         changedIniFields={changedIniFields}
         changedMetadataFields={changedMetadataFields}
-        onCancel={() => {
+        onCancelRemove={() => setConfirmRemoveOpen(false)}
+        onConfirmRemove={() => {
+          void confirmRemoveCurrentImage();
+        }}
+        onCancelClear={() => setConfirmClearOpen(false)}
+        onConfirmClear={() => {
+          void confirmClearAllImages();
+        }}
+        onCancelUnsaved={() => {
           dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_TRANSITION_CANCELLED' });
         }}
-        onDiscard={() => {
+        onDiscardUnsaved={() => {
           discardMetadata();
           discardEditor();
           applyPendingTransition();
         }}
-        onSave={async () => {
+        onSaveUnsaved={async () => {
           await saveMetadata();
           const editorSaved = await saveEditor();
-          if (!editorSaved) return;
+          if (!editorSaved) {
+            return;
+          }
           applyPendingTransition();
         }}
       />
 
-      <div
-        className={`sticky top-0 z-20 -mx-6 mb-6 px-6 transition-all duration-200 flex flex-col justify-center border-b ${
-          isScrolled
-            ? 'pt-4 pb-2 bg-base-100/95 backdrop-blur-md border-base-content/10 shadow-sm'
-            : 'pt-6 pb-2 bg-transparent border-transparent'
-        }`}
-      >
-        <div className={`flex items-center justify-between transition-all duration-200`}>
-          <div className="min-w-0 flex-1">
-            <div className={`flex items-center gap-2 transition-all duration-200 mb-0`}>
-              <button
-                onClick={() => setMobilePane('grid')}
-                aria-label={t('preview:actions.back_to_grid')}
-                className={`btn btn-circle btn-ghost text-base-content/50 hover:text-base-content md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
-              >
-                <ChevronRight className="rotate-180" size={isScrolled ? 14 : 16} />
-              </button>
-              <input
-                type="text"
-                className={`bg-transparent p-0 m-0 border-none outline-none focus:ring-1 focus:ring-primary focus:bg-base-200/50 rounded px-1 -ml-1 truncate tracking-tight text-base-content transition-all duration-200 origin-left hover:bg-base-content/5 ${
-                  isScrolled ? 'text-sm font-semibold' : 'text-xl font-bold'
-                }`}
-                value={titleDraft || ''}
-                placeholder={resolvedTitle || t('preview:empty.no_mod_selected')}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                disabled={!activePath}
-              />
-            </div>
-            {resolvedSubtitle && (
-              <p
-                className={`truncate text-base-content/50 transition-all duration-200 ${
-                  isScrolled ? 'mt-0.5 text-[10px]' : 'mt-1 text-xs'
-                }`}
-                title={resolvedSubtitle}
-              >
-                {resolvedSubtitle}
-              </p>
-            )}
-            <label
-              className={`label cursor-pointer justify-start gap-2 p-0 opacity-80 hover:opacity-100 transition-all duration-200 ${isScrolled ? '-mt-0.5' : 'mt-1'}`}
-            >
-              <WorkspaceSwitchControl
-                node={selectedFolder}
-                policy={switchPolicy}
-                isPending={actions.isSwitchPending || actions.isFolderSwitchPending(selectedFolder)}
-                size={isScrolled ? 'xs' : 'sm'}
-                ariaLabel={t('preview:actions.toggle_enabled')}
-                onToggle={(node) => {
-                  if (node.node_kind === 'object') {
-                    return;
-                  }
-
-                  void actions.handleToggleEnabled(node);
-                }}
-              />
-              <WorkspaceSwitchLabel
-                node={selectedFolder}
-                policy={switchPolicy}
-                className={`font-medium text-base-content/60 transition-all duration-200 ${isScrolled ? 'text-[10px]' : 'text-sm'}`}
-              />
-            </label>
-            {warningSummary && warningSummary.messages.length > 0 && (
-              <p
-                className={`mt-1 truncate text-warning/80 transition-all duration-200 ${
-                  isScrolled ? 'text-[10px]' : 'text-xs'
-                }`}
-                title={warningSummary.messages
-                  .map((entry) => formatWorkspaceWarning(t, entry) ?? '')
-                  .filter(Boolean)
-                  .join('\n')}
-              >
-                {primaryWarningText}
-              </p>
-            )}
-          </div>
-
-          <div className="ml-2 flex items-center gap-1">
-            {selectedFolder && (
-              <PreviewPanelContextMenu
-                folder={selectedFolder}
-                onRename={() => actions.handleRenameRequest(selectedFolder)}
-                onDelete={() => actions.handleDeleteRequest(selectedFolder)}
-                onToggle={actions.handleToggleEnabled}
-                onToggleFavorite={actions.handleToggleFavorite}
-                onEnableOnlyThis={actions.handleEnableOnlyThis}
-                onOpenMoveDialog={actions.openMoveDialog}
-                onToggleSafe={actions.handleToggleSafeRequest}
-              />
-            )}
-            <button
-              onClick={() =>
-                runtime.clearSelection({ resetExplorer: true, clearObjectSelection: true })
-              }
-              aria-label={t('preview:actions.unselect_mod')}
-              className={`btn btn-circle btn-ghost hidden text-base-content/30 hover:bg-base-content/5 hover:text-base-content md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
-              title={t('preview:actions.close')}
-            >
-              <X size={isScrolled ? 16 : 18} />
-            </button>
-            <button
-              onClick={() => setMobilePane('grid')}
-              aria-label={t('preview:actions.close')}
-              className={`btn btn-circle btn-ghost text-base-content/30 hover:text-base-content md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
-            >
-              <X size={isScrolled ? 16 : 18} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <PreviewHeader
+        selectedFolder={selectedFolder}
+        resolvedTitle={resolvedTitle}
+        resolvedSubtitle={resolvedSubtitle}
+        titleDraft={titleDraft}
+        warningText={primaryWarningText}
+        warningTooltip={warningTooltip}
+        sourceUnavailableMessage={sourceUnavailableMessage}
+        isScrolled={isScrolled}
+        canEdit={canEdit}
+        actions={actions}
+        onTitleChange={setTitleDraft}
+        onBackToGrid={() => setMobilePane('grid')}
+        onClearSelection={() =>
+          runtime.clearSelection({ resetExplorer: true, clearObjectSelection: true })
+        }
+      />
 
       <GallerySection
         images={images}
         currentImageIndex={currentImageIndex}
         isFetching={previewImagesQuery.isFetching}
-        canEdit={!!activePath}
+        canEdit={canEdit}
         isMutating={
           savePreviewImage.isPending || removePreviewImage.isPending || clearPreviewImages.isPending
         }
@@ -366,6 +235,7 @@ export default function PreviewPanel() {
         versionDraft={versionDraft}
         descriptionDraft={descriptionDraft}
         metadataDirty={metadataDirty}
+        canEdit={canEdit}
         onAuthorChange={setAuthorDraft}
         onVersionChange={setVersionDraft}
         onDescriptionChange={setDescriptionDraft}
@@ -383,6 +253,7 @@ export default function PreviewPanel() {
         conflictingKeys={conflictingKeys}
         editorDirty={hasUnsavedEditorChanges}
         isSaving={writeModIni.isPending}
+        canEdit={canEdit}
         onToggleSection={requestToggleSection}
         onFieldChange={updateEditorField}
         onSave={async () => {
@@ -399,7 +270,7 @@ export default function PreviewPanel() {
           onClick={() => {
             void openCurrentLocation();
           }}
-          disabled={!activePath}
+          disabled={!canEdit}
         >
           <Info size={16} />
           {t('preview:actions.view_location')}

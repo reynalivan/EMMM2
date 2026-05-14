@@ -22,6 +22,7 @@ import {
 import type { IniDocumentLike } from '../previewPanelUtils';
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import { buildQueryInvalidationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
+import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../../workspace-runtime/actions/workspaceActionAvailability';
 
 interface PreviewIniDocument {
   fileName: string;
@@ -57,7 +58,7 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const availableObjects = workspace?.objects ?? [];
   const sourceUnavailableMessage =
     workspace?.runtime?.source_state?.status === 'unavailable'
-      ? workspace.runtime.source_state.message
+      ? (workspace.runtime.source_state.message ?? DEFAULT_SOURCE_UNAVAILABLE_MESSAGE)
       : null;
   const resolvedTitle = workspace?.preview.display_title ?? selectedFolder?.display_name ?? null;
   const resolvedSubtitle = workspace?.preview.display_subtitle ?? null;

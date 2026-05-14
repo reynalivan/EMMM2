@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSelectionReconciledEvent,
   buildWorkspaceViewModelFilter,
   buildWorkspaceViewModelInput,
   workspaceKeys,
@@ -91,5 +92,28 @@ describe('useWorkspaceViewModel contract', () => {
       'Objects/Diluc/Variants',
       'Objects/Diluc/Variants/mod.ini',
     ]);
+  });
+
+  it('maps selection reconciliation status, reason, and affected paths to runtime event', () => {
+    const event = buildSelectionReconciledEvent({
+      selected_object_folder_path: null,
+      explorer_sub_path: null,
+      selected_mod_path: null,
+      current_path: [],
+      reconciliation_status: 'cleared',
+      reconciliation_reason: 'source_unavailable',
+      affected_paths: ['E:/Mods'],
+    });
+
+    expect(event).toEqual({
+      type: 'SELECTION_RECONCILED',
+      selectedObjectFolderPath: null,
+      explorerSubPath: undefined,
+      selectedModPath: null,
+      currentPath: [],
+      reconciliationStatus: 'cleared',
+      reconciliationReason: 'source_unavailable',
+      affectedPaths: ['E:/Mods'],
+    });
   });
 });
