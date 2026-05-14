@@ -65,8 +65,8 @@ As a user, I want my saved collections to remain intact even if I move a mod fol
 
 | ID        | Type        | Criteria                                                                                                                                                                                                    |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.4.1 | ✅ Positive | Given a user moves a mod via the "Move to Object" dialog, the backend triggers `handle_mod_moved_or_renamed`.                                                                                               |
-| AC-31.4.2 | ✅ Positive | Given `handle_mod_moved_or_renamed` fires, the system updates `mod_path` and `object_id` for that specific `mod_id` across ALL saved collections in the database.                                           |
+| AC-31.4.1 | ✅ Positive | Given a user moves a mod via the "Move to Object" dialog, the backend collection auto-healing service runs inside the mutation boundary.                                                                     |
+| AC-31.4.2 | ✅ Positive | Given auto-healing runs, the system updates `mod_path` and `object_id` for that specific `mod_id` across ALL saved collections in the database.                                                             |
 | AC-31.4.3 | ✅ Positive | Given the path cascades successfully, the user can apply a collection from 3 months ago and it will correctly activate the mod in its newly moved location without triggering a Pre-Apply Validation error. |
 
 ---
@@ -151,8 +151,8 @@ apply_collection(game_id, collection_id, ignore_missing):
   7. Update `tasks` table -> status = 'COMPLETED'.
   8. Return `ApplyCollectionResult { collection_id, changed_count, warnings }`.
 
-handle_dirty_state(game_id, current_context):
-  1. Triggered by IPC from React or by Disk Reconcile runtime result.
+dirty-state snapshot service:
+  1. Triggered by Disk Reconcile runtime results or explicit backend runtime mutations.
   2. Upsert `is_unsaved = true` collection for `current_context`.
   3. Internal name may use a timestamp, but all user-facing surfaces resolve the same canonical corridor-aware unsaved label.
   4. Snapshot current ENABLED mods/objects into DB, including collection preview metadata per mod (`preview_path`, `node_type`, `warnings_json`).
@@ -186,8 +186,8 @@ build_collection_preview_tree(objects, mods, mods_path):
 | Preview Panel Payload   | Collection preview, apply preview, and corridor switch preview MUST expose ready-to-render tree payloads rather than requiring the frontend to infer hierarchy from flat member rows.                                                                               |
 | Snapshot Persistence    | `collection_mods` persists `preview_path`, `node_type`, and `warnings_json` so saved collection previews remain stable for flat/mod-pack/variant semantics and warning badges.                                                                                      |
 | ObjectList Payload      | Backend queries MUST return `active_mod_paths: string[]` per Object so the UI Preview Panel correctly highlights active mods.                                                                                                                                       |
-| Disk Reconcile Hook     | Disk Reconcile results map to `handle_dirty_state` to immediately mark manual Explorer changes as Unsaved.                                                                                                                                                          |
-| Move/Rename Hook        | `move_mod` command directly calls `UPDATE collection_mods SET mod_path...` to ensure Auto-Healing.                                                                                                                                                                  |
+| Disk Reconcile Hook     | Disk Reconcile results map to the collection dirty-state snapshot service to immediately mark manual Explorer changes as Unsaved.                                                                                                                                    |
+| Move/Rename Hook        | Backend move/rename mutations update `collection_mods.mod_path` through the collection auto-healing service.                                                                                                                                                        |
 
 ### Runtime Dirty-State Trigger Matrix
 

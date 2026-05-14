@@ -17,6 +17,4 @@ commands.allow = [
     "browser_list_import_queue",
     "browser_confirm_import",
     "browser_cancel_import",
-    "create_download_session",
 ]
-

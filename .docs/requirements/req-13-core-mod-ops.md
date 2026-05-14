@@ -106,7 +106,7 @@ delete_mod(path):
 | `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                                           |
 | `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects.               |
 | `Runtime Mutation Engine` | Single backend boundary for `DISABLED ` prefix changes used by manual toggle, collection apply, and Safe/Unsafe corridor switch. |
-| `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code does not call raw `invalidateQueries`.                |
+| `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code uses runtime-sync descriptors instead of raw query refresh calls. |
 | Disk Reconcile            | Internal filesystem mutations suppress watcher noise, then complete through one intentional runtime refresh path.                |
 
 ### Security & Privacy

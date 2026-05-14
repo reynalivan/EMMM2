@@ -25,8 +25,8 @@ pub async fn run_maintenance_counts(
         .await
         .map_err(|e| format!("Failed to fetch thumbnails: {}", e))?;
 
-    let pruned_count =
-        ThumbnailCache::prune_orphans(&valid_paths).map_err(|e| format!("Prune failed: {}", e))?;
+    let pruned_count = ThumbnailCache::prune_orphans_for_app_data(app_data_dir, &valid_paths)
+        .map_err(|e| format!("Prune failed: {}", e))?;
 
     // 3. Purge empty trash entries older than 30 days
     let trash_dir = app_data_dir.join("trash");

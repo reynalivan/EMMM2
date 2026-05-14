@@ -237,11 +237,40 @@ impl ThumbnailCache {
         Ok(mtime_cache >= mtime_orig)
     }
 
+    /// Prune thumbnails for a specific app data directory.
+    /// Returns number of deleted files.
+    pub fn prune_orphans_for_app_data(
+        app_data_dir: &Path,
+        valid_paths: &[String],
+    ) -> Result<usize, String> {
+        let cache_dir = thumbnail_cache_dir(app_data_dir);
+        {
+            let mut cache = Self::get_instance().lock().unwrap();
+            if cache.base_dir.as_ref() != Some(&cache_dir) {
+                cache.folder_cache.clear();
+                cache.image_cache.clear();
+            }
+            cache.base_dir = Some(cache_dir.clone());
+        }
+
+        Self::prune_orphans_in_cache_dir(&cache_dir, valid_paths)
+    }
+
     /// Prune thumbnails that don't correspond to any path in `valid_paths`.
     /// Returns number of deleted files.
     pub fn prune_orphans(valid_paths: &[String]) -> Result<usize, String> {
-        let cache = Self::get_instance().lock().unwrap();
-        let base_dir = cache.base_dir.as_ref().ok_or("Cache not initialized")?;
+        let base_dir = {
+            let cache = Self::get_instance().lock().unwrap();
+            cache.base_dir.clone().ok_or("Cache not initialized")?
+        };
+
+        Self::prune_orphans_in_cache_dir(&base_dir, valid_paths)
+    }
+
+    fn prune_orphans_in_cache_dir(
+        base_dir: &Path,
+        valid_paths: &[String],
+    ) -> Result<usize, String> {
         fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
 
         let mut keep_hashes = std::collections::HashSet::new();

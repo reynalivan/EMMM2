@@ -40,47 +40,6 @@ async fn emit_internal_disk_reconcile(
 
 #[specta::specta]
 #[tauri::command]
-pub async fn repair_orphan_mods(
-    config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    watcher: tauri::State<'_, WatcherState>,
-    game_id: String,
-) -> Result<usize, AppError> {
-    let repaired = metadata::repair_orphan_mods(pool.inner(), &game_id)
-        .await
-        .map_err(AppError::Internal)?;
-
-    if repaired > 0 {
-        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
-            &pool,
-            &config,
-            watcher.suppressor.clone(),
-            &game_id,
-            &[],
-            false,
-            true,
-        )
-        .await;
-    }
-
-    Ok(repaired)
-}
-
-#[specta::specta]
-#[tauri::command]
-pub async fn pin_mod(
-    config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    watcher: tauri::State<'_, WatcherState>,
-    game_id: String,
-    folder_path: String,
-    pin: bool,
-) -> Result<(), AppError> {
-    Ok(metadata::toggle_pin(&config, pool.inner(), &watcher, &game_id, &folder_path, pin).await?)
-}
-
-#[specta::specta]
-#[tauri::command]
 pub async fn toggle_favorite(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,

@@ -240,20 +240,6 @@ pub async fn delete_collection(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn handle_dirty_state(
-    pool: State<'_, SqlitePool>,
-    config: State<'_, crate::services::config::ConfigService>,
-    game_id: String,
-) -> Result<CollectionSummary, AppError> {
-    let settings = config.get_settings();
-    let is_safe = settings.safe_mode.enabled;
-
-    let result = collection_service::handle_dirty_state(pool.inner(), &game_id, is_safe).await?;
-    Ok(result)
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn get_collection_preview(
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::services::config::ConfigService>,
@@ -302,34 +288,6 @@ pub async fn preview_apply_collection(
     )
     .await?;
     Ok(result)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn handle_mod_moved_or_renamed(
-    pool: State<'_, SqlitePool>,
-    old_path_key: String,
-    new_path_key: String,
-    new_object_id: Option<String>,
-) -> Result<u64, AppError> {
-    let result = collection_service::handle_mod_moved_or_renamed(
-        pool.inner(),
-        &old_path_key,
-        &new_path_key,
-        new_object_id.as_deref(),
-    )
-    .await?;
-    Ok(result)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn check_pending_tasks(
-    pool: State<'_, SqlitePool>,
-    game_id: String,
-) -> Result<Vec<crate::domain::task::PipelineTask>, AppError> {
-    let tasks = crate::repo::task_repo::get_pending_tasks(pool.inner(), &game_id).await?;
-    Ok(tasks)
 }
 
 #[tauri::command]

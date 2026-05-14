@@ -1,9 +1,7 @@
 use sqlx::SqlitePool;
 use tauri::{AppHandle, State};
 
-use crate::services::browser::{
-    browser_service, download_service, import_service, session_service,
-};
+use crate::services::browser::{browser_service, download_service, import_service};
 
 // ── Browser Tab ──────────────────────────────────────────────────────────────
 
@@ -168,33 +166,4 @@ pub async fn browser_cancel_import(
     db: State<'_, SqlitePool>,
 ) -> Result<(), String> {
     import_service::cancel_job(db.inner(), &job_id).await
-}
-
-// ── Download Session ──────────────────────────────────────────────────────────
-
-/// Create a Download Session for a Discover Hub (e.g., GameBanana) mod download.
-#[tauri::command]
-#[specta::specta]
-pub async fn create_download_session(
-    source: String,
-    submission_id: Option<String>,
-    mod_title: Option<String>,
-    profile_url: Option<String>,
-    game_id: Option<String>,
-    expected_keywords: Option<Vec<String>>,
-    db: State<'_, SqlitePool>,
-) -> Result<String, String> {
-    let kw_refs: Option<Vec<&str>> = expected_keywords
-        .as_ref()
-        .map(|v| v.iter().map(|s| s.as_str()).collect());
-    session_service::create_session(
-        db.inner(),
-        &source,
-        submission_id.as_deref(),
-        mod_title.as_deref(),
-        profile_url.as_deref(),
-        game_id.as_deref(),
-        kw_refs.as_deref(),
-    )
-    .await
 }

@@ -272,11 +272,11 @@ External change detected (Create/Remove/Rename/Move/Modified) OR window refocus 
   → [Backend]
       1. Run Disk Reconcile (`reconcile_disk_state_cmd`) to refresh the filesystem projection.
       2. Detect add/remove/rename/move/enable/disable/modified state from disk.
-      3. Trigger `handle_mod_moved_or_renamed(mod_id, new_path, new_object_id)` when path healing is needed.
+      3. Run the collection auto-healing service when path healing is needed.
       4. CROSS-COLLECTION CASCADE:
          `UPDATE collection_mods SET mod_path = ?, object_id = ? WHERE mod_id = ?`
          (This ensures saved collections never break when a user reorganizes folders).
-      5. If active mods changed state/count, trigger `handle_dirty_state`.
+      5. If active mods changed state/count, trigger the collection dirty-state snapshot service.
       6. If runtime files changed (`.ini`, `info.json`, thumbnail), trigger side effects as needed.
       7. Internal preview/file writes use `DiskReconcileReason::InternalMutation` under watcher suppression to avoid watcher conflicts.
       8. Thumbnail-only changes refresh thumbnail caches but must not mark collections dirty by themselves.

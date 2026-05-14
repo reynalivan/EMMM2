@@ -78,7 +78,7 @@ MainLayout (React)
   ├── ToastContainer
   └── TopBar
       ├── NavPopover → React Router navigate()
-      ├── GameSelector → commands.setActiveGame({ gameId }) + invalidateQueries
+      ├── GameSelector → commands.setActiveGame({ gameId }) + runtime refresh descriptors
       └── [children route outlet]
 
 ResizableWorkspace (custom pointer-driven split shell)

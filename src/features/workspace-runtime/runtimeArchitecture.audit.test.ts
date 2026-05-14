@@ -53,6 +53,7 @@ const EXCLUDED_FILES = new Set<string>([
   'src/features/runtime-sync/queryRefresh.ts',
   'src/hooks/useFolders.ts',
   'src/hooks/useObjects.ts',
+  'src/setupTests.ts',
 ]);
 
 const USER_INPUT_FILESYSTEM_PREFLIGHT_FILES = new Set<string>([
@@ -285,7 +286,7 @@ describe('mods runtime architecture audit', () => {
         (file) =>
           file.path !== 'src/features/runtime-sync/queryRefresh.ts' &&
           file.path !== 'src/features/workspace-runtime/optimistic/applyOptimisticEffects.ts' &&
-          file.source.includes('invalidateQueries('),
+          file.source.includes('invalidateQueries'),
       )
       .map((file) => file.path);
 
@@ -376,8 +377,7 @@ describe('mods runtime architecture audit', () => {
           file.source.includes('refreshObjectListQueries(') ||
           file.source.includes('selectedFolders') ||
           file.source.includes('toggle_mod') ||
-          file.source.includes('invalidateQueries(') ||
-          file.source.includes('invalidateQueries(['),
+          file.source.includes('invalidateQueries'),
       )
       .map((file) => file.path);
 
@@ -390,6 +390,7 @@ describe('mods runtime architecture audit', () => {
       'getObjectsCmd',
       'commands.listFolders',
       'queryClient.invalidateQueries',
+      'invalidateQueries',
       'toggle_mod',
       'useObjects(',
       'useModFolders(',
@@ -404,7 +405,7 @@ describe('mods runtime architecture audit', () => {
   it('keeps active runtime docs free of removed IPC and raw refresh claims', () => {
     const stalePatterns = [
       /queryClient\.invalidateQueries\(?/,
-      /invalidateQueries\(/,
+      /invalidateQueries/,
       /`toggle_mod`/,
       /toggle_mod command/,
       /toggle_mod\(/,
@@ -413,6 +414,20 @@ describe('mods runtime architecture audit', () => {
       /undo_collection\(/,
       /listObjectModPaths/,
       /list_object_mod_paths/,
+      /get_log_lines/,
+      /bulk_delete_mods_by_ids/,
+      /resolve_folder_collision/,
+      /pin_object_cmd/,
+      /get_file_watcher_state/,
+      /[`'"]get_game[`'"]/,
+      /check_pending_tasks/,
+      /handle_dirty_state/,
+      /handle_mod_moved_or_renamed/,
+      /create_download_session/,
+      /get_hotkey_bindings/,
+      /detect_hotkey_conflicts/,
+      /pin_mod/,
+      /repair_orphan_mods/,
     ];
     const offenders = readAuditSources(RUNTIME_CONTRACT_DOCS)
       .filter((file) => stalePatterns.some((pattern) => pattern.test(file.source)))

@@ -71,8 +71,6 @@ pub fn run() {
             commands::mods::mod_bulk_cmds::bulk_update_info,
             commands::mods::mod_bulk_cmds::bulk_toggle_favorite,
             commands::mods::mod_bulk_cmds::bulk_pin_mods,
-            commands::mods::mod_meta_cmds::repair_orphan_mods,
-            commands::mods::mod_meta_cmds::pin_mod,
             commands::mods::mod_meta_cmds::toggle_favorite,
             commands::mods::mod_meta_cmds::toggle_mod_safe,
             commands::mods::mod_meta_cmds::suggest_random_mods,
@@ -124,9 +122,6 @@ pub fn run() {
             commands::collections::cmds::apply_collection,
             commands::collections::cmds::update_collection,
             commands::collections::cmds::delete_collection,
-            commands::collections::cmds::handle_dirty_state,
-            commands::collections::cmds::handle_mod_moved_or_renamed,
-            commands::collections::cmds::check_pending_tasks,
             commands::collections::cmds::app_startup_check,
             commands::collections::cmds::check_boot_security,
             commands::collections::cmds::clear_pending_tasks,
@@ -155,8 +150,6 @@ pub fn run() {
             commands::duplicates::dup_ignore_cmds::remove_ignored_pair,
             commands::app::update_cmds::check_metadata_update,
             commands::app::update_cmds::fetch_missing_asset,
-            commands::app::hotkey_cmds::get_hotkey_bindings,
-            commands::app::hotkey_cmds::detect_hotkey_conflicts,
             commands::app::hotkey_cmds::update_hotkey_config,
             commands::browser::browser_cmds::browser_open_tab,
             commands::browser::browser_cmds::browser_navigate,
@@ -174,7 +167,6 @@ pub fn run() {
             commands::browser::browser_cmds::browser_list_import_queue,
             commands::browser::browser_cmds::browser_confirm_import,
             commands::browser::browser_cmds::browser_cancel_import,
-            commands::browser::browser_cmds::create_download_session,
         ]);
 
     /*
@@ -473,8 +465,6 @@ mod specta_tests {
                 commands::mods::mod_bulk_cmds::bulk_update_info,
                 commands::mods::mod_bulk_cmds::bulk_toggle_favorite,
                 commands::mods::mod_bulk_cmds::bulk_pin_mods,
-                commands::mods::mod_meta_cmds::repair_orphan_mods,
-                commands::mods::mod_meta_cmds::pin_mod,
                 commands::mods::mod_meta_cmds::toggle_favorite,
                 commands::mods::mod_meta_cmds::toggle_mod_safe,
                 commands::mods::mod_meta_cmds::suggest_random_mods,
@@ -526,9 +516,6 @@ mod specta_tests {
                 commands::collections::cmds::apply_collection,
                 commands::collections::cmds::update_collection,
                 commands::collections::cmds::delete_collection,
-                commands::collections::cmds::handle_dirty_state,
-                commands::collections::cmds::handle_mod_moved_or_renamed,
-                commands::collections::cmds::check_pending_tasks,
                 commands::collections::cmds::app_startup_check,
                 commands::collections::cmds::check_boot_security,
                 commands::collections::cmds::clear_pending_tasks,
@@ -557,8 +544,6 @@ mod specta_tests {
                 commands::duplicates::dup_ignore_cmds::remove_ignored_pair,
                 commands::app::update_cmds::check_metadata_update,
                 commands::app::update_cmds::fetch_missing_asset,
-                commands::app::hotkey_cmds::get_hotkey_bindings,
-                commands::app::hotkey_cmds::detect_hotkey_conflicts,
                 commands::app::hotkey_cmds::update_hotkey_config,
                 commands::browser::browser_cmds::browser_open_tab,
                 commands::browser::browser_cmds::browser_navigate,
@@ -576,7 +561,6 @@ mod specta_tests {
                 commands::browser::browser_cmds::browser_list_import_queue,
                 commands::browser::browser_cmds::browser_confirm_import,
                 commands::browser::browser_cmds::browser_cancel_import,
-                commands::browser::browser_cmds::create_download_session,
             ])
             .export(
                 specta_typescript::Typescript::default()

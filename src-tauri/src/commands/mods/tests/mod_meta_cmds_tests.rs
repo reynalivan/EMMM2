@@ -102,10 +102,10 @@ async fn test_set_object_mods_category_inner_updates_only_target_object_mods() {
     );
 }
 
-// ── TC-40: pin_mod updates DB ──────────────────────────────────────────────
+// ── TC-40: mod pin flag updates DB ──────────────────────────────────────────
 
 #[tokio::test]
-async fn test_pin_mod_updates_db() {
+async fn test_mod_pin_flag_updates_db() {
     let pool = setup_test_db().await;
 
     insert_test_game(

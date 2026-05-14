@@ -78,7 +78,7 @@ Frontend:
 ### Security & Privacy
 
 - **`target` path validated** with `canonicalize(target.parent()) + starts_with(mods_path)` before every `fs::rename` — no escape from `mods_path` hierarchy.
-- **DB transaction is atomic** — if `fs::rename` succeeds but DB update fails, the transaction rolls back; the file remains at new path but orphan detection (Epic 27 `repair_orphan_mods`) will reconcile on next scan.
+- **DB transaction is atomic** — if `fs::rename` succeeds but DB update fails, the transaction rolls back; the file remains at new path and Disk Reconcile will repair projection drift on the next reconcile pass.
 - **`OperationLock` prevents concurrent organize calls** on the same game — no race conditions between two batch operations.
 
 ---

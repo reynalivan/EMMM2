@@ -97,74 +97,6 @@ pub fn update_mod_thumbnail(
     Ok(new_thumbnail_path.to_string_lossy().to_string())
 }
 
-pub async fn repair_orphan_mods(pool: &SqlitePool, game_id: &str) -> Result<usize, String> {
-    let orphans = crate::repo::mod_repo::get_orphan_mods(pool, game_id)
-        .await
-        .map_err(|e| format!("DB error: {}", e))?;
-
-    if orphans.is_empty() {
-        return Ok(0);
-    }
-
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    let mut repaired = 0usize;
-    let mut changed_object_ids: Vec<String> = Vec::new();
-
-    for row in &orphans {
-        let mod_id = &row.id;
-        let actual_name = &row.actual_name;
-        let mod_folder_path = &row.folder_path;
-
-        let clean_name =
-            crate::services::scanner::core::normalizer::normalize_display_name(actual_name);
-
-        let obj_folder = std::path::Path::new(mod_folder_path)
-            .parent()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| clean_name.clone());
-
-        let mut new_objects_count = 0;
-        let object_id = crate::repo::object_repo::ensure_object_exists(
-            &mut tx,
-            crate::repo::object_repo::EnsureObjectInput {
-                game_id,
-                folder_path: &obj_folder,
-                obj_name: &clean_name,
-                obj_type: "Other",
-                db_thumbnail: None,
-                db_tags_json: "[]",
-                db_metadata_json: "{}",
-                db_hash_db_json: None,
-                db_custom_skins_json: None,
-            },
-            &mut new_objects_count,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-        crate::repo::mod_repo::update_mod_object_id_and_type_tx(
-            &mut tx, mod_id, &object_id, "Other",
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-        changed_object_ids.push(object_id);
-        repaired += 1;
-    }
-
-    tx.commit().await.map_err(|e| e.to_string())?;
-    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
-        pool,
-        game_id,
-        &changed_object_ids,
-        false,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(repaired)
-}
-
 pub async fn toggle_favorite(
     config: &ConfigService,
     pool: &SqlitePool,
@@ -246,42 +178,6 @@ pub async fn toggle_mod_safe(
     refresh_projection_for_optional_object(pool, game_id, object_id)
         .await
         .map_err(MetadataError::from)?;
-
-    Ok(())
-}
-
-/// Toggle the pinned state of a single mod folder.
-/// Ensures synchronization between DB and info.json on disk.
-pub async fn toggle_pin(
-    config: &ConfigService,
-    pool: &SqlitePool,
-    watcher: &WatcherState,
-    game_id: &str,
-    folder_path: &str,
-    pin: bool,
-) -> Result<(), MetadataError> {
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
-    let full_path =
-        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
-
-    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await?
-        .ok_or_else(|| MetadataError::NotFound("Game not found or has no mods_path".to_string()))?;
-
-    let base = std::path::Path::new(&game_mod_path);
-    let rel_path = full_path
-        .strip_prefix(base)
-        .unwrap_or(&full_path)
-        .to_string_lossy()
-        .to_string();
-
-    crate::repo::mod_repo::set_pinned_by_path(pool, game_id, &rel_path, pin).await?;
-
-    let update = crate::services::mods::info_json::ModInfoUpdate {
-        is_pinned: Some(pin),
-        ..Default::default()
-    };
-    let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
 
     Ok(())
 }
