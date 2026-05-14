@@ -87,7 +87,7 @@ Frontend:
 
 - **All `folder_path` values are validated** with `canonicalize()` + `starts_with(mods_path)` before any DB write.
 - **`commit_scan` is idempotent** — running it twice with the same candidates produces the same DB state (no duplicates via `INSERT OR REPLACE` + UNIQUE constraint).
-- **Orphan repair deletes only by `folder_path`** — never an unbounded DELETE; always scoped to the confirmed non-existent paths.
+- **Scan commit does not delete unrelated missing rows** — `deleted_mods` remains in the result shape for compatibility, but passive missing-folder cleanup is owned by Disk Reconcile or a future explicit repair flow.
 
 ---
 

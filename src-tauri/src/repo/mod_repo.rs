@@ -956,6 +956,19 @@ pub async fn get_mod_id_and_object_id_by_path(
         .await
 }
 
+pub async fn get_mod_id_by_path_tx(
+    conn: &mut sqlx::SqliteConnection,
+    folder_path: &str,
+    game_id: &str,
+    mods_path: Option<&str>,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM mods WHERE folder_path_key = ? AND game_id = ?")
+        .bind(folder_path_key(folder_path, mods_path))
+        .bind(game_id)
+        .fetch_optional(conn)
+        .await
+}
+
 pub async fn update_mod_path_by_id(
     pool: &sqlx::SqlitePool,
     id: &str,

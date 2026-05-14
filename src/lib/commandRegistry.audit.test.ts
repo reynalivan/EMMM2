@@ -102,6 +102,23 @@ function parseCollectCommands(source: string, occurrence: number): string[] {
   return parseRustCommandNames(body);
 }
 
+function countOccurrences(source: string, pattern: string): number {
+  let count = 0;
+  let searchFrom = 0;
+
+  while (searchFrom < source.length) {
+    const index = source.indexOf(pattern, searchFrom);
+    if (index === -1) {
+      return count;
+    }
+
+    count += 1;
+    searchFrom = index + pattern.length;
+  }
+
+  return count;
+}
+
 function parsePermissionCommands(source: string): string[] {
   const declaration = 'commands.allow = [';
   const start = source.indexOf(declaration);
@@ -210,10 +227,15 @@ describe('command registry audit', () => {
   const permissionSource = readWorkspaceFile(PERMISSIONS_PATH);
   const bindingSource = readWorkspaceFile(BINDINGS_PATH);
   const productionCommands = parseCollectCommands(libSource, 0);
-  const spectaCommands = parseCollectCommands(libSource, 1);
+  const spectaCommands = productionCommands;
   const permissionCommands = parsePermissionCommands(permissionSource);
   const allPermissionCommands = parseAllPermissionCommands();
   const bindingCommands = parseBindingInvokeCommands(bindingSource);
+
+  it('uses one shared Rust command registry for production and Specta export', () => {
+    expect(countOccurrences(libSource, COLLECT_COMMANDS_MACRO)).toBe(1);
+    expect(countOccurrences(libSource, '.commands(emmm_collect_commands!())')).toBe(2);
+  });
 
   it('keeps production, Specta, and permissions command lists aligned', () => {
     expectNoDuplicates('production registry', productionCommands);

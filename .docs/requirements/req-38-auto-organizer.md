@@ -61,19 +61,19 @@ Frontend:
   → commands.runDeepmatchPreview({ game_id, specific_paths })
   → user confirms/overrides review
   → commands.commitScan({ game_id, items })
-  → invalidate objects / folder grid / collections via the normal Deep Match + Disk Reconcile flow
+  → publish runtime-sync descriptors for object, folder, preview, and collection refresh
 ```
 
 ### Integration Points
 
-| Component                          | Detail                                                                                                                                          |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| OperationLock + WatcherSuppression | Scoped to the entire batch — prevents intermediate FS events                                                                                    |
-| DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename`                                                      |
-| Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)                                                                |
-| Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize                                                            |
-| Canonical Relation                 | Uses physical object ownership; `matched_entry_key` / `matched_alias_name` stay as enrichment and never rewrite the physical target folder name |
-| Frontend                           | Context menu "Auto-Organize" on bulk selection → Deep Match Scanner preview + commit                                                            |
+| Component                          | Detail                                                                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OperationLock + WatcherSuppression | Scoped to the entire batch — prevents intermediate FS events                                                                                     |
+| DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename`                                                       |
+| Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)                                                                 |
+| Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize                                                             |
+| Canonical Relation                 | Uses physical object ownership; `matched_entry_key` / `matched_alias_name` stay as enrichment and never rewrite the physical target folder name  |
+| Frontend                           | Context menu "Auto-Organize" on bulk selection → explicit Deep Match Scanner preview + commit; no watcher/refocus/bootstrap path invokes scanner |
 
 ### Security & Privacy
 

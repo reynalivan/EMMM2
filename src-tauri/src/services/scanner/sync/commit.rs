@@ -100,12 +100,21 @@ pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncR
                         let _ = std::fs::create_dir_all(&target_dir);
                     }
                     if target_path.exists() {
+                        let target_path_string = target_path.to_string_lossy().into_owned();
+                        let existing_mod_id = mod_repo::get_mod_id_by_path_tx(
+                            &mut tx,
+                            &target_path_string,
+                            game_id,
+                            Some(mods_path),
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
                         collisions.push(crate::services::scanner::core::types::CollisionInfo {
-                            id: generate_stable_id(game_id, &target_path.to_string_lossy()),
+                            id: generate_stable_id(game_id, &target_path_string),
                             source_path: item.folder_path.clone(),
-                            target_path: target_path.to_string_lossy().into_owned(),
+                            target_path: target_path_string,
                             object_name: object_folder.clone(),
-                            existing_mod_id: None, // TODO: Look up existing mod ID if mapped
+                            existing_mod_id,
                         });
                         continue;
                     }
@@ -445,19 +454,9 @@ pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncR
         }
     }
 
-    // Phase 3: Purge Deletions
-    let mut deleted_mods_count = 0;
-    for (db_idx, db_mod) in db_mods.iter().enumerate() {
-        if !db_matched.contains(&db_idx) {
-            // Only delete if the physical path is truly gone
-            if !Path::new(&db_mod.1).exists() {
-                crate::repo::mod_repo::delete_mod_tx(&mut tx, &db_mod.0)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                deleted_mods_count += 1;
-            }
-        }
-    }
+    // Scan commit is an explicit import/scan commit, not passive filesystem repair.
+    // Disk Reconcile owns cleanup of DB rows whose folders disappeared outside this flow.
+    let deleted_mods_count = 0;
 
     crate::repo::object_repo::delete_ghost_objects_gc(&mut tx, game_id)
         .await

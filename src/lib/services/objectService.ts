@@ -70,6 +70,5 @@ export async function updateObject(id: string, updates: UpdateObjectInput): Prom
 }
 
 export function deleteObject(id: string, force: boolean): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return commands.deleteObject({ id, force } as any);
+  return commands.deleteObject({ id, force });
 }

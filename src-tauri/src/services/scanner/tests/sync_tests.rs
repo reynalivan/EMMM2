@@ -54,6 +54,32 @@ fn needs_review_db() -> deep_matcher::MasterDb {
     deep_matcher::MasterDb::from_json(&db_json).unwrap()
 }
 
+fn confirmed_scan_item(
+    folder_path: String,
+    display_name: &str,
+    matched_entry_key: Option<String>,
+    move_from_temp: bool,
+) -> ConfirmedScanItem {
+    ConfirmedScanItem {
+        folder_path,
+        display_name: display_name.to_string(),
+        is_disabled: false,
+        matched_entry_key,
+        matched_alias_name: None,
+        matched_confidence: None,
+        matched_reason: None,
+        object_type: Some("Character".to_string()),
+        thumbnail_path: None,
+        tags_json: Some("[]".to_string()),
+        metadata_json: Some("{}".to_string()),
+        hash_db_json: None,
+        custom_skins_json: None,
+        db_thumbnail: None,
+        skip: false,
+        move_from_temp,
+    }
+}
+
 // Covers: TC-2.3-Review-03 (Sync preview keeps NeedsReview pending)
 #[tokio::test]
 async fn test_scan_preview_needs_review_has_no_auto_assignment() {
@@ -446,6 +472,256 @@ async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physi
     .await
     .unwrap();
     assert_eq!(object_count, 1);
+}
+
+#[tokio::test]
+async fn test_commit_temp_collision_includes_existing_mod_id_when_mapped() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mods_root = temp_dir.path().join("Mods");
+    let object_dir = mods_root.join("Amber");
+    let target_mod_dir = object_dir.join("Collision Pack");
+    let source_mod_dir = temp_dir.path().join("TempCollision").join("Collision Pack");
+    fs::create_dir_all(&target_mod_dir).unwrap();
+    fs::create_dir_all(&source_mod_dir).unwrap();
+
+    let mods_path = mods_root.to_string_lossy().to_string();
+    let target_mod_path = target_mod_dir.to_string_lossy().to_string();
+    let source_mod_path = source_mod_dir.to_string_lossy().to_string();
+    let matched_key = canonical_entry_key("Amber");
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .unwrap();
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "obj_amber",
+            game_id: "g1",
+            name: "Amber",
+            folder_path: "Amber",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    crate::repo::object_repo::apply_canonical_match(
+        &pool,
+        "obj_amber",
+        Some(&matched_key),
+        Some("Amber"),
+        Some(1.0),
+        Some("Test"),
+        Some("test"),
+    )
+    .await
+    .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod_existing",
+            game_id: "g1",
+            object_id: Some("obj_amber"),
+            actual_name: "Collision Pack",
+            folder_path: &target_mod_path,
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &mods_path,
+        items: vec![confirmed_scan_item(
+            source_mod_path,
+            "Collision Pack",
+            Some(matched_key),
+            true,
+        )],
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(result.collisions.len(), 1);
+    assert_eq!(
+        result.collisions[0].existing_mod_id.as_deref(),
+        Some("mod_existing")
+    );
+    assert_eq!(result.collisions[0].target_path, target_mod_path);
+    assert_eq!(result.deleted_mods, 0);
+}
+
+#[tokio::test]
+async fn test_commit_temp_collision_has_no_existing_mod_id_for_physical_only_target() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mods_root = temp_dir.path().join("Mods");
+    let object_dir = mods_root.join("Amber");
+    let target_mod_dir = object_dir.join("Physical Only");
+    let source_mod_dir = temp_dir.path().join("TempCollision").join("Physical Only");
+    fs::create_dir_all(&target_mod_dir).unwrap();
+    fs::create_dir_all(&source_mod_dir).unwrap();
+
+    let mods_path = mods_root.to_string_lossy().to_string();
+    let target_mod_path = target_mod_dir.to_string_lossy().to_string();
+    let source_mod_path = source_mod_dir.to_string_lossy().to_string();
+    let matched_key = canonical_entry_key("Amber");
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .unwrap();
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "obj_amber",
+            game_id: "g1",
+            name: "Amber",
+            folder_path: "Amber",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    crate::repo::object_repo::apply_canonical_match(
+        &pool,
+        "obj_amber",
+        Some(&matched_key),
+        Some("Amber"),
+        Some(1.0),
+        Some("Test"),
+        Some("test"),
+    )
+    .await
+    .unwrap();
+
+    let result = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &mods_path,
+        items: vec![confirmed_scan_item(
+            source_mod_path,
+            "Physical Only",
+            Some(matched_key),
+            true,
+        )],
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(result.collisions.len(), 1);
+    assert_eq!(result.collisions[0].existing_mod_id, None);
+    assert_eq!(result.collisions[0].target_path, target_mod_path);
+    assert_eq!(result.deleted_mods, 0);
+}
+
+#[tokio::test]
+async fn test_commit_preserves_missing_db_mod_rows_for_disk_reconcile() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mods_root = temp_dir.path().join("Mods");
+    let live_mod_dir = mods_root.join("Live Mod");
+    fs::create_dir_all(&live_mod_dir).unwrap();
+
+    let mods_path = mods_root.to_string_lossy().to_string();
+    let live_mod_path = live_mod_dir.to_string_lossy().to_string();
+    let missing_mod_path = mods_root.join("Missing Mod").to_string_lossy().to_string();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .unwrap();
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "obj_old",
+            game_id: "g1",
+            name: "Old",
+            folder_path: "Old",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod_missing",
+            game_id: "g1",
+            object_id: Some("obj_old"),
+            actual_name: "Missing Mod",
+            folder_path: &missing_mod_path,
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &mods_path,
+        items: vec![confirmed_scan_item(live_mod_path, "Live Mod", None, false)],
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
+    .await
+    .unwrap();
+
+    let missing_row_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE id = 'mod_missing'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(result.deleted_mods, 0);
+    assert_eq!(missing_row_count, 1);
 }
 
 // Covers: TC-27-003 (Transaction Rollback on failure)

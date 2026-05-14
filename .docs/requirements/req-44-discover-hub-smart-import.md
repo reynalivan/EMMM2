@@ -316,11 +316,12 @@ On `DownloadEvent::Finished` with `success=true`:
 
 ### 9.2 Fallback Trigger (Recommended)
 
-A targeted file watcher on `BrowserDownloadsRoot` (NOT the OS Downloads folder):
+A targeted browser-download watcher on `BrowserDownloadsRoot` (NOT the workspace FileWatcher and NOT the OS Downloads folder):
 
 - For manual copy/paste into the folder or edge cases where the `Finished` event is missed.
 - Rule: file size is stable for 2s AND file can be opened for read → treat as `Finished`.
 - Only applies to files matching the allowed extensions allowlist.
+- It may enqueue the explicit Browser Smart Import pipeline; it must not be treated as workspace passive filesystem sync.
 
 ---
 

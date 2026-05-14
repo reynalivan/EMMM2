@@ -290,7 +290,8 @@ export const commands = {
     invoke<void>('update_object_cmd', params),
   applyObjectMatch: (params: { input: ApplyObjectMatchInput }) =>
     invoke<void>('apply_object_match_cmd', params),
-  deleteObject: (params: { id?: string }) => invoke<void>('delete_object_cmd', params),
+  deleteObject: (params: { id?: string; force?: boolean }) =>
+    invoke<void>('delete_object_cmd', params),
   pinObject: (params: { id?: string; isPinned?: boolean; pin?: boolean }) =>
     invoke<void>('pin_object', params),
   matchObjectWithDb: (params: { gameType: number; objectName: string }) =>
