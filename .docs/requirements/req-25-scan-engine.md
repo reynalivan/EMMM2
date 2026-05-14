@@ -36,9 +36,9 @@ As a user, I want to stop a long-running scan, so that I can regain control of t
 
 | ID        | Type        | Criteria                                                                                                                                                                                                           |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-25.2.1 | ✅ Positive | Given a scan is running, when `commands.cancelScan()` is called, then the `CancellationToken` is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled`                                    |
+| AC-25.2.1 | ✅ Positive | Given a scan is running, when frontend `scanService.cancelScan()` calls backend `cancel_scan_cmd`, then the cancellation state is signaled; the walker halts within ≤ 1s; `ScanState` transitions to `Cancelled` |
 | AC-25.2.2 | ✅ Positive | Given cancellation, the partial scan results collected so far are NOT discarded — they remain available to the explicit scan pipeline for diagnostic or partial-review use without becoming a runtime refresh path |
-| AC-25.2.3 | ⚠️ Edge     | Given `cancel_scan` is called after the scan has already `Completed`, then the command returns an `AlreadyCompleted` status — no error thrown                                                                      |
+| AC-25.2.3 | ⚠️ Edge     | Given `cancel_scan_cmd` is called after the scan has already `Completed`, then cancellation is idempotent and returns success — no error thrown                                                                      |
 
 ---
 
@@ -83,8 +83,8 @@ ScanState: Running | Completed | Cancelled | Idle
   stored in: Arc<Mutex<ScanState>> (Tauri managed state)
   progress: (scanned: u32, estimate: u32, last_path: PathBuf)
 
-deepmatch_preview_cmd(game_id, mods_path, specific_paths?) → Vec<ScanPreviewItem>
-cancel_scan() → (): cancel the active explicit scan UI flow
+deepmatch_preview_cmd(game_id, mods_path, specific_paths?) -> Vec<ScanPreviewItem>
+scanService.cancelScan() -> cancel_scan_cmd() -> Result<(), String>
 ```
 
 ### Integration Points

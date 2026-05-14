@@ -83,37 +83,22 @@ As a user, I want the system to automatically flag potentially sensitive mods so
 ### Architecture Overview
 
 ```rust
-// Backend Service: PrivacyManager (switch.rs, runtime_mutation_engine.rs)
+// Backend entrypoint: collections::cmds::switch_corridor
+// Runtime owner: pipeline::switch_pipeline + services::runtime_mutation_engine
 
-pub async fn switch_mode(pool: &SqlitePool, target_safe_mode: bool) -> Result<SwitchResult, Error> {
-    // 1. Acquire Locks
-    let _lock = acquire_operation_lock().await;
+pub async fn switch_corridor(game_id: String, target_safe_mode: bool) -> Result<CorridorSwitchResult, Error> {
+    // 1. Resolve active settings/corridor pointers and acquire OperationLock.
+    let watcher_state = app.state::<WatcherState>();
+    let mut ctx = switch_pipeline::SwitchContext::new(pool, game_id, target_safe_mode).await?;
 
-    // 2. Track Task
-    let task_id = insert_task(pool, "SWITCH_MODE", target_safe_mode).await?;
+    // 2. Execute the shared corridor switch pipeline.
+    // The pipeline records task state, disables the leaving corridor, restores the
+    // target corridor from active/unsaved collection or SYSTEM fallback, and calls
+    // runtime_mutation_engine::toggle_mods_mixed under WatcherSuppression.
+    let result = switch_pipeline::execute(&mut ctx, watcher_state).await?;
 
-    // 3. Disable Leaving Corridor
-    // Only target depth 1-5 mods, NEVER top-level objects
-    let leaving_mods = get_enabled_mods_where_safe_is_not(pool, target_safe_mode).await?;
-    runtime_mutation_engine::toggle_mods(pool, leaving_mods, target_disabled_with_system_reason).await?;
-
-    // 4. Restore Target Corridor
-    let restored_collection_id = if let Some(target_collection) = resolve_restore_collection(pool, target_safe_mode).await? {
-        // Delegate to Epic 31's logic
-        apply_collection_internal(pool, target_collection.id, true).await?;
-        Some(target_collection.id)
-    } else {
-        // Fallback: Enable strictly by SYSTEM reason
-        let system_mods = get_system_disabled_mods_for_corridor(pool, target_safe_mode).await?;
-        runtime_mutation_engine::toggle_mods(pool, system_mods, target_enabled_with_null_reason).await?;
-        None
-    };
-
-    // 5. Persist active corridor and complete task
-    save_safe_mode_enabled(pool, target_safe_mode).await?;
-    complete_task(pool, task_id).await?;
-
-    Ok(SwitchResult { active_safe: target_safe_mode, restored_collection_id, warnings: vec![] })
+    // 3. Return backend-authoritative corridor state for React to sync from.
+    Ok(result)
 }
 ```
 
