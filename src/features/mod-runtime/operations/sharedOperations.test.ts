@@ -3,6 +3,7 @@ import { moveModToObjectAndRefresh, syncExplorerAfterRename } from './sharedOper
 
 const moveModToObject = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
+const publishQueryInvalidations = vi.fn();
 const updateFolderCache = vi.fn();
 const dispatchWorkspaceRuntimeEvent = vi.fn();
 
@@ -14,6 +15,7 @@ vi.mock('../../../lib/bindings', () => ({
 
 vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
+  publishQueryInvalidations: (...args: unknown[]) => publishQueryInvalidations(...args),
 }));
 
 vi.mock('../../../hooks/folderCache', () => ({
@@ -38,6 +40,8 @@ describe('shared mod runtime operations', () => {
     moveModToObject.mockResolvedValue(undefined);
     publishRuntimeDescriptor.mockReset();
     publishRuntimeDescriptor.mockResolvedValue(undefined);
+    publishQueryInvalidations.mockReset();
+    publishQueryInvalidations.mockResolvedValue(undefined);
     updateFolderCache.mockReset();
     dispatchWorkspaceRuntimeEvent.mockReset();
   });

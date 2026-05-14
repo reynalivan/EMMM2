@@ -7,6 +7,7 @@ import { getGameTypeKey as getGameKey, type GameConfig } from '../../types/game'
 interface AutoDetectResultProps {
   games: GameConfig[];
   onBack: () => void;
+  onAddMore: () => void;
   onConfirm: (games: GameConfig[]) => void;
   onRemoveGame: (gameId: string) => void;
 }
@@ -14,6 +15,7 @@ interface AutoDetectResultProps {
 export function AutoDetectResult({
   games,
   onBack,
+  onAddMore,
   onConfirm,
   onRemoveGame,
 }: AutoDetectResultProps) {
@@ -124,7 +126,7 @@ export function AutoDetectResult({
       </div>
 
       <div className="flex justify-center gap-4 mt-10 w-full max-w-2xl">
-        <button className="btn btn-outline gap-2 flex-1" onClick={onBack}>
+        <button className="btn btn-outline gap-2 flex-1" onClick={onAddMore}>
           <Plus className="w-4 h-4" />
           {t('result.add_another')}
         </button>

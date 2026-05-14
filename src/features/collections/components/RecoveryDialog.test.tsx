@@ -48,7 +48,7 @@ describe('RecoveryDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'recovery.actions.rollback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
 
     await waitFor(() => {
       expect(resolveRecoveryTaskMock).toHaveBeenCalledWith({

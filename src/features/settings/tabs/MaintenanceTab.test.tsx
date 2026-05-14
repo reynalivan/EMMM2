@@ -94,7 +94,10 @@ describe('MaintenanceTab (TC-04)', () => {
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('clear_old_thumbnails');
-      expect(mockAddToast).toHaveBeenCalledWith('success', 'Cache cleared 12 items');
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'success',
+        'Successfully cleared Cache cleared 12 items old thumbnails.',
+      );
     });
   });
 

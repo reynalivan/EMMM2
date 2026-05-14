@@ -44,7 +44,7 @@ describe('BulkContextMenu', () => {
     fireEvent.click(screen.getByText('Favorite Selected'));
     expect(onFavorite).toHaveBeenCalledWith(true);
 
-    fireEvent.click(screen.getByText('Mark Safe'));
+    fireEvent.click(screen.getByText('Mark as Safe (Add Privacy)'));
     expect(onSafe).toHaveBeenCalledWith(true);
 
     fireEvent.click(screen.getByText('Pin Selected'));

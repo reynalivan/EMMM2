@@ -83,6 +83,8 @@ vi.mock('@tauri-apps/plugin-log', () => ({
 vi.mock('@tauri-apps/plugin-fs', () => ({
   exists: vi.fn().mockResolvedValue(true),
   mkdir: vi.fn().mockResolvedValue(undefined),
+  readFile: vi.fn().mockResolvedValue(new Uint8Array()),
+  writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock ResizeObserver for JSDOM
@@ -194,8 +196,12 @@ function interpolateTranslation(text: string, options: TranslationOptions | unde
 }
 
 function candidateKeys(key: string, options: TranslationOptions | undefined): string[] {
+  if (typeof options?.count === 'number' && options.count === 1) {
+    return [`${key}_one`, key];
+  }
+
   if (typeof options?.count === 'number' && options.count !== 1) {
-    return [`${key}_plural`, key];
+    return [`${key}_other`, `${key}_plural`, key];
   }
 
   return [key];

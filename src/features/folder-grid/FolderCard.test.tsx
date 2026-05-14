@@ -188,7 +188,7 @@ describe('FolderCard', () => {
         toggleSelection={vi.fn()}
       />,
     );
-    expect(screen.getByText('common:status.enabled')).toBeInTheDocument();
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox', { hidden: true })[1]).toBeChecked();
 
     const disabledFolder = {
@@ -204,7 +204,7 @@ describe('FolderCard', () => {
         toggleSelection={vi.fn()}
       />,
     );
-    expect(screen.getByText('common:status.disabled')).toBeInTheDocument();
+    expect(screen.getByText('Disabled')).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox', { hidden: true })[1]).not.toBeChecked();
   });
 
@@ -294,7 +294,7 @@ describe('FolderCard', () => {
       />,
     );
 
-    const maskedName = screen.getByText('card.hidden_mod');
+    const maskedName = screen.getByText('[Hidden Mod]');
     expect(maskedName).toBeInTheDocument();
     expect(maskedName).toHaveClass('blur-xs');
     expect(screen.queryByText('Unsafe Mod Name')).not.toBeInTheDocument();

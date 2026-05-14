@@ -5,6 +5,7 @@ import GeneralTab from './GeneralTab';
 let mockAutoClose = false;
 const mockSetAutoClose = vi.fn();
 const mockUpdateThemeMutate = vi.fn();
+const mockUpdateLanguageMutate = vi.fn();
 
 vi.mock('../../../hooks/useSettings', () => ({
   useSettings: () => ({
@@ -45,6 +46,10 @@ vi.mock('../../../hooks/useSettings', () => ({
     },
     updateTheme: {
       mutate: mockUpdateThemeMutate,
+      isPending: false,
+    },
+    updateLanguage: {
+      mutate: mockUpdateLanguageMutate,
       isPending: false,
     },
   }),
@@ -93,7 +98,7 @@ describe('GeneralTab (TC-04)', () => {
   it('updates only theme when user selects a new option', () => {
     render(<GeneralTab />);
 
-    const select = screen.getByRole('combobox', { name: 'Theme' });
+    const select = screen.getByRole('combobox', { name: 'Theme Selection' });
     fireEvent.change(select, { target: { value: 'light' } });
 
     expect(mockUpdateThemeMutate).toHaveBeenCalledWith('light');

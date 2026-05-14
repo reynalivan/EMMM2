@@ -49,7 +49,7 @@ describe('PinEntryModal (TC-30 Privacy & Safe Mode)', () => {
     );
 
     // Initial state: input is enabled
-    const pinInput = screen.getByPlaceholderText('safe_mode:pin_entry.placeholder');
+    const pinInput = screen.getByPlaceholderText('••••••');
     expect(pinInput).toBeInTheDocument();
     expect(pinInput).not.toBeDisabled();
 
@@ -59,7 +59,7 @@ describe('PinEntryModal (TC-30 Privacy & Safe Mode)', () => {
     fireEvent.click(submitBtn);
 
     // Verify error state and lockout message
-    expect(await screen.findByText('safe_mode:pin_entry.error.locked')).toBeInTheDocument();
+    expect(await screen.findByText(/Locked for 30s/)).toBeInTheDocument();
     expect(pinInput).toBeDisabled();
     expect(onSuccessMock).not.toHaveBeenCalled();
   });
@@ -70,7 +70,7 @@ describe('PinEntryModal (TC-30 Privacy & Safe Mode)', () => {
 
     render(<PinEntryModal open={true} onClose={onCloseMock} onSuccess={onSuccessMock} />);
 
-    const pinInput = screen.getByPlaceholderText('safe_mode:pin_entry.placeholder');
+    const pinInput = screen.getByPlaceholderText('••••••');
     fireEvent.change(pinInput, { target: { value: '654321' } });
 
     const submitBtn = screen.getByRole('button', { name: /Verify/i });

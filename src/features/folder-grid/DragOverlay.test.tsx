@@ -5,7 +5,7 @@ import DragOverlay from './DragOverlay';
 describe('DragOverlay', () => {
   it('renders correctly when dragging', () => {
     render(<DragOverlay isDragging={true} />);
-    expect(screen.getByText('Drop files here')).toBeInTheDocument();
+    expect(screen.getByText('Move to Object')).toBeInTheDocument();
   });
 
   it('renders nothing when not dragging', () => {

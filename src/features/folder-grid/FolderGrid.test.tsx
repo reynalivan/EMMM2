@@ -189,7 +189,7 @@ describe('FolderGrid', () => {
       sortedFolders: [],
     });
     render(<FolderGrid />, { wrapper: createWrapper });
-    expect(screen.getByText('empty.no_mods')).toBeInTheDocument();
+    expect(screen.getByText('No mods installed yet.')).toBeInTheDocument();
   });
 
   it('renders loading state', () => {
@@ -287,7 +287,7 @@ describe('FolderGrid', () => {
     });
 
     render(<FolderGrid />, { wrapper: createWrapper });
-    expect(screen.getByText('empty.no_match')).toBeInTheDocument();
+    expect(screen.getByText('No mods match your search.')).toBeInTheDocument();
     expect(screen.queryByText(/NonExistentMod/i)).not.toBeInTheDocument();
   });
 

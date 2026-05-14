@@ -22,11 +22,11 @@ describe('MoveToObjectDialog', () => {
       />,
     );
 
-    expect(screen.getByText('folder_grid:move.title')).toBeInTheDocument();
+    expect(screen.getByText('Move to Object')).toBeInTheDocument();
     expect(screen.getByText('Zeta')).toBeInTheDocument();
 
     // Search for Alpha
-    fireEvent.change(screen.getByPlaceholderText('folder_grid:move.placeholder'), {
+    fireEvent.change(screen.getByPlaceholderText('Search objects...'), {
       target: { value: 'alp' },
     });
 
@@ -54,6 +54,6 @@ describe('MoveToObjectDialog', () => {
 
     const alphaButton = screen.getByText('Alpha').closest('button');
     expect(alphaButton).toBeDisabled();
-    expect(screen.getByText('folder_grid:move.current_marker')).toBeInTheDocument();
+    expect(screen.getByText('(Current)')).toBeInTheDocument();
   });
 });

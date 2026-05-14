@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import WelcomeScreen from './WelcomeScreen';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { GameConfig } from '../../types/game';
+import { GameType, type GameConfig } from '../../types/game';
 
 // Mock Tauri dependencies
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -20,36 +20,53 @@ vi.mock('../welcome/AnimatedLogo', () => ({
   default: () => <div data-testid="logo">Logo</div>,
 }));
 vi.mock('./ManualSetupForm', () => ({
-  default: ({
+  ManualSetupForm: ({
     onBack,
-    onComplete,
+    onSuccess,
   }: {
     onBack: () => void;
-    onComplete: (game: { id: string }) => void;
+    onSuccess: (game: GameConfig) => void;
   }) => (
     <div data-testid="manual-form">
       Manual Setup
-      <button onClick={() => onComplete({ id: 'new-game' })}>Finish</button>
+      <button
+        onClick={() =>
+          onSuccess({
+            id: 'new-game',
+            name: 'New Game',
+            game_type: GameType.GIMI,
+            mod_path: 'C:/Mods',
+            game_exe: 'C:/Game.exe',
+            loader_exe: null,
+            launch_args: null,
+          })
+        }
+      >
+        Finish
+      </button>
       <button onClick={onBack}>Go Back</button>
     </div>
   ),
 }));
 vi.mock('./AutoDetectResult', () => ({
-  default: ({
+  AutoDetectResult: ({
     games,
-    onContinue,
+    onConfirm,
     onAddMore,
+    onBack,
     onRemoveGame,
   }: {
     games: { id: string; name: string }[];
-    onContinue: () => void;
+    onConfirm: () => void;
     onAddMore: () => void;
+    onBack: () => void;
     onRemoveGame: (id: string) => void;
   }) => (
     <div data-testid="result-screen">
       Result Screen: {games.length} games
-      <button onClick={onContinue}>Result Continue</button>
+      <button onClick={onConfirm}>Result Continue</button>
       <button onClick={onAddMore}>Result Add More</button>
+      <button onClick={onBack}>Result Back</button>
       <button onClick={() => onRemoveGame('new-game')}>Remove</button>
     </div>
   ),

@@ -88,7 +88,9 @@ describe('GamesTab (TC-02)', () => {
 
   it('renders empty state correctly', () => {
     render(<GamesTab />);
-    expect(screen.getByText('settings:games.empty')).toBeInTheDocument();
+    expect(
+      screen.getByText('No games configured. Click "Add Game" to get started.'),
+    ).toBeInTheDocument();
   });
 
   it('renders a list of games', () => {
@@ -113,7 +115,7 @@ describe('GamesTab (TC-02)', () => {
 
     render(<GamesTab />);
     expect(screen.getByText('Genshin Impact')).toBeInTheDocument();
-    expect(screen.getByText('settings:games.active')).toBeInTheDocument();
+    expect(screen.getByText('ACTIVE')).toBeInTheDocument();
     expect(screen.getByText('C:/Mods')).toBeInTheDocument();
   });
 
@@ -124,7 +126,7 @@ describe('GamesTab (TC-02)', () => {
     expect(screen.queryByTestId('game-form-modal')).not.toBeInTheDocument();
 
     // Click add game
-    fireEvent.click(screen.getByRole('button', { name: 'settings:games.add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Game' }));
 
     // Modal should render
     expect(screen.getByTestId('game-form-modal')).toBeInTheDocument();
@@ -164,7 +166,7 @@ describe('GamesTab (TC-02)', () => {
     render(<GamesTab />);
 
     // We expect two trash buttons, one for each game. Click the first one (g1)
-    const deleteButtons = screen.getAllByTitle('settings:games.actions.remove');
+    const deleteButtons = screen.getAllByTitle('Remove Game');
     fireEvent.click(deleteButtons[0]);
 
     // confirm is mocked to true
@@ -193,7 +195,7 @@ describe('GamesTab (TC-02)', () => {
     render(<GamesTab />);
 
     // Play buttons (Set as Active). First one is disabled (already active).
-    const activeButtons = screen.getAllByTitle('settings:games.actions.set_active');
+    const activeButtons = screen.getAllByTitle('Set as Active');
     expect(activeButtons[0]).toBeDisabled();
 
     // Click second game to make it active
@@ -227,7 +229,7 @@ describe('GamesTab (TC-02)', () => {
 
     render(<GamesTab />);
 
-    const rescanBtn = screen.getByTitle('settings:games.actions.rescan');
+    const rescanBtn = screen.getByTitle('Rescan Library');
     fireEvent.click(rescanBtn);
 
     await waitFor(() => {

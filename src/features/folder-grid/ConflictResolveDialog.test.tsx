@@ -90,12 +90,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
     });
 
     // Check header
-    expect(screen.getByText('folder_grid:resolution.title')).toBeInTheDocument();
+    expect(screen.getByText('Name Conflict Detected')).toBeInTheDocument();
 
     // Check fetching logic
     await waitFor(() => {
-      expect(screen.getByText('folder_grid:resolution.enabled_label')).toBeInTheDocument();
-      expect(screen.getByText('folder_grid:resolution.disabled_label')).toBeInTheDocument();
+      expect(screen.getByText('Enabled Version')).toBeInTheDocument();
+      expect(screen.getByText('Disabled Version')).toBeInTheDocument();
     });
 
     expect(invoke).toHaveBeenCalledWith('get_conflict_details', {
@@ -114,12 +114,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
     act(() => openDialog());
 
-    await waitFor(() => screen.getByText('common:actions.keep_enabled'));
+    await waitFor(() => screen.getByText('Keep Enabled'));
 
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined); // for resolve_conflict
 
     act(() => {
-      fireEvent.click(screen.getByText('common:actions.keep_enabled'));
+      fireEvent.click(screen.getByText('Keep Enabled'));
     });
 
     await waitFor(() => {
@@ -142,12 +142,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
     act(() => openDialog());
 
-    await waitFor(() => screen.getByText('common:actions.keep_disabled'));
+    await waitFor(() => screen.getByText('Keep Disabled'));
 
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
     act(() => {
-      fireEvent.click(screen.getByText('common:actions.keep_disabled'));
+      fireEvent.click(screen.getByText('Keep Disabled'));
     });
 
     await waitFor(() => {
@@ -169,12 +169,12 @@ describe('ConflictResolveDialog (TC-39)', () => {
 
     act(() => openDialog());
 
-    await waitFor(() => screen.getByText('common:actions.separate'));
+    await waitFor(() => screen.getByText('Keep Both Separately'));
 
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
     act(() => {
-      fireEvent.click(screen.getByText('common:actions.separate'));
+      fireEvent.click(screen.getByText('Keep Both Separately'));
     });
 
     await waitFor(() => {

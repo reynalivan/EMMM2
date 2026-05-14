@@ -5,6 +5,7 @@ import type { GameConfig } from '../../types/game';
 
 describe('AutoDetectResult (TC-03)', () => {
   const mockOnContinue = vi.fn();
+  const mockOnAddMore = vi.fn();
   const mockOnRemoveGame = vi.fn();
   const mockOnGoBack = vi.fn();
 
@@ -18,13 +19,13 @@ describe('AutoDetectResult (TC-03)', () => {
       <AutoDetectResult
         games={games}
         onConfirm={mockOnContinue}
+        onAddMore={mockOnAddMore}
         onRemoveGame={mockOnRemoveGame}
         onBack={mockOnGoBack}
       />,
     );
 
-    // Using flexible regex since i18next might return raw keys in test
-    expect(screen.getByText(/result\.title/i)).toBeInTheDocument();
+    expect(screen.getByText('2 Games Found!')).toBeInTheDocument();
     expect(screen.getByText('Game 1')).toBeInTheDocument();
     expect(screen.getByText('Game 2')).toBeInTheDocument();
     // Check for the new big checkmark icon (and the one in the button)
@@ -36,12 +37,13 @@ describe('AutoDetectResult (TC-03)', () => {
       <AutoDetectResult
         games={[]}
         onConfirm={mockOnContinue}
+        onAddMore={mockOnAddMore}
         onRemoveGame={mockOnRemoveGame}
         onBack={mockOnGoBack}
       />,
     );
 
-    expect(screen.getByText(/result\.title/i)).toBeInTheDocument();
+    expect(screen.getByText('0 Games Found!')).toBeInTheDocument();
   });
 
   it('triggers callbacks', () => {
@@ -52,24 +54,22 @@ describe('AutoDetectResult (TC-03)', () => {
       <AutoDetectResult
         games={games}
         onConfirm={mockOnContinue}
+        onAddMore={mockOnAddMore}
         onRemoveGame={mockOnRemoveGame}
         onBack={mockOnGoBack}
       />,
     );
 
-    // Testing back to welcome button
-    fireEvent.click(screen.getByText(/result\.back_to_welcome/i));
+    fireEvent.click(screen.getByText('Back to Welcome'));
     expect(mockOnGoBack).toHaveBeenCalled();
 
-    // Testing bottom buttons
-    fireEvent.click(screen.getByText(/result\.add_another/i));
-    expect(mockOnGoBack).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText('Add Another'));
+    expect(mockOnAddMore).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText(/result\.confirm/i));
+    fireEvent.click(screen.getByText('Confirm'));
     expect(mockOnContinue).toHaveBeenCalled();
 
-    // Clicking trash icon
-    const removeBtn = screen.getByTitle(/result\.remove_tip/i);
+    const removeBtn = screen.getByTitle('Remove from detection');
     fireEvent.click(removeBtn);
     expect(mockOnRemoveGame).toHaveBeenCalledWith('g1');
   });

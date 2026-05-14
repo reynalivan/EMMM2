@@ -118,7 +118,7 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('app_locked_title')).toBeInTheDocument();
+      expect(screen.getByText('App Locked')).toBeInTheDocument();
     });
   });
 });

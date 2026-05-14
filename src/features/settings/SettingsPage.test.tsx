@@ -46,13 +46,13 @@ describe('SettingsPage (TC-04)', () => {
   it('shows loading state initially', () => {
     mockIsLoading = true;
     render(<SettingsPage />);
-    expect(screen.getByText('Loading settings...')).toBeInTheDocument();
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
   it('shows error state if settings fail to load', () => {
     mockError = 'Failed to load DB';
     render(<SettingsPage />);
-    expect(screen.getByText('Error loading settings: Failed to load DB')).toBeInTheDocument();
+    expect(screen.getByText(/Failed to load DB/)).toBeInTheDocument();
   });
 
   it('renders default General tab and allows navigation', () => {

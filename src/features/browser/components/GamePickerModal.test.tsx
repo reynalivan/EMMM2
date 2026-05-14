@@ -75,7 +75,7 @@ describe('GamePickerModal', () => {
       <GamePickerModal downloadIds={['1']} open={true} onClose={onClose} onConfirm={onConfirm} />,
     );
 
-    const confirmBtn = screen.getByText('Import Now');
+    const confirmBtn = screen.getByText('picker.confirm');
     expect(confirmBtn).toBeDisabled();
 
     // Since daisyUI handles visibility via CSS `modal-open`, jsdom might think it's hidden
@@ -102,7 +102,7 @@ describe('GamePickerModal', () => {
       <GamePickerModal downloadIds={['1']} open={true} onClose={onClose} onConfirm={onConfirm} />,
     );
 
-    const cancelBtn = screen.getByText('Cancel');
+    const cancelBtn = screen.getByText('picker.cancel');
     fireEvent.click(cancelBtn);
     expect(onClose).toHaveBeenCalled();
   });

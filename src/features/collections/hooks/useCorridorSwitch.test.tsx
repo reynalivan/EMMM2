@@ -32,6 +32,8 @@ vi.mock('../../../stores/useToastStore', () => ({
 vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishRuntimeDescriptor: (queryClient: unknown, descriptor: unknown, behavior: unknown) =>
     publishRuntimeDescriptorMock(queryClient, descriptor, behavior),
+  publishQueryInvalidations: (queryClient: unknown, keys: unknown, behavior: unknown) =>
+    publishRuntimeDescriptorMock(queryClient, { keys }, behavior),
 }));
 
 vi.mock('../../workspace-runtime/optimistic/descriptorBuilders', () => ({

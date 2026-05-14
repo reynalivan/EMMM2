@@ -164,12 +164,12 @@ describe('CollectionTreeView', () => {
   it('shows muted type chips for container, variants, mod pack, and flat mod nodes', () => {
     render(<CollectionTreeView nodes={createTree()} />);
 
-    expect(screen.getAllByText('Container').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Variants').length).toBeGreaterThan(0);
-    expect(screen.getByText('Mod Pack')).toBeInTheDocument();
-    expect(screen.getByText('Flat Mod')).toBeInTheDocument();
+    expect(screen.getAllByText('Container Folder').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Variant Container').length).toBeGreaterThan(0);
+    expect(screen.getByText('Mod Pack Root')).toBeInTheDocument();
+    expect(screen.getByText('Flat Mod Root')).toBeInTheDocument();
 
-    const variantsChip = screen.getAllByText('Variants')[0];
+    const variantsChip = screen.getAllByText('Variant Container')[0];
     expect(variantsChip.className).toContain('bg-base-200/70');
     expect(variantsChip.className).not.toContain('badge-secondary');
   });
@@ -177,9 +177,9 @@ describe('CollectionTreeView', () => {
   it('renders inactive container section separately with disabled chips', () => {
     render(<CollectionTreeView nodes={createTree()} />);
 
-    expect(screen.getByText('tree.inactive_section')).toBeInTheDocument();
-    expect(screen.getByText('tree.disabled')).toBeInTheDocument();
-    expect(screen.getByText('tree.disabled_by_container')).toBeInTheDocument();
+    expect(screen.getByText('Inactive Containers')).toBeInTheDocument();
+    expect(screen.getByText('Disabled')).toBeInTheDocument();
+    expect(screen.getByText('Disabled by Container')).toBeInTheDocument();
   });
 
   it('shows warning icon tooltip for corrupt variant container', () => {

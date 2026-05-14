@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath, URL } from 'node:url';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -57,7 +58,9 @@ export default defineConfig({
       },
     },
     alias: {
-      '@tauri-apps/plugin-fs': 'e:/Dev/EMMMNEW/src/testing/mocks/tauri-plugin-fs.ts',
+      '@tauri-apps/plugin-fs': fileURLToPath(
+        new URL('./src/testing/mocks/tauri-plugin-fs.ts', import.meta.url),
+      ),
     },
   },
 

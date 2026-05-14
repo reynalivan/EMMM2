@@ -31,7 +31,7 @@ describe('useThemeRuntime', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('cyberpunk');
   });
 
-  it('maps settings.theme=system to dark when prefers-color-scheme is dark', () => {
+  it('maps settings.theme=system to onyx when prefers-color-scheme is dark', () => {
     vi.mocked(window.matchMedia).mockImplementation((query: string) => {
       return {
         matches: true,
@@ -53,6 +53,6 @@ describe('useThemeRuntime', () => {
 
     render(<ThemeProbe />);
 
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('onyx');
   });
 });

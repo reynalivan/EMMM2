@@ -291,6 +291,10 @@ export default function WelcomeScreen({
           setError(null);
           setView('welcome');
         }}
+        onAddMore={() => {
+          setError(null);
+          setView('manual');
+        }}
         onRemoveGame={handleRemoveGame}
       />
     );
