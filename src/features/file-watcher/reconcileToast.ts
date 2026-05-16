@@ -1,4 +1,5 @@
 import type { DiskReconcileResult } from '../../lib/bindings';
+import { formatCollectionReferenceImpact } from '../../hooks/collectionReferenceImpact';
 import { toast } from '../../stores/useToastStore';
 
 const TOAST_SAMPLE_LIMIT = 2;
@@ -55,6 +56,13 @@ export function maybeShowExternalChangeToast(result: DiskReconcileResult): void 
         ? `${modCount} mod folder changes: ${names}`
         : `${modCount} mod folder changes detected`,
     );
+  }
+
+  const collectionImpactMessage = formatCollectionReferenceImpact(
+    result.collection_reference_impact,
+  );
+  if (collectionImpactMessage) {
+    messages.push(collectionImpactMessage);
   }
 
   if (messages.length > 0) {

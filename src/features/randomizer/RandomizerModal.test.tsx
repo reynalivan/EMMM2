@@ -15,6 +15,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: {
+    type: '3rdParty',
+    init: vi.fn(),
+  },
   useTranslation: () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
@@ -186,7 +190,11 @@ describe('RandomizerModal - TC-35', () => {
   describe('TC-35-004: Apply Selection', () => {
     it('calls execute_workspace_switch for each selected proposal', async () => {
       vi.mocked(invoke).mockResolvedValueOnce(mockProposals);
-      vi.mocked(invoke).mockResolvedValue(undefined);
+      vi.mocked(invoke).mockResolvedValue({
+        status: 'applied',
+        changed_folder_paths: [],
+        impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+      });
 
       const onClose = vi.fn();
       render(<RandomizerModal open={true} onClose={onClose} gameId="g-1" />);

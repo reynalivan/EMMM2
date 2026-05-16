@@ -230,6 +230,7 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
         thumbnail_roots: request.outcome.thumbnail_roots,
         cleared_selection_paths: request.outcome.cleared_selection_paths,
         path_updates: request.outcome.path_updates,
+        collection_reference_impact: request.outcome.collection_reference_impact,
         change_summary: request.outcome.change_summary,
     }
 }

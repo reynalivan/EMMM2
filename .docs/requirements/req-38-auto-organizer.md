@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users who extract mods manually (not via Epic 37) often end up with a flat `Mods/` root that mixes hundreds of folders across different categories and characters — browsing becomes impractical without a hierarchy like `Mods/Characters/Keqing/`.
-- **Proposed Solution**: User-facing Auto Organize now routes through **Deep Match Scanner preview/commit**, not a direct move command. The preview suggests canonical relations and enrichment, while commit preserves physical folder identity and only creates/reuses physical object shells as needed. Disk Reconcile remains out of scope for this flow.
+- **Proposed Solution**: Explicit import/drop Auto Organize routes through **Deep Match Scanner preview/commit**, not a passive workspace refresh path. ObjectList bulk selection uses **Auto Recognize** for metadata/enrichment only; filesystem move/organize operations live on selected FolderGrid mod folders through Move to Object.
 - **Success Criteria**:
   - Organizing 100 mod folders completes in ≤ 10s (SSD) — bounded by `fs::rename` syscall speed.
   - Zero data loss on collision — duplicate targets are skipped and reported; the original folder is never moved to a conflicting path.
@@ -23,11 +23,11 @@ As a user, I want to select unorganized mod folders and have the app move them t
 
 | ID        | Type        | Criteria                                                                                                                                                                                                           |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-38.1.1 | ✅ Positive | Given a selection of mods with known `object_id`, when I trigger "Auto-Organize", then each mod is moved to `mods_path/{category}/{object_name}/{folder_name}` — folder name is preserved, only its parent changes |
+| AC-38.1.1 | ✅ Positive | Given selected FolderGrid mod folders with a chosen target object, when I trigger "Move to Object", then each mod moves to the target object root or an existing subfolder while preserving the folder name |
 | AC-38.1.2 | ✅ Positive | Given a successful move, then the `folders` DB row's `folder_path` is updated to the new path in the same DB transaction as the metadata update — no orphaned rows                                                 |
-| AC-38.1.3 | ✅ Positive | Given the batch completes, then a toast shows "Organized N mods" and runtime-sync descriptors refresh the grid                                                                                                     |
+| AC-38.1.3 | ✅ Positive | Given the batch completes, then a toast shows the move result and runtime-sync descriptors refresh the grid/object list/preview                                                                                     |
 | AC-38.1.4 | ❌ Negative | Given the target destination `mods_path/{category}/{object_name}/{folder_name}` already exists, then that mod is skipped — logged as "DUPLICATE" in `BulkResult.errors`; the original folder is NOT moved          |
-| AC-38.1.5 | ❌ Negative | Given a mod has `object_id = NULL` (uncategorized), then it is also skipped with status "NO_OBJECT" — organize cannot place what has no owner                                                                      |
+| AC-38.1.5 | ❌ Negative | Given the selected target object does not exist or belongs to another game, the move is rejected before any filesystem mutation                                                                                     |
 | AC-38.1.6 | ⚠️ Edge     | Given the mod is currently enabled (`is_enabled = true`), then the rename/move still proceeds (the new path retains the filename without "DISABLED " prefix) — the enabled state is preserved correctly            |
 | AC-38.1.7 | ✅ Positive | Given the object has a canonical Deep Match relation, Auto Organize still preserves the physical object folder name/path; canonical alias data is enrichment only and does not rename folders                      |
 
@@ -36,7 +36,7 @@ As a user, I want to select unorganized mod folders and have the app move them t
 ### Non-Goals
 
 - No recursive sub-folder organization — only root-level mod folders are moved.
-- No batch auto-organize of the entire library without explicit selection.
+- No batch auto-organize of the entire library without explicit FolderGrid selection.
 - No category-only organization mode (e.g., move all to `Characters/` without Object subfolder).
 
 ---
@@ -62,6 +62,14 @@ Frontend:
   → user confirms/overrides review
   → commands.commitScan({ game_id, items })
   → publish runtime-sync descriptors for object, folder, preview, and collection refresh
+
+ObjectList Auto Recognize:
+  → selected object IDs call MasterDB matching/enrichment only
+  → no filesystem move is attempted from object-level selection
+
+FolderGrid Move to Object:
+  → selected folder paths call move_mods_to_object({ target_object_id, target_subpath, status })
+  → backend validates paths, applies watcher suppression, returns failures + path rewrites
 ```
 
 ### Integration Points
@@ -73,7 +81,7 @@ Frontend:
 | Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)                                                                 |
 | Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize                                                             |
 | Canonical Relation                 | Uses physical object ownership; `matched_entry_key` / `matched_alias_name` stay as enrichment and never rewrite the physical target folder name  |
-| Frontend                           | Context menu "Auto-Organize" on bulk selection → explicit Deep Match Scanner preview + commit; no watcher/refocus/bootstrap path invokes scanner |
+| Frontend                           | ObjectList bulk "Auto Recognize" updates metadata; FolderGrid selected folders use "Move to Object"; no watcher/refocus/bootstrap path invokes scanner |
 
 ### Security & Privacy
 

@@ -68,14 +68,14 @@ As a system, I want to classify folders into their correct types so the UI can d
 
 #### US-11.4: Incremental Classification Cache
 
-As a system, I want folder classification to be cached and only recomputed when files change, so that repeated `list_folders` calls don't re-scan unchanged directories.
+As a system, I want folder classification to be cached and only recomputed when files change, so that repeated `WorkspaceViewModel.explorer.children` reads don't re-scan unchanged directories.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                       |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-11.4.1 | ✅ Positive | Given a second call to `list_folders` for the same path within the same session, when no entry has changed `mtime` or `size`, then classification results are served from the in-memory cache in ≤ 20ms — no `.ini` re-parsing |
-| AC-11.4.2 | ✅ Positive | Given 1 out of 100 entries has a changed `mtime`, then only that entry is re-classified; the other 99 are served from cache                                                                                                    |
-| AC-11.4.3 | ❌ Negative | Given a folder is deleted externally between two `list_folders` calls, then the stale cache entry is evicted; the deleted folder does not appear in the results                                                                |
-| AC-11.4.4 | ⚠️ Edge     | Given a `.ini` is modified inside a `ModPackRoot` (changing `filename=` references), then the cache key (mtime/size of the folder's content) changes — the folder is re-classified from scratch                                |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                      |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-11.4.1 | ✅ Positive | Given a second `WorkspaceViewModel` request for the same explorer path within the same session, when no entry has changed `mtime` or `size`, then classification results are served from the in-memory cache in ≤ 20ms — no `.ini` re-parsing |
+| AC-11.4.2 | ✅ Positive | Given 1 out of 100 entries has a changed `mtime`, then only that entry is re-classified; the other 99 are served from cache                                                                                                                   |
+| AC-11.4.3 | ❌ Negative | Given a folder is deleted externally between two `WorkspaceViewModel` requests, then Disk Reconcile repairs projection/cache freshness; the deleted folder does not appear in `explorer.children`                                             |
+| AC-11.4.4 | ⚠️ Edge     | Given a `.ini` is modified inside a `ModPackRoot` (changing `filename=` references), then the cache key (mtime/size of the folder's content) changes — the folder is re-classified from scratch                                               |
 
 ---
 
@@ -115,7 +115,7 @@ As a system, I want each listed folder to carry its `info.json` fields and thumb
 ### Architecture Overview
 
 ```
-list_folders(game_id, sub_path) → Vec<FolderEntry>
+WorkspaceViewModel(input) → explorer.children: Vec<WorkspaceExplorerNode>
   ├── 1. Resolve absolute path: mods_path + canonicalize(sub_path)
   │         → Reject if resolved path escapes mods_path (traversal guard)
   ├── 2. fs::read_dir → rayon::par_iter over entries
@@ -132,7 +132,7 @@ list_folders(game_id, sub_path) → Vec<FolderEntry>
   │       │         → referenced children = InternalAssets (filtered from output)
   │       ├── enrich_metadata(entry_path) → Option<ModMetadata>  [info.json]
   │       └── resolve_thumbnail(entry_path) → Option<PathBuf>    [preview.png/jpg]
-  └── 3. Filter out InternalAssets, return Vec<FolderEntry>
+  └── 3. Filter out InternalAssets, return WorkspaceExplorerNode entries
 
 has_valid_mod_ini(folder_path) → bool:
   for each *.ini in folder_path (root only):
@@ -158,15 +158,15 @@ FolderEntry {
 
 ### Integration Points
 
-| Component               | Detail                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Path Guard              | `std::fs::canonicalize(mods_path + sub_path)` → `starts_with(mods_path)` check — rejects traversal                         |
-| Classification Cache    | `Arc<RwLock<HashMap<(PathBuf, SystemTime, u64), FolderType>>>` — keyed by path + mtime + size                              |
-| INI Validity Check      | Scan only `TextureOverride*`, `ShaderOverride*`, `Resource*` section headers — line-by-line, no full parse                 |
-| `referenced_subfolders` | Parsed from `filename=` values in `Resource*` and `CustomShader*` sections only                                            |
-| Parallelism             | `rayon::par_iter` for entry processing — `max_threads = Rayon default (num_cpus)`                                          |
-| React Query Key         | `['mod-folders', modsPath, subPath, safeMode]` — refreshed by RuntimeSyncCoordinator from Disk Reconcile results (Epic 28) |
-| Thumbnail               | Path stored in `FolderEntry`; frontend converts with `convertFileSrc()` from `@tauri-apps/api`                             |
+| Component               | Detail                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Path Guard              | `std::fs::canonicalize(mods_path + sub_path)` → `starts_with(mods_path)` check — rejects traversal                                    |
+| Classification Cache    | `Arc<RwLock<HashMap<(PathBuf, SystemTime, u64), FolderType>>>` — keyed by path + mtime + size                                         |
+| INI Validity Check      | Scan only `TextureOverride*`, `ShaderOverride*`, `Resource*` section headers — line-by-line, no full parse                            |
+| `referenced_subfolders` | Parsed from `filename=` values in `Resource*` and `CustomShader*` sections only                                                       |
+| Parallelism             | `rayon::par_iter` for entry processing — `max_threads = Rayon default (num_cpus)`                                                     |
+| React Query Key         | `workspaceKeys.viewModel(...)` — refreshed by `runtime-sync` descriptors from explicit mutations and Disk Reconcile results (Epic 28) |
+| Thumbnail               | Path stored in `FolderEntry`; frontend converts with `convertFileSrc()` from `@tauri-apps/api`                                        |
 
 ### Security & Privacy
 
@@ -181,4 +181,4 @@ FolderEntry {
 ## 4. Dependencies
 
 - **Blocked by**: Epic 01 (App Bootstrap — DB), Epic 02 (Game Management — `mods_path`), Epic 09 (Object Schema — classifier uses INI detection logic).
-- **Blocks**: Epic 12 (Folder Grid UI — renders the `Vec<FolderEntry>`), Epic 28 (File Watcher / Disk Reconcile — invalidates `['mod-folders']`), Epic 41 (Thumbnail System — reads `thumbnail_path`).
+- **Blocks**: Epic 12 (Folder Grid UI — renders `WorkspaceViewModel.explorer.children`), Epic 28 (File Watcher / Disk Reconcile — refreshes WorkspaceViewModel through `runtime-sync`), Epic 41 (Thumbnail System — reads `thumbnail_path`).

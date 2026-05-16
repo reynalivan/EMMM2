@@ -43,6 +43,12 @@ export interface ObjectListRefreshOptions {
 type ObjectSummaryUpdater = (object: ObjectSummary) => ObjectSummary;
 type WorkspaceObjectNodeUpdater = (object: WorkspaceObjectNode) => WorkspaceObjectNode;
 
+interface ObjectRootSwitchPatch {
+  objectId: string;
+  folderPath: string;
+  enabled: boolean;
+}
+
 export function buildObjectListRefreshDescriptor(options: ObjectListRefreshOptions = {}) {
   const events = ['workspaceChanged'] as Array<
     | 'workspaceChanged'
@@ -170,6 +176,23 @@ export function patchObjectListQueries(
   });
 }
 
+export function patchWorkspaceObjectQueries(
+  queryClient: QueryClient,
+  objectId: string,
+  updater: WorkspaceObjectNodeUpdater,
+): void {
+  queryClient.setQueriesData<WorkspaceViewModel>({ queryKey: workspaceKeys.all }, (current) => {
+    if (!current) {
+      return current;
+    }
+
+    return {
+      ...current,
+      objects: current.objects.map((object) => (object.id === objectId ? updater(object) : object)),
+    };
+  });
+}
+
 function clampEnabledCount(enabledCount: number, modCount: number): number {
   if (enabledCount < 0) {
     return 0;
@@ -189,6 +212,28 @@ export function patchObjectEnabledCount(
   patchObjectListQueries(queryClient, objectId, (object) => ({
     ...object,
     enabled_count: clampEnabledCount(object.enabled_count + delta, object.mod_count),
+  }));
+}
+
+export function patchObjectRootSwitchState(
+  queryClient: QueryClient,
+  patch: ObjectRootSwitchPatch,
+): void {
+  patchObjectListQueries(queryClient, patch.objectId, (object) => ({
+    ...object,
+    folder_path: patch.folderPath,
+    is_object_disabled: !patch.enabled,
+    enabled_count: patch.enabled ? object.mod_count : 0,
+  }));
+  patchWorkspaceObjectQueries(queryClient, patch.objectId, (object) => ({
+    ...object,
+    folder_path: patch.folderPath,
+    is_object_disabled: !patch.enabled,
+    enabled_count: patch.enabled ? object.mod_count : 0,
+    is_effectively_active: patch.enabled,
+    switch_state: patch.enabled ? 'enabled' : 'disabled',
+    inactive_reason: patch.enabled ? null : object.inactive_reason,
+    switch_reason: patch.enabled ? null : object.switch_reason,
   }));
 }
 

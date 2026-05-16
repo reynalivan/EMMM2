@@ -1,6 +1,7 @@
 use super::{
     apply_collection, create_collection, delete_collection, get_collection_preview,
-    handle_dirty_state, handle_mod_moved_or_renamed, preview_apply, update_collection,
+    handle_dirty_state, handle_mod_missing, handle_mod_moved_or_renamed, handle_object_renamed_tx,
+    preview_apply, replace_collection_with_current_state, update_collection,
     ApplyCollectionRequest,
 };
 use crate::database::models::{GameType, ItemStatus};
@@ -172,6 +173,83 @@ async fn delete_saved_active_collection_recreates_unsaved_and_marks_it_active() 
     assert_eq!(collections.len(), 1);
     assert!(recreated_unsaved.is_unsaved);
     assert_ne!(recreated_unsaved.id, initial_unsaved.id);
+}
+
+#[tokio::test]
+async fn dirty_state_refresh_updates_existing_zero_mod_unsaved_collection() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    let unsaved = collection_repo::create(&ctx.pool, "unsaved-1", "game-1", "Unsaved", false, true)
+        .await
+        .expect("create zero-mod unsaved");
+    corridor_repo::update_pointers(&ctx.pool, "game-1", false, Some(&unsaved.id), None)
+        .await
+        .expect("activate unsaved");
+
+    create_flat_mod_folder(mods_root.path(), "AINOZ/Blue");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-blue",
+            game_id: "game-1",
+            object_id: Some("object-1"),
+            actual_name: "Blue",
+            folder_path: "AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: false,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert enabled unsafe mod");
+
+    let summary = handle_dirty_state(&ctx.pool, "game-1", false)
+        .await
+        .expect("refresh dirty state");
+    let mods = collection_repo::get_mods(&ctx.pool, &summary.id)
+        .await
+        .expect("load unsaved mods");
+    let stored = collection_repo::get_by_id(&ctx.pool, &summary.id)
+        .await
+        .expect("load unsaved")
+        .expect("unsaved exists");
+    let projected_state = projected_state_service::parse_snapshot_json(
+        stored.snapshot_json.as_deref().expect("snapshot json"),
+    )
+    .expect("parse projected state");
+
+    assert_eq!(summary.id, unsaved.id);
+    assert_eq!(summary.mod_count, 1);
+    assert_eq!(mods.len(), 1);
+    assert_eq!(mods[0].mod_path, "AINOZ/Blue");
+    assert_eq!(projected_state.summary.active_root_count, 1);
 }
 
 #[tokio::test]
@@ -482,6 +560,386 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
 }
 
 #[tokio::test]
+async fn partial_apply_skips_missing_paths_without_replacing_original_collection() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    create_flat_mod_folder(mods_root.path(), "AINOZ/Blue");
+    create_flat_mod_folder(mods_root.path(), "AINOZ/Green");
+
+    for (id, name, folder_path) in [
+        ("mod-blue", "Blue", "AINOZ/Blue"),
+        ("mod-green", "Green", "AINOZ/Green"),
+    ] {
+        insert_test_mod(
+            &ctx.pool,
+            &TestModFixture {
+                id,
+                game_id: "game-1",
+                object_id: Some("object-1"),
+                actual_name: name,
+                folder_path,
+                status: ItemStatus::Enabled,
+                is_safe: true,
+                object_type: Some("Character"),
+                mods_path: Some(&mods_path),
+            },
+        )
+        .await
+        .expect("insert enabled mod");
+    }
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let target_mods = vec![
+        test_collection_mod(&collection.id, "AINOZ/Blue", "Blue"),
+        test_collection_mod(&collection.id, "AINOZ/Missing Mod", "Missing Mod"),
+    ];
+    let target_objects = vec![test_collection_object(&collection.id)];
+    let projected_state = projected_state_service::build_projected_state(
+        &target_mods,
+        &target_objects,
+        Some(&mods_path),
+    );
+    let roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &target_mods,
+        &target_objects,
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist collection state");
+
+    let result = apply_collection(ApplyCollectionRequest {
+        pool: &ctx.pool,
+        game_id: "game-1",
+        collection_id: &collection.id,
+        is_safe: true,
+        mods_path: mods_root.path().to_path_buf(),
+        suppressor: Arc::new(WatcherSuppressor::new(false)),
+        ignore_missing: true,
+        settings: AppSettings::default(),
+    })
+    .await
+    .expect("partial apply succeeds");
+
+    assert!(result.partial_apply);
+    assert_eq!(result.skipped_missing_paths, vec!["AINOZ/Missing Mod"]);
+    assert!(result.final_state_is_dirty);
+    assert_eq!(result.mods_disabled, 1);
+    assert_eq!(result.runtime_path_rewrites.len(), 1);
+    assert_eq!(
+        result.runtime_path_rewrites[0].old_path.replace('\\', "/"),
+        mods_root
+            .path()
+            .join("AINOZ")
+            .join("Green")
+            .to_string_lossy()
+            .to_string()
+            .replace('\\', "/")
+    );
+    assert_eq!(
+        result.runtime_path_rewrites[0].new_path.replace('\\', "/"),
+        mods_root
+            .path()
+            .join("AINOZ")
+            .join("DISABLED Green")
+            .to_string_lossy()
+            .to_string()
+            .replace('\\', "/")
+    );
+
+    let original_mods = collection_repo::get_mods(&ctx.pool, &collection.id)
+        .await
+        .expect("load original collection mods");
+    assert_eq!(
+        original_mods
+            .iter()
+            .map(|entry| entry.mod_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["AINOZ/Blue", "AINOZ/Missing Mod"]
+    );
+}
+
+#[tokio::test]
+async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_missing() {
+    let ctx = init_test_db().await;
+    let temp_root = tempfile::tempdir().expect("create temp root");
+    let missing_root = temp_root.path().join("missing-mods-root");
+    let mods_path = missing_root.to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let target_mod = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
+    let target_object = test_collection_object(&collection.id);
+    let projected_state = projected_state_service::build_projected_state(
+        &[target_mod.clone()],
+        &[target_object.clone()],
+        None,
+    );
+    let roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &[target_mod],
+        &[target_object],
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist collection state");
+
+    let result = apply_collection(ApplyCollectionRequest {
+        pool: &ctx.pool,
+        game_id: "game-1",
+        collection_id: &collection.id,
+        is_safe: true,
+        mods_path: missing_root,
+        suppressor: Arc::new(WatcherSuppressor::new(false)),
+        ignore_missing: true,
+        settings: AppSettings::default(),
+    })
+    .await;
+
+    match result {
+        Err(CollectionError::Corridor(crate::domain::errors::CorridorError::NoModsPath {
+            game_id,
+        })) => assert_eq!(game_id, "game-1"),
+        other => panic!("expected source unavailable NoModsPath error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn preview_apply_blocks_when_mods_root_is_unavailable() {
+    let ctx = init_test_db().await;
+    let temp_root = tempfile::tempdir().expect("create temp root");
+    let missing_root = temp_root.path().join("missing-mods-root");
+    let mods_path = missing_root.to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+
+    let result = preview_apply(&ctx.pool, "game-1", &collection.id, true, Some(&mods_path)).await;
+
+    match result {
+        Err(CollectionError::Corridor(crate::domain::errors::CorridorError::NoModsPath {
+            game_id,
+        })) => assert_eq!(game_id, "game-1"),
+        other => panic!("expected source unavailable NoModsPath error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn replace_collection_with_current_state_drops_missing_partial_apply_members() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    create_flat_mod_folder(mods_root.path(), "AINOZ/Blue");
+
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-blue",
+            game_id: "game-1",
+            object_id: Some("object-1"),
+            actual_name: "Blue",
+            folder_path: "AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert enabled mod");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let target_mods = vec![
+        test_collection_mod(&collection.id, "AINOZ/Blue", "Blue"),
+        test_collection_mod(&collection.id, "AINOZ/Missing Mod", "Missing Mod"),
+    ];
+    let target_objects = vec![test_collection_object(&collection.id)];
+    let projected_state = projected_state_service::build_projected_state(
+        &target_mods,
+        &target_objects,
+        Some(&mods_path),
+    );
+    let roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &target_mods,
+        &target_objects,
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist collection state");
+
+    apply_collection(ApplyCollectionRequest {
+        pool: &ctx.pool,
+        game_id: "game-1",
+        collection_id: &collection.id,
+        is_safe: true,
+        mods_path: mods_root.path().to_path_buf(),
+        suppressor: Arc::new(WatcherSuppressor::new(false)),
+        ignore_missing: true,
+        settings: AppSettings::default(),
+    })
+    .await
+    .expect("partial apply succeeds");
+
+    let updated = replace_collection_with_current_state(&ctx.pool, "game-1", &collection.id)
+        .await
+        .expect("replace original snapshot");
+    let replaced_mods = collection_repo::get_mods(&ctx.pool, &collection.id)
+        .await
+        .expect("load replaced collection mods");
+    let replaced = collection_repo::get_by_id(&ctx.pool, &collection.id)
+        .await
+        .expect("load replaced collection")
+        .expect("collection exists");
+    let replaced_state = projected_state_service::parse_snapshot_json(
+        replaced.snapshot_json.as_deref().expect("snapshot json"),
+    )
+    .expect("parse replaced snapshot");
+
+    assert_eq!(updated.id, collection.id);
+    assert_eq!(replaced_mods.len(), 1);
+    assert_eq!(replaced_mods[0].mod_path, "AINOZ/Blue");
+    assert_eq!(replaced_state.summary.missing_root_count, 0);
+    assert_eq!(replaced_state.summary.active_root_count, 1);
+}
+
+#[tokio::test]
 async fn preview_apply_rejects_cross_corridor_collection() {
     let ctx = init_test_db().await;
     insert_test_game(
@@ -510,6 +968,43 @@ async fn preview_apply_rejects_cross_corridor_collection() {
         }
         other => panic!("expected corridor validation error, got {other:?}"),
     }
+}
+
+fn test_collection_mod(collection_id: &str, mod_path: &str, display_name: &str) -> CollectionMod {
+    CollectionMod {
+        kind: MemberKind::Mod,
+        collection_id: collection_id.to_string(),
+        mod_id: None,
+        mod_path: mod_path.to_string(),
+        mod_path_key: Some(crate::services::path_key::folder_path_key(mod_path, None)),
+        object_id: "object-1".to_string(),
+        display_name: Some(display_name.to_string()),
+        preview_path: Some(mod_path.to_string()),
+        node_type: Some("FlatModRoot".to_string()),
+        warnings: Vec::new(),
+        is_enabled: true,
+    }
+}
+
+fn test_collection_object(collection_id: &str) -> CollectionObject {
+    CollectionObject {
+        kind: MemberKind::Object,
+        collection_id: collection_id.to_string(),
+        object_id: "object-1".to_string(),
+        is_enabled: true,
+        display_name: Some("AINOZ".to_string()),
+        path_key: Some("AINOZ".to_string()),
+    }
+}
+
+fn create_flat_mod_folder(mods_root: &std::path::Path, relative_path: &str) {
+    let target = mods_root.join(relative_path);
+    std::fs::create_dir_all(&target).expect("create flat mod folder");
+    std::fs::write(
+        target.join("mod.ini"),
+        "[TextureOverrideUnitTest]\nhash = 12345678\n",
+    )
+    .expect("write mod ini");
 }
 
 #[tokio::test]
@@ -671,5 +1166,291 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
     assert_eq!(
         healed.display_mod_count,
         healed_state.summary.active_root_count as i32
+    );
+}
+
+#[tokio::test]
+async fn auto_heal_returns_collection_reference_impact() {
+    let ctx = init_test_db().await;
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let old_mod = test_collection_mod(&collection.id, "AINOZ/Old Mod", "Old Mod");
+    let object = test_collection_object(&collection.id);
+    let old_state =
+        projected_state_service::build_projected_state(&[old_mod.clone()], &[object.clone()], None);
+    let old_roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &old_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &[old_mod],
+        &[object],
+        &old_roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &old_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&old_state).as_deref(),
+        old_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist old state");
+
+    let impact = handle_mod_moved_or_renamed(&ctx.pool, "AINOZ/Old Mod", "AINOZ/New Mod", None)
+        .await
+        .expect("auto heal path");
+
+    assert_eq!(impact.affected_collection_count, 1);
+    assert_eq!(impact.affected_collection_names, vec!["Preset"]);
+    assert_eq!(impact.rewritten_paths.len(), 1);
+    assert_eq!(impact.rewritten_paths[0].from, "AINOZ/Old Mod");
+    assert_eq!(impact.rewritten_paths[0].to, "AINOZ/New Mod");
+    assert!(impact.missing_paths.is_empty());
+}
+
+#[tokio::test]
+async fn runtime_prefix_toggle_does_not_rewrite_saved_collection_references() {
+    let ctx = init_test_db().await;
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
+    let object = test_collection_object(&collection.id);
+    let projected_state = projected_state_service::build_projected_state(
+        &[mod_member.clone()],
+        &[object.clone()],
+        None,
+    );
+    let roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &[mod_member],
+        &[object],
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist collection state");
+
+    let impact = handle_mod_moved_or_renamed(&ctx.pool, "AINOZ/Blue", "AINOZ/DISABLED Blue", None)
+        .await
+        .expect("classify runtime prefix transition");
+    let collection_mods = collection_repo::get_mods(&ctx.pool, &collection.id)
+        .await
+        .expect("load collection mods");
+
+    assert_eq!(impact.affected_collection_count, 0);
+    assert!(impact.rewritten_paths.is_empty());
+    assert_eq!(collection_mods[0].mod_path, "AINOZ/Blue");
+}
+
+#[tokio::test]
+async fn object_runtime_prefix_toggle_does_not_rewrite_saved_collection_references() {
+    let ctx = init_test_db().await;
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
+    let object = test_collection_object(&collection.id);
+    let projected_state = projected_state_service::build_projected_state(
+        &[mod_member.clone()],
+        &[object.clone()],
+        None,
+    );
+    let roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &[mod_member],
+        &[object],
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist collection state");
+
+    let mut tx = ctx.pool.begin().await.expect("begin tx");
+    let impact = handle_object_renamed_tx(&mut tx, "AINOZ", "DISABLED AINOZ")
+        .await
+        .expect("classify object runtime prefix transition");
+    tx.commit().await.expect("commit tx");
+    let collection_mods = collection_repo::get_mods(&ctx.pool, &collection.id)
+        .await
+        .expect("load collection mods");
+
+    assert_eq!(impact.affected_collection_count, 0);
+    assert_eq!(collection_mods[0].mod_path, "AINOZ/Blue");
+}
+
+#[tokio::test]
+async fn missing_collection_member_is_preserved_and_reported_as_missing() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-1",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-1",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    create_flat_mod_folder(mods_root.path(), "AINOZ/Blue");
+
+    let collection =
+        collection_repo::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+            .await
+            .expect("create collection");
+    let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
+    let object = test_collection_object(&collection.id);
+    let projected_state = projected_state_service::build_projected_state(
+        &[mod_member.clone()],
+        &[object.clone()],
+        Some(&mods_path),
+    );
+    let roots =
+        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &[mod_member],
+        &[object],
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist collection state");
+
+    std::fs::remove_dir_all(mods_root.path().join("AINOZ/Blue")).expect("remove mod folder");
+
+    let impact = handle_mod_missing(&ctx.pool, "AINOZ/Blue")
+        .await
+        .expect("mark missing impact");
+    let preview = get_collection_preview(&ctx.pool, "game-1", &collection.id, Some(&mods_path))
+        .await
+        .expect("load preview");
+    let collection_mods = collection_repo::get_mods(&ctx.pool, &collection.id)
+        .await
+        .expect("load collection mods");
+
+    assert_eq!(impact.affected_collection_count, 1);
+    assert_eq!(impact.affected_collection_names, vec!["Preset"]);
+    assert_eq!(impact.missing_paths, vec!["AINOZ/Blue"]);
+    assert_eq!(collection_mods.len(), 1);
+    assert_eq!(collection_mods[0].mod_path, "AINOZ/Blue");
+    assert_eq!(preview.projected_state.summary.missing_root_count, 1);
+    assert_eq!(
+        preview.tree_nodes[0].children[0].status_kind.as_deref(),
+        Some("missing")
     );
 }

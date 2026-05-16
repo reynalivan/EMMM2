@@ -37,7 +37,7 @@ As a user, I want to click an object in the objectlist to view its mod folders i
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                                          |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-07.2.1 | ✅ Positive | Given a click on an object row, then `selectedObjectFolderPath` in Zustand updates within ≤ 16ms and the selected row shows a highlight indicator                                                                                                                                 |
-| AC-07.2.2 | ✅ Positive | Given a new `selectedObjectFolderPath`, then the center FolderGrid refreshes using the current `explorerSubPath` / `mod-folders` query model and the new mod list loads within ≤ 200ms from DB                                                                                    |
+| AC-07.2.2 | ✅ Positive | Given a new `selectedObjectFolderPath`, then the center FolderGrid refreshes through `WorkspaceViewModel.explorer.children` using the current `explorerSubPath`, and the new mod list loads within ≤ 200ms from DB                                                              |
 | AC-07.2.3 | ❌ Negative | Given an object that was deleted by a background process while the objectlist was cached, when the user clicks it, then the stale row is removed from the list without an error toast — the action is silently swallowed and the selection remains on the previously valid object |
 | AC-07.2.4 | ⚠️ Edge     | Given the user switches the active game, then `selectedObjectFolderPath` is immediately cleared to `null` before the new game's object list loads — preventing a cross-game object path in flight                                                                                 |
 
@@ -107,7 +107,7 @@ get_filtered_objects(filter):
 | Virtualization     | `@tanstack/react-virtual` — `useVirtualizer({ count, estimateSize: () => 48 })`                                                                                                 |
 | DnD                | `dnd-kit` — `useDraggable` (FolderCard) + `useDroppable` (ObjectRow)                                                                                                            |
 | Optimistic Update  | Shared object-query patch helpers update row name/image/pin/object-disabled state immediately; terminal mod toggles may optimistically patch `enabled_count` when deterministic |
-| Move Command       | `commands.moveMod({ srcPath, targetObjectPath })` — atomic rename on disk                                                                                                       |
+| Move Command       | `commands.moveModsToObject({ folderPaths, targetObjectId, targetSubpath, status })` — guarded batch move with object/subfolder target validation and runtime path rewrites      |
 | Batch Render       | React 18 automatic batching — all count updates within one async event are batched                                                                                              |
 
 ### Security & Privacy

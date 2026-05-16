@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useGameSchema } from '../../hooks/useObjectQueries';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -56,6 +56,7 @@ export function useObjectListLogic() {
   const activeFiltersState = objectMetaFilters ?? EMPTY_OBJECT_META_FILTERS;
   const activeSortBy = objectSortBy ?? 'name';
   const activeStatusFilter = objectStatusFilter ?? 'all';
+  const filterScopeRef = useRef<string | null>(null);
 
   const { filteredIds, search: workerSearch } = useSearchWorker();
   const { data: schema } = useGameSchema();
@@ -82,6 +83,29 @@ export function useObjectListLogic() {
 
     return sanitizeObjectMetaFilters(activeFiltersState, categoryFilters);
   }, [activeFiltersState, categoryFilters, schema]);
+
+  const filterScope = useMemo(
+    () => `${selectedObjectType ?? ''}|${categoryFilters.map((filter) => filter.key).join('\0')}`,
+    [categoryFilters, selectedObjectType],
+  );
+
+  useEffect(() => {
+    if (!schema) {
+      return;
+    }
+
+    const previousScope = filterScopeRef.current;
+    filterScopeRef.current = filterScope;
+    if (
+      previousScope === null ||
+      previousScope === filterScope ||
+      areObjectMetaFiltersEqual(activeFiltersState, effectiveObjectMetaFilters)
+    ) {
+      return;
+    }
+
+    setObjectMetaFilters(effectiveObjectMetaFilters);
+  }, [activeFiltersState, effectiveObjectMetaFilters, filterScope, schema, setObjectMetaFilters]);
 
   const {
     data: workspace,
@@ -320,7 +344,7 @@ export function useObjectListLogic() {
       handleBulkDisable: handlers.handleBulkDisable,
       handleBulkAddTags: handlers.handleBulkAddTags,
       handleBulkRemoveTags: handlers.handleBulkRemoveTags,
-      handleBulkAutoOrganize: handlers.handleBulkAutoOrganize,
+      handleBulkAutoRecognize: handlers.handleBulkAutoRecognize,
       handleBulkFavorite: handlers.handleBulkFavorite,
       handleBulkSafe: handlers.handleBulkSafe,
     }),

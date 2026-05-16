@@ -7,7 +7,9 @@ use crate::domain::collection::{
     ProjectedStateSummary,
 };
 use crate::services::collection_preview_tree::resolve_preview_terminal_metadata;
-use crate::services::path_key::{canonical_collection_path_key, canonical_name_key};
+use crate::services::path_key::{
+    canonical_collection_path_key, canonical_name_key, resolve_collection_path,
+};
 use crate::services::scanner::core::normalizer::normalize_display_name;
 
 const ROOT_TYPE_MODPACK: &str = "ModPackRoot";
@@ -86,6 +88,7 @@ pub fn build_projected_state(
                     .unwrap_or_else(|| canonical_name_key(&source_path))
             });
         let display_name = root_display_name(&source_path, member.display_name.as_deref());
+        let is_missing = source_is_missing(&source_path, mods_path);
         let key = (member.object_id.clone(), root_key.clone());
 
         root_map
@@ -104,7 +107,7 @@ pub fn build_projected_state(
                 source_path,
                 thumbnail_hint: metadata.preview_path.clone(),
                 warnings: metadata.warnings.clone(),
-                is_missing: false,
+                is_missing,
             });
     }
 
@@ -356,6 +359,14 @@ fn root_display_name(source_path: &str, fallback: Option<&str>) -> String {
         .filter(|value| !value.trim().is_empty());
 
     normalize_display_name(path_name.as_deref().or(fallback).unwrap_or("Unnamed Mod"))
+}
+
+fn source_is_missing(source_path: &str, mods_path: Option<&str>) -> bool {
+    let Some(resolved_path) = resolve_collection_path(source_path, mods_path) else {
+        return false;
+    };
+
+    !resolved_path.exists()
 }
 
 fn merge_warnings(target: &mut Vec<String>, source: &[String]) {

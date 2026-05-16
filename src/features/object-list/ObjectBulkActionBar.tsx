@@ -25,7 +25,7 @@ interface ObjectBulkActionBarProps {
   onDisable: () => void;
   onAddTags: () => void;
   onRemoveTags: () => void;
-  onAutoOrganize: () => void;
+  onAutoRecognize: () => void;
   onFavorite: (fav: boolean) => void;
   onMarkSafe: (safe: boolean) => void;
   onClear: () => void;
@@ -40,7 +40,7 @@ export default function ObjectBulkActionBar({
   onDisable,
   onAddTags,
   onRemoveTags,
-  onAutoOrganize,
+  onAutoRecognize,
   onFavorite,
   onMarkSafe,
   onClear,
@@ -167,11 +167,11 @@ export default function ObjectBulkActionBar({
             <li>
               <button
                 className="flex items-center gap-2 text-xs py-1.5 text-info"
-                onClick={onAutoOrganize}
+                onClick={onAutoRecognize}
                 disabled={mutationsDisabled}
               >
                 <Sparkles size={14} className="opacity-70" />
-                {t('bulk.auto_organize')}
+                {t('bulk.auto_recognize')}
               </button>
             </li>
             <li>

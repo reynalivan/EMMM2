@@ -116,6 +116,7 @@
     "unsafe_title": "标记为不安全",
     "ops_title": "批量操作",
     "edit_metadata": "编辑元数据",
+    "move_object": "移动到对象...",
     "move_trash": "移动到回收站"
   },
   "status": {

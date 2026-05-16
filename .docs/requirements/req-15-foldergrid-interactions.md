@@ -28,7 +28,7 @@ As a user, I want to right-click a mod card to access advanced actions, so that 
 | AC-15.1.4 | ⚠️ Edge     | Given I click "Open in Explorer" on a folder deleted externally 1s before the click, then the OS shell command fails; a toast shows "Folder no longer exists" — no crash                                                            |
 | AC-15.1.5 | ✅ Positive | Given I click "Favorite/Unfavorite", then the `is_favorite` flag is toggled simultaneously in the database and written to the mod's `info.json`                                                                                     |
 | AC-15.1.6 | ✅ Positive | Given I click "Import Thumbnail...", a file dialog opens (filtering PNG/JPG/WebP); on selection, the image is copied and saved as `preview_custom.png`                                                                              |
-| AC-15.1.7 | ✅ Positive | Given I click "Move to Object...", the `MoveToObjectDialog` opens, providing a searchable object list and a status selector (Set Disabled / Only Enable This / Keep Status) to assign the mod to a new object path                  |
+| AC-15.1.7 | ✅ Positive | Given I click "Move to Object...", the `MoveToObjectDialog` opens, providing a searchable object list, root/existing recursive subfolder target selection, and a status selector (Keep Status / Set Disabled / Only Enable This) |
 | AC-15.1.8 | ✅ Positive | Given I click "Sync with DB", then `match_object_with_db` uses the folder name to find a MasterDB entry and opens `SyncConfirmModal` for diff preview before applying metadata and renaming the folder                              |
 
 ---
@@ -114,18 +114,18 @@ Keyboard Navigation:
 | Shell Open      | Explorer open action lives in mod action hooks; policy/menu builders do not call commands directly                                                |
 | Lasso           | `useRef` for overlay `<div>`, `getBoundingClientRect()` intersection per virtual row rect                                                         |
 | DnD             | `@dnd-kit/core` `DndContext`, `useDraggable`, `useDroppable`, `DragOverlay`                                                                       |
-| Bulk Move (DnD) | Delegates to Epic 14 `bulk_move` on `onDragEnd`                                                                                                   |
+| Bulk Move (DnD) | Delegates to Epic 14 `move_mods_to_object` on `onDragEnd`                                                                                          |
 
 ### Security & Privacy
 
 - **Shell open path is validated** on the Rust side via `canonicalize()` + `starts_with(mods_path)` before `Command::new("explorer")` is called — prevents launching arbitrary paths.
 - **Clipboard image is written directly to `folderPath/preview.png`** — path validated as above; no arbitrary write destination.
 - **`event.preventDefault()` on `onContextMenu`** prevents any browser context menu or default browser action from interfering; the custom menu is the only visible result.
-- **DnD drop target IDs (`over.id`)** are always validated against the `objects` DB table on the backend before `bulk_move` executes — a spoofed droppable ID is rejected.
+- **DnD drop target IDs (`over.id`)** are always validated against the `objects` DB table on the backend before `move_mods_to_object` executes — a spoofed droppable ID is rejected.
 
 ---
 
 ## 4. Dependencies
 
-- **Blocked by**: Epic 12 (Folder Grid — card rendering), Epic 13 (Core Mod Ops — rename/delete commands), Epic 14 (Bulk Ops — bulk_move for DnD), Epic 07 (Object List — objectlist droppable rows).
+- **Blocked by**: Epic 12 (Folder Grid — card rendering), Epic 13 (Core Mod Ops — rename/delete commands), Epic 14 (Bulk Ops — `move_mods_to_object` for DnD), Epic 07 (Object List — objectlist droppable rows).
 - **Blocks**: Nothing — this is a cross-cutting interaction layer consumed by the completed workspace.

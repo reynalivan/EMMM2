@@ -2,6 +2,7 @@
   "toolbar": {
     "search_placeholder": "搜索...",
     "auto_organize": "自动整理",
+    "auto_recognize": "自动识别",
     "hide_filters": "隐藏过滤器",
     "show_filters": "显示过滤器",
     "refresh_list": "刷新列表",
@@ -114,6 +115,7 @@
     "enable": "启用",
     "disable": "禁用",
     "auto_organize": "自动整理",
+    "auto_recognize": "自动识别",
     "add_tags": "添加标签",
     "remove_tags": "移除标签"
   },
@@ -190,6 +192,11 @@
     "dialog_title": "自动整理不匹配项？",
     "dialog_message": "您确定要让系统自动整理 {{count}} 个文件夹吗？这将把它们移动到最匹配的对象中。",
     "confirm": "自动整理"
+  },
+  "auto_recognize": {
+    "toast_none": "未找到所选对象的数据库匹配项。",
+    "toast_success": "已识别 {{matched}} 个对象；跳过 {{skipped}} 个。",
+    "toast_error": "自动识别失败：{{error}}"
   },
   "scan_review": {
     "title": "扫描检查",

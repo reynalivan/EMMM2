@@ -15,7 +15,7 @@ interface UseObjectListBulkToolbarPropsInput {
   handleBulkPin: (ids: Set<string>, pin: boolean) => Promise<void>;
   handleBulkEnable: (ids: Set<string>) => Promise<void>;
   handleBulkDisable: (ids: Set<string>) => Promise<void>;
-  handleBulkAutoOrganize: (ids: Set<string>) => Promise<void>;
+  handleBulkAutoRecognize: (ids: Set<string>) => Promise<void>;
   handleBulkFavorite: (ids: Set<string>, favorite: boolean) => Promise<void>;
   handleBulkSafe: (ids: Set<string>, safe: boolean) => Promise<void>;
 }
@@ -37,7 +37,7 @@ export function useObjectListBulkToolbarProps({
   handleBulkPin,
   handleBulkEnable,
   handleBulkDisable,
-  handleBulkAutoOrganize,
+  handleBulkAutoRecognize,
   handleBulkFavorite,
   handleBulkSafe,
 }: UseObjectListBulkToolbarPropsInput) {
@@ -72,9 +72,9 @@ export function useObjectListBulkToolbarProps({
           setBulkTagModal({ open: true, mode: 'remove' });
         }
       },
-      onAutoOrganize: () =>
+      onAutoRecognize: () =>
         runWhenAvailable(mutationsDisabled, () =>
-          handleBulkAutoOrganize(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
+          handleBulkAutoRecognize(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
         ),
       onFavorite: (favorite: boolean) =>
         runWhenAvailable(mutationsDisabled, () =>
@@ -96,7 +96,7 @@ export function useObjectListBulkToolbarProps({
       handleBulkPin,
       handleBulkEnable,
       handleBulkDisable,
-      handleBulkAutoOrganize,
+      handleBulkAutoRecognize,
       handleBulkFavorite,
       handleBulkSafe,
       mutationsDisabled,

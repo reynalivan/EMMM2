@@ -92,6 +92,15 @@ describe('useCollections', () => {
           warnings: [],
           final_state_name: 'Backend Runtime',
           final_mode: 'SAFE',
+          partial_apply: false,
+          skipped_missing_paths: [],
+          final_state_is_dirty: false,
+          runtime_path_rewrites: [
+            {
+              old_path: 'E:/Mods/ALBEDO/Variant',
+              new_path: 'E:/Mods/ALBEDO/DISABLED Variant',
+            },
+          ],
         };
       }
 
@@ -135,6 +144,10 @@ describe('useCollections', () => {
       current_tree_nodes: [],
       projected_state: createProjectedState(),
     });
+    useAppStore.setState({
+      selectedModPath: 'E:/Mods/ALBEDO/Variant',
+      gridSelection: new Set(['E:/Mods/ALBEDO/Variant']),
+    });
 
     const { result } = renderHook(() => useApplyCollection(), { wrapper });
 
@@ -147,6 +160,8 @@ describe('useCollections', () => {
 
     const snapshot = queryClient.getQueryData<CorridorSnapshot>(corridorKeys.state('g-1', true));
     expect(snapshot?.active_collection_name).toBe('Backend Runtime');
+    expect(useAppStore.getState().selectedModPath).toBe('E:/Mods/ALBEDO/DISABLED Variant');
+    expect(useAppStore.getState().gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
   });
 
   it('refetches apply preview when game id changes', async () => {

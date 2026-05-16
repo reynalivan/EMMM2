@@ -19,7 +19,15 @@
     "placeholder": "搜索对象...",
     "no_results": "未找到对象",
     "current_marker": "(当前)",
+    "location_label": "位置",
+    "select_object_first": "请先选择对象",
+    "loading_targets": "正在加载文件夹...",
     "status_label": "设置状态",
+    "status": {
+      "keep": "保持",
+      "disabled": "禁用",
+      "only-enable": "仅启用"
+    },
     "toast": {
       "success": "已移动到 {{name}}",
       "failed": "移动失败：{{error}}"

@@ -129,6 +129,7 @@ export interface DiskReconcileResult {
   thumbnail_roots: string[];
   cleared_selection_paths: string[];
   path_updates: DiskReconcilePathUpdate[];
+  collection_reference_impact: CollectionReferenceImpact;
   change_summary: DiskReconcileChangeSummary;
 }
 
@@ -161,6 +162,7 @@ import type {
   ApplyProgressSnapshot,
   ApplyPreview,
   ApplyResult,
+  CollectionReferenceImpact,
   PinStatus,
   SwitchResult,
 } from '../types/collection';
@@ -173,6 +175,7 @@ import type {
   ConflictDetails,
   SyncResult,
   TrashMetadata,
+  DeleteModResult,
   BulkResult,
   DupScanReport,
   ResolutionSummary,
@@ -222,6 +225,23 @@ export interface DeepmatchPreviewForObjectsInput {
   modsPath: string;
   dbJson: string;
   objectIds: string[];
+}
+
+export interface WorkspaceMoveTarget {
+  object_id: string;
+  object_name: string;
+  object_folder_path: string;
+  target_subpath: string | null;
+  display_path: string;
+  depth: number;
+}
+
+export interface MoveModsToObjectInput {
+  game_id: string;
+  folder_paths: string[];
+  target_object_id: string;
+  target_subpath: string | null;
+  status: string | null;
 }
 
 // ----- COMMANDS REGISTRY -----
@@ -302,7 +322,7 @@ export const commands = {
     gameId?: string;
   }) => invoke<RenameResult>('rename_mod_folder', params),
   deleteMod: (params: { path?: string; folderPath?: string; gameId?: string }) =>
-    invoke<void>('delete_mod', params),
+    invoke<DeleteModResult>('delete_mod', params),
   openInExplorer: (params: { gameId: string; path: string }) =>
     invoke<void>('open_in_explorer', params),
   revealObjectInExplorer: (params: { gameId: string; objectId: string; objectName: string }) =>
@@ -328,13 +348,10 @@ export const commands = {
     invoke<ConflictInfo[]>('get_active_mod_conflicts', params),
   suggestRandomMods: (params: { gameId: string; isSafe: boolean }) =>
     invoke<RandomModProposal[]>('suggest_random_mods', params),
-  moveModToObject: (params: {
-    gameId?: string;
-    folderPath?: string;
-    objectId?: string;
-    targetObjectId?: string;
-    status?: string;
-  }) => invoke<void>('move_mod_to_object', params),
+  listMoveTargetsForObject: (params: { gameId: string; objectId: string }) =>
+    invoke<WorkspaceMoveTarget[]>('list_move_targets_for_object', params),
+  moveModsToObject: (params: { input: MoveModsToObjectInput }) =>
+    invoke<BulkResult>('move_mods_to_object', params),
 
   // Previews & Ini
   readModInfo: (params: { folderPath?: string; path?: string }) =>
@@ -526,6 +543,8 @@ export const commands = {
   }) => invoke<CollectionSummary>('create_collection', params),
   updateCollection: (params: { id?: string; gameId?: string; name?: string }) =>
     invoke<CollectionSummary>('update_collection', params),
+  replaceCollectionWithCurrentState: (params: { gameId: string; collectionId: string }) =>
+    invoke<CollectionSummary>('replace_collection_with_current_state', params),
   deleteCollection: (params: { id?: string; collectionId?: string; gameId?: string }) =>
     invoke<void>('delete_collection', params),
   applyCollection: (params: {

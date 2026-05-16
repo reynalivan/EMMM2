@@ -224,6 +224,22 @@ pub async fn update_collection(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn replace_collection_with_current_state(
+    pool: State<'_, SqlitePool>,
+    game_id: String,
+    collection_id: String,
+) -> Result<CollectionSummary, AppError> {
+    let result = collection_service::replace_collection_with_current_state(
+        pool.inner(),
+        &game_id,
+        &collection_id,
+    )
+    .await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn delete_collection(
     pool: State<'_, SqlitePool>,
     op_lock: State<'_, OperationLock>,

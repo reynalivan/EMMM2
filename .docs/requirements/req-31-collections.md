@@ -21,12 +21,12 @@
 
 As a user, I want to save my currently active mods as a permanent collection, so that I can easily revert to this exact setup later.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                     |
-| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.1.1 | ✅ Positive | Given the active state is an Unsaved Collection, when I click "Save Collection", the system prompts for a name and performs a "Save As" operation — creating a new permanent collection and deleting the old Unsaved record. |
-| AC-31.1.2 | ✅ Positive | Given the Save operation is triggered, the backend validates all active mods against the physical disk; if a mod has 0 active items, the save is rejected with a "Cannot save an empty collection" error.                    |
-| AC-31.1.3 | ✅ Positive | Given a created Collection, the current Safe Mode state determines its `is_safe_context`. If created in Safe Mode, it is hidden entirely when the app is in Unsafe Mode, ensuring zero cross-corridor leakage.               |
-| AC-31.1.4 | ❌ Negative | Given I click Save but a physical folder for an active mod has just been deleted externally by the user, the disk validation fails to find it and silently drops it from the saved payload — the Disk is the Absolute Truth. |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                  |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-31.1.1 | ✅ Positive | Given the active state is an Unsaved Collection, when I click "Save Collection", the system prompts for a name and performs a "Save As" operation — creating a new permanent collection and deleting the old Unsaved record.                                              |
+| AC-31.1.2 | ✅ Positive | Given the Save operation is triggered, the backend validates all active mods against the physical disk; if a mod has 0 active items, the save is rejected with a "Cannot save an empty collection" error.                                                                 |
+| AC-31.1.3 | ✅ Positive | Given a created Collection, the current Safe Mode state determines its `is_safe_context`. If created in Safe Mode, it is hidden entirely when the app is in Unsafe Mode, ensuring zero cross-corridor leakage.                                                            |
+| AC-31.1.4 | ❌ Negative | Given I click Save but a physical folder for an active mod has just been deleted externally by the user, the saved collection keeps a logical missing reference and marks it as missing in preview/apply state until the user explicitly updates the original collection. |
 
 ---
 
@@ -65,7 +65,7 @@ As a user, I want my saved collections to remain intact even if I move a mod fol
 
 | ID        | Type        | Criteria                                                                                                                                                                                                    |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.4.1 | ✅ Positive | Given a user moves a mod via the "Move to Object" dialog, the backend collection auto-healing service runs inside the mutation boundary.                                                                     |
+| AC-31.4.1 | ✅ Positive | Given a user moves a mod via the "Move to Object" dialog, the backend collection auto-healing service runs inside the mutation boundary.                                                                    |
 | AC-31.4.2 | ✅ Positive | Given auto-healing runs, the system updates `mod_path` and `object_id` for that specific `mod_id` across ALL saved collections in the database.                                                             |
 | AC-31.4.3 | ✅ Positive | Given the path cascades successfully, the user can apply a collection from 3 months ago and it will correctly activate the mod in its newly moved location without triggering a Pre-Apply Validation error. |
 
@@ -186,7 +186,7 @@ build_collection_preview_tree(objects, mods, mods_path):
 | Preview Panel Payload   | Collection preview, apply preview, and corridor switch preview MUST expose ready-to-render tree payloads rather than requiring the frontend to infer hierarchy from flat member rows.                                                                               |
 | Snapshot Persistence    | `collection_mods` persists `preview_path`, `node_type`, and `warnings_json` so saved collection previews remain stable for flat/mod-pack/variant semantics and warning badges.                                                                                      |
 | ObjectList Payload      | Backend queries MUST return `active_mod_paths: string[]` per Object so the UI Preview Panel correctly highlights active mods.                                                                                                                                       |
-| Disk Reconcile Hook     | Disk Reconcile results map to the collection dirty-state snapshot service to immediately mark manual Explorer changes as Unsaved.                                                                                                                                    |
+| Disk Reconcile Hook     | Disk Reconcile results map to the collection dirty-state snapshot service to immediately mark manual Explorer changes as Unsaved.                                                                                                                                   |
 | Move/Rename Hook        | Backend move/rename mutations update `collection_mods.mod_path` through the collection auto-healing service.                                                                                                                                                        |
 
 ### Runtime Dirty-State Trigger Matrix

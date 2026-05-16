@@ -2,7 +2,7 @@
  * useCorridorSwitch — Mutation hook for switching corridor mode.
  *
  * Replaces: useAppStore.setSafeMode + useSafeModeToggle.setSafeModeWithToast chain.
- * Calls switch_corridor → invalidates corridor + collections + objects + mod-folders.
+ * Calls switch_corridor → publishes the corridorState runtime-sync descriptor.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';

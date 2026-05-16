@@ -15,7 +15,7 @@ pub async fn delete_mod(
     op_lock: State<'_, OperationLock>,
     path: String,
     game_id: Option<String>,
-) -> Result<(), AppError> {
+) -> Result<trash::DeleteModResult, AppError> {
     let app_data_dir = app
         .path()
         .app_data_dir()

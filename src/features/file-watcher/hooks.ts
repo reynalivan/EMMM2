@@ -5,8 +5,13 @@ import { useAppStore } from '../../stores/useAppStore';
 import type { GameConfig } from '../../types/game';
 import { commands, type DiskReconcileReason, type DiskReconcileResult } from '../../lib/bindings';
 import { publishDiskReconcileRefresh } from './reconcileRefresh';
-import { applyPathUpdates, clearStaleSelections, isPreviewAffected } from './reconcileSelection';
+import {
+  buildDiskReconcilePathRewrites,
+  clearStaleSelections,
+  isPreviewAffected,
+} from './reconcileSelection';
 import { maybeShowExternalChangeToast } from './reconcileToast';
+import { applyWorkspacePathRewrites } from '../workspace-runtime/optimistic/workspaceViewModelRewrite';
 
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
@@ -61,7 +66,11 @@ export function applyDiskReconcileResult(
 
   appStore.setDiskSourceUnavailable(result.game_id, null);
   appStore.setDiskReconcileTimestamp(result.game_id, Date.now());
-  applyPathUpdates(result, activeGame);
+  applyWorkspacePathRewrites(
+    queryClient,
+    buildDiskReconcilePathRewrites(result, activeGame),
+    'disk_reconcile',
+  );
   clearStaleSelections(result, activeGame);
   publishDiskReconcileRefresh(queryClient, result, isPreviewAffected(result, activeGame));
 

@@ -325,13 +325,6 @@ pub async fn toggle_object_root_service(
         },
     )
     .await?;
-    crate::services::collection_service::handle_object_renamed_tx(
-        &mut tx,
-        &old_relative_path,
-        &new_relative_path,
-    )
-    .await
-    .map_err(|error| AppError::Internal(error.to_string()))?;
     tx.commit().await?;
 
     crate::services::runtime_projection_service::refresh_projection_for_object_ids(

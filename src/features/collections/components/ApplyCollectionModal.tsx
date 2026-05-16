@@ -6,6 +6,7 @@ import {
   useApplyCollectionPreview,
   useApplyCollection,
   useApplyProgress,
+  useReplaceCollectionWithCurrentState,
 } from '../hooks/useCollections';
 import { useAppStore } from '../../../stores/useAppStore';
 import { CollectionTreeView } from './CollectionTreeView';
@@ -33,6 +34,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
   const [missingPaths, setMissingPaths] = useState<string[] | null>(null);
   const [result, setResult] = useState<ApplyResult | null>(null);
   const applyMutation = useApplyCollection();
+  const replaceMutation = useReplaceCollectionWithCurrentState();
   const previewQuery = useApplyCollectionPreview(activeGameId, collectionId, safeMode);
   const progressQuery = useApplyProgress(activeGameId, applyMutation.isPending);
   const preview = previewQuery.data;
@@ -67,6 +69,22 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
         setMissingPaths(missingMods.paths);
       }
     }
+  };
+
+  const updateOriginalCollection = () => {
+    if (!activeGameId || !result?.partial_apply) {
+      return;
+    }
+
+    replaceMutation.mutate(
+      {
+        gameId: activeGameId,
+        collectionId,
+      },
+      {
+        onSuccess: onClose,
+      },
+    );
   };
 
   if (previewQuery.isError) {
@@ -168,6 +186,24 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                   {result.final_mode ?? (safeMode ? 'SAFE' : 'UNSAFE')}
                 </div>
               </div>
+              {result.partial_apply && (
+                <div className="rounded-2xl border border-warning/20 bg-warning/8 p-4">
+                  <div className="text-sm font-semibold text-warning/85">
+                    {t('collections:apply.partial.title', 'Applied Available Files')}
+                  </div>
+                  <div className="mt-1 text-xs text-base-content/65">
+                    {t(
+                      'collections:apply.partial.desc',
+                      'Some saved files were missing. The current state is unsaved until you update the original collection.',
+                    )}
+                  </div>
+                  <ul className="mt-3 space-y-1 text-xs font-mono text-base-content/70">
+                    {result.skipped_missing_paths.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {result.warnings.length > 0 && (
                 <div className="rounded-2xl border border-warning/20 bg-warning/8 p-4">
                   <div className="text-sm font-semibold text-warning/85">
@@ -286,12 +322,18 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
         )}
 
         <div className="p-4 border-t border-base-content/5 bg-base-300 shrink-0 flex justify-end gap-2">
-          <button className="btn btn-ghost" onClick={onClose} disabled={applyMutation.isPending}>
-            {result
-              ? t('common:actions.close')
-              : missingPaths
-                ? t('collections:apply.actions.cancel')
-                : t('collections:apply.actions.cancel')}
+          <button
+            className="btn btn-ghost"
+            onClick={onClose}
+            disabled={applyMutation.isPending || replaceMutation.isPending}
+          >
+            {result?.partial_apply
+              ? t('collections:apply.partial.keep_unsaved', 'Keep Unsaved')
+              : result
+                ? t('common:actions.close')
+                : missingPaths
+                  ? t('collections:apply.actions.cancel')
+                  : t('collections:apply.actions.cancel')}
           </button>
           {missingPaths && !result && (
             <button
@@ -317,6 +359,21 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 t('collections:apply.missing.confirm', 'Skip & Apply')
               ) : (
                 t('collections:apply.actions.confirm')
+              )}
+            </button>
+          )}
+          {result?.partial_apply && (
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                updateOriginalCollection();
+              }}
+              disabled={replaceMutation.isPending}
+            >
+              {replaceMutation.isPending ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                t('collections:apply.partial.update_original', 'Update Original Collection')
               )}
             </button>
           )}

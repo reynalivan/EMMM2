@@ -70,6 +70,7 @@ export default function FolderGrid() {
     handleBulkFavorite,
     handleBulkSafe,
     handleBulkPin,
+    handleBulkMoveToObject,
     pinSafeDialog,
     handleToggleSafeSubmit,
     handleToggleSafeCancel,
@@ -232,6 +233,7 @@ export default function FolderGrid() {
         onFavorite={handleBulkFavorite}
         onMarkSafe={handleBulkSafe}
         onUpdateInfo={handleBulkTagRequest}
+        onMoveToObject={handleBulkMoveToObject}
         mutationsDisabled={mutationsDisabled}
       />
 

@@ -1,5 +1,5 @@
 use super::get_workspace_view_model;
-use crate::database::models::GameType;
+use crate::database::models::{GameType, ItemStatus};
 use crate::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNode, WorkspaceNodeKind, WorkspaceReasonCode,
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
@@ -7,7 +7,8 @@ use crate::domain::workspace::{
 };
 use crate::repo::object_repo::ObjectFilter;
 use crate::test_utils::{
-    init_test_db, insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture,
+    init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
+    TestModFixture, TestObjectFixture,
 };
 use std::fs;
 use tempfile::TempDir;

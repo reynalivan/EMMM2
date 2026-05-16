@@ -1,4 +1,5 @@
 import type { WorkspaceRuntimeEvent } from './workspaceEvents';
+import { rewriteWorkspacePathValue } from '../pathRewrite';
 import {
   INITIAL_WORKSPACE_DIALOG_STATE,
   INITIAL_WORKSPACE_PREVIEW_TRANSITION,
@@ -40,49 +41,6 @@ function buildCurrentPath(
 
   const suffixSegments = relative.split('/').filter(Boolean);
   return [rootName, ...suffixSegments];
-}
-
-function rewritePathValue(
-  value: string | null | undefined,
-  rewrites: Array<{ oldPath: string; newPath: string }>,
-): string | null | undefined {
-  if (!value) {
-    return value;
-  }
-
-  let nextValue = value.replace(/\\/g, '/');
-  for (const rewrite of rewrites) {
-    const oldPath = rewrite.oldPath.replace(/\\/g, '/');
-    const newPath = rewrite.newPath.replace(/\\/g, '/');
-    const oldName = oldPath.split('/').filter(Boolean).pop() ?? oldPath;
-    const newName = newPath.split('/').filter(Boolean).pop() ?? newPath;
-    if (nextValue === oldPath) {
-      nextValue = newPath;
-      continue;
-    }
-
-    if (nextValue.startsWith(`${oldPath}/`)) {
-      nextValue = `${newPath}${nextValue.slice(oldPath.length)}`;
-      continue;
-    }
-
-    if (nextValue === oldName) {
-      nextValue = newName;
-      continue;
-    }
-
-    if (nextValue.startsWith(`${oldName}/`)) {
-      nextValue = `${newName}${nextValue.slice(oldName.length)}`;
-      continue;
-    }
-
-    const segments = nextValue.split('/');
-    if (segments.includes(oldName)) {
-      nextValue = segments.map((segment) => (segment === oldName ? newName : segment)).join('/');
-    }
-  }
-
-  return nextValue;
 }
 
 function shouldGuardPreviewTransition(
@@ -388,9 +346,11 @@ export function reduceWorkspaceRuntimeState(
 
   if (event.type === 'PATHS_REWRITTEN') {
     const selectedObjectFolderPath =
-      rewritePathValue(state.selectedObjectFolderPath, event.rewrites) ?? null;
-    const explorerSubPath = rewritePathValue(state.explorerSubPath, event.rewrites) ?? undefined;
-    const selectedModPath = rewritePathValue(state.selectedModPath, event.rewrites) ?? null;
+      rewriteWorkspacePathValue(state.selectedObjectFolderPath, event.rewrites) ?? null;
+    const explorerSubPath =
+      rewriteWorkspacePathValue(state.explorerSubPath, event.rewrites) ?? undefined;
+    const selectedModPath =
+      rewriteWorkspacePathValue(state.selectedModPath, event.rewrites) ?? null;
 
     return {
       ...state,

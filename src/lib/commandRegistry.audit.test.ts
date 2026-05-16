@@ -18,7 +18,7 @@ const LIB_RS_PATH = 'src-tauri/src/lib.rs';
 const PERMISSIONS_PATH = 'src-tauri/permissions/app-commands.toml';
 const BINDINGS_PATH = 'src/lib/bindings.ts';
 const COLLECT_COMMANDS_MACRO = 'collect_commands![';
-const BACKEND_ONLY_COMMANDS: string[] = [];
+const BACKEND_ONLY_COMMANDS: string[] = ['move_mod_to_object'];
 const COMMAND_WRAPPER_USAGE_POLICY: string[] = [];
 
 function expectNoDuplicates(label: string, values: string[]): void {

@@ -3,58 +3,27 @@
  * Extracted from useObjectListHandlers for SRP.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../lib/bindings';
 import { toast } from '../../stores/useToastStore';
-import type { UpdateObjectInput } from '../../types/object';
-import type { ScanPreviewItem } from '../../types/scanner';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { runObjectBatchMutation } from '../../hooks/objectQueryCache';
 import { useDeleteCollection as useDeleteObject } from '../collections/hooks/useCollections';
-import { scanService } from '../../lib/services/scanService';
 import { useTranslation } from 'react-i18next';
-import { parseMasterDb } from '../mod-runtime/operations/sharedOperations';
-import type { MasterDbEntry } from './scanReviewHelpers';
 import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../workspace-runtime/optimistic/descriptorBuilders';
 import { useWorkspaceSwitchActions } from '../workspace-runtime/actions/useWorkspaceSwitchActions';
 import type { WorkspaceObjectNode } from '../../types/workspace';
+import { createObjectUpdate } from './objectUpdateFactory';
+import { runBulkAutoRecognize } from './runBulkAutoRecognize';
 
 interface BulkDeps {
   objects: WorkspaceObjectNode[];
-  setScanReview: React.Dispatch<
-    React.SetStateAction<{
-      open: boolean;
-      items: ScanPreviewItem[];
-      masterDbEntries: MasterDbEntry[];
-      isCommitting: boolean;
-    }>
-  >;
-  setIsSyncing: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsSyncing: Dispatch<SetStateAction<boolean>>;
 }
 
-/**
- * Helper to create an UpdateObjectInput with all fields set to null by default.
- * Defined outside to avoid hook dependency issues.
- */
-function createObjectUpdate(patch: Partial<UpdateObjectInput>): UpdateObjectInput {
-  return {
-    name: null,
-    object_type: null,
-    sub_category: null,
-    status: null,
-    metadata: null,
-    hash_db: null,
-    custom_skins: null,
-    thumbnail_path: null,
-    is_auto_sync: null,
-    tags: null,
-    ...patch,
-  };
-}
-
-export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: BulkDeps) {
+export function useObjHandlersBulk({ objects, setIsSyncing }: BulkDeps) {
   const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const queryClient = useQueryClient();
@@ -308,46 +277,18 @@ export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: Bul
     [objects, queryClient, t],
   );
 
-  const handleBulkAutoOrganize = useCallback(
+  const handleBulkAutoRecognize = useCallback(
     async (ids: Set<string>) => {
-      if (!activeGame) return;
-      if (ids.size === 0) {
-        toast.info(t('objects:auto_organize.toast_none'));
-        return;
-      }
-
-      try {
-        setIsSyncing(true);
-
-        const previewItems = await scanService.runDeepmatchPreviewForObjects(
-          activeGame.id,
-          activeGame.game_type,
-          activeGame.mod_path,
-          Array.from(ids),
-        );
-
-        if (previewItems.length === 0) {
-          toast.info(t('objects:auto_organize.toast_none'));
-          return;
-        }
-
-        const dbJson = await scanService.getMasterDb(activeGame.game_type);
-        const masterEntries = parseMasterDb(dbJson);
-
-        setScanReview({
-          open: true,
-          items: previewItems,
-          masterDbEntries: masterEntries,
-          isCommitting: false,
-        });
-      } catch (e) {
-        console.error('Auto-organize failed:', e);
-        toast.error(t('objects:auto_organize.toast_error', { error: String(e) }));
-      } finally {
-        setIsSyncing(false);
-      }
+      await runBulkAutoRecognize({
+        ids,
+        activeGame,
+        objects,
+        queryClient,
+        setIsSyncing,
+        t,
+      });
     },
-    [activeGame, setIsSyncing, setScanReview, t],
+    [activeGame, objects, queryClient, setIsSyncing, t],
   );
 
   const handleBulkFavorite = useCallback(
@@ -418,7 +359,7 @@ export function useObjHandlersBulk({ objects, setScanReview, setIsSyncing }: Bul
     handleBulkDisable,
     handleBulkAddTags,
     handleBulkRemoveTags,
-    handleBulkAutoOrganize,
+    handleBulkAutoRecognize,
     handleBulkFavorite,
     handleBulkSafe,
   };

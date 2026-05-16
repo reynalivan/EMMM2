@@ -196,6 +196,55 @@ async fn set_object_mods_category_inner(
     Ok(result.rows_affected() as usize)
 }
 
+#[derive(serde::Deserialize, specta::Type)]
+pub struct MoveModsToObjectInput {
+    pub game_id: String,
+    pub folder_paths: Vec<String>,
+    pub target_object_id: String,
+    pub target_subpath: Option<String>,
+    pub status: Option<String>,
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn list_move_targets_for_object(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    object_id: String,
+) -> Result<Vec<crate::services::mods::organizer_ext::WorkspaceMoveTarget>, AppError> {
+    crate::services::mods::organizer_ext::list_move_targets_for_object_service(
+        pool.inner(),
+        &game_id,
+        &object_id,
+    )
+    .await
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn move_mods_to_object(
+    config: tauri::State<'_, ConfigService>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    op_lock: tauri::State<'_, OperationLock>,
+    watcher: tauri::State<'_, WatcherState>,
+    input: MoveModsToObjectInput,
+) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
+    crate::services::mods::organizer_ext::move_mods_to_object_service(
+        &config,
+        pool.inner(),
+        &op_lock,
+        &watcher,
+        crate::services::mods::organizer_ext::MoveModsToObjectParams {
+            game_id: &input.game_id,
+            folder_paths: &input.folder_paths,
+            target_object_id: &input.target_object_id,
+            target_subpath: input.target_subpath.as_deref(),
+            status: input.status.as_deref(),
+        },
+    )
+    .await
+}
+
 #[specta::specta]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
@@ -214,10 +263,12 @@ pub async fn move_mod_to_object(
         pool.inner(),
         &op_lock,
         &watcher,
-        &game_id,
-        &folder_path,
-        &target_object_id,
-        status.as_deref(),
+        crate::services::mods::organizer_ext::MoveModToObjectParams {
+            game_id: &game_id,
+            folder_path: &folder_path,
+            target_object_id: &target_object_id,
+            status: status.as_deref(),
+        },
     )
     .await?;
 

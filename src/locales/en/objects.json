@@ -2,6 +2,7 @@
   "toolbar": {
     "search_placeholder": "Search...",
     "auto_organize": "Auto Organize",
+    "auto_recognize": "Auto Recognize",
     "hide_filters": "Hide Filters",
     "show_filters": "Show Filters",
     "refresh_list": "Refresh list",
@@ -114,6 +115,7 @@
     "enable": "Enable",
     "disable": "Disable",
     "auto_organize": "Auto Organize",
+    "auto_recognize": "Auto Recognize",
     "add_tags": "Add Tags",
     "remove_tags": "Remove Tags"
   },
@@ -228,6 +230,11 @@
     "dialog_title": "Auto-Organize Mismatches?",
     "dialog_message": "Are you sure you want to let the system auto-organize {{count}} folder(s)? This will move them to their best matched Object.",
     "confirm": "Auto-Organize"
+  },
+  "auto_recognize": {
+    "toast_none": "No database matches found for the selected objects.",
+    "toast_success": "Recognized {{matched}} object(s); {{skipped}} skipped.",
+    "toast_error": "Auto-recognize failed: {{error}}"
   },
   "scan_review": {
     "title": "Scan Review",

@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ModFolder } from '../../../types/mod';
 import { useFolderNavigation } from './useFolderNavigation';
+import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
 
 interface UseFolderGridSelectionOptions {
   sortedFolders: ModFolder[];
@@ -34,6 +35,23 @@ export function useFolderGridSelection({
   handleRenameRequest,
 }: UseFolderGridSelectionOptions) {
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  const visiblePathKeys = useMemo(
+    () => new Set(sortedFolders.map((folder) => normalizeWorkspacePath(folder.path))),
+    [sortedFolders],
+  );
+
+  useEffect(() => {
+    if (!lastSelectedPath || visiblePathKeys.has(normalizeWorkspacePath(lastSelectedPath))) {
+      return;
+    }
+
+    const nextSelectedPath = Array.from(gridSelection).find((path) =>
+      visiblePathKeys.has(normalizeWorkspacePath(path)),
+    );
+    if (nextSelectedPath) {
+      setLastSelectedPath(nextSelectedPath);
+    }
+  }, [gridSelection, lastSelectedPath, visiblePathKeys]);
 
   const handleActivateItem = useCallback(
     (path: string) => {

@@ -1,45 +1,19 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
-import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import { updateFolderCache } from '../../../hooks/folderCache';
 import type { GameConfig } from '../../../types/game';
 import type { MasterDbEntry } from '../../object-list/scanReviewHelpers';
 import type { MatchedDbEntry } from '../../../lib/bindings';
-import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
 import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
 import { formatAppError } from '../../../lib/appError';
-
-export function syncExplorerAfterRename(modPath: string, oldPath: string, newPath: string): void {
-  const { explorerSubPath } = useAppStore.getState();
-  if (!explorerSubPath) {
-    return;
-  }
-
-  const clean = (path: string) => path.replace(/\\/g, '/');
-  const cleanMod = clean(modPath);
-  const cleanOld = clean(oldPath);
-  const cleanNew = clean(newPath);
-  const currentAbs = `${cleanMod}/${clean(explorerSubPath)}`;
-
-  if (currentAbs !== cleanOld && !currentAbs.startsWith(`${cleanOld}/`)) {
-    return;
-  }
-
-  const updated =
-    currentAbs === cleanOld ? cleanNew : currentAbs.replace(`${cleanOld}/`, `${cleanNew}/`);
-  let sub = updated.substring(cleanMod.length);
-  if (sub.startsWith('/')) {
-    sub = sub.substring(1);
-  }
-  if (!sub || sub === explorerSubPath) {
-    return;
-  }
-  dispatchWorkspaceRuntimeEvent({
-    type: 'PATHS_REWRITTEN',
-    rewrites: [{ oldPath, newPath }],
-  });
-}
+import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
+import {
+  buildQueryRemovalDescriptor,
+  buildWorkspacePathRewritesDescriptor,
+} from '../../workspace-runtime/optimistic/descriptorBuilders';
+import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
+import { thumbnailKeys } from '../../../hooks/useThumbnail';
 
 export function parseMasterDb(dbJson: string): MasterDbEntry[] {
   try {
@@ -67,17 +41,56 @@ export async function moveModToObjectAndRefresh(params: {
   folderPath: string;
   targetObjectId: string;
   status: 'disabled' | 'only-enable' | 'keep';
+  targetSubpath?: string | null;
   removeFromCurrentView?: boolean;
 }): Promise<void> {
-  await commands.moveModToObject({
+  await moveModsToObjectAndRefresh({
+    queryClient: params.queryClient,
     gameId: params.gameId,
-    folderPath: params.folderPath,
+    folderPaths: [params.folderPath],
     targetObjectId: params.targetObjectId,
+    targetSubpath: params.targetSubpath ?? null,
     status: params.status,
+    removeFromCurrentView: params.removeFromCurrentView,
+  });
+}
+
+export async function moveModsToObjectAndRefresh(params: {
+  queryClient: QueryClient;
+  gameId: string;
+  folderPaths: string[];
+  targetObjectId: string;
+  targetSubpath: string | null;
+  status: 'disabled' | 'only-enable' | 'keep';
+  removeFromCurrentView?: boolean;
+}): Promise<void> {
+  const result = await commands.moveModsToObject({
+    input: {
+      game_id: params.gameId,
+      folder_paths: params.folderPaths,
+      target_object_id: params.targetObjectId,
+      target_subpath: params.targetSubpath,
+      status: params.status,
+    },
   });
 
   if (params.removeFromCurrentView) {
-    updateFolderCache(params.queryClient, [params.folderPath], undefined, true);
+    updateFolderCache(params.queryClient, params.folderPaths, undefined, true);
+  }
+
+  applyRuntimeEffects(
+    params.queryClient,
+    mergeRuntimeEffectDescriptors(
+      buildQueryRemovalDescriptor(
+        result.path_rewrites.map((rewrite) => thumbnailKeys.folder(rewrite.old_path)),
+        [],
+      ),
+      buildWorkspacePathRewritesDescriptor(result.path_rewrites, []),
+    ),
+  );
+
+  if (result.failures.length > 0) {
+    throw result.failures[0].error;
   }
 
   await applyRuntimeMutationResult(params.queryClient, 'workspaceStructure');

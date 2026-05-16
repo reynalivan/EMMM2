@@ -2,6 +2,7 @@
   "toolbar": {
     "search_placeholder": "Cari...",
     "auto_organize": "Atur Otomatis",
+    "auto_recognize": "Kenali Otomatis",
     "hide_filters": "Sembunyikan Filter",
     "show_filters": "Tampilkan Filter",
     "refresh_list": "Segarkan daftar",
@@ -114,6 +115,7 @@
     "enable": "Aktifkan",
     "disable": "Nonaktifkan",
     "auto_organize": "Atur Otomatis",
+    "auto_recognize": "Kenali Otomatis",
     "add_tags": "Tambah Tag",
     "remove_tags": "Hapus Tag"
   },
@@ -190,6 +192,11 @@
     "dialog_title": "Atur Otomatis Ketidakcocokan?",
     "dialog_message": "Apakah Anda yakin ingin membiarkan sistem mengatur otomatis {{count}} folder? Ini akan memindahkannya ke Objek yang paling cocok.",
     "confirm": "Atur Otomatis"
+  },
+  "auto_recognize": {
+    "toast_none": "Tidak ada kecocokan database untuk objek yang dipilih.",
+    "toast_success": "Mengenali {{matched}} objek; {{skipped}} dilewati.",
+    "toast_error": "Gagal mengenali otomatis: {{error}}"
   },
   "scan_review": {
     "title": "Tinjau Pemindaian",

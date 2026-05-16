@@ -11,6 +11,7 @@ import {
   Edit,
   ShieldCheck,
   ShieldAlert,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/useAppStore';
@@ -24,6 +25,7 @@ interface BulkActionBarProps {
   onFavorite: (favorite: boolean) => void;
   onMarkSafe: (safe: boolean) => void;
   onUpdateInfo: () => void;
+  onMoveToObject: () => void;
   mutationsDisabled?: boolean;
 }
 
@@ -36,6 +38,7 @@ export default function BulkActionBar({
   onFavorite,
   onMarkSafe,
   onUpdateInfo,
+  onMoveToObject,
   mutationsDisabled = false,
 }: BulkActionBarProps) {
   const { t } = useTranslation(['grid']);
@@ -147,6 +150,12 @@ export default function BulkActionBar({
           >
             <li className="menu-title px-4 py-1.5 text-[10px] uppercase font-bold opacity-50">
               {t('bulk.ops_title')}
+            </li>
+            <li>
+              <button className="py-2" onClick={onMoveToObject} disabled={mutationsDisabled}>
+                <ArrowRightLeft size={16} className="opacity-70" />
+                {t('bulk.move_object')}
+              </button>
             </li>
             <li>
               <button className="py-2" onClick={onUpdateInfo} disabled={mutationsDisabled}>

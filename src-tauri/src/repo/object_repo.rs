@@ -201,18 +201,7 @@ pub async fn get_filtered_objects(
 
     if let Some(meta_filters) = &filter.meta_filters {
         for (key, values) in meta_filters {
-            if !values.is_empty() {
-                let safe_key = key.replace(['\'', '"'], "");
-                qb.push(format!(
-                    " AND JSON_EXTRACT(o.metadata, '$.{}') IN (",
-                    safe_key
-                ));
-                let mut separated = qb.separated(", ");
-                for v in values {
-                    separated.push_bind(v);
-                }
-                separated.push_unseparated(")");
-            }
+            append_metadata_filter_condition(&mut qb, key, values);
         }
     }
 
@@ -350,6 +339,59 @@ fn fallback_object_disabled(row: &ObjectSummaryRow) -> bool {
         || split_segments(&row.folder_path)
             .iter()
             .any(|segment| is_disabled_folder(segment))
+}
+
+fn append_metadata_filter_condition(
+    qb: &mut QueryBuilder<'_, Sqlite>,
+    key: &str,
+    values: &[String],
+) {
+    if !is_valid_metadata_filter_key(key) {
+        return;
+    }
+
+    let normalized_values = normalized_metadata_filter_values(values);
+    if normalized_values.is_empty() {
+        return;
+    }
+
+    let json_path = format!("$.{key}");
+    qb.push(" AND (");
+    qb.push("EXISTS (SELECT 1 FROM json_each(o.metadata, ");
+    qb.push_bind(json_path.clone());
+    qb.push(") WHERE json_valid(o.metadata) = 1 AND LOWER(CAST(json_each.value AS TEXT)) IN (");
+    {
+        let mut separated = qb.separated(", ");
+        for value in &normalized_values {
+            separated.push_bind(value.clone());
+        }
+    }
+    qb.push("))");
+    qb.push(" OR (json_valid(o.metadata) = 1 AND LOWER(CAST(JSON_EXTRACT(o.metadata, ");
+    qb.push_bind(json_path);
+    qb.push(") AS TEXT)) IN (");
+    {
+        let mut separated = qb.separated(", ");
+        for value in &normalized_values {
+            separated.push_bind(value.clone());
+        }
+    }
+    qb.push(")))");
+}
+
+fn is_valid_metadata_filter_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn normalized_metadata_filter_values(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect()
 }
 
 async fn load_game_mods_path(
@@ -1518,3 +1560,7 @@ pub async fn get_kv_matching_objects(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+#[path = "object_repo_tests.rs"]
+mod tests;

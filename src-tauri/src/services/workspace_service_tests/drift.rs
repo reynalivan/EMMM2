@@ -8,7 +8,10 @@ async fn workspace_view_model_clears_selection_when_db_object_path_is_missing_on
     let view_model = get_workspace_view_model(
         &pool,
         WorkspaceViewModelInput {
-            filter: build_filter("game_workspace"),
+            filter: ObjectFilter {
+                safe_mode: true,
+                ..build_filter("game_workspace")
+            },
             selected_object_folder_path: Some(object_folder.clone()),
             explorer_sub_path: None,
             selected_mod_path: None,
@@ -96,6 +99,65 @@ async fn workspace_view_model_falls_back_to_object_root_when_nested_grid_path_is
                 .to_string_lossy()
                 .to_string(),
         ]
+    );
+}
+
+#[tokio::test]
+async fn workspace_view_model_marks_disabled_sibling_resolution_as_fallback() {
+    let (pool, _mods_root, mods_path, object_folder) =
+        setup_workspace_fixture("PREFIX_REWRITE").await;
+    let object_root = std::path::Path::new(&mods_path).join(&object_folder);
+    let disabled_variant = object_root.join("DISABLED Variant");
+    fs::create_dir_all(&disabled_variant).expect("disabled variant");
+    write_file(&disabled_variant.join("mod.ini"), "[TextureOverrideTest]\n");
+    insert_test_mod(
+        &pool,
+        &TestModFixture {
+            id: "mod_prefix_rewrite",
+            game_id: "game_workspace",
+            object_id: Some("obj_workspace"),
+            actual_name: "DISABLED Variant",
+            folder_path: disabled_variant.to_string_lossy().as_ref(),
+            status: ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert disabled mod");
+
+    let requested_variant = object_root.join("Variant");
+    let view_model = get_workspace_view_model(
+        &pool,
+        WorkspaceViewModelInput {
+            filter: ObjectFilter {
+                safe_mode: true,
+                ..build_filter("game_workspace")
+            },
+            selected_object_folder_path: Some(object_folder.clone()),
+            explorer_sub_path: Some(object_folder),
+            selected_mod_path: Some(requested_variant.to_string_lossy().to_string()),
+        },
+    )
+    .await
+    .expect("workspace view model");
+
+    assert_eq!(
+        view_model.selection.selected_mod_path,
+        Some(disabled_variant.to_string_lossy().to_string())
+    );
+    assert_eq!(
+        view_model.selection.reconciliation_status,
+        WorkspaceSelectionReconciliationStatus::Fallback
+    );
+    assert_eq!(
+        view_model.selection.reconciliation_reason,
+        Some(WorkspaceSelectionReconciliationReason::MissingModPath)
+    );
+    assert_eq!(
+        view_model.selection.affected_paths,
+        vec![requested_variant.to_string_lossy().to_string()]
     );
 }
 

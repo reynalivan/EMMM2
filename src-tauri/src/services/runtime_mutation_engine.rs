@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use sqlx::SqlitePool;
 
+use crate::domain::workspace::WorkspacePathRewrite;
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use crate::services::mods::core_ops::standardize_prefix;
 use crate::services::path_key::folder_path_key;
@@ -43,6 +44,7 @@ pub struct RuntimeToggleResult {
     pub enabled_count: usize,
     pub disabled_count: usize,
     pub warnings: Vec<String>,
+    pub path_rewrites: Vec<WorkspacePathRewrite>,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +138,14 @@ pub async fn toggle_mods_mixed(
         enabled_count,
         disabled_count,
         warnings,
+        path_rewrites: renamed
+            .iter()
+            .filter(|plan| plan.old_abs != plan.new_abs)
+            .map(|plan| WorkspacePathRewrite {
+                old_path: plan.old_abs.to_string_lossy().to_string(),
+                new_path: plan.new_abs.to_string_lossy().to_string(),
+            })
+            .collect(),
     })
 }
 
@@ -145,6 +155,7 @@ fn empty_result() -> RuntimeToggleResult {
         enabled_count: 0,
         disabled_count: 0,
         warnings: Vec::new(),
+        path_rewrites: Vec::new(),
     }
 }
 
@@ -308,4 +319,80 @@ fn validate_relative_path(path: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::models::{GameType, ItemStatus};
+    use crate::test_utils::{
+        init_test_db, insert_test_game, insert_test_mod, TestGameFixture, TestModFixture,
+    };
+
+    #[tokio::test]
+    async fn toggle_mods_mixed_returns_runtime_path_rewrites() {
+        let ctx = init_test_db().await;
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mods_path = temp.path().join("Mods");
+        std::fs::create_dir_all(mods_path.join("Variant")).expect("mod folder");
+        let mods_path_string = mods_path.to_string_lossy().to_string();
+
+        insert_test_game(
+            &ctx.pool,
+            &TestGameFixture {
+                id: "game-runtime-toggle",
+                name: "Game",
+                game_type: GameType::GIMI,
+                path: temp.path().to_string_lossy().as_ref(),
+                mods_path: Some(&mods_path_string),
+            },
+        )
+        .await
+        .expect("insert game");
+        insert_test_mod(
+            &ctx.pool,
+            &TestModFixture {
+                id: "mod-runtime-toggle",
+                game_id: "game-runtime-toggle",
+                object_id: None,
+                actual_name: "Variant",
+                folder_path: "Variant",
+                status: ItemStatus::Enabled,
+                is_safe: true,
+                object_type: Some("Character"),
+                mods_path: Some(&mods_path_string),
+            },
+        )
+        .await
+        .expect("insert mod");
+
+        let result = toggle_mods_mixed(
+            &ctx.pool,
+            RuntimeToggleBatchRequest {
+                game_id: "game-runtime-toggle".to_string(),
+                mods_path: mods_path.clone(),
+                operations: vec![RuntimeToggleOperation {
+                    id: "mod-runtime-toggle".to_string(),
+                    folder_path: "Variant".to_string(),
+                    target_enabled: false,
+                    disabled_reason: None,
+                }],
+            },
+        )
+        .await
+        .expect("toggle");
+
+        assert_eq!(result.path_rewrites.len(), 1);
+        assert_eq!(
+            result.path_rewrites[0].old_path,
+            mods_path.join("Variant").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            result.path_rewrites[0].new_path,
+            mods_path
+                .join("DISABLED Variant")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
 }

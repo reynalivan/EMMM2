@@ -87,7 +87,7 @@ export default function ObjectList() {
     handleBulkDisable,
     handleBulkAddTags,
     handleBulkRemoveTags,
-    handleBulkAutoOrganize,
+    handleBulkAutoRecognize,
     handleBulkFavorite,
     handleBulkSafe,
   } = handlers;
@@ -206,7 +206,7 @@ export default function ObjectList() {
     handleBulkPin,
     handleBulkEnable,
     handleBulkDisable,
-    handleBulkAutoOrganize,
+    handleBulkAutoRecognize,
     handleBulkFavorite,
     handleBulkSafe,
   });

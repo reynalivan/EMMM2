@@ -19,7 +19,15 @@
     "placeholder": "Search objects...",
     "no_results": "No objects found",
     "current_marker": "(Current)",
+    "location_label": "Location",
+    "select_object_first": "Select an object first",
+    "loading_targets": "Loading folders...",
     "status_label": "Set Status",
+    "status": {
+      "keep": "Keep",
+      "disabled": "Disabled",
+      "only-enable": "Only Enable"
+    },
     "toast": {
       "success": "Moved to {{name}}",
       "failed": "Failed to move: {{error}}"

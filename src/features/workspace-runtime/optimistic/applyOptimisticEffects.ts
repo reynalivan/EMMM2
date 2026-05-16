@@ -14,10 +14,13 @@ import {
 } from '../state/workspaceStoreBridge';
 import type { WorkspaceRuntimeState } from '../state/workspaceState';
 import type { RuntimeEffectDescriptor } from './descriptor';
+import { useAppStore } from '../../../stores/useAppStore';
+import { applyWorkspacePathRewrites } from './workspaceViewModelRewrite';
 
 export interface OptimisticEffectSnapshot {
   objectSnapshot: ObjectListSnapshot;
   runtimeSnapshot: WorkspaceRuntimeState;
+  gridSelectionSnapshot: Set<string>;
 }
 
 export function applyOptimisticEffects(
@@ -27,6 +30,7 @@ export function applyOptimisticEffects(
   const snapshot: OptimisticEffectSnapshot = {
     objectSnapshot: snapshotObjectListQueries(queryClient),
     runtimeSnapshot: getWorkspaceRuntimeState(),
+    gridSelectionSnapshot: new Set(useAppStore.getState().gridSelection),
   };
 
   for (const effect of descriptor.objectCountDeltas) {
@@ -34,10 +38,7 @@ export function applyOptimisticEffects(
   }
 
   if (descriptor.rewrites.length > 0) {
-    dispatchWorkspaceRuntimeEvent({
-      type: 'PATHS_REWRITTEN',
-      rewrites: descriptor.rewrites,
-    });
+    applyWorkspacePathRewrites(queryClient, descriptor.rewrites, 'internal');
   }
 
   if (descriptor.invalidatedPaths.length > 0) {
@@ -70,10 +71,7 @@ export function applyRuntimeEffects(
   }
 
   if (descriptor.rewrites.length > 0) {
-    dispatchWorkspaceRuntimeEvent({
-      type: 'PATHS_REWRITTEN',
-      rewrites: descriptor.rewrites,
-    });
+    applyWorkspacePathRewrites(queryClient, descriptor.rewrites, 'internal');
   }
 
   if (descriptor.invalidatedPaths.length > 0) {
@@ -101,4 +99,5 @@ export function rollbackOptimisticEffects(
 ): void {
   restoreObjectListQueries(queryClient, snapshot.objectSnapshot);
   restoreWorkspaceRuntimeState(snapshot.runtimeSnapshot);
+  useAppStore.setState({ gridSelection: snapshot.gridSelectionSnapshot });
 }

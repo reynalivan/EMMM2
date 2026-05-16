@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::database::models::ItemStatus;
+use crate::domain::collection::CollectionReferenceImpact;
 use crate::services::corridor_constants::CORRIDOR_SOURCE_MANUAL;
 use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::services::disk_reconcile::helpers::{
@@ -56,6 +57,7 @@ struct ModRenameHintsRequest<'a> {
     safe_mode_keywords: &'a [String],
     hints: &'a WatcherRenameHints,
     path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
+    collection_reference_impact: &'a mut CollectionReferenceImpact,
     change_summary: &'a mut ChangeSummaryBuilder,
 }
 
@@ -136,7 +138,7 @@ async fn apply_mod_rename_hints(
         .await
         .map_err(|error| error.to_string())?;
 
-        crate::services::collection_service::handle_mod_moved_or_renamed_tx(
+        let impact = crate::services::collection_service::handle_mod_moved_or_renamed_tx(
             &mut *conn,
             old_relative,
             new_relative,
@@ -144,6 +146,7 @@ async fn apply_mod_rename_hints(
         )
         .await
         .map_err(|error| format!("Failed to heal mod rename in collections: {error}"))?;
+        request.collection_reference_impact.merge(impact);
 
         push_path_update(
             &mut *request.path_updates,
@@ -165,6 +168,7 @@ async fn apply_object_rename_hints(
     mods_root: &str,
     hints: &WatcherRenameHints,
     path_updates: &mut Vec<DiskReconcilePathUpdate>,
+    collection_reference_impact: &mut CollectionReferenceImpact,
     change_summary: &mut ChangeSummaryBuilder,
 ) -> Result<(), String> {
     for (old_folder, new_folder) in &hints.object_renames {
@@ -194,11 +198,12 @@ async fn apply_object_rename_hints(
             .map_err(|error| format!("Failed to update child paths: {error}"))?;
         }
 
-        crate::services::collection_service::handle_object_renamed_tx(
+        let impact = crate::services::collection_service::handle_object_renamed_tx(
             &mut *conn, old_folder, new_folder,
         )
         .await
         .map_err(|error| format!("Failed to heal object rename in collections: {error}"))?;
+        collection_reference_impact.merge(impact);
 
         push_path_update(
             path_updates,
@@ -212,41 +217,48 @@ async fn apply_object_rename_hints(
     Ok(())
 }
 
+pub(crate) struct WatcherRenameHintsApplyRequest<'a> {
+    pub conn: &'a mut sqlx::SqliteConnection,
+    pub game_id: &'a str,
+    pub mods_path: &'a Path,
+    pub safe_mode_keywords: &'a [String],
+    pub watcher_events: &'a [ModWatchEvent],
+    pub path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
+    pub collection_reference_impact: &'a mut CollectionReferenceImpact,
+    pub change_summary: &'a mut ChangeSummaryBuilder,
+}
+
 pub(crate) async fn apply_watcher_rename_hints(
-    conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    mods_path: &Path,
-    safe_mode_keywords: &[String],
-    watcher_events: &[ModWatchEvent],
-    path_updates: &mut Vec<DiskReconcilePathUpdate>,
-    change_summary: &mut ChangeSummaryBuilder,
+    request: WatcherRenameHintsApplyRequest<'_>,
 ) -> Result<(), String> {
-    let hints = collect_rename_hints(mods_path, watcher_events);
+    let hints = collect_rename_hints(request.mods_path, request.watcher_events);
     if hints.mod_renames.is_empty() && hints.object_renames.is_empty() {
         return Ok(());
     }
 
-    let mods_root = mods_path.to_string_lossy().to_string();
+    let mods_root = request.mods_path.to_string_lossy().to_string();
     apply_mod_rename_hints(
-        &mut *conn,
+        &mut *request.conn,
         ModRenameHintsRequest {
-            game_id,
-            mods_path,
+            game_id: request.game_id,
+            mods_path: request.mods_path,
             mods_root: &mods_root,
-            safe_mode_keywords,
+            safe_mode_keywords: request.safe_mode_keywords,
             hints: &hints,
-            path_updates,
-            change_summary,
+            path_updates: &mut *request.path_updates,
+            collection_reference_impact: &mut *request.collection_reference_impact,
+            change_summary: &mut *request.change_summary,
         },
     )
     .await?;
     apply_object_rename_hints(
-        &mut *conn,
-        game_id,
+        &mut *request.conn,
+        request.game_id,
         &mods_root,
         &hints,
-        path_updates,
-        change_summary,
+        &mut *request.path_updates,
+        &mut *request.collection_reference_impact,
+        &mut *request.change_summary,
     )
     .await
 }

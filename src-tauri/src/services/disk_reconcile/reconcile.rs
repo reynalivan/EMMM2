@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::domain::collection::CollectionReferenceImpact;
 use crate::repo::object_repo::ObjectRuntimeDescriptor;
 use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::services::disk_reconcile::disk_snapshot::collect_disk_projection;
@@ -14,7 +15,9 @@ use crate::services::disk_reconcile::path_classifier::{
 use crate::services::disk_reconcile::projection_writer::{
     reconcile_projection_in_tx, ProjectionWriteRequest,
 };
-use crate::services::disk_reconcile::rename_healer::apply_watcher_rename_hints;
+use crate::services::disk_reconcile::rename_healer::{
+    apply_watcher_rename_hints, WatcherRenameHintsApplyRequest,
+};
 use crate::services::disk_reconcile::types::{
     DiskReconcileChangeSummary, DiskReconcilePathUpdate, DiskReconcileReason, DiskReconcileStatus,
 };
@@ -31,6 +34,7 @@ pub struct ReconcileOutcome {
     pub runtime_file_changed: bool,
     pub cleared_selection_paths: Vec<String>,
     pub path_updates: Vec<DiskReconcilePathUpdate>,
+    pub collection_reference_impact: CollectionReferenceImpact,
     pub change_summary: DiskReconcileChangeSummary,
 }
 
@@ -173,6 +177,7 @@ pub async fn reconcile_disk_projection(
             runtime_file_changed,
             cleared_selection_paths: Vec::new(),
             path_updates: Vec::new(),
+            collection_reference_impact: CollectionReferenceImpact::default(),
             change_summary: ChangeSummaryBuilder::default().build(),
         });
     }
@@ -189,6 +194,7 @@ pub async fn reconcile_disk_projection(
     let mut folders_changed = false;
     let mut cleared_selection_paths = Vec::new();
     let mut path_updates = Vec::new();
+    let mut collection_reference_impact = CollectionReferenceImpact::default();
     let mut change_summary = ChangeSummaryBuilder::default();
 
     if runtime_file_changed {
@@ -210,6 +216,7 @@ pub async fn reconcile_disk_projection(
                     runtime_file_changed,
                     cleared_selection_paths: Vec::new(),
                     path_updates: Vec::new(),
+                    collection_reference_impact: CollectionReferenceImpact::default(),
                     change_summary: change_summary.build(),
                 });
             }
@@ -218,15 +225,16 @@ pub async fn reconcile_disk_projection(
         let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
 
         if let Some(events) = watcher_events {
-            apply_watcher_rename_hints(
-                &mut tx,
+            apply_watcher_rename_hints(WatcherRenameHintsApplyRequest {
+                conn: &mut tx,
                 game_id,
                 mods_path,
                 safe_mode_keywords,
-                events,
-                &mut path_updates,
-                &mut change_summary,
-            )
+                watcher_events: events,
+                path_updates: &mut path_updates,
+                collection_reference_impact: &mut collection_reference_impact,
+                change_summary: &mut change_summary,
+            })
             .await?;
         }
 
@@ -240,6 +248,7 @@ pub async fn reconcile_disk_projection(
                 changed_roots: &changed_roots,
                 force_full,
                 path_updates: &mut path_updates,
+                collection_reference_impact: &mut collection_reference_impact,
                 change_summary: &mut change_summary,
             },
         )
@@ -274,6 +283,7 @@ pub async fn reconcile_disk_projection(
         runtime_file_changed,
         cleared_selection_paths,
         path_updates,
+        collection_reference_impact,
         change_summary: change_summary.build(),
     })
 }

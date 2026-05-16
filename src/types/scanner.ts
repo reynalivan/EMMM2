@@ -2,6 +2,8 @@
  * Types for Epic 2: Mod Scanner & Organization.
  * Mirrors the active Deep Match Scanner preview/review payloads.
  */
+import type { CollectionReferenceImpact } from './collection';
+import type { WorkspacePathRewrite } from './workspace';
 
 export interface ArchiveInfo {
   path: string;
@@ -183,6 +185,12 @@ export type BulkActionError = {
 export type BulkResult = {
   success: string[];
   failures: BulkActionError[];
+  collection_impact: CollectionReferenceImpact;
+  path_rewrites: WorkspacePathRewrite[];
+};
+
+export type DeleteModResult = {
+  collection_impact: CollectionReferenceImpact;
 };
 
 export type DuplicateInfo = {

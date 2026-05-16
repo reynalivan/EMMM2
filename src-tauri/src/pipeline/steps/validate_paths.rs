@@ -51,6 +51,7 @@ pub async fn validate(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
             missing_paths.len(),
             missing_paths
         );
+        ctx.skipped_missing_paths = missing_paths.clone();
         ctx.warnings.extend(
             missing_paths
                 .iter()

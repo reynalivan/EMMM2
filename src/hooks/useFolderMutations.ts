@@ -18,7 +18,9 @@ import {
   buildQueryInvalidationDescriptor,
   buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
+  buildWorkspacePathRewritesDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
+import { mergeRuntimeEffectDescriptors } from '../features/workspace-runtime/optimistic/descriptor';
 import {
   FolderGridResponse,
   ModInfoUpdate,
@@ -31,6 +33,10 @@ import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/stat
 import { extractFileInUsePayload, formatAppError } from '../lib/appError';
 import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
 import { withWatcherSuppression } from '../features/file-watcher/watcherSuppression';
+import {
+  hasCollectionReferenceImpact,
+  notifyCollectionReferenceImpact,
+} from './collectionReferenceImpact';
 
 // ── Trash ───────────────────────────────────────────────────────
 
@@ -256,16 +262,24 @@ export function useBulkToggle() {
       commands.bulkToggleMods(params),
 
     onSuccess: async (result, variables) => {
-      const removalDescriptor = buildQueryRemovalDescriptor(
-        result.success.map((newPath) => thumbnailKeys.folder(newPath)),
-        [],
+      const fallbackRewrites = result.success.map((newPath) => ({
+        old_path: toggleDisabledInPath(newPath, !variables.enable),
+        new_path: newPath,
+      }));
+      const pathRewrites =
+        result.path_rewrites && result.path_rewrites.length > 0
+          ? result.path_rewrites
+          : fallbackRewrites;
+      applyRuntimeEffects(
+        queryClient,
+        mergeRuntimeEffectDescriptors(
+          buildQueryRemovalDescriptor(
+            result.success.map((newPath) => thumbnailKeys.folder(newPath)),
+            [],
+          ),
+          buildWorkspacePathRewritesDescriptor(pathRewrites, []),
+        ),
       );
-      applyRuntimeEffects(queryClient, removalDescriptor);
-      result.success.forEach((newPath) => {
-        // Derive old path to keep grid selection alive
-        const oldPath = toggleDisabledInPath(newPath, !variables.enable);
-        useAppStore.getState().replaceGridSelection(oldPath, newPath);
-      });
       await publishRuntimeDescriptor(
         queryClient,
         buildRuntimeMutationDescriptor('folderSwitch'),
@@ -275,6 +289,14 @@ export function useBulkToggle() {
       if (result.success.length > 0) {
         const action = variables.enable ? 'Enabled' : 'Disabled';
         toast.success(getBulkToastMessage(queryClient, result.success, action));
+      }
+      if (hasCollectionReferenceImpact(result.collection_impact)) {
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('collectionsCatalog'),
+          'active',
+        );
+        notifyCollectionReferenceImpact(result.collection_impact);
       }
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'Toggle'));
@@ -321,6 +343,14 @@ export function useBulkDelete() {
 
       if (result.success.length > 0) {
         toast.success(getBulkToastMessage(queryClient, result.success, 'Deleted'));
+      }
+      if (hasCollectionReferenceImpact(result.collection_impact)) {
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('collectionsCatalog'),
+          'active',
+        );
+        notifyCollectionReferenceImpact(result.collection_impact);
       }
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'Delete'));

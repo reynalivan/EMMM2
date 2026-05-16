@@ -20,7 +20,9 @@ export interface FolderGridModalsProps {
     folder: ModFolder,
     targetId: string,
     status: 'disabled' | 'only-enable' | 'keep',
-  ) => void;
+    targetSubpath?: string | null,
+    targetModPaths?: string[],
+  ) => Promise<void> | void;
   deleteConfirm: { open: boolean; folder: ModFolder | null };
   setDeleteConfirm: (state: { open: boolean; folder: ModFolder | null }) => void;
   handleDeleteConfirm: () => void;
@@ -99,13 +101,30 @@ export default function FolderGridModals({
         <MoveToObjectDialog
           isOpen={moveDialog.open}
           onClose={closeMoveDialog}
-          targetModPaths={[currentPath ?? moveDialog.folder.path]} // Use currentPath if available, otherwise fallback
+          targetModPaths={
+            gridSelection.size > 1
+              ? Array.from(gridSelection)
+              : [currentPath ?? moveDialog.folder.path]
+          }
           currentObjectId={objectId || undefined}
           objects={objects}
-          onSubmit={(targetId: string, status: 'disabled' | 'only-enable' | 'keep') => {
+          onSubmit={async (
+            targetId: string,
+            status: 'disabled' | 'only-enable' | 'keep',
+            targetSubpath: string | null,
+          ) => {
             if (!moveDialog.folder) return;
-            handleMoveToObject(moveDialog.folder, targetId, status);
-            closeMoveDialog();
+            const targetPaths =
+              gridSelection.size > 1
+                ? Array.from(gridSelection)
+                : [currentPath ?? moveDialog.folder.path];
+            await handleMoveToObject(
+              moveDialog.folder,
+              targetId,
+              status,
+              targetSubpath,
+              targetPaths,
+            );
           }}
         />
       )}

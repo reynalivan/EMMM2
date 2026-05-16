@@ -108,7 +108,7 @@ pub async fn import_mods_from_paths(
         }
     }
 
-    Ok(BulkResult { success, failures })
+    Ok(BulkResult::new(success, failures))
 }
 
 fn handle_archive_import(

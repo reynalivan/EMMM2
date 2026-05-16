@@ -12,7 +12,7 @@ import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { useAppStore } from '../../../stores/useAppStore';
 import {
   applyFolderDbSyncMatchAndRefresh,
-  moveModToObjectAndRefresh,
+  moveModsToObjectAndRefresh,
 } from '../operations/sharedOperations';
 import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
 import {
@@ -111,16 +111,19 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
       folder: ModFolder,
       targetObjectId: string,
       status: 'disabled' | 'only-enable' | 'keep',
+      targetSubpath?: string | null,
+      targetModPaths?: string[],
     ) => {
       if (!activeGame?.id) {
         return;
       }
 
-      await moveModToObjectAndRefresh({
+      await moveModsToObjectAndRefresh({
         queryClient,
         gameId: activeGame.id,
-        folderPath: folder.path,
+        folderPaths: targetModPaths && targetModPaths.length > 0 ? targetModPaths : [folder.path],
         targetObjectId,
+        targetSubpath: targetSubpath ?? null,
         status,
         removeFromCurrentView: options.removeFromCurrentView,
       });

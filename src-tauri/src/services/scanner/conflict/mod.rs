@@ -178,6 +178,7 @@ fn parse_hash_line(line: &str) -> Option<String> {
 mod tests;
 
 use crate::domain::errors::AppError;
+use crate::domain::workspace::WorkspacePathRewrite;
 
 /// Find all enabled mods in the same object as `folder_path` (i.e. duplicates/conflicts).
 pub async fn get_duplicates_for_mod_service(
@@ -293,6 +294,7 @@ pub async fn enable_only_this_service(
     let mut success = Vec::new();
     let mut failures = Vec::new();
     let mut db_updates = Vec::new();
+    let mut path_rewrites = Vec::new();
 
     let target_object_id =
         crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &target_rel, game_id)
@@ -329,13 +331,13 @@ pub async fn enable_only_this_service(
                     success.push(new_abs_path);
 
                     if sibling_rel != new_rel {
-                        let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-                            pool,
-                            &sibling_rel,
-                            &new_rel,
-                            None,
-                        )
-                        .await;
+                        path_rewrites.push(WorkspacePathRewrite {
+                            old_path: sibling_abs,
+                            new_path: Path::new(&mods_path)
+                                .join(&new_rel)
+                                .to_string_lossy()
+                                .to_string(),
+                        });
                     }
                 }
                 Err(e) => failures.push(BulkActionError {
@@ -361,13 +363,13 @@ pub async fn enable_only_this_service(
             success.push(new_abs_path);
 
             if target_rel != new_rel {
-                let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-                    pool,
-                    &target_rel,
-                    &new_rel,
-                    None,
-                )
-                .await;
+                path_rewrites.push(WorkspacePathRewrite {
+                    old_path: target_path.clone(),
+                    new_path: Path::new(&mods_path)
+                        .join(&new_rel)
+                        .to_string_lossy()
+                        .to_string(),
+                });
             }
         }
         Err(e) => failures.push(BulkActionError {
@@ -402,5 +404,7 @@ pub async fn enable_only_this_service(
     )
     .await;
 
-    Ok(BulkResult { success, failures })
+    let mut result = BulkResult::new(success, failures);
+    result.path_rewrites = path_rewrites;
+    Ok(result)
 }

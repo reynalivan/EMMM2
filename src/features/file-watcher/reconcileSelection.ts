@@ -4,8 +4,10 @@ import type { GameConfig } from '../../types/game';
 import { dispatchWorkspaceRuntimeEvent } from '../workspace-runtime/state/workspaceStoreBridge';
 import { isSameOrDescendantPath, joinModPath, normalizePath, rewritePath } from './pathUtils';
 
-export function applyPathUpdates(result: DiskReconcileResult, activeGame: GameConfig | null): void {
-  const appStore = useAppStore.getState();
+export function buildDiskReconcilePathRewrites(
+  result: DiskReconcileResult,
+  activeGame: GameConfig | null,
+): Array<{ oldPath: string; newPath: string }> {
   const modsPath = activeGame?.mod_path;
   const rewrites: Array<{ oldPath: string; newPath: string }> = [];
 
@@ -24,17 +26,9 @@ export function applyPathUpdates(result: DiskReconcileResult, activeGame: GameCo
       oldPath: absoluteFrom,
       newPath: absoluteTo,
     });
-    appStore.replaceGridSelection(absoluteFrom, absoluteTo);
   }
 
-  if (rewrites.length === 0) {
-    return;
-  }
-
-  dispatchWorkspaceRuntimeEvent({
-    type: 'PATHS_REWRITTEN',
-    rewrites,
-  });
+  return rewrites;
 }
 
 export function clearStaleSelections(

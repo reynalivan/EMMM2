@@ -4,6 +4,7 @@ use std::path::Path;
 use sqlx::FromRow;
 
 use crate::database::models::ItemStatus;
+use crate::domain::collection::CollectionReferenceImpact;
 use crate::services::corridor_constants::{CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN};
 use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::services::disk_reconcile::disk_snapshot::DiskProjection;
@@ -78,6 +79,7 @@ pub(crate) struct ProjectionWriteRequest<'a> {
     pub changed_roots: &'a [String],
     pub force_full: bool,
     pub path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
+    pub collection_reference_impact: &'a mut CollectionReferenceImpact,
     pub change_summary: &'a mut ChangeSummaryBuilder,
 }
 
@@ -92,6 +94,7 @@ pub(crate) async fn reconcile_projection_in_tx(
     let changed_roots = request.changed_roots;
     let force_full = request.force_full;
     let path_updates = request.path_updates;
+    let collection_reference_impact = request.collection_reference_impact;
     let change_summary = request.change_summary;
 
     let db_objects = load_db_objects(&mut *conn, game_id).await?;
@@ -148,7 +151,7 @@ pub(crate) async fn reconcile_projection_in_tx(
                 .map_err(|error| format!("Failed to update object runtime state: {error}"))?;
 
                 if existing_object.folder_path != disk_object.folder_path {
-                    crate::services::collection_service::handle_object_renamed_tx(
+                    let impact = crate::services::collection_service::handle_object_renamed_tx(
                         &mut *conn,
                         &existing_object.folder_path,
                         &disk_object.folder_path,
@@ -157,6 +160,7 @@ pub(crate) async fn reconcile_projection_in_tx(
                     .map_err(|error| {
                         format!("Failed to heal object rename in collections: {error}")
                     })?;
+                    collection_reference_impact.merge(impact);
 
                     folders_changed = true;
                     push_path_update(
@@ -299,7 +303,7 @@ pub(crate) async fn reconcile_projection_in_tx(
             }
 
             if path_changed {
-                crate::services::collection_service::handle_mod_moved_or_renamed_tx(
+                let impact = crate::services::collection_service::handle_mod_moved_or_renamed_tx(
                     &mut *conn,
                     &existing_mod.folder_path,
                     &disk_mod.folder_path,
@@ -307,6 +311,7 @@ pub(crate) async fn reconcile_projection_in_tx(
                 )
                 .await
                 .map_err(|error| format!("Failed to heal mod rename in collections: {error}"))?;
+                collection_reference_impact.merge(impact);
             }
         } else {
             crate::repo::mod_repo::insert_mod_with_reason_tx(
@@ -376,6 +381,19 @@ pub(crate) async fn reconcile_projection_in_tx(
         if mods_path.join(&db_mod.folder_path).exists() {
             continue;
         }
+
+        let impact = crate::services::collection_service::handle_mod_missing_tx(
+            &mut *conn,
+            &db_mod.folder_path,
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to report missing collection references for '{}': {error}",
+                db_mod.folder_path
+            )
+        })?;
+        collection_reference_impact.merge(impact);
 
         crate::repo::mod_repo::delete_mod_tx(&mut *conn, &db_mod.id)
             .await

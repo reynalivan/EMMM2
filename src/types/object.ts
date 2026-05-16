@@ -2,6 +2,7 @@
  * Types for Epic 3: Game Object Management & File Properties.
  * Directly mirrors Rust payload & test usages.
  */
+import type { CollectionReferenceImpact } from './collection';
 
 export enum ObjectCategory {
   Character = 'Character',
@@ -210,6 +211,7 @@ export type RenameResult = {
   old_path: string;
   new_path: string;
   new_name: string;
+  collection_impact: CollectionReferenceImpact;
 };
 
 export interface GetObjectsResult {

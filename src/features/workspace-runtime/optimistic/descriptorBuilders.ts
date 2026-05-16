@@ -30,6 +30,11 @@ export type RuntimeMutationClass =
   | 'conflictsOnly'
   | 'dashboardKeybindings';
 
+export interface WorkspacePathRewriteLike {
+  old_path: string;
+  new_path: string;
+}
+
 const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]> = {
   workspaceOnly: ['workspaceChanged'],
   workspaceCorridor: ['workspaceChanged', 'corridorChanged'],
@@ -42,6 +47,7 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
     'workspaceChanged',
     'folderStructureChanged',
     'corridorChanged',
+    'collectionsChanged',
     'dashboardChanged',
     'activeKeybindingsChanged',
     'previewChanged',
@@ -54,6 +60,7 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
     'folderStructureChanged',
     'objectRowsChanged',
     'corridorChanged',
+    'collectionsChanged',
     'dashboardChanged',
     'activeKeybindingsChanged',
     'previewChanged',
@@ -121,6 +128,24 @@ export function buildPathRewriteDescriptor(
     ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
     rewrites: [{ oldPath, newPath }],
     thumbnailPaths: [oldPath],
+  });
+}
+
+export function buildWorkspacePathRewritesDescriptor(
+  rewrites: WorkspacePathRewriteLike[],
+  events: RuntimeRefreshEvent[],
+): RuntimeEffectDescriptor {
+  if (rewrites.length === 0) {
+    return buildRefreshDescriptor(events);
+  }
+
+  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
+    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
+    rewrites: rewrites.map((rewrite) => ({
+      oldPath: rewrite.old_path,
+      newPath: rewrite.new_path,
+    })),
+    thumbnailPaths: rewrites.map((rewrite) => rewrite.old_path),
   });
 }
 

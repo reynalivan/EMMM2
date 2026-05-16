@@ -102,6 +102,18 @@ async fn run_enable_only_this(
     .await?;
     let changed_folder_paths = result.success;
     let primary_path = changed_folder_paths.last().cloned();
+    let rewrites = result.path_rewrites.clone();
+
+    let mut impact = build_switch_impact(
+        None,
+        primary_path.as_deref(),
+        &changed_folder_paths,
+        &changed_object_ids,
+        false,
+    );
+    if !rewrites.is_empty() {
+        impact.rewrites = rewrites;
+    }
 
     Ok(WorkspaceSwitchResult {
         status: WorkspaceSwitchStatus::Applied,
@@ -109,13 +121,7 @@ async fn run_enable_only_this(
         changed_folder_paths: changed_folder_paths.clone(),
         changed_object_ids: changed_object_ids.clone(),
         duplicates: Vec::new(),
-        impact: build_switch_impact(
-            None,
-            primary_path.as_deref(),
-            &changed_folder_paths,
-            &changed_object_ids,
-            false,
-        ),
+        impact,
     })
 }
 
@@ -125,6 +131,7 @@ fn default_switch_refresh_scopes() -> Vec<WorkspaceRefreshScope> {
         WorkspaceRefreshScope::FolderStructureChanged,
         WorkspaceRefreshScope::ObjectRowsChanged,
         WorkspaceRefreshScope::CorridorChanged,
+        WorkspaceRefreshScope::CollectionsChanged,
         WorkspaceRefreshScope::DashboardChanged,
         WorkspaceRefreshScope::ActiveKeybindingsChanged,
         WorkspaceRefreshScope::PreviewChanged,
@@ -276,4 +283,16 @@ pub async fn execute_workspace_switch(
             false,
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_switch_refresh_scopes, WorkspaceRefreshScope};
+
+    #[test]
+    fn switch_refresh_scopes_include_collections_for_unsaved_corridor_counts() {
+        let scopes = default_switch_refresh_scopes();
+
+        assert!(scopes.contains(&WorkspaceRefreshScope::CollectionsChanged));
+    }
 }

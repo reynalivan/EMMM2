@@ -2,6 +2,18 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../lib/bindings';
 import { RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { thumbnailKeys } from '../../hooks/useThumbnail';
+import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
+import { applyRuntimeEffects } from '../workspace-runtime/optimistic/applyOptimisticEffects';
+import {
+  buildQueryRemovalDescriptor,
+  buildRuntimeMutationDescriptor,
+  buildRuntimeRefreshDescriptor,
+  buildWorkspacePathRewritesDescriptor,
+} from '../workspace-runtime/optimistic/descriptorBuilders';
+import { mergeRuntimeEffectDescriptors } from '../workspace-runtime/optimistic/descriptor';
+import type { WorkspaceImpact } from '../../types/workspace';
 
 interface RandomizerModalProps {
   open: boolean;
@@ -20,6 +32,7 @@ interface RandomModProposal {
 
 export default function RandomizerModal({ open, onClose, gameId }: RandomizerModalProps) {
   const { t } = useTranslation('collections');
+  const queryClient = useQueryClient();
   const [proposals, setProposals] = useState<RandomModProposal[]>([]);
   const [selectedModIds, setSelectedModIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -112,7 +125,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
       const toApply = proposals.filter((p) => selectedModIds.has(p.mod_id));
 
       for (const proposal of toApply) {
-        await commands.executeWorkspaceSwitch({
+        const result = await commands.executeWorkspaceSwitch({
           input: {
             game_id: gameId,
             target: {
@@ -124,6 +137,23 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
             origin_surface: 'collections',
           },
         });
+        if (result.status === 'applied') {
+          applyRuntimeEffects(
+            queryClient,
+            mergeRuntimeEffectDescriptors(
+              buildQueryRemovalDescriptor(
+                result.changed_folder_paths.map((path) => thumbnailKeys.folder(path)),
+                [],
+              ),
+              buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
+            ),
+          );
+          await publishRuntimeDescriptor(
+            queryClient,
+            buildRandomizerRefreshDescriptor(result.impact),
+            'active',
+          );
+        }
       }
 
       onClose();
@@ -254,4 +284,12 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
       </form>
     </dialog>
   );
+}
+
+function buildRandomizerRefreshDescriptor(impact: WorkspaceImpact) {
+  if (impact.refresh_scopes.length > 0) {
+    return buildRuntimeRefreshDescriptor(impact.refresh_scopes);
+  }
+
+  return buildRuntimeMutationDescriptor(['folderSwitch', 'collectionsCatalog']);
 }

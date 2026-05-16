@@ -46,7 +46,7 @@ interface ToolbarProps {
     onDisable: () => void;
     onAddTags: () => void;
     onRemoveTags: () => void;
-    onAutoOrganize: () => void;
+    onAutoRecognize: () => void;
     onFavorite: (fav: boolean) => void;
     onMarkSafe: (safe: boolean) => void;
     onClear: () => void;

@@ -3,7 +3,6 @@ import { commands } from '../lib/bindings';
 import { applyDiskReconcileResult } from '../features/file-watcher/hooks';
 import { toast } from '../stores/useToastStore';
 import type { GameConfig } from '../types/game';
-import { useAppStore } from '../stores/useAppStore';
 import { thumbnailKeys } from './useThumbnail';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../features/workspace-runtime/optimistic/applyOptimisticEffects';
@@ -15,6 +14,10 @@ import {
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
 import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
 import { updateFolderCache } from './folderCache';
+import {
+  hasCollectionReferenceImpact,
+  notifyCollectionReferenceImpact,
+} from './collectionReferenceImpact';
 
 async function runDiskRepairRecovery(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -90,7 +93,6 @@ export function useRenameMod() {
         name: result.new_name,
         path: result.new_path,
       }));
-      useAppStore.getState().replaceGridSelection(variables.folderPath, result.new_path);
       applyRuntimeEffects(
         queryClient,
         buildPathRewriteDescriptor(variables.folderPath, result.new_path, []),
@@ -105,6 +107,14 @@ export function useRenameMod() {
         buildRuntimeMutationDescriptor('folderConflictState'),
         'none',
       );
+      if (hasCollectionReferenceImpact(result.collection_impact)) {
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('collectionsCatalog'),
+          'active',
+        );
+        notifyCollectionReferenceImpact(result.collection_impact);
+      }
     },
     onError: (error, variables) => {
       const errorMessage = String(error);
@@ -132,7 +142,7 @@ export function useDeleteMod() {
 
   const mutation = useMutation({
     mutationFn: (params: { path: string; gameId?: string }) => commands.deleteMod(params),
-    onSuccess: async (_, variables) => {
+    onSuccess: async (result, variables) => {
       applyRuntimeEffects(
         queryClient,
         buildQueryRemovalDescriptor([thumbnailKeys.folder(variables.path)], []),
@@ -149,6 +159,14 @@ export function useDeleteMod() {
         buildRuntimeMutationDescriptor('folderConflictState'),
         'none',
       );
+      if (hasCollectionReferenceImpact(result.collection_impact)) {
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('collectionsCatalog'),
+          'active',
+        );
+        notifyCollectionReferenceImpact(result.collection_impact);
+      }
     },
     onError: (error, variables) => {
       const errorMessage = String(error);

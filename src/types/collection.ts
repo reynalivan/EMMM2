@@ -2,6 +2,8 @@
 // v2 Domain Types — Direct mirrors of Rust `domain/` structs
 // ---------------------------------------------------------------------------
 
+import type { WorkspacePathRewrite } from './workspace';
+
 export type CollectionKind = 'named' | 'undo_snapshot' | 'unsaved';
 export type MemberKind = 'mod' | 'nested' | 'object' | 'root';
 
@@ -173,6 +175,22 @@ export type ApplyResult = {
   warnings: string[];
   final_state_name: string | null;
   final_mode: string | null;
+  partial_apply: boolean;
+  skipped_missing_paths: string[];
+  final_state_is_dirty: boolean;
+  runtime_path_rewrites: WorkspacePathRewrite[];
+};
+
+export type CollectionPathRewrite = {
+  from: string;
+  to: string;
+};
+
+export type CollectionReferenceImpact = {
+  affected_collection_count: number;
+  affected_collection_names: string[];
+  rewritten_paths: CollectionPathRewrite[];
+  missing_paths: string[];
 };
 
 export type ProjectedObjectState = {

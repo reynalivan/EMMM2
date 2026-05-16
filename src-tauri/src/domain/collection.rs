@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::domain::workspace::WorkspacePathRewrite;
+
 // ---------------------------------------------------------------------------
 // Collection — A named loadout snapshot
 // ---------------------------------------------------------------------------
@@ -249,6 +251,46 @@ pub struct ApplyResult {
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
     pub final_mode: Option<String>,
+    pub partial_apply: bool,
+    pub skipped_missing_paths: Vec<String>,
+    pub final_state_is_dirty: bool,
+    pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct CollectionPathRewrite {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct CollectionReferenceImpact {
+    #[specta(type = f64)]
+    pub affected_collection_count: usize,
+    pub affected_collection_names: Vec<String>,
+    pub rewritten_paths: Vec<CollectionPathRewrite>,
+    pub missing_paths: Vec<String>,
+}
+
+impl CollectionReferenceImpact {
+    pub fn merge(&mut self, next: Self) {
+        for name in next.affected_collection_names {
+            if !self
+                .affected_collection_names
+                .iter()
+                .any(|existing| existing == &name)
+            {
+                self.affected_collection_names.push(name);
+            }
+        }
+        for path in next.missing_paths {
+            if !self.missing_paths.iter().any(|existing| existing == &path) {
+                self.missing_paths.push(path);
+            }
+        }
+        self.rewritten_paths.extend(next.rewritten_paths);
+        self.affected_collection_count = self.affected_collection_names.len();
+    }
 }
 
 /// Input for creating a new collection.

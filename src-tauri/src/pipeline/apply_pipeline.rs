@@ -5,6 +5,7 @@ use sqlx::SqlitePool;
 
 use crate::domain::collection::{ApplyResult, CollectionMod, CollectionObject};
 use crate::domain::errors::CollectionError;
+use crate::domain::workspace::WorkspacePathRewrite;
 use crate::services::app::post_apply::PostApplyContext;
 use crate::services::config::AppSettings;
 use crate::services::scanner::watcher::WatcherSuppressor;
@@ -35,6 +36,9 @@ pub struct ApplyContext {
     pub new_signature: String,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
+    pub skipped_missing_paths: Vec<String>,
+    pub final_state_is_dirty: bool,
+    pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
 
     // Stats
     pub mods_enabled: usize,
@@ -73,6 +77,9 @@ impl ApplyContext {
             new_signature: String::new(),
             warnings: Vec::new(),
             final_state_name: None,
+            skipped_missing_paths: Vec::new(),
+            final_state_is_dirty: false,
+            runtime_path_rewrites: Vec::new(),
             mods_enabled: 0,
             mods_disabled: 0,
             objects_toggled: 0,
@@ -146,6 +153,14 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         0,
         None,
     );
+    if !ctx.mods_path.exists() || !ctx.mods_path.is_dir() {
+        return Err(CollectionError::Corridor(
+            crate::domain::errors::CorridorError::NoModsPath {
+                game_id: ctx.game_id.clone(),
+            },
+        ));
+    }
+
     // Step 1: Validate corridor match
     super::steps::validate_corridor::validate(ctx).await?;
 
@@ -225,6 +240,10 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         } else {
             "UNSAFE".to_string()
         }),
+        partial_apply: !ctx.skipped_missing_paths.is_empty(),
+        skipped_missing_paths: ctx.skipped_missing_paths.clone(),
+        final_state_is_dirty: ctx.final_state_is_dirty,
+        runtime_path_rewrites: ctx.runtime_path_rewrites.clone(),
     };
     crate::services::apply_progress_service::finish(
         &ctx.game_id,

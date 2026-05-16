@@ -49,7 +49,6 @@ export function useObjectListHandlers({
 
   const bulk = useObjHandlersBulk({
     objects,
-    setScanReview: scan.setScanReview,
     setIsSyncing: scan.setIsSyncing,
   });
 
@@ -112,7 +111,7 @@ export function useObjectListHandlers({
     handleBulkDisable: bulk.handleBulkDisable,
     handleBulkAddTags: bulk.handleBulkAddTags,
     handleBulkRemoveTags: bulk.handleBulkRemoveTags,
-    handleBulkAutoOrganize: bulk.handleBulkAutoOrganize,
+    handleBulkAutoRecognize: bulk.handleBulkAutoRecognize,
     handleBulkFavorite: bulk.handleBulkFavorite,
     handleBulkSafe: bulk.handleBulkSafe,
   };

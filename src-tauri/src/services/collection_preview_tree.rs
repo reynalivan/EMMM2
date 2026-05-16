@@ -433,6 +433,15 @@ fn build_preview_descriptor(
     }
 
     let terminal_path = resolve_collection_path(&member.mod_path, mods_path);
+    if terminal_path.as_ref().is_some_and(|path| !path.exists()) {
+        return PreviewDescriptor {
+            display_path: member.mod_path.clone(),
+            node_type: NodeType::FlatModRoot,
+            warnings: Vec::new(),
+            display_segments: relative_segments,
+        };
+    }
+
     let candidate_paths = cumulative_candidate_paths(&terminal_path, relative_segments.len());
     for candidate_path in candidate_paths {
         let Some((node_type, warnings)) = classify_path(candidate_path.as_deref()) else {

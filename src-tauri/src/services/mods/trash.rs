@@ -5,6 +5,7 @@
 //!
 //! # Covers: US-4.4 (Soft Delete), TC-4.5-01, DI-4.01
 
+use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
@@ -33,6 +34,11 @@ pub struct TrashMetadata {
     pub game_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct DeleteModResult {
+    pub collection_impact: CollectionReferenceImpact,
+}
+
 /// Move a mod folder to the trash directory.
 ///
 /// Creates `{trash_dir}/{uuid}/` containing:
@@ -48,7 +54,7 @@ pub async fn delete_mod_service(
     trash_dir: std::path::PathBuf,
     path: String,
     game_id: Option<String>,
-) -> Result<(), AppError> {
+) -> Result<DeleteModResult, AppError> {
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
 
     if !trash_dir.exists() {
@@ -60,7 +66,7 @@ pub async fn delete_mod_service(
         PathGuard::validate_path(config, gid, &path).map_err(AppError::Security)?;
     }
 
-    let (is_safe, object_id) = if let Some(ref gid) = game_id {
+    let (is_safe, object_id, relative_path) = if let Some(ref gid) = game_id {
         let mods_path = crate::repo::game_repo::get_mod_path(pool, gid)
             .await
             .ok()
@@ -87,12 +93,12 @@ pub async fn delete_mod_service(
                 .await
                 .ok()
                 .flatten();
-            (safe, object)
+            (safe, object, Some(rel))
         } else {
-            (None, None)
+            (None, None, None)
         }
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     let path_obj = Path::new(&path);
@@ -100,6 +106,13 @@ pub async fn delete_mod_service(
 
     move_to_trash(path_obj, &trash_dir, game_id.clone())?;
     let _ = crate::repo::mod_repo::delete_mod_by_path(pool, &path).await;
+    let collection_impact = if let Some(rel) = relative_path.as_deref() {
+        crate::services::collection_service::handle_mod_missing(pool, rel)
+            .await
+            .unwrap_or_default()
+    } else {
+        CollectionReferenceImpact::default()
+    };
 
     if let (Some(gid), Some(safe)) = (game_id, is_safe) {
         let changed_object_ids = object_id.into_iter().collect::<Vec<_>>();
@@ -122,7 +135,7 @@ pub async fn delete_mod_service(
         .await;
     }
 
-    Ok(())
+    Ok(DeleteModResult { collection_impact })
 }
 
 /// Helper that suppresses the watcher for the single move action.

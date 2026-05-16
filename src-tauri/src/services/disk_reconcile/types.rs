@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::domain::collection::CollectionReferenceImpact;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum DiskReconcileReason {
     StartupBoot,
@@ -64,5 +66,6 @@ pub struct DiskReconcileResult {
     pub thumbnail_roots: Vec<String>,
     pub cleared_selection_paths: Vec<String>,
     pub path_updates: Vec<DiskReconcilePathUpdate>,
+    pub collection_reference_impact: CollectionReferenceImpact,
     pub change_summary: DiskReconcileChangeSummary,
 }

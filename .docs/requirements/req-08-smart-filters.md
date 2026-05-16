@@ -51,8 +51,9 @@ As a user, I want to filter the objectlist by status (enabled/disabled) or categ
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-08.3.1 | ✅ Positive | Given "Enabled Only", the list is filtered to objects having `enabled_count > 0`. "Disabled Only" shows objects with `enabled_count = 0` or missing files.                  |
 | AC-08.3.2 | ✅ Positive | Given a Category selection (e.g., Characters), the list is filtered to objects where `object_type` matches. Non-matching objects are excluded.                              |
-| AC-08.3.3 | ✅ Positive | Given multiple metadata filters (Element: Pyro, Rarity: 5), the list uses an AND logic intersection — only objects matching ALL active chips are shown                      |
-| AC-08.3.4 | ⚠️ Edge     | Given a newly sync'd object that changes category while a filter is active, it immediately moves or disappears from the list based on match criteria via cache invalidation |
+| AC-08.3.3 | ✅ Positive | Given multiple metadata filters (Element: Pyro, Weapon: Sword), the list uses AND logic and matches scalar or array JSON metadata values case-insensitively                 |
+| AC-08.3.4 | ⚠️ Edge     | Given a newly sync'd object changes category while a filter is active, metadata chips not valid for the new category are cleared so stale filters do not create false empty results |
+| AC-08.3.5 | ❌ Negative | Given a malformed metadata filter key reaches the backend, then it is ignored safely rather than generating invalid SQL or forcing an empty result                          |
 
 ---
 
@@ -103,10 +104,10 @@ Fuzzy search (heavy path):
 ### Integration Points
 
 | Component     | Detail                                                                                                                            |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Object Query  | `commands.getWorkspaceViewModel({ input })` — filtering/sorting applied in the backend runtime projection                         |
 | Fuzzy Search  | `fuzzysort` npm package (Jaro-Winkler variant) — threshold 0.75, runs in Web Worker for ≥ 500 objects                             |
-| Sort Persist  | `localStorage['sidebarSort']` — string enum `'az'                                                                                 | 'active_first'` |
+| Sort Persist  | `localStorage['sidebarSort']` — typed sort key such as `az`, `active_first`, `date`, or `rarity`                                  |
 | Safe Mode     | Read from `useAppStore.safeMode` Zustand state → passed into `getWorkspaceViewModel({ input })` corridor-aware runtime projection |
 | Query Refresh | Filter changes update workspace query params; runtime refresh uses descriptor scopes instead of direct invalidation               |
 

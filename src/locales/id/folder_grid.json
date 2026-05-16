@@ -19,7 +19,15 @@
     "placeholder": "Cari objek...",
     "no_results": "Objek tidak ditemukan",
     "current_marker": "(Sekarang)",
+    "location_label": "Lokasi",
+    "select_object_first": "Pilih objek dulu",
+    "loading_targets": "Memuat folder...",
     "status_label": "Atur Status",
+    "status": {
+      "keep": "Pertahankan",
+      "disabled": "Nonaktif",
+      "only-enable": "Aktifkan Saja"
+    },
     "toast": {
       "success": "Dipindahkan ke {{name}}",
       "failed": "Gagal memindahkan: {{error}}"

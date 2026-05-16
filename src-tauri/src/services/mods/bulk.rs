@@ -1,3 +1,5 @@
+use crate::domain::collection::CollectionReferenceImpact;
+use crate::domain::workspace::WorkspacePathRewrite;
 use crate::repo::mod_repo;
 use crate::services::mods::core_ops::toggle_mod_inner;
 use crate::services::mods::info_json;
@@ -29,6 +31,33 @@ pub struct BulkActionError {
 pub struct BulkResult {
     pub success: Vec<String>,
     pub failures: Vec<BulkActionError>,
+    pub collection_impact: CollectionReferenceImpact,
+    pub path_rewrites: Vec<WorkspacePathRewrite>,
+}
+
+impl BulkResult {
+    pub fn new(success: Vec<String>, failures: Vec<BulkActionError>) -> Self {
+        Self {
+            success,
+            failures,
+            collection_impact: CollectionReferenceImpact::default(),
+            path_rewrites: Vec::new(),
+        }
+    }
+
+    pub fn with_collection_impact(
+        success: Vec<String>,
+        failures: Vec<BulkActionError>,
+        collection_impact: CollectionReferenceImpact,
+        path_rewrites: Vec<WorkspacePathRewrite>,
+    ) -> Self {
+        Self {
+            success,
+            failures,
+            collection_impact,
+            path_rewrites,
+        }
+    }
 }
 
 /// Bulk toggle mods on disk and sync DB.
@@ -66,6 +95,8 @@ pub async fn bulk_toggle(
 
     let mut success = Vec::new();
     let mut failures = Vec::new();
+    let collection_impact = CollectionReferenceImpact::default();
+    let mut path_rewrites = Vec::new();
     // (old_abs, new_abs, ItemStatus) — for DB batch update
     let mut db_updates = Vec::new();
 
@@ -100,12 +131,11 @@ pub async fn bulk_toggle(
                 db_updates.push((old_rel.clone(), new_rel.clone(), new_status_enum));
                 success.push(new_abs_path.clone());
 
-                // Collection auto-healing: cascade path rename to all saved collections
                 if old_rel != new_rel {
-                    let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-                        pool, &old_rel, &new_rel, None,
-                    )
-                    .await;
+                    path_rewrites.push(WorkspacePathRewrite {
+                        old_path: path.clone(),
+                        new_path: new_abs_path,
+                    });
                 }
             }
             Err(e) => failures.push(BulkActionError {
@@ -170,7 +200,12 @@ pub async fn bulk_toggle(
         },
     );
 
-    Ok(BulkResult { success, failures })
+    Ok(BulkResult::with_collection_impact(
+        success,
+        failures,
+        collection_impact,
+        path_rewrites,
+    ))
 }
 
 /// Internal bulk toggle without progress events (for test use only).
@@ -187,7 +222,7 @@ pub async fn bulk_toggle_inner(
             Err(e) => failures.push(BulkActionError { path, error: e }),
         }
     }
-    Ok(BulkResult { success, failures })
+    Ok(BulkResult::new(success, failures))
 }
 
 pub async fn bulk_delete(
@@ -223,6 +258,7 @@ pub async fn bulk_delete(
     let mut success = Vec::new();
     let mut failures = Vec::new();
     let mut db_deletes = Vec::new();
+    let mut collection_impact = CollectionReferenceImpact::default();
 
     // Opt-O: Batch progress — emit every N items
     let progress_interval = std::cmp::max(1, total / 10);
@@ -273,6 +309,13 @@ pub async fn bulk_delete(
                             .unwrap_or_else(|_| p.clone())
                     })
                     .collect();
+                for relative in &relatives {
+                    let impact =
+                        crate::services::collection_service::handle_mod_missing(pool, relative)
+                            .await
+                            .unwrap_or_default();
+                    collection_impact.merge(impact);
+                }
 
                 sqlx::query_scalar(
                     "SELECT DISTINCT is_safe FROM mods WHERE game_id = ? AND folder_path IN (SELECT value FROM json_each(?))"
@@ -325,7 +368,12 @@ pub async fn bulk_delete(
         },
     );
 
-    Ok(BulkResult { success, failures })
+    Ok(BulkResult::with_collection_impact(
+        success,
+        failures,
+        collection_impact,
+        Vec::new(),
+    ))
 }
 
 /// Internal bulk delete without progress events (for test use only).
@@ -343,7 +391,7 @@ pub async fn bulk_delete_inner(
             Err(e) => failures.push(BulkActionError { path, error: e }),
         }
     }
-    Ok(BulkResult { success, failures })
+    Ok(BulkResult::new(success, failures))
 }
 
 pub async fn bulk_update_info(
@@ -367,7 +415,7 @@ pub async fn bulk_update_info(
             }),
         }
     }
-    Ok(BulkResult { success, failures })
+    Ok(BulkResult::new(success, failures))
 }
 
 pub async fn bulk_toggle_favorite(
@@ -417,10 +465,7 @@ pub async fn bulk_toggle_favorite(
             let _ = info_json::update_info_json(full_path, &update_for_parallel);
         }
     });
-    Ok(BulkResult {
-        success: folder_paths,
-        failures,
-    })
+    Ok(BulkResult::new(folder_paths, failures))
 }
 
 pub async fn bulk_pin(
@@ -456,8 +501,5 @@ pub async fn bulk_pin(
         return Err(crate::domain::errors::AppError::Io(e.to_string()));
     }
 
-    Ok(BulkResult {
-        success: folder_paths,
-        failures,
-    })
+    Ok(BulkResult::new(folder_paths, failures))
 }

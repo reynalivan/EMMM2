@@ -17,7 +17,9 @@ interface PreviewPanelModalsProps {
     folder: ModFolder,
     targetId: string,
     status: 'disabled' | 'only-enable' | 'keep',
-  ) => void;
+    targetSubpath?: string | null,
+    targetModPaths?: string[],
+  ) => Promise<void> | void;
   objectId?: string;
   objects: ObjectSummary[];
 
@@ -94,10 +96,15 @@ export default function PreviewPanelModals({
           objects={objects}
           targetModPaths={[currentPath]}
           currentObjectId={objectId || undefined}
-          onSubmit={(targetId: string, status: 'disabled' | 'only-enable' | 'keep') => {
+          onSubmit={async (
+            targetId: string,
+            status: 'disabled' | 'only-enable' | 'keep',
+            targetSubpath: string | null,
+          ) => {
             if (!moveDialog.folder) return;
-            handleMoveToObject(moveDialog.folder, targetId, status);
-            closeMoveDialog();
+            await handleMoveToObject(moveDialog.folder, targetId, status, targetSubpath, [
+              currentPath,
+            ]);
           }}
         />
       )}

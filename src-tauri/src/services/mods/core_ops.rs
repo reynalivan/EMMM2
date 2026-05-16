@@ -1,3 +1,4 @@
+use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
@@ -292,13 +293,6 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
             log::warn!("Failed to recompute corridor signature after toggle: {e}");
         }
 
-        // Collection Auto-Healing: cascade path changes to all saved collections
-        if old_rel != new_rel {
-            let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-                pool, &old_rel, &new_rel, None,
-            )
-            .await;
-        }
         let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
             pool,
             config,
@@ -347,12 +341,6 @@ pub async fn toggle_and_sync_db(
     if new_rel != rel_path {
         let _ = crate::repo::mod_repo::update_mod_path_by_id(pool, id, &new_rel).await;
 
-        // Auto-heal collections that depend on this mod
-        let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-            pool, rel_path, &new_rel, None,
-        )
-        .await;
-
         // Top-level folder → also update object + children
         let rel_components: Vec<_> = Path::new(rel_path).components().collect();
         if rel_components.len() == 1 {
@@ -380,6 +368,7 @@ pub struct RenameResult {
     pub old_path: String,
     pub new_path: String,
     pub new_name: String,
+    pub collection_impact: CollectionReferenceImpact,
 }
 
 pub async fn rename_mod_folder_inner(
@@ -456,6 +445,7 @@ pub async fn rename_mod_folder_inner(
         old_path: folder_path,
         new_path: new_path.to_string_lossy().to_string(),
         new_name,
+        collection_impact: CollectionReferenceImpact::default(),
     })
 }
 
@@ -504,7 +494,7 @@ pub async fn rename_mod_folder_inner_service(
         }
     }
 
-    let result = rename_mod_folder_inner(
+    let mut result = rename_mod_folder_inner(
         state,
         canonical_path.to_string_lossy().to_string(),
         new_name.clone(),
@@ -534,10 +524,11 @@ pub async fn rename_mod_folder_inner_service(
     }
 
     // Collection Auto-Healing: cascade path changes to all saved collections
-    let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
+    result.collection_impact = crate::services::collection_service::handle_mod_moved_or_renamed(
         pool, &old_rel, &new_rel, None,
     )
-    .await;
+    .await
+    .unwrap_or_default();
 
     let rel_components: Vec<_> = Path::new(&old_rel).components().collect();
     if rel_components.len() == 1 {

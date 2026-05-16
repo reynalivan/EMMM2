@@ -1,11 +1,11 @@
 use crate::domain::collection::{
-    ApplyPreview, ApplyResult, CollectionMod, CollectionObject, CollectionPreview, CollectionRoot,
-    CollectionSummary, CreateCollectionInput, CreateCollectionMode, ProjectedCollectionState,
-    UpdateCollectionInput,
+    ApplyPreview, ApplyResult, CollectionMod, CollectionObject, CollectionPathRewrite,
+    CollectionPreview, CollectionReferenceImpact, CollectionRoot, CollectionSummary,
+    CreateCollectionInput, CreateCollectionMode, ProjectedCollectionState, UpdateCollectionInput,
 };
 use crate::domain::errors::CollectionError;
 use crate::repo::{collection_repo, corridor_repo};
-use crate::services::scanner::core::normalizer::is_disabled_folder;
+use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::services::{
     collection_preview_tree::resolve_preview_terminal_metadata, projected_state_service,
 };
@@ -34,33 +34,73 @@ fn build_projected_state_from_members(
     projected_state_service::build_projected_state(mods, objects, mods_path)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CollectionPathTransitionKind {
+    RuntimeTogglePrefix,
+    SemanticMoveOrRename,
+}
+
+fn logical_collection_path(path: &str) -> String {
+    path.split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .map(normalize_display_name)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn unique_reference_candidates(path: &str) -> Vec<String> {
+    let logical_path = logical_collection_path(path);
+    let mut candidates = vec![path.to_string()];
+    if logical_path != path {
+        candidates.push(logical_path);
+    }
+    candidates
+}
+
+pub(crate) fn classify_collection_path_transition(
+    old_path: &str,
+    new_path: &str,
+) -> CollectionPathTransitionKind {
+    if logical_collection_path(old_path) == logical_collection_path(new_path) {
+        return CollectionPathTransitionKind::RuntimeTogglePrefix;
+    }
+
+    CollectionPathTransitionKind::SemanticMoveOrRename
+}
+
 pub(crate) async fn load_projected_collection_state(
     pool: &SqlitePool,
     collection: &crate::domain::collection::Collection,
     mods_path: Option<&str>,
 ) -> Result<ProjectedCollectionState, CollectionError> {
-    if let Some(snapshot_json) = collection.snapshot_json.as_deref() {
-        if let Some(snapshot) = projected_state_service::parse_snapshot_json(snapshot_json) {
-            let active_root_count = snapshot.summary.active_root_count as i32;
-            if collection.root_count != active_root_count
-                || collection.display_mod_count != active_root_count
-            {
-                sqlx::query(
-                    "UPDATE collections SET root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                )
-                .bind(active_root_count)
-                .bind(active_root_count)
-                .bind(&collection.id)
-                .execute(pool)
-                .await?;
+    if mods_path.is_none() {
+        if let Some(snapshot_json) = collection.snapshot_json.as_deref() {
+            if let Some(snapshot) = projected_state_service::parse_snapshot_json(snapshot_json) {
+                let active_root_count = snapshot.summary.active_root_count as i32;
+                if collection.root_count != active_root_count
+                    || collection.display_mod_count != active_root_count
+                {
+                    sqlx::query(
+                        "UPDATE collections SET root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    )
+                    .bind(active_root_count)
+                    .bind(active_root_count)
+                    .bind(&collection.id)
+                    .execute(pool)
+                    .await?;
+                }
+                return Ok(snapshot);
             }
-            return Ok(snapshot);
         }
     }
 
     let mods = collection_repo::get_mods(pool, &collection.id).await?;
     let objects = collection_repo::get_objects(pool, &collection.id).await?;
     let snapshot = build_projected_state_from_members(&mods, &objects, mods_path);
+    if mods_path.is_some() {
+        return Ok(snapshot);
+    }
+
     let signature = projected_state_service::signature_for_projected_state(&snapshot);
     let snapshot_json = projected_state_service::serialize_snapshot_json(&snapshot);
 
@@ -538,8 +578,7 @@ pub async fn update_collection(
         .ok_or_else(|| CollectionError::NotFound {
             id: input.id.clone(),
         })?;
-    let mods_path = load_game_mods_path(pool, &input.game_id).await?;
-    let _ = load_projected_collection_state(pool, &collection, mods_path.as_deref()).await?;
+    let _ = load_projected_collection_state(pool, &collection, None).await?;
     let collection = collection_repo::get_by_id(pool, &input.id)
         .await?
         .ok_or_else(|| CollectionError::NotFound {
@@ -549,12 +588,100 @@ pub async fn update_collection(
     Ok(collection_repo::to_summary(&collection, None, None))
 }
 
+pub async fn replace_collection_with_current_state(
+    pool: &SqlitePool,
+    game_id: &str,
+    collection_id: &str,
+) -> Result<CollectionSummary, CollectionError> {
+    let collection = collection_repo::get_by_id(pool, collection_id)
+        .await?
+        .ok_or_else(|| CollectionError::NotFound {
+            id: collection_id.to_string(),
+        })?;
+
+    if collection.game_id != game_id {
+        return Err(CollectionError::Validation(format!(
+            "Collection '{}' does not belong to game '{}'",
+            collection_id, game_id
+        )));
+    }
+    if collection.is_unsaved {
+        return Err(CollectionError::Validation(
+            "Cannot replace an unsaved collection snapshot".to_string(),
+        ));
+    }
+
+    let mods_path = load_game_mods_path(pool, game_id).await?;
+    let (mods, objects) = load_live_corridor_state(pool, game_id, collection.is_safe).await?;
+    if mods.is_empty() {
+        return Err(CollectionError::Validation(
+            "A collection must contain at least 1 active mod".to_string(),
+        ));
+    }
+
+    let persisted_mods: Vec<CollectionMod> = mods
+        .iter()
+        .map(|entry| CollectionMod {
+            collection_id: collection.id.clone(),
+            ..entry.clone()
+        })
+        .collect();
+    let persisted_objects: Vec<CollectionObject> = objects
+        .iter()
+        .map(|entry| CollectionObject {
+            collection_id: collection.id.clone(),
+            ..entry.clone()
+        })
+        .collect();
+    let projected_state = build_projected_state_from_members(
+        &persisted_mods,
+        &persisted_objects,
+        mods_path.as_deref(),
+    );
+    let roots = projected_state_service::roots_from_projected_state(
+        &collection.id,
+        collection.is_safe,
+        &projected_state,
+    );
+    let signature = projected_state_service::signature_for_projected_state(&projected_state);
+    let snapshot_json = projected_state_service::serialize_snapshot_json(&projected_state);
+
+    collection_repo::replace_all_state(
+        pool,
+        &collection.id,
+        &persisted_mods,
+        &persisted_objects,
+        &roots,
+        Some(&signature),
+        snapshot_json.as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await?;
+
+    let updated = collection_repo::get_by_id(pool, &collection.id)
+        .await?
+        .ok_or_else(|| CollectionError::NotFound {
+            id: collection.id.clone(),
+        })?;
+    let corridor = corridor_repo::get(pool, game_id, collection.is_safe)
+        .await
+        .map_err(CollectionError::Corridor)?;
+    let active_id = corridor
+        .as_ref()
+        .and_then(|state| state.active_collection_id.as_deref());
+    let undo_id = corridor
+        .as_ref()
+        .and_then(|state| state.undo_collection_id.as_deref());
+
+    Ok(collection_repo::to_summary(&updated, active_id, undo_id))
+}
+
 pub async fn handle_mod_moved_or_renamed(
     pool: &SqlitePool,
     old_mod_path: &str,
     new_mod_path: &str,
     new_object_id: Option<&str>,
-) -> Result<u64, CollectionError> {
+) -> Result<CollectionReferenceImpact, CollectionError> {
     let mut tx = pool.begin().await?;
     let count =
         handle_mod_moved_or_renamed_tx(&mut tx, old_mod_path, new_mod_path, new_object_id).await?;
@@ -567,105 +694,255 @@ pub async fn handle_mod_moved_or_renamed_tx(
     old_mod_path: &str,
     new_mod_path: &str,
     new_object_id: Option<&str>,
-) -> Result<u64, CollectionError> {
-    let count =
-        collection_repo::update_member_paths(&mut *conn, old_mod_path, new_mod_path, new_object_id)
-            .await?;
-
-    if count > 0 {
-        // Find all collections that now contain this new path
-        let collection_ids: Vec<String> = sqlx::query_scalar(
-            "SELECT DISTINCT collection_id FROM collection_mods WHERE mod_path = ?",
-        )
-        .bind(new_mod_path)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        // Recompute and update signatures
-        for id in collection_ids {
-            recompute_signature_tx(&mut *conn, &id).await?;
-        }
+) -> Result<CollectionReferenceImpact, CollectionError> {
+    if classify_collection_path_transition(old_mod_path, new_mod_path)
+        == CollectionPathTransitionKind::RuntimeTogglePrefix
+    {
+        return Ok(CollectionReferenceImpact::default());
     }
 
-    Ok(count)
+    let new_logical_path = logical_collection_path(new_mod_path);
+    let mut affected_collections =
+        std::collections::BTreeMap::<String, CollectionReferenceRow>::new();
+    let mut rewritten_paths = Vec::new();
+
+    for old_candidate in unique_reference_candidates(old_mod_path) {
+        let references = load_collection_references_tx(&mut *conn, &old_candidate).await?;
+        let count = collection_repo::update_member_paths(
+            &mut *conn,
+            &old_candidate,
+            &new_logical_path,
+            new_object_id,
+        )
+        .await?;
+
+        if count == 0 {
+            continue;
+        }
+
+        for collection in references {
+            affected_collections.insert(collection.id.clone(), collection);
+        }
+        rewritten_paths.push(CollectionPathRewrite {
+            from: old_candidate,
+            to: new_logical_path.clone(),
+        });
+    }
+
+    if affected_collections.is_empty() {
+        return Ok(CollectionReferenceImpact::default());
+    }
+
+    for collection in affected_collections.values() {
+        recompute_signature_tx(&mut *conn, &collection.id).await?;
+    }
+
+    Ok(CollectionReferenceImpact {
+        affected_collection_count: affected_collections.len(),
+        affected_collection_names: affected_collections
+            .values()
+            .map(|entry| entry.name.clone())
+            .collect(),
+        rewritten_paths,
+        missing_paths: Vec::new(),
+    })
+}
+
+pub async fn handle_mod_missing(
+    pool: &SqlitePool,
+    mod_path: &str,
+) -> Result<CollectionReferenceImpact, CollectionError> {
+    let mut tx = pool.begin().await?;
+    let impact = handle_mod_missing_tx(&mut tx, mod_path).await?;
+    tx.commit().await?;
+    Ok(impact)
+}
+
+pub async fn handle_mod_missing_tx(
+    conn: &mut sqlx::SqliteConnection,
+    mod_path: &str,
+) -> Result<CollectionReferenceImpact, CollectionError> {
+    let affected_collections = load_collection_references_tx(&mut *conn, mod_path).await?;
+    if affected_collections.is_empty() {
+        return Ok(CollectionReferenceImpact::default());
+    }
+
+    Ok(CollectionReferenceImpact {
+        affected_collection_count: affected_collections.len(),
+        affected_collection_names: affected_collections
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect(),
+        rewritten_paths: Vec::new(),
+        missing_paths: vec![mod_path.to_string()],
+    })
 }
 
 pub async fn handle_object_renamed_tx(
     conn: &mut sqlx::SqliteConnection,
     old_object_folder: &str,
     new_object_folder: &str,
-) -> Result<(), CollectionError> {
-    let mut affected_collections = std::collections::HashSet::new();
+) -> Result<CollectionReferenceImpact, CollectionError> {
+    if classify_collection_path_transition(old_object_folder, new_object_folder)
+        == CollectionPathTransitionKind::RuntimeTogglePrefix
+    {
+        return Ok(CollectionReferenceImpact::default());
+    }
 
-    for (old_sep, new_sep) in [
-        (
-            format!("{}\\", old_object_folder),
-            format!("{}\\", new_object_folder),
-        ),
-        (
-            format!("{}/", old_object_folder),
-            format!("{}/", new_object_folder),
-        ),
-    ] {
-        let pattern = format!("{}%", old_sep);
-        let rows = sqlx::query(
-            "SELECT collection_id, mod_path FROM collection_mods WHERE mod_path LIKE ?",
-        )
-        .bind(&pattern)
-        .fetch_all(&mut *conn)
-        .await?;
+    let new_logical_folder = logical_collection_path(new_object_folder);
+    let mut affected_collections =
+        std::collections::BTreeMap::<String, CollectionReferenceRow>::new();
 
-        for r in rows {
-            use sqlx::Row;
-            let col_id: String = r.get("collection_id");
-            let old_path: String = r.get("mod_path");
-            let new_path = old_path.replacen(&old_sep, &new_sep, 1);
-
-            sqlx::query(
+    for old_candidate in unique_reference_candidates(old_object_folder) {
+        for (old_sep, new_sep) in [
+            (
+                format!("{}\\", old_candidate),
+                format!("{}\\", new_logical_folder),
+            ),
+            (
+                format!("{}/", old_candidate),
+                format!("{}/", new_logical_folder),
+            ),
+        ] {
+            let pattern = format!("{}%", old_sep);
+            let rows = sqlx::query(
                 r#"
-                UPDATE collection_mods
-                SET
-                    mod_path = ?,
-                    mod_path_key = ?,
-                    preview_path = CASE
-                        WHEN preview_path = ? THEN ?
-                        WHEN preview_path LIKE ? THEN REPLACE(preview_path, ?, ?)
-                        ELSE preview_path
-                    END
-                WHERE collection_id = ? AND mod_path = ?
-            "#,
+                SELECT cm.collection_id, c.name, cm.mod_path
+                FROM collection_mods cm
+                INNER JOIN collections c ON c.id = cm.collection_id
+                WHERE cm.mod_path LIKE ?
+                "#,
             )
-            .bind(&new_path)
-            .bind(crate::services::path_key::folder_path_key(&new_path, None))
-            .bind(&old_path)
-            .bind(&new_path)
-            .bind(format!("{}%", old_sep))
-            .bind(&old_sep)
-            .bind(&new_sep)
-            .bind(&col_id)
-            .bind(&old_path)
-            .execute(&mut *conn)
+            .bind(&pattern)
+            .fetch_all(&mut *conn)
             .await?;
 
-            affected_collections.insert(col_id);
+            for r in rows {
+                use sqlx::Row;
+                let col_id: String = r.get("collection_id");
+                let collection_name: String = r.get("name");
+                let old_path: String = r.get("mod_path");
+                let new_path = old_path.replacen(&old_sep, &new_sep, 1);
+
+                sqlx::query(
+                    r#"
+                    UPDATE collection_mods
+                    SET
+                        mod_path = ?,
+                        mod_path_key = ?,
+                        preview_path = CASE
+                            WHEN preview_path = ? THEN ?
+                            WHEN preview_path LIKE ? THEN REPLACE(preview_path, ?, ?)
+                            ELSE preview_path
+                        END
+                    WHERE collection_id = ? AND mod_path = ?
+                    "#,
+                )
+                .bind(&new_path)
+                .bind(crate::services::path_key::folder_path_key(&new_path, None))
+                .bind(&old_path)
+                .bind(&new_path)
+                .bind(format!("{}%", old_sep))
+                .bind(&old_sep)
+                .bind(&new_sep)
+                .bind(&col_id)
+                .bind(&old_path)
+                .execute(&mut *conn)
+                .await?;
+
+                affected_collections.insert(
+                    col_id.clone(),
+                    CollectionReferenceRow {
+                        id: col_id,
+                        name: collection_name,
+                    },
+                );
+            }
         }
     }
 
-    for id in affected_collections {
-        recompute_signature_tx(&mut *conn, &id).await?;
+    if affected_collections.is_empty() {
+        return Ok(CollectionReferenceImpact::default());
     }
 
-    Ok(())
+    for collection in affected_collections.values() {
+        recompute_signature_tx(&mut *conn, &collection.id).await?;
+    }
+
+    Ok(CollectionReferenceImpact {
+        affected_collection_count: affected_collections.len(),
+        affected_collection_names: affected_collections
+            .values()
+            .map(|entry| entry.name.clone())
+            .collect(),
+        rewritten_paths: vec![CollectionPathRewrite {
+            from: logical_collection_path(old_object_folder),
+            to: new_logical_folder,
+        }],
+        missing_paths: Vec::new(),
+    })
+}
+
+#[derive(Debug, Clone)]
+struct CollectionReferenceRow {
+    id: String,
+    name: String,
+}
+
+async fn load_collection_references_tx(
+    conn: &mut sqlx::SqliteConnection,
+    mod_path: &str,
+) -> Result<Vec<CollectionReferenceRow>, CollectionError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT DISTINCT c.id, c.name
+        FROM collections c
+        INNER JOIN collection_mods cm ON cm.collection_id = c.id
+        WHERE cm.mod_path = ?
+        ORDER BY c.name ASC, c.id ASC
+        "#,
+    )
+    .bind(mod_path)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    let references = rows
+        .into_iter()
+        .map(|row| {
+            use sqlx::Row;
+            Ok(CollectionReferenceRow {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+
+    Ok(references)
 }
 
 async fn recompute_signature_tx(
     conn: &mut sqlx::SqliteConnection,
     collection_id: &str,
 ) -> Result<(), CollectionError> {
-    let is_safe: i32 = sqlx::query_scalar("SELECT is_safe FROM collections WHERE id = ?")
-        .bind(collection_id)
-        .fetch_one(&mut *conn)
-        .await?;
+    let collection_context = sqlx::query(
+        r#"
+        SELECT c.is_safe, g.mods_path
+        FROM collections c
+        LEFT JOIN games g ON g.id = c.game_id
+        WHERE c.id = ?
+        "#,
+    )
+    .bind(collection_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    let is_safe: i32 = {
+        use sqlx::Row;
+        collection_context.try_get("is_safe")?
+    };
+    let mods_path: Option<String> = {
+        use sqlx::Row;
+        collection_context.try_get("mods_path").unwrap_or(None)
+    };
     let rows = sqlx::query(
         "SELECT collection_id, mod_id, mod_path, mod_path_key, object_id, preview_path, node_type, warnings_json FROM collection_mods WHERE collection_id = ?"
     )
@@ -711,7 +988,7 @@ async fn recompute_signature_tx(
             path_key: None,
         });
     }
-    let projected_state = build_projected_state_from_members(&mods, &objects, None);
+    let projected_state = build_projected_state_from_members(&mods, &objects, mods_path.as_deref());
     let signature = projected_state_service::signature_for_projected_state(&projected_state);
     let snapshot_json = projected_state_service::serialize_snapshot_json(&projected_state);
     let roots = projected_state_service::roots_from_projected_state(
@@ -758,6 +1035,17 @@ pub async fn preview_apply(
             collection_id
         )));
     }
+    if mods_path.is_some_and(|path| {
+        let root = std::path::Path::new(path);
+        !root.exists() || !root.is_dir()
+    }) {
+        return Err(CollectionError::Corridor(
+            crate::domain::errors::CorridorError::NoModsPath {
+                game_id: game_id.to_string(),
+            },
+        ));
+    }
+
     let corridor_snapshot =
         crate::services::corridor_service::get_corridor_state(pool, game_id, is_safe)
             .await

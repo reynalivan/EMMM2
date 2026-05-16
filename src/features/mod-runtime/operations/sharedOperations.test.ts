@@ -1,49 +1,42 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { moveModToObjectAndRefresh, syncExplorerAfterRename } from './sharedOperations';
+import { moveModToObjectAndRefresh } from './sharedOperations';
 
-const moveModToObject = vi.fn();
-const publishRuntimeDescriptor = vi.fn();
-const publishQueryInvalidations = vi.fn();
+const moveModsToObject = vi.fn();
+const applyRuntimeEffects = vi.fn();
+const applyRuntimeMutationResult = vi.fn();
 const updateFolderCache = vi.fn();
-const dispatchWorkspaceRuntimeEvent = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
   commands: {
-    moveModToObject: (...args: unknown[]) => moveModToObject(...args),
+    moveModsToObject: (...args: unknown[]) => moveModsToObject(...args),
   },
 }));
 
-vi.mock('../../runtime-sync/queryRefresh', () => ({
-  publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
-  publishQueryInvalidations: (...args: unknown[]) => publishQueryInvalidations(...args),
+vi.mock('../../workspace-runtime/optimistic/applyOptimisticEffects', () => ({
+  applyRuntimeEffects: (...args: unknown[]) => applyRuntimeEffects(...args),
+}));
+
+vi.mock('../../workspace-runtime/actions/sharedRuntimeResultMapper', () => ({
+  applyRuntimeMutationResult: (...args: unknown[]) => applyRuntimeMutationResult(...args),
 }));
 
 vi.mock('../../../hooks/folderCache', () => ({
   updateFolderCache: (...args: unknown[]) => updateFolderCache(...args),
 }));
 
-vi.mock('../../workspace-runtime/state/workspaceStoreBridge', () => ({
-  dispatchWorkspaceRuntimeEvent: (...args: unknown[]) => dispatchWorkspaceRuntimeEvent(...args),
-}));
-
-vi.mock('../../../stores/useAppStore', () => ({
-  useAppStore: {
-    getState: vi.fn(() => ({
-      explorerSubPath: 'Objects/Diluc/Variants',
-    })),
-  },
-}));
-
 describe('shared mod runtime operations', () => {
   beforeEach(() => {
-    moveModToObject.mockReset();
-    moveModToObject.mockResolvedValue(undefined);
-    publishRuntimeDescriptor.mockReset();
-    publishRuntimeDescriptor.mockResolvedValue(undefined);
-    publishQueryInvalidations.mockReset();
-    publishQueryInvalidations.mockResolvedValue(undefined);
+    moveModsToObject.mockReset();
+    moveModsToObject.mockResolvedValue({
+      success: [],
+      successes: [],
+      failures: [],
+      path_rewrites: [{ old_path: 'Mods/Diluc/mod-a', new_path: 'Mods/Kaeya/mod-a' }],
+    });
+    applyRuntimeEffects.mockReset();
+    applyRuntimeMutationResult.mockReset();
+    applyRuntimeMutationResult.mockResolvedValue(undefined);
     updateFolderCache.mockReset();
-    dispatchWorkspaceRuntimeEvent.mockReset();
   });
 
   it('moves mod to object and publishes runtime refresh', async () => {
@@ -56,11 +49,14 @@ describe('shared mod runtime operations', () => {
       removeFromCurrentView: true,
     });
 
-    expect(moveModToObject).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      folderPath: 'Mods/Diluc/mod-a',
-      targetObjectId: 'object-2',
-      status: 'disabled',
+    expect(moveModsToObject).toHaveBeenCalledWith({
+      input: {
+        game_id: 'game-1',
+        folder_paths: ['Mods/Diluc/mod-a'],
+        target_object_id: 'object-2',
+        target_subpath: null,
+        status: 'disabled',
+      },
     });
     expect(updateFolderCache).toHaveBeenCalledWith(
       {} as never,
@@ -68,20 +64,7 @@ describe('shared mod runtime operations', () => {
       undefined,
       true,
     );
-    expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
-  });
-
-  it('rewrites explorer selection when rename touches current explorer path', () => {
-    syncExplorerAfterRename('E:/Mods', 'E:/Mods/Objects/Diluc', 'E:/Mods/Objects/Diluc_Renamed');
-
-    expect(dispatchWorkspaceRuntimeEvent).toHaveBeenCalledWith({
-      type: 'PATHS_REWRITTEN',
-      rewrites: [
-        {
-          oldPath: 'E:/Mods/Objects/Diluc',
-          newPath: 'E:/Mods/Objects/Diluc_Renamed',
-        },
-      ],
-    });
+    expect(applyRuntimeEffects).toHaveBeenCalledTimes(1);
+    expect(applyRuntimeMutationResult).toHaveBeenCalledWith({} as never, 'workspaceStructure');
   });
 });

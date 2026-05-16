@@ -93,7 +93,8 @@ pub fn existing_relative_sub_path(mods_path: &str, sub_path: &str) -> Option<Str
         return None;
     }
 
-    Some(trimmed.to_string())
+    let resolved_path = resolved.to_string_lossy().to_string();
+    strip_path_prefix_preserve_display(&resolved_path, mods_path, None)
 }
 
 fn existing_absolute_path(path: &str) -> Option<String> {
@@ -108,6 +109,10 @@ fn existing_absolute_path(path: &str) -> Option<String> {
     }
 
     Some(resolved.to_string_lossy().to_string())
+}
+
+fn paths_match(left: &str, right: &str) -> bool {
+    left.replace('\\', "/") == right.replace('\\', "/")
 }
 
 pub fn resolve_workspace_selection(
@@ -136,6 +141,15 @@ pub fn resolve_workspace_selection(
                 affected_paths: vec![requested_path.to_string()],
             };
         }
+
+        if let Some(selected_path) = selected_object_folder_path.as_deref() {
+            if !paths_match(selected_path, requested_path) {
+                reconciliation_status = WorkspaceSelectionReconciliationStatus::Fallback;
+                reconciliation_reason =
+                    Some(WorkspaceSelectionReconciliationReason::MissingObjectRoot);
+                push_affected_path(&mut affected_paths, requested_path);
+            }
+        }
     }
 
     let requested_explorer_sub_path = resolve_requested_explorer_sub_path(input);
@@ -145,7 +159,10 @@ pub fn resolve_workspace_selection(
         .or_else(|| selected_object_folder_path.clone());
 
     if let Some(requested_path) = requested_explorer_sub_path.as_deref() {
-        if explorer_sub_path.as_deref() != Some(requested_path) {
+        if explorer_sub_path
+            .as_deref()
+            .is_none_or(|selected_path| !paths_match(selected_path, requested_path))
+        {
             reconciliation_status = WorkspaceSelectionReconciliationStatus::Fallback;
             reconciliation_reason =
                 Some(WorkspaceSelectionReconciliationReason::MissingExplorerPath);
@@ -163,6 +180,16 @@ pub fn resolve_workspace_selection(
             push_affected_path(&mut affected_paths, requested_path);
             if reconciliation_status == WorkspaceSelectionReconciliationStatus::Unchanged {
                 reconciliation_status = WorkspaceSelectionReconciliationStatus::Cleared;
+                reconciliation_reason =
+                    Some(WorkspaceSelectionReconciliationReason::MissingModPath);
+            }
+        } else if selected_mod_path
+            .as_deref()
+            .is_some_and(|selected_path| !paths_match(selected_path, requested_path))
+        {
+            push_affected_path(&mut affected_paths, requested_path);
+            if reconciliation_status == WorkspaceSelectionReconciliationStatus::Unchanged {
+                reconciliation_status = WorkspaceSelectionReconciliationStatus::Fallback;
                 reconciliation_reason =
                     Some(WorkspaceSelectionReconciliationReason::MissingModPath);
             }

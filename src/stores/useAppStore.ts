@@ -11,6 +11,10 @@ import type {
   WorkspaceDialogState,
   WorkspacePreviewTransitionState,
 } from '../features/workspace-runtime/state/workspaceState';
+import {
+  rewriteWorkspacePathValue,
+  type WorkspacePathRewriteInput,
+} from '../features/workspace-runtime/pathRewrite';
 type WorkspaceView =
   | 'dashboard'
   | 'mods'
@@ -108,6 +112,7 @@ export interface AppState {
   clearGridSelection: () => void;
   setGridSelection: (selection: Set<string>) => void;
   replaceGridSelection: (oldPath: string, newPath: string) => void;
+  replaceGridSelections: (rewrites: WorkspacePathRewriteInput[]) => void;
   setPanelWidths: (left: number, right: number) => void;
 
   // Responsive Actions
@@ -130,7 +135,6 @@ export interface AppState {
   setExplorerSearch: (query: string) => void;
   setExplorerScrollOffset: (offset: number) => void;
   setTheme: (theme: 'onyx' | 'light') => void;
-  correctExplorerPath: (oldPath: string, newPath: string) => void;
 }
 
 import { createJSONStorage } from 'zustand/middleware';
@@ -389,14 +393,37 @@ export const useAppStore = create<AppState>()(
         }),
 
       replaceGridSelection: (oldPath, newPath) =>
+        get().replaceGridSelections([{ oldPath, newPath }]),
+
+      replaceGridSelections: (rewrites) =>
         set((state) => {
-          if (!state.gridSelection.has(oldPath)) return state;
-          const newSet = new Set(state.gridSelection);
-          newSet.delete(oldPath);
-          newSet.add(newPath);
+          if (rewrites.length === 0) {
+            return state;
+          }
+
+          const originalEntries = Array.from(state.gridSelection);
+          const rewrittenEntries = originalEntries.map((path) => {
+            return rewriteWorkspacePathValue(path, rewrites) ?? path;
+          });
+          const changed = rewrittenEntries.some((path, index) => {
+            return path !== originalEntries[index];
+          });
+          const rewrittenSelectedModPath = state.selectedModPath
+            ? rewriteWorkspacePathValue(state.selectedModPath, rewrites)
+            : null;
+          const selectedModPathChanged =
+            !!rewrittenSelectedModPath && rewrittenSelectedModPath !== state.selectedModPath;
+
+          if (!changed && !selectedModPathChanged) {
+            return state;
+          }
+
+          const newSet = new Set(rewrittenEntries);
           return {
             gridSelection: newSet,
-            selectedModPath: state.selectedModPath === oldPath ? newPath : state.selectedModPath,
+            selectedModPath: selectedModPathChanged
+              ? rewrittenSelectedModPath
+              : state.selectedModPath,
           };
         }),
 
@@ -443,49 +470,6 @@ export const useAppStore = create<AppState>()(
       setExplorerSearch: (query) => set({ explorerSearchQuery: query }),
       setExplorerScrollOffset: (offset) => set({ explorerScrollOffset: offset }),
       setTheme: (theme) => set({ theme }),
-      correctExplorerPath: (oldPath, newPath) => {
-        const oldName = oldPath.split(/[/\\]/).pop() || '';
-        const newName = newPath.split(/[/\\]/).pop() || '';
-
-        set((state) => {
-          const normalize = (p: string) => p.replace(/\\/g, '/');
-          const normOldName = normalize(oldName);
-          const normNewName = normalize(newName);
-
-          let nextSubPath = state.explorerSubPath;
-          if (state.explorerSubPath) {
-            const normSub = normalize(state.explorerSubPath);
-            // Case 1: subPath is exactly the renamed folder
-            if (normSub === normOldName) {
-              nextSubPath = normNewName;
-            }
-            // Case 2: subPath is a descendant of the renamed folder
-            else if (normSub.startsWith(normOldName + '/')) {
-              nextSubPath = normNewName + normSub.substring(normOldName.length);
-            }
-          }
-
-          // Update breadcrumbs (array of names)
-          const nextCurrentPath = state.currentPath.map((p) => (p === oldName ? newName : p));
-
-          // Update selection (absolute path)
-          let nextSelectedFolder = state.selectedObjectFolderPath;
-          if (state.selectedObjectFolderPath === oldPath) {
-            nextSelectedFolder = newPath;
-          } else if (
-            state.selectedObjectFolderPath?.startsWith(oldPath + '/') ||
-            state.selectedObjectFolderPath?.startsWith(oldPath + '\\')
-          ) {
-            nextSelectedFolder = state.selectedObjectFolderPath.replace(oldPath, newPath);
-          }
-
-          return {
-            explorerSubPath: nextSubPath,
-            currentPath: nextCurrentPath,
-            selectedObjectFolderPath: nextSelectedFolder,
-          };
-        });
-      },
     }),
     {
       name: 'vibecode-storage',

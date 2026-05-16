@@ -1,3 +1,4 @@
+use crate::database::models::ItemStatus;
 use crate::domain::errors::MetadataError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
@@ -158,6 +159,26 @@ pub struct RandomModProposal {
     pub folder_path: String,
 }
 
+fn path_has_hidden_segment(path: &str) -> bool {
+    path.split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .any(|segment| segment.starts_with('.'))
+}
+
+fn path_has_disabled_segment(path: &str) -> bool {
+    path.split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .any(crate::services::scanner::core::normalizer::is_disabled_folder)
+}
+
+fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::repo::mod_repo::Mod) -> bool {
+    if path_has_hidden_segment(&mod_row.folder_path) {
+        return false;
+    }
+
+    mod_row.status == ItemStatus::Disabled || path_has_disabled_segment(&mod_row.folder_path)
+}
+
 pub async fn suggest_random_mods(
     pool: &SqlitePool,
     game_id: &str,
@@ -176,7 +197,7 @@ pub async fn suggest_random_mods(
     let mut proposals = Vec::new();
 
     for (object_id, object_name) in characters {
-        let mods = crate::repo::mod_repo::get_disabled_mods_by_object_id(pool, &object_id, is_safe)
+        let mods = crate::repo::mod_repo::get_mods_by_object_id(pool, &object_id, is_safe)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -186,19 +207,8 @@ pub async fn suggest_random_mods(
 
         let candidates: Vec<(String, String, String)> = mods
             .into_iter()
-            .filter_map(|row| {
-                let path_obj = Path::new(&row.folder_path);
-                if let Some(name) = path_obj.file_name() {
-                    if name.to_string_lossy().starts_with('.') {
-                        return None;
-                    }
-                }
-                Some((
-                    row.id.clone(),
-                    row.actual_name.clone(),
-                    row.folder_path.clone(),
-                ))
-            })
+            .filter(is_effectively_disabled_randomizer_candidate)
+            .map(|row| (row.id, row.actual_name, row.folder_path))
             .collect();
 
         let mut rng = rand::thread_rng();

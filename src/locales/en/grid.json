@@ -119,6 +119,7 @@
     "unsafe_title": "Mark as Unsafe",
     "ops_title": "Bulk Operations",
     "edit_metadata": "Edit Metadata",
+    "move_object": "Move to Object...",
     "move_trash": "Move to Trash"
   },
   "status": {

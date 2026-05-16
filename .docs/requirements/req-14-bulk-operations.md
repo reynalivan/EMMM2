@@ -50,8 +50,8 @@ As a user, I want to move multiple selected mods to a specific Object in one act
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                       |
 | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-14.3.1 | ✅ Positive | Given N selected mods, when I click "Move to Object…" and pick a target, then `bulk_move(paths[], target_object_path)` is invoked; each folder is moved sequentially with a streamed progress event per item                                   |
-| AC-14.3.2 | ✅ Positive | Given all items complete successfully, then both the source `['folders', gameId, srcPath]` and target `['folders', gameId, targetPath]` caches invalidate; `selectedItems` clears                                                              |
+| AC-14.3.1 | ✅ Positive | Given N selected FolderGrid mods, when I click "Move to Object…" and pick a target object plus root/existing subfolder target, then `move_mods_to_object` moves the selected folder paths under one guarded batch operation                    |
+| AC-14.3.2 | ✅ Positive | Given all items complete successfully, then runtime path rewrites and centralized refresh descriptors update FolderGrid/ObjectList/Preview without raw feature-level query invalidation                                                        |
 | AC-14.3.3 | ❌ Negative | Given 1 of N folders collides with an existing name in the target, then a `ResolverDialog` surfaces for that specific item (Skip / Rename / Overwrite); the remaining N-1 items continue processing — partial failure does NOT abort the batch |
 | AC-14.3.4 | ⚠️ Edge     | Given a second bulk move is triggered while the first is in progress, then the "Move to Object…" button is disabled (grayed) during the in-flight operation — only one batch op per game path at a time (`OperationLock` enforced)             |
 
@@ -77,7 +77,7 @@ Frontend:
   BulkActionBar (portal-mounted, slides in when selectedItems.size > 0)
     ├── "Enable All" → commands.bulkToggle({ paths: [...selectedItems], enable: true })
     ├── "Disable All" → commands.bulkToggle({ paths: [...selectedItems], enable: false })
-    ├── "Move to Object…" → ObjectPickerModal → commands.bulkMove({ paths, targetObjectPath })
+    ├── "Move to Object…" → MoveToObjectDialog → commands.moveModsToObject({ folderPaths, targetObjectId, targetSubpath, status })
     └── "Delete Selected" → ConfirmDialog → commands.bulkDelete({ paths: [...selectedItems] })
 
 Backend:
@@ -86,8 +86,8 @@ Backend:
         → for path in paths: switch_item_internal(path, enable) → emit_event('bulk-progress', {i, total})
         → return BulkResult { success, failed: Vec<{path, error}> }
 
-  bulk_move(game_id, paths, target_object_path) → BulkResult
-    └── same pattern: handled via "Move to Object" dialog and sequential moves
+  move_mods_to_object(game_id, paths, target_object_id, target_subpath, status) → BulkResult
+    └── same pattern: validates root/subfolder target, returns per-item failures + runtime path rewrites
 
   bulk_delete_mods(game_id, paths) → BulkResult
     └── same pattern: trash per item (app trash) → stream progress ('bulk-progress')
@@ -114,4 +114,4 @@ Backend:
 ## 4. Dependencies
 
 - **Blocked by**: Epic 12 (Folder Grid — selection UI), Epic 13 (Core Mod Ops — reuses toggle/move/delete internals), Epic 28 (File Watcher — WatcherSuppression).
-- **Blocks**: Epic 15 (Explorer Interactions — DnD multi-item drop triggers bulk_move).
+- **Blocks**: Epic 15 (Explorer Interactions — DnD multi-item drop triggers `move_mods_to_object`).

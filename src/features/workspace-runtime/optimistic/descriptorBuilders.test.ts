@@ -9,6 +9,7 @@ describe('buildRuntimeMutationDescriptor', () => {
     expect(descriptor.refreshEvents).toContain('activeKeybindingsChanged');
     expect(descriptor.refreshEvents).toContain('previewChanged');
     expect(descriptor.refreshEvents).toContain('conflictsChanged');
+    expect(descriptor.refreshEvents).toContain('collectionsChanged');
   });
 
   it('deduplicates merged events when combining mutation classes', () => {

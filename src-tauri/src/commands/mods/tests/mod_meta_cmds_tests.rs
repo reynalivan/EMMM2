@@ -370,3 +370,60 @@ async fn test_suggest_random_mods() {
         .unwrap();
     assert_eq!(obj1_safe.mod_id, "m1", "Obj1 MUST get m1, as m3 is unsafe");
 }
+
+#[tokio::test]
+async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
+    use crate::services::mods::metadata::suggest_random_mods;
+
+    let pool = setup_test_db().await;
+
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_effective_disabled",
+            name: "Genshin",
+            game_type: crate::database::models::GameType::GIMI,
+            path: "/Mods",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "obj_effective",
+            game_id: "g_effective_disabled",
+            name: "Amber",
+            folder_path: "DISABLED Amber",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    insert_test_mod(
+        &pool,
+        &TestModFixture {
+            id: "m_effective",
+            game_id: "g_effective_disabled",
+            object_id: Some("obj_effective"),
+            actual_name: "Amber Skin",
+            folder_path: "/Mods/DISABLED Amber/Amber Skin",
+            status: crate::database::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    let proposals = suggest_random_mods(&pool, "g_effective_disabled", true)
+        .await
+        .unwrap();
+
+    assert_eq!(proposals.len(), 1);
+    assert_eq!(proposals[0].mod_id, "m_effective");
+}

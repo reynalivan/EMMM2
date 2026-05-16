@@ -4,14 +4,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import {
-  patchObjectListQueries,
+  patchObjectRootSwitchState,
   restoreObjectListQueries,
   snapshotObjectListQueries,
 } from '../../../hooks/objectQueryCache';
 import { commands } from '../../../lib/bindings';
 import { formatAppError, extractFileInUsePayload } from '../../../lib/appError';
 import { toast } from '../../../stores/useToastStore';
-import { useAppStore } from '../../../stores/useAppStore';
 import type {
   WorkspaceImpact,
   WorkspaceExplorerNode,
@@ -25,13 +24,14 @@ import { thumbnailKeys } from '../../../hooks/useThumbnail';
 import { updateFolderCache } from '../../../hooks/folderCache';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import {
-  buildPathRewriteDescriptor,
   buildRuntimeRefreshDescriptor,
   buildRuntimeMutationDescriptor,
   buildQueryRemovalDescriptor,
+  buildWorkspacePathRewritesDescriptor,
+  buildObjectCountDeltaDescriptor,
 } from '../optimistic/descriptorBuilders';
+import { mergeRuntimeEffectDescriptors } from '../optimistic/descriptor';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
-import { syncExplorerAfterRename } from '../../mod-runtime/operations/sharedOperations';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
 import {
   openWorkspaceConflictDialog,
@@ -88,6 +88,25 @@ function buildSwitchRefreshDescriptor(
   }
 
   return buildRuntimeRefreshDescriptor(impact.refresh_scopes);
+}
+
+function normalizeWorkspaceSwitchPath(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
+function stripModsRoot(path: string, modsPath: string): string {
+  const normalizedPath = normalizeWorkspaceSwitchPath(path);
+  const normalizedModsPath = normalizeWorkspaceSwitchPath(modsPath);
+  if (normalizedPath === normalizedModsPath) {
+    return normalizedPath;
+  }
+
+  const prefix = `${normalizedModsPath}/`;
+  if (!normalizedPath.startsWith(prefix)) {
+    return normalizedPath;
+  }
+
+  return normalizedPath.slice(prefix.length);
 }
 
 export function useWorkspaceSwitchActions() {
@@ -152,7 +171,7 @@ export function useWorkspaceSwitchActions() {
       node: WorkspaceExplorerNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
-      options: PathSwitchOptions,
+      _options: PathSwitchOptions,
     ) => {
       if (!activeGame?.id) {
         return null;
@@ -198,19 +217,20 @@ export function useWorkspaceSwitchActions() {
         path: nextPath,
         is_enabled: desiredEnabled,
       }));
+      const countDelta =
+        node.node_kind === 'terminal_mod' &&
+        node.owner_object_id &&
+        node.is_enabled !== desiredEnabled
+          ? buildObjectCountDeltaDescriptor(node.owner_object_id, desiredEnabled ? 1 : -1, [])
+          : null;
       applyRuntimeEffects(
         queryClient,
-        buildQueryRemovalDescriptor([thumbnailKeys.folder(node.path)], []),
+        mergeRuntimeEffectDescriptors(
+          buildQueryRemovalDescriptor([thumbnailKeys.folder(node.path)], []),
+          buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
+          ...(countDelta ? [countDelta] : []),
+        ),
       );
-
-      if (options.syncExplorerPath && activeGame.mod_path) {
-        syncExplorerAfterRename(activeGame.mod_path, node.path, nextPath);
-      }
-
-      if (nextPath !== node.path) {
-        useAppStore.getState().replaceGridSelection(node.path, nextPath);
-        applyRuntimeEffects(queryClient, buildPathRewriteDescriptor(node.path, nextPath, []));
-      }
       await publishRuntimeDescriptor(
         queryClient,
         buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
@@ -232,11 +252,11 @@ export function useWorkspaceSwitchActions() {
 
       const previousQueries = snapshotObjectListQueries(queryClient);
       const targetPath = await join(activeGame.mod_path, node.folder_path);
-      patchObjectListQueries(queryClient, node.id, (object) => ({
-        ...object,
-        folder_path: toggleDisabledInPath(object.folder_path, desiredEnabled),
-        is_object_disabled: !desiredEnabled,
-      }));
+      patchObjectRootSwitchState(queryClient, {
+        objectId: node.id,
+        folderPath: toggleDisabledInPath(node.folder_path, desiredEnabled),
+        enabled: desiredEnabled,
+      });
 
       const result = await executeSwitch({
         game_id: activeGame.id,
@@ -259,14 +279,21 @@ export function useWorkspaceSwitchActions() {
         restoreObjectListQueries(queryClient, previousQueries);
         return null;
       }
+      patchObjectRootSwitchState(queryClient, {
+        objectId: node.id,
+        folderPath: stripModsRoot(nextPath, activeGame.mod_path),
+        enabled: desiredEnabled,
+      });
 
       applyRuntimeEffects(
         queryClient,
         buildQueryRemovalDescriptor([thumbnailKeys.folder(targetPath)], []),
       );
-      syncExplorerAfterRename(activeGame.mod_path, targetPath, nextPath);
       if (nextPath !== targetPath) {
-        applyRuntimeEffects(queryClient, buildPathRewriteDescriptor(targetPath, nextPath, []));
+        applyRuntimeEffects(
+          queryClient,
+          buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
+        );
       }
       await publishRuntimeDescriptor(
         queryClient,
@@ -316,7 +343,7 @@ export function useWorkspaceSwitchActions() {
   );
 
   const setFolderPathEnabled = useCallback(
-    async (path: string, desiredEnabled: boolean, options: PathSwitchOptions) => {
+    async (path: string, desiredEnabled: boolean, _options: PathSwitchOptions) => {
       if (!activeGame?.id) {
         return null;
       }
@@ -354,13 +381,11 @@ export function useWorkspaceSwitchActions() {
           buildQueryRemovalDescriptor([thumbnailKeys.folder(path)], []),
         );
 
-        if (options.syncExplorerPath && activeGame.mod_path) {
-          syncExplorerAfterRename(activeGame.mod_path, path, nextPath);
-        }
-
         if (nextPath !== path) {
-          useAppStore.getState().replaceGridSelection(path, nextPath);
-          applyRuntimeEffects(queryClient, buildPathRewriteDescriptor(path, nextPath, []));
+          applyRuntimeEffects(
+            queryClient,
+            buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
+          );
         }
         await publishRuntimeDescriptor(
           queryClient,
@@ -401,10 +426,9 @@ export function useWorkspaceSwitchActions() {
         buildQueryRemovalDescriptor([thumbnailKeys.folder(folder.path)], []),
       );
       if (result.primary_path !== folder.path) {
-        useAppStore.getState().replaceGridSelection(folder.path, result.primary_path);
         applyRuntimeEffects(
           queryClient,
-          buildPathRewriteDescriptor(folder.path, result.primary_path, []),
+          buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
         );
       }
       await publishRuntimeDescriptor(
@@ -447,13 +471,10 @@ export function useWorkspaceSwitchActions() {
           ),
         );
       }
-      for (const changedPath of result.changed_folder_paths) {
-        const previousPath =
-          changedPath === result.primary_path
-            ? toggleDisabledInPath(changedPath, false)
-            : toggleDisabledInPath(changedPath, true);
-        useAppStore.getState().replaceGridSelection(previousPath, changedPath);
-      }
+      applyRuntimeEffects(
+        queryClient,
+        buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
+      );
       await publishRuntimeDescriptor(
         queryClient,
         buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),

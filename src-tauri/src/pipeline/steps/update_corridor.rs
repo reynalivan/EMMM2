@@ -28,7 +28,10 @@ pub async fn update(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         crate::services::corridor_service::get_corridor_state(&ctx.pool, &ctx.game_id, ctx.is_safe)
             .await
             .map_err(CollectionError::from)?;
-    ctx.final_state_name = if snapshot.is_dirty || snapshot.active_collection_is_unsaved {
+    ctx.final_state_is_dirty = snapshot.is_dirty
+        || snapshot.active_collection_is_unsaved
+        || !ctx.skipped_missing_paths.is_empty();
+    ctx.final_state_name = if ctx.final_state_is_dirty {
         Some(if ctx.is_safe {
             "Unsaved SAFE Preset".to_string()
         } else {

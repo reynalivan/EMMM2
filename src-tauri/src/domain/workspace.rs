@@ -367,7 +367,7 @@ pub enum WorkspaceRefreshScope {
     PinsChanged,
 }
 
-#[derive(Debug, Clone, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct WorkspacePathRewrite {
     pub old_path: String,
     pub new_path: String,

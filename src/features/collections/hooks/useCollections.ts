@@ -23,7 +23,12 @@ import {
   publishQueryInvalidations,
   publishRuntimeDescriptor,
 } from '../../runtime-sync/queryRefresh';
-import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
+import {
+  buildRuntimeMutationDescriptor,
+  buildWorkspacePathRewritesDescriptor,
+} from '../../workspace-runtime/optimistic/descriptorBuilders';
+import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
+import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import { openWorkspaceFileInUseDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import type {
   CollectionSummary,
@@ -210,6 +215,34 @@ export function useUpdateCollection() {
   });
 }
 
+/** Replace an existing named collection with the current live corridor state. */
+export function useReplaceCollectionWithCurrentState() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ gameId, collectionId }: { gameId: string; collectionId: string }) =>
+      commands.replaceCollectionWithCurrentState({ gameId, collectionId }),
+
+    onSuccess: async (result: CollectionSummary, variables) => {
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('collectionsState'),
+        'active',
+      );
+      await Promise.all([
+        refetchStrictCorridorState(queryClient, variables.gameId, result.is_safe),
+        refetchCollectionList(queryClient, variables.gameId, result.is_safe),
+        refetchCollectionPreview(queryClient, result.id, variables.gameId),
+      ]);
+      toast.success(`Updated collection: ${result.name}`);
+    },
+
+    onError: (err: unknown) => {
+      toast.error(formatAppError(err));
+    },
+  });
+}
+
 /** Delete a collection. */
 export function useDeleteCollection() {
   const queryClient = useQueryClient();
@@ -259,11 +292,12 @@ export function useApplyCollection() {
       }),
 
     onSuccess: async (result: ApplyResult, variables) => {
-      await publishRuntimeDescriptor(
-        queryClient,
+      const descriptor = mergeRuntimeEffectDescriptors(
         buildRuntimeMutationDescriptor('collectionsState'),
-        'active',
+        buildWorkspacePathRewritesDescriptor(result.runtime_path_rewrites ?? [], []),
       );
+      applyRuntimeEffects(queryClient, descriptor);
+      await publishRuntimeDescriptor(queryClient, descriptor, 'active');
       await Promise.all([
         refetchStrictCorridorState(queryClient, variables.gameId, safeMode),
         refetchCollectionList(queryClient, variables.gameId, safeMode),

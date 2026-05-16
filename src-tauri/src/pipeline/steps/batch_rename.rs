@@ -38,6 +38,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
 
     ctx.mods_enabled = result.enabled_count;
     ctx.mods_disabled = result.disabled_count;
+    ctx.runtime_path_rewrites.extend(result.path_rewrites);
     ctx.warnings.extend(result.warnings);
 
     log::info!(
