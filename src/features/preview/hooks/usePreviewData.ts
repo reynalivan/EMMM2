@@ -1,6 +1,7 @@
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '../../../types/mod';
 import { commands } from '../../../lib/bindings';
+import { useAppStore } from '../../../stores/useAppStore';
 
 export interface IniFileEntry {
   filename: string;
@@ -25,16 +26,6 @@ export interface KeyBinding {
   back_line_idx: number | null;
 }
 
-export interface IniDocument {
-  file_path: string;
-  raw_lines: string[];
-  variables: IniVariable[];
-  key_bindings: KeyBinding[];
-  had_bom: boolean;
-  newline_style: NewlineStyle;
-  mode: IniReadMode;
-}
-
 export interface IniLineUpdate {
   line_idx: number;
   content: string;
@@ -44,11 +35,6 @@ export interface WriteModIniInput {
   folderPath: string;
   fileName: string;
   lineUpdates: IniLineUpdate[];
-}
-
-export interface PastePreviewImageInput {
-  folderPath: string;
-  imageData: number[];
 }
 
 export interface SavePreviewImageInput {
@@ -92,24 +78,35 @@ function normalizeFileName(fileName?: string | null): string | null {
   return value ? value : null;
 }
 
+/**
+ * Every preview command is scoped to the active game on the Rust side. The panel
+ * only ever renders mods from that game, so resolve it here instead of threading
+ * `gameId` through each hook signature.
+ */
+function useActiveGameId(): string {
+  return useAppStore((state) => state.activeGameId) ?? '';
+}
+
 export function useModInfo(folderPath?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
+  const gameId = useActiveGameId();
 
   return useQuery({
     queryKey: detailsKeys.modInfo(normalizedPath ?? ''),
-    queryFn: () => commands.readModInfo({ folderPath: normalizedPath ?? '' }),
-    enabled: !!normalizedPath,
+    queryFn: () => commands.readModInfo({ gameId, folderPath: normalizedPath ?? '' }),
+    enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
 }
 
 export function useModIniFiles(folderPath?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
+  const gameId = useActiveGameId();
 
   return useQuery({
     queryKey: detailsKeys.iniFiles(normalizedPath ?? ''),
-    queryFn: () => commands.listModIniFiles({ folderPath: normalizedPath ?? '' }),
-    enabled: !!normalizedPath,
+    queryFn: () => commands.listModIniFiles({ gameId, folderPath: normalizedPath ?? '' }),
+    enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
 }
@@ -117,15 +114,17 @@ export function useModIniFiles(folderPath?: string | null) {
 export function useModIniDocument(folderPath?: string | null, fileName?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
   const normalizedName = normalizeFileName(fileName);
+  const gameId = useActiveGameId();
 
   return useQuery({
     queryKey: detailsKeys.iniDocument(normalizedPath ?? '', normalizedName ?? ''),
     queryFn: () =>
       commands.readModIni({
+        gameId,
         folderPath: normalizedPath ?? '',
         fileName: normalizedName ?? '',
       }),
-    enabled: !!normalizedPath && !!normalizedName,
+    enabled: !!normalizedPath && !!normalizedName && !!gameId,
     staleTime: 0,
   });
 }
@@ -133,16 +132,18 @@ export function useModIniDocument(folderPath?: string | null, fileName?: string 
 export function useAllModIniDocuments(folderPath?: string | null, files?: IniFileEntry[]) {
   const normalizedPath = normalizeFolderPath(folderPath);
   const safeFiles = files ?? [];
+  const gameId = useActiveGameId();
 
   return useQueries({
     queries: safeFiles.map((file) => ({
       queryKey: detailsKeys.iniDocument(normalizedPath ?? '', file.filename),
       queryFn: () =>
         commands.readModIni({
+          gameId,
           folderPath: normalizedPath ?? '',
           fileName: file.filename,
         }),
-      enabled: !!normalizedPath,
+      enabled: !!normalizedPath && !!gameId,
       staleTime: 0,
     })),
   });
@@ -150,47 +151,50 @@ export function useAllModIniDocuments(folderPath?: string | null, files?: IniFil
 
 export function usePreviewImages(folderPath?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
+  const gameId = useActiveGameId();
 
   return useQuery({
     queryKey: detailsKeys.previewImages(normalizedPath ?? ''),
-    queryFn: () => commands.listModPreviewImages({ folderPath: normalizedPath ?? '' }),
-    enabled: !!normalizedPath,
+    queryFn: () => commands.listModPreviewImages({ gameId, folderPath: normalizedPath ?? '' }),
+    enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
 }
 
 export function useWriteModIni() {
+  const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: WriteModIniInput) => commands.writeModIni({ ...input }),
-  });
-}
-
-export function usePastePreviewImage() {
-  return useMutation({
-    mutationFn: (input: PastePreviewImageInput) => commands.pasteThumbnail({ ...input }),
+    mutationFn: (input: WriteModIniInput) => commands.writeModIni({ ...input, gameId }),
   });
 }
 
 export function useSavePreviewImage() {
+  const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: SavePreviewImageInput) => commands.saveModPreviewImage({ ...input }),
+    mutationFn: (input: SavePreviewImageInput) =>
+      commands.saveModPreviewImage({ ...input, gameId }),
   });
 }
 
 export function useRemovePreviewImage() {
+  const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: RemovePreviewImageInput) => commands.removeModPreviewImage({ ...input }),
+    mutationFn: (input: RemovePreviewImageInput) =>
+      commands.removeModPreviewImage({ ...input, gameId }),
   });
 }
 
 export function useClearPreviewImages() {
+  const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: ClearPreviewImagesInput) => commands.clearModPreviewImages({ ...input }),
+    mutationFn: (input: ClearPreviewImagesInput) =>
+      commands.clearModPreviewImages({ ...input, gameId }),
   });
 }
 
 export function useUpdateModInfoDetails() {
+  const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: UpdateModInfoInput) => commands.updateModInfo({ ...input }),
+    mutationFn: (input: UpdateModInfoInput) => commands.updateModInfo({ ...input, gameId }),
   });
 }

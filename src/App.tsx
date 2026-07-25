@@ -6,26 +6,22 @@ import { useAppStore } from './stores/useAppStore';
 import { useThemeRuntime } from './features/settings/theme/useThemeRuntime';
 import type { PipelineTask } from './types/task';
 import { RecoveryDialog } from './features/collections/components/RecoveryDialog';
-import PinEntryModal from './features/safe-mode/PinEntryModal';
 import MainLayout from './components/layout/MainLayout';
 import WelcomeScreen from './features/onboarding/WelcomeScreen';
 import { commands } from './lib/bindings';
-import { useTranslation } from 'react-i18next';
 import { publishQueryScopes } from './features/runtime-sync/queryRefresh';
 
 function AppRouter() {
-  const { t } = useTranslation('layout');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [pendingTasks, setPendingTasks] = useState<PipelineTask[]>([]);
   const [isCheckingRecovery, setIsCheckingRecovery] = useState(true);
-  const [needsPinUnlock, setNeedsPinUnlock] = useState(false);
 
   useEffect(() => {
     initLogger().catch(console.error);
 
     // Passive startup must not rename anything on disk.
-    // Only recovery resume, apply_collection, or switch_corridor may perform physical renames.
+    // Only recovery resume or apply_collection may perform physical renames.
     // Disk Reconcile at boot is read/projection-only.
     // Run recovery check first
     commands
@@ -49,29 +45,19 @@ function AppRouter() {
       // Check config status
       commands
         .checkConfigStatus()
-        .then((configStatus: unknown) => {
+        .then((configStatus) => {
           if (configStatus !== 'HasConfig') {
             navigate('/welcome', { replace: true });
             commands.closeSplashscreen().catch(console.error);
           } else {
-            // Epic 5/Safe Mode: Check for Safe Mode GUI lock on boot
             useAppStore
               .getState()
               .initStore()
-              .then(async () => {
-                const state = useAppStore.getState();
-                const shouldLock = await commands.checkBootSecurity({
-                  isSafeMode: state.safeMode,
-                });
-
-                if (shouldLock) {
-                  setNeedsPinUnlock(true);
-                } else {
-                  navigate('/dashboard', { replace: true });
-                }
+              .then(() => {
+                navigate('/dashboard', { replace: true });
               })
               .catch((e) => {
-                console.error('Failed to init store or check PIN:', e);
+                console.error('Failed to init store:', e);
                 navigate('/dashboard', { replace: true });
               })
               .finally(() => {
@@ -120,24 +106,6 @@ function AppRouter() {
     );
   }
 
-  if (needsPinUnlock) {
-    return (
-      <div className="h-screen w-screen bg-base-100 overflow-hidden relative">
-        <PinEntryModal
-          open={true}
-          onClose={() => {}}
-          onSuccess={() => {
-            setNeedsPinUnlock(false);
-            navigate('/dashboard', { replace: true });
-          }}
-          title={t('app_locked_title')}
-          description={t('app_locked_description')}
-          cancellable={false}
-        />
-      </div>
-    );
-  }
-
   return (
     <Routes>
       <Route
@@ -163,7 +131,7 @@ function AppRouter() {
 
 import { useLanguageRuntime } from './features/settings/hooks/useLanguageRuntime';
 import { ToastContainer } from './components/ui/Toast';
-import ConflictResolveDialog from './features/folder-grid/ConflictResolveDialog';
+import ConflictResolveDialog from './features/folder-grid/modals/ConflictResolveDialog';
 import { DynamicThemeInjector } from './features/settings/theme/DynamicThemeInjector';
 import { FileInUseDialog } from './components/dialogs/FileInUseDialog';
 

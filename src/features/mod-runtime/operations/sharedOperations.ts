@@ -3,7 +3,7 @@ import { commands } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
 import { updateFolderCache } from '../../../hooks/folderCache';
 import type { GameConfig } from '../../../types/game';
-import type { MasterDbEntry } from '../../object-list/scanReviewHelpers';
+import type { MasterDbEntry } from '../../object-list/modals/scanReviewHelpers';
 import type { MatchedDbEntry } from '../../../lib/bindings';
 import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
 import { formatAppError } from '../../../lib/appError';
@@ -130,6 +130,7 @@ export async function applyFolderDbSyncMatchAndRefresh(params: {
       }
     });
     await commands.updateModInfo({
+      gameId: params.activeGame.id,
       folderPath: params.folderPath,
       update: { metadata: metaStrings },
     });
@@ -137,6 +138,7 @@ export async function applyFolderDbSyncMatchAndRefresh(params: {
 
   if (params.match.thumbnail_path) {
     await commands.updateModThumbnail({
+      gameId: params.activeGame.id,
       folderPath: params.folderPath,
       sourcePath: params.match.thumbnail_path,
     });

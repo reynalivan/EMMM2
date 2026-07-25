@@ -11,10 +11,11 @@ import { useToastStore } from '../../../stores/useToastStore';
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
   cooldown_ms: 500,
-  toggle_safe_mode: 'F5',
   next_preset: 'F6',
   prev_preset: 'Shift+F6',
   toggle_overlay: 'F7',
+  next_variant: 'F8',
+  prev_variant: 'Shift+F8',
 };
 
 const DEFAULT_KEYVIEWER: KeyViewerConfig = {
@@ -58,7 +59,6 @@ function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowPr
 /** Detect conflicts: same key string used for multiple actions. */
 function detectConflicts(config: HotkeyConfig, t: TFunction): string[] {
   const bindings: [string, string][] = [
-    [t('settings:hotkeys.labels.safe_mode'), config.toggle_safe_mode],
     [t('settings:hotkeys.labels.next_preset'), config.next_preset],
     [t('settings:hotkeys.labels.prev_preset'), config.prev_preset],
     [t('settings:hotkeys.labels.toggle_overlay'), config.toggle_overlay],
@@ -101,7 +101,7 @@ export default function HotkeyTab() {
         ...settings,
         hotkeys: { ...hotkeys, ...patch },
       });
-      await commands.updateHotkeyConfig({});
+      await commands.updateHotkeyConfig();
     } catch (err) {
       addToast('error', t('settings:hotkeys.save_failed', { error: String(err) }));
     } finally {
@@ -133,7 +133,7 @@ export default function HotkeyTab() {
           hotkeys: { ...DEFAULT_HOTKEYS },
           keyviewer: { ...DEFAULT_KEYVIEWER },
         });
-        await commands.updateHotkeyConfig({});
+        await commands.updateHotkeyConfig();
         addToast('success', t('settings:hotkeys.reset_success'));
       } catch (err) {
         addToast('error', t('settings:hotkeys.save_failed', { error: String(err) }));
@@ -213,12 +213,6 @@ export default function HotkeyTab() {
               )}
 
               <div className="space-y-0 bg-base-300/30 rounded-lg p-3">
-                <KeyBindingRow
-                  label={t('settings:hotkeys.labels.safe_mode')}
-                  value={hotkeys.toggle_safe_mode}
-                  defaultValue={DEFAULT_HOTKEYS.toggle_safe_mode}
-                  onChange={(v) => persistHotkeys({ toggle_safe_mode: v })}
-                />
                 <KeyBindingRow
                   label={t('settings:hotkeys.labels.next_preset')}
                   value={hotkeys.next_preset}

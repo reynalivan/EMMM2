@@ -1,4 +1,4 @@
-import { commands } from '../bindings';
+import { commands, type GameObject } from '../bindings';
 import type {
   ObjectFilter,
   ObjectSummary,
@@ -6,6 +6,19 @@ import type {
   CreateObjectInput,
   UpdateObjectInput,
 } from '../../types/object';
+
+/**
+ * `get_object` returns `Option<GameObject>`. Re-reading a row we just wrote can
+ * only come back empty if it was deleted concurrently, so surface that instead
+ * of handing callers a half-typed object.
+ */
+async function readBack(id: string): Promise<GameObject> {
+  const object = await commands.getObject({ id });
+  if (!object) {
+    throw new Error(`Object ${id} disappeared immediately after being written.`);
+  }
+  return object;
+}
 
 export function validateObjectName(name: string): string | null {
   const trimmed = name.trim();
@@ -50,23 +63,23 @@ export function getCategoryCounts(
   return commands.getCategoryCounts({ gameId, safeMode });
 }
 
-export async function createObject(input: CreateObjectInput): Promise<ObjectSummary> {
+export async function createObject(input: CreateObjectInput): Promise<GameObject> {
   const nameError = validateObjectName(input.name);
   if (nameError) throw new Error(nameError);
 
   const id = await commands.createObject({ input });
   // Re-fetch since create_object_cmd only returns ID
-  return commands.getObject({ id });
+  return readBack(id);
 }
 
-export async function updateObject(id: string, updates: UpdateObjectInput): Promise<ObjectSummary> {
+export async function updateObject(id: string, updates: UpdateObjectInput): Promise<GameObject> {
   if (updates.name !== undefined && updates.name !== null) {
     const nameError = validateObjectName(updates.name);
     if (nameError) throw new Error(nameError);
   }
 
   await commands.updateObject({ id, updates });
-  return commands.getObject({ id });
+  return readBack(id);
 }
 
 export function deleteObject(id: string, force: boolean): Promise<void> {

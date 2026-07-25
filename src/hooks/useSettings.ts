@@ -98,7 +98,7 @@ export function useSettings() {
   });
 
   const maintenanceMutation = useMutation({
-    mutationFn: () => commands.runMaintenance({}),
+    mutationFn: () => commands.runMaintenance(),
     onSuccess: (data) => {
       // data is [pruned, purged]
       const [pruned, purged] = data;

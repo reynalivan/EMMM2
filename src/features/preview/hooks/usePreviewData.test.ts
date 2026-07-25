@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../testing/test-utils';
+import { useAppStore } from '../../../stores/useAppStore';
 import {
   useModInfo,
   useModIniFiles,
@@ -24,6 +25,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 describe('usePreviewData hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.setState({ activeGameId: 'game-1' });
   });
 
   it('fetches mod info when folder path is provided', async () => {
@@ -34,7 +36,7 @@ describe('usePreviewData hooks', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('read_mod_info', { folderPath: 'E:/Mods/ModA' });
+    expect(invoke).toHaveBeenCalledWith('read_mod_info', { gameId: 'game-1', folderPath: 'E:/Mods/ModA' });
   });
 
   it('fetches ini files list', async () => {
@@ -47,7 +49,7 @@ describe('usePreviewData hooks', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_mod_ini_files', { folderPath: 'E:/Mods/ModA' });
+    expect(invoke).toHaveBeenCalledWith('list_mod_ini_files', { gameId: 'game-1', folderPath: 'E:/Mods/ModA' });
   });
 
   it('fetches ini document for selected file', async () => {
@@ -59,6 +61,7 @@ describe('usePreviewData hooks', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(invoke).toHaveBeenCalledWith('read_mod_ini', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       fileName: 'config.ini',
     });
@@ -81,10 +84,12 @@ describe('usePreviewData hooks', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('read_mod_ini', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       fileName: 'a.ini',
     });
     expect(invoke).toHaveBeenCalledWith('read_mod_ini', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       fileName: 'b.ini',
     });
@@ -98,7 +103,7 @@ describe('usePreviewData hooks', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_mod_preview_images', { folderPath: 'E:/Mods/ModA' });
+    expect(invoke).toHaveBeenCalledWith('list_mod_preview_images', { gameId: 'game-1', folderPath: 'E:/Mods/ModA' });
   });
 
   it('writes ini line updates with mutation', async () => {
@@ -113,6 +118,7 @@ describe('usePreviewData hooks', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('write_mod_ini', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       fileName: 'config.ini',
       lineUpdates: [{ line_idx: 1, content: '$swapvar = 1' }],
@@ -131,6 +137,7 @@ describe('usePreviewData hooks', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('save_mod_preview_image', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       objectName: 'Keqing',
       imageData: [1, 2, 3],
@@ -148,6 +155,7 @@ describe('usePreviewData hooks', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('remove_mod_preview_image', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       imagePath: 'E:/Mods/ModA/preview_keqing.png',
     });
@@ -163,6 +171,7 @@ describe('usePreviewData hooks', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('clear_mod_preview_images', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
     });
   });
@@ -192,6 +201,7 @@ describe('usePreviewData hooks', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('update_mod_info', {
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       update: { actual_name: 'Mod A+', description: 'updated' },
     });

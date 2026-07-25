@@ -160,7 +160,7 @@ export const scanService = {
           }
           results.push({ path: archivePath, status: 'failed', error: errMsg });
         } else {
-          const destPaths = result.dest_paths ?? [];
+          const destPaths = result.destPaths ?? [];
           extractedPaths.push(...destPaths);
           results.push({ path: archivePath, status: 'done', destPaths });
         }
@@ -336,7 +336,7 @@ export const scanService = {
     folderPath: string,
     candidateNames: string[],
     gameType: GameType,
-  ): Promise<Record<string, number>> {
+  ): Promise<Partial<Record<string, number>>> {
     const dbJson = await this.getMasterDb(gameType);
     return commands.scoreCandidatesBatch({
       folderPath,

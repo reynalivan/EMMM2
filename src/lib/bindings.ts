@@ -6,6 +6,17 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 
+// Command payload types sourced from the generated bindings so they cannot drift
+// from the Rust definitions.
+import type {
+  ConfigStatus,
+  CreateCollectionMode,
+  GameObject,
+  IniFileEntry,
+  ImportStrategy,
+} from './bindings.gen';
+export type { ConfigStatus, CreateCollectionMode, GameObject, IniFileEntry, ImportStrategy };
+
 // Internal types that are too small for separate files
 export type TaskStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
 export type PipelineTask = {
@@ -157,14 +168,12 @@ import type {
 import type {
   CollectionSummary,
   CorridorSnapshot,
-  CorridorSwitchPreview,
   CollectionPreview,
   ApplyProgressSnapshot,
   ApplyPreview,
   ApplyResult,
   CollectionReferenceImpact,
   PinStatus,
-  SwitchResult,
 } from '../types/collection';
 import type {
   ArchiveInfo,
@@ -248,12 +257,10 @@ export interface MoveModsToObjectInput {
 export const commands = {
   // App & System
   appStartupCheck: () => invoke<PipelineTask[]>('app_startup_check'),
-  checkBootSecurity: (params: { isSafeMode: boolean }) =>
-    invoke<boolean>('check_boot_security', { isSafeMode: params.isSafeMode }),
-  checkConfigStatus: () => invoke<boolean>('check_config_status'),
+  checkConfigStatus: () => invoke<ConfigStatus>('check_config_status'),
   checkMetadataUpdate: () => invoke<MetadataSyncResult>('check_metadata_update'),
   closeSplashscreen: () => invoke<void>('close_splashscreen'),
-  getLogs: (params: { count?: number; limit?: number; offset?: number }) =>
+  getLogs: (params: { limit?: number | null; count?: number | null }) =>
     invoke<string[]>('get_logs', params),
   openLogFolder: () => invoke<void>('open_log_folder'),
   resetDatabase: () => invoke<void>('reset_database'),
@@ -262,14 +269,12 @@ export const commands = {
   ensureDir: (params: { path: string }) => invoke<void>('ensure_dir_cmd', params),
   getSettings: () => invoke<AppSettings>('get_settings'),
   saveSettings: (params: { settings: AppSettings }) => invoke<void>('save_settings', params),
-  runMaintenance: (params: { gameId?: string; id?: string }) =>
-    invoke<string>('run_maintenance', params),
-  clearOldThumbnails: () => invoke<string>('clear_old_thumbnails'),
-  updateHotkeyConfig: (params: { config?: Record<string, string> }) =>
-    invoke<void>('update_hotkey_config', params),
-  getDashboardStats: (params: { gameId?: string; id?: string; safeMode?: boolean }) =>
+  runMaintenance: () => invoke<[number, number]>('run_maintenance'),
+  clearOldThumbnails: () => invoke<number>('clear_old_thumbnails'),
+  updateHotkeyConfig: () => invoke<void>('update_hotkey_config'),
+  getDashboardStats: (params: { safeMode: boolean }) =>
     invoke<DashboardPayload>('get_dashboard_stats', params),
-  getActiveKeybindings: (params: { gameId?: string; id?: string }) =>
+  getActiveKeybindings: (params: { gameId: string }) =>
     invoke<ActiveKeyBinding[]>('get_active_keybindings', params),
   getWorkspaceViewModel: (params: { input: WorkspaceViewModelInput }) =>
     invoke<WorkspaceViewModel>('get_workspace_view_model', params),
@@ -278,15 +283,14 @@ export const commands = {
 
   // Game Management
   getGames: () => invoke<GameConfig[]>('get_games'),
-  autoDetectGames: (params?: { rootPath?: string }) =>
+  autoDetectGames: (params: { rootPath: string }) =>
     invoke<GameConfig[]>('auto_detect_games', params),
-  addGameManual: (params: { name?: string; path: string; gameType: number | string }) =>
+  addGameManual: (params: { gameType: string; path: string }) =>
     invoke<GameConfig>('add_game_manual', params),
   saveOnboardingGames: (params: { games: GameConfig[] }) =>
     invoke<void>('save_onboarding_games', params),
-  launchGame: (params: { id?: string; gameId?: string }) => invoke<void>('launch_game', params),
-  setActiveGame: (params: { gameId?: string | null; id?: string | null }) =>
-    invoke<void>('set_active_game', params),
+  launchGame: (params: { gameId: string }) => invoke<void>('launch_game', params),
+  setActiveGame: (params: { gameId: string | null }) => invoke<void>('set_active_game', params),
   setAutoCloseLauncher: (params: { enabled: boolean }) =>
     invoke<void>('set_auto_close_launcher', params),
 
@@ -295,33 +299,27 @@ export const commands = {
   getMasterDb: (params: { gameType: number }) => invoke<string>('get_master_db', params),
   searchMasterDb: (params: { gameType: number; query: string; objectType?: string | null }) =>
     invoke<{ score: number; item: DbEntry }[]>('search_master_db', params),
-  getObject: (params: { id?: string; gameId?: string }) =>
-    invoke<ObjectSummary>('get_object', params),
-  getObjects: (params?: { filter?: ObjectFilter } | { gameId?: string; safeMode?: boolean }) =>
+  getObject: (params: { id: string }) => invoke<GameObject | null>('get_object', params),
+  getObjects: (params: { filter: ObjectFilter }) =>
     invoke<{ objects: ObjectSummary[]; lost_objects: string[] }>('get_objects_cmd', params),
-  getCategoryCounts: (params?: { gameId?: string; safeMode?: boolean }) =>
+  getCategoryCounts: (params: { gameId: string; safeMode: boolean }) =>
     invoke<CategoryCount[]>('get_category_counts_cmd', params),
   createObject: (params: { input: CreateObjectInput }) =>
     invoke<string>('create_object_cmd', params),
-  updateObject: (params: { id?: string; updates: UpdateObjectInput }) =>
+  updateObject: (params: { id: string; updates: UpdateObjectInput }) =>
     invoke<void>('update_object_cmd', params),
   applyObjectMatch: (params: { input: ApplyObjectMatchInput }) =>
     invoke<void>('apply_object_match_cmd', params),
-  deleteObject: (params: { id?: string; force?: boolean }) =>
+  deleteObject: (params: { id: string; force: boolean }) =>
     invoke<void>('delete_object_cmd', params),
-  pinObject: (params: { id?: string; isPinned?: boolean; pin?: boolean }) =>
-    invoke<void>('pin_object', params),
+  pinObject: (params: { id: string; pin: boolean }) => invoke<void>('pin_object', params),
   matchObjectWithDb: (params: { gameType: number; objectName: string }) =>
     invoke<MatchedDbEntry | null>('match_object_with_db', params),
 
   // Mod Management (Core)
-  renameModFolder: (params: {
-    folderPath?: string;
-    path?: string;
-    newName: string;
-    gameId?: string;
-  }) => invoke<RenameResult>('rename_mod_folder', params),
-  deleteMod: (params: { path?: string; folderPath?: string; gameId?: string }) =>
+  renameModFolder: (params: { folderPath: string; newName: string; gameId: string }) =>
+    invoke<RenameResult>('rename_mod_folder', params),
+  deleteMod: (params: { path: string; gameId?: string | null }) =>
     invoke<DeleteModResult>('delete_mod', params),
   openInExplorer: (params: { gameId: string; path: string }) =>
     invoke<void>('open_in_explorer', params),
@@ -329,22 +327,13 @@ export const commands = {
     invoke<string>('reveal_object_in_explorer', params),
 
   // Mod Metadata & Tags
-  setModCategory: (params: {
-    path?: string;
-    folderPath?: string;
-    category: string;
-    gameId?: string;
-  }) => invoke<void>('set_mod_category', params),
+  setModCategory: (params: { gameId: string; folderPath: string; category: string }) =>
+    invoke<void>('set_mod_category', params),
   setObjectModsCategory: (params: { gameId: string; objectId: string; category: string }) =>
     invoke<number>('set_object_mods_category', params),
-  toggleModSafe: (params: {
-    gameId?: string;
-    id?: string;
-    path?: string;
-    folderPath?: string;
-    safe?: boolean;
-  }) => invoke<void>('toggle_mod_safe', params),
-  getActiveModConflicts: (params: { gameId?: string }) =>
+  toggleModSafe: (params: { gameId: string; folderPath: string; safe: boolean }) =>
+    invoke<void>('toggle_mod_safe', params),
+  getActiveModConflicts: (params: { gameId: string }) =>
     invoke<ConflictInfo[]>('get_active_mod_conflicts', params),
   suggestRandomMods: (params: { gameId: string; isSafe: boolean }) =>
     invoke<RandomModProposal[]>('suggest_random_mods', params),
@@ -354,43 +343,41 @@ export const commands = {
     invoke<BulkResult>('move_mods_to_object', params),
 
   // Previews & Ini
-  readModInfo: (params: { folderPath?: string; path?: string }) =>
-    invoke<ModInfo>('read_mod_info', params),
-  updateModInfo: (params: { folderPath?: string; path?: string; update: ModInfoUpdate }) =>
+  readModInfo: (params: { gameId: string; folderPath: string }) =>
+    invoke<ModInfo | null>('read_mod_info', params),
+  updateModInfo: (params: { gameId: string; folderPath: string; update: ModInfoUpdate }) =>
     invoke<ModInfo>('update_mod_info', params),
-  listModIniFiles: (params: { folderPath?: string; path?: string }) =>
-    invoke<string[]>('list_mod_ini_files', params),
-  readModIni: (params: { folderPath?: string; path?: string; fileName?: string }) =>
+  listModIniFiles: (params: { gameId: string; folderPath: string }) =>
+    invoke<IniFileEntry[]>('list_mod_ini_files', params),
+  readModIni: (params: { gameId: string; folderPath: string; fileName: string }) =>
     invoke<IniDocument>('read_mod_ini', params),
   writeModIni: (params: {
-    folderPath?: string;
-    path?: string;
-    fileName?: string;
-    lineUpdates?: IniLineUpdate[];
-    content?: string;
+    gameId: string;
+    folderPath: string;
+    fileName: string;
+    lineUpdates: IniLineUpdate[];
   }) => invoke<void>('write_mod_ini', params),
-  listModPreviewImages: (params: { folderPath?: string; path?: string }) =>
+  listModPreviewImages: (params: { gameId: string; folderPath: string }) =>
     invoke<string[]>('list_mod_preview_images', params),
   saveModPreviewImage: (params: {
-    folderPath?: string;
-    modPath?: string;
-    objectName?: string;
-    imageData?: number[];
-    imagePath?: string;
+    gameId: string;
+    folderPath: string;
+    objectName: string;
+    imageData: number[];
   }) => invoke<string>('save_mod_preview_image', params),
-  removeModPreviewImage: (params: { folderPath?: string; imagePath?: string }) =>
+  removeModPreviewImage: (params: { gameId: string; folderPath: string; imagePath: string }) =>
     invoke<void>('remove_mod_preview_image', params),
-  clearModPreviewImages: (params: { folderPath?: string }) =>
+  clearModPreviewImages: (params: { gameId: string; folderPath: string }) =>
     invoke<string[]>('clear_mod_preview_images', params),
 
   // Thumbnails
   getModThumbnail: (params: { gameId: string; folderPath: string }) =>
     invoke<string | null>('get_mod_thumbnail', params),
-  updateModThumbnail: (params: { folderPath?: string; path?: string; sourcePath: string }) =>
+  updateModThumbnail: (params: { gameId: string; folderPath: string; sourcePath: string }) =>
     invoke<string>('update_mod_thumbnail', params),
-  deleteModThumbnail: (params: { folderPath?: string; path?: string }) =>
+  deleteModThumbnail: (params: { folderPath: string }) =>
     invoke<void>('delete_mod_thumbnail', params),
-  pasteThumbnail: (params: { folderPath?: string; path?: string; imageData: number[] }) =>
+  pasteThumbnail: (params: { gameId: string; folderPath: string; imageData: number[] }) =>
     invoke<string>('paste_thumbnail', params),
 
   // Bulk Operations
@@ -429,13 +416,13 @@ export const commands = {
   // Scanner (General)
   cancelScan: () => invoke<void>('cancel_scan_cmd'),
   runDeepmatchScanner: (params: {
-    gameId?: string;
-    gameName?: string;
-    gameType?: string;
-    modsPath?: string;
-    dbJson?: string;
-    preserveExistingMappings?: boolean;
-    onProgress?: Channel<ScanEvent>;
+    gameId: string;
+    gameName: string;
+    gameType: string;
+    modsPath: string;
+    dbJson: string;
+    preserveExistingMappings: boolean;
+    onProgress: Channel<ScanEvent>;
   }) => invoke<SyncResult>('deepmatch_scanner_cmd', params),
   runDeepmatchPreview: (params: {
     gameId: string;
@@ -449,17 +436,17 @@ export const commands = {
     onProgress: Channel<ScanEvent>;
   }) => invoke<ScanPreviewItem[]>('deepmatch_preview_for_objects_cmd', params),
   commitScan: (params: {
-    gameId?: string;
-    gameName?: string;
-    gameType?: string;
-    modsPath?: string;
-    items?: ConfirmedScanItem[];
+    gameId: string;
+    gameName: string;
+    gameType: string;
+    modsPath: string;
+    items: ConfirmedScanItem[];
   }) => invoke<SyncResult>('commit_scan_cmd', params),
   scoreCandidatesBatch: (params: {
     folderPath: string;
     candidateNames: string[];
     dbJson: string;
-  }) => invoke<Record<string, number>>('score_candidates_batch_cmd', params),
+  }) => invoke<Partial<Record<string, number>>>('score_candidates_batch_cmd', params),
   reconcileDiskState: (params: {
     gameId: string;
     reason: DiskReconcileReason;
@@ -469,30 +456,28 @@ export const commands = {
   importModsFromPaths: (params: {
     paths: string[];
     targetDir: string;
-    strategy: string;
-    dbJson?: string;
+    strategy: ImportStrategy;
+    dbJson?: string | null;
   }) => invoke<BulkResult>('import_mods_from_paths', params),
   ingestDroppedFolders: (params: {
-    paths?: string[];
-    modsPath?: string;
-    gameId?: string;
-    gameName?: string;
-    gameType?: string;
-    dbJson?: string;
+    paths: string[];
+    modsPath: string;
+    gameId: string;
+    gameName: string;
+    gameType: string;
   }) => invoke<IngestResult>('ingest_dropped_folders', params),
   // Conflicts & Duplicates
   detectConflicts: (params: { iniPaths: string[] }) =>
     invoke<ConflictInfo[]>('detect_conflicts_cmd', params),
   detectConflictsInFolder: (params: { modsPath: string }) =>
     invoke<ConflictInfo[]>('detect_conflicts_in_folder_cmd', params),
-  getConflictDetails: (params: { path?: string; enabledPath?: string; disabledPath?: string }) =>
+  getConflictDetails: (params: { gameId: string; enabledPath: string; disabledPath: string }) =>
     invoke<ConflictDetails>('get_conflict_details', params),
   resolveConflict: (params: {
-    path?: string;
-    resolution?: string;
-    keepPath?: string;
-    duplicatePath?: string;
-    strategy?: string;
+    gameId: string;
+    keepPath: string;
+    duplicatePath: string;
+    strategy: string;
   }) => invoke<void>('resolve_conflict', params),
   ignoreObjectConflict: (params: { gameId: string; objectId: string; modIds: string[] }) =>
     invoke<void>('ignore_object_conflict', params),
@@ -520,89 +505,80 @@ export const commands = {
     invoke<void>('set_watcher_suppression', params),
 
   // Collections
-  getCorridorState: (params: { gameId: string; isSafe: boolean }) =>
+  getCorridorState: (params: { gameId: string; isSafe?: boolean | null }) =>
     invoke<CorridorSnapshot>('get_corridor_state', params),
   getApplyProgress: (params: { gameId: string }) =>
     invoke<ApplyProgressSnapshot | null>('get_apply_progress', params),
-  listCollections: (params: { gameId: string; isSafe: boolean }) =>
+  listCollections: (params: { gameId: string; isSafe?: boolean | null }) =>
     invoke<CollectionSummary[]>('list_collections', params),
-  getCollectionPreview: (params: { id?: string; collectionId?: string; gameId?: string }) =>
+  getCollectionPreview: (params: { collectionId: string; gameId: string }) =>
     invoke<CollectionPreview>('get_collection_preview', params),
   previewApplyCollection: (params: {
-    id?: string;
-    collectionId?: string;
-    gameId?: string;
-    isSafe?: boolean;
+    gameId: string;
+    collectionId: string;
+    isSafe?: boolean | null;
   }) => invoke<ApplyPreview>('preview_apply_collection', params),
   createCollection: (params: {
-    gameId?: string;
+    gameId: string;
     name: string;
-    saveMode?: 'save_current_state' | 'clone_snapshot';
+    saveMode?: CreateCollectionMode | null;
     sourceCollectionId?: string | null;
-    description?: string;
   }) => invoke<CollectionSummary>('create_collection', params),
-  updateCollection: (params: { id?: string; gameId?: string; name?: string }) =>
+  updateCollection: (params: { gameId: string; id: string; name?: string | null }) =>
     invoke<CollectionSummary>('update_collection', params),
   replaceCollectionWithCurrentState: (params: { gameId: string; collectionId: string }) =>
     invoke<CollectionSummary>('replace_collection_with_current_state', params),
-  deleteCollection: (params: { id?: string; collectionId?: string; gameId?: string }) =>
-    invoke<void>('delete_collection', params),
+  deleteCollection: (params: { id: string }) => invoke<void>('delete_collection', params),
   applyCollection: (params: {
-    id?: string;
-    collectionId?: string;
-    gameId?: string;
-    ignoreMissing?: boolean;
+    gameId: string;
+    collectionId: string;
+    ignoreMissing?: boolean | null;
   }) => invoke<ApplyResult>('apply_collection', params),
-  switchCorridor: (params: { gameId?: string; targetSafe?: boolean }) =>
-    invoke<SwitchResult>('switch_corridor', params),
-  previewCorridorSwitch: (params: { gameId?: string; targetSafe?: boolean }) =>
-    invoke<CorridorSwitchPreview>('preview_corridor_switch', params),
   resolveRecoveryTask: (params: { taskId: string; action: RecoveryAction }) =>
     invoke<void>('resolve_recovery_task', params),
 
   // Security (PIN)
-  hasPin: () => invoke<boolean>('has_pin'),
-  setPin: (params: { pin: string; recoveryCode?: string }) => invoke<void>('set_pin', params),
-  verifyPin: (params: { pin?: string }) => invoke<boolean>('verify_pin', params),
-  clearPin: (params: { pin?: string }) => invoke<void>('clear_pin', params),
+  setPin: (params: { pin: string; recoveryCode?: string | null }) =>
+    invoke<void>('set_pin', params),
+  verifyPin: (params: { pin: string }) => invoke<boolean>('verify_pin', params),
   getPinStatus: () => invoke<PinStatus>('get_pin_status'),
-  resetPinWithRecoveryCode: (params: { code?: string; recoveryCode?: string }) =>
+  resetPinWithRecoveryCode: (params: { code: string }) =>
     invoke<boolean>('reset_pin_with_recovery_code', params),
 
   // Browser
-  browserOpenTab: (params: { url: string }) => invoke<string>('browser_open_tab', params),
-  browserNavigate: (params: { id?: string; url: string; label?: string }) =>
+  browserOpenTab: (params: { url: string; sessionId?: string | null }) =>
+    invoke<string>('browser_open_tab', params),
+  browserNavigate: (params: { label: string; url: string }) =>
     invoke<void>('browser_navigate', params),
-  browserReloadTab: (params: { id?: string; label?: string }) =>
-    invoke<void>('browser_reload_tab', params),
-  browserClearData: (params: { id?: string; label?: string }) =>
-    invoke<void>('browser_clear_data', params),
+  browserGoBack: (params: { label: string }) => invoke<void>('browser_go_back', params),
+  browserGoForward: (params: { label: string }) => invoke<void>('browser_go_forward', params),
+  browserReloadTab: (params: { label: string }) => invoke<void>('browser_reload_tab', params),
+  browserClearData: (params: { label: string }) => invoke<void>('browser_clear_data', params),
   browserGetHomepage: () => invoke<string>('browser_get_homepage'),
   browserSetHomepage: (params: { url: string }) => invoke<void>('browser_set_homepage', params),
-  browserImportSelected: (params: { id?: string; ids?: string[]; gameId?: string }) =>
+  browserImportSelected: (params: { ids: string[]; gameId: string }) =>
     invoke<void>('browser_import_selected', params),
   browserListDownloads: () => invoke<BrowserDownloadItem[]>('browser_list_downloads'),
-  browserDeleteDownload: (params: { id?: string; ids?: string[]; deleteFile?: boolean }) =>
+  browserDeleteDownload: (params: { id: string; deleteFile: boolean }) =>
     invoke<void>('browser_delete_download', params),
-  browserCancelDownload: (params: { id?: string; ids?: string[]; deleteFile?: boolean }) =>
+  browserCancelDownload: (params: { id: string; deleteFile?: boolean | null }) =>
     invoke<void>('browser_cancel_download', params),
   browserClearImported: () => invoke<void>('browser_clear_imported'),
   browserClearOldDownloads: () => invoke<void>('browser_clear_old_downloads'),
   browserListImportQueue: () => invoke<ImportJobItem[]>('browser_list_import_queue'),
   browserConfirmImport: (params: {
-    id?: string;
-    jobId?: string;
-    gameId?: string;
-    category?: string;
-    objectId?: string;
+    jobId: string;
+    gameId: string;
+    category: string;
+    objectId?: string | null;
   }) => invoke<void>('browser_confirm_import', params),
-  browserCancelImport: (params: { id?: string; jobId?: string }) =>
-    invoke<void>('browser_cancel_import', params),
+  browserCancelImport: (params: { jobId: string }) => invoke<void>('browser_cancel_import', params),
 
   // Trash
   listTrash: () => invoke<TrashMetadata[]>('list_trash'),
   emptyTrash: () => invoke<number>('empty_trash'),
-  restoreMod: (params: { trashId: string; gameId?: string }) => invoke<void>('restore_mod', params),
+  restoreMod: (params: { trashId: string; gameId?: string | null }) =>
+    invoke<void>('restore_mod', params),
 
   // Themes
   listCustomThemes: () => invoke<ThemeMetadata[]>('list_custom_themes'),

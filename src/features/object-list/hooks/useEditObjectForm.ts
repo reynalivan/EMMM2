@@ -12,7 +12,8 @@ import {
   useUpdateModThumbnail,
 } from '../../../hooks/useFolderMutations';
 import { useRenameMod } from '../../../hooks/useFolderCoreMutations';
-import { ItemStatus, type ModInfo } from '../../../types/object';
+import { ItemStatus, type JsonValue, type ModInfo } from '../../../types/object';
+import type { GameObject } from '../../../lib/bindings';
 import type { ObjectSummary } from '../../../types/object';
 import type { ModFolder } from '../../../types/mod';
 import { useActiveGame } from '../../../hooks/useActiveGame';
@@ -96,7 +97,11 @@ export function useEditObjectForm(
       if (!object) return null;
       if (isFolder) {
         const folder = object as ModFolder;
-        return { type: 'folder', data: await commands.readModInfo({ folderPath: folder.path }) };
+        if (!activeGame?.id) return null;
+        return {
+          type: 'folder',
+          data: await commands.readModInfo({ gameId: activeGame.id, folderPath: folder.path }),
+        };
       } else {
         const obj = object as ObjectSummary;
         return { type: 'object', data: await commands.getObject({ id: obj.id }) };
@@ -152,8 +157,8 @@ export function useEditObjectForm(
 
     if (fullDetails?.type === 'folder' && fullDetails.data) {
       const info = fullDetails.data as ModInfo;
-      defaultSafe = info.is_safe;
-      defaultAutoSync = info.is_auto_sync;
+      defaultSafe = info.is_safe ?? true;
+      defaultAutoSync = info.is_auto_sync ?? false;
       if (info.metadata) {
         defaultMeta = info.metadata as Record<string, unknown>;
         if (defaultMeta.custom_skin) {
@@ -164,7 +169,7 @@ export function useEditObjectForm(
         }
       }
     } else if (fullDetails?.type === 'object' && fullDetails.data) {
-      const obj = fullDetails.data as unknown as ObjectSummary;
+      const obj = fullDetails.data as GameObject;
       defaultType = obj.object_type;
       defaultAutoSync = obj.is_auto_sync;
       try {
@@ -266,7 +271,7 @@ export function useEditObjectForm(
             status: data.status,
             hash_db: data.hash_db ? JSON.parse(data.hash_db) : null,
             custom_skins: data.custom_skins ? JSON.parse(data.custom_skins) : null,
-            metadata: finalMeta,
+            metadata: finalMeta as JsonValue,
             tags: data.tags || [],
             thumbnail_path:
               thumbnailAction === 'update'

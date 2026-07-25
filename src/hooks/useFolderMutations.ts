@@ -1,42 +1,30 @@
 /**
  * useFolderMutations — Non-core mutation hooks for mod folders.
  *
- * Owner surface for trash, metadata, bulk, import, and advanced folder hooks.
+ * Owner surface for trash, metadata, import, and advanced folder hooks.
+ * Multi-selection actions live in `useBulkModMutations`.
  */
 
-import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../lib/bindings';
+import i18n from '../lib/i18n';
 import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
-import { folderKeys, updateFolderCache } from './folderCache';
-import { stripDisabledPrefix, toggleDisabledInPath } from '../lib/disabledPrefix';
+import { updateFolderCache } from './folderCache';
 import { detailsKeys } from '../features/preview/hooks/usePreviewData';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../features/workspace-runtime/optimistic/applyOptimisticEffects';
 import {
   buildQueryInvalidationDescriptor,
-  buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
-  buildWorkspacePathRewritesDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '../features/workspace-runtime/optimistic/descriptor';
-import {
-  FolderGridResponse,
-  ModInfoUpdate,
-  TrashEntry,
-  ConflictInfo,
-  ModFolder,
-} from '../types/mod';
+import { ModInfoUpdate, TrashEntry, ConflictInfo, ModFolder } from '../types/mod';
 import { useAppStore } from '../stores/useAppStore';
-import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
-import { extractFileInUsePayload, formatAppError } from '../lib/appError';
 import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
 import { withWatcherSuppression } from '../features/file-watcher/watcherSuppression';
-import {
-  hasCollectionReferenceImpact,
-  notifyCollectionReferenceImpact,
-} from './collectionReferenceImpact';
+import { formatBulkFailureMessage } from './bulkToastMessages';
+import { applyModInfoUpdate } from './folderMutationPayloads';
 
 // ── Trash ───────────────────────────────────────────────────────
 
@@ -99,10 +87,13 @@ export function useUpdateModCategory() {
 /** Hook to update a mod's thumbnail. */
 export function useUpdateModThumbnail() {
   const queryClient = useQueryClient();
+  const { activeGame } = useActiveGame();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; sourcePath: string }) =>
-      commands.updateModThumbnail(params),
+    mutationFn: (params: { folderPath: string; sourcePath: string }) => {
+      if (!activeGame?.id) throw new Error('No active game selected');
+      return commands.updateModThumbnail({ ...params, gameId: activeGame.id });
+    },
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
         [thumbnailKeys.folder(variables.folderPath)],
@@ -167,10 +158,13 @@ export function useDeleteModThumbnail() {
 /** Hook to paste a thumbnail from clipboard bytes. */
 export function usePasteThumbnail() {
   const queryClient = useQueryClient();
+  const { activeGame } = useActiveGame();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; imageData: number[] }) =>
-      commands.pasteThumbnail(params),
+    mutationFn: (params: { folderPath: string; imageData: number[] }) => {
+      if (!activeGame?.id) throw new Error('No active game selected');
+      return commands.pasteThumbnail({ ...params, gameId: activeGame.id });
+    },
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
         [thumbnailKeys.folder(variables.folderPath)],
@@ -185,255 +179,25 @@ export function usePasteThumbnail() {
 
 export function useUpdateModInfo() {
   const queryClient = useQueryClient();
+  const { activeGame } = useActiveGame();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) =>
-      commands.updateModInfo(params),
+    mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) => {
+      if (!activeGame?.id) throw new Error('No active game selected');
+      return commands.updateModInfo({ ...params, gameId: activeGame.id });
+    },
     onSuccess: (_data, variables) => {
       // Targeted: update the specific folder in cache
-      updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) => ({
-        ...f,
-        metadata: variables.update.metadata
-          ? { ...f.metadata, ...variables.update.metadata }
-          : f.metadata,
-        is_favorite: variables.update.is_favorite ?? f.is_favorite,
-        is_safe: variables.update.is_safe ?? f.is_safe,
-      }));
-    },
-  });
-}
-
-// ── Bulk Operations ─────────────────────────────────────────────
-
-export type ImportStrategy = 'Raw';
-
-/** Helper to construct bulk toast messages with explicit names. */
-function getBulkToastMessage(queryClient: QueryClient, paths: string[], action: string): string {
-  const count = paths.length;
-  if (count === 0) return '';
-
-  const displayNames = paths.map((p) => {
-    const name = stripDisabledPrefix(p.split(/[/\\]/).pop() || '');
-
-    const prevQueries = queryClient.getQueriesData<FolderGridResponse>({
-      queryKey: folderKeys.all,
-    });
-    for (const [, data] of prevQueries) {
-      if (!data) continue;
-      const match = data.children.find((f: ModFolder) => f.path === p);
-      if (match) return match.name;
-    }
-    return name;
-  });
-
-  return count <= 4
-    ? `${action} ${displayNames.join(', ')}`
-    : `${action} ${displayNames.slice(0, 4).join(', ')} + ${count - 4} others`;
-}
-
-function formatBulkFailureMessage(
-  failures: { path: string; error: unknown }[],
-  action: string,
-): string {
-  if (failures.length === 0) {
-    return '';
-  }
-
-  const firstFailure = failures[0];
-  const firstName = stripDisabledPrefix(
-    firstFailure.path.split(/[/\\]/).pop() || firstFailure.path,
-  );
-  const reason = formatAppError(firstFailure.error);
-  if (failures.length === 1) {
-    return `${action} failed for ${firstName}: ${reason}`;
-  }
-
-  return `${action} failed for ${firstName} + ${failures.length - 1} others: ${reason}`;
-}
-
-/** Hook to bulk toggle mods. */
-export function useBulkToggle() {
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    // Bulk toggle is an explicit runtime switch path.
-    // Global runtime refresh comes from one final publish, not per-item ad-hoc invalidation.
-    mutationFn: (params: { gameId: string; paths: string[]; enable: boolean }) =>
-      commands.bulkToggleMods(params),
-
-    onSuccess: async (result, variables) => {
-      const fallbackRewrites = result.success.map((newPath) => ({
-        old_path: toggleDisabledInPath(newPath, !variables.enable),
-        new_path: newPath,
-      }));
-      const pathRewrites =
-        result.path_rewrites && result.path_rewrites.length > 0
-          ? result.path_rewrites
-          : fallbackRewrites;
-      applyRuntimeEffects(
-        queryClient,
-        mergeRuntimeEffectDescriptors(
-          buildQueryRemovalDescriptor(
-            result.success.map((newPath) => thumbnailKeys.folder(newPath)),
-            [],
-          ),
-          buildWorkspacePathRewritesDescriptor(pathRewrites, []),
-        ),
+      updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) =>
+        applyModInfoUpdate(f, variables.update),
       );
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('folderSwitch'),
-        'active',
-      );
-
-      if (result.success.length > 0) {
-        const action = variables.enable ? 'Enabled' : 'Disabled';
-        toast.success(getBulkToastMessage(queryClient, result.success, action));
-      }
-      if (hasCollectionReferenceImpact(result.collection_impact)) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('collectionsCatalog'),
-          'active',
-        );
-        notifyCollectionReferenceImpact(result.collection_impact);
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'Toggle'));
-      }
-    },
-    onError: (error, variables) => {
-      const payload = extractFileInUsePayload(error);
-      if (payload) {
-        openWorkspaceFileInUseDialog({
-          path: payload.path,
-          processes: payload.processes,
-          onRetry: () => mutation.mutate(variables),
-        });
-        return;
-      }
-      toast.error(formatAppError(error));
-    },
-  });
-
-  return mutation;
-}
-
-/** Hook to bulk delete mods. */
-export function useBulkDelete() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { paths: string[]; gameId?: string }) => commands.bulkDeleteMods(params),
-    onSuccess: async (result) => {
-      applyRuntimeEffects(
-        queryClient,
-        buildQueryRemovalDescriptor(
-          result.success.map((path) => thumbnailKeys.folder(path)),
-          [],
-        ),
-      );
-      // Targeted cache update instead of full refetch: remove deleted folders
-      updateFolderCache(queryClient, result.success, undefined, true);
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor(['workspaceCorridor', 'dashboardKeybindings']),
-        'active',
-      );
-
-      if (result.success.length > 0) {
-        toast.success(getBulkToastMessage(queryClient, result.success, 'Deleted'));
-      }
-      if (hasCollectionReferenceImpact(result.collection_impact)) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('collectionsCatalog'),
-          'active',
-        );
-        notifyCollectionReferenceImpact(result.collection_impact);
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'Delete'));
-      }
-    },
-  });
-}
-
-/** Hook to bulk update info.json. */
-export function useBulkUpdateInfo() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { gameId: string; paths: string[]; update: ModInfoUpdate }) =>
-      commands.bulkUpdateInfo(params),
-    onSuccess: (result, variables) => {
-      // Targeted cache update instead of full refetch
-      updateFolderCache(queryClient, result.success, (f: ModFolder) => {
-        const update = variables.update;
-        return {
-          ...f,
-          is_favorite: update.is_favorite ?? f.is_favorite,
-          is_safe: update.is_safe ?? f.is_safe,
-          metadata: update.metadata ? { ...f.metadata, ...update.metadata } : f.metadata,
-        };
-      });
-      if (result.success.length > 0) {
-        toast.success(getBulkToastMessage(queryClient, result.success, 'Updated'));
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'Update'));
-      }
-    },
-  });
-}
-
-/** Hook to bulk toggle favorite with targeted cache update. */
-export function useBulkFavorite() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { gameId: string; folderPaths: string[]; favorite: boolean }) =>
-      commands.bulkToggleFavorite(params),
-    onSuccess: (result, variables) => {
-      updateFolderCache(queryClient, result.success, (f: ModFolder) => ({
-        ...f,
-        is_favorite: variables.favorite,
-      }));
-      if (result.success.length > 0) {
-        const action = variables.favorite ? 'Favorited' : 'Unfavorited';
-        toast.success(getBulkToastMessage(queryClient, result.success, action));
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'Favorite'));
-      }
-    },
-  });
-}
-
-/** Hook to bulk pin/unpin mods with targeted cache update. */
-export function useBulkPin() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
-      commands.bulkPinMods(params),
-    onSuccess: (result, variables) => {
-      updateFolderCache(queryClient, result.success, (f: ModFolder) => ({
-        ...f,
-        is_pinned: variables.pin,
-      }));
-      if (result.success.length > 0) {
-        const action = variables.pin ? 'Pinned' : 'Unpinned';
-        toast.success(getBulkToastMessage(queryClient, result.success, action));
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'Pin'));
-      }
     },
   });
 }
 
 // ── Import & Organize ───────────────────────────────────────────
+
+export type ImportStrategy = 'Raw';
 
 /** Hook to import mods from external paths (Drag & Drop). */
 export function useImportMods() {
@@ -460,10 +224,14 @@ export function useImportMods() {
         'active',
       );
       if (result.success.length > 0) {
-        toast.success(`Imported ${result.success.length} items`);
+        toast.success(
+          i18n.t('grid:bulk_toast.import_success', {
+            count: result.success.length,
+          }),
+        );
       }
       if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'Import'));
+        toast.error(formatBulkFailureMessage(result.failures, 'import'));
       }
     },
   });

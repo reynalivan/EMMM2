@@ -71,13 +71,7 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const clearPreviewImagesRaw = useClearPreviewImages();
   const writeModIniRaw = useWriteModIni();
 
-  const iniFiles = useMemo(
-    () =>
-      (iniFilesQuery.data ?? []).map((filename) =>
-        typeof filename === 'string' ? { filename, path: filename } : filename,
-      ) as IniFileEntry[],
-    [iniFilesQuery.data],
-  );
+  const iniFiles = useMemo<IniFileEntry[]>(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
 
   const allIniQueries = useAllModIniDocuments(activePath, iniFiles);
   const iniDocuments = useMemo(
