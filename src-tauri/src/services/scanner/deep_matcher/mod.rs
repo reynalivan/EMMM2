@@ -19,7 +19,6 @@ pub mod golden_corpus;
 mod required_tests;
 
 // Public types and matcher entrypoints used by commands and sync services.
-pub use analysis::skin_resolver::detect_skin_for_staged;
 pub use models::types::{
     sort_candidates_deterministic, Candidate, Confidence, CustomSkin, DbEntry, Evidence, MatchMode,
     MatchStatus, Reason, ScoreState, StagedMatchResult, MAX_EVIDENCE_HASHES, MAX_EVIDENCE_SECTIONS,

@@ -2,13 +2,16 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { listen } from '@tauri-apps/api/event';
 import { Webview } from '@tauri-apps/api/webview';
-import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { useBrowserStore } from '../../../stores/useBrowserStore';
 import { useDownloads } from '../hooks/useDownloads';
+import { useWebviewSync } from '../hooks/useWebviewSync';
+import { normalizeBrowserUrl } from '../utils/browserUrl';
+import { BrowserTabBar } from './BrowserTabBar';
+import { BrowserToolbar } from './BrowserToolbar';
 import { DownloadManagerPanel } from './DownloadManagerPanel';
 import { GamePickerModal } from './GamePickerModal';
 import { ImportQueuePanel } from './ImportQueuePanel';
-import { Globe, Download, Plus, X, RotateCcw, Trash2 } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../lib/bindings';
 
@@ -35,6 +38,10 @@ export function BrowserPage() {
     setActiveTab,
   } = useBrowserStore();
 
+  // Native webviews always paint above the DOM, so any overlay that must sit
+  // on top of the page content requires hiding them while it's open.
+  const overlayOpen = isDownloadPanelOpen || isGamePickerOpen;
+
   const { finishedCount } = useDownloads();
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -42,10 +49,7 @@ export function BrowserPage() {
   // Navigate in a new tab window
   const handleNavigate = useCallback(
     async (url: string, asNewTab: boolean = false) => {
-      let normalized = url.trim();
-      if (!normalized.startsWith('http') && !normalized.startsWith('about:')) {
-        normalized = `https://${normalized}`;
-      }
+      const normalized = normalizeBrowserUrl(url);
       setIsNavigating(true);
       try {
         if (asNewTab || tabs.length === 0) {
@@ -84,93 +88,7 @@ export function BrowserPage() {
   }, [activeTab]);
 
   // Handle resizing and positioning of the Tauri Webviews
-  useEffect(() => {
-    let resizeObserver: ResizeObserver | null = null;
-    let isSyncing = false;
-    let pendingSync = false;
-    let isMounted = true;
-
-    const syncWebviews = async () => {
-      if (!isMounted) return;
-      if (isSyncing) {
-        pendingSync = true;
-        return;
-      }
-      isSyncing = true;
-
-      try {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return;
-
-        for (const tab of tabs) {
-          if (!isMounted) break;
-          try {
-            const webview = await Webview.getByLabel(tab.id);
-            if (webview) {
-              if (tab.id === activeTabId) {
-                try {
-                  await webview.setSize(new LogicalSize(rect.width, rect.height));
-                  await webview.setPosition(new LogicalPosition(rect.left, rect.top));
-                  await webview.show();
-                  await webview.setFocus();
-                } catch (innerErr) {
-                  console.error(
-                    `[Browser] Error modifying webview properties for ${tab.id}:`,
-                    innerErr,
-                  );
-                }
-              } else {
-                try {
-                  await webview.hide();
-                } catch (hideErr) {
-                  console.error(`[Browser] Error hiding webview ${tab.id}:`, hideErr);
-                }
-              }
-            }
-          } catch (err) {
-            console.error(`[Browser] Failed to get/sync webview ${tab.id}:`, err);
-          }
-        }
-      } finally {
-        isSyncing = false;
-        if (pendingSync && isMounted) {
-          pendingSync = false;
-          requestAnimationFrame(syncWebviews);
-        }
-      }
-    };
-
-    if (containerRef.current) {
-      resizeObserver = new ResizeObserver(() => {
-        requestAnimationFrame(syncWebviews);
-      });
-      resizeObserver.observe(containerRef.current);
-    }
-
-    const handleWinResize = () => {
-      requestAnimationFrame(syncWebviews);
-    };
-    window.addEventListener('resize', handleWinResize);
-
-    // Initial sync
-    syncWebviews();
-
-    return () => {
-      isMounted = false;
-      if (resizeObserver) resizeObserver.disconnect();
-      window.removeEventListener('resize', handleWinResize);
-
-      // We do not await this, just fire and forget hides on unmount
-      tabs.forEach((t) => {
-        Webview.getByLabel(t.id)
-          .then((w) => {
-            if (w) w.hide().catch(() => {});
-          })
-          .catch(() => {});
-      });
-    };
-  }, [tabs, activeTabId]);
+  useWebviewSync(containerRef, tabs, activeTabId, overlayOpen);
 
   // Keep a ref to handleNavigate to avoid listener re-creation loops
   const navigateRef = useRef(handleNavigate);
@@ -210,6 +128,34 @@ export function BrowserPage() {
     } finally {
       setIsRefreshing(false);
     }
+  };
+
+  const handleGoBack = async () => {
+    if (!activeTabId) return;
+    try {
+      await commands.browserGoBack({ label: activeTabId });
+    } catch (err) {
+      console.error('Failed to go back:', err);
+    }
+  };
+
+  const handleGoForward = async () => {
+    if (!activeTabId) return;
+    try {
+      await commands.browserGoForward({ label: activeTabId });
+    } catch (err) {
+      console.error('Failed to go forward:', err);
+    }
+  };
+
+  const handleNewTab = async () => {
+    let homepage = 'https://www.google.com';
+    try {
+      homepage = await commands.browserGetHomepage();
+    } catch (err) {
+      console.error('Failed to load homepage setting:', err);
+    }
+    handleNavigate(homepage, true);
   };
 
   const handleClearData = async () => {
@@ -267,121 +213,29 @@ export function BrowserPage() {
 
   return (
     <div className="flex flex-col h-full relative overflow-hidden bg-base-100">
-      {/* ── Tab Bar ────────────────────────────────────────────────────── */}
-      <div className="flex items-end gap-1 px-2 pt-2 bg-base-300 border-b border-base-200 shrink-0 h-12 overflow-x-auto">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`
-              group flex items-center gap-2 max-w-48 px-3 py-1.5 rounded-t-lg border border-b-0 text-sm truncate transition-colors
-              ${
-                activeTabId === tab.id
-                  ? 'bg-base-100 border-base-200 text-base-content font-medium opacity-100 relative'
-                  : 'bg-base-200/50 border-transparent text-base-content/60 hover:bg-base-200 opacity-80'
-              }
-            `}
-            style={{
-              // Cover the bottom border line of the container when active
-              marginBottom: activeTabId === tab.id ? '-1px' : '0',
-              zIndex: activeTabId === tab.id ? 10 : 1,
-            }}
-          >
-            <span className="truncate flex-1">
-              {tab.title && tab.title !== 'Loading...'
-                ? tab.title
-                : tab.url
-                  ? new URL(tab.url).hostname
-                  : t('tabs.new_tab')}
-            </span>
-            <div
-              className="w-5 h-5 rounded-md hover:bg-base-300 grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => handleCloseTab(tab.id, e)}
-            >
-              <X size={12} />
-            </div>
-          </button>
-        ))}
-        <button
-          onClick={() => handleNavigate('https://www.google.com', true)}
-          className="btn btn-sm btn-ghost btn-square rounded-full mb-1 ml-1"
-          title={t('tabs.new_tab')}
-        >
-          <Plus size={16} />
-        </button>
-      </div>
+      <BrowserTabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelectTab={setActiveTab}
+        onCloseTab={handleCloseTab}
+        onNewTab={handleNewTab}
+      />
 
-      {/* ── Top Bar ───────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-2 bg-base-100 border-b border-base-200 shrink-0 z-10 relative shadow-sm">
-        {/* Navigation buttons */}
-        <div className="flex items-center gap-1">
-          <button
-            className="btn btn-ghost btn-xs btn-square"
-            title={t('tabs.refresh')}
-            onClick={handleReload}
-            disabled={!activeTabId || isRefreshing}
-          >
-            <RotateCcw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-          </button>
-        </div>
-
-        {/* Discover Hub quick link */}
-        <button
-          id="browser-gamebanana-btn"
-          className="btn btn-ghost btn-sm gap-2"
-          title={t('tabs.open_gamebanana')}
-          onClick={() => handleNavigate('https://gamebanana.com', true)}
-        >
-          <Globe size={16} className="text-info" />
-          {t('tabs.discover')}
-        </button>
-
-        {/* URL bar */}
-        <form onSubmit={handleUrlSubmit} className="flex-1 flex gap-2">
-          <input
-            id="browser-url-input"
-            type="text"
-            className="input input-sm input-bordered flex-1 font-mono text-sm bg-base-200 focus:bg-base-100 transition-colors"
-            placeholder={t('tabs.url_placeholder')}
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-          />
-          <button
-            id="browser-navigate-btn"
-            type="submit"
-            className="btn btn-sm btn-primary"
-            disabled={isNavigating}
-          >
-            {isNavigating ? <span className="loading loading-spinner loading-xs" /> : t('tabs.go')}
-          </button>
-        </form>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          <button
-            className="btn btn-sm btn-ghost text-error"
-            onClick={handleClearData}
-            title={t('tabs.clear_data')}
-            disabled={!activeTabId}
-          >
-            <Trash2 size={18} />
-          </button>
-
-          <button
-            id="browser-downloads-btn"
-            className="btn btn-sm btn-ghost relative"
-            onClick={openDownloadPanel}
-            title={t('tabs.open_downloads')}
-          >
-            <Download size={18} />
-            {finishedCount > 0 && (
-              <span className="badge badge-primary badge-xs absolute -top-1 -right-1">
-                {finishedCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
+      <BrowserToolbar
+        urlInput={urlInput}
+        onUrlInputChange={setUrlInput}
+        onUrlSubmit={handleUrlSubmit}
+        activeTabId={activeTabId}
+        isNavigating={isNavigating}
+        isRefreshing={isRefreshing}
+        finishedCount={finishedCount}
+        onGoBack={handleGoBack}
+        onGoForward={handleGoForward}
+        onReload={handleReload}
+        onOpenDiscover={() => handleNavigate('https://gamebanana.com', true)}
+        onClearData={handleClearData}
+        onOpenDownloads={openDownloadPanel}
+      />
 
       {/* ── Main Content / Webview Container ──────────────────────────── */}
       {/* This div acts as the reference for where the native Webview will be placed. */}

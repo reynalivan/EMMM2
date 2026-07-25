@@ -8,7 +8,7 @@ async fn get_filtered_objects_matches_scalar_and_array_metadata_case_insensitive
     let game = GameRow {
         id: "g_filters".into(),
         name: "Game Filters".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameFilters".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,

@@ -82,16 +82,16 @@ pub fn default_schema() -> GameSchema {
     }
 }
 
-/// Normalize legacy game_type values to canonical XXMI codes.
-/// Maps alternative names (e.g. "StarRail" → "srmi", "Genshin" → "gimi") so that
-/// resource lookups (schemas, databases, thumbnails) resolve correctly.
+/// Map a `GameType` discriminant to its canonical XXMI resource code.
+/// Must match `domain::models::GameType` (GIMI=0 … EFMI=4); the value is the
+/// `Serialize_repr` discriminant the frontend round-trips. Unknown → gimi.
 pub fn normalize_game_type(raw: i32) -> String {
     match raw {
-        1 => "gimi".to_string(),
-        2 => "srmi".to_string(),
+        0 => "gimi".to_string(),
+        1 => "srmi".to_string(),
+        2 => "wwmi".to_string(),
         3 => "zzmi".to_string(),
-        4 => "wwmi".to_string(),
-        5 => "efmi".to_string(),
+        4 => "efmi".to_string(),
         _ => "gimi".to_string(),
     }
 }

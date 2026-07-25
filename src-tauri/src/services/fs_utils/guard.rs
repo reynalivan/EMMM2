@@ -46,23 +46,4 @@ impl PathGuard {
 
         Ok(canonical_candidate)
     }
-
-    /// Validates that a filename (not a path) is safe and doesn't contain traversal components.
-    pub fn validate_filename(filename: &str) -> Result<(), String> {
-        if filename.trim().is_empty() {
-            return Err("Filename cannot be empty".to_string());
-        }
-
-        let path = Path::new(filename);
-        if path
-            .components()
-            .any(|c| !matches!(c, std::path::Component::Normal(_)))
-        {
-            return Err(
-                "Invalid filename: must not contain directory components or traversal".to_string(),
-            );
-        }
-
-        Ok(())
-    }
 }

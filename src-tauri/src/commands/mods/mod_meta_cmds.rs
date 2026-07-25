@@ -1,42 +1,10 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::disk_reconcile::orchestrator::DiskReconcileState;
-use crate::services::disk_reconcile::types::DiskReconcileReason;
+use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::{info_json, metadata};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
-use tauri::Emitter;
-
-async fn emit_internal_disk_reconcile(
-    app: &tauri::AppHandle,
-    pool: &sqlx::SqlitePool,
-    config: &ConfigService,
-    disk_reconcile_state: &DiskReconcileState,
-    watcher: &WatcherState,
-    game_id: &str,
-    changed_paths: Vec<String>,
-) -> Result<(), AppError> {
-    let result = crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
-        crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
-            pool,
-            config,
-            state: disk_reconcile_state,
-            watcher_suppressor: watcher.suppressor.clone(),
-        },
-        crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
-            game_id.to_string(),
-            DiskReconcileReason::InternalMutation,
-            changed_paths,
-            false,
-        ),
-    )
-    .await
-    .map_err(AppError::Internal)?;
-
-    app.emit("disk_reconcile:result", result)
-        .map_err(|error| AppError::Internal(error.to_string()))
-}
 
 #[specta::specta]
 #[tauri::command]
@@ -97,12 +65,10 @@ pub async fn read_mod_info(
 
 #[specta::specta]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn update_mod_info(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    disk_reconcile_state: tauri::State<'_, DiskReconcileState>,
     state: tauri::State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
@@ -113,16 +79,9 @@ pub async fn update_mod_info(
     let changed_path = path.join("info.json").to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&state.suppressor);
     let info = info_json::update_info_json(&path, &update)?;
-    emit_internal_disk_reconcile(
-        &app,
-        pool.inner(),
-        &config,
-        &disk_reconcile_state,
-        &state,
-        &game_id,
-        vec![changed_path],
-    )
-    .await?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path])
+        .await
+        .map_err(AppError::Internal)?;
 
     Ok(info)
 }
@@ -185,15 +144,12 @@ async fn set_object_mods_category_inner(
     object_id: &str,
     category: &str,
 ) -> Result<usize, AppError> {
-    let result = sqlx::query("UPDATE mods SET object_type = ? WHERE game_id = ? AND object_id = ?")
-        .bind(category)
-        .bind(game_id)
-        .bind(object_id)
-        .execute(pool)
-        .await
-        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let updated =
+        crate::repo::mod_repo::set_object_type_for_object(pool, game_id, object_id, category)
+            .await
+            .map_err(|error| AppError::Internal(error.to_string()))?;
 
-    Ok(result.rows_affected() as usize)
+    Ok(updated as usize)
 }
 
 #[derive(serde::Deserialize, specta::Type)]
@@ -223,13 +179,14 @@ pub async fn list_move_targets_for_object(
 #[specta::specta]
 #[tauri::command]
 pub async fn move_mods_to_object(
+    app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     op_lock: tauri::State<'_, OperationLock>,
     watcher: tauri::State<'_, WatcherState>,
     input: MoveModsToObjectInput,
 ) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
-    crate::services::mods::organizer_ext::move_mods_to_object_service(
+    let result = crate::services::mods::organizer_ext::move_mods_to_object_service(
         &config,
         pool.inner(),
         &op_lock,
@@ -242,13 +199,25 @@ pub async fn move_mods_to_object(
             status: input.status.as_deref(),
         },
     )
-    .await
+    .await?;
+
+    // Convergence: reconcile source and destination roots after the move.
+    let mut changed_paths = input.folder_paths.clone();
+    changed_paths.extend(result.success.iter().cloned());
+    if let Err(error) =
+        emit_internal_disk_reconcile(&app, pool.inner(), &input.game_id, changed_paths).await
+    {
+        log::warn!("Post-move disk reconcile failed: {error}");
+    }
+
+    Ok(result)
 }
 
 #[specta::specta]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn move_mod_to_object(
+    app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     op_lock: tauri::State<'_, OperationLock>,
@@ -271,6 +240,13 @@ pub async fn move_mod_to_object(
         },
     )
     .await?;
+
+    // Convergence: reconcile the source root after the move.
+    if let Err(error) =
+        emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![folder_path]).await
+    {
+        log::warn!("Post-move disk reconcile failed: {error}");
+    }
 
     Ok(())
 }

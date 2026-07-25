@@ -1,6 +1,6 @@
 use tauri::{Manager, State};
 
-use crate::types::errors::CommandResult;
+use crate::domain::errors::AppError;
 
 use crate::repo::object_repo::{
     CategoryCount, CreateObjectInput, GetObjectsResult, ObjectFilter, UpdateObjectInput,
@@ -23,18 +23,18 @@ pub struct ApplyObjectMatchInput {
 pub async fn get_objects_cmd(
     filter: ObjectFilter,
     pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<GetObjectsResult> {
+) -> Result<GetObjectsResult, AppError> {
     get_objects_cmd_inner(filter, &pool).await
 }
 
 pub async fn get_objects_cmd_inner(
     filter: ObjectFilter,
     pool: &sqlx::SqlitePool,
-) -> CommandResult<GetObjectsResult> {
+) -> Result<GetObjectsResult, AppError> {
     let objects =
         crate::services::objects::query::get_filtered_objects_with_conflict_check(pool, &filter)
             .await
-            .map_err(crate::types::errors::CommandError::Database)?;
+            .map_err(AppError::Db)?;
 
     Ok(objects)
 }
@@ -45,11 +45,11 @@ pub async fn get_category_counts_cmd(
     game_id: String,
     safe_mode: bool,
     pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<Vec<CategoryCount>> {
+) -> Result<Vec<CategoryCount>, AppError> {
     let counts =
         crate::services::objects::query::get_category_counts_service(&pool, &game_id, safe_mode)
             .await
-            .map_err(|e| crate::types::errors::CommandError::App(e.to_string()))?;
+            .map_err(|e| AppError::Validation(e.to_string()))?;
 
     Ok(counts)
 }
@@ -62,10 +62,11 @@ pub async fn create_object_cmd(
     app: tauri::AppHandle,
     watcher: State<'_, crate::services::scanner::watcher::WatcherState>,
     op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
-) -> CommandResult<String> {
-    let _lock = op_lock.acquire().await.map_err(|error| {
-        crate::types::errors::CommandError::Io(format!("Operation in progress: {error}"))
-    })?;
+) -> Result<String, AppError> {
+    let _lock = op_lock
+        .acquire()
+        .await
+        .map_err(|error| AppError::Io(format!("Operation in progress: {error}")))?;
     let _guard = crate::services::scanner::watcher::SuppressionGuard::new(&watcher.suppressor);
     create_object_cmd_inner(input, &pool, Some(&app)).await
 }
@@ -74,7 +75,7 @@ pub async fn create_object_cmd_inner(
     input: CreateObjectInput,
     pool: &sqlx::SqlitePool,
     app_handle: Option<&tauri::AppHandle>,
-) -> CommandResult<String> {
+) -> Result<String, AppError> {
     crate::services::objects::mutate::create_object_cmd_inner(pool, app_handle, input).await
 }
 
@@ -84,7 +85,7 @@ pub async fn update_object_cmd(
     id: String,
     updates: UpdateObjectInput,
     pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<()> {
+) -> Result<(), AppError> {
     update_object_cmd_inner(id, &updates, &pool).await
 }
 
@@ -92,7 +93,7 @@ pub async fn update_object_cmd_inner(
     id: String,
     updates: &UpdateObjectInput,
     pool: &sqlx::SqlitePool,
-) -> CommandResult<()> {
+) -> Result<(), AppError> {
     crate::services::objects::mutate::update_object(pool, &id, updates).await
 }
 
@@ -101,52 +102,28 @@ pub async fn update_object_cmd_inner(
 pub async fn apply_object_match_cmd(
     input: ApplyObjectMatchInput,
     pool: State<'_, sqlx::SqlitePool>,
-) -> CommandResult<()> {
+) -> Result<(), AppError> {
     apply_object_match_cmd_inner(&input, &pool).await
 }
 
 pub async fn apply_object_match_cmd_inner(
     input: &ApplyObjectMatchInput,
     pool: &sqlx::SqlitePool,
-) -> CommandResult<()> {
-    let target_object_id = match input.object_id.as_deref() {
-        Some(object_id) => object_id.to_string(),
-        None => {
-            let folder_path = input.folder_path.as_deref().ok_or_else(|| {
-                crate::types::errors::CommandError::App(
-                    "apply_object_match_cmd requires object_id or folder_path".to_string(),
-                )
-            })?;
-
-            crate::repo::mod_repo::get_object_id_by_folder_and_game(
-                pool,
-                folder_path,
-                &input.game_id,
-            )
-            .await
-            .map_err(|error| crate::types::errors::CommandError::Database(error.to_string()))?
-            .ok_or_else(|| {
-                crate::types::errors::CommandError::NotFound(format!(
-                    "No physical object found for folder '{}'",
-                    folder_path
-                ))
-            })?
-        }
-    };
-
-    crate::repo::object_repo::apply_canonical_match(
+) -> Result<(), AppError> {
+    crate::services::objects::matching::apply_object_match(
         pool,
-        &target_object_id,
-        input.matched_entry_key.as_deref(),
-        input.matched_alias_name.as_deref(),
-        input.matched_confidence,
-        input.matched_reason.as_deref(),
-        Some(input.matched_source.as_deref().unwrap_or("manual_match")),
+        &input.game_id,
+        input.object_id.as_deref(),
+        input.folder_path.as_deref(),
+        crate::services::objects::matching::ObjectMatchFields {
+            entry_key: input.matched_entry_key.as_deref(),
+            alias_name: input.matched_alias_name.as_deref(),
+            confidence: input.matched_confidence,
+            reason: input.matched_reason.as_deref(),
+            source: input.matched_source.as_deref(),
+        },
     )
     .await
-    .map_err(|error| crate::types::errors::CommandError::Database(error.to_string()))?;
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -158,13 +135,11 @@ pub async fn delete_object_cmd(
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, crate::services::scanner::watcher::WatcherState>,
     op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
-) -> CommandResult<()> {
+) -> Result<(), AppError> {
     let trash_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| {
-            crate::types::errors::CommandError::Io(format!("Failed to get app data dir: {}", e))
-        })?
+        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {}", e)))?
         .join("trash");
     crate::services::objects::mutate::delete_object(&pool, &id, force, &trash_dir, &state, &op_lock)
         .await

@@ -1,9 +1,10 @@
+use crate::domain::errors::AppError;
 use crate::services::config::{AppSettings, ConfigService};
 use tauri::State;
 
 #[specta::specta]
 #[tauri::command]
-pub async fn get_settings(state: State<'_, ConfigService>) -> Result<AppSettings, String> {
+pub async fn get_settings(state: State<'_, ConfigService>) -> Result<AppSettings, AppError> {
     Ok(state.get_settings())
 }
 
@@ -12,7 +13,7 @@ pub async fn get_settings(state: State<'_, ConfigService>) -> Result<AppSettings
 pub async fn save_settings(
     settings: AppSettings,
     state: State<'_, ConfigService>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     state.save_settings(settings)
 }
 
@@ -23,7 +24,7 @@ pub async fn set_active_game(
     state: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     state.set_active_game(game_id.clone())?;
     if game_id.is_some() {
         let _ = crate::services::app::post_apply::trigger_overlay_refresh(
@@ -41,7 +42,7 @@ pub async fn set_active_game(
 pub async fn set_auto_close_launcher(
     enabled: bool,
     state: State<'_, ConfigService>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     state.set_auto_close_launcher(enabled)
 }
 
@@ -50,18 +51,19 @@ pub async fn set_auto_close_launcher(
 pub async fn run_maintenance(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<(u64, u64), String> {
+) -> Result<(u64, u64), AppError> {
     use tauri::Manager;
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let app_data_dir = app.path().app_data_dir()?;
     crate::services::app::maintenance_service::run_maintenance_counts(pool.inner(), &app_data_dir)
         .await
+        .map_err(AppError::Internal)
 }
 
 #[specta::specta]
 #[tauri::command]
-pub async fn clear_old_thumbnails() -> Result<u64, String> {
+pub async fn clear_old_thumbnails() -> Result<u64, AppError> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
-    let pruned = ThumbnailCache::clear_old_cache(30)?;
+    let pruned = ThumbnailCache::clear_old_cache(30).map_err(AppError::Internal)?;
     Ok(pruned as u64)
 }
 
@@ -70,7 +72,7 @@ pub async fn clear_old_thumbnails() -> Result<u64, String> {
 pub async fn reset_pin_with_recovery_code(
     code: String,
     state: State<'_, ConfigService>,
-) -> Result<bool, String> {
+) -> Result<bool, AppError> {
     state.reset_pin_with_recovery_code(&code)
 }
 

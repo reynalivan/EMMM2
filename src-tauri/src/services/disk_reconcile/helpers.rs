@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use crate::database::models::ItemStatus;
-use crate::services::corridor_constants::{
+use crate::common::corridor_constants::{
     CORRIDOR_SOURCE_AUTO_TAGGED, CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN,
 };
+use crate::domain::models::ItemStatus;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeModMetadata {
@@ -14,18 +14,18 @@ pub struct RuntimeModMetadata {
 }
 
 pub fn generate_stable_mod_id(game_id: &str, folder_path: &str) -> String {
-    let key = crate::services::path_key::folder_path_key(folder_path, None);
+    let key = crate::common::path_key::folder_path_key(folder_path, None);
     let input = format!("{game_id}:{key}");
     let hash = blake3::hash(input.as_bytes());
     hash.to_hex()[..32].to_string()
 }
 
 pub fn normalize_runtime_name(name: &str) -> String {
-    crate::services::scanner::core::normalizer::normalize_display_name(name)
+    crate::common::normalizer::normalize_display_name(name)
 }
 
 pub fn is_disabled_runtime_name(name: &str) -> bool {
-    crate::services::scanner::core::normalizer::is_disabled_folder(name)
+    crate::common::normalizer::is_disabled_folder(name)
 }
 
 pub fn classify_runtime_corridor(
@@ -94,7 +94,7 @@ pub fn load_runtime_mod_metadata(
 #[cfg(test)]
 mod tests {
     use super::load_runtime_mod_metadata;
-    use crate::database::models::ItemStatus;
+    use crate::domain::models::ItemStatus;
 
     #[test]
     fn object_disabled_does_not_mutate_child_mod_status() {

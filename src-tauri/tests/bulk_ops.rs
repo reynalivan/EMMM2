@@ -3,13 +3,28 @@ mod common;
 #[cfg(test)]
 mod tests {
     use super::common::init_test_db;
+    use emmm_lib::domain::models::GameType;
+    use emmm_lib::repo::game_repo::{upsert_game, GameRow};
     use emmm_lib::services::config::ConfigService;
     use emmm_lib::services::mods::bulk;
+    use emmm_lib::services::mods::core_ops::toggle_mod_inner;
     use emmm_lib::services::mods::info_json;
     use std::fs;
     use tempfile::TempDir;
 
     use emmm_lib::services::scanner::watcher::WatcherState;
+
+    async fn toggle_all(
+        state: &WatcherState,
+        paths: Vec<String>,
+        enable: bool,
+    ) -> Result<Vec<String>, emmm_lib::domain::errors::AppError> {
+        let mut toggled = Vec::new();
+        for path in paths {
+            toggled.push(toggle_mod_inner(state, path, enable).await?);
+        }
+        Ok(toggled)
+    }
 
     #[tokio::test]
     async fn test_bulk_toggle_mods() {
@@ -33,12 +48,11 @@ mod tests {
             mod2.to_string_lossy().to_string(),
         ];
 
-        let result = bulk::bulk_toggle_inner(&state, paths, false)
+        let result = toggle_all(&state, paths, false)
             .await
             .expect("Bulk disable should succeed");
 
-        assert_eq!(result.success.len(), 2);
-        assert!(result.failures.is_empty());
+        assert_eq!(result.len(), 2);
 
         assert!(root.join("DISABLED Mod1").exists());
         assert!(root.join("DISABLED Mod2").exists());
@@ -49,11 +63,11 @@ mod tests {
             mod3.to_string_lossy().to_string(),
         ];
 
-        let result_enable = bulk::bulk_toggle_inner(&state, paths_enable, true)
+        let result_enable = toggle_all(&state, paths_enable, true)
             .await
             .expect("Bulk enable should succeed");
 
-        assert_eq!(result_enable.success.len(), 2);
+        assert_eq!(result_enable.len(), 2);
         assert!(root.join("Mod1").exists());
         assert!(root.join("Mod3").exists());
     }
@@ -61,7 +75,6 @@ mod tests {
     #[tokio::test]
     async fn test_bulk_update_info() {
         let ctx = init_test_db().await;
-        let config = ConfigService::new_for_test(ctx.pool.clone());
         let game_id = "test_game";
 
         let tmp = TempDir::new().unwrap();
@@ -72,6 +85,25 @@ mod tests {
 
         fs::create_dir(&mod1).unwrap();
         fs::create_dir(&mod2).unwrap();
+
+        upsert_game(
+            &ctx.pool,
+            &GameRow {
+                id: game_id.to_string(),
+                name: "Test Game".to_string(),
+                game_type: GameType::GIMI,
+                path: root.to_string_lossy().to_string(),
+                mods_path: Some(root.to_string_lossy().to_string()),
+                game_exe: None,
+                launcher_path: None,
+                loader_exe: None,
+                launch_args: None,
+            },
+        )
+        .await
+        .expect("insert test game");
+
+        let config = ConfigService::new_for_test_async(ctx.pool.clone()).await;
 
         let paths = vec![
             mod1.to_string_lossy().to_string(),

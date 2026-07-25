@@ -51,14 +51,11 @@ const RUNTIME_CONTRACT_DOCS = [
 
 const EXCLUDED_FILES = new Set<string>([
   'src/features/runtime-sync/queryRefresh.ts',
-  'src/hooks/useFolders.ts',
-  'src/hooks/useObjects.ts',
   'src/setupTests.ts',
 ]);
 
 const USER_INPUT_FILESYSTEM_PREFLIGHT_FILES = new Set<string>([
-  'src/features/object-list/useObjHandlersArchive.ts',
-  'src/features/object-list/useObjHandlersDrop.ts',
+  'src/features/object-list/utils/importPipeline.ts',
 ]);
 
 function collectSourceFiles(directory: string): string[] {
@@ -127,6 +124,36 @@ function readAuditSources(paths: string[]): Array<{ path: string; source: string
 }
 
 describe('mods runtime architecture audit', () => {
+  it('keeps runtime-sync and workspace-runtime free of circular imports', () => {
+    const runtimeSyncDirectory = join(WORKSPACE_ROOT, 'src/features/runtime-sync');
+    const runtimeSyncOffenders = readdirSync(runtimeSyncDirectory)
+      .filter((entry) => /\.(ts|tsx)$/.test(entry))
+      .filter((entry) =>
+        readFileSync(join(runtimeSyncDirectory, entry), 'utf8').includes('workspace-runtime'),
+      );
+
+    // runtime-sync must never import from workspace-runtime (breaks the cycle).
+    expect(runtimeSyncOffenders).toEqual([]);
+
+    // Shared descriptor contracts live in src/lib/runtimeEffects; the optimistic
+    // contract modules import downward only, never back into runtime-sync.
+    const descriptorOffenders = readAuditSources([
+      'src/features/workspace-runtime/optimistic/descriptor.ts',
+      'src/features/workspace-runtime/optimistic/descriptorBuilders.ts',
+    ])
+      .filter((file) => file.source.includes('runtime-sync'))
+      .map((file) => file.path);
+
+    expect(descriptorOffenders).toEqual([]);
+
+    // The shared contract module stays a leaf: no feature imports.
+    const runtimeEffectsSource = readFileSync(
+      join(WORKSPACE_ROOT, 'src/lib/runtimeEffects.ts'),
+      'utf8',
+    );
+    expect(runtimeEffectsSource.includes('features/')).toBe(false);
+  });
+
   it('does not call publishRuntimeEvents directly from consumer code', () => {
     const offenders = readRuntimeSources()
       .filter((file) => file.source.includes('publishRuntimeEvents('))
@@ -238,7 +265,15 @@ describe('mods runtime architecture audit', () => {
   });
 
   it('does not keep legacy conflict dialog state in app store', () => {
-    const appStoreSource = readFileSync(join(WORKSPACE_ROOT, 'src/stores/useAppStore.ts'), 'utf8');
+    const storeFiles = [
+      'src/stores/useAppStore.ts',
+      ...readdirSync(join(WORKSPACE_ROOT, 'src/stores/appStore'))
+        .filter((name) => name.endsWith('.ts'))
+        .map((name) => `src/stores/appStore/${name}`),
+    ];
+    const appStoreSource = storeFiles
+      .map((path) => readFileSync(join(WORKSPACE_ROOT, path), 'utf8'))
+      .join('\n');
 
     expect(appStoreSource.includes('conflictDialog:')).toBe(false);
     expect(appStoreSource.includes('duplicateConflictDialog:')).toBe(false);
@@ -494,10 +529,9 @@ describe('mods runtime architecture audit', () => {
 
   it('keeps folder-grid dialogs free of direct runtime descriptor publishing and console logging', () => {
     const offenders = readAuditSources([
-      'src/features/folder-grid/ConflictResolveDialog.tsx',
-      'src/features/folder-grid/ObjectConflictModal.tsx',
-      'src/features/folder-grid/MoveToObjectDialog.tsx',
-      'src/features/folder-grid/IgnoreManagementModal.tsx',
+      'src/features/folder-grid/modals/ConflictResolveDialog.tsx',
+      'src/features/folder-grid/modals/MoveToObjectDialog.tsx',
+      'src/features/folder-grid/modals/IgnoreManagementModal.tsx',
     ])
       .filter(
         (file) =>

@@ -2,7 +2,7 @@ use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 use crate::repo::collection_repo;
 
-/// Step 1: Validate that the collection belongs to the correct corridor.
+/// Step 1: Validate that the collection belongs to the requested game.
 pub async fn validate(ctx: &ApplyContext) -> Result<(), CollectionError> {
     let collection = collection_repo::get_by_id(&ctx.pool, &ctx.collection_id)
         .await?
@@ -10,28 +10,38 @@ pub async fn validate(ctx: &ApplyContext) -> Result<(), CollectionError> {
             id: ctx.collection_id.clone(),
         })?;
 
+    if collection.game_id != ctx.game_id {
+        return Err(CollectionError::Validation(format!(
+            "Collection '{}' does not belong to game '{}'",
+            ctx.collection_id, ctx.game_id
+        )));
+    }
+
+    // Corridor enforcement: an unsafe collection is mathematically impossible to
+    // apply while in Safe Mode, and vice versa. UI already scopes lists per
+    // corridor; this is the backend guard so a direct invoke cannot bypass it.
     if collection.is_safe != ctx.is_safe {
-        return Err(CollectionError::Corridor(
-            crate::domain::errors::CorridorError::CorridorMismatch {
-                collection_mode: if collection.is_safe {
-                    "Safe".to_string()
-                } else {
-                    "Unsafe".to_string()
-                },
-                current_mode: if ctx.is_safe {
-                    "Safe".to_string()
-                } else {
-                    "Unsafe".to_string()
-                },
-            },
-        ));
+        return Err(CollectionError::Validation(format!(
+            "Collection '{}' belongs to the {} corridor and cannot be applied in {} mode",
+            ctx.collection_id,
+            corridor_label(collection.is_safe),
+            corridor_label(ctx.is_safe),
+        )));
     }
 
     log::info!(
-        "apply_pipeline[validate]: collection '{}' validated for {} corridor",
+        "apply_pipeline[validate]: collection '{}' validated for game '{}'",
         collection.name,
-        if ctx.is_safe { "Safe" } else { "Unsafe" }
+        ctx.game_id
     );
 
     Ok(())
+}
+
+fn corridor_label(is_safe: bool) -> &'static str {
+    if is_safe {
+        "SAFE"
+    } else {
+        "UNSAFE"
+    }
 }

@@ -5,7 +5,7 @@ pub const RENAME_PAIR_TIMEOUT: Duration = Duration::from_millis(100);
 
 const RELEVANT_EXTENSIONS: &[&str] = &["ini", "json", "png", "jpg", "jpeg", "webp"];
 
-pub(crate) fn is_relevant_path(path: &Path) -> bool {
+fn is_relevant_path(path: &Path) -> bool {
     if path
         .file_name()
         .and_then(|value| value.to_str())
@@ -44,5 +44,15 @@ pub(crate) fn should_keep_event_path(path: &Path, watcher_path: &Path) -> bool {
         return true;
     }
 
-    is_relevant_path(path)
+    if is_relevant_path(path) {
+        return true;
+    }
+
+    // A deep dotted name could be a folder ("Variant v1.2") or asset noise
+    // ("mesh.buf") — the name alone can't tell, so stat while it still exists.
+    // Checked only after the cheap extension match so relevant deep files never
+    // pay the syscall.
+    // ponytail: a Removed deep dot-folder stays filtered; sibling events for
+    // its contents still mark the parent root for scoped reconcile.
+    path.is_dir()
 }

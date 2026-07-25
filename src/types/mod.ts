@@ -17,14 +17,6 @@ import type { BulkActionError, BulkResult, ConflictInfo, TrashMetadata } from '.
 /** A single mod folder entry from the WorkspaceViewModel explorer projection. */
 export type { ModFolder };
 
-/** Possible folder classification values from the backend classifier. */
-export type NodeType =
-  | 'ContainerFolder'
-  | 'ModPackRoot'
-  | 'VariantContainer'
-  | 'InternalAssets'
-  | 'FlatModRoot';
-
 /** Response from the backend explorer projection. */
 export type { FolderGridResponse };
 
@@ -33,11 +25,6 @@ export type { ConflictMember };
 
 /** A group of folders sharing the same base name in the same parent directory. */
 export type { ConflictGroup };
-
-/** Only ContainerFolder allows double-click drill-down navigation. */
-export function isNavigable(folder: ModFolder): boolean {
-  return folder.node_type === 'ContainerFolder';
-}
 
 /** Mod metadata stored in `info.json` inside each mod folder. */
 export type { ModInfo };

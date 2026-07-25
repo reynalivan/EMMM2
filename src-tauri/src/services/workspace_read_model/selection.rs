@@ -1,10 +1,10 @@
 use std::path::Path;
 
+use crate::common::path_key::strip_path_prefix_preserve_display;
 use crate::domain::workspace::{
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
     WorkspaceViewModelInput,
 };
-use crate::services::path_key::strip_path_prefix_preserve_display;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedWorkspaceSelection {
@@ -60,10 +60,7 @@ fn resolve_existing_path(path: &Path) -> Option<std::path::PathBuf> {
     entries
         .flatten()
         .find(|entry| {
-            crate::services::path_key::names_equal_by_key(
-                &entry.file_name().to_string_lossy(),
-                &name,
-            )
+            crate::common::path_key::names_equal_by_key(&entry.file_name().to_string_lossy(), &name)
         })
         .map(|entry| entry.path())
         .or_else(|| {
@@ -72,7 +69,7 @@ fn resolve_existing_path(path: &Path) -> Option<std::path::PathBuf> {
                 .ok()?
                 .flatten()
                 .find(|entry| {
-                    crate::services::path_key::names_equal_by_key(
+                    crate::common::path_key::names_equal_by_key(
                         &entry.file_name().to_string_lossy(),
                         &disabled_name,
                     )

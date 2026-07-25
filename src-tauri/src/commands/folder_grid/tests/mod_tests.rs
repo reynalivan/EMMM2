@@ -210,7 +210,7 @@ async fn test_get_filtered_objects_unsafe() {
         &crate::test_utils::TestGameFixture {
             id: "test_game",
             name: "Test",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/mods"),
         },
@@ -244,7 +244,7 @@ async fn test_get_filtered_objects_unsafe() {
     let result = get_filtered_objects(pool, &filter).await;
     match result {
         Ok(objects) => {
-            assert!(objects.len() >= 1);
+            assert!(!objects.is_empty());
         }
         Err(e) => {
             panic!("SQL Error: {:?}", e);

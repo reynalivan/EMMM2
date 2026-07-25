@@ -25,13 +25,9 @@ pub fn start_watcher(
 ) -> Result<(), String> {
     let path_obj = std::path::Path::new(&path);
 
-    {
-        let mut watcher = state.watcher.lock().unwrap();
-        if watcher.is_some() {
-            log::info!("Stopping existing watcher");
-            *watcher = None;
-        }
-    }
+    // A fresh watcher session must not inherit stale frontend suppression
+    // (e.g. webview reloaded mid-operation).
+    state.suppressor.reset_manual();
 
     log::info!("Starting watcher on: {}", path);
 
@@ -39,7 +35,12 @@ pub fn start_watcher(
         crate::services::scanner::watcher::watch_mod_directory(path_obj, state.suppressor.clone())?;
 
     {
+        // Single lock: stop the old watcher and install the new one atomically
+        // so overlapping start/stop commands cannot interleave.
         let mut active_watcher = state.watcher.lock().unwrap();
+        if active_watcher.is_some() {
+            log::info!("Stopping existing watcher");
+        }
         *active_watcher = Some(watcher);
     }
 
@@ -94,6 +95,17 @@ async fn process_event_loop(
 
         log::debug!("Watcher flushing batched events: {}", batch.len());
 
+        // notify emits transient errors during event bursts (Windows
+        // ReadDirectoryChangesW buffer overflow on a refresh/mass-rename is the
+        // classic one). The watcher keeps running and the reconcile below +
+        // TTL repair self-heal, so log them instead of alarming the user with a
+        // toast. Genuine failures still surface via the reconcile Err branch.
+        for event in &batch {
+            if let ModWatchEvent::Error(error) = event {
+                log::warn!("Transient watcher error for {}: {}", mods_path_root, error);
+            }
+        }
+
         let changed_paths =
             crate::services::disk_reconcile::watcher_batch::collect_changed_paths(&batch);
         let disk_reconcile_state =
@@ -123,19 +135,9 @@ async fn process_event_loop(
                     WatchEventPayload::Error {
                         error,
                         path: Some(mods_path_root.clone()),
-                        retry_count: None,
                     },
                 );
             }
-        }
-
-        let payloads = batch
-            .iter()
-            .map(WatchEventPayload::from_event)
-            .collect::<Vec<_>>();
-
-        if !payloads.is_empty() {
-            let _ = app.emit("mod_watch:events_batch", payloads);
         }
     }
 

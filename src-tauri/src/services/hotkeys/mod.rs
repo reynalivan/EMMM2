@@ -26,8 +26,6 @@ use serde::{Deserialize, Serialize};
 /// All actions that can be triggered by a global hotkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 pub enum HotkeyAction {
-    /// Toggle Safe Mode on/off (default: F5).
-    ToggleSafeMode,
     /// Switch to next Collection preset (default: F6).
     NextPreset,
     /// Switch to previous Collection preset (default: Shift+F6).
@@ -50,8 +48,7 @@ pub struct HotkeyConfig {
     /// Cooldown between successive hotkey triggers (milliseconds).
     #[specta(type = f64)]
     pub cooldown_ms: u64,
-    /// Key binding strings (e.g. "F5", "Shift+F6").
-    pub toggle_safe_mode: String,
+    /// Key binding strings (e.g. "F6", "Shift+F6").
     pub next_preset: String,
     pub prev_preset: String,
     pub toggle_overlay: String,
@@ -64,7 +61,6 @@ impl Default for HotkeyConfig {
         Self {
             enabled: true,
             cooldown_ms: 500,
-            toggle_safe_mode: "F5".to_string(),
             next_preset: "F6".to_string(),
             prev_preset: "Shift+F6".to_string(),
             toggle_overlay: "F7".to_string(),
@@ -161,7 +157,6 @@ impl HotkeyState {
 /// Map an action enum to its key string from the config.
 pub fn get_key_string(config: &HotkeyConfig, action: HotkeyAction) -> &str {
     match action {
-        HotkeyAction::ToggleSafeMode => &config.toggle_safe_mode,
         HotkeyAction::NextPreset => &config.next_preset,
         HotkeyAction::PrevPreset => &config.prev_preset,
 
@@ -174,10 +169,6 @@ pub fn get_key_string(config: &HotkeyConfig, action: HotkeyAction) -> &str {
 /// List all configurable hotkey actions with their current bindings.
 pub fn list_bindings(config: &HotkeyConfig) -> Vec<(HotkeyAction, String)> {
     vec![
-        (
-            HotkeyAction::ToggleSafeMode,
-            config.toggle_safe_mode.clone(),
-        ),
         (HotkeyAction::NextPreset, config.next_preset.clone()),
         (HotkeyAction::PrevPreset, config.prev_preset.clone()),
         (HotkeyAction::ToggleOverlay, config.toggle_overlay.clone()),

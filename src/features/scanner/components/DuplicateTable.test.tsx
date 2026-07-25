@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '../../../testing/test-utils';
 import DuplicateTable from './DuplicateTable';
-import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 
 describe('DuplicateTable', () => {
   const mockGroups: DupScanGroup[] = [
@@ -26,6 +26,7 @@ describe('DuplicateTable', () => {
           confidenceScore: 95,
           signals: [],
           modId: null,
+          version: 1,
           isSafe: false,
         },
         {
@@ -36,6 +37,7 @@ describe('DuplicateTable', () => {
           confidenceScore: 95,
           signals: [],
           modId: null,
+          version: 1,
           isSafe: false,
         },
       ],
@@ -58,6 +60,7 @@ describe('DuplicateTable', () => {
           confidenceScore: 85,
           signals: [],
           modId: null,
+          version: 1,
           isSafe: false,
         },
         {
@@ -68,6 +71,7 @@ describe('DuplicateTable', () => {
           confidenceScore: 85,
           signals: [],
           modId: null,
+          version: 1,
           isSafe: false,
         },
       ],
@@ -247,7 +251,7 @@ describe('DuplicateTable', () => {
 
     it('highlights selected member row when Keep is active', () => {
       const onSelectionChange = vi.fn();
-      const selections = new Map<string, ResolutionAction>([
+      const selections = new Map<string, DuplicateSelection>([
         ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
       ]);
 
@@ -298,6 +302,7 @@ describe('DuplicateTable', () => {
             confidenceScore: 95,
             signals: [],
             modId: null,
+            version: 1,
             isSafe: true,
           },
         ],

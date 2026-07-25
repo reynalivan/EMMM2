@@ -68,6 +68,7 @@ describe('useDedup hooks', () => {
                 confidenceScore: 95,
                 signals: [],
                 modId: null,
+                version: 1,
               },
               {
                 folderPath: '/path/mod-b',
@@ -78,6 +79,7 @@ describe('useDedup hooks', () => {
                 confidenceScore: 95,
                 signals: [],
                 modId: null,
+                version: 1,
               },
             ],
           },
@@ -247,9 +249,9 @@ describe('useDedup hooks', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'Keep' as const,
-          targetPath: '/path/mod-a',
-          allMembers: ['/path/mod-a', '/path/mod-b'],
+          action: 'keepA' as const,
+          folderA: '/path/mod-a',
+          folderB: '/path/mod-b',
         },
       ];
 
@@ -287,7 +289,7 @@ describe('useDedup hooks', () => {
         total: 3,
         successful: 2,
         failed: 1,
-        errors: [{ groupId: 'group-1', message: '', action: { type: 'Ignore' } }],
+        errors: [{ groupId: 'group-1', message: '', action: 'ignore' }],
       };
 
       vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);

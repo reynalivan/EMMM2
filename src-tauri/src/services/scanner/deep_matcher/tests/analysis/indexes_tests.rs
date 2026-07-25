@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::services::scanner::core::normalizer;
+use crate::common::normalizer;
 
 use super::*;
 use crate::services::scanner::deep_matcher::CustomSkin;
@@ -78,7 +78,7 @@ fn test_index_build_is_deterministic() {
     assert_eq!(first.hash_index.get("d94c8962"), Some(&vec![0, 1]));
     assert_eq!(first.hash_df.get("d94c8962"), Some(&2));
     assert_eq!(first.hash_index.get("c77e380b"), Some(&vec![1]));
-    assert!(first.hash_index.get("invalid").is_none());
+    assert!(!first.hash_index.contains_key("invalid"));
 }
 
 // Covers: TC-2.2-06 (empty index safety)

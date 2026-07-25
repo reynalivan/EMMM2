@@ -1,9 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Extensions considered 3DMigoto mod assets.
-const MOD_EXTENSIONS: &[&str] = &["ini", "dds", "ib", "vb", "buf", "hlsl"];
-
 /// Extensions considered loose/non-mod files (readme, previews, etc).
 const LOOSE_EXTENSIONS: &[&str] = &[
     "txt", "md", "png", "jpg", "jpeg", "gif", "webp", "bmp", "url", "html", "pdf",
@@ -171,16 +168,6 @@ pub fn resolve_unique_dest(parent_dir: &Path, name: &str) -> PathBuf {
             return parent_dir.join(format!("{} ({})", name, uuid::Uuid::new_v4()));
         }
     }
-}
-
-/// Check if a file has a mod-relevant extension.
-pub fn is_mod_file(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_default();
-    MOD_EXTENSIONS.contains(&ext.as_str())
 }
 
 #[cfg(test)]

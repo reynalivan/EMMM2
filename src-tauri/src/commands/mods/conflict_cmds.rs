@@ -3,8 +3,8 @@ use std::path::Path;
 
 use tauri::State;
 
+use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::scanner::core::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 
 use crate::domain::errors::AppError;
@@ -66,11 +66,8 @@ pub async fn resolve_conflict(
         )
         .await;
     }
-    let _ = crate::services::runtime_projection_service::rebuild_game_projection(
-        pool.inner(),
-        &game_id,
-    )
-    .await;
+    let _ =
+        crate::repo::runtime_projection_repo::rebuild_game_projection(pool.inner(), &game_id).await;
     let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
         pool.inner(),
         &config,

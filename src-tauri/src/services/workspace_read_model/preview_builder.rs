@@ -1,18 +1,16 @@
 use std::path::Path;
 
-use crate::commands::mods::preview_cmds::{
-    list_mod_ini_files_inner, list_mod_preview_images_inner,
-};
+use crate::common::classifier::NodeType;
+use crate::common::path_key::path_starts_with_key;
 use crate::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceExplorer, WorkspaceExplorerNode, WorkspaceImageSummary,
     WorkspaceIniSummary, WorkspaceModInfoSummary, WorkspaceNode, WorkspacePreview,
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
     WorkspaceWarning, WorkspaceWarningState, WorkspaceWarningSummary,
 };
-use crate::services::explorer::classifier::NodeType;
 use crate::services::explorer::listing::build_mod_folder_from_path;
 use crate::services::mods::info_json::{read_info_json, ModInfo};
-use crate::services::path_key::path_starts_with_key;
+use crate::services::mods::preview_ops::{list_mod_ini_files_inner, list_mod_preview_images_inner};
 use crate::services::workspace_read_model::common::{
     build_folder_warning, build_inactive_warning, paths_equal_by_key,
 };

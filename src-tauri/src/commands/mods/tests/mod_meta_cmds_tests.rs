@@ -19,7 +19,7 @@ async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
         &TestGameFixture {
             id: "g_object_mods",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -61,7 +61,7 @@ async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
                 object_id,
                 actual_name,
                 folder_path,
-                status: crate::database::models::ItemStatus::Disabled,
+                status: crate::domain::models::ItemStatus::Disabled,
                 is_safe: true,
                 object_type: Some("Other"),
                 mods_path: Some("/Mods"),
@@ -113,7 +113,7 @@ async fn test_mod_pin_flag_updates_db() {
         &TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -128,7 +128,7 @@ async fn test_mod_pin_flag_updates_db() {
             object_id: None,
             actual_name: "TestMod",
             folder_path: "/Mods/TestMod",
-            status: crate::database::models::ItemStatus::Disabled,
+            status: crate::domain::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Other"),
             mods_path: Some("/Mods"),
@@ -140,7 +140,7 @@ async fn test_mod_pin_flag_updates_db() {
     // Navigate direct DB rather than Tauri State — test the raw DB logic
     sqlx::query("UPDATE mods SET is_pinned = ? WHERE folder_path_key = ?")
         .bind(true)
-        .bind(crate::services::path_key::folder_path_key(
+        .bind(crate::common::path_key::folder_path_key(
             "/Mods/TestMod",
             Some("/Mods"),
         ))
@@ -233,7 +233,7 @@ async fn test_suggest_random_mods() {
         &TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -320,7 +320,7 @@ async fn test_suggest_random_mods() {
                 object_id,
                 actual_name,
                 folder_path,
-                status: crate::database::models::ItemStatus::from_str(status).unwrap(),
+                status: crate::domain::models::ItemStatus::from_str(status).unwrap(),
                 is_safe,
                 object_type: Some("Other"),
                 mods_path: Some("/Mods"),
@@ -382,7 +382,7 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
         &TestGameFixture {
             id: "g_effective_disabled",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -411,7 +411,7 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
             object_id: Some("obj_effective"),
             actual_name: "Amber Skin",
             folder_path: "/Mods/DISABLED Amber/Amber Skin",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some("/Mods"),

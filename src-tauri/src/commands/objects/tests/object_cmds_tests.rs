@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_utils::{insert_test_mod, insert_test_object, TestModFixture, TestObjectFixture};
-use crate::types::errors::CommandResult;
+type CommandResult<T> = Result<T, crate::domain::errors::AppError>;
 use sqlx::SqlitePool;
 use std::fs;
 use tempfile::TempDir;
@@ -18,7 +18,7 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
         &crate::test_utils::TestGameFixture {
             id: &game_id,
             name: "Test Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path.to_string_lossy()),
         },
@@ -79,8 +79,8 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
         obj.folder_path, "DISABLED MyFallbackMod",
         "Folder path must reflect physical directory"
     );
-    assert_eq!(
-        obj.is_object_disabled, true,
+    assert!(
+        obj.is_object_disabled,
         "TC-10-xx: Object disabled state should be reflected correctly"
     );
 
@@ -241,7 +241,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         custom_skins: None,
     };
 
-    let _updated = update_object_cmd_inner(obj_id.to_string(), &payload, &pool).await?;
+    update_object_cmd_inner(obj_id.to_string(), &payload, &pool).await?;
 
     let filter = ObjectFilter {
         game_id: game_id.clone(),
@@ -310,10 +310,10 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
             object_id: Some(full_obj_id),
             actual_name: "ModName",
             folder_path: "Path",
-            status: crate::database::models::ItemStatus::Disabled,
+            status: crate::domain::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Weapon"),
-            mods_path: Some("C:\\Mods".into()),
+            mods_path: Some("C:\\Mods"),
         },
     )
     .await
@@ -488,7 +488,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "FlatSolo",
             folder_path: "Albedo/FlatSolo",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),
@@ -499,7 +499,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "BigPack",
             folder_path: "Albedo/BigPack",
-            status: crate::database::models::ItemStatus::Disabled,
+            status: crate::domain::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),
@@ -510,7 +510,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "SchoolVest",
             folder_path: "Albedo/SchoolVest",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),
@@ -521,7 +521,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "1.school",
             folder_path: "Albedo/SchoolVest/1.school",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),
@@ -532,7 +532,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "DISABLED DisabledNest",
             folder_path: "Albedo/DISABLED DisabledNest",
-            status: crate::database::models::ItemStatus::Disabled,
+            status: crate::domain::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),
@@ -543,7 +543,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "InnerLeaf",
             folder_path: "Albedo/DISABLED DisabledNest/InnerLeaf",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),
@@ -554,7 +554,7 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
             object_id: Some("obj_terminal_counts"),
             actual_name: "New folder",
             folder_path: "Albedo/New folder",
-            status: crate::database::models::ItemStatus::Disabled,
+            status: crate::domain::models::ItemStatus::Disabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_root),

@@ -98,7 +98,7 @@ async fn test_scan_preview_needs_review_has_no_auto_assignment() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/"),
         },
@@ -321,7 +321,7 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/"),
         },
@@ -388,7 +388,7 @@ async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physi
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path),
         },
@@ -401,7 +401,7 @@ async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physi
     let mut new_objects_count = 0_usize;
 
     let created = resolve_or_create_object_target_for_match(
-        &mut *tx,
+        &mut tx,
         ResolveObjectTargetInput {
             game_id: "g1",
             mods_path: &mods_path,
@@ -439,7 +439,7 @@ async fn test_resolve_or_create_object_target_for_match_creates_and_reuses_physi
     let mut tx = pool.begin().await.unwrap();
     let mut second_new_objects_count = 0_usize;
     let reused = resolve_or_create_object_target_for_match(
-        &mut *tx,
+        &mut tx,
         ResolveObjectTargetInput {
             game_id: "g1",
             mods_path: &mods_path,
@@ -495,7 +495,7 @@ async fn test_commit_temp_collision_includes_existing_mod_id_when_mapped() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path),
         },
@@ -533,7 +533,7 @@ async fn test_commit_temp_collision_includes_existing_mod_id_when_mapped() {
             object_id: Some("obj_amber"),
             actual_name: "Collision Pack",
             folder_path: &target_mod_path,
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_path),
@@ -591,7 +591,7 @@ async fn test_commit_temp_collision_has_no_existing_mod_id_for_physical_only_tar
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path),
         },
@@ -664,7 +664,7 @@ async fn test_commit_preserves_missing_db_mod_rows_for_disk_reconcile() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path),
         },
@@ -691,7 +691,7 @@ async fn test_commit_preserves_missing_db_mod_rows_for_disk_reconcile() {
             object_id: Some("obj_old"),
             actual_name: "Missing Mod",
             folder_path: &missing_mod_path,
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Character"),
             mods_path: Some(&mods_path),
@@ -818,7 +818,7 @@ async fn test_commit_garbage_collects_ghost_objects() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/Mods"),
         },

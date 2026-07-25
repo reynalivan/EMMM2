@@ -1,5 +1,6 @@
 use super::*;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 fn setup_trash() -> (TempDir, PathBuf, PathBuf) {

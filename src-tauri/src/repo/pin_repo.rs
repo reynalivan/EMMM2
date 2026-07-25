@@ -85,36 +85,6 @@ pub async fn clear_pin(pool: &SqlitePool) -> Result<(), PinError> {
     Ok(())
 }
 
-/// Increment failed attempts and set lockout if threshold reached.
-pub async fn record_failed_attempt(
-    pool: &SqlitePool,
-    max_attempts: i32,
-    lockout_minutes: i32,
-) -> Result<i32, PinError> {
-    ensure_config_row(pool).await?;
-    sqlx::query(
-        r#"UPDATE pin_config SET
-            failed_attempts = failed_attempts + 1,
-            lockout_until = CASE
-                WHEN failed_attempts + 1 >= ?
-                THEN datetime('now', '+' || ? || ' minutes')
-                ELSE lockout_until
-            END,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = 1"#,
-    )
-    .bind(max_attempts)
-    .bind(lockout_minutes)
-    .execute(pool)
-    .await?;
-
-    let count: i32 = sqlx::query_scalar("SELECT failed_attempts FROM pin_config WHERE id = 1")
-        .fetch_one(pool)
-        .await?;
-
-    Ok(count)
-}
-
 pub async fn set_failed_attempts(pool: &SqlitePool, failed_attempts: i32) -> Result<(), PinError> {
     ensure_config_row(pool).await?;
     sqlx::query(

@@ -39,7 +39,7 @@ function createCollection(partial: Partial<CollectionSummary>): CollectionSummar
     is_undo_target: false,
     signature: null,
     updated_at: '2026-03-25T15:30:00Z',
-    member_count: 4,
+    raw_member_count: 4,
     mod_count: 4,
     ...partial,
   };
@@ -61,7 +61,6 @@ describe('CollectionList', () => {
         rows={rows}
         selectedId="unsaved-1"
         isLoading={false}
-        safeMode={true}
         onSelect={vi.fn()}
         onApply={vi.fn()}
         onDelete={vi.fn()}
@@ -101,7 +100,6 @@ describe('CollectionList', () => {
         rows={rows}
         selectedId="__current_runtime__"
         isLoading={false}
-        safeMode={true}
         onSelect={vi.fn()}
         onApply={vi.fn()}
         onDelete={vi.fn()}

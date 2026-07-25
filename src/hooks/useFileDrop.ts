@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { classifyDroppedPaths, allUnsupported } from '../features/object-list/dropUtils';
+import { classifyDroppedPaths, allUnsupported } from '../features/object-list/utils/dropUtils';
 import { toast } from '../stores/useToastStore';
 
 interface FileDropPayload {

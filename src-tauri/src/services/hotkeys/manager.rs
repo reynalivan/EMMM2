@@ -55,7 +55,6 @@ type HotkeyMap = HashMap<String, HotkeyAction>;
 /// Build a map of (shortcut string, HotkeyAction) from the user config.
 fn build_registration(config: &HotkeyConfig) -> Result<Vec<(String, HotkeyAction)>, String> {
     let bindings = [
-        (HotkeyAction::ToggleSafeMode, &config.toggle_safe_mode),
         (HotkeyAction::NextPreset, &config.next_preset),
         (HotkeyAction::PrevPreset, &config.prev_preset),
         (HotkeyAction::ToggleOverlay, &config.toggle_overlay),
@@ -215,31 +214,6 @@ impl HotkeyManager {
         if !focus::is_active_game_focused(&settings) {
             return;
         }
-
-        if action == HotkeyAction::ToggleSafeMode {
-            if !self.try_acquire() {
-                log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
-                return;
-            }
-
-            let current_safe_mode = settings.safe_mode.enabled;
-            let summary = actions::plan_toggle_safe_mode(current_safe_mode, None).summary;
-            log::info!("Hotkey {:?} → {}", action, summary);
-
-            let app_handle = app.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = execute_toggle_safe_mode(&app_handle).await {
-                    log::error!("Toggle safe mode hotkey failed: {e}");
-                }
-
-                if let Some(hotkey_manager) = app_handle.try_state::<HotkeyManager>() {
-                    hotkey_manager.inner().release();
-                }
-            });
-
-            return;
-        }
-
         if matches!(action, HotkeyAction::NextPreset | HotkeyAction::PrevPreset) {
             if !self.try_acquire() {
                 log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
@@ -297,9 +271,6 @@ impl HotkeyManager {
         }
 
         let result = match action {
-            HotkeyAction::ToggleSafeMode => {
-                actions::plan_toggle_safe_mode(safe_mode, current_preset)
-            }
             HotkeyAction::NextPreset => {
                 match actions::resolve_next_preset(
                     available_presets,
@@ -337,70 +308,6 @@ impl HotkeyManager {
 
         Some(result)
     }
-}
-
-async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<(), String> {
-    let Some(config_state) = app.try_state::<ConfigService>() else {
-        return Err("ConfigService not available".to_string());
-    };
-    let Some(pool_state) = app.try_state::<sqlx::SqlitePool>() else {
-        return Err("SqlitePool not available".to_string());
-    };
-    let Some(watcher_state) = app.try_state::<crate::services::scanner::watcher::WatcherState>()
-    else {
-        return Err("WatcherState not available".to_string());
-    };
-    let Some(op_lock) = app.try_state::<crate::services::fs_utils::operation_lock::OperationLock>()
-    else {
-        return Err("OperationLock not available".to_string());
-    };
-
-    let settings = config_state.get_settings();
-    let game_id = settings
-        .active_game_id
-        .as_deref()
-        .ok_or_else(|| "No active game selected".to_string())?;
-
-    let game = settings
-        .games
-        .iter()
-        .find(|g| g.id == game_id)
-        .ok_or_else(|| "No active game selected".to_string())?;
-
-    let target_enabled = !settings.safe_mode.enabled;
-
-    let _lock = op_lock.inner().acquire().await.map_err(|e| e.to_string())?;
-
-    crate::services::corridor_service::switch_corridor(
-        pool_state.inner(),
-        game_id,
-        target_enabled,
-        std::path::PathBuf::from(&game.mod_path),
-        watcher_state.suppressor.clone(),
-        &watcher_state,
-        settings.clone(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    config_state.set_safe_mode_enabled(target_enabled)?;
-
-    let settings_after = config_state.get_settings();
-    let status = StatusFields {
-        safe_mode: target_enabled,
-        ..Default::default()
-    };
-    write_runtime_status(
-        pool_state.inner(),
-        game_id,
-        &status,
-        &settings_after.hotkeys,
-    )
-    .await?;
-
-    let reload_key = super::reload::trigger_reload_fixes(&settings_after)?;
-    log::debug!("Sent reload_fixes key after safe mode switch: {reload_key}");
-
-    Ok(())
 }
 
 async fn execute_cycle_preset(

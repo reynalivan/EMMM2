@@ -11,6 +11,27 @@ const __dirname = path.dirname(__filename);
 
 let tauriDriver: ChildProcess;
 
+function resolveNativeEdgeDriverPath(): string {
+  if (fs.existsSync(edgeDriver.path)) {
+    return edgeDriver.path;
+  }
+
+  const lookupCommand = process.platform === 'win32' ? 'where' : 'which';
+  const lookup = spawnSync(lookupCommand, ['msedgedriver'], { encoding: 'utf8' });
+  const candidate = lookup.stdout
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+
+  if (candidate && fs.existsSync(candidate)) {
+    return candidate;
+  }
+
+  throw new Error(
+    `msedgedriver binary not found. Expected ${edgeDriver.path}; install or approve the msedgedriver build before running WDIO E2E.`,
+  );
+}
+
 export const config = {
   hostname: '127.0.0.1',
   port: 4444,
@@ -20,7 +41,7 @@ export const config = {
     {
       browserName: 'webview2',
       'tauri:options': {
-        application: 'e:/Dev/EMMMNEW/src-tauri/target/debug/emmm.exe',
+        application: path.resolve(__dirname, 'src-tauri/target/debug/emmm.exe'),
       },
     },
   ],
@@ -53,7 +74,7 @@ export const config = {
       // ignore
     }
 
-    tauriDriver = spawn('tauri-driver', ['--native-driver', edgeDriver.path], {
+    tauriDriver = spawn('tauri-driver', ['--native-driver', resolveNativeEdgeDriverPath()], {
       stdio: [null, process.stdout, process.stderr],
       shell: true,
     });

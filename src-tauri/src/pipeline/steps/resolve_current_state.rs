@@ -1,14 +1,11 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 
-/// Step 3: Resolve the currently-enabled mod path_keys in this corridor.
+/// Step 3: Resolve currently-enabled mod path keys for the whole runtime.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let (mods, objects) = crate::services::collection_service::load_live_corridor_state(
-        &ctx.pool,
-        &ctx.game_id,
-        ctx.is_safe,
-    )
-    .await?;
+    let (mods, objects) =
+        crate::services::collection_service::load_live_runtime_state(&ctx.pool, &ctx.game_id)
+            .await?;
     let projected_state =
         crate::services::projected_state_service::build_projected_state(&mods, &objects, None);
     ctx.currently_enabled_path_keys = projected_state
@@ -18,7 +15,7 @@ pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         .collect();
 
     log::info!(
-        "apply_pipeline[resolve_current]: {} mods currently enabled in corridor",
+        "apply_pipeline[resolve_current]: {} mods currently enabled in runtime",
         ctx.currently_enabled_path_keys.len()
     );
 

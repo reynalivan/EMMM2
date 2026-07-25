@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../testing/test-utils';
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
-import type { DupScanReport, DupScanGroup, ResolutionAction } from '../../../types/scanner';
+import type { DupScanReport, DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 
 // Mock the hooks
 vi.mock('../hooks/useDedup', () => ({
@@ -44,7 +44,7 @@ vi.mock('./DuplicateTable', () => ({
     disabled,
   }: {
     groups: DupScanGroup[];
-    onSelectionChange: (groupId: string, action: ResolutionAction) => void;
+    onSelectionChange: (groupId: string, action: DuplicateSelection) => void;
     disabled: boolean;
   }) => {
     return (
@@ -116,6 +116,7 @@ const mockGroup: DupScanGroup = {
       confidenceScore: 95,
       signals: [],
       modId: null,
+      version: 1,
       isSafe: false,
     },
     {
@@ -126,6 +127,7 @@ const mockGroup: DupScanGroup = {
       confidenceScore: 95,
       signals: [],
       modId: null,
+      version: 1,
       isSafe: false,
     },
   ],

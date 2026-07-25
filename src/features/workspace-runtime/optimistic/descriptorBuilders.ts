@@ -1,9 +1,8 @@
-import type { RuntimeRefreshEvent } from '../../runtime-sync/queryRefresh';
-import {
-  EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
-  mergeRuntimeEffectDescriptors,
-  type RuntimeEffectDescriptor,
-} from './descriptor';
+import type {
+  RuntimeEffectDescriptor,
+  RuntimeRefreshEvent,
+} from '../../../lib/runtimeEffects';
+import { EMPTY_RUNTIME_EFFECT_DESCRIPTOR, mergeRuntimeEffectDescriptors } from './descriptor';
 
 export type RuntimeMutationClass =
   | 'workspaceOnly'
@@ -12,6 +11,7 @@ export type RuntimeMutationClass =
   | 'folderStructureOnly'
   | 'folderConflictState'
   | 'folderMetadata'
+  | 'folderMetadataPreview'
   | 'folderMetadataThumbnail'
   | 'folderSwitch'
   | 'objectRows'
@@ -42,6 +42,7 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
   folderStructureOnly: ['folderStructureChanged'],
   folderConflictState: ['conflictsChanged', 'corridorChanged'],
   folderMetadata: ['workspaceChanged'],
+  folderMetadataPreview: ['folderMetadataChanged', 'previewChanged'],
   folderMetadataThumbnail: ['workspaceChanged', 'folderMetadataChanged', 'thumbnailChanged'],
   folderSwitch: [
     'workspaceChanged',

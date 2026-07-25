@@ -1,5 +1,5 @@
 use super::get_workspace_view_model;
-use crate::database::models::{GameType, ItemStatus};
+use crate::domain::models::{GameType, ItemStatus};
 use crate::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNode, WorkspaceNodeKind, WorkspaceReasonCode,
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,

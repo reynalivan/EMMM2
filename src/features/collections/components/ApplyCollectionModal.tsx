@@ -10,7 +10,7 @@ import {
 } from '../hooks/useCollections';
 import { useAppStore } from '../../../stores/useAppStore';
 import { CollectionTreeView } from './CollectionTreeView';
-import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
+import { ApplyCollectionActions } from './ApplyCollectionActions';
 import { extractMissingModsPayload } from '../../../lib/appError';
 import type { ApplyResult } from '../../../types/collection';
 
@@ -30,24 +30,17 @@ function SummaryStat({ label, value }: { label: string; value: number }) {
 
 export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionModalProps) {
   const { t } = useTranslation(['collections', 'layout', 'common']);
-  const { activeGameId, safeMode } = useAppStore();
+  const { activeGameId } = useAppStore();
   const [missingPaths, setMissingPaths] = useState<string[] | null>(null);
   const [result, setResult] = useState<ApplyResult | null>(null);
   const applyMutation = useApplyCollection();
   const replaceMutation = useReplaceCollectionWithCurrentState();
-  const previewQuery = useApplyCollectionPreview(activeGameId, collectionId, safeMode);
+  const previewQuery = useApplyCollectionPreview(activeGameId, collectionId);
   const progressQuery = useApplyProgress(activeGameId, applyMutation.isPending);
   const preview = previewQuery.data;
 
-  const unsavedLabels = useUnsavedLabels();
-
   const currentStateLabel = preview
-    ? getCollectionDisplayName({
-        name: preview.current_state_is_unsaved ? null : preview.current_state_name,
-        isUnsaved: preview.current_state_is_unsaved,
-        isSafe: safeMode,
-        labels: unsavedLabels,
-      })
+    ? preview.current_state_name || t('collections:list.item.current_runtime', 'Current Runtime')
     : t('common:status.loading');
 
   const confirmApplyAction = async (ignoreMissing: boolean) => {
@@ -183,7 +176,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                   {result.final_state_name ?? preview?.collection_name}
                 </div>
                 <div className="mt-1 text-xs text-base-content/60">
-                  {result.final_mode ?? (safeMode ? 'SAFE' : 'UNSAFE')}
+                  {result.final_mode ?? t('collections:apply.success.runtime', 'Runtime snapshot')}
                 </div>
               </div>
               {result.partial_apply && (
@@ -321,63 +314,19 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
           </div>
         )}
 
-        <div className="p-4 border-t border-base-content/5 bg-base-300 shrink-0 flex justify-end gap-2">
-          <button
-            className="btn btn-ghost"
-            onClick={onClose}
-            disabled={applyMutation.isPending || replaceMutation.isPending}
-          >
-            {result?.partial_apply
-              ? t('collections:apply.partial.keep_unsaved', 'Keep Unsaved')
-              : result
-                ? t('common:actions.close')
-                : missingPaths
-                  ? t('collections:apply.actions.cancel')
-                  : t('collections:apply.actions.cancel')}
-          </button>
-          {missingPaths && !result && (
-            <button
-              className="btn btn-ghost"
-              onClick={() => setMissingPaths(null)}
-              disabled={applyMutation.isPending}
-            >
-              {t('collections:apply.missing.back', 'Back')}
-            </button>
-          )}
-          {!result && (
-            <button
-              data-testid="modal-apply-btn"
-              className="btn btn-primary min-w-30"
-              onClick={() => {
-                void confirmApplyAction(!!missingPaths);
-              }}
-              disabled={applyMutation.isPending || previewQuery.isLoading}
-            >
-              {applyMutation.isPending ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : missingPaths ? (
-                t('collections:apply.missing.confirm', 'Skip & Apply')
-              ) : (
-                t('collections:apply.actions.confirm')
-              )}
-            </button>
-          )}
-          {result?.partial_apply && (
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                updateOriginalCollection();
-              }}
-              disabled={replaceMutation.isPending}
-            >
-              {replaceMutation.isPending ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                t('collections:apply.partial.update_original', 'Update Original Collection')
-              )}
-            </button>
-          )}
-        </div>
+        <ApplyCollectionActions
+          result={result}
+          missingPaths={missingPaths}
+          isApplying={applyMutation.isPending}
+          isReplacing={replaceMutation.isPending}
+          isPreviewLoading={previewQuery.isLoading}
+          onClose={onClose}
+          onDismissMissing={() => setMissingPaths(null)}
+          onConfirm={() => {
+            void confirmApplyAction(!!missingPaths);
+          }}
+          onUpdateOriginal={updateOriginalCollection}
+        />
       </div>
 
       <form method="dialog" className="modal-backdrop">

@@ -8,8 +8,7 @@ async fn test_update_cmds_delegation() {
 
     // Simulate the command inner logic which syncs metadata
     // This calls HTTP but handles offline connection gracefully
-    let result = metadata_sync::check_and_sync_metadata(pool).await;
+    metadata_sync::check_and_sync_metadata(pool).await;
 
     // It should succeed (either true or false depending on network)
-    assert!(result.updated == true || result.updated == false);
 }

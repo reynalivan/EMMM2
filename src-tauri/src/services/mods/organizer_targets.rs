@@ -108,9 +108,8 @@ fn is_hidden_dir(path: &Path) -> bool {
 }
 
 fn is_move_container(path: &Path) -> bool {
-    let (node_type, _reasons, _warnings) =
-        crate::services::explorer::classifier::classify_folder(path);
-    node_type == crate::services::explorer::classifier::NodeType::ContainerFolder
+    let (node_type, _reasons, _warnings) = crate::common::classifier::classify_folder(path);
+    node_type == crate::common::classifier::NodeType::ContainerFolder
 }
 
 fn normalize_relative_path(path: &Path) -> String {

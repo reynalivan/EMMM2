@@ -236,17 +236,6 @@ impl ThumbnailCache {
         Self::prune_orphans_in_cache_dir(&cache_dir, valid_paths)
     }
 
-    /// Prune thumbnails that don't correspond to any path in `valid_paths`.
-    /// Returns number of deleted files.
-    pub fn prune_orphans(valid_paths: &[String]) -> Result<usize, String> {
-        let base_dir = {
-            let cache = Self::get_instance().lock().unwrap();
-            cache.base_dir.clone().ok_or("Cache not initialized")?
-        };
-
-        Self::prune_orphans_in_cache_dir(&base_dir, valid_paths)
-    }
-
     fn prune_orphans_in_cache_dir(
         base_dir: &Path,
         valid_paths: &[String],

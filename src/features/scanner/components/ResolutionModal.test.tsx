@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../testing/test-utils';
 import ResolutionModal from './ResolutionModal';
-import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 
 // Mock HTMLDialogElement methods
 beforeEach(() => {
@@ -40,6 +40,7 @@ describe('ResolutionModal', () => {
         confidenceScore: 95,
         signals: [],
         modId: null,
+        version: 1,
       },
       {
         folderPath: '/path/mod-b',
@@ -50,13 +51,14 @@ describe('ResolutionModal', () => {
         confidenceScore: 95,
         signals: [],
         modId: null,
+        version: 1,
       },
     ],
   };
 
   const defaultProps = {
     isOpen: false,
-    selections: new Map<string, ResolutionAction>(),
+    selections: new Map<string, DuplicateSelection>(),
     groups: [mockGroup],
     onConfirm: vi.fn(),
     onCancel: vi.fn(),
@@ -119,7 +121,7 @@ describe('ResolutionModal', () => {
     });
 
     it('shows deletion count correctly', async () => {
-      const selections = new Map<string, ResolutionAction>([
+      const selections = new Map<string, DuplicateSelection>([
         ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
       ]);
 
@@ -132,7 +134,7 @@ describe('ResolutionModal', () => {
     });
 
     it('shows ignore count correctly', async () => {
-      const selections = new Map<string, ResolutionAction>([['group-1', { type: 'Ignore' }]]);
+      const selections = new Map<string, DuplicateSelection>([['group-1', { type: 'Ignore' }]]);
 
       render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
 
@@ -194,6 +196,7 @@ describe('ResolutionModal', () => {
             confidenceScore: 90,
             signals: [],
             modId: null,
+            version: 1,
           },
           {
             folderPath: '/path/mod-d',
@@ -204,11 +207,12 @@ describe('ResolutionModal', () => {
             confidenceScore: 90,
             signals: [],
             modId: null,
+            version: 1,
           },
         ],
       };
 
-      const selections = new Map<string, ResolutionAction>([
+      const selections = new Map<string, DuplicateSelection>([
         ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
         ['group-2', { type: 'Keep', targetPath: '/path/mod-c' }],
       ]);
@@ -273,7 +277,7 @@ describe('ResolutionModal', () => {
     });
 
     it('confirm button shows action count', async () => {
-      const selections = new Map<string, ResolutionAction>([
+      const selections = new Map<string, DuplicateSelection>([
         ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
       ]);
 
@@ -422,7 +426,7 @@ describe('ResolutionModal', () => {
         groupId: 'group-2',
       };
 
-      const selections = new Map<string, ResolutionAction>([
+      const selections = new Map<string, DuplicateSelection>([
         ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
         ['group-2', { type: 'Keep', targetPath: '/path/mod-b' }],
       ]);
@@ -447,7 +451,7 @@ describe('ResolutionModal', () => {
         groupId: 'group-2',
       };
 
-      const selections = new Map<string, ResolutionAction>([
+      const selections = new Map<string, DuplicateSelection>([
         ['group-1', { type: 'Keep', targetPath: '/path/mod-a' }],
         ['group-2', { type: 'Ignore' }],
       ]);

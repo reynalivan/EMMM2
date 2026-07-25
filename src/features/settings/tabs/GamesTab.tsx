@@ -77,8 +77,8 @@ export default function GamesTab() {
       addToast(
         'success',
         t('settings:games.actions.scan_success', {
-          new: result.new_mods,
-          updated: result.updated_mods,
+          new: result.newMods,
+          updated: result.updatedMods,
         }),
       );
 

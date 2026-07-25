@@ -1,5 +1,6 @@
 pub mod change_summary;
 pub mod disk_snapshot;
+pub mod emit;
 pub mod helpers;
 pub mod orchestrator;
 pub mod path_classifier;

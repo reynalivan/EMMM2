@@ -4,12 +4,12 @@ use super::{
     preview_apply, replace_collection_with_current_state, update_collection,
     ApplyCollectionRequest,
 };
-use crate::database::models::{GameType, ItemStatus};
 use crate::domain::collection::{
     CollectionMod, CollectionObject, CreateCollectionInput, CreateCollectionMode, MemberKind,
     ProjectedCollectionState, ProjectedStateSummary, UpdateCollectionInput,
 };
 use crate::domain::errors::CollectionError;
+use crate::domain::models::{GameType, ItemStatus};
 use crate::repo::{collection_repo, corridor_repo};
 use crate::services::config::AppSettings;
 use crate::services::projected_state_service;
@@ -21,7 +21,7 @@ use crate::test_utils::{
 use std::sync::Arc;
 
 #[tokio::test]
-async fn delete_collection_promotes_corridor_unsaved_when_active_is_removed() {
+async fn delete_collection_clears_legacy_pointers_without_promoting_unsaved() {
     let ctx = init_test_db().await;
 
     insert_test_game(
@@ -68,15 +68,16 @@ async fn delete_collection_promotes_corridor_unsaved_when_active_is_removed() {
         .expect("load corridor")
         .expect("corridor exists");
 
-    assert_eq!(
-        snapshot.active_collection_id.as_deref(),
-        Some(unsaved.id.as_str())
-    );
+    assert!(snapshot.active_collection_id.is_none());
     assert!(snapshot.undo_collection_id.is_none());
+    assert!(collection_repo::get_by_id(&ctx.pool, &unsaved.id)
+        .await
+        .expect("query unsaved")
+        .is_some());
 }
 
 #[tokio::test]
-async fn delete_saved_active_collection_recreates_unsaved_and_marks_it_active() {
+async fn delete_saved_collection_does_not_recreate_unsaved_state() {
     let ctx = init_test_db().await;
 
     insert_test_game(
@@ -122,11 +123,15 @@ async fn delete_saved_active_collection_recreates_unsaved_and_marks_it_active() 
     .await
     .expect("insert mod");
 
-    let initial_unsaved = handle_dirty_state(&ctx.pool, "game-1", true)
+    let dirty_summary = handle_dirty_state(&ctx.pool, "game-1", true)
         .await
-        .expect("create unsaved");
-    assert!(initial_unsaved.is_unsaved);
-    assert!(initial_unsaved.is_active);
+        .expect("build dirty runtime summary");
+    assert!(dirty_summary.is_unsaved);
+    assert!(!dirty_summary.is_active);
+    assert!(collection_repo::get_by_id(&ctx.pool, &dirty_summary.id)
+        .await
+        .expect("query dirty summary")
+        .is_none());
 
     let named = create_collection(
         &ctx.pool,
@@ -141,7 +146,7 @@ async fn delete_saved_active_collection_recreates_unsaved_and_marks_it_active() 
     .await
     .expect("create named collection");
     assert!(!named.is_unsaved);
-    assert!(named.is_active);
+    assert!(!named.is_active);
 
     let unsaved_after_save =
         collection_repo::find_unsaved_for_corridor(&ctx.pool, "game-1", true, None)
@@ -160,23 +165,185 @@ async fn delete_saved_active_collection_recreates_unsaved_and_marks_it_active() 
     let recreated_unsaved =
         collection_repo::find_unsaved_for_corridor(&ctx.pool, "game-1", true, None)
             .await
-            .expect("query recreated unsaved")
-            .expect("unsaved recreated");
+            .expect("query recreated unsaved");
     let collections = collection_repo::list_for_corridor(&ctx.pool, "game-1", true, true)
         .await
         .expect("list collections");
 
-    assert_eq!(
-        corridor.active_collection_id.as_deref(),
-        Some(recreated_unsaved.id.as_str())
-    );
-    assert_eq!(collections.len(), 1);
-    assert!(recreated_unsaved.is_unsaved);
-    assert_ne!(recreated_unsaved.id, initial_unsaved.id);
+    assert!(corridor.active_collection_id.is_none());
+    assert!(recreated_unsaved.is_none());
+    assert!(collections.is_empty());
 }
 
 #[tokio::test]
-async fn dirty_state_refresh_updates_existing_zero_mod_unsaved_collection() {
+async fn save_current_state_creates_snapshot_without_touching_legacy_corridor_pointers() {
+    let ctx = init_test_db().await;
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-save-no-pointer",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-save-no-pointer",
+            game_id: "game-save-no-pointer",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-save-no-pointer",
+            game_id: "game-save-no-pointer",
+            object_id: Some("object-save-no-pointer"),
+            actual_name: "Blue",
+            folder_path: "AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert mod");
+    let previous_active = collection_repo::create(
+        &ctx.pool,
+        "previous-active",
+        "game-save-no-pointer",
+        "Previous",
+        true,
+        false,
+    )
+    .await
+    .expect("create previous active");
+    corridor_repo::update_pointers(
+        &ctx.pool,
+        "game-save-no-pointer",
+        true,
+        Some(&previous_active.id),
+        None,
+    )
+    .await
+    .expect("seed legacy pointer");
+
+    let saved = create_collection(
+        &ctx.pool,
+        CreateCollectionInput {
+            game_id: "game-save-no-pointer".to_string(),
+            name: "Saved Snapshot".to_string(),
+            is_safe: true,
+            save_mode: Some(CreateCollectionMode::SaveCurrentState),
+            source_collection_id: None,
+        },
+    )
+    .await
+    .expect("save current state");
+    let corridor = corridor_repo::get(&ctx.pool, "game-save-no-pointer", true)
+        .await
+        .expect("load corridor")
+        .expect("corridor row exists");
+
+    assert!(!saved.is_unsaved);
+    assert!(!saved.is_active);
+    assert_eq!(
+        corridor.active_collection_id.as_deref(),
+        Some(previous_active.id.as_str())
+    );
+    assert!(collection_repo::find_unsaved_for_corridor(
+        &ctx.pool,
+        "game-save-no-pointer",
+        true,
+        None
+    )
+    .await
+    .expect("query unsaved")
+    .is_none());
+}
+
+#[tokio::test]
+async fn list_collections_returns_all_named_presets_across_safety_flags() {
+    let ctx = init_test_db().await;
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-list-all",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert game");
+    collection_repo::create(
+        &ctx.pool,
+        "safe-collection",
+        "game-list-all",
+        "Safe",
+        true,
+        false,
+    )
+    .await
+    .expect("create safe collection");
+    collection_repo::create(
+        &ctx.pool,
+        "unsafe-collection",
+        "game-list-all",
+        "Unsafe",
+        false,
+        false,
+    )
+    .await
+    .expect("create unsafe collection");
+    collection_repo::create(
+        &ctx.pool,
+        "unsaved-collection",
+        "game-list-all",
+        "Unsaved",
+        false,
+        true,
+    )
+    .await
+    .expect("create legacy unsaved collection");
+
+    // Corridor enforcement: listing in the SAFE corridor returns only the safe
+    // named collection — the unsafe and unsaved rows are excluded.
+    let safe_collections = super::list_collections(&ctx.pool, "game-list-all", true, None)
+        .await
+        .expect("list safe collections");
+    let safe_ids = safe_collections
+        .iter()
+        .map(|collection| collection.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(safe_ids, vec!["safe-collection"]);
+
+    // The UNSAFE corridor returns only the unsafe named collection.
+    let unsafe_collections = super::list_collections(&ctx.pool, "game-list-all", false, None)
+        .await
+        .expect("list unsafe collections");
+    let unsafe_ids = unsafe_collections
+        .iter()
+        .map(|collection| collection.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(unsafe_ids, vec!["unsafe-collection"]);
+}
+
+#[tokio::test]
+async fn dirty_state_refresh_returns_synthetic_runtime_without_unsaved_collection() {
     let ctx = init_test_db().await;
     let mods_root = tempfile::tempdir().expect("create mods root");
     let mods_path = mods_root.path().to_string_lossy().to_string();
@@ -233,27 +400,24 @@ async fn dirty_state_refresh_updates_existing_zero_mod_unsaved_collection() {
     let summary = handle_dirty_state(&ctx.pool, "game-1", false)
         .await
         .expect("refresh dirty state");
-    let mods = collection_repo::get_mods(&ctx.pool, &summary.id)
-        .await
-        .expect("load unsaved mods");
-    let stored = collection_repo::get_by_id(&ctx.pool, &summary.id)
-        .await
-        .expect("load unsaved")
-        .expect("unsaved exists");
-    let projected_state = projected_state_service::parse_snapshot_json(
-        stored.snapshot_json.as_deref().expect("snapshot json"),
-    )
-    .expect("parse projected state");
 
-    assert_eq!(summary.id, unsaved.id);
+    assert_eq!(summary.id, "__current_runtime__");
     assert_eq!(summary.mod_count, 1);
-    assert_eq!(mods.len(), 1);
-    assert_eq!(mods[0].mod_path, "AINOZ/Blue");
-    assert_eq!(projected_state.summary.active_root_count, 1);
+    assert!(summary.is_unsaved);
+    assert!(!summary.is_active);
+    assert!(collection_repo::get_by_id(&ctx.pool, &summary.id)
+        .await
+        .expect("query synthetic summary")
+        .is_none());
+    let stored_unsaved = collection_repo::get_by_id(&ctx.pool, &unsaved.id)
+        .await
+        .expect("query legacy unsaved")
+        .expect("legacy unsaved remains untouched");
+    assert_eq!(stored_unsaved.root_count, 0);
 }
 
 #[tokio::test]
-async fn clone_snapshot_keeps_existing_unsaved_and_active_pointer() {
+async fn clone_snapshot_does_not_touch_legacy_active_pointer() {
     let ctx = init_test_db().await;
 
     insert_test_game(
@@ -299,9 +463,21 @@ async fn clone_snapshot_keeps_existing_unsaved_and_active_pointer() {
     .await
     .expect("insert mod");
 
-    let unsaved = handle_dirty_state(&ctx.pool, "game-1", true)
+    let source = create_collection(
+        &ctx.pool,
+        CreateCollectionInput {
+            game_id: "game-1".to_string(),
+            name: "Source Preset".to_string(),
+            is_safe: true,
+            save_mode: Some(CreateCollectionMode::SaveCurrentState),
+            source_collection_id: None,
+        },
+    )
+    .await
+    .expect("create source snapshot");
+    corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&source.id), None)
         .await
-        .expect("create unsaved");
+        .expect("seed legacy active pointer");
 
     let cloned = create_collection(
         &ctx.pool,
@@ -310,27 +486,21 @@ async fn clone_snapshot_keeps_existing_unsaved_and_active_pointer() {
             name: "Cloned Preset".to_string(),
             is_safe: true,
             save_mode: Some(CreateCollectionMode::CloneSnapshot),
-            source_collection_id: Some(unsaved.id.clone()),
+            source_collection_id: Some(source.id.clone()),
         },
     )
     .await
-    .expect("clone unsaved snapshot");
+    .expect("clone source snapshot");
 
     let corridor = corridor_repo::get(&ctx.pool, "game-1", true)
         .await
         .expect("load corridor")
         .expect("corridor exists");
-    let unsaved_after_clone =
-        collection_repo::find_unsaved_for_corridor(&ctx.pool, "game-1", true, None)
-            .await
-            .expect("query unsaved after clone")
-            .expect("unsaved still exists");
 
     assert_eq!(
         corridor.active_collection_id.as_deref(),
-        Some(unsaved.id.as_str())
+        Some(source.id.as_str())
     );
-    assert_eq!(unsaved_after_clone.id, unsaved.id);
     assert!(!cloned.is_active);
     assert!(!cloned.is_unsaved);
 }
@@ -506,8 +676,8 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         path_key: Some("AINOZ".to_string()),
     };
     let projected_state = projected_state_service::build_projected_state(
-        &[missing_mod.clone()],
-        &[object.clone()],
+        std::slice::from_ref(&missing_mod),
+        std::slice::from_ref(&object),
         Some(&mods_path),
     );
     let roots =
@@ -736,8 +906,8 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
     let target_mod = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let target_object = test_collection_object(&collection.id);
     let projected_state = projected_state_service::build_projected_state(
-        &[target_mod.clone()],
-        &[target_object.clone()],
+        std::slice::from_ref(&target_mod),
+        std::slice::from_ref(&target_object),
         None,
     );
     let roots =
@@ -775,6 +945,123 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
         })) => assert_eq!(game_id, "game-1"),
         other => panic!("expected source unavailable NoModsPath error, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn apply_collection_rejects_cross_corridor_request() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-apply-no-mode",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-1",
+            game_id: "game-apply-no-mode",
+            name: "AINOZ",
+            folder_path: "AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    create_flat_mod_folder(mods_root.path(), "AINOZ/DISABLED Red");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-apply-no-mode",
+            game_id: "game-apply-no-mode",
+            object_id: Some("object-1"),
+            actual_name: "Red",
+            folder_path: "AINOZ/DISABLED Red",
+            status: ItemStatus::Disabled,
+            is_safe: false,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert disabled unsafe mod");
+
+    let collection = collection_repo::create(
+        &ctx.pool,
+        "unsafe-collection",
+        "game-apply-no-mode",
+        "Unsafe Preset",
+        false,
+        false,
+    )
+    .await
+    .expect("create unsafe collection");
+    let target_mod = test_collection_mod(&collection.id, "AINOZ/Red", "Red");
+    let target_object = test_collection_object(&collection.id);
+    let projected_state = projected_state_service::build_projected_state(
+        std::slice::from_ref(&target_mod),
+        std::slice::from_ref(&target_object),
+        Some(&mods_path),
+    );
+    let roots = projected_state_service::roots_from_projected_state(
+        &collection.id,
+        false,
+        &projected_state,
+    );
+    collection_repo::replace_all_state(
+        &ctx.pool,
+        &collection.id,
+        &[target_mod],
+        &[target_object],
+        &roots,
+        Some(&projected_state_service::signature_for_projected_state(
+            &projected_state,
+        )),
+        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
+        projected_state.summary.active_root_count as i32,
+    )
+    .await
+    .expect("persist unsafe collection state");
+
+    // Corridor enforcement: applying an UNSAFE collection while the request is
+    // in the SAFE corridor must be rejected before any filesystem mutation.
+    let result = apply_collection(ApplyCollectionRequest {
+        pool: &ctx.pool,
+        game_id: "game-apply-no-mode",
+        collection_id: &collection.id,
+        is_safe: true,
+        mods_path: mods_root.path().to_path_buf(),
+        suppressor: Arc::new(WatcherSuppressor::new(false)),
+        ignore_missing: false,
+        settings: AppSettings::default(),
+    })
+    .await;
+
+    assert!(
+        matches!(result, Err(CollectionError::Validation(_))),
+        "cross-corridor apply must be rejected, got {result:?}"
+    );
+
+    // The mod stays disabled on disk and in the DB — no mutation occurred.
+    let row: (String, i64) = sqlx::query_as("SELECT folder_path, status FROM mods WHERE id = ?")
+        .bind("mod-apply-no-mode")
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("load mod row");
+
+    assert_eq!(row.0.replace('\\', "/"), "AINOZ/DISABLED Red");
+    assert_eq!(row.1, ItemStatus::Disabled as i64);
+    assert!(mods_root.path().join("AINOZ/DISABLED Red").exists());
+    assert!(!mods_root.path().join("AINOZ/Red").exists());
 }
 
 #[tokio::test]
@@ -940,7 +1227,7 @@ async fn replace_collection_with_current_state_drops_missing_partial_apply_membe
 }
 
 #[tokio::test]
-async fn preview_apply_rejects_cross_corridor_collection() {
+async fn preview_apply_rejects_cross_corridor_request() {
     let ctx = init_test_db().await;
     insert_test_game(
         &ctx.pool,
@@ -960,14 +1247,13 @@ async fn preview_apply_rejects_cross_corridor_collection() {
             .await
             .expect("create collection");
 
-    let result = preview_apply(&ctx.pool, "game-1", &collection.id, true, Some("E:/Mods")).await;
+    // Previewing an UNSAFE collection from the SAFE corridor must be rejected.
+    let result = preview_apply(&ctx.pool, "game-1", &collection.id, true, None).await;
 
-    match result {
-        Err(CollectionError::Validation(message)) => {
-            assert!(message.contains("requested corridor"));
-        }
-        other => panic!("expected corridor validation error, got {other:?}"),
-    }
+    assert!(
+        matches!(result, Err(CollectionError::Validation(_))),
+        "cross-corridor preview must be rejected, got {result:?}"
+    );
 }
 
 fn test_collection_mod(collection_id: &str, mod_path: &str, display_name: &str) -> CollectionMod {
@@ -976,7 +1262,7 @@ fn test_collection_mod(collection_id: &str, mod_path: &str, display_name: &str) 
         collection_id: collection_id.to_string(),
         mod_id: None,
         mod_path: mod_path.to_string(),
-        mod_path_key: Some(crate::services::path_key::folder_path_key(mod_path, None)),
+        mod_path_key: Some(crate::common::path_key::folder_path_key(mod_path, None)),
         object_id: "object-1".to_string(),
         display_name: Some(display_name.to_string()),
         preview_path: Some(mod_path.to_string()),
@@ -1085,7 +1371,7 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
         collection_id: collection.id.clone(),
         mod_id: None,
         mod_path: "AINOZ/Old Mod".to_string(),
-        mod_path_key: Some(crate::services::path_key::folder_path_key(
+        mod_path_key: Some(crate::common::path_key::folder_path_key(
             "AINOZ/Old Mod",
             None,
         )),
@@ -1105,8 +1391,8 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
         path_key: Some("AINOZ".to_string()),
     };
     let old_state = projected_state_service::build_projected_state(
-        &[old_mod.clone()],
-        &[object.clone()],
+        std::slice::from_ref(&old_mod),
+        std::slice::from_ref(&object),
         Some("E:/Mods"),
     );
     let old_roots =
@@ -1144,7 +1430,7 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
     let healed_roots = collection_repo::get_roots(&ctx.pool, &collection.id)
         .await
         .expect("load healed roots");
-    let expected_key = crate::services::path_key::folder_path_key("AINOZ/New Mod", None);
+    let expected_key = crate::common::path_key::folder_path_key("AINOZ/New Mod", None);
 
     assert_eq!(
         healed_mods
@@ -1203,8 +1489,11 @@ async fn auto_heal_returns_collection_reference_impact() {
             .expect("create collection");
     let old_mod = test_collection_mod(&collection.id, "AINOZ/Old Mod", "Old Mod");
     let object = test_collection_object(&collection.id);
-    let old_state =
-        projected_state_service::build_projected_state(&[old_mod.clone()], &[object.clone()], None);
+    let old_state = projected_state_service::build_projected_state(
+        std::slice::from_ref(&old_mod),
+        std::slice::from_ref(&object),
+        None,
+    );
     let old_roots =
         projected_state_service::roots_from_projected_state(&collection.id, true, &old_state);
     collection_repo::replace_all_state(
@@ -1269,8 +1558,8 @@ async fn runtime_prefix_toggle_does_not_rewrite_saved_collection_references() {
     let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let object = test_collection_object(&collection.id);
     let projected_state = projected_state_service::build_projected_state(
-        &[mod_member.clone()],
-        &[object.clone()],
+        std::slice::from_ref(&mod_member),
+        std::slice::from_ref(&object),
         None,
     );
     let roots =
@@ -1337,8 +1626,8 @@ async fn object_runtime_prefix_toggle_does_not_rewrite_saved_collection_referenc
     let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let object = test_collection_object(&collection.id);
     let projected_state = projected_state_service::build_projected_state(
-        &[mod_member.clone()],
-        &[object.clone()],
+        std::slice::from_ref(&mod_member),
+        std::slice::from_ref(&object),
         None,
     );
     let roots =
@@ -1410,8 +1699,8 @@ async fn missing_collection_member_is_preserved_and_reported_as_missing() {
     let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let object = test_collection_object(&collection.id);
     let projected_state = projected_state_service::build_projected_state(
-        &[mod_member.clone()],
-        &[object.clone()],
+        std::slice::from_ref(&mod_member),
+        std::slice::from_ref(&object),
         Some(&mods_path),
     );
     let roots =

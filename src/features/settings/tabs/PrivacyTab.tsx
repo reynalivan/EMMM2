@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import { Shield, ShieldAlert, KeyRound, X } from 'lucide-react';
+import { Shield, KeyRound, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
 import PinModal from '../modals/PinModal';
 import { useToastStore } from '../../../stores/useToastStore';
-import { useSafeModeToggle } from '../../collections/hooks/useSafeModeToggle';
-import ModeSwitchConfirmModal from '../../safe-mode/ModeSwitchConfirmModal';
 import { commands } from '../../../lib/bindings';
-import PinEntryModal from '../../safe-mode/PinEntryModal';
 import RecoveryCodeModal from '../../safe-mode/RecoveryCodeModal';
 
 type SafeModePendingAction = (() => Promise<void>) | null;
@@ -38,16 +35,6 @@ function toErrorMessage(error: unknown): string {
 export default function PrivacyTab() {
   const { t } = useTranslation(['settings', 'safe_mode', 'common']);
   const { settings, saveSettingsAsync, setPinWithRecoveryAsync, verifyPin } = useSettings();
-  const {
-    toggleSafeMode,
-    handleConfirmSwitch,
-    handlePinSuccess,
-    confirmModalOpen,
-    confirmTargetSafeMode,
-    closeConfirmModal,
-    pinModalOpen: corridorPinModalOpen,
-    closePinModal: closeCorridorPinModal,
-  } = useSafeModeToggle();
   const { addToast } = useToastStore();
 
   const [modalMode, setModalMode] = useState<'unlock' | 'set_new'>('unlock');
@@ -72,11 +59,6 @@ export default function PrivacyTab() {
       ...settings,
       safe_mode: nextSafeMode,
     });
-  };
-
-  // Toggle Safe Mode — uses the shared hook which shows confirmation modal
-  const handleToggleSafeMode = () => {
-    toggleSafeMode();
   };
 
   // Change PIN Flow
@@ -195,23 +177,14 @@ export default function PrivacyTab() {
         <div className="card-body">
           <div className="flex items-start justify-between gap-4">
             <div className="flex gap-4">
-              <div
-                className={`p-3 rounded-xl ${settings.safe_mode.enabled ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}
-              >
-                {settings.safe_mode.enabled ? <Shield size={24} /> : <ShieldAlert size={24} />}
+              <div className="p-3 rounded-xl bg-primary/10 text-primary">
+                <Shield size={24} />
               </div>
               <div>
                 <h3 className="card-title text-lg">{t('settings:privacy.title')}</h3>
                 <p className="text-sm opacity-70 max-w-md mt-1">{t('settings:privacy.desc')}</p>
               </div>
             </div>
-            <input
-              type="checkbox"
-              className="toggle toggle-success toggle-lg"
-              checked={settings.safe_mode.enabled}
-              onChange={handleToggleSafeMode}
-              aria-label={t('safe_mode:settings.toggle')}
-            />
           </div>
 
           <div className="mt-6 pt-6 border-t border-base-300">
@@ -357,23 +330,6 @@ export default function PrivacyTab() {
         open={!!recoveryCode}
         recoveryCode={recoveryCode ?? ''}
         onClose={() => setRecoveryCode(null)}
-      />
-
-      {/* Confirmation Modal for Corridor Switch */}
-      <ModeSwitchConfirmModal
-        open={confirmModalOpen}
-        targetSafeMode={confirmTargetSafeMode}
-        onClose={closeConfirmModal}
-        onConfirm={handleConfirmSwitch}
-      />
-
-      {/* PIN Entry Modal for Safe→Unsafe corridor transition */}
-      <PinEntryModal
-        open={corridorPinModalOpen}
-        onClose={closeCorridorPinModal}
-        onSuccess={async () => {
-          handlePinSuccess();
-        }}
       />
     </div>
   );

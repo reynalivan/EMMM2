@@ -85,11 +85,6 @@ impl ApplyContext {
             objects_toggled: 0,
         }
     }
-
-    pub fn without_task(mut self) -> Self {
-        self.track_task = false;
-        self
-    }
 }
 
 /// Execute the full apply pipeline.

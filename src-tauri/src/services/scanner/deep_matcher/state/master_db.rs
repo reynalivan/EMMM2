@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::services::scanner::core::normalizer;
+use crate::common::normalizer;
 use crate::services::scanner::deep_matcher::analysis::indexes::MatcherIndexes;
 use crate::services::scanner::deep_matcher::models::types::DbEntry;
 

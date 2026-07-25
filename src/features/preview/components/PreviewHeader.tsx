@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ChevronRight, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceExplorerNode, WorkspaceNode } from '../../../types/workspace';
+import { isWorkspaceExplorerNode } from '../../../types/workspace';
 import type { useSharedModActions } from '../../mod-runtime/actions/useSharedModActions';
 import { buildWorkspaceSwitchPolicy } from '../../workspace-runtime/actions/workspaceSwitchPolicy';
 import { maskWorkspaceNodeCapabilities } from '../../workspace-runtime/actions/workspaceActionAvailability';
@@ -95,12 +96,15 @@ export default function PreviewHeader({
               node={actionFolder}
               policy={switchPolicy}
               isPending={
-                !canEdit || actions.isSwitchPending || actions.isFolderSwitchPending(actionFolder)
+                !canEdit ||
+                actions.isSwitchPending ||
+                (isWorkspaceExplorerNode(actionFolder) &&
+                  actions.isFolderSwitchPending(actionFolder))
               }
               size={isScrolled ? 'xs' : 'sm'}
               ariaLabel={t('preview:actions.toggle_enabled')}
               onToggle={(node: WorkspaceNode) => {
-                if (node.node_kind !== 'object') {
+                if (isWorkspaceExplorerNode(node)) {
                   void actions.handleToggleEnabled(node);
                 }
               }}

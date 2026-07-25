@@ -13,12 +13,6 @@ export function isWorkspaceSwitchChecked(node: WorkspaceNode | null | undefined)
   return node?.switch_state === 'enabled';
 }
 
-export function getWorkspaceSwitchNextEnabledState(
-  node: WorkspaceNode | null | undefined,
-): boolean {
-  return !isWorkspaceSwitchChecked(node);
-}
-
 export function buildWorkspaceSwitchPolicy(
   t: TFunction,
   node: WorkspaceNode | null | undefined,

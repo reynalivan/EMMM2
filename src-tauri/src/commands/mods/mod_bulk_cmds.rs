@@ -119,7 +119,3 @@ pub async fn bulk_pin_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     bulk::bulk_pin(&pool, game_id, folder_paths, pin).await
 }
-
-#[cfg(test)]
-#[path = "tests/mod_bulk_cmds_tests.rs"]
-mod tests;

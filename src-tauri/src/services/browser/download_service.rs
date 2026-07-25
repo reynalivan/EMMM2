@@ -3,25 +3,12 @@ use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-use crate::services::browser::import_service;
+use crate::repo::browser_repo;
+use crate::services::browser::{download_handler, import_service};
 
-/// DTO for the frontend download list.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
-pub struct BrowserDownloadDto {
-    pub id: String,
-    pub session_id: Option<String>,
-    pub filename: String,
-    pub file_path: Option<String>,
-    pub source_url: Option<String>,
-    pub status: String,
-    #[specta(type = Option<f64>)]
-    pub bytes_total: Option<i64>,
-    #[specta(type = f64)]
-    pub bytes_received: i64,
-    pub error_msg: Option<String>,
-    pub started_at: String,
-    pub finished_at: Option<String>,
-}
+/// DTO for the frontend download list. Defined in `repo::browser_repo`; re-exported
+/// so existing `download_service::BrowserDownloadDto` users keep compiling.
+pub use crate::repo::browser_repo::BrowserDownloadDto;
 
 /// Insert a new `requested` download record.
 pub async fn create_download(
@@ -34,20 +21,9 @@ pub async fn create_download(
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
-    sqlx::query!(
-        r#"INSERT INTO browser_downloads
-           (id, session_id, filename, file_path, source_url, status, bytes_received, started_at)
-           VALUES (?, ?, ?, ?, ?, 'requested', 0, ?)"#,
-        id,
-        session_id,
-        filename,
-        file_path,
-        source_url,
-        now
-    )
-    .execute(db)
-    .await
-    .map_err(|e| format!("DB insert failed: {e}"))?;
+    browser_repo::insert_download(db, &id, session_id, filename, source_url, file_path, &now)
+        .await
+        .map_err(|e| format!("DB insert failed: {e}"))?;
 
     Ok(id)
 }
@@ -69,43 +45,25 @@ pub async fn update_status(
             None
         };
 
-    sqlx::query!(
-        r#"UPDATE browser_downloads SET
-            status         = ?,
-            bytes_received = COALESCE(?, bytes_received),
-            bytes_total    = COALESCE(?, bytes_total),
-            error_msg      = ?,
-            file_path      = COALESCE(?, file_path),
-            finished_at    = COALESCE(?, finished_at)
-          WHERE id = ?"#,
+    browser_repo::update_status(
+        db,
+        download_id,
         status,
         bytes_received,
         bytes_total,
         error_msg,
         file_path,
         finished_at,
-        download_id
     )
-    .execute(db)
     .await
-    .map_err(|e| format!("DB update failed: {e}"))?;
-    Ok(())
+    .map_err(|e| format!("DB update failed: {e}"))
 }
 
 /// List all downloads ordered by most recent first.
 pub async fn list_downloads(db: &SqlitePool) -> Result<Vec<BrowserDownloadDto>, String> {
-    let rows = sqlx::query_as::<_, BrowserDownloadDto>(
-        r#"SELECT id, session_id, filename, file_path, source_url,
-                  status, bytes_total, bytes_received, error_msg,
-                  started_at, finished_at
-           FROM browser_downloads
-           ORDER BY started_at DESC
-           LIMIT 200"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| format!("DB list failed: {e}"))?;
-    Ok(rows)
+    browser_repo::list_downloads(db)
+        .await
+        .map_err(|e| format!("DB list failed: {e}"))
 }
 
 /// Delete a download record and optionally the file on disk.
@@ -115,59 +73,57 @@ pub async fn delete_download(
     delete_file: bool,
 ) -> Result<(), String> {
     if delete_file {
-        let path: Option<String> = sqlx::query_scalar!(
-            "SELECT file_path FROM browser_downloads WHERE id = ?",
-            download_id
-        )
-        .fetch_optional(db)
-        .await
-        .ok()
-        .flatten()
-        .flatten();
+        let path = browser_repo::get_file_path(db, download_id)
+            .await
+            .ok()
+            .flatten();
 
         if let Some(p) = path {
             let _ = std::fs::remove_file(&p); // best-effort
         }
     }
 
-    sqlx::query!("DELETE FROM browser_downloads WHERE id = ?", download_id)
-        .execute(db)
+    browser_repo::delete_download(db, download_id)
         .await
-        .map_err(|e| format!("DB delete failed: {e}"))?;
+        .map_err(|e| format!("DB delete failed: {e}"))
+}
+
+/// Cancel a download: abort the in-flight transfer when one is running,
+/// otherwise mark the stale record `canceled` (and optionally drop the file).
+pub async fn cancel_download(
+    db: &SqlitePool,
+    download_id: &str,
+    delete_file: Option<bool>,
+) -> Result<(), String> {
+    if download_handler::request_cancel(download_id) {
+        return Ok(());
+    }
+
+    update_status(db, download_id, "canceled", None, None, None, None).await?;
+    if delete_file.unwrap_or(false) {
+        delete_download(db, download_id, true).await?;
+    }
     Ok(())
 }
 
 /// Remove all downloads with status `imported`.
 pub async fn clear_imported(db: &SqlitePool) -> Result<u64, String> {
-    let result = sqlx::query!("DELETE FROM browser_downloads WHERE status = 'imported'")
-        .execute(db)
+    browser_repo::delete_imported(db)
         .await
-        .map_err(|e| format!("DB clear_imported failed: {e}"))?;
-    Ok(result.rows_affected())
+        .map_err(|e| format!("DB clear_imported failed: {e}"))
 }
 
 /// Remove old downloads that exceed the retention period.
 pub async fn clear_old_downloads(db: &SqlitePool) -> Result<u64, String> {
-    let retention: i64 = sqlx::query_scalar!(
-        "SELECT CAST(value AS INTEGER) FROM browser_settings WHERE key = 'retention_days'"
-    )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(30);
+    let retention = browser_repo::get_retention_days(db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(30);
 
-    let interval = format!("-{retention}");
-    let result = sqlx::query!(
-        r#"DELETE FROM browser_downloads
-           WHERE status IN ('finished', 'imported', 'failed', 'canceled')
-             AND finished_at < datetime('now', ? || ' days')"#,
-        interval
-    )
-    .execute(db)
-    .await
-    .map_err(|e| format!("DB clear_old failed: {e}"))?;
-    Ok(result.rows_affected())
+    browser_repo::delete_older_than(db, retention)
+        .await
+        .map_err(|e| format!("DB clear_old failed: {e}"))
 }
 
 /// Called by `browser_service` when the download `Finished` event fires.
@@ -181,22 +137,12 @@ pub async fn on_download_finished(
     tab_label: &str,
 ) -> Result<(), String> {
     // Find the download by source_url + tab_label heuristic (most recent requested)
-    use sqlx::Row;
-    let row = sqlx::query(
-        r#"SELECT id, session_id FROM browser_downloads
-           WHERE source_url = ? AND status IN ('requested', 'in_progress')
-           ORDER BY started_at DESC LIMIT 1"#,
-    )
-    .bind(source_url)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| format!("DB fetch failed: {e}"))?;
+    let row = browser_repo::find_active_by_url(db, source_url)
+        .await
+        .map_err(|e| format!("DB fetch failed: {e}"))?;
 
     let (download_id, session_id) = match row {
-        Some(r) => (
-            r.get::<String, _>("id"),
-            r.get::<Option<String>, _>("session_id"),
-        ),
+        Some(r) => (r.id, r.session_id),
         None => {
             log::warn!("No download record found for URL: {source_url} (tab: {tab_label})");
             return Ok(());
@@ -217,14 +163,12 @@ pub async fn on_download_finished(
         );
 
         // Auto-import if enabled
-        let auto_import: bool =
-            sqlx::query_scalar!("SELECT value FROM browser_settings WHERE key = 'auto_import'")
-                .fetch_optional(db)
-                .await
-                .ok()
-                .flatten()
-                .map(|v: String| v != "false")
-                .unwrap_or(true);
+        let auto_import: bool = browser_repo::get_setting(db, "auto_import")
+            .await
+            .ok()
+            .flatten()
+            .map(|v: String| v != "false")
+            .unwrap_or(true);
 
         if auto_import {
             if let Some(path) = file_path {
@@ -263,3 +207,7 @@ pub async fn on_download_finished(
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/download_service_tests.rs"]
+mod tests;

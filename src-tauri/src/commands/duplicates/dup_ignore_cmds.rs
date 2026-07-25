@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::repo::dedup_repo::{delete_whitelist_entry, get_whitelist_detailed, WhitelistEntry};
 use tauri::State;
 
@@ -6,10 +7,10 @@ use tauri::State;
 pub async fn get_ignored_pairs(
     game_id: String,
     db: State<'_, sqlx::SqlitePool>,
-) -> Result<Vec<WhitelistEntry>, String> {
+) -> Result<Vec<WhitelistEntry>, AppError> {
     get_whitelist_detailed(db.inner(), &game_id)
         .await
-        .map_err(|e| format!("Failed to fetch ignored pairs: {}", e))
+        .map_err(|e| AppError::Db(format!("Failed to fetch ignored pairs: {}", e)))
 }
 
 #[tauri::command]
@@ -17,8 +18,8 @@ pub async fn get_ignored_pairs(
 pub async fn remove_ignored_pair(
     entry_id: String,
     db: State<'_, sqlx::SqlitePool>,
-) -> Result<u64, String> {
+) -> Result<u64, AppError> {
     delete_whitelist_entry(db.inner(), &entry_id)
         .await
-        .map_err(|e| format!("Failed to remove ignored pair: {}", e))
+        .map_err(|e| AppError::Db(format!("Failed to remove ignored pair: {}", e)))
 }

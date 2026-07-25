@@ -18,7 +18,13 @@
     "parent_disabled_title": "Locked by {{name}}",
     "parent_disabled_object_title": "Disabled Object Mods",
     "enable_parent_btn": "Enable Parent",
-    "preview_impact": "Preview Impact"
+    "preview_impact": "Preview Impact",
+    "source_hint": "The folder may have been moved, renamed, or its drive disconnected.",
+    "source_retry_btn": "Retry",
+    "source_locate_btn": "Locate folder…",
+    "source_locate_title": "Select the mods folder for this game",
+    "source_relocated": "Mods folder updated.",
+    "source_action_failed": "Could not reach the mods folder: {{error}}"
   },
   "empty": {
     "no_match": "No mods match your search.",
@@ -121,6 +127,32 @@
     "edit_metadata": "Edit Metadata",
     "move_object": "Move to Object...",
     "move_trash": "Move to Trash"
+  },
+  "bulk_toast": {
+    "success": "{{action}}: {{names}}",
+    "success_with_more": "{{action}}: {{names}} + {{extraCount}} others",
+    "import_success_one": "Imported {{count}} item",
+    "import_success_other": "Imported {{count}} items",
+    "failure_one": "Failed to {{action}} {{name}}: {{reason}}",
+    "failure_other": "Failed to {{action}} {{name}} + {{extraCount}} others: {{reason}}",
+    "actions": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "deleted": "Deleted",
+      "updated": "Updated",
+      "favorited": "Favorited",
+      "unfavorited": "Unfavorited",
+      "pinned": "Pinned",
+      "unpinned": "Unpinned"
+    },
+    "failure_actions": {
+      "toggle": "toggle",
+      "delete": "delete",
+      "update": "update",
+      "favorite": "update favorite status for",
+      "pin": "update pin status for",
+      "import": "import"
+    }
   },
   "status": {
     "load_error": "Failed to load mods",

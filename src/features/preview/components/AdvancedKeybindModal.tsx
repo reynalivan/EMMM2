@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Keyboard, Check, X, Lightbulb } from 'lucide-react';
 import { mapBrowserKeyTo3DMigoto } from './keyMapper';
+import { formatKeybindValue, parseKeybindValue } from '../utils/keybindValue';
 
 export interface AdvancedKeybindModalProps {
   isOpen: boolean;
@@ -23,29 +24,16 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
   const { t } = useTranslation(['preview', 'common']);
   const [isListening, setIsListening] = useState(true);
 
-  const lowerInitial = initialValue.toLowerCase();
-  const [ctrlKey, setCtrlKey] = useState(
-    lowerInitial.includes('ctrl') && !lowerInitial.includes('no_ctrl'),
-  );
-  const [altKey, setAltKey] = useState(
-    lowerInitial.includes('alt') && !lowerInitial.includes('no_alt'),
-  );
-  const [shiftKey, setShiftKey] = useState(
-    lowerInitial.includes('shift') && !lowerInitial.includes('no_shift'),
-  );
+  const initial = parseKeybindValue(initialValue);
+  const [ctrlKey, setCtrlKey] = useState(initial.ctrlKey);
+  const [altKey, setAltKey] = useState(initial.altKey);
+  const [shiftKey, setShiftKey] = useState(initial.shiftKey);
 
-  const [noCtrl, setNoCtrl] = useState(lowerInitial.includes('no_ctrl'));
-  const [noAlt, setNoAlt] = useState(lowerInitial.includes('no_alt'));
-  const [noShift, setNoShift] = useState(lowerInitial.includes('no_shift'));
+  const [noCtrl, setNoCtrl] = useState(initial.noCtrl);
+  const [noAlt, setNoAlt] = useState(initial.noAlt);
+  const [noShift, setNoShift] = useState(initial.noShift);
 
-  const [mainKey, setMainKey] = useState<string | null>(() => {
-    const parts = initialValue
-      .split(/\s+/)
-      .filter(
-        (p) => !['ctrl', 'alt', 'shift', 'no_ctrl', 'no_alt', 'no_shift'].includes(p.toLowerCase()),
-      );
-    return parts.length > 0 ? parts[parts.length - 1].toUpperCase() : null;
-  });
+  const [mainKey, setMainKey] = useState<string | null>(initial.mainKey);
 
   const dialogRef = useRef<HTMLDialogElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -106,18 +94,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
       return;
     }
 
-    const parts = [];
-    if (ctrlKey) parts.push('ctrl');
-    if (noCtrl && !ctrlKey) parts.push('no_ctrl');
-
-    if (altKey) parts.push('alt');
-    if (noAlt && !altKey) parts.push('no_alt');
-
-    if (shiftKey) parts.push('shift');
-    if (noShift && !shiftKey) parts.push('no_shift');
-
-    parts.push(mainKey);
-    onApply(parts.join(' '));
+    onApply(formatKeybindValue({ ctrlKey, altKey, shiftKey, noCtrl, noAlt, noShift }, mainKey));
     onClose();
   };
 

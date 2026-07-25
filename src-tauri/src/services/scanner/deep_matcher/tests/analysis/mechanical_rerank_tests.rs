@@ -82,8 +82,10 @@ fn test_gb_category_mismatch_penalty() {
     let signals = FolderSignals::default();
 
     // config where GB says it's a "Skins", but we know it's a "Weapon"
-    let mut config = MechanicalRerankConfig::default();
-    config.gb_root_category = Some("Skins".to_string());
+    let config = MechanicalRerankConfig {
+        gb_root_category: Some("Skins".to_string()),
+        ..Default::default()
+    };
 
     let score = compute_points(&candidate, &signals, &db, &config);
 

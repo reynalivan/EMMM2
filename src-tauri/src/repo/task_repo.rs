@@ -49,40 +49,6 @@ pub async fn update_status(
     Ok(())
 }
 
-/// Get all PENDING tasks (useful for crash recovery on boot).
-pub async fn get_pending_tasks(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<Vec<PipelineTask>, AppError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT id, game_id, task_type, status, target_id, created_at, updated_at
-        FROM tasks
-        WHERE game_id = ? AND status = 'PENDING'
-        ORDER BY created_at ASC
-        "#,
-    )
-    .bind(game_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::Db(e.to_string()))?;
-
-    let tasks = rows
-        .into_iter()
-        .map(|r: sqlx::sqlite::SqliteRow| PipelineTask {
-            id: r.get("id"),
-            game_id: r.get("game_id"),
-            task_type: r.get("task_type"),
-            status: TaskStatus::from_db_value(r.get::<&str, _>("status")),
-            target_id: r.try_get("target_id").ok().flatten(),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-        })
-        .collect();
-
-    Ok(tasks)
-}
-
 /// Get all PENDING tasks across all games (useful for crash recovery on boot).
 pub async fn get_all_pending_tasks_global(
     pool: &SqlitePool,
@@ -142,4 +108,13 @@ pub async fn get_task_by_id(pool: &SqlitePool, id: &str) -> Result<Option<Pipeli
     } else {
         Ok(None)
     }
+}
+
+/// Delete task rows older than 7 days. Returns the number of purged rows.
+pub async fn purge_old_tasks(pool: &SqlitePool) -> Result<u64, AppError> {
+    sqlx::query("DELETE FROM tasks WHERE created_at < datetime('now', '-7 days')")
+        .execute(pool)
+        .await
+        .map(|result| result.rows_affected())
+        .map_err(|e| AppError::Db(e.to_string()))
 }

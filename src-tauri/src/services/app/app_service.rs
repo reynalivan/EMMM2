@@ -3,7 +3,7 @@
 //! Provides `check_config_status` (DB check for fresh install vs configured)
 //! and `reset_database_service` (backup + full table clear).
 
-use crate::database::models::ConfigStatus;
+use crate::domain::models::ConfigStatus;
 use std::path::Path;
 
 /// Determine whether the app has games configured.

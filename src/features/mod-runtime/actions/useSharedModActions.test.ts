@@ -56,10 +56,13 @@ vi.mock('../../../hooks/folderCache', () => ({
   updateFolderCache: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useFolderMutations', () => ({
+vi.mock('../../../hooks/useBulkModMutations', () => ({
   useBulkFavorite: () => ({
     mutate: bulkFavoriteMutate,
   }),
+}));
+
+vi.mock('../../../hooks/useFolderMutations', () => ({
   useToggleModSafe: () => ({
     mutate: toggleSafeMutate,
   }),
@@ -135,7 +138,6 @@ function createFolder(overrides: Partial<ModFolder> = {}): ModFolder {
     category: 'Character',
     conflict_group_id: null,
     conflict_state: null,
-    pin_hash: null,
     warnings: [],
     ...overrides,
   };

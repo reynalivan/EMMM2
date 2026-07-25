@@ -11,8 +11,8 @@ pub async fn disable_target_duplicates(
     target_obj_path: &Path,
     path_rewrites: &mut Vec<crate::domain::workspace::WorkspacePathRewrite>,
 ) -> Result<(), AppError> {
-    use crate::database::models::ItemStatus;
-    use crate::services::scanner::core::normalizer::is_disabled_folder;
+    use crate::common::normalizer::is_disabled_folder;
+    use crate::domain::models::ItemStatus;
 
     let siblings =
         crate::repo::mod_repo::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)

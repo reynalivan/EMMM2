@@ -4,12 +4,12 @@
  */
 
 import { Trash2, ShieldCheck, AlertTriangle, X } from 'lucide-react';
-import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 import { useTranslation } from 'react-i18next';
 
 interface Props {
   isOpen: boolean;
-  selections: Map<string, ResolutionAction>;
+  selections: Map<string, DuplicateSelection>;
   groups: DupScanGroup[];
   onConfirm: () => void;
   onCancel: () => void;

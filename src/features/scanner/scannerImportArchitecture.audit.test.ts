@@ -28,10 +28,8 @@ const PASSIVE_RUST_PATHS = [
 const EXPLICIT_FRONTEND_DEEP_MATCH_CALLERS = new Set<string>([
   'src/lib/services/scanService.ts',
   'src/features/scanner/ScannerFeature.tsx',
-  'src/features/object-list/useObjHandlersArchive.ts',
-  'src/features/object-list/useObjHandlersBulk.ts',
-  'src/features/object-list/useObjHandlersDrop.ts',
-  'src/features/object-list/useObjHandlersScan.ts',
+  'src/features/object-list/hooks/useScanReviewFlow.ts',
+  'src/features/object-list/utils/importPipeline.ts',
   'src/features/settings/tabs/GamesTab.tsx',
 ]);
 

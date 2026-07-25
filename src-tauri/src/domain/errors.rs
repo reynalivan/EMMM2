@@ -202,6 +202,9 @@ pub enum AppError {
 
     #[error("Path is busy and cannot be renamed right now: {path}")]
     PathBusy { path: String },
+
+    #[error("Object has {0} mods")]
+    ObjectHasMods(i32),
 }
 
 impl From<sqlx::Error> for AppError {
@@ -213,5 +216,17 @@ impl From<sqlx::Error> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Internal(e.to_string())
+    }
+}
+
+impl From<tauri::Error> for AppError {
+    fn from(e: tauri::Error) -> Self {
+        Self::Internal(e.to_string())
     }
 }

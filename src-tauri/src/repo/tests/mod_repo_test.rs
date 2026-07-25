@@ -1,7 +1,7 @@
 use super::*;
+use crate::common::path_key::folder_path_key;
 use crate::repo::game_repo::{upsert_game, GameRow};
 use crate::repo::object_repo::create_object;
-use crate::services::path_key::folder_path_key;
 use sqlx::SqlitePool;
 
 async fn setup_pool() -> SqlitePool {
@@ -17,7 +17,7 @@ async fn test_mod_repo_crud() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game1".into(),
         mods_path: Some("C:".into()),
         game_exe: None,
@@ -54,7 +54,7 @@ async fn test_mod_repo_crud() {
         "My Mod",
         "Mods/Obj1/Mod1",
         Some("C:"),
-        crate::database::models::ItemStatus::Enabled,
+        crate::domain::models::ItemStatus::Enabled,
         true,
         "manual",
     )
@@ -91,7 +91,7 @@ async fn test_mod_repo_crud() {
         "g1",
         "Mods/Obj1/Mod1",
         "Mods/Obj1/Mod2",
-        crate::database::models::ItemStatus::Disabled,
+        crate::domain::models::ItemStatus::Disabled,
         None,
     )
     .await
@@ -110,7 +110,7 @@ async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
     let game = GameRow {
         id: "g_unicode".into(),
         name: "Game Unicode".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameUnicode".into(),
         mods_path: Some("C:".into()),
         game_exe: None,
@@ -146,7 +146,7 @@ async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
         "日本語Variant",
         "한국Character/日本語Root/VariantA",
         Some("C:"),
-        crate::database::models::ItemStatus::Enabled,
+        crate::domain::models::ItemStatus::Enabled,
         true,
         "manual",
     )
@@ -188,7 +188,7 @@ async fn update_status_for_object_matches_unicode_object_folder_with_ascii_case_
     let game = GameRow {
         id: "g_status".into(),
         name: "Game Status".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameStatus".into(),
         mods_path: Some("C:".into()),
         game_exe: None,
@@ -224,7 +224,7 @@ async fn update_status_for_object_matches_unicode_object_folder_with_ascii_case_
         "中文Mod",
         "한국Character/中文Mod",
         Some("C:"),
-        crate::database::models::ItemStatus::Enabled,
+        crate::domain::models::ItemStatus::Enabled,
         true,
         "manual",
     )
@@ -236,20 +236,20 @@ async fn update_status_for_object_matches_unicode_object_folder_with_ascii_case_
         &mut conn,
         "g_status",
         "한국character",
-        crate::database::models::ItemStatus::Disabled,
+        crate::domain::models::ItemStatus::Disabled,
     )
     .await
     .unwrap();
     drop(conn);
 
-    let status: crate::database::models::ItemStatus =
+    let status: crate::domain::models::ItemStatus =
         sqlx::query_scalar("SELECT status FROM mods WHERE id = ?")
             .bind("status_mod")
             .fetch_one(&pool)
             .await
             .unwrap();
 
-    assert_eq!(status, crate::database::models::ItemStatus::Disabled);
+    assert_eq!(status, crate::domain::models::ItemStatus::Disabled);
 }
 
 #[tokio::test]
@@ -259,7 +259,7 @@ async fn test_repo_mod_status_consistency() {
     let game = GameRow {
         id: "g_consist".into(),
         name: "Game Consist".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameConsist".into(),
         mods_path: Some("C:".into()),
         game_exe: None,
@@ -296,7 +296,7 @@ async fn test_repo_mod_status_consistency() {
         "Enabled Mod",
         "Mods/EnabledMod",
         Some("C:"),
-        crate::database::models::ItemStatus::Enabled,
+        crate::domain::models::ItemStatus::Enabled,
         true,
         "manual",
     )
@@ -312,7 +312,7 @@ async fn test_repo_mod_status_consistency() {
         "Disabled Mod",
         "Mods/DisabledMod",
         Some("C:"),
-        crate::database::models::ItemStatus::Disabled,
+        crate::domain::models::ItemStatus::Disabled,
         true,
         "manual",
     )

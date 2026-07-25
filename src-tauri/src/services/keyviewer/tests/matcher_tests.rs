@@ -83,8 +83,10 @@ fn respects_score_threshold() {
     let entries = vec![make_kv_entry("Albedo", &["aabb1111"])];
     let active = make_active_hashes(&["aabb1111"]);
     let occ = make_occurrences(&["aabb1111"], 1);
-    let mut config = MatchConfig::default();
-    config.score_threshold = 999.0; // impossible threshold
+    let config = MatchConfig {
+        score_threshold: 999.0, // impossible threshold
+        ..Default::default()
+    };
 
     let results = match_objects(&entries, &active, &occ, &config);
     assert!(results.is_empty());
@@ -234,8 +236,10 @@ fn sentinels_exclude_high_collision_hashes() {
     ];
     let active = make_active_hashes(&["collision01", "safe01"]);
     let occ = make_occurrences(&["collision01", "safe01"], 1);
-    let mut config = MatchConfig::default();
-    config.collision_threshold = 3;
+    let config = MatchConfig {
+        collision_threshold: 3,
+        ..Default::default()
+    };
 
     let results = match_objects(&entries, &active, &occ, &config);
 
@@ -251,8 +255,10 @@ fn sentinel_count_limited_by_config() {
     let entries = vec![make_kv_entry("Test", &["h1", "h2", "h3", "h4", "h5"])];
     let active = make_active_hashes(&["h1", "h2", "h3", "h4", "h5"]);
     let occ = make_occurrences(&["h1", "h2", "h3", "h4", "h5"], 1);
-    let mut config = MatchConfig::default();
-    config.sentinel_count = 2;
+    let config = MatchConfig {
+        sentinel_count: 2,
+        ..Default::default()
+    };
 
     let results = match_objects(&entries, &active, &occ, &config);
     assert_eq!(results[0].sentinel_hashes.len(), 2);
@@ -321,8 +327,10 @@ fn sentinels_empty_when_all_hashes_high_collision() {
     ];
     let active = make_active_hashes(&["c1", "c2"]);
     let occ = make_occurrences(&["c1", "c2"], 1);
-    let mut config = MatchConfig::default();
-    config.collision_threshold = 3;
+    let config = MatchConfig {
+        collision_threshold: 3,
+        ..Default::default()
+    };
 
     let results = match_objects(&entries, &active, &occ, &config);
     let target = results.iter().find(|r| r.object_name == "Target").unwrap();

@@ -90,10 +90,10 @@
   },
   "recovery": {
     "title": "Tugas Terinterupsi Terdeteksi",
-    "desc": "EMMM mendeteksi bahwa operasi kritis sebelumnya (seperti menerapkan koleksi atau berpindah Mode Aman) terhenti sebelum selesai.",
+    "desc": "EMMM mendeteksi bahwa operasi koleksi penting sebelumnya terhenti sebelum selesai.",
     "pending": "Tugas Tertunda ({{count}})",
     "important": "Penting",
-    "warning": "Menghapus tugas-tugas ini akan memungkinkan Anda mengakses aplikasi kembali. Anda harus mencoba kembali secara manual penerapan koleksi atau perpindahan mode yang terhenti untuk memastikan file game Anda dalam status yang benar.",
+    "warning": "Menghapus tugas-tugas ini akan memungkinkan Anda mengakses aplikasi kembali. Anda harus mencoba kembali secara manual penerapan koleksi yang terhenti untuk memastikan file game Anda dalam status yang benar.",
     "actions": {
       "ignore": "Abaikan Tugas",
       "ignoring": "Mengabaikan...",

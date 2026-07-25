@@ -1,8 +1,34 @@
+export type {
+  CategoryCount,
+  CategoryDef,
+  JsonValue,
+  ConflictGroup,
+  ConflictMember,
+  CreateObjectInput,
+  CustomSkin,
+  DbEntry,
+  FilterDef,
+  GameSchema,
+  ModInfo,
+  ObjectFilter,
+  ObjectSummary,
+  RenameResult,
+} from '../lib/bindings.gen';
+
+import type {
+  ConflictGroup,
+  ModInfoUpdate as GenModInfoUpdate,
+  UpdateObjectInput as GenUpdateObjectInput,
+} from '../lib/bindings.gen';
+
 /**
- * Types for Epic 3: Game Object Management & File Properties.
- * Directly mirrors Rust payload & test usages.
+ * All fields optional on purpose: every field is `Option` in Rust and serde
+ * deserializes missing keys as `None`, so partial payloads are wire-valid.
  */
-import type { CollectionReferenceImpact } from './collection';
+export type ModInfoUpdate = Partial<GenModInfoUpdate>;
+
+/** Same wire semantics as ModInfoUpdate: every field is `Option` in Rust. */
+export type UpdateObjectInput = Partial<GenUpdateObjectInput>;
 
 export enum ObjectCategory {
   Character = 'Character',
@@ -13,184 +39,39 @@ export enum ObjectCategory {
 
 export const OBJECT_CATEGORIES = Object.values(ObjectCategory);
 
+/**
+ * Numeric on the wire (Rust `serde_repr`): the generated bindings type this as
+ * plain `number`; this enum is the frontend-side domain vocabulary for it.
+ */
 export enum ItemStatus {
   Disabled = 0,
   Enabled = 1,
 }
 
-export interface CategoryDef {
-  name: string;
-  label?: string;
-  icon: string;
-  color: string;
-  filters?: FilterDef[];
-}
+import type { WorkspaceExplorerNode } from '../lib/bindings.gen';
 
-export interface FilterDef {
-  key: string;
-  label: string;
-  options: string[];
-}
-
-export interface GameSchema {
-  categories: CategoryDef[];
-  filters: FilterDef[];
-}
-
-export type CategoryCount = {
-  object_type: string;
-  count: number;
-};
-
-export type ObjectSummary = {
-  id: string;
-  name: string;
-  folder_path: string;
-  matched_entry_key?: string | null;
-  matched_alias_name?: string | null;
-  matched_confidence?: number | null;
-  matched_reason?: string | null;
-  matched_source?: string | null;
-  object_type: string;
-  sub_category: string | null;
-  status: number | null;
-  created_at: string | null;
-  mod_count: number;
-  enabled_count: number;
-  thumbnail_path: string | null;
-  is_pinned: boolean;
-  is_auto_sync: boolean;
-  is_object_disabled: boolean;
-  has_naming_conflict: boolean;
-  metadata: string;
-  tags: string;
-  hash_db: Record<string, string[]> | null;
-  custom_skins: Record<string, string> | null;
-  /** Pipe-separated list of enabled mod paths for this object in the current corridor */
-  active_mod_paths?: string | null;
-};
-
-export type ObjectFilter = {
-  game_id: string;
-  search_query: string | null;
-  object_type: string | null;
-  safe_mode: boolean;
-  meta_filters: Record<string, string[]> | null;
-  sort_by: string | null;
-  status_filter: ItemStatus | null;
-};
-
-export type CreateObjectInput = {
-  game_id: string;
-  name: string;
-  folder_path?: string | null;
-  object_type: string;
-  sub_category?: string | null;
-  status?: ItemStatus | null;
-  metadata?: unknown | null;
-  thumbnail_url?: string | null;
-  hash_db?: Record<string, string[]> | null;
-  custom_skins?: Record<string, string> | null;
-};
-
-export type UpdateObjectInput = {
-  name?: string | null;
-  object_type?: string | null;
-  sub_category?: string | null;
-  status?: ItemStatus | null;
-  metadata?: unknown | null;
-  hash_db?: Record<string, string[]> | null;
-  custom_skins?: Record<string, string> | null;
-  thumbnail_path?: string | null;
-  is_auto_sync?: boolean | null;
-  tags?: string[] | null;
-};
-
-export type CustomSkin = {
-  name: string;
-  aliases: string[];
-  thumbnail_skin_path: string | null;
-  rarity: string | null;
-};
-
-export type DbEntry = {
-  name: string;
-  tags: string[];
-  object_type: string;
-  custom_skins: CustomSkin[];
-  thumbnail_path: string | null;
-  metadata: Record<string, unknown> | null;
-  hash_db: Record<string, string[]>;
-};
-
-export type ModFolder = {
-  node_type: string;
-  classification_reasons: string[];
-  id?: string | null;
-  owner_object_id?: string | null;
-  owner_object_folder_path?: string | null;
-  name: string;
-  folder_name: string;
-  path: string;
-  is_enabled: boolean;
-  is_directory: boolean;
-  thumbnail_path: string | null;
-  modified_at: number;
-  size_bytes: number;
-  has_info_json: boolean;
-  is_favorite: boolean;
-  is_misplaced: boolean;
-  is_safe: boolean;
-  metadata: Record<string, string> | null;
-  category: string | null;
-  conflict_group_id?: string | null;
-  conflict_state?: string | null;
-  pin_hash?: string | null;
-  warnings: string[];
-};
-
-export type ModInfo = {
-  actual_name: string;
-  author: string;
-  description: string;
-  version: string;
-  tags: string[];
-  is_safe: boolean;
-  is_favorite: boolean;
-  is_auto_sync: boolean;
-  preset_name: string[];
-  metadata: Record<string, string>;
-};
-
-export type ModInfoUpdate = {
-  actual_name?: string | null;
-  author?: string | null;
-  description?: string | null;
-  version?: string | null;
-  tags?: string[] | null;
-  tags_add?: string[] | null;
-  tags_remove?: string[] | null;
-  is_safe?: boolean | null;
-  is_favorite?: boolean | null;
-  is_auto_sync?: boolean | null;
-  preset_name_add?: string[] | null;
-  preset_name_remove?: string[] | null;
-  metadata?: Record<string, string> | null;
-};
-
-export type ConflictMember = {
-  path: string;
-  folder_name: string;
-  is_enabled: boolean;
-  modified_at: number;
-  size_bytes: number;
-};
-
-export type ConflictGroup = {
-  group_id: string;
-  base_name: string;
-  members: ConflictMember[];
-};
+/**
+ * Frontend-only: the plain-folder subset of the generated
+ * `WorkspaceExplorerNode` (Rust has no standalone struct for this shape).
+ * Deriving via Omit keeps it structurally in sync with the wire type.
+ */
+export type ModFolder = Omit<
+  WorkspaceExplorerNode,
+  | 'node_kind'
+  | 'display_mode'
+  | 'type_chip'
+  | 'display_name'
+  | 'is_effectively_active'
+  | 'ancestor_disabled'
+  | 'inactive_reason'
+  | 'warning_state'
+  | 'primary_warning'
+  | 'switch_state'
+  | 'switch_reason'
+  | 'switch_policy_key'
+  | 'capabilities'
+  | 'can_navigate'
+>;
 
 export type FolderGridResponse = {
   self_node_type: string | null;
@@ -206,15 +87,3 @@ export type FolderGridResponse = {
   /** Absolute path of the nearest disabled ancestor (for toggling). */
   ancestor_disabled_path?: string | null;
 };
-
-export type RenameResult = {
-  old_path: string;
-  new_path: string;
-  new_name: string;
-  collection_impact: CollectionReferenceImpact;
-};
-
-export interface GetObjectsResult {
-  objects: ObjectSummary[];
-  lost_objects: string[];
-}

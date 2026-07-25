@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/mod';
 import type { DuplicateInfo } from '../../../types/scanner';
-import MoveToObjectDialog from '../../folder-grid/MoveToObjectDialog';
+import MoveToObjectDialog from '../../folder-grid/modals/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
-import DuplicateWarningModal from '../../folder-grid/DuplicateWarningModal';
+import DuplicateWarningModal from '../../folder-grid/modals/DuplicateWarningModal';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
-import ActiveModContextDialog from '../../folder-grid/ActiveModContextDialog';
+import ActiveModContextDialog from '../../folder-grid/modals/ActiveModContextDialog';
 import type { ObjectSummary } from '../../../types/object';
 
 interface PreviewPanelModalsProps {
@@ -35,7 +35,7 @@ interface PreviewPanelModalsProps {
 
   // Duplicate Warning
   duplicateWarning: { open: boolean; folder: ModFolder | null; duplicates: DuplicateInfo[] };
-  handleDuplicateForceEnable: () => void;
+  handleDuplicateForceEnable: (ignoreFuture: boolean) => void;
   handleDuplicateEnableOnly: () => void;
   handleDuplicateCancel: () => void;
 

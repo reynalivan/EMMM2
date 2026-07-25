@@ -1,5 +1,5 @@
-use crate::database::models::ItemStatus;
 use crate::domain::errors::MetadataError;
+use crate::domain::models::ItemStatus;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::PathGuard;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
@@ -15,7 +15,7 @@ async fn refresh_projection_for_optional_object(
     object_id: Option<String>,
 ) -> Result<(), sqlx::Error> {
     let object_ids = object_id.into_iter().collect::<Vec<_>>();
-    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
         pool,
         game_id,
         &object_ids,
@@ -168,7 +168,7 @@ fn path_has_hidden_segment(path: &str) -> bool {
 fn path_has_disabled_segment(path: &str) -> bool {
     path.split(['/', '\\'])
         .filter(|segment| !segment.is_empty())
-        .any(crate::services::scanner::core::normalizer::is_disabled_folder)
+        .any(crate::common::normalizer::is_disabled_folder)
 }
 
 fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::repo::mod_repo::Mod) -> bool {

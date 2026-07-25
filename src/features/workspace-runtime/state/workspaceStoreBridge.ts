@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react';
+import { reduceWorkspaceRuntimeState } from '../../../stores/appStore/workspaceRuntimeReducer';
+import { selectWorkspaceRuntimeState } from '../../../stores/appStore/workspaceRuntimeSlice';
 import { useAppStore } from '../../../stores/useAppStore';
-import type { WorkspaceRuntimeEvent } from './workspaceEvents';
-import { reduceWorkspaceRuntimeState } from './workspaceReducer';
-import { selectWorkspaceRuntimeState } from './workspaceSelectors';
 import type { AppState } from '../../../stores/useAppStore';
+import type { WorkspaceRuntimeEvent } from './workspaceEvents';
 import type { WorkspaceRuntimeState, WorkspaceTransitionTarget } from './workspaceState';
 
 const FALLBACK_RUNTIME_STATE: WorkspaceRuntimeState = {
@@ -26,26 +26,6 @@ function readAppStoreState(): AppState | null {
   return store.getState();
 }
 
-function applyWorkspaceRuntimeState(nextState: WorkspaceRuntimeState): void {
-  const store = useAppStore as typeof useAppStore & {
-    setState?: (partial: Partial<AppState>) => void;
-  };
-  if (typeof store.setState !== 'function') {
-    return;
-  }
-
-  store.setState({
-    selectedObjectFolderPath: nextState.selectedObjectFolderPath,
-    explorerSubPath: nextState.explorerSubPath,
-    currentPath: nextState.currentPath,
-    selectedModPath: nextState.selectedModPath,
-    mobileActivePane: nextState.mobileActivePane,
-    workspacePreviewDirty: nextState.previewDirty,
-    workspacePreviewTransition: nextState.previewTransition,
-    workspaceDialogState: nextState.dialogState,
-  });
-}
-
 export function getWorkspaceRuntimeState(): WorkspaceRuntimeState {
   const storeState = readAppStoreState();
   if (!storeState) {
@@ -55,15 +35,14 @@ export function getWorkspaceRuntimeState(): WorkspaceRuntimeState {
   return selectWorkspaceRuntimeState(storeState);
 }
 
-export function restoreWorkspaceRuntimeState(state: WorkspaceRuntimeState): void {
-  applyWorkspaceRuntimeState(state);
-}
-
 export function dispatchWorkspaceRuntimeEvent(event: WorkspaceRuntimeEvent): WorkspaceRuntimeState {
-  const currentState = getWorkspaceRuntimeState();
-  const nextState = reduceWorkspaceRuntimeState(currentState, event);
-  applyWorkspaceRuntimeState(nextState);
-  return nextState;
+  const storeState = readAppStoreState();
+  if (!storeState || typeof storeState.dispatchWorkspaceRuntime !== 'function') {
+    // Partial store mocks in tests: compute the next state without writing to the store.
+    return reduceWorkspaceRuntimeState(getWorkspaceRuntimeState(), event);
+  }
+
+  return storeState.dispatchWorkspaceRuntime(event);
 }
 
 export function useWorkspaceRuntimeSelector<T>(selector: (state: WorkspaceRuntimeState) => T): T {

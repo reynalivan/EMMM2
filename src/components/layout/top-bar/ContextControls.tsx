@@ -1,31 +1,17 @@
-import { ShieldCheck, ShieldAlert, Save, Layers, Loader2 } from 'lucide-react';
+import { Save, Layers, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
 import { SaveCollectionModal } from '../../../features/collections/components/SaveCollectionModal';
 import { ApplyCollectionModal } from '../../../features/collections/components/ApplyCollectionModal';
-import { useCollections } from '../../../features/collections/hooks/useCollections';
-import { useCorridor } from '../../../features/collections/hooks/useCorridor';
+import { useCollections, useCorridor } from '../../../features/collections/hooks';
 import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
 import { useState } from 'react';
-import { useSafeModeToggle } from '../../../features/collections/hooks/useSafeModeToggle';
-import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
-import ModeSwitchConfirmModal from '../../../features/safe-mode/ModeSwitchConfirmModal';
 
 export default function ContextControls() {
   const { t } = useTranslation('layout');
-  const { activeGameId, safeMode, setWorkspaceView } = useAppStore();
-  const {
-    toggleSafeMode,
-    handleConfirmSwitch,
-    handlePinSuccess,
-    confirmModalOpen,
-    confirmTargetSafeMode,
-    closeConfirmModal,
-    pinModalOpen,
-    closePinModal,
-  } = useSafeModeToggle();
-  const { data: collections = [], isLoading } = useCollections(activeGameId, safeMode);
-  const corridorQuery = useCorridor(activeGameId, safeMode);
+  const { activeGameId, setWorkspaceView } = useAppStore();
+  const { data: collections = [], isLoading } = useCollections(activeGameId);
+  const corridorQuery = useCorridor(activeGameId);
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [applyModalCollectionId, setApplyModalCollectionId] = useState<string | null>(null);
@@ -39,12 +25,10 @@ export default function ContextControls() {
           name: corridorQuery.data?.is_dirty ? null : corridorQuery.data?.active_collection_name,
           isUnsaved:
             corridorQuery.data?.is_dirty || corridorQuery.data?.active_collection_is_unsaved,
-          isSafe: corridorQuery.data?.is_safe ?? safeMode,
+          isSafe: corridorQuery.data?.is_safe,
           labels: unsavedLabels,
         });
-  const corridorCollections = collections.filter(
-    (collection) => collection.is_safe === safeMode && !collection.is_undo_target,
-  );
+  const corridorCollections = collections.filter((collection) => !collection.is_undo_target);
 
   const handleApplyClick = (e: React.MouseEvent, id: string, _name: string) => {
     e.stopPropagation();
@@ -60,16 +44,6 @@ export default function ContextControls() {
   return (
     <>
       <div className="hidden lg:flex items-center gap-3 bg-base-100/30 p-1.5 rounded-full border border-base-content/10 backdrop-blur-md">
-        <label
-          className={`btn btn-xs btn-circle border-0 ${safeMode ? 'bg-success/20 text-success hover:bg-success/30' : 'bg-error/20 text-error hover:bg-error/30'}`}
-          onClick={toggleSafeMode}
-          title={t('context.safe_mode_tip')}
-        >
-          {safeMode ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-        </label>
-
-        <div className="h-4 w-px bg-base-content/10" />
-
         <div className="dropdown dropdown-bottom dropdown-end">
           <div
             tabIndex={0}
@@ -166,23 +140,6 @@ export default function ContextControls() {
           </ul>
         </div>
       </div>
-
-      {/* Confirmation Modal for Corridor Switch */}
-      <ModeSwitchConfirmModal
-        open={confirmModalOpen}
-        targetSafeMode={confirmTargetSafeMode}
-        onClose={closeConfirmModal}
-        onConfirm={handleConfirmSwitch}
-      />
-
-      {/* Pin Entry Modal for Context Controls Safe Mode */}
-      <PinEntryModal
-        open={pinModalOpen}
-        onClose={closePinModal}
-        onSuccess={async () => {
-          handlePinSuccess();
-        }}
-      />
 
       {saveModalOpen && <SaveCollectionModal onClose={() => setSaveModalOpen(false)} />}
       {applyModalCollectionId && (

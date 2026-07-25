@@ -83,7 +83,7 @@ pub fn detect_conflicts(ini_files: &[(PathBuf, PathBuf)]) -> Vec<ConflictInfo> {
                 is_active: unique_paths
                     .iter()
                     .filter(|p| {
-                        !crate::services::scanner::core::normalizer::is_disabled_folder(
+                        !crate::common::normalizer::is_disabled_folder(
                             Path::new(p)
                                 .file_name()
                                 .unwrap_or_default()
@@ -218,10 +218,10 @@ pub async fn get_duplicates_for_mod_service(
             (Path::new(folder_path).parent(), Path::new(&path).parent())
         {
             if target_parent == dup_parent {
-                let (node_type, _, _) = crate::services::explorer::classifier::classify_folder(
+                let (node_type, _, _) = crate::common::classifier::classify_folder(
                     &Path::new(&mods_path).join(target_parent),
                 );
-                if node_type == crate::services::explorer::classifier::NodeType::VariantContainer {
+                if node_type == crate::common::classifier::NodeType::VariantContainer {
                     is_variant = true;
                     parent_path = target_parent.to_string_lossy().to_string();
                 }
@@ -274,7 +274,7 @@ pub async fn get_duplicates_for_mod_service(
 pub async fn enable_only_this_service(
     config: &crate::services::config::ConfigService,
     pool: &sqlx::SqlitePool,
-    state: &tauri::State<'_, crate::services::scanner::watcher::WatcherState>,
+    state: &crate::services::scanner::watcher::WatcherState,
     target_path: String,
     game_id: &str,
 ) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
@@ -326,7 +326,7 @@ pub async fn enable_only_this_service(
                     db_updates.push((
                         sibling_rel.clone(),
                         new_rel.clone(),
-                        crate::database::models::ItemStatus::Disabled,
+                        crate::domain::models::ItemStatus::Disabled,
                     ));
                     success.push(new_abs_path);
 
@@ -358,7 +358,7 @@ pub async fn enable_only_this_service(
             db_updates.push((
                 target_rel.clone(),
                 new_rel.clone(),
-                crate::database::models::ItemStatus::Enabled,
+                crate::domain::models::ItemStatus::Enabled,
             ));
             success.push(new_abs_path);
 
@@ -391,8 +391,7 @@ pub async fn enable_only_this_service(
     let _ = crate::services::corridor_service::recompute_signature(pool, game_id, true).await;
     let _ = crate::services::corridor_service::recompute_signature(pool, game_id, false).await;
 
-    let _ =
-        crate::services::runtime_projection_service::rebuild_game_projection(pool, game_id).await;
+    let _ = crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await;
     let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
         pool,
         config,

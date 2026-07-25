@@ -3,6 +3,8 @@
     "loading": "加载中...",
     "new_tab": "新标签页",
     "clear_data_confirm": "清除此会话的所有浏览数据（Cookie、缓存等）吗？",
+    "back": "后退",
+    "forward": "前进",
     "refresh": "刷新",
     "discover": "发现",
     "open_gamebanana": "打开 GameBanana",

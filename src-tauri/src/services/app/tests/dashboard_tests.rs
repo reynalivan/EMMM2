@@ -1,4 +1,4 @@
-use crate::database::models::{GameType, ItemStatus};
+use crate::domain::models::{GameType, ItemStatus};
 use crate::services::app::dashboard::{get_active_keybindings_service, get_dashboard_payload};
 use std::fs;
 use tempfile::TempDir;

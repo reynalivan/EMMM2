@@ -1,4 +1,4 @@
-use crate::services::scanner::core::normalizer;
+use crate::common::normalizer;
 use crate::services::scanner::deep_matcher::{MasterDb, MatchStatus, StagedMatchResult};
 
 /// Detect skin/variant for a staged match result.

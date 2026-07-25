@@ -90,10 +90,10 @@
   },
   "recovery": {
     "title": "Interrupted Task Detected",
-    "desc": "EMMM detected that a previous critical operation (like applying a collection or switching Safe Mode) was interrupted before finishing.",
+    "desc": "EMMM detected that a previous critical collection operation was interrupted before finishing.",
     "pending": "Pending Tasks ({{count}})",
     "important": "Important",
-    "warning": "Clearing these tasks will allow you to access the app again. You should manually retry the collection apply or mode switch that was interrupted to ensure your game files are in the correct state.",
+    "warning": "Clearing these tasks will allow you to access the app again. You should manually retry the interrupted collection apply to ensure your game files are in the correct state.",
     "labels": {
       "id": "ID:",
       "type": "Type:",

@@ -1,4 +1,4 @@
-import TopBar from './top-bar/index';
+import TopBar from './top-bar';
 import ResizableWorkspace from './ResizableWorkspace';
 import Dashboard from '../../features/dashboard/Dashboard';
 import ObjectList from '../../features/object-list/ObjectList';
@@ -7,9 +7,9 @@ import PreviewPanel from '../../features/preview/PreviewPanel';
 import SettingsPage from '../../features/settings/SettingsPage';
 import CollectionsPage from '../../features/collections/CollectionsPage';
 import StorageOptimizerPage from '../../features/scanner/StorageOptimizerPage';
-import ExplorerEmptyState from '../../features/folder-grid/ExplorerEmptyState';
+import ExplorerEmptyState from '../../features/folder-grid/components/ExplorerEmptyState';
 import { BrowserPage } from '../../features/browser/components/BrowserPage';
-import DownloadsPage from '../../features/downloads/DownloadsPage';
+import DownloadsPage from '../../features/browser/components/DownloadsPage';
 import { useAppStore } from '../../stores/useAppStore';
 import { ExternalChangeHandler } from '../../features/file-watcher/ExternalChangeHandler';
 import { ErrorBoundary } from '../ui/ErrorBoundary';

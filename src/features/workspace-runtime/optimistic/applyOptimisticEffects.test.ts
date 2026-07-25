@@ -58,7 +58,6 @@ function createWorkspaceExplorerNode(path: string): WorkspaceExplorerNode {
     category: null,
     conflict_group_id: null,
     conflict_state: null,
-    pin_hash: null,
     warnings: [],
     node_kind: 'terminal_mod',
     display_mode: 'flat_mod',

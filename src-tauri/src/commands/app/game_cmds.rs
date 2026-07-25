@@ -1,7 +1,8 @@
-use crate::database::models::GameType;
+use crate::common::path_key::folder_path_key;
+use crate::domain::errors::AppError;
+use crate::domain::models::GameType;
 use crate::services::config::{ConfigService, GameConfig};
 use crate::services::game::validator;
-use crate::services::path_key::folder_path_key;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -16,22 +17,26 @@ fn canonical_game_path_key(path: &str) -> String {
 pub async fn auto_detect_games(
     state: tauri::State<'_, ConfigService>,
     root_path: String,
-) -> Result<Vec<GameConfig>, String> {
+) -> Result<Vec<GameConfig>, AppError> {
     auto_detect_games_inner(&state, &root_path).await
 }
 
 pub async fn auto_detect_games_inner(
     service: &ConfigService,
     root_path: &str,
-) -> Result<Vec<GameConfig>, String> {
+) -> Result<Vec<GameConfig>, AppError> {
     let root = Path::new(root_path);
     if !root.exists() {
-        return Err(format!("Path does not exist: {root_path}"));
+        return Err(AppError::NotFound(format!(
+            "Path does not exist: {root_path}"
+        )));
     }
 
     let found = validator::scan_xxmi_root(root);
     if found.is_empty() {
-        return Err("No valid 3DMigoto instances found in standard XXMI folders.".to_string());
+        return Err(AppError::NotFound(
+            "No valid 3DMigoto instances found in standard XXMI folders.".to_string(),
+        ));
     }
 
     let mut new_games: Vec<GameConfig> = Vec::new();
@@ -78,7 +83,7 @@ pub async fn add_game_manual(
     state: tauri::State<'_, ConfigService>,
     game_type: String,
     path: String,
-) -> Result<GameConfig, String> {
+) -> Result<GameConfig, AppError> {
     add_game_manual_inner(&state, &game_type, &path).await
 }
 
@@ -86,13 +91,15 @@ pub async fn add_game_manual_inner(
     service: &ConfigService,
     game_type: &str,
     path: &str,
-) -> Result<GameConfig, String> {
+) -> Result<GameConfig, AppError> {
     // Parse game type
-    let gt: GameType = game_type.parse().map_err(|e: String| e)?;
+    let gt: GameType = game_type
+        .parse()
+        .map_err(|e: String| AppError::Validation(e))?;
     let folder = Path::new(path);
 
     // Validate folder structure (returns warnings, not hard errors, for missing files)
-    let (info, warnings) = validator::validate_instance(folder)?;
+    let (info, warnings) = validator::validate_instance(folder).map_err(AppError::Validation)?;
 
     let settings = service.get_settings();
 
@@ -101,10 +108,10 @@ pub async fn add_game_manual_inner(
     for g in &settings.games {
         let existing_normalized = canonical_game_path_key(&g.game_exe.to_string_lossy());
         if existing_normalized == normalized_path {
-            return Err(format!(
+            return Err(AppError::Validation(format!(
                 "This game path is already registered as '{}'.",
                 g.name
-            ));
+            )));
         }
     }
 
@@ -140,14 +147,14 @@ pub async fn add_game_manual_inner(
 pub async fn save_onboarding_games(
     state: tauri::State<'_, ConfigService>,
     games: Vec<GameConfig>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     save_onboarding_games_inner(&state, games).await
 }
 
 pub async fn save_onboarding_games_inner(
     service: &ConfigService,
     games: Vec<GameConfig>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut settings = service.get_settings();
 
     let mut added_count = 0;
@@ -175,7 +182,9 @@ pub async fn save_onboarding_games_inner(
 /// Get all configured games.
 #[specta::specta]
 #[tauri::command]
-pub async fn get_games(state: tauri::State<'_, ConfigService>) -> Result<Vec<GameConfig>, String> {
+pub async fn get_games(
+    state: tauri::State<'_, ConfigService>,
+) -> Result<Vec<GameConfig>, AppError> {
     Ok(state.get_settings().games)
 }
 
@@ -186,7 +195,7 @@ pub async fn get_games(state: tauri::State<'_, ConfigService>) -> Result<Vec<Gam
 pub async fn launch_game(
     state: tauri::State<'_, ConfigService>,
     game_id: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     use sysinfo::System;
 
     // 1. Get Game Config
@@ -194,22 +203,25 @@ pub async fn launch_game(
     let game = games
         .into_iter()
         .find(|g| g.id == game_id)
-        .ok_or_else(|| "Game config not found".to_string())?;
+        .ok_or_else(|| AppError::NotFound("Game config not found".to_string()))?;
 
     // 2. Check if Game is valid
     let game_path = &game.game_exe;
     if !game_path.exists() {
-        return Err(format!(
+        return Err(AppError::NotFound(format!(
             "Game executable not found at: {}",
             game_path.display()
-        ));
+        )));
     }
 
     // 3. Process Check & Loader Launch (if loader is configured)
     if let Some(launcher_path) = &game.loader_exe {
         if !launcher_path.as_os_str().is_empty() {
             if !launcher_path.exists() {
-                return Err(format!("Loader not found at: {}", launcher_path.display()));
+                return Err(AppError::NotFound(format!(
+                    "Loader not found at: {}",
+                    launcher_path.display()
+                )));
             }
 
             let mut sys = System::new_all();
@@ -244,7 +256,9 @@ pub async fn launch_game(
                             launcher_dir.display()
                         ))
                         .spawn()
-                        .map_err(|e| format!("Failed to start loader as Admin: {e}"))?;
+                        .map_err(|e| {
+                            AppError::Io(format!("Failed to start loader as Admin: {e}"))
+                        })?;
                 }
 
                 #[cfg(not(target_os = "windows"))]
@@ -252,7 +266,7 @@ pub async fn launch_game(
                     std::process::Command::new(launcher_path)
                         .current_dir(launcher_dir)
                         .spawn()
-                        .map_err(|e| format!("Failed to start loader: {e}"))?;
+                        .map_err(|e| AppError::Io(format!("Failed to start loader: {e}")))?;
                 }
 
                 // Small delay to let loader initialize
@@ -280,7 +294,7 @@ pub async fn launch_game(
     }
 
     cmd.spawn()
-        .map_err(|e| format!("Failed to start game: {e}"))?;
+        .map_err(|e| AppError::Io(format!("Failed to start game: {e}")))?;
 
     Ok(())
 }

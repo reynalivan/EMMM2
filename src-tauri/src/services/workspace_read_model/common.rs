@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
+use crate::common::classifier::NodeType;
+use crate::common::path_key::path_starts_with_key;
 use crate::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNodeKind, WorkspaceReason, WorkspaceReasonCode,
     WorkspaceTypeChip, WorkspaceWarning, WorkspaceWarningCode, WorkspaceWarningState,
 };
 use crate::repo::object_repo::ObjectSummary;
-use crate::services::explorer::classifier::NodeType;
-use crate::services::path_key::path_starts_with_key;
 
 pub(crate) fn build_workspace_args(entries: &[(&str, &str)]) -> HashMap<String, String> {
     entries

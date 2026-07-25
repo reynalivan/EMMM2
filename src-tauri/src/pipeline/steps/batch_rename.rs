@@ -22,7 +22,9 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         id: target.id,
         folder_path: target.folder_path,
         target_enabled: false,
-        disabled_reason: Some("COLLECTION".to_string()),
+        disabled_reason: Some(
+            crate::common::corridor_constants::DISABLED_REASON_COLLECTION.to_string(),
+        ),
     }));
 
     let result = toggle_mods_mixed(
@@ -62,11 +64,10 @@ async fn load_targets_for_keys(
         r#"
         SELECT id, folder_path, folder_path_key
         FROM mods
-        WHERE game_id = ? AND is_safe = ?
+        WHERE game_id = ?
         "#,
     )
     .bind(&ctx.game_id)
-    .bind(if ctx.is_safe { 1i32 } else { 0i32 })
     .fetch_all(&ctx.pool)
     .await?;
     let desired: std::collections::HashSet<String> =
@@ -100,5 +101,5 @@ fn normalized_enabled_key(path: &str, mods_path: Option<&str>) -> String {
         .map(|segment| crate::services::mods::core_ops::standardize_prefix(segment, true))
         .collect::<Vec<_>>()
         .join("/");
-    crate::services::path_key::folder_path_key(&clean_path, mods_path).to_lowercase()
+    crate::common::path_key::folder_path_key(&clean_path, mods_path).to_lowercase()
 }

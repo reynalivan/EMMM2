@@ -250,8 +250,7 @@ fn test_margin_not_met_forces_needs_review() {
     );
 
     // Should not auto-match due to insufficient margin
-    if result.is_some() {
-        let res = result.unwrap();
+    if let Some(res) = result {
         assert_eq!(
             res.status,
             MatchStatus::NeedsReview,

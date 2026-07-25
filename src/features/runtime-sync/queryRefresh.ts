@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { RuntimeEffectDescriptor } from '../workspace-runtime/optimistic/descriptor';
+import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../lib/runtimeEffects';
 
 // FE runtime refresh bus only.
 // Disk Reconcile event handlers or explicit non-filesystem mutations publish into this layer.
@@ -29,27 +29,6 @@ export const runtimeQueryKeys = {
 };
 
 export type RuntimeRefreshScope = keyof typeof runtimeQueryKeys;
-export type RuntimeRefreshEvent =
-  | 'workspaceChanged'
-  | 'objectRowsChanged'
-  | 'folderStructureChanged'
-  | 'folderMetadataChanged'
-  | 'previewChanged'
-  | 'thumbnailChanged'
-  | 'conflictsChanged'
-  | 'corridorChanged'
-  | 'collectionsChanged'
-  | 'dashboardChanged'
-  | 'activeKeybindingsChanged'
-  | 'trashChanged'
-  | 'settingsChanged'
-  | 'browserDownloadsChanged'
-  | 'browserImportQueueChanged'
-  | 'browserHomepageChanged'
-  | 'dedupChanged'
-  | 'dedupReportChanged'
-  | 'scannerChanged'
-  | 'pinsChanged';
 
 interface RefreshRuntimeQueriesOptions {
   refetchType?: QueryRefetchType;

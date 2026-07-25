@@ -86,7 +86,9 @@ export function usePreviewPanelState() {
       .filter((field) => (draftByField[field.id] ?? '') !== (initialByField[field.id] ?? ''))
       .map((field) => ({
         label: field.label || field.id,
-        filename: field.id.split('::')[0] || 'Unknown INI',
+        // Field ids are built with single colons (`file:section:kind:line`), so
+        // splitting on '::' returned the whole id and showed it as the filename.
+        filename: field.fileName || 'Unknown INI',
         oldValue: initialByField[field.id] ?? '',
         newValue: draftByField[field.id] ?? '',
       }));

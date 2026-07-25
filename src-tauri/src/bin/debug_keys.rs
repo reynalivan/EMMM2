@@ -1,4 +1,4 @@
-use emmm_lib::services::path_key::folder_path_key;
+use emmm_lib::common::path_key::folder_path_key;
 
 fn main() {
     let p1 = "E:\\Dev\\EMMMNEW\\src-tauri\\Mods\\Aether";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reduceWorkspaceRuntimeState } from './workspaceReducer';
+import { reduceWorkspaceRuntimeState } from '../../../stores/appStore/workspaceRuntimeReducer';
 import type { WorkspaceRuntimeState } from './workspaceState';
 
 const baseState: WorkspaceRuntimeState = {

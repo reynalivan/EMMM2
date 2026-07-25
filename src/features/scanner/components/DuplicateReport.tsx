@@ -7,7 +7,8 @@
 import { useState } from 'react';
 import { AlertCircle, Loader2, ShieldOff, Lock } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
-import type { ResolutionAction, ResolutionRequest } from '../../../types/scanner';
+import type { DuplicateSelection, ResolutionRequest } from '../../../types/scanner';
+import { buildResolutionRequests } from '../utils/resolutionRequests';
 import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
 import { toast } from '../../../stores/useToastStore';
@@ -27,7 +28,7 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
   const { mutate: resolve, isPending } = useResolveDuplicates();
   const { settings } = useSettings();
 
-  const [selections, setSelections] = useState<Map<string, ResolutionAction>>(new Map());
+  const [selections, setSelections] = useState<Map<string, DuplicateSelection>>(new Map());
   const [showModal, setShowModal] = useState(false);
 
   const filteredGroups =
@@ -39,7 +40,7 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
       return true;
     }) || [];
 
-  const handleActionChange = (groupId: string, action: ResolutionAction) => {
+  const handleActionChange = (groupId: string, action: DuplicateSelection) => {
     const newSelections = new Map(selections);
     newSelections.set(groupId, action);
     setSelections(newSelections);
@@ -54,32 +55,8 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
     setShowModal(true);
   };
 
-  const convertSelectionsToRequests = (): ResolutionRequest[] => {
-    if (!report) return [];
-
-    const requests: ResolutionRequest[] = [];
-    selections.forEach((selection, groupId) => {
-      const group = report.groups.find((g) => g.groupId === groupId);
-      if (!group || !selection) return;
-
-      if (selection.type === 'Keep') {
-        requests.push({
-          groupId,
-          action: 'Keep',
-          targetPath: selection.targetPath,
-          allMembers: group.members.map((m) => m.folderPath),
-        });
-      } else if (selection.type === 'Ignore') {
-        requests.push({
-          groupId,
-          action: 'Ignore',
-          allMembers: group.members.map((m) => m.folderPath),
-        });
-      }
-    });
-
-    return requests;
-  };
+  const convertSelectionsToRequests = (): ResolutionRequest[] =>
+    report ? buildResolutionRequests(selections, report.groups) : [];
 
   const handleConfirm = () => {
     if (!report) return;

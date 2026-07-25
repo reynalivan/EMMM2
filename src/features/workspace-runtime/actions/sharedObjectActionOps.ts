@@ -1,7 +1,7 @@
 import { commands, type MatchedDbEntry } from '../../../lib/bindings';
 import type { QueryClient, UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { GameConfig } from '../../../types/game';
-import type { UpdateObjectInput } from '../../../types/object';
+import type { JsonValue, UpdateObjectInput } from '../../../types/object';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import type { ObjectSyncCurrentData } from './sharedObjectActionsState';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
@@ -116,7 +116,7 @@ export async function applyObjectSyncMatch(params: {
     id: params.objectId,
     updates: {
       object_type: params.match.object_type,
-      metadata: (params.match.metadata as Record<string, unknown>) ?? undefined,
+      metadata: (params.match.metadata ?? undefined) as JsonValue | undefined,
       thumbnail_path: params.match.thumbnail_path ?? undefined,
     },
   });

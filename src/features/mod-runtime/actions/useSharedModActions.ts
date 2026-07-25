@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import type { MatchedDbEntry } from '../../../lib/bindings';
+import { commands, type MatchedDbEntry } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useSettings } from '../../../hooks/useSettings';
-import { useBulkFavorite, useToggleModSafe } from '../../../hooks/useFolderMutations';
+import { useBulkFavorite } from '../../../hooks/useBulkModMutations';
+import { useToggleModSafe } from '../../../hooks/useFolderMutations';
 import { useDeleteMod, useRenameMod } from '../../../hooks/useFolderCoreMutations';
 import type { ModFolder } from '../../../types/mod';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
@@ -52,7 +53,7 @@ interface SharedModActionsOptions {
 }
 
 export function useSharedModActions(options: SharedModActionsOptions = {}) {
-  const { t } = useTranslation(['grid', 'objects', 'common']);
+  const { t } = useTranslation(['grid', 'objects', 'common', 'folder_grid']);
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
   const { settings } = useSettings();
@@ -76,9 +77,38 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     [resolvedSwitchSurface, switchActions],
   );
 
-  const handleDuplicateForceEnable = useCallback(() => {
-    void switchActions.resolveDuplicateForceEnable(state.duplicateWarning.folder);
-  }, [state.duplicateWarning.folder, switchActions]);
+  const handleDuplicateForceEnable = useCallback(
+    (ignoreFuture: boolean = false) => {
+      void (async () => {
+        const { folder, duplicates } = state.duplicateWarning;
+
+        if (ignoreFuture && activeGame?.id && folder && duplicates.length > 0) {
+          // Backend matches the ignore against the exact sorted set of
+          // duplicate mod ids plus the target mod id — keep this in sync
+          // with find duplicates in services/scanner/conflict.
+          const modIds = duplicates.map((duplicate) => duplicate.mod_id);
+          if (folder.id) {
+            modIds.push(folder.id);
+          }
+
+          try {
+            // No cache invalidation needed: the ignored-conflicts query is
+            // gated on the management modal being open and refetches on open.
+            await commands.ignoreObjectConflict({
+              gameId: activeGame.id,
+              objectId: duplicates[0].object_id,
+              modIds,
+            });
+          } catch (error) {
+            toast.error(t('folder_grid:duplicate_warning.ignore_failed', { error: String(error) }));
+          }
+        }
+
+        await switchActions.resolveDuplicateForceEnable(folder);
+      })();
+    },
+    [state.duplicateWarning, activeGame, switchActions, t],
+  );
 
   const handleDuplicateEnableOnly = useCallback(() => {
     void switchActions.resolveDuplicateEnableOnly(state.duplicateWarning.folder);

@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::game::schema_loader;
 use crate::services::scanner::deep_matcher;
 use std::collections::HashMap;
@@ -29,11 +30,11 @@ impl MasterDbCache {
 pub async fn get_game_schema(
     app: tauri::AppHandle,
     game_type: i32,
-) -> Result<schema_loader::GameSchema, String> {
+) -> Result<schema_loader::GameSchema, AppError> {
     let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
+        .map_err(|e| AppError::Internal(format!("Failed to get resource dir: {e}")))?;
 
     log::info!("get_game_schema: resource_dir = {}", resource_dir.display());
 
@@ -47,8 +48,10 @@ pub async fn get_game_schema(
 pub async fn get_object(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
-) -> Result<Option<crate::services::scanner::core::types::GameObject>, String> {
-    let row = crate::services::objects::query::get_object_by_id_service(&pool, &id).await?;
+) -> Result<Option<crate::services::scanner::core::types::GameObject>, AppError> {
+    let row = crate::services::objects::query::get_object_by_id_service(&pool, &id)
+        .await
+        .map_err(AppError::Internal)?;
     Ok(row)
 }
 
@@ -58,12 +61,13 @@ pub async fn get_object(
 /// When hash_db is present in source, merges hashes into matching entries.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<String, String> {
+pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<String, AppError> {
     let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
+        .map_err(|e| AppError::Internal(format!("Failed to get resource dir: {e}")))?;
     crate::services::scanner::master_db::load_master_db_json(&resource_dir, game_type)
+        .map_err(AppError::Internal)
 }
 
 /// Pin or unpin an object in the database.
@@ -73,7 +77,7 @@ pub async fn pin_object(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
     pin: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     crate::services::objects::mutate::toggle_pin_object(pool.inner(), &id, pin).await
 }
 
@@ -87,17 +91,18 @@ pub async fn match_object_with_db(
     app: tauri::AppHandle,
     game_type: i32,
     object_name: String,
-) -> Result<Option<crate::services::scanner::master_db::MatchedDbEntry>, String> {
+) -> Result<Option<crate::services::scanner::master_db::MatchedDbEntry>, AppError> {
     let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
+        .map_err(|e| AppError::Internal(format!("Failed to get resource dir: {e}")))?;
 
     crate::services::scanner::master_db::match_object_with_db_service(
         &resource_dir,
         game_type,
         &object_name,
     )
+    .map_err(AppError::Internal)
 }
 
 /// Search Master DB from Rust to offload fuzzy matching from the JS thread.
@@ -110,7 +115,7 @@ pub async fn search_master_db(
     game_type: i32,
     query: String,
     object_type: Option<String>,
-) -> Result<Vec<crate::services::scanner::master_db::SearchResultEntry>, String> {
+) -> Result<Vec<crate::services::scanner::master_db::SearchResultEntry>, AppError> {
     let canonical = schema_loader::normalize_game_type(game_type);
 
     // 1. Try to get from cache
@@ -126,7 +131,7 @@ pub async fn search_master_db(
             let resource_dir = app
                 .path()
                 .resource_dir()
-                .map_err(|e| format!("Failed to get resource dir: {e}"))?;
+                .map_err(|e| AppError::Internal(format!("Failed to get resource dir: {e}")))?;
 
             let db_path = resource_dir
                 .join("databases")
@@ -137,9 +142,9 @@ pub async fn search_master_db(
             }
 
             let json = std::fs::read_to_string(&db_path)
-                .map_err(|e| format!("Failed to read MasterDB for search: {e}"))?;
+                .map_err(|e| AppError::Io(format!("Failed to read MasterDB for search: {e}")))?;
 
-            let parsed_db = deep_matcher::MasterDb::from_json(&json)?;
+            let parsed_db = deep_matcher::MasterDb::from_json(&json).map_err(AppError::Internal)?;
             let arc_db = Arc::new(parsed_db);
 
             // Re-acquire lock for writing
@@ -152,7 +157,7 @@ pub async fn search_master_db(
     let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
+        .map_err(|e| AppError::Internal(format!("Failed to get resource dir: {e}")))?;
 
     Ok(
         crate::services::scanner::master_db::search_master_db_service(

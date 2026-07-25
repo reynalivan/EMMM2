@@ -32,7 +32,7 @@ vi.mock('../../features/folder-grid/FolderGrid', () => ({
 vi.mock('../../features/preview/PreviewPanel', () => ({
   default: () => <div data-testid="preview-panel">PreviewPanel</div>,
 }));
-vi.mock('../../features/folder-grid/ExplorerEmptyState', () => ({
+vi.mock('../../features/folder-grid/components/ExplorerEmptyState', () => ({
   default: () => <div data-testid="explorer-empty">ExplorerEmptyState</div>,
 }));
 vi.mock('../../features/file-watcher/ExternalChangeHandler', () => ({

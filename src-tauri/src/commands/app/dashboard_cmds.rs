@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::app::dashboard::{self, ActiveKeyBinding, DashboardPayload};
 
 /// Fetch all dashboard data in a single command for minimal IPC overhead.
@@ -8,8 +9,10 @@ use crate::services::app::dashboard::{self, ActiveKeyBinding, DashboardPayload};
 pub async fn get_dashboard_stats(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     safe_mode: bool,
-) -> Result<DashboardPayload, String> {
-    dashboard::get_dashboard_payload(pool.inner(), safe_mode).await
+) -> Result<DashboardPayload, AppError> {
+    dashboard::get_dashboard_payload(pool.inner(), safe_mode)
+        .await
+        .map_err(AppError::Internal)
 }
 
 /// Scan all enabled mods for a game and return their keybindings.
@@ -21,8 +24,10 @@ pub async fn get_dashboard_stats(
 pub async fn get_active_keybindings(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     game_id: String,
-) -> Result<Vec<ActiveKeyBinding>, String> {
-    dashboard::get_active_keybindings_service(pool.inner(), &game_id).await
+) -> Result<Vec<ActiveKeyBinding>, AppError> {
+    dashboard::get_active_keybindings_service(pool.inner(), &game_id)
+        .await
+        .map_err(AppError::Internal)
 }
 
 #[cfg(test)]

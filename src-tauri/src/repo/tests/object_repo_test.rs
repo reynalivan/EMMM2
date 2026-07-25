@@ -15,7 +15,7 @@ async fn test_object_crud() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game1".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,
@@ -103,7 +103,7 @@ async fn ensure_object_exists_matches_unicode_names_without_duplicate_rows() {
     let game = GameRow {
         id: "g_unicode".into(),
         name: "Game Unicode".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameUnicode".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,
@@ -169,7 +169,7 @@ async fn delete_object_and_mods_by_folder_matches_unicode_prefix_with_ascii_case
     let game = GameRow {
         id: "g_delete".into(),
         name: "Game Delete".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameDelete".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,
@@ -204,7 +204,7 @@ async fn delete_object_and_mods_by_folder_matches_unicode_prefix_with_ascii_case
         "日本語Mod",
         "한국Character/日本語Mod",
         Some("C:\\Mods"),
-        crate::database::models::ItemStatus::Enabled,
+        crate::domain::models::ItemStatus::Enabled,
     )
     .await
     .unwrap();

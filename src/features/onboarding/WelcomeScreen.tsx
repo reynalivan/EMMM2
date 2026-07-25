@@ -8,9 +8,9 @@ import type { GameConfig } from '../../types/game';
 import { pathsEqual } from '../../lib/pathKey';
 import { ManualSetupForm } from './ManualSetupForm';
 import { AutoDetectResult } from './AutoDetectResult';
-import AuroraBackground from '../welcome/AuroraBackground';
-import SmartDemoStrip from '../welcome/SmartDemoStrip';
-import AnimatedLogo from '../welcome/AnimatedLogo';
+import AuroraBackground from './welcome/AuroraBackground';
+import SmartDemoStrip from './welcome/SmartDemoStrip';
+import AnimatedLogo from './welcome/AnimatedLogo';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 

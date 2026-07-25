@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  buildWorkspaceViewModelFilter,
+  buildWorkspaceViewModelInput,
+  workspaceKeys,
+} from './useWorkspaceViewModel';
+import {
   buildSelectionReconciledEvent,
   recordInternalWorkspacePathRewrites,
   resetWorkspaceSelectionReconciliationGuardsForTest,
+  shouldApplySelectionReconciledEvent,
   shouldRunSelectionReconciliationEffect,
   shouldShowSelectionReconciliationToast,
-  buildWorkspaceViewModelFilter,
-  buildWorkspaceViewModelInput,
-  shouldApplySelectionReconciledEvent,
-  workspaceKeys,
-} from './useWorkspaceViewModel';
+} from './selectionReconciliation';
 
 describe('useWorkspaceViewModel contract', () => {
   beforeEach(() => {

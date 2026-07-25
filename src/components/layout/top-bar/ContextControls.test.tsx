@@ -36,33 +36,12 @@ vi.mock('../../../features/collections/hooks/useCorridor', () => ({
   useCorridor: (...args: unknown[]) => mockUseCorridor(...args),
 }));
 
-vi.mock('../../../features/collections/hooks/useSafeModeToggle', () => ({
-  useSafeModeToggle: () => ({
-    toggleSafeMode: vi.fn(),
-    handleConfirmSwitch: vi.fn(),
-    handlePinSuccess: vi.fn(),
-    confirmModalOpen: false,
-    confirmTargetSafeMode: false,
-    closeConfirmModal: vi.fn(),
-    pinModalOpen: false,
-    closePinModal: vi.fn(),
-  }),
-}));
-
 vi.mock('../../../features/collections/components/SaveCollectionModal', () => ({
   SaveCollectionModal: () => null,
 }));
 
 vi.mock('../../../features/collections/components/ApplyCollectionModal', () => ({
   ApplyCollectionModal: () => null,
-}));
-
-vi.mock('../../../features/safe-mode/PinEntryModal', () => ({
-  default: () => null,
-}));
-
-vi.mock('../../../features/safe-mode/ModeSwitchConfirmModal', () => ({
-  default: () => null,
 }));
 
 describe('ContextControls', () => {

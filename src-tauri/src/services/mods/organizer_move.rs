@@ -120,7 +120,7 @@ pub async fn move_mods_to_object_service(
 
     changed_object_ids.sort();
     changed_object_ids.dedup();
-    crate::services::runtime_projection_service::refresh_projection_for_object_ids(
+    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
         pool,
         params.game_id,
         &changed_object_ids,
@@ -215,8 +215,8 @@ async fn move_one_mod_to_object(
     target_obj_path: &Path,
     target_base_path: &Path,
 ) -> Result<MoveOneResult, AppError> {
-    use crate::database::models::ItemStatus;
-    use crate::services::scanner::core::normalizer::is_disabled_folder;
+    use crate::common::normalizer::is_disabled_folder;
+    use crate::domain::models::ItemStatus;
 
     let current_path =
         PathGuard::validate_path(config, game_id, folder_path).map_err(AppError::Security)?;
@@ -316,8 +316,8 @@ async fn move_one_mod_to_object(
     })
 }
 
-fn disabled_reason_for_status(status: crate::database::models::ItemStatus) -> Option<&'static str> {
-    if status == crate::database::models::ItemStatus::Disabled {
+fn disabled_reason_for_status(status: crate::domain::models::ItemStatus) -> Option<&'static str> {
+    if status == crate::domain::models::ItemStatus::Disabled {
         return Some("User Disabled");
     }
     None

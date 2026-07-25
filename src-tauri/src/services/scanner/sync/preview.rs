@@ -245,11 +245,11 @@ pub fn score_candidates_batch(
         .to_string_lossy()
         .into_owned();
 
-    let is_disabled = crate::services::scanner::core::normalizer::is_disabled_folder(&raw_name);
+    let is_disabled = crate::common::normalizer::is_disabled_folder(&raw_name);
 
     let candidate = walker::ModCandidate {
         path: path.to_path_buf(),
-        display_name: crate::services::scanner::core::normalizer::normalize_display_name(&raw_name),
+        display_name: crate::common::normalizer::normalize_display_name(&raw_name),
         raw_name,
         is_disabled,
     };

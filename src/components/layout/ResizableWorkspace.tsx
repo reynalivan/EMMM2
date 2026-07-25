@@ -118,14 +118,20 @@ export default function ResizableWorkspace({
 
   // Desktop View: 3-Pane Split
   return (
-    <div className="flex w-full h-full overflow-hidden" ref={containerRef}>
+    <div
+      data-testid="workspace-desktop"
+      className="flex w-full h-full overflow-hidden"
+      ref={containerRef}
+    >
       {/* Left Panel */}
       <div
+        data-testid="workspace-left"
         style={{ width: widths.left }}
         className="h-full shrink-0 relative transition-[width] duration-0 ease-linear"
       >
         {leftPanel}
         <div
+          data-testid="resize-handle-left"
           className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-10 hidden md:flex items-center justify-center group ${isResizing === 'left' ? 'bg-primary' : 'bg-transparent'}`}
           onMouseDown={() => handleMouseDown('left')}
         >
@@ -134,16 +140,23 @@ export default function ResizableWorkspace({
       </div>
 
       {/* Main Panel */}
-      <div className="flex-1 h-full min-w-0 bg-transparent z-0 relative">{mainPanel}</div>
+      <div
+        data-testid="workspace-main"
+        className="flex-1 h-full min-w-0 bg-transparent z-0 relative"
+      >
+        {mainPanel}
+      </div>
 
       {/* Right Panel */}
       <div
+        data-testid="workspace-right"
         style={{ width: isPreviewOpen ? widths.right : 0 }}
         className={`h-full shrink-0 relative transition-[width] duration-300 ease-in-out ${!isPreviewOpen ? 'overflow-hidden border-none' : ''}`}
       >
         {/* Resize Handle only if open */}
         {isPreviewOpen && (
           <div
+            data-testid="resize-handle-right"
             className={`absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-10 hidden md:flex items-center justify-center group -ml-0.5 ${isResizing === 'right' ? 'bg-primary' : 'bg-transparent'}`}
             onMouseDown={() => handleMouseDown('right')}
           >

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Frontend tests
+        run: pnpm vitest run
+
+      - name: Backend tests
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Type bindings drift guard
+        # `git add -N` first: a plain `git diff` ignores untracked files, so an
+        # uncommitted generated file would silently pass this gate.
+        run: |
+          git add -N src/lib/bindings.gen.ts
+          git diff --exit-code src/lib/bindings.gen.ts
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: pnpm build

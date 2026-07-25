@@ -18,7 +18,13 @@
     "parent_disabled_title": "容器 \"{{name}}\" 已禁用 — 目录已锁定",
     "parent_disabled_object_title": "\"{{name}}\" 中的对象模组已禁用",
     "enable_parent_btn": "启用父级",
-    "preview_impact": "预览影响"
+    "preview_impact": "预览影响",
+    "source_hint": "文件夹可能已被移动、重命名，或其驱动器已断开连接。",
+    "source_retry_btn": "重试",
+    "source_locate_btn": "定位文件夹…",
+    "source_locate_title": "为此游戏选择模组文件夹",
+    "source_relocated": "模组文件夹已更新。",
+    "source_action_failed": "无法访问模组文件夹：{{error}}"
   },
   "empty": {
     "no_match": "没有匹配您搜索的模组。",
@@ -118,6 +124,32 @@
     "edit_metadata": "编辑元数据",
     "move_object": "移动到对象...",
     "move_trash": "移动到回收站"
+  },
+  "bulk_toast": {
+    "success": "已{{action}}：{{names}}",
+    "success_with_more": "已{{action}}：{{names}} + 其他 {{extraCount}} 项",
+    "import_success_one": "已导入 {{count}} 个项目",
+    "import_success_other": "已导入 {{count}} 个项目",
+    "failure_one": "无法{{action}} {{name}}：{{reason}}",
+    "failure_other": "无法{{action}} {{name}} + 其他 {{extraCount}} 项：{{reason}}",
+    "actions": {
+      "enabled": "启用",
+      "disabled": "禁用",
+      "deleted": "删除",
+      "updated": "更新",
+      "favorited": "收藏",
+      "unfavorited": "取消收藏",
+      "pinned": "固定",
+      "unpinned": "取消固定"
+    },
+    "failure_actions": {
+      "toggle": "切换状态",
+      "delete": "删除",
+      "update": "更新",
+      "favorite": "更新收藏状态",
+      "pin": "更新固定状态",
+      "import": "导入"
+    }
   },
   "status": {
     "load_error": "加载模组失败",

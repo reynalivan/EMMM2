@@ -1,7 +1,7 @@
 {
   "pin_entry": {
     "title": "Enter PIN",
-    "desc": "A PIN is required to disable Safe Mode.",
+    "desc": "A PIN is required to continue.",
     "placeholder": "••••••",
     "error": {
       "length": "PIN must be 6 digits",
@@ -31,7 +31,7 @@
       "desc": "Your PIN has been cleared. Go to Settings → Privacy → Set PIN to create a new one."
     },
     "error_match": "PINs do not match",
-    "removed": "PIN Removed: Safe Mode is now unprotected.",
+    "removed": "PIN removed.",
     "remove_failed": "Failed to remove PIN: {{error}}"
   },
   "settings": {
@@ -54,15 +54,15 @@
     },
     "security": {
       "title": "Security PIN",
-      "status_set": "A PIN is currently set. It is required to disable Safe Mode.",
-      "status_none": "No PIN set. Anyone can toggle Safe Mode freely.",
+      "status_set": "A PIN is currently set.",
+      "status_none": "No PIN set.",
       "recovery_configured": "Recovery code is configured",
       "remove": "Remove PIN",
       "change": "Change PIN",
       "set": "Set PIN",
       "modal_set_title": "Set Security PIN",
       "modal_unlock_title": "Unlock Settings",
-      "modal_set_desc": "Create a secure PIN to protect Safe Mode settings.",
+      "modal_set_desc": "Create a secure PIN to protect sensitive settings.",
       "modal_unlock_desc": "Enter your current PIN to proceed."
     }
   },

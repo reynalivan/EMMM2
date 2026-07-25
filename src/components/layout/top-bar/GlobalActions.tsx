@@ -4,8 +4,6 @@ import {
   MoreVertical,
   PanelRightClose,
   PanelRightOpen,
-  ShieldCheck,
-  ShieldAlert,
   Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -13,24 +11,10 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
 import TrashManagerModal from '../../../features/file-management/TrashManagerModal';
 import LaunchBar from '../../../features/launch-bar/LaunchBar';
-import PinEntryModal from '../../../features/safe-mode/PinEntryModal';
-import ModeSwitchConfirmModal from '../../../features/safe-mode/ModeSwitchConfirmModal';
-import { useSafeModeToggle } from '../../../features/collections/hooks/useSafeModeToggle';
 
 export default function GlobalActions() {
   const { t } = useTranslation('layout');
   const { workspaceView, setWorkspaceView, isPreviewOpen, togglePreview } = useAppStore();
-  const {
-    toggleSafeMode,
-    handleConfirmSwitch,
-    handlePinSuccess,
-    confirmModalOpen,
-    confirmTargetSafeMode,
-    closeConfirmModal,
-    pinModalOpen,
-    closePinModal,
-    safeMode,
-  } = useSafeModeToggle();
   const [trashOpen, setTrashOpen] = useState(false);
 
   return (
@@ -65,23 +49,6 @@ export default function GlobalActions() {
       {/* Trash Manager Modal */}
       <TrashManagerModal open={trashOpen} onClose={() => setTrashOpen(false)} />
 
-      {/* Confirmation Modal for Corridor Switch */}
-      <ModeSwitchConfirmModal
-        open={confirmModalOpen}
-        targetSafeMode={confirmTargetSafeMode}
-        onClose={closeConfirmModal}
-        onConfirm={handleConfirmSwitch}
-      />
-
-      {/* Pin Entry Modal for Epic 7 Safe Mode */}
-      <PinEntryModal
-        open={pinModalOpen}
-        onClose={closePinModal}
-        onSuccess={async () => {
-          handlePinSuccess();
-        }}
-      />
-
       {/* Mobile Menu Dropdown */}
       <div className="dropdown dropdown-end md:hidden">
         <div
@@ -111,21 +78,6 @@ export default function GlobalActions() {
           <li>
             <a className="gap-2 hover:bg-base-content/10">
               <RefreshCw size={16} /> {t('actions.refresh')}
-            </a>
-          </li>
-          <div className="divider my-1 before:bg-base-content/10 after:bg-base-content/10"></div>
-          <li>
-            <a
-              onClick={toggleSafeMode}
-              className="gap-2 justify-between hover:bg-base-content/10"
-              aria-label={t('actions.privacy_toggle')}
-            >
-              <span>{safeMode ? t('actions.safe_mode') : t('actions.privacy_mode')}</span>
-              {safeMode ? (
-                <ShieldCheck size={16} className="text-success" />
-              ) : (
-                <ShieldAlert size={16} className="text-error" />
-              )}
             </a>
           </li>
         </ul>

@@ -63,12 +63,12 @@ describe('useCollections', () => {
       },
     ]);
 
-    const { result } = renderHook(() => useCollections('g-1', true), {
+    const { result } = renderHook(() => useCollections('g-1'), {
       wrapper: createWrapper,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_collections', { gameId: 'g-1', isSafe: true });
+    expect(invoke).toHaveBeenCalledWith('list_collections', { gameId: 'g-1' });
     expect(result.current.data?.[0].name).toBe('Abyss Team');
   });
 
@@ -118,7 +118,6 @@ describe('useCollections', () => {
           undo_collection_id: null,
           current_signature: 'backend-sig',
           is_dirty: false,
-          last_switched_at: null,
           current_mods: [],
           current_objects: [],
           current_tree_nodes: [],
@@ -129,7 +128,7 @@ describe('useCollections', () => {
       throw new Error(`Unexpected invoke command: ${command}`);
     });
 
-    queryClient.setQueryData<CorridorSnapshot>(corridorKeys.state('g-1', true), {
+    queryClient.setQueryData<CorridorSnapshot>(corridorKeys.state('g-1'), {
       game_id: 'g-1',
       is_safe: true,
       active_collection_id: null,
@@ -138,7 +137,6 @@ describe('useCollections', () => {
       undo_collection_id: null,
       current_signature: 'old',
       is_dirty: false,
-      last_switched_at: null,
       current_mods: [],
       current_objects: [],
       current_tree_nodes: [],
@@ -158,7 +156,7 @@ describe('useCollections', () => {
       });
     });
 
-    const snapshot = queryClient.getQueryData<CorridorSnapshot>(corridorKeys.state('g-1', true));
+    const snapshot = queryClient.getQueryData<CorridorSnapshot>(corridorKeys.state('g-1'));
     expect(snapshot?.active_collection_name).toBe('Backend Runtime');
     expect(useAppStore.getState().selectedModPath).toBe('E:/Mods/ALBEDO/DISABLED Variant');
     expect(useAppStore.getState().gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
@@ -181,7 +179,7 @@ describe('useCollections', () => {
     });
 
     const { rerender } = renderHook(
-      ({ gameId }: { gameId: string }) => useApplyCollectionPreview(gameId, 'c-1', true),
+      ({ gameId }: { gameId: string }) => useApplyCollectionPreview(gameId, 'c-1'),
       {
         initialProps: { gameId: 'g-1' },
         wrapper: createWrapper,
@@ -192,7 +190,6 @@ describe('useCollections', () => {
       expect(invoke).toHaveBeenCalledWith('preview_apply_collection', {
         gameId: 'g-1',
         collectionId: 'c-1',
-        isSafe: true,
       }),
     );
 
@@ -203,7 +200,6 @@ describe('useCollections', () => {
       expect(invoke).toHaveBeenCalledWith('preview_apply_collection', {
         gameId: 'g-2',
         collectionId: 'c-1',
-        isSafe: true,
       }),
     );
   });

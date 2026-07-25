@@ -1,10 +1,13 @@
-use crate::database::models::GameType;
+use crate::domain::models::{GameType, ItemStatus};
 use crate::services::disk_reconcile::reconcile::{
     reconcile_disk_projection, ReconcileDiskProjectionRequest,
 };
 use crate::services::disk_reconcile::types::{DiskReconcileReason, DiskReconcileStatus};
 use crate::services::objects::query::{get_category_counts_service, get_object_by_id_service};
-use crate::test_utils::{insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture};
+use crate::test_utils::{
+    insert_test_game, insert_test_mod, insert_test_object, TestGameFixture, TestModFixture,
+    TestObjectFixture,
+};
 use std::fs;
 use tempfile::TempDir;
 
@@ -16,7 +19,7 @@ async fn run_full_disk_reconcile(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     mods_path: &std::path::Path,
-) {
+) -> crate::services::disk_reconcile::reconcile::ReconcileOutcome {
     reconcile_disk_projection(ReconcileDiskProjectionRequest {
         pool,
         game_id,
@@ -28,7 +31,13 @@ async fn run_full_disk_reconcile(
         watcher_events: None,
     })
     .await
-    .expect("Disk Reconcile should succeed in test");
+    .expect("Disk Reconcile should succeed in test")
+}
+
+fn create_terminal_mod(path: &std::path::Path) {
+    fs::create_dir_all(path).unwrap();
+    fs::write(path.join("mod.ini"), "[TextureOverride]\nhash = abc\n").unwrap();
+    fs::write(path.join("mesh.buf"), "mesh").unwrap();
 }
 
 #[tokio::test]
@@ -42,7 +51,7 @@ async fn test_get_object_by_id_service() {
             name: "Genshin",
             game_type: GameType::GIMI,
             path: "/game_get_obj",
-            mods_path: Some("C:\\Mods".into()),
+            mods_path: Some("C:\\Mods"),
         },
     )
     .await
@@ -83,7 +92,7 @@ async fn test_get_category_counts_service() {
             name: "StarRail",
             game_type: GameType::GIMI,
             path: "/game_cat_counts",
-            mods_path: Some("C:\\Mods".into()),
+            mods_path: Some("C:\\Mods"),
         },
     )
     .await
@@ -293,4 +302,148 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
         .await
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn test_disk_reconcile_repairs_disabled_db_mod_when_disk_is_enabled() {
+    let pool = setup_test_db().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mod_path = temp_dir.path().join("mods_dir");
+    let object_path = mod_path.join("Alice");
+    create_terminal_mod(&object_path.join("Blue Dress"));
+
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_repair_enabled",
+            name: "ZZZ",
+            game_type: GameType::GIMI,
+            path: "/game_repair_enabled",
+            mods_path: Some(mod_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "o_repair_enabled",
+            game_id: "g_repair_enabled",
+            name: "Alice",
+            folder_path: "Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_mod(
+        &pool,
+        &TestModFixture {
+            id: "m_repair_enabled",
+            game_id: "g_repair_enabled",
+            object_id: Some("o_repair_enabled"),
+            actual_name: "Blue Dress",
+            folder_path: "Alice/DISABLED Blue Dress",
+            status: ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(mod_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    let outcome = run_full_disk_reconcile(&pool, "g_repair_enabled", &mod_path).await;
+
+    let rows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT folder_path, status FROM mods WHERE game_id = ?")
+            .bind("g_repair_enabled")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        rows.into_iter()
+            .map(|(path, status)| (path.replace('\\', "/"), status))
+            .collect::<Vec<_>>(),
+        vec![("Alice/Blue Dress".to_string(), 1)]
+    );
+    assert!(outcome
+        .path_updates
+        .iter()
+        .any(
+            |update| update.from.replace('\\', "/") == "Alice/DISABLED Blue Dress"
+                && update.to.replace('\\', "/") == "Alice/Blue Dress"
+        ));
+}
+
+#[tokio::test]
+async fn test_disk_reconcile_repairs_enabled_db_mod_when_disk_is_disabled() {
+    let pool = setup_test_db().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mod_path = temp_dir.path().join("mods_dir");
+    let object_path = mod_path.join("Alice");
+    create_terminal_mod(&object_path.join("DISABLED Blue Dress"));
+
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_repair_disabled",
+            name: "ZZZ",
+            game_type: GameType::GIMI,
+            path: "/game_repair_disabled",
+            mods_path: Some(mod_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "o_repair_disabled",
+            game_id: "g_repair_disabled",
+            name: "Alice",
+            folder_path: "Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_mod(
+        &pool,
+        &TestModFixture {
+            id: "m_repair_disabled",
+            game_id: "g_repair_disabled",
+            object_id: Some("o_repair_disabled"),
+            actual_name: "Blue Dress",
+            folder_path: "Alice/Blue Dress",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(mod_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    let outcome = run_full_disk_reconcile(&pool, "g_repair_disabled", &mod_path).await;
+
+    let rows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT folder_path, status FROM mods WHERE game_id = ?")
+            .bind("g_repair_disabled")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        rows.into_iter()
+            .map(|(path, status)| (path.replace('\\', "/"), status))
+            .collect::<Vec<_>>(),
+        vec![("Alice/DISABLED Blue Dress".to_string(), 0)]
+    );
+    assert!(outcome
+        .path_updates
+        .iter()
+        .any(
+            |update| update.from.replace('\\', "/") == "Alice/Blue Dress"
+                && update.to.replace('\\', "/") == "Alice/DISABLED Blue Dress"
+        ));
 }

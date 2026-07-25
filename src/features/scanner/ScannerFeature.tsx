@@ -8,7 +8,7 @@ import { scanService } from '../../lib/services/scanService';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useTranslation } from 'react-i18next';
 import { useRenameMod } from '../../hooks/useFolderCoreMutations';
-import { useBulkToggle, useBulkDelete } from '../../hooks/useFolderMutations';
+import { useBulkToggle, useBulkDelete } from '../../hooks/useBulkModMutations';
 import type { ArchiveInfo } from '../../types/scanner';
 import { toast } from '../../stores/useToastStore';
 import type { ScanResultItem } from '../../types/scanner';

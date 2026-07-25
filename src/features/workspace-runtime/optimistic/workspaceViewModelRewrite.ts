@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../../../stores/useAppStore';
-import { recordInternalWorkspacePathRewrites, workspaceKeys } from '../useWorkspaceViewModel';
+import { workspaceKeys } from '../useWorkspaceViewModel';
+import { recordInternalWorkspacePathRewrites } from '../selectionReconciliation';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
 import { rewriteWorkspacePathValue } from '../pathRewrite';
 import {
@@ -10,7 +11,7 @@ import {
   type WorkspaceObjectNode,
   type WorkspaceViewModel,
 } from '../../../types/workspace';
-import type { RuntimeEffectDescriptor } from './descriptor';
+import type { RuntimeEffectDescriptor } from '../../../lib/runtimeEffects';
 
 type RuntimePathRewrite = RuntimeEffectDescriptor['rewrites'][number];
 type WorkspacePathRewriteSource = 'internal' | 'disk_reconcile';

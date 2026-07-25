@@ -33,9 +33,8 @@ async fn test_check_and_sync_metadata_graceful_handling() {
     // If we call check_and_sync_metadata, it will attempt a real HTTP request to GitHub.
     // If it succeeds, it updates the DB. If it fails (no network), it logs a warning and returns updated: false.
     // We can at least ensure it doesn't panic.
-    let result = check_and_sync_metadata(&pool).await;
+    check_and_sync_metadata(&pool).await;
 
     // Both success and failure are valid outcomes in a CI environment (where network might drop)
     // The key is it returns a structured result without crashing.
-    assert!(result.updated == true || result.updated == false);
 }

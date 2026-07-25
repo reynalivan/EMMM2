@@ -14,7 +14,7 @@ async fn seed_game(pool: &SqlitePool, id: &str, name: &str) {
         &crate::test_utils::TestGameFixture {
             id,
             name,
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: &format!("/dummy/{}", id),
             mods_path: Some(&format!("/dummy/mods/{}", id)),
         },
@@ -37,16 +37,26 @@ async fn seed_game(pool: &SqlitePool, id: &str, name: &str) {
     .unwrap();
 }
 
-async fn seed_mod(
-    pool: &SqlitePool,
-    id: &str,
-    game_id: &str,
-    name: &str,
-    status: &str,
+struct SeedMod<'a> {
+    id: &'a str,
+    game_id: &'a str,
+    name: &'a str,
+    status: &'a str,
     is_safe: bool,
     size_bytes: i64,
-    object_type: Option<&str>,
-) {
+    object_type: Option<&'a str>,
+}
+
+async fn seed_mod(pool: &SqlitePool, seed: SeedMod<'_>) {
+    let SeedMod {
+        id,
+        game_id,
+        name,
+        status,
+        is_safe,
+        size_bytes,
+        object_type,
+    } = seed;
     crate::test_utils::insert_test_mod(
         pool,
         &crate::test_utils::TestModFixture {
@@ -55,7 +65,7 @@ async fn seed_mod(
             object_id: Some(&format!("obj_{}", game_id)),
             actual_name: name,
             folder_path: &format!("/dummy/mod/{}", id),
-            status: crate::database::models::ItemStatus::from_str(status).unwrap(),
+            status: crate::domain::models::ItemStatus::from_str(status).unwrap(),
             is_safe,
             object_type,
             mods_path: Some(&format!("/dummy/mods/{}", game_id)),
@@ -83,39 +93,69 @@ async fn test_stats_accuracy() {
 
     seed_mod(
         &pool,
-        "m1",
-        "g1",
-        "Mod1",
-        "ENABLED",
-        true,
-        1000,
-        Some("Character"),
+        SeedMod {
+            id: "m1",
+            game_id: "g1",
+            name: "Mod1",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 1000,
+            object_type: Some("Character"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m2",
-        "g1",
-        "Mod2",
-        "DISABLED",
-        true,
-        2000,
-        Some("Weapon"),
+        SeedMod {
+            id: "m2",
+            game_id: "g1",
+            name: "Mod2",
+            status: "DISABLED",
+            is_safe: true,
+            size_bytes: 2000,
+            object_type: Some("Weapon"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m3",
-        "g1",
-        "Mod3",
-        "ENABLED",
-        false,
-        500,
-        Some("Character"),
+        SeedMod {
+            id: "m3",
+            game_id: "g1",
+            name: "Mod3",
+            status: "ENABLED",
+            is_safe: false,
+            size_bytes: 500,
+            object_type: Some("Character"),
+        },
     )
     .await;
-    seed_mod(&pool, "m4", "g2", "Mod4", "ENABLED", true, 3000, Some("UI")).await;
-    seed_mod(&pool, "m5", "g2", "Mod5", "DISABLED", true, 1500, None).await;
+    seed_mod(
+        &pool,
+        SeedMod {
+            id: "m4",
+            game_id: "g2",
+            name: "Mod4",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 3000,
+            object_type: Some("UI"),
+        },
+    )
+    .await;
+    seed_mod(
+        &pool,
+        SeedMod {
+            id: "m5",
+            game_id: "g2",
+            name: "Mod5",
+            status: "DISABLED",
+            is_safe: true,
+            size_bytes: 1500,
+            object_type: None,
+        },
+    )
+    .await;
 
     let stats = dashboard_repo::fetch_global_stats(&pool, false)
         .await
@@ -136,24 +176,28 @@ async fn test_safe_mode_filter() {
 
     seed_mod(
         &pool,
-        "m1",
-        "g1",
-        "SafeMod",
-        "ENABLED",
-        true,
-        1000,
-        Some("Character"),
+        SeedMod {
+            id: "m1",
+            game_id: "g1",
+            name: "SafeMod",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 1000,
+            object_type: Some("Character"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m2",
-        "g1",
-        "UnsafeMod",
-        "ENABLED",
-        false,
-        2000,
-        Some("Character"),
+        SeedMod {
+            id: "m2",
+            game_id: "g1",
+            name: "UnsafeMod",
+            status: "ENABLED",
+            is_safe: false,
+            size_bytes: 2000,
+            object_type: Some("Character"),
+        },
     )
     .await;
 
@@ -194,38 +238,56 @@ async fn test_category_distribution() {
 
     seed_mod(
         &pool,
-        "m1",
-        "g1",
-        "Mod1",
-        "ENABLED",
-        true,
-        100,
-        Some("Character"),
+        SeedMod {
+            id: "m1",
+            game_id: "g1",
+            name: "Mod1",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Character"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m2",
-        "g1",
-        "Mod2",
-        "ENABLED",
-        true,
-        100,
-        Some("Character"),
+        SeedMod {
+            id: "m2",
+            game_id: "g1",
+            name: "Mod2",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Character"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m3",
-        "g1",
-        "Mod3",
-        "ENABLED",
-        true,
-        100,
-        Some("Weapon"),
+        SeedMod {
+            id: "m3",
+            game_id: "g1",
+            name: "Mod3",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Weapon"),
+        },
     )
     .await;
-    seed_mod(&pool, "m4", "g1", "Mod4", "ENABLED", true, 100, None).await;
+    seed_mod(
+        &pool,
+        SeedMod {
+            id: "m4",
+            game_id: "g1",
+            name: "Mod4",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: None,
+        },
+    )
+    .await;
 
     let dist = dashboard_repo::fetch_category_distribution(&pool, false)
         .await
@@ -250,35 +312,41 @@ async fn test_game_distribution() {
 
     seed_mod(
         &pool,
-        "m1",
-        "g1",
-        "Mod1",
-        "ENABLED",
-        true,
-        100,
-        Some("Character"),
+        SeedMod {
+            id: "m1",
+            game_id: "g1",
+            name: "Mod1",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Character"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m2",
-        "g1",
-        "Mod2",
-        "ENABLED",
-        true,
-        100,
-        Some("Character"),
+        SeedMod {
+            id: "m2",
+            game_id: "g1",
+            name: "Mod2",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Character"),
+        },
     )
     .await;
     seed_mod(
         &pool,
-        "m3",
-        "g2",
-        "Mod3",
-        "ENABLED",
-        true,
-        100,
-        Some("Weapon"),
+        SeedMod {
+            id: "m3",
+            game_id: "g2",
+            name: "Mod3",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Weapon"),
+        },
     )
     .await;
 
@@ -300,13 +368,15 @@ async fn test_negative_size_clamped() {
 
     seed_mod(
         &pool,
-        "m1",
-        "g1",
-        "BadMod",
-        "ENABLED",
-        true,
-        -500,
-        Some("Character"),
+        SeedMod {
+            id: "m1",
+            game_id: "g1",
+            name: "BadMod",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: -500,
+            object_type: Some("Character"),
+        },
     )
     .await;
 
@@ -331,13 +401,15 @@ async fn test_recent_mods_limit() {
         let name = format!("Mod{i}");
         seed_mod(
             &pool,
-            &id,
-            "g1",
-            &name,
-            "ENABLED",
-            true,
-            100,
-            Some("Character"),
+            SeedMod {
+                id: &id,
+                game_id: "g1",
+                name: &name,
+                status: "ENABLED",
+                is_safe: true,
+                size_bytes: 100,
+                object_type: Some("Character"),
+            },
         )
         .await;
     }

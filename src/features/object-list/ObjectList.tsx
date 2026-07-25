@@ -1,21 +1,21 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
-import { useObjectListLogic } from './useObjectListLogic';
+import { useObjectListLogic } from './hooks/useObjectListLogic';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
-import ObjectListToolbar from './ObjectListToolbar';
-import ObjectListContent from './ObjectListContent';
-import { useObjectListDropZones } from './useObjectListDropZones';
+import ObjectListToolbar from './components/ObjectListToolbar';
+import ObjectListContent from './components/ObjectListContent';
+import { useObjectListDropZones } from './hooks/useObjectListDropZones';
 import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
 import { useObjectListEffects } from './hooks/useObjectListEffects';
-import ObjectListConflictBanner from './ObjectListConflictBanner';
-import ObjectListDropIndicators from './ObjectListDropIndicators';
-import ObjectListAuxiliaryModals from './ObjectListAuxiliaryModals';
-import { useObjectListBulkToolbarProps } from './useObjectListBulkToolbarProps';
-import { useObjectListKeyboard } from './useObjectListKeyboard';
-import ObjectListPrimaryModals from './ObjectListPrimaryModals';
-import ObjectListStateHost from './ObjectListStateHost';
-import { useObjectListContextMenuProps } from './useObjectListContextMenuProps';
+import ObjectListConflictBanner from './components/ObjectListConflictBanner';
+import ObjectListDropIndicators from './components/ObjectListDropIndicators';
+import ObjectListAuxiliaryModals from './modals/ObjectListAuxiliaryModals';
+import { useObjectListBulkToolbarProps } from './hooks/useObjectListBulkToolbarProps';
+import { useObjectListKeyboard } from './hooks/useObjectListKeyboard';
+import ObjectListPrimaryModals from './modals/ObjectListPrimaryModals';
+import ObjectListStateHost from './components/ObjectListStateHost';
+import { useObjectListContextMenuProps } from './hooks/useObjectListContextMenuProps';
 
 export default function ObjectList() {
   const { state, filters, nav, virtualizer, modals, handlers, bulkSelect } = useObjectListLogic();
@@ -223,6 +223,7 @@ export default function ObjectList() {
 
   return (
     <div
+      data-testid="object-list-panel"
       className={cn(
         'flex flex-col h-full bg-base-100/50 relative outline-none transition-shadow duration-200',
         activePane === 'objectList' && 'ring-1 ring-inset ring-primary/20',

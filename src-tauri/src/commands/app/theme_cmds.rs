@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -22,15 +23,12 @@ pub struct ThemeMetadata {
     pub label: String,
 }
 
-fn get_themes_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+fn get_themes_dir(app_handle: &AppHandle) -> Result<PathBuf, AppError> {
+    let app_data_dir = app_handle.path().app_data_dir()?;
     let themes_dir = app_data_dir.join("themes");
 
     if !themes_dir.exists() {
-        fs::create_dir_all(&themes_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&themes_dir)?;
     }
 
     Ok(themes_dir)
@@ -38,7 +36,7 @@ fn get_themes_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_custom_themes(app_handle: AppHandle) -> Result<Vec<ThemeMetadata>, String> {
+pub async fn list_custom_themes(app_handle: AppHandle) -> Result<Vec<ThemeMetadata>, AppError> {
     let themes_dir = get_themes_dir(&app_handle)?;
     let mut themes = Vec::new();
 
@@ -63,40 +61,40 @@ pub async fn list_custom_themes(app_handle: AppHandle) -> Result<Vec<ThemeMetada
 
 #[tauri::command]
 #[specta::specta]
-pub async fn load_custom_theme(app_handle: AppHandle, id: String) -> Result<CustomTheme, String> {
+pub async fn load_custom_theme(app_handle: AppHandle, id: String) -> Result<CustomTheme, AppError> {
     let themes_dir = get_themes_dir(&app_handle)?;
     let theme_path = themes_dir.join(format!("{}.json", id));
 
     if !theme_path.exists() {
-        return Err(format!("Theme '{}' not found", id));
+        return Err(AppError::NotFound(format!("Theme '{}' not found", id)));
     }
 
-    let content = fs::read_to_string(theme_path).map_err(|e| e.to_string())?;
-    let theme = serde_json::from_str::<CustomTheme>(&content).map_err(|e| e.to_string())?;
+    let content = fs::read_to_string(theme_path)?;
+    let theme = serde_json::from_str::<CustomTheme>(&content)?;
 
     Ok(theme)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_custom_theme(app_handle: AppHandle, theme: CustomTheme) -> Result<(), String> {
+pub async fn save_custom_theme(app_handle: AppHandle, theme: CustomTheme) -> Result<(), AppError> {
     let themes_dir = get_themes_dir(&app_handle)?;
     let theme_path = themes_dir.join(format!("{}.json", theme.id));
 
-    let content = serde_json::to_string_pretty(&theme).map_err(|e| e.to_string())?;
-    fs::write(theme_path, content).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&theme)?;
+    fs::write(theme_path, content)?;
 
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_custom_theme(app_handle: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_custom_theme(app_handle: AppHandle, id: String) -> Result<(), AppError> {
     let themes_dir = get_themes_dir(&app_handle)?;
     let theme_path = themes_dir.join(format!("{}.json", id));
 
     if theme_path.exists() {
-        fs::remove_file(theme_path).map_err(|e| e.to_string())?;
+        fs::remove_file(theme_path)?;
     }
 
     Ok(())

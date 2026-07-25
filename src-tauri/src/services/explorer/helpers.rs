@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use crate::services::config::ConfigService;
-
 use crate::services::explorer::types::{ConflictGroup, InfoAnalysis, ModFolder};
 
 pub fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis {
@@ -72,27 +70,6 @@ pub fn contains_filtered_keyword(folder: &ModFolder, keywords: &[String]) -> boo
         .any(|keyword| haystacks.iter().any(|value| value.contains(keyword)))
 }
 
-pub fn apply_safe_mode_filter(folders: Vec<ModFolder>, config: &ConfigService) -> Vec<ModFolder> {
-    let settings = config.get_settings();
-    let keywords = normalize_keywords(&settings.safe_mode.keywords);
-    let force_exclusive_mode = settings.safe_mode.force_exclusive_mode;
-
-    folders
-        .into_iter()
-        .filter(|folder| {
-            if settings.safe_mode.enabled {
-                // Safe Mode: ONLY show safe folders
-                folder.is_safe
-                    && (!force_exclusive_mode || !contains_filtered_keyword(folder, &keywords))
-            } else {
-                // Unsafe Mode: ONLY show unsafe folders (Mutually Exclusive Corridor)
-                !folder.is_safe
-                    || (force_exclusive_mode && contains_filtered_keyword(folder, &keywords))
-            }
-        })
-        .collect()
-}
-
 fn prune_conflicts(
     conflicts: Vec<ConflictGroup>,
     visible_paths: &std::collections::HashSet<String>,
@@ -109,20 +86,6 @@ fn prune_conflicts(
             Some(conflict)
         })
         .collect()
-}
-
-pub fn apply_safe_mode_filter_to_response(
-    mut response: crate::services::explorer::types::FolderGridResponse,
-    config: &ConfigService,
-) -> crate::services::explorer::types::FolderGridResponse {
-    response.children = apply_safe_mode_filter(response.children, config);
-    let visible_paths = response
-        .children
-        .iter()
-        .map(|folder| folder.path.clone())
-        .collect::<std::collections::HashSet<_>>();
-    response.conflicts = prune_conflicts(response.conflicts, &visible_paths);
-    response
 }
 
 pub fn apply_runtime_corridor_filter_to_response(

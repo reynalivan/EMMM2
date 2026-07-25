@@ -80,8 +80,7 @@ export function isPreviewAffected(
 
   const appStore = useAppStore.getState();
   const selectedPaths = Array.from(appStore.gridSelection);
-  const selectedModPath =
-    selectedPaths.length > 0 ? selectedPaths[selectedPaths.length - 1] : undefined;
+  const selectedModPath = appStore.selectedModPath ?? selectedPaths[selectedPaths.length - 1];
   if (!selectedModPath) {
     return false;
   }

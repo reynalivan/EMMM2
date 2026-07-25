@@ -35,7 +35,6 @@ fn parse_invalid_returns_error() {
 fn parse_every_default_binding() {
     let config = HotkeyConfig::default();
     let keys = [
-        &config.toggle_safe_mode,
         &config.next_preset,
         &config.prev_preset,
         &config.next_variant,
@@ -67,7 +66,7 @@ fn dispatch_when_disabled_returns_none() {
     let manager = HotkeyManager::new(&config).expect("manager should initialize");
 
     // Any action should return None when disabled.
-    let result = manager.dispatch_action(HotkeyAction::ToggleSafeMode, false, None, &[]);
+    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, None, &[]);
     assert!(result.is_none());
 }
 
@@ -79,21 +78,6 @@ fn lookup_action_returns_none_without_runtime_registration() {
     // Shortcuts are populated only after runtime plugin registration.
     assert_eq!(manager.lookup_action("f5"), None);
     assert_eq!(manager.lookup_action("shift+f6"), None);
-}
-
-#[test]
-fn dispatch_safe_mode_toggle() {
-    let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
-
-    // Simulate already-enabled runtime manager.
-    manager.set_enabled_for_test(true);
-
-    let result = manager.dispatch_action(HotkeyAction::ToggleSafeMode, false, None, &[]);
-
-    assert!(result.is_some());
-    let res = result.unwrap();
-    assert!(res.summary.contains("Safe Mode"));
 }
 
 #[test]

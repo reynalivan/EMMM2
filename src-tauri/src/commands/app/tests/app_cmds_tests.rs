@@ -26,7 +26,7 @@ async fn test_check_config_status_has_config() {
     let game = GameRow {
         id: "game1".into(),
         name: "Test Game".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,

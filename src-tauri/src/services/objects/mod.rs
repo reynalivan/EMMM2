@@ -1,3 +1,4 @@
+pub mod matching;
 pub mod mutate;
 pub mod query;
 

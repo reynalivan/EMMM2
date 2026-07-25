@@ -4,8 +4,8 @@ use std::thread;
 use std::time::Duration;
 
 use crate::services::hotkeys::actions::{
-    plan_cycle_preset, plan_cycle_variant, plan_noop, plan_toggle_safe_mode,
-    resolve_next_folder_index, resolve_next_preset, CycleDirection,
+    plan_cycle_preset, plan_cycle_variant, plan_noop, resolve_next_folder_index,
+    resolve_next_preset, CycleDirection,
 };
 use crate::services::hotkeys::{
     detect_conflicts, get_key_string, list_bindings, HotkeyAction, HotkeyConfig, HotkeyState,
@@ -19,7 +19,6 @@ fn hotkey_config_defaults() {
     let config = HotkeyConfig::default();
     assert!(config.enabled);
     assert_eq!(config.cooldown_ms, 500);
-    assert_eq!(config.toggle_safe_mode, "F5");
     assert_eq!(config.next_preset, "F6");
     assert_eq!(config.prev_preset, "Shift+F6");
     assert_eq!(config.toggle_overlay, "F7");
@@ -34,7 +33,6 @@ fn keyviewer_config_defaults() {
 #[test]
 fn get_key_string_maps_correctly() {
     let config = HotkeyConfig::default();
-    assert_eq!(get_key_string(&config, HotkeyAction::ToggleSafeMode), "F5");
     assert_eq!(get_key_string(&config, HotkeyAction::NextPreset), "F6");
     assert_eq!(
         get_key_string(&config, HotkeyAction::PrevPreset),
@@ -47,7 +45,7 @@ fn get_key_string_maps_correctly() {
 fn list_bindings_returns_correct_count() {
     let config = HotkeyConfig::default();
     let bindings = list_bindings(&config);
-    assert_eq!(bindings.len(), 6);
+    assert_eq!(bindings.len(), 5);
     assert_eq!(
         get_key_string(&config, HotkeyAction::NextVariantFolder),
         "F8"
@@ -71,8 +69,10 @@ fn no_conflicts_with_default_config() {
 
 #[test]
 fn detects_conflict_when_same_key() {
-    let mut config = HotkeyConfig::default();
-    config.toggle_safe_mode = "F6".to_string(); // Same as next_preset
+    let config = HotkeyConfig {
+        prev_preset: "F6".to_string(), // Same as next_preset
+        ..Default::default()
+    };
     let conflicts = detect_conflicts(&config);
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].2, "F6");
@@ -80,9 +80,11 @@ fn detects_conflict_when_same_key() {
 
 #[test]
 fn conflict_detection_case_insensitive() {
-    let mut config = HotkeyConfig::default();
-    config.next_preset = "f6".to_string(); // lowercase vs default "F6" was "F6"
-    config.prev_preset = "f6".to_string(); // same key lowercase
+    let config = HotkeyConfig {
+        next_preset: "f6".to_string(), // lowercase vs default "F6" was "F6"
+        prev_preset: "f6".to_string(), // same key lowercase
+        ..Default::default()
+    };
     let conflicts = detect_conflicts(&config);
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].0, HotkeyAction::NextPreset);
@@ -134,22 +136,6 @@ fn cooldown_expires_allows_retrigger() {
 }
 
 // ─── Safe Mode Toggle Action ─────────────────────────────────────────────────
-
-#[test]
-fn toggle_safe_mode_on_to_off() {
-    let result = plan_toggle_safe_mode(true, Some("Default"));
-    assert!(!result.status.safe_mode);
-    assert!(result.needs_reload);
-    assert!(result.summary.contains("OFF"));
-}
-
-#[test]
-fn toggle_safe_mode_off_to_on() {
-    let result = plan_toggle_safe_mode(false, Some("Default"));
-    assert!(result.status.safe_mode);
-    assert!(result.needs_reload);
-    assert!(result.summary.contains("ON"));
-}
 
 // ─── Preset Cycling ──────────────────────────────────────────────────────────
 

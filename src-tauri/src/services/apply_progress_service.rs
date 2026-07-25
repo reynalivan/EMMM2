@@ -123,9 +123,3 @@ pub fn get(game_id: &str, is_safe: bool) -> Option<ApplyProgressSnapshot> {
         .ok()
         .and_then(|store| store.get(&progress_key(game_id, is_safe)).cloned())
 }
-
-pub fn clear(game_id: &str, is_safe: bool) {
-    if let Ok(mut store) = progress_store().lock() {
-        store.remove(&progress_key(game_id, is_safe));
-    }
-}

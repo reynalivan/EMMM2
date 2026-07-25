@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::services::scanner::core::normalizer;
+use crate::common::normalizer;
 use crate::services::scanner::deep_matcher::analysis::content::FolderSignals;
 use crate::services::scanner::deep_matcher::analysis::scoring::push_reason_capped;
 use crate::services::scanner::deep_matcher::state::master_db::MasterDb;

@@ -74,7 +74,9 @@
     "description": "{{targetName}} sudah memiliki mod aktif lain pada target yang sama. Pilih cara melanjutkan.",
     "currently_enabled": "Sedang Aktif",
     "enable_only_this": "Aktifkan Hanya Ini",
-    "force_enable": "Paksa Aktifkan"
+    "force_enable": "Paksa Aktifkan",
+    "dont_warn_again": "Jangan ingatkan lagi untuk kombinasi ini",
+    "ignore_failed": "Gagal menyimpan aturan abaikan: {{error}}"
   },
   "drag_overlay": {
     "title": "Pindah ke Objek",

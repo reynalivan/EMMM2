@@ -1,5 +1,4 @@
 export const BUILTIN_THEMES = ['system', 'onyx', 'light'] as const;
-export type BuiltinTheme = (typeof BUILTIN_THEMES)[number];
 
 export const THEME_OPTIONS = [
   { value: 'system', labelKey: 'general.appearance.themes.system' },
@@ -10,10 +9,6 @@ export const THEME_OPTIONS = [
 export type ThemeSetting = string; // Allow custom strings
 
 export type ResolvedTheme = string;
-
-export function isThemeSetting(value: string): boolean {
-  return (BUILTIN_THEMES as readonly string[]).includes(value) || true; // Custom themes are arbitrary IDs
-}
 
 export function normalizeThemeSetting(value: string | null | undefined): ThemeSetting {
   if (!value) return 'onyx';

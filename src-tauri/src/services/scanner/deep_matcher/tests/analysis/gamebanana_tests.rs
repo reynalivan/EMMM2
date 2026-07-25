@@ -32,28 +32,6 @@ fn test_detect_gamebanana_ids_from_text() {
 
 #[test]
 fn test_game_enum_resolution() {
-    assert_eq!(
-        GameBananaGame::from_key("gimi"),
-        Some(GameBananaGame::Genshin)
-    );
-    assert_eq!(
-        GameBananaGame::from_key("srmi"),
-        Some(GameBananaGame::StarRail)
-    );
-    assert_eq!(
-        GameBananaGame::from_key("zzmi"),
-        Some(GameBananaGame::ZenlessZoneZero)
-    );
-    assert_eq!(
-        GameBananaGame::from_key("wwmi"),
-        Some(GameBananaGame::WutheringWaves)
-    );
-    assert_eq!(
-        GameBananaGame::from_key("efmi"),
-        Some(GameBananaGame::ArknightsEndfield)
-    );
-    assert_eq!(GameBananaGame::from_key("unknown"), None);
-
     assert_eq!(GameBananaGame::Genshin.game_id(), 8552);
     assert_eq!(GameBananaGame::StarRail.game_id(), 18366);
     assert_eq!(GameBananaGame::ZenlessZoneZero.game_id(), 19567);
@@ -78,7 +56,7 @@ fn test_live_api_fetch_and_validate() {
         game: Some(GameBananaGame::Genshin),
     };
 
-    let result = fetch_gamebanana_metadata(&[gb_ref.clone()], &config);
+    let result = fetch_gamebanana_metadata(std::slice::from_ref(&gb_ref), &config);
 
     // Verify it fetched the name
     assert!(result.mod_name.is_some(), "Expected mod name from API");

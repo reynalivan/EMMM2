@@ -142,9 +142,7 @@ fn handle_archive_import(
                     .unwrap_or_default()
                     .to_string_lossy();
 
-                let final_path = if !crate::services::scanner::core::normalizer::is_disabled_folder(
-                    &folder_name,
-                ) {
+                let final_path = if !crate::common::normalizer::is_disabled_folder(&folder_name) {
                     let new_path =
                         target.join(format!("{}{}", crate::DISABLED_PREFIX, folder_name));
                     if crate::services::fs_utils::file_utils::rename_cross_drive_fallback(

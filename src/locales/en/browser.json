@@ -3,6 +3,8 @@
     "loading": "Loading...",
     "new_tab": "New Tab",
     "clear_data_confirm": "Clear all browsing data (cookies, cache, etc.) for this session?",
+    "back": "Back",
+    "forward": "Forward",
     "refresh": "Refresh",
     "discover": "Discover",
     "open_gamebanana": "Open GameBanana",

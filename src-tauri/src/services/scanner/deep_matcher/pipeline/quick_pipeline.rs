@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::services::scanner::core::normalizer;
+use crate::common::normalizer;
 use crate::services::scanner::core::walker::{FolderContent, ModCandidate};
 
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::maybe_apply_ai_rerank;

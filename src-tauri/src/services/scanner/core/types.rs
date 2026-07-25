@@ -1,11 +1,7 @@
-use crate::database::models::ItemStatus;
-use crate::services::scanner::core::walker;
 use crate::services::scanner::deep_matcher::{
     Candidate, Confidence, MatchStatus, StagedMatchResult,
 };
 use serde::{Deserialize, Serialize};
-
-use std::path::PathBuf;
 
 /// Represents a folder naming collision discovered during sync or organize.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -21,20 +17,6 @@ pub struct CollisionInfo {
     pub object_name: String,
     /// ID of the mod already occupying the target path (if indexed)
     pub existing_mod_id: Option<String>,
-}
-
-/// User resolution choice for a folder collision.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum CollisionResolution {
-    /// Rename the incoming mod (e.g. Mod (2))
-    Rename,
-    /// Skip this mod entirely
-    Skip,
-    /// Delete existing and replace with new
-    Overwrite,
-    /// Merge contents (if both are folders)
-    Merge,
 }
 
 // ─── Event Types ───────────────────────────────────────────────────
@@ -79,27 +61,6 @@ pub enum ScanEvent {
     },
 }
 
-// ─── Result Types ──────────────────────────────────────────────────
-
-/// A single scan result item returned per mod folder.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanResultItem {
-    pub path: String,
-    pub raw_name: String,
-    pub display_name: String,
-    pub is_disabled: bool,
-    pub matched_object: Option<String>,
-    pub match_level: String,
-    pub confidence: String,
-    pub confidence_score: u8,
-    pub match_detail: Option<String>,
-    pub detected_skin: Option<String>,
-    /// Canonical folder name for this skin variant (first alias).
-    pub skin_folder_name: Option<String>,
-    pub thumbnail_path: Option<String>,
-}
-
 // ─── Helpers ───────────────────────────────────────────────────────
 
 pub fn match_status_label(status: &MatchStatus) -> &'static str {
@@ -137,38 +98,6 @@ pub fn staged_match_detail(result: &StagedMatchResult) -> String {
     result.summary()
 }
 
-pub fn staged_auto_matched_object_name(result: &StagedMatchResult) -> Option<&str> {
-    if result.status != MatchStatus::AutoMatched {
-        return None;
-    }
-
-    staged_primary_candidate(result).map(|candidate| candidate.name.as_str())
-}
-
-pub fn build_result_item_from_staged(
-    candidate: &walker::ModCandidate,
-    match_result: &StagedMatchResult,
-    thumb: Option<PathBuf>,
-    detected_skin: Option<String>,
-    skin_folder_name: Option<String>,
-) -> ScanResultItem {
-    ScanResultItem {
-        path: candidate.path.to_string_lossy().to_string(),
-        raw_name: candidate.raw_name.clone(),
-        display_name: candidate.display_name.clone(),
-        is_disabled: candidate.is_disabled,
-        matched_object: staged_auto_matched_object_name(match_result)
-            .map(std::string::ToString::to_string),
-        match_level: match_status_label(&match_result.status).to_string(),
-        confidence: staged_confidence_label(match_result).to_string(),
-        confidence_score: match_result.confidence_score(),
-        match_detail: Some(staged_match_detail(match_result)),
-        detected_skin,
-        skin_folder_name,
-        thumbnail_path: thumb.map(|p| p.to_string_lossy().to_string()),
-    }
-}
-
 fn confidence_value_label(confidence: &Confidence) -> &'static str {
     match confidence {
         Confidence::Excellent => "Excellent",
@@ -183,23 +112,4 @@ fn confidence_value_label(confidence: &Confidence) -> &'static str {
 #[path = "tests/types_tests.rs"]
 mod tests;
 
-/// Represents a row in the `objects` table.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
-pub struct GameObject {
-    pub id: String,
-    pub game_id: String,
-    pub name: String,
-    pub folder_path: String,
-    pub folder_path_key: String,
-    pub status: ItemStatus,
-    pub object_type: String,
-    pub sub_category: Option<String>,
-    pub tags: String,
-    pub metadata: String,
-    pub hash_db: Option<crate::database::models::HashDbPayload>,
-    pub custom_skins: Option<crate::database::models::CustomSkinsPayload>,
-    pub thumbnail_path: Option<String>,
-    pub is_pinned: bool,
-    pub is_auto_sync: bool,
-    pub created_at: String,
-}
+pub use crate::domain::models::GameObject;

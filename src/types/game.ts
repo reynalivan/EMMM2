@@ -1,5 +1,11 @@
 /** Shared game configuration types for the EMMM frontend. */
 
+export type { GameConfig } from '../lib/bindings.gen';
+
+/**
+ * Numeric on the wire (Rust `serde_repr`): the generated bindings type this as
+ * plain `number`; this enum is the frontend-side domain vocabulary for it.
+ */
 export enum GameType {
   GIMI = 0,
   SRMI = 1,
@@ -11,17 +17,6 @@ export enum GameType {
 /** Get the string identifier for a GameType (e.g. 0 -> "GIMI"). */
 export function getGameTypeKey(type: GameType): string {
   return GameType[type];
-}
-
-export interface GameConfig {
-  id: string;
-  name: string;
-  game_type: GameType;
-  mod_path: string;
-  game_exe: string;
-  loader_exe: string | null;
-  launch_args: string | null;
-  warnings?: string[];
 }
 
 /**

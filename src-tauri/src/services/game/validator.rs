@@ -1,4 +1,4 @@
-use crate::database::models::GameInfo;
+use crate::domain::models::GameInfo;
 use std::path::{Path, PathBuf};
 
 /// Smart result type: (resolved path, warnings)

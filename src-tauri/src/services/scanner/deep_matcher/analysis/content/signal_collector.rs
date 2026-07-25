@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::services::scanner::core::normalizer;
+use crate::common::normalizer;
 use crate::services::scanner::core::walker::FolderContent;
 use crate::services::scanner::deep_matcher::MatchMode;
 

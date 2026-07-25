@@ -48,7 +48,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
         .await
         .map_err(|e| format!("Sig recompute failed: {e}"))?;
 
-    crate::services::runtime_projection_service::rebuild_game_projection(pool, game_id)
+    crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id)
         .await
         .map_err(|e| format!("Projection rebuild failed: {e}"))?;
 

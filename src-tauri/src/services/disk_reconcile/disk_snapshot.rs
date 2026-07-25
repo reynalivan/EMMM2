@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::common::classifier::{classify_folder, NodeType};
 use crate::services::disk_reconcile::helpers::{is_disabled_runtime_name, normalize_runtime_name};
-use crate::services::explorer::classifier::{classify_folder, NodeType};
 
 #[derive(Debug, Clone)]
 pub struct DiskObjectEntry {
@@ -91,7 +91,7 @@ fn collect_terminal_mods(
                 })?;
             projection.mods.push(DiskModEntry {
                 folder_path: folder_path.clone(),
-                folder_path_key: crate::services::path_key::folder_path_key(&folder_path, None),
+                folder_path_key: crate::common::path_key::folder_path_key(&folder_path, None),
                 object_folder_path_key: object_folder_path_key.to_string(),
                 object_disabled,
                 raw_name,
@@ -147,7 +147,7 @@ pub fn collect_disk_projection(
 
         let object_entry = DiskObjectEntry {
             folder_path: root_name.clone(),
-            folder_path_key: crate::services::path_key::folder_path_key(&root_name, None),
+            folder_path_key: crate::common::path_key::folder_path_key(&root_name, None),
             name: normalize_runtime_name(&root_name),
             is_disabled: is_disabled_runtime_name(&root_name),
         };

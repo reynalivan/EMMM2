@@ -1,19 +1,4 @@
-import type { RuntimeRefreshEvent } from '../../runtime-sync/queryRefresh';
-
-export interface ObjectCountDeltaEffect {
-  objectId: string;
-  delta: number;
-}
-
-export interface RuntimeEffectDescriptor {
-  rewrites: Array<{ oldPath: string; newPath: string }>;
-  invalidatedPaths: string[];
-  objectCountDeltas: ObjectCountDeltaEffect[];
-  thumbnailPaths: string[];
-  removedQueryKeys: Array<readonly unknown[]>;
-  invalidatedQueryKeys: Array<readonly unknown[]>;
-  refreshEvents: RuntimeRefreshEvent[];
-}
+import type { RuntimeEffectDescriptor } from '../../../lib/runtimeEffects';
 
 export const EMPTY_RUNTIME_EFFECT_DESCRIPTOR: RuntimeEffectDescriptor = {
   rewrites: [],

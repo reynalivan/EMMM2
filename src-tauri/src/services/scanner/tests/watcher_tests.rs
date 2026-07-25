@@ -131,6 +131,61 @@ fn test_watcher_keeps_deep_directory_events_but_filters_deep_asset_noise() {
     assert!(!should_keep_event_path(&deep_asset, root));
 }
 
+// Regression: folders with dots in the name ("Mod v1.2") must not be
+// mistaken for files with irrelevant extensions and dropped.
+#[test]
+fn test_watcher_keeps_dot_named_folders_at_any_depth() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    let deep_dot_dir = root.join("Alice").join("Nested").join("Variant v1.2");
+    fs::create_dir_all(&deep_dot_dir).unwrap();
+
+    assert!(should_keep_event_path(&root.join("Char v2.0"), root));
+    assert!(should_keep_event_path(
+        &root.join("Alice").join("Mod v1.2"),
+        root
+    ));
+    assert!(should_keep_event_path(&deep_dot_dir, root));
+    // Deep asset noise is still filtered.
+    assert!(!should_keep_event_path(
+        &deep_dot_dir.join("mesh.buf"),
+        root
+    ));
+}
+
+#[tokio::test]
+async fn test_watcher_detects_rename_of_dot_named_folder() {
+    let dir = TempDir::new().unwrap();
+    let suppressed = Arc::new(WatcherSuppressor::new(false));
+
+    let old_dir = dir.path().join("Alice").join("Mod v1.2");
+    fs::create_dir_all(&old_dir).unwrap();
+
+    let (watcher, mut rx) = watch_mod_directory(dir.path(), suppressed).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let new_dir = dir.path().join("Alice").join("DISABLED Mod v1.2");
+    fs::rename(&old_dir, &new_dir).unwrap();
+
+    let mut received = false;
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while std::time::Instant::now() < deadline {
+        if let Ok(Some(ModWatchEvent::StatusChanged { .. } | ModWatchEvent::Renamed { .. })) =
+            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
+        {
+            received = true;
+            break;
+        }
+    }
+
+    assert!(
+        received,
+        "Expected rename/status event for dot-named folder"
+    );
+    drop(watcher);
+}
+
 #[test]
 fn test_watcher_nonexistent_path() {
     let suppressed = Arc::new(WatcherSuppressor::new(false));

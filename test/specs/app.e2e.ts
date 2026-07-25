@@ -24,15 +24,26 @@ describe('EMMM Initial Load', () => {
   });
 
   it('should not throw React runtime errors on mount', async () => {
-    // Check browser logs for errors:
     const logs = await browser.getLogs('browser');
-    const errors = logs.filter((l) => l.level === 'SEVERE');
+    const severe = logs.filter(
+      (l): l is { level: string; message: string } =>
+        typeof l === 'object' && l !== null && (l as { level?: string }).level === 'SEVERE',
+    );
 
-    if (errors.length > 0) {
-      console.warn('Browser Errors found on mount:', errors);
+    // Gate on genuine app faults only — ignore resource/network noise the
+    // webview emits in a debug build.
+    const appErrors = severe.filter((l) =>
+      /Uncaught|Minified React error|React will try to recreate|Cannot read propert/i.test(
+        l.message ?? '',
+      ),
+    );
+
+    if (severe.length > 0) {
+      console.warn('SEVERE browser logs on mount:', severe);
     }
-
-    // In a strict setup, we might fail on severe React errors:
-    // expect(errors.length).toBe(0)
+    if (appErrors.length > 0) {
+      console.error('Uncaught/React errors on mount:', appErrors);
+    }
+    expect(appErrors.length).toBe(0);
   });
 });

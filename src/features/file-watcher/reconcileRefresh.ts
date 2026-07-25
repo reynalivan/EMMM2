@@ -35,6 +35,14 @@ export function publishDiskReconcileRefresh(
     );
   }
 
+  if (result.runtime_file_changed) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor('folderMetadataPreview'),
+      'active',
+    );
+  }
+
   if (result.collections_changed) {
     void publishRuntimeDescriptor(
       queryClient,

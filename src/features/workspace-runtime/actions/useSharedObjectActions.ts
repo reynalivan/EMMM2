@@ -10,7 +10,9 @@ import type { GameSchema } from '../../../types/object';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import { applyObjectCategoryAndRefresh, revealObjectInExplorer } from './sharedObjectActionOps';
 import {
-  INITIAL_SHARED_OBJECT_ACTION_STATE,
+  buildSharedObjectActionState,
+  buildSharedObjectDialogEvent,
+  describeObjectMutationError,
   parseObjectHasModsError,
   type SharedObjectAction,
   sharedObjectActionsReducer,
@@ -30,54 +32,6 @@ interface SharedObjectActionsOptions {
   schema: GameSchema | undefined;
 }
 
-function buildSharedObjectActionState(
-  dialogState: ReturnType<typeof getWorkspaceRuntimeState>['dialogState'],
-) {
-  if (dialogState.kind === 'objectEdit') {
-    return {
-      ...INITIAL_SHARED_OBJECT_ACTION_STATE,
-      editObject: dialogState.object,
-    };
-  }
-  if (dialogState.kind === 'objectDelete') {
-    return {
-      ...INITIAL_SHARED_OBJECT_ACTION_STATE,
-      deleteObjectDialog: {
-        open: true,
-        id: dialogState.id,
-        name: dialogState.name,
-      },
-    };
-  }
-  if (dialogState.kind === 'objectForceDelete') {
-    return {
-      ...INITIAL_SHARED_OBJECT_ACTION_STATE,
-      forceDeleteObjectDialog: {
-        open: true,
-        id: dialogState.id,
-        name: dialogState.name,
-        count: dialogState.count,
-      },
-    };
-  }
-  if (dialogState.kind === 'objectSync') {
-    return {
-      ...INITIAL_SHARED_OBJECT_ACTION_STATE,
-      syncConfirm: {
-        open: true,
-        objectId: dialogState.objectId,
-        objectName: dialogState.objectName,
-        itemType: dialogState.itemType,
-        match: dialogState.match,
-        isLoading: dialogState.isLoading,
-        currentData: dialogState.currentData,
-      },
-    };
-  }
-
-  return INITIAL_SHARED_OBJECT_ACTION_STATE;
-}
-
 export function useSharedObjectActions(options: SharedObjectActionsOptions) {
   const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
@@ -95,58 +49,9 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
         buildSharedObjectActionState(getWorkspaceRuntimeState().dialogState),
         action,
       );
-
-      if (reduced.editObject) {
-        dispatchWorkspaceRuntimeEvent({
-          type: 'DIALOG_OPENED',
-          dialog: { kind: 'objectEdit', object: reduced.editObject },
-        });
-        return;
-      }
-
-      if (reduced.deleteObjectDialog.open) {
-        dispatchWorkspaceRuntimeEvent({
-          type: 'DIALOG_OPENED',
-          dialog: {
-            kind: 'objectDelete',
-            id: reduced.deleteObjectDialog.id,
-            name: reduced.deleteObjectDialog.name,
-          },
-        });
-        return;
-      }
-
-      if (reduced.forceDeleteObjectDialog.open) {
-        dispatchWorkspaceRuntimeEvent({
-          type: 'DIALOG_OPENED',
-          dialog: {
-            kind: 'objectForceDelete',
-            id: reduced.forceDeleteObjectDialog.id,
-            name: reduced.forceDeleteObjectDialog.name,
-            count: reduced.forceDeleteObjectDialog.count,
-          },
-        });
-        return;
-      }
-
-      if (reduced.syncConfirm.open) {
-        dispatchWorkspaceRuntimeEvent({
-          type: dialogState.kind === 'objectSync' ? 'DIALOG_UPDATED' : 'DIALOG_OPENED',
-          dialog: {
-            kind: 'objectSync',
-            objectId: reduced.syncConfirm.objectId,
-            objectName: reduced.syncConfirm.objectName,
-            itemType: reduced.syncConfirm.itemType,
-            match: reduced.syncConfirm.match,
-            isLoading: reduced.syncConfirm.isLoading,
-            currentData: reduced.syncConfirm.currentData,
-          },
-        });
-        return;
-      }
-
-      if (dialogState.kind.startsWith('object')) {
-        dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: dialogState.kind });
+      const event = buildSharedObjectDialogEvent(reduced, dialogState.kind);
+      if (event) {
+        dispatchWorkspaceRuntimeEvent(event);
       }
     },
     [dialogState],
@@ -156,7 +61,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
     () =>
       options.schema?.categories.map((category) => ({
         name: category.name,
-        label: category.label,
+        label: category.label ?? undefined,
       })) ?? [],
     [options.schema],
   );
@@ -243,11 +148,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
       }
 
       console.error('Failed to delete object:', error);
-      toast.error(
-        t('create_modal.error_message', {
-          error: String((error as Record<string, unknown>)?.message ?? error),
-        }),
-      );
+      toast.error(t('create_modal.error_message', { error: describeObjectMutationError(error) }));
     }
   }, [deleteObjectMutation, dispatch, queryClient, state.deleteObjectDialog, t]);
 
@@ -265,11 +166,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
       toast.success(t('create_modal.success_message', { name }));
     } catch (error) {
       console.error('Failed to force delete object:', error);
-      toast.error(
-        t('create_modal.error_message', {
-          error: String((error as Record<string, unknown>)?.message ?? error),
-        }),
-      );
+      toast.error(t('create_modal.error_message', { error: describeObjectMutationError(error) }));
     }
   }, [deleteObjectMutation, dispatch, queryClient, state.forceDeleteObjectDialog, t]);
 

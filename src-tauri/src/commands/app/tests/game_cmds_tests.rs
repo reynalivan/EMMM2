@@ -34,10 +34,7 @@ async fn test_auto_detect_games() {
             .await
             .unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(
-        results[0].game_type,
-        crate::database::models::GameType::GIMI
-    );
+    assert_eq!(results[0].game_type, crate::domain::models::GameType::GIMI);
 
     // Persist to DB/Settings
     crate::commands::app::game_cmds::save_onboarding_games_inner(&service, results)
@@ -82,7 +79,10 @@ async fn test_add_game_manual_and_duplicate() {
     .await;
     assert!(dup_result.is_err());
     assert!(
-        dup_result.unwrap_err().contains("already registered"),
+        dup_result
+            .unwrap_err()
+            .to_string()
+            .contains("already registered"),
         "Duplicate addition was not prevented."
     );
 }
@@ -122,5 +122,8 @@ async fn test_add_game_manual_rejects_unicode_duplicate_with_ascii_case_and_slas
     .await;
 
     assert!(dup_result.is_err());
-    assert!(dup_result.unwrap_err().contains("already registered"));
+    assert!(dup_result
+        .unwrap_err()
+        .to_string()
+        .contains("already registered"));
 }

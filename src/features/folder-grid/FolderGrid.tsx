@@ -1,15 +1,15 @@
-import FolderGridToolbar from './FolderGridToolbar';
-import FolderGridBanners from './FolderGridBanners';
-import FolderGridModals from './FolderGridModals';
-import DragOverlay from './DragOverlay';
-import EnableParentDialog from './EnableParentDialog';
-import BulkProgressBar from './BulkProgressBar';
-import BulkActionBar from './BulkActionBar';
+import FolderGridToolbar from './components/FolderGridToolbar';
+import FolderGridBanners from './components/FolderGridBanners';
+import FolderGridModals from './modals/FolderGridModals';
+import DragOverlay from './components/DragOverlay';
+import EnableParentDialog from './modals/EnableParentDialog';
+import BulkProgressBar from './components/BulkProgressBar';
+import BulkActionBar from './components/BulkActionBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
 import { cn } from '../../lib/utils';
-import { useFolderGridViewModel } from './useFolderGridViewModel';
-import FolderGridStateViews from './FolderGridStateViews';
-import FolderGridContent from './FolderGridContent';
+import { useFolderGridViewModel } from './hooks/useFolderGridViewModel';
+import FolderGridStateViews from './components/FolderGridStateViews';
+import FolderGridContent from './components/FolderGridContent';
 
 export default function FolderGrid() {
   const folderGrid = useFolderGrid();
@@ -99,6 +99,7 @@ export default function FolderGrid() {
 
   return (
     <div
+      data-testid="folder-grid"
       className={cn(
         'flex flex-col h-full bg-transparent p-4 relative outline-none transition-shadow duration-200',
         activePane === 'folderGrid' && 'ring-1 ring-inset ring-primary/20',

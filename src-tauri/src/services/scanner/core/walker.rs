@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::normalizer;
+use crate::common::normalizer;
 
 /// Represents a mod folder candidate discovered during scanning.
 #[derive(Debug, Clone)]
@@ -80,7 +80,7 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
         ));
     }
 
-    use crate::services::explorer::classifier::{self, NodeType};
+    use crate::common::classifier::{self, NodeType};
 
     let mut candidates = Vec::new();
 
@@ -154,7 +154,7 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
 /// Scan specific subset of folders directly and deeply.
 /// Useful for drag-and-drop operations on explicit folders.
 pub fn scan_specific_folders(paths: &[PathBuf]) -> Result<Vec<ModCandidate>, String> {
-    use crate::services::explorer::classifier::{self, NodeType};
+    use crate::common::classifier::{self, NodeType};
 
     let mut candidates = Vec::new();
 

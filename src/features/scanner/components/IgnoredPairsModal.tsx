@@ -83,14 +83,14 @@ export const IgnoredPairsModal: React.FC<IgnoredPairsModalProps> = ({ gameId, on
               <tbody>
                 {ignoredPairs.map((pair) => (
                   <tr key={pair.id} className="hover:bg-primary/5 transition-colors group">
-                    <td className="font-medium max-w-50 truncate">{pair.folder_a_name}</td>
-                    <td className="font-medium max-w-50 truncate">{pair.folder_b_name}</td>
+                    <td className="font-medium max-w-50 truncate">{pair.folderAName}</td>
+                    <td className="font-medium max-w-50 truncate">{pair.folderBName}</td>
                     <td>
                       <span className="badge badge-ghost badge-sm border-base-content/10 opacity-70">
                         {pair.reason}
                       </span>
                     </td>
-                    <td className="text-xs opacity-60">{formatDate(pair.ignored_at)}</td>
+                    <td className="text-xs opacity-60">{formatDate(pair.ignoredAt)}</td>
                     <td className="text-right">
                       <button
                         className="btn btn-xs btn-outline btn-primary opacity-0 group-hover:opacity-100 transition-opacity"

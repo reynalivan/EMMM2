@@ -36,7 +36,6 @@ export type WorkspaceDialogState =
   | { kind: 'none' }
   | { kind: 'previewUnsavedChanges' }
   | { kind: 'conflict'; conflict: WorkspaceRenameConflict }
-  | { kind: 'duplicateConflict'; folder: ModFolder; duplicates: DuplicateInfo[] }
   | { kind: 'fileInUse'; data: WorkspaceFileInUseDialogData }
   | { kind: 'modMove'; folder: ModFolder }
   | { kind: 'modRename'; folder: ModFolder }

@@ -8,8 +8,7 @@ export type CollectionSaveRequest = {
 };
 
 export type CollectionWorkspaceSource =
-  | { kind: 'current_runtime' }
-  | { kind: 'stored_collection'; collectionId: string };
+  { kind: 'current_runtime' } | { kind: 'stored_collection'; collectionId: string };
 
 export type CollectionListRow =
   | {

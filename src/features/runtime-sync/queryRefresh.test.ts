@@ -4,7 +4,7 @@ import {
   publishRuntimeDescriptor,
   runtimeQueryKeys,
 } from './queryRefresh';
-import type { RuntimeEffectDescriptor } from '../workspace-runtime/optimistic/descriptor';
+import type { RuntimeEffectDescriptor } from '../../lib/runtimeEffects';
 
 function createQueryClientMock() {
   return {

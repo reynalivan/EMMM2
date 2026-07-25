@@ -2,9 +2,9 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Pool, Sqlite};
 use std::sync::Once;
 
+use crate::common::path_key::{collection_name_key, folder_path_key, object_name_key};
 use crate::domain::collection::ProjectedCollectionState;
 use crate::repo::game_repo::{upsert_game, GameRow};
-use crate::services::path_key::{collection_name_key, folder_path_key, object_name_key};
 
 static INIT: Once = Once::new();
 
@@ -15,7 +15,7 @@ pub struct TestContext {
 pub struct TestGameFixture<'a> {
     pub id: &'a str,
     pub name: &'a str,
-    pub game_type: crate::database::models::GameType,
+    pub game_type: crate::domain::models::GameType,
     pub path: &'a str,
     pub mods_path: Option<&'a str>,
 }
@@ -34,7 +34,7 @@ pub struct TestModFixture<'a> {
     pub object_id: Option<&'a str>,
     pub actual_name: &'a str,
     pub folder_path: &'a str,
-    pub status: crate::database::models::ItemStatus,
+    pub status: crate::domain::models::ItemStatus,
     pub is_safe: bool,
     pub object_type: Option<&'a str>,
     pub mods_path: Option<&'a str>,
@@ -213,11 +213,7 @@ pub async fn update_test_mod_path_and_status(
     sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ?, status = ? WHERE id = ?")
         .bind(folder_path)
         .bind(folder_path_key(folder_path, mods_path))
-        .bind(
-            status
-                .parse::<crate::database::models::ItemStatus>()
-                .unwrap() as i64,
-        )
+        .bind(status.parse::<crate::domain::models::ItemStatus>().unwrap() as i64)
         .bind(mod_id)
         .execute(pool)
         .await?;

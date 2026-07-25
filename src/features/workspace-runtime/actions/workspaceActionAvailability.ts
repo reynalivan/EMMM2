@@ -21,17 +21,6 @@ export function areWorkspaceMutationsDisabled(sourceUnavailableMessage: string |
   return Boolean(sourceUnavailableMessage);
 }
 
-export function maskWorkspaceCapabilities(
-  capabilities: WorkspaceCapabilities,
-  mutationsDisabled: boolean,
-): WorkspaceCapabilities {
-  if (!mutationsDisabled) {
-    return capabilities;
-  }
-
-  return DISABLED_CAPABILITIES;
-}
-
 export function maskWorkspaceNodeCapabilities<TNode extends WorkspaceNode>(
   node: TNode,
   mutationsDisabled: boolean,

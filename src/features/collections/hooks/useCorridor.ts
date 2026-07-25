@@ -11,13 +11,12 @@ import { commands } from '../../../lib/bindings';
 import type { CorridorSnapshot } from '../../../types/collection';
 import { corridorKeys } from '../queryKeys';
 
-export function useCorridor(gameId: string | null, isSafe: boolean) {
+export function useCorridor(gameId: string | null) {
   return useQuery<CorridorSnapshot>({
-    queryKey: corridorKeys.state(gameId ?? '', isSafe),
+    queryKey: corridorKeys.state(gameId ?? ''),
     queryFn: () =>
       commands.getCorridorState({
         gameId: gameId ?? '',
-        isSafe,
       }),
     enabled: !!gameId,
     staleTime: 5_000,

@@ -16,7 +16,6 @@ interface CollectionListProps {
   rows: CollectionListRow[];
   selectedId: string | null;
   isLoading: boolean;
-  safeMode: boolean;
   onSelect: (id: string) => void;
   onApply: (id: string, name: string) => void;
   onDelete: (id: string) => void;
@@ -30,7 +29,6 @@ export function CollectionList({
   rows,
   selectedId,
   isLoading,
-  safeMode,
   onSelect,
   onApply,
   onDelete,
@@ -74,8 +72,6 @@ export function CollectionList({
     );
   }
 
-  const modeLabel = safeMode ? t('tab.safe').toLowerCase() : t('tab.unsafe').toLowerCase();
-
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center h-full absolute inset-0">
@@ -83,9 +79,14 @@ export function CollectionList({
           <Layers size={32} />
         </div>
         <h3 className="text-lg font-medium opacity-80 mb-2">
-          {t('list.empty', { mode: modeLabel })}
+          {t('list.empty_all', 'No collections found')}
         </h3>
-        <p className="text-sm opacity-50 max-w-sm">{t('list.empty_desc', { mode: modeLabel })}</p>
+        <p className="text-sm opacity-50 max-w-sm">
+          {t(
+            'list.empty_all_desc',
+            'Create your first collection by clicking "Save Current State" at the top right.',
+          )}
+        </p>
       </div>
     );
   }
@@ -172,12 +173,23 @@ export function CollectionList({
                       <span className="truncate max-w-30 2xl:max-w-50">{label}</span>
                       {isActive && (
                         <span className="badge badge-sm badge-success opacity-90 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
-                          {t('list.item.active', 'Active')}
+                          {t('list.item.matches_runtime', 'Matches current runtime')}
                         </span>
                       )}
                       {isCurrentRuntime && (
                         <span className="badge badge-sm badge-ghost opacity-80 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
                           {t('list.item.current_runtime', 'Live')}
+                        </span>
+                      )}
+                      {collection && !collection.is_unsaved && (
+                        <span
+                          className={`badge badge-sm opacity-85 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0 ${
+                            collection.is_safe
+                              ? 'badge-success badge-outline'
+                              : 'badge-error badge-outline'
+                          }`}
+                        >
+                          {collection.is_safe ? t('tab.safe', 'SAFE') : t('tab.unsafe', 'UNSAFE')}
                         </span>
                       )}
                       {collection && !collection.is_unsaved && (

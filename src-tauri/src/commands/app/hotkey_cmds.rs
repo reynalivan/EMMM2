@@ -1,5 +1,6 @@
 //! Tauri commands for hotkey management — bindings, conflicts, and config updates.
 
+use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::hotkeys::manager::HotkeyManager;
 use crate::services::scanner::watcher::WatcherState;
@@ -15,11 +16,12 @@ pub async fn update_hotkey_config(
     hotkey_manager: State<'_, HotkeyManager>,
     watcher_state: State<'_, WatcherState>,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let settings = config_state.get_settings();
     hotkey_manager
         .inner()
-        .update_bindings(&app, &settings.hotkeys)?;
+        .update_bindings(&app, &settings.hotkeys)
+        .map_err(AppError::Validation)?;
 
     // Sync in-game overlay artifacts
     let _ = crate::services::app::post_apply::trigger_overlay_refresh(

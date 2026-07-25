@@ -31,6 +31,12 @@ describe('shared object action operations', () => {
     expect(
       buildObjectSyncCurrentData(
         {
+          matched_entry_key: null,
+          matched_alias_name: null,
+          matched_confidence: null,
+          matched_reason: null,
+          matched_source: null,
+          active_mod_paths: null,
           id: 'object-1',
           name: 'Diluc',
           display_name: 'Diluc',

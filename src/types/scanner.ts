@@ -1,61 +1,50 @@
-/**
- * Types for Epic 2: Mod Scanner & Organization.
- * Mirrors the active Deep Match Scanner preview/review payloads.
- */
-import type { CollectionReferenceImpact } from './collection';
-import type { WorkspacePathRewrite } from './workspace';
+export type {
+  ArchiveAnalysis,
+  ArchiveEntryInfo,
+  BulkActionError,
+  BulkResult,
+  CollisionInfo,
+  ConfirmedScanItem,
+  ConflictDetails,
+  ConflictInfo,
+  DeleteModResult,
+  DupScanEvent,
+  DupScanGroup,
+  DupScanMember,
+  DupScanReport,
+  DupScanSignal,
+  ExtractionEvent,
+  ExtractionResult,
+  FileEntry,
+  FolderDetail,
+  FolderEntry,
+  IgnoredConflict,
+  MatchCheckResult,
+  MetadataSyncResult,
+  ResolutionAction,
+  ResolutionError,
+  ResolutionRequest,
+  ResolutionSummary,
+  ScanEvent,
+  ScoredCandidate,
+  SyncResult,
+  TrashMetadata,
+  WhitelistEntry,
+} from '../lib/bindings.gen';
 
-export interface ArchiveInfo {
-  path: string;
-  name: string;
-  extension: string;
-  size_bytes: number;
-  has_ini: boolean;
-  file_count: number;
-  /** Whether the archive requires a password for extraction. */
-  is_encrypted: boolean;
-  contains_nested_archives: boolean;
-  /** File entries for tree preview (from analysis, capped at 500). */
-  entries?: Array<{ path: string; isDir: boolean; size: number }>;
-}
+import type {
+  ArchiveEntryInfo as GenArchiveEntryInfo,
+  ArchiveInfo as GenArchiveInfo,
+  ScanPreviewItem as GenScanPreviewItem,
+} from '../lib/bindings.gen';
 
-export interface ArchiveAnalysis {
-  format: string;
-  file_count: number;
-  has_ini: boolean;
-  uncompressed_size: number;
-  file_size_bytes: number;
-  single_root_folder: string | null;
-  is_encrypted: boolean;
-  contains_nested_archives: boolean;
-  entries: Array<{ path: string; isDir: boolean; size: number }>;
-}
+/** FE enrichment: analysis entries get attached to the archive row after analyze. */
+export type ArchiveInfo = GenArchiveInfo & { entries?: GenArchiveEntryInfo[] };
 
-export type CollisionResolution = 'rename' | 'skip' | 'overwrite' | 'merge';
+/** FE enrichment: flag set by the temp-import flow, not part of the wire payload. */
+export type ScanPreviewItem = GenScanPreviewItem & { moveFromTemp?: boolean };
 
-export interface CollisionInfo {
-  id: string;
-  sourcePath: string;
-  targetPath: string;
-  objectName: string;
-  existingModId: string | null;
-}
-
-export interface ExtractionResult {
-  archive_name: string;
-  /** Primary destination path (backward compat — first mod root moved). */
-  dest_path: string;
-  /** All destination paths (for multi-mod packs, may be > 1). */
-  dest_paths: string[];
-  files_extracted: number;
-  /** Number of independent mod roots found and moved. */
-  mod_count: number;
-  success: boolean;
-  error?: string;
-  aborted?: boolean;
-  collisions: CollisionInfo[];
-}
-
+/** Frontend-only view row for the legacy scan review table (no Rust counterpart). */
 export interface ScanResultItem {
   path: string;
   rawName: string;
@@ -72,127 +61,6 @@ export interface ScanResultItem {
   thumbnailPath: string | null;
 }
 
-export type ScoredCandidate = {
-  name: string;
-  objectType: string;
-  scorePct: number;
-};
-
-export type ScanPreviewItem = {
-  folderPath: string;
-  displayName: string;
-  isDisabled: boolean;
-  matchedEntryKey: string | null;
-  matchedAliasName: string | null;
-  matchLevel: string;
-  confidence: string;
-  confidenceScore: number;
-  matchDetail: string | null;
-  detectedSkin: string | null;
-  objectType: string | null;
-  thumbnailPath: string | null;
-  tagsJson: string | null;
-  metadataJson: string | null;
-  alreadyInDb: boolean;
-  alreadyMatched: boolean;
-  scoredCandidates: ScoredCandidate[];
-  hashDbJson: string | null;
-  customSkinsJson: string | null;
-  dbThumbnail: string | null;
-  moveFromTemp?: boolean;
-};
-
-export interface SyncResult {
-  total_scanned: number;
-  new_mods: number;
-  updated_mods: number;
-  deleted_mods: number;
-  new_objects: number;
-  collisions: CollisionInfo[];
-}
-
-export interface MetadataSyncResult {
-  success: boolean;
-  updated: boolean;
-  version?: string;
-  updated_count: number;
-  failed_count: number;
-  errors?: string[];
-}
-
-export interface FileEntry {
-  name: string;
-  size: number;
-  is_ini: boolean;
-}
-
-export interface FolderDetail {
-  path: string;
-  folder_name: string;
-  is_enabled: boolean;
-  total_size: number;
-  file_count: number;
-  files: FileEntry[];
-  thumbnail_path: string | null;
-}
-
-export interface ConflictDetails {
-  enabled: FolderDetail;
-  disabled: FolderDetail;
-}
-
-export interface ConflictInfo {
-  hash: string;
-  section_name: string;
-  mod_paths: string[];
-  is_active: boolean;
-}
-
-export interface MatchCheckResult {
-  matchedName: string | null;
-  matchScorePct: number;
-  targetScorePct: number;
-  isMatch: boolean;
-  confidence: string;
-}
-
-export type ScanEvent =
-  | { event: 'started'; data: { totalFolders: number } }
-  | { event: 'progress'; data: { current: number; folderName: string; etaMs: number } }
-  | { event: 'matched'; data: { folderName: string; objectName: string; confidence: string } }
-  | { event: 'finished'; data: { matched: number; unmatched: number } };
-
-export type ExtractionEvent = {
-  event: 'fileProgress';
-  data: { fileName: string; fileIndex: number; totalFiles: number };
-};
-
-// Extracted from bindings.ts
-export type TrashMetadata = {
-  id: string;
-  original_path: string;
-  original_name: string;
-  deleted_at: string;
-  size_bytes: number;
-  game_id: string | null;
-};
-
-export type BulkActionError = {
-  path: string;
-  error: unknown;
-};
-
-export type BulkResult = {
-  success: string[];
-  failures: BulkActionError[];
-  collection_impact: CollectionReferenceImpact;
-  path_rewrites: WorkspacePathRewrite[];
-};
-
-export type DeleteModResult = {
-  collection_impact: CollectionReferenceImpact;
-};
-
 export type DuplicateInfo = {
   mod_id: string;
   object_id: string;
@@ -202,127 +70,8 @@ export type DuplicateInfo = {
   parent_path: string;
 };
 
-export type IgnoredConflict = {
-  id: string;
-  game_id: string;
-  object_id: string;
-  object_name?: string;
-  mod_ids: string[];
-  mod_names: string[];
-};
-
-export type DupScanSignal = {
-  key: string;
-  detail: string;
-  score: number;
-};
-
-export type DupScanMember = {
-  modId: string | null;
-  folderPath: string;
-  displayName: string;
-  totalSizeBytes: number;
-  fileCount: number;
-  isSafe: boolean;
-  confidenceScore: number;
-  signals: DupScanSignal[];
-};
-
-export type DupScanGroup = {
-  groupId: string;
-  confidenceScore: number;
-  matchReason: string;
-  isUnsafe: boolean;
-  signals: DupScanSignal[];
-  members: DupScanMember[];
-};
-
-export type DupScanReport = {
-  scanId: string;
-  gameId: string;
-  rootPath: string;
-  totalGroups: number;
-  totalMembers: number;
-  groups: DupScanGroup[];
-};
-
-export type DupScanEvent =
-  | { event: 'started'; data: { scanId: string; gameId: string; totalFolders: number } }
-  | {
-      event: 'progress';
-      data: {
-        scanId: string;
-        processedFolders: number;
-        totalFolders: number;
-        currentFolder: string;
-        percent: number;
-      };
-    }
-  | { event: 'match'; data: { scanId: string; group: DupScanGroup } }
-  | { event: 'finished'; data: { scanId: string; totalGroups: number; totalMembers: number } }
-  | {
-      event: 'cancelled';
-      data: { scanId: string; processedFolders: number; totalFolders: number };
-    };
-
-export type ResolutionAction = { type: 'Keep'; targetPath: string } | { type: 'Ignore' } | null;
-
-export type ResolutionError = {
-  groupId: string;
-  action: ResolutionAction;
-  message: string;
-};
-
-export type ResolutionSummary = {
-  total: number;
-  successful: number;
-  failed: number;
-  errors: ResolutionError[];
-};
-
-export type ResolutionRequest = {
-  groupId: string;
-  action: 'Keep' | 'Ignore';
-  targetPath?: string; // Only if action is 'Keep'
-  allMembers: string[]; // All folder paths in the group
-};
-
-export type ConfirmedScanItem = {
-  folderPath: string;
-  displayName: string;
-  isDisabled: boolean;
-  matchedEntryKey: string | null;
-  matchedAliasName: string | null;
-  matchedConfidence: number | null;
-  matchedReason: string | null;
-  objectType: string | null;
-  thumbnailPath: string | null;
-  tagsJson: string | null;
-  metadataJson: string | null;
-  hashDbJson: string | null;
-  customSkinsJson: string | null;
-  dbThumbnail: string | null;
-  skip: boolean;
-  moveFromTemp?: boolean;
-};
-
-export type MetadataDraftValues = {
-  object_type: string;
-  sub_category?: string;
-  metadata?: Record<string, string>;
-};
-
-export type FolderEntry = {
-  name: string;
-  is_dir: boolean;
-};
-
-export type WhitelistEntry = {
-  id: string;
-  folder_a_id: string;
-  folder_b_id: string;
-  folder_a_name: string;
-  folder_b_name: string;
-  reason: string;
-  ignored_at: string;
-};
+/**
+ * UI-only vocabulary for the duplicate report: the user picks per GROUP, while
+ * the Rust wire contract is per PAIR. `buildResolutionRequests` translates.
+ */
+export type DuplicateSelection = { type: 'Keep'; targetPath: string } | { type: 'Ignore' } | null;

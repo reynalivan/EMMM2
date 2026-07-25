@@ -9,6 +9,6 @@ pub mod organizer_ext;
 pub mod organizer_move;
 pub mod organizer_targets;
 pub mod preview_image;
+pub mod preview_ops;
 pub mod stale_mod_service;
 pub mod trash;
-pub mod variant_service;

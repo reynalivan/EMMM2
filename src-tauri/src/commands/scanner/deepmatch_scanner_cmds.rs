@@ -201,21 +201,10 @@ async fn resolve_object_preview_paths(
         .canonicalize()
         .map_err(|error| format!("Failed to canonicalize mods root: {}", error))?;
 
-    let mut query_builder =
-        sqlx::QueryBuilder::new("SELECT folder_path FROM mods WHERE game_id = ");
-    query_builder.push_bind(game_id);
-    query_builder.push(" AND object_id IN (");
-    let mut separated = query_builder.separated(", ");
-    for object_id in object_ids {
-        separated.push_bind(object_id);
-    }
-    separated.push_unseparated(") ORDER BY id");
-
-    let folder_paths = query_builder
-        .build_query_scalar::<String>()
-        .fetch_all(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+    let folder_paths =
+        crate::repo::mod_repo::get_folder_paths_by_object_ids(pool, game_id, object_ids)
+            .await
+            .map_err(|error| error.to_string())?;
 
     let mut resolved_paths = Vec::with_capacity(folder_paths.len());
     for folder_path in folder_paths {

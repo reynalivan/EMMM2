@@ -1,19 +1,38 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { listen } from '@tauri-apps/api/event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { isModFolder } from './pathUtils';
-import { applyDiskReconcileResult } from './hooks';
+import { applyDiskReconcileResult, useDiskReconcileCoordinator } from './hooks';
+import { isPreviewAffected } from './reconcileSelection';
 import type { DiskReconcileResult } from '../../lib/bindings';
+import { commands } from '../../lib/bindings';
 import { runtimeQueryKeys } from '../runtime-sync/queryRefresh';
-import { GameType } from '../../types/game';
+import { GameType, type GameConfig } from '../../types/game';
 import { workspaceKeys } from '../workspace-runtime/useWorkspaceViewModel';
 import type { WorkspaceViewModel } from '../../types/workspace';
+import { useAppStore } from '../../stores/useAppStore';
+
+vi.mock('../../lib/bindings', () => ({
+  commands: {
+    stopWatcher: vi.fn().mockResolvedValue(undefined),
+    startWatcher: vi.fn().mockResolvedValue(undefined),
+    reconcileDiskState: vi.fn(),
+  },
+}));
 
 vi.mock('../../stores/useAppStore', () => {
   const state = {
+    workspaceView: 'mods',
     explorerSubPath: undefined as string | undefined,
     selectedObjectFolderPath: null as string | null,
+    selectedModPath: null as string | null,
     gridSelection: new Set<string>(),
+    lastDiskReconcileAtByGame: {} as Record<string, number>,
+    pendingDiskReconcileByGame: {} as Record<string, boolean>,
+    diskSourceUnavailableByGame: {} as Record<string, string | null>,
     setDiskReconcileTimestamp: vi.fn(),
+    markDiskReconcilePending: vi.fn(),
     setDiskSourceUnavailable: vi.fn(),
     setExplorerSubPath: vi.fn(),
     setCurrentPath: vi.fn(),
@@ -24,7 +43,7 @@ vi.mock('../../stores/useAppStore', () => {
   };
 
   const useAppStore = Object.assign(
-    vi.fn(() => null),
+    vi.fn((selector?: (value: typeof state) => unknown) => (selector ? selector(state) : state)),
     {
       getState: vi.fn(() => state),
     },
@@ -32,6 +51,31 @@ vi.mock('../../stores/useAppStore', () => {
 
   return { useAppStore };
 });
+
+type MockEventHandler = (event: { payload: unknown }) => void;
+
+function createActiveGame(): GameConfig {
+  return {
+    id: 'game-1',
+    mod_path: 'E:/Mods',
+    game_type: GameType.GIMI,
+    name: 'Genshin',
+    game_exe: 'game.exe',
+    loader_exe: null,
+    launch_args: null,
+  };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
 
 vi.mock('../../stores/useToastStore', () => ({
   toast: {
@@ -108,7 +152,6 @@ function createWorkspaceViewModel(selectedPath: string): WorkspaceViewModel {
           category: null,
           conflict_group_id: null,
           conflict_state: null,
-          pin_hash: null,
           warnings: [],
           node_kind: 'terminal_mod',
           display_mode: 'flat_mod',
@@ -186,6 +229,13 @@ describe('applyDiskReconcileResult', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    const state = useAppStore.getState();
+    state.workspaceView = 'mods';
+    state.selectedObjectFolderPath = null;
+    state.selectedModPath = null;
+    state.gridSelection = new Set();
+    state.lastDiskReconcileAtByGame = {};
+    state.pendingDiskReconcileByGame = {};
   });
 
   it('refreshes ObjectList when folders change', async () => {
@@ -316,6 +366,34 @@ describe('applyDiskReconcileResult', () => {
     });
   });
 
+  it('refreshes metadata and preview queries when a runtime file changes on disk', async () => {
+    const state = useAppStore.getState();
+    state.selectedModPath = 'E:/Mods/ALBEDO/Variant';
+
+    applyDiskReconcileResult(
+      createResult({
+        changed_roots: ['ALBEDO'],
+        runtime_file_changed: true,
+      }),
+      queryClient as unknown as import('@tanstack/react-query').QueryClient,
+      createActiveGame(),
+    );
+    await Promise.resolve();
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.workspaceViewModel,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.folderMetadata,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.previewDetails,
+      refetchType: 'active',
+    });
+  });
+
   it('records unavailable disk source without refreshing runtime queries', async () => {
     const { useAppStore } = await import('../../stores/useAppStore');
     const state = useAppStore.getState();
@@ -436,6 +514,77 @@ describe('applyDiskReconcileResult', () => {
       expect.stringContaining('Updated references in 1 collection: Preset A'),
       5000,
     );
+  });
+});
+
+describe('isPreviewAffected', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const state = useAppStore.getState();
+    state.selectedObjectFolderPath = null;
+    state.selectedModPath = null;
+    state.gridSelection = new Set();
+  });
+
+  it('uses selectedModPath when grid selection is empty', () => {
+    const state = useAppStore.getState();
+    state.selectedModPath = 'E:/Mods/ALBEDO/Variant';
+
+    expect(
+      isPreviewAffected(
+        createResult({
+          changed_roots: ['ALBEDO'],
+        }),
+        createActiveGame(),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('useDiskReconcileCoordinator', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const state = useAppStore.getState();
+    state.workspaceView = 'mods';
+    state.lastDiskReconcileAtByGame = {};
+    state.pendingDiskReconcileByGame = {};
+  });
+
+  it('runs a queued focus refresh after the current reconcile completes', async () => {
+    const eventHandlers: Record<string, MockEventHandler> = {};
+    (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, callback: MockEventHandler) => {
+        eventHandlers[event] = callback;
+        return Promise.resolve(vi.fn());
+      },
+    );
+    const firstRefresh = createDeferred<DiskReconcileResult>();
+    const reconcileDiskState = commands.reconcileDiskState as unknown as ReturnType<typeof vi.fn>;
+    reconcileDiskState
+      .mockReturnValueOnce(firstRefresh.promise)
+      .mockResolvedValueOnce(createResult({ reason: 'WindowRefocused' }));
+
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      eventHandlers['tauri://focus']({ payload: null });
+    });
+
+    expect(reconcileDiskState).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
+      await firstRefresh.promise;
+    });
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
+    expect(reconcileDiskState).toHaveBeenLastCalledWith({
+      gameId: 'game-1',
+      reason: 'WindowRefocused',
+      forceFull: false,
+    });
   });
 });
 

@@ -170,16 +170,6 @@ export function closeModActiveContextDialog(): void {
   closeWorkspaceDialog('modActiveContext');
 }
 
-export function openModDuplicateWarningDialog(
-  folder: ModFolder,
-  duplicates: DuplicateInfo[],
-): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'modDuplicateWarning', folder, duplicates },
-  });
-}
-
 export function closeModDuplicateWarningDialog(): void {
   closeWorkspaceDialog('modDuplicateWarning');
 }

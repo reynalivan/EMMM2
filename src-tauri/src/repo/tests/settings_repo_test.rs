@@ -53,7 +53,7 @@ async fn test_reset_all_data() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game1".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,

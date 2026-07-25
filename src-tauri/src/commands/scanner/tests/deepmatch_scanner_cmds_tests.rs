@@ -1,5 +1,5 @@
 use super::*;
-use crate::database::models::{GameType, ItemStatus};
+use crate::domain::models::{GameType, ItemStatus};
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,

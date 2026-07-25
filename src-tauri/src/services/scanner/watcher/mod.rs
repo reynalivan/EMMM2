@@ -12,7 +12,7 @@
 //!
 //! # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 
-use crate::services::path_key::path_file_name_lossy;
+use crate::common::path_key::path_file_name_lossy;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
@@ -25,7 +25,7 @@ mod events;
 mod suppressor;
 
 pub(crate) use event_filter::should_keep_event_path;
-use event_filter::{is_relevant_path, RENAME_PAIR_TIMEOUT};
+use event_filter::RENAME_PAIR_TIMEOUT;
 pub use events::{ModWatchEvent, WatchEventPayload};
 pub use suppressor::{SuppressionGuard, WatcherSuppressor};
 
@@ -57,7 +57,7 @@ impl Default for WatcherState {
 /// Detect if a rename represents an enable/disable status change.
 /// Returns `Some((old_status, new_status))` if the DISABLED prefix was added/removed.
 fn detect_status_change(from_path: &Path, to_path: &Path) -> Option<(&'static str, &'static str)> {
-    use crate::services::scanner::core::normalizer;
+    use crate::common::normalizer;
 
     let old_name = path_file_name_lossy(from_path)?;
     let new_name = path_file_name_lossy(to_path)?;
@@ -144,9 +144,7 @@ pub fn watch_mod_directory(
                     let mut pending = pending_clone.lock().unwrap();
                     if let Some((ref from_path, ts)) = *pending {
                         if ts.elapsed() > RENAME_PAIR_TIMEOUT {
-                            if is_relevant_path(Path::new(from_path)) {
-                                send(ModWatchEvent::Removed(from_path.clone()));
-                            }
+                            send(ModWatchEvent::Removed(from_path.clone()));
                             *pending = None;
                         }
                     }
@@ -160,9 +158,7 @@ pub fn watch_mod_directory(
                             let mut pending = pending_clone.lock().unwrap();
                             // Flush any existing pending From as Removed
                             if let Some((ref old_from, _)) = *pending {
-                                if is_relevant_path(Path::new(old_from)) {
-                                    send(ModWatchEvent::Removed(old_from.clone()));
-                                }
+                                send(ModWatchEvent::Removed(old_from.clone()));
                             }
                             *pending = Some((path_str.clone(), Instant::now()));
                             let pending_for_timeout = pending_clone.clone();
@@ -181,10 +177,7 @@ pub fn watch_mod_directory(
 
                                 let removed_path = pending_path.clone();
                                 *pending = None;
-                                if is_relevant_path(Path::new(&removed_path)) {
-                                    let _ =
-                                        tx_for_timeout.send(ModWatchEvent::Removed(removed_path));
-                                }
+                                let _ = tx_for_timeout.send(ModWatchEvent::Removed(removed_path));
                             });
                         }
                     }
@@ -196,32 +189,26 @@ pub fn watch_mod_directory(
                             let mut pending = pending_clone.lock().unwrap();
                             if let Some((from_path, _)) = pending.take() {
                                 // Paired: check if it's a status change
-                                if is_relevant_path(Path::new(&from_path))
-                                    || is_relevant_path(Path::new(&to_path))
+                                let from_p = Path::new(&from_path);
+                                let to_p = Path::new(&to_path);
+                                if let Some((from_status, to_status)) =
+                                    detect_status_change(from_p, to_p)
                                 {
-                                    let from_p = Path::new(&from_path);
-                                    let to_p = Path::new(&to_path);
-                                    if let Some((from_status, to_status)) =
-                                        detect_status_change(from_p, to_p)
-                                    {
-                                        send(ModWatchEvent::StatusChanged {
-                                            from: from_path,
-                                            to: to_path,
-                                            from_status,
-                                            to_status,
-                                        });
-                                    } else {
-                                        send(ModWatchEvent::Renamed {
-                                            from: from_path,
-                                            to: to_path,
-                                        });
-                                    }
+                                    send(ModWatchEvent::StatusChanged {
+                                        from: from_path,
+                                        to: to_path,
+                                        from_status,
+                                        to_status,
+                                    });
+                                } else {
+                                    send(ModWatchEvent::Renamed {
+                                        from: from_path,
+                                        to: to_path,
+                                    });
                                 }
                             } else {
                                 // Orphan To → treat as Created
-                                if is_relevant_path(p) {
-                                    send(ModWatchEvent::Created(to_path));
-                                }
+                                send(ModWatchEvent::Created(to_path));
                             }
                         }
                     }
@@ -231,23 +218,19 @@ pub fn watch_mod_directory(
                         if event.paths.len() >= 2 {
                             let from = event.paths[0].to_string_lossy().to_string();
                             let to = event.paths[1].to_string_lossy().to_string();
-                            if is_relevant_path(&event.paths[0])
-                                || is_relevant_path(&event.paths[1])
+                            let from_p = Path::new(&from);
+                            let to_p = Path::new(&to);
+                            if let Some((from_status, to_status)) =
+                                detect_status_change(from_p, to_p)
                             {
-                                let from_p = Path::new(&from);
-                                let to_p = Path::new(&to);
-                                if let Some((from_status, to_status)) =
-                                    detect_status_change(from_p, to_p)
-                                {
-                                    send(ModWatchEvent::StatusChanged {
-                                        from,
-                                        to,
-                                        from_status,
-                                        to_status,
-                                    });
-                                } else {
-                                    send(ModWatchEvent::Renamed { from, to });
-                                }
+                                send(ModWatchEvent::StatusChanged {
+                                    from,
+                                    to,
+                                    from_status,
+                                    to_status,
+                                });
+                            } else {
+                                send(ModWatchEvent::Renamed { from, to });
                             }
                         }
                     }
@@ -258,27 +241,21 @@ pub fn watch_mod_directory(
                     // ── Create ──
                     EventKind::Create(_) => {
                         for p in &event.paths {
-                            if is_relevant_path(p) {
-                                send(ModWatchEvent::Created(p.to_string_lossy().to_string()));
-                            }
+                            send(ModWatchEvent::Created(p.to_string_lossy().to_string()));
                         }
                     }
 
                     // ── Modify (content/metadata, not rename) ──
                     EventKind::Modify(_) => {
                         for p in &event.paths {
-                            if is_relevant_path(p) {
-                                send(ModWatchEvent::Modified(p.to_string_lossy().to_string()));
-                            }
+                            send(ModWatchEvent::Modified(p.to_string_lossy().to_string()));
                         }
                     }
 
                     // ── Remove ──
                     EventKind::Remove(_) => {
                         for p in &event.paths {
-                            if is_relevant_path(p) {
-                                send(ModWatchEvent::Removed(p.to_string_lossy().to_string()));
-                            }
+                            send(ModWatchEvent::Removed(p.to_string_lossy().to_string()));
                         }
                     }
 

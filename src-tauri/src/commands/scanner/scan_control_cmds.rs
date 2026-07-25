@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::State;
 
@@ -25,7 +26,7 @@ impl Default for ScanState {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn cancel_scan_cmd(state: State<'_, ScanState>) -> Result<(), String> {
+pub async fn cancel_scan_cmd(state: State<'_, ScanState>) -> Result<(), AppError> {
     state.cancel();
     Ok(())
 }

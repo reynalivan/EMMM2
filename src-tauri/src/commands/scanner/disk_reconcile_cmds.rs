@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use tauri::State;
 
 #[tauri::command]
@@ -16,7 +17,7 @@ pub async fn reconcile_disk_state_cmd(
         '_,
         crate::services::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-) -> Result<crate::services::disk_reconcile::types::DiskReconcileResult, String> {
+) -> Result<crate::services::disk_reconcile::types::DiskReconcileResult, AppError> {
     crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
         crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
@@ -32,4 +33,5 @@ pub async fn reconcile_disk_state_cmd(
         ),
     )
     .await
+    .map_err(AppError::Internal)
 }

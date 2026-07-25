@@ -7,7 +7,7 @@ use sqlx::SqlitePool;
 pub struct GameRow {
     pub id: String,
     pub name: String,
-    pub game_type: crate::database::models::GameType,
+    pub game_type: crate::domain::models::GameType,
     pub path: String,
     pub mods_path: Option<String>,
     pub game_exe: Option<String>,
@@ -80,24 +80,31 @@ pub async fn count_games(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
     Ok(row.0)
 }
 
-/// Get all game mod paths as a map of game_id -> mod_path.
-pub async fn get_all_game_mod_paths(
+/// Get the mod path for a specific game by ID.
+/// Raw configured `mods_path` (may be None; no fallback — `get_mod_path`
+/// falls back to the game `path` when `mods_path` is unset).
+pub async fn get_configured_mods_path(
     pool: &SqlitePool,
-) -> Result<std::collections::HashMap<String, String>, sqlx::Error> {
-    let rows: Vec<(String, Option<String>)> =
-        sqlx::query_as("SELECT id, COALESCE(NULLIF(mods_path, ''), path) FROM games")
-            .fetch_all(pool)
+    game_id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let value: Option<Option<String>> =
+        sqlx::query_scalar("SELECT mods_path FROM games WHERE id = ?")
+            .bind(game_id)
+            .fetch_optional(pool)
             .await?;
-
-    let map = rows
-        .into_iter()
-        .filter_map(|(id, path)| path.map(|p| (id, p)))
-        .collect();
-
-    Ok(map)
+    Ok(value.flatten())
 }
 
-/// Get the mod path for a specific game by ID.
+/// Raw `game_type` discriminant, used to pick the matching Master DB resource file.
+pub async fn get_game_type_raw(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar!("SELECT game_type FROM games WHERE id = ?", game_id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn get_mod_path(pool: &SqlitePool, game_id: &str) -> Result<Option<String>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT COALESCE(NULLIF(mods_path, ''), path) AS mods_path FROM games WHERE id = ?",
@@ -118,7 +125,7 @@ pub async fn ensure_game_exists(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     game_name: &str,
-    game_type: crate::database::models::GameType,
+    game_type: crate::domain::models::GameType,
     mods_path: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(

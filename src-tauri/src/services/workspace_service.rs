@@ -20,9 +20,7 @@ use crate::services::workspace_read_model::selection::{
 };
 
 async fn load_game_mods_path(pool: &sqlx::SqlitePool, game_id: &str) -> Result<String, String> {
-    sqlx::query_scalar::<_, String>("SELECT mods_path FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(pool)
+    crate::repo::game_repo::get_configured_mods_path(pool, game_id)
         .await
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("Game '{}' has no mods_path", game_id))

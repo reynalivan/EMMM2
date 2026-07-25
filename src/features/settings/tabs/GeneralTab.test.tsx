@@ -30,7 +30,6 @@ vi.mock('../../../hooks/useSettings', () => ({
         enabled: false,
         game_focus_only: false,
         cooldown_ms: 150,
-        toggle_safe_mode: '',
         next_preset: '',
         prev_preset: '',
         next_variant: '',

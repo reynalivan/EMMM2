@@ -35,5 +35,5 @@ fn test_object_service_auto_matched_uses_staged_status_adapters() {
     // We can directly call the private helpers exposed for testing if needed, or recreate the logic.
     // For now, let's just make sure it compiles by avoiding the deleted functions.
     // The matching logic itself is well tested in the deep_matcher crate.
-    assert!(db.entries.len() > 0);
+    assert!(!db.entries.is_empty());
 }

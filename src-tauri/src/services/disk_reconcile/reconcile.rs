@@ -255,7 +255,7 @@ pub async fn reconcile_disk_projection(
         .await?;
 
         tx.commit().await.map_err(|error| error.to_string())?;
-        crate::services::runtime_projection_service::rebuild_game_projection(pool, game_id)
+        crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id)
             .await
             .map_err(|error| error.to_string())?;
 

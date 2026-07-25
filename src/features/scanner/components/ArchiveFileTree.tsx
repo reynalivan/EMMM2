@@ -2,14 +2,10 @@ import { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Folder, File } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-interface Entry {
-  path: string;
-  isDir: boolean;
-  size: number;
-}
+import type { ArchiveEntryInfo } from '../../../types/scanner';
 
 interface Props {
-  entries: Entry[];
+  entries: ArchiveEntryInfo[];
   totalCount: number;
 }
 
@@ -27,7 +23,7 @@ export default function ArchiveFileTree({ entries, totalCount }: Props) {
       const normalized = entry.path.replace(/\\/g, '/');
       const parts = normalized.split('/').filter(Boolean);
 
-      if (parts.length <= 1 && !entry.isDir) {
+      if (parts.length <= 1 && !entry.is_dir) {
         rootFiles++;
         continue;
       }

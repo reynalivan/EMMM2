@@ -29,13 +29,16 @@ vi.mock('../../../hooks/useFolderCoreMutations', () => ({
 vi.mock('../../../hooks/useFolderMutations', () => ({
   useImportMods: () => ({ mutate: vi.fn() }),
   useToggleModSafe: () => ({ mutate: vi.fn() }),
+  useUpdateModInfo: () => ({ mutate: vi.fn() }),
+  useActiveConflicts: () => ({ data: [] }),
+}));
+
+vi.mock('../../../hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
   useBulkUpdateInfo: () => ({ mutate: vi.fn() }),
   useBulkFavorite: () => ({ mutate: vi.fn() }),
   useBulkPin: () => ({ mutate: vi.fn() }),
-  useUpdateModInfo: () => ({ mutate: vi.fn() }),
-  useActiveConflicts: () => ({ data: [] }),
 }));
 
 vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({

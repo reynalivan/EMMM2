@@ -74,7 +74,9 @@
     "description": "{{targetName}} 在同一目标下已有其他已启用模组。请选择继续方式。",
     "currently_enabled": "当前已启用",
     "enable_only_this": "仅启用此项",
-    "force_enable": "仍然强制启用"
+    "force_enable": "仍然强制启用",
+    "dont_warn_again": "不再对该组合发出警告",
+    "ignore_failed": "保存忽略规则失败：{{error}}"
   },
   "drag_overlay": {
     "title": "移动到对象",

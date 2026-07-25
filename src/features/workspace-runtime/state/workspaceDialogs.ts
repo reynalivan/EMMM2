@@ -1,5 +1,3 @@
-import type { ModFolder } from '../../../types/mod';
-import type { DuplicateInfo } from '../../../types/scanner';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import type {
   WorkspaceFileInUseDialogData,
@@ -12,16 +10,6 @@ export function openWorkspaceConflictDialog(conflict: WorkspaceRenameConflict): 
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_OPENED',
     dialog: { kind: 'conflict', conflict },
-  });
-}
-
-export function openWorkspaceDuplicateConflictDialog(
-  folder: ModFolder,
-  duplicates: DuplicateInfo[],
-): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'duplicateConflict', folder, duplicates },
   });
 }
 

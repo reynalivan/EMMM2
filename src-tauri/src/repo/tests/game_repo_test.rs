@@ -13,7 +13,7 @@ async fn test_game_crud() {
     let game = GameRow {
         id: "test-id".into(),
         name: "Test Game".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: Some("C:\\Game\\game.exe".into()),
@@ -50,7 +50,7 @@ async fn test_count_games() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game1".into(),
         mods_path: Some("C:\\Mods".into()),
         game_exe: None,
@@ -68,7 +68,7 @@ async fn test_get_mod_path() {
     let game = GameRow {
         id: "g2".into(),
         name: "Game 2".into(),
-        game_type: crate::database::models::GameType::GIMI,
+        game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game2".into(),
         mods_path: Some("C:\\CustomModPath".into()),
         game_exe: None,

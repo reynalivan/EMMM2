@@ -3,7 +3,6 @@ import type { QueryRefetchType } from '../../runtime-sync/queryRefresh';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import {
-  buildQueryInvalidationDescriptor,
   buildPathInvalidationDescriptor,
   buildRuntimeMutationDescriptor,
 } from '../optimistic/descriptorBuilders';
@@ -19,20 +18,6 @@ export async function applyRuntimeMutationResult(
   refetchType: QueryRefetchType = 'active',
 ): Promise<void> {
   const descriptor = buildRuntimeMutationDescriptor(mutationKind);
-  applyRuntimeEffects(queryClient, descriptor);
-  await publishRuntimeDescriptor(queryClient, descriptor, refetchType);
-}
-
-export async function applyRuntimeQueryInvalidationResult(
-  queryClient: QueryClient,
-  queryKeys: readonly (readonly unknown[])[],
-  mutationKind: RuntimeMutationKind,
-  refetchType: QueryRefetchType = 'active',
-): Promise<void> {
-  const descriptor = buildQueryInvalidationDescriptor(
-    [...queryKeys],
-    buildRuntimeMutationDescriptor(mutationKind).refreshEvents,
-  );
   applyRuntimeEffects(queryClient, descriptor);
   await publishRuntimeDescriptor(queryClient, descriptor, refetchType);
 }

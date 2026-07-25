@@ -101,7 +101,9 @@ fn open_explorer_select(path: &str) -> Result<String, AppError> {
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn rename_mod_folder(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
@@ -120,6 +122,19 @@ pub async fn rename_mod_folder(
         &game_id,
     )
     .await?;
+
+    // Convergence: scoped disk reconcile guarantees DB matches disk even if a
+    // manual sync step missed a case.
+    if let Err(error) = crate::services::disk_reconcile::emit::emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &game_id,
+        vec![result.old_path.clone(), result.new_path.clone()],
+    )
+    .await
+    {
+        log::warn!("Post-rename disk reconcile failed: {error}");
+    }
 
     Ok(result)
 }

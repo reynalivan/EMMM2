@@ -32,7 +32,7 @@ fn test_load_schema_corrupt_json_returns_default() {
     let mut file = std::fs::File::create(schemas_dir.join("gimi.json")).unwrap();
     file.write_all(b"{ invalid json !!!").unwrap();
 
-    let schema = load_schema(temp.path(), 1);
+    let schema = load_schema(temp.path(), 0);
     assert_eq!(schema.categories.len(), 4);
 }
 
@@ -46,7 +46,7 @@ fn test_load_schema_empty_categories_returns_default() {
     file.write_all(b"{\"categories\": [], \"filters\": []}")
         .unwrap();
 
-    let schema = load_schema(temp.path(), 1);
+    let schema = load_schema(temp.path(), 0);
     assert_eq!(schema.categories.len(), 4, "Should fallback on empty");
 }
 
@@ -70,7 +70,8 @@ fn test_load_schema_valid_json_returns_parsed() {
     let mut file = std::fs::File::create(schemas_dir.join("wwmi.json")).unwrap();
     file.write_all(valid_json.as_bytes()).unwrap();
 
-    let schema = load_schema(temp.path(), 4);
+    // WWMI = 2
+    let schema = load_schema(temp.path(), 2);
     assert_eq!(schema.categories.len(), 2);
     assert_eq!(schema.categories[0].name, "Resonator");
     assert_eq!(schema.filters.len(), 1);
@@ -90,20 +91,20 @@ fn test_load_schema_case_insensitive_game_type() {
     let mut file = std::fs::File::create(schemas_dir.join("srmi.json")).unwrap();
     file.write_all(valid.as_bytes()).unwrap();
 
-    // Should find srmi.json even when called with "SRMI"
-    let schema = load_schema(temp.path(), 2);
+    // SRMI = 1
+    let schema = load_schema(temp.path(), 1);
     assert_eq!(schema.categories.len(), 1);
     assert_eq!(schema.categories[0].name, "Test");
 }
 
-// Covers: normalize_game_type maps legacy names to canonical XXMI codes
+// Covers: normalize_game_type maps GameType discriminants to canonical XXMI codes
 #[test]
 fn test_normalize_game_type() {
-    assert_eq!(normalize_game_type(2), "srmi");
-    assert_eq!(normalize_game_type(1), "gimi");
+    assert_eq!(normalize_game_type(0), "gimi");
+    assert_eq!(normalize_game_type(1), "srmi");
+    assert_eq!(normalize_game_type(2), "wwmi");
     assert_eq!(normalize_game_type(3), "zzmi");
-    assert_eq!(normalize_game_type(4), "wwmi");
-    assert_eq!(normalize_game_type(5), "efmi");
+    assert_eq!(normalize_game_type(4), "efmi");
     // Unknown passthrough
     assert_eq!(normalize_game_type(6), "gimi");
 }
@@ -120,7 +121,7 @@ fn test_load_schema_with_legacy_game_type() {
     file.write_all(valid.as_bytes()).unwrap();
 
     // "StarRail" (legacy) should normalize to "srmi" and find srmi.json
-    let schema = load_schema(temp.path(), 2);
+    let schema = load_schema(temp.path(), 1);
     assert_eq!(schema.categories.len(), 1);
     assert_eq!(schema.categories[0].name, "Character");
     // Per-category filters should be present

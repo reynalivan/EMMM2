@@ -1,5 +1,5 @@
-use crate::database::models::ConfigStatus;
-use crate::database::models::GameType;
+use crate::domain::models::ConfigStatus;
+use crate::domain::models::GameType;
 use crate::services::app::app_service::{check_config_status, reset_database_service};
 use std::fs;
 use tempfile::TempDir;

@@ -1,8 +1,8 @@
+use crate::common::classifier::NodeType;
 use crate::domain::workspace::{
     WorkspaceCapabilities, WorkspaceDisplayMode, WorkspaceExplorer, WorkspaceExplorerNode,
     WorkspaceNodeKind, WorkspaceSwitchPolicyKey, WorkspaceSwitchState,
 };
-use crate::services::explorer::classifier::NodeType;
 use crate::services::explorer::types::{FolderGridResponse, ModFolder};
 use crate::services::workspace_read_model::common::{
     build_disabled_by_container_reason, build_folder_warning, build_inactive_warning,

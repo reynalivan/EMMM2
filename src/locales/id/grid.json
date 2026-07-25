@@ -18,7 +18,13 @@
     "parent_disabled_title": "Kontainer \"{{name}}\" nonaktif — direktori terkunci",
     "parent_disabled_object_title": "Disabled Object Mods ({{name}})",
     "enable_parent_btn": "Aktifkan Parent",
-    "preview_impact": "Pratinjau Dampak"
+    "preview_impact": "Pratinjau Dampak",
+    "source_hint": "Folder mungkin dipindahkan, diganti nama, atau drive-nya terputus.",
+    "source_retry_btn": "Coba lagi",
+    "source_locate_btn": "Cari folder…",
+    "source_locate_title": "Pilih folder mods untuk game ini",
+    "source_relocated": "Folder mods diperbarui.",
+    "source_action_failed": "Tidak dapat mengakses folder mods: {{error}}"
   },
   "empty": {
     "no_match": "Tidak ada mod yang cocok dengan pencarian Anda.",
@@ -118,6 +124,32 @@
     "edit_metadata": "Ubah Metadata",
     "move_object": "Pindah ke Objek...",
     "move_trash": "Pindahkan ke Tempat Sampah"
+  },
+  "bulk_toast": {
+    "success": "Berhasil {{action}}: {{names}}",
+    "success_with_more": "Berhasil {{action}}: {{names}} + {{extraCount}} lainnya",
+    "import_success_one": "Berhasil mengimpor {{count}} item",
+    "import_success_other": "Berhasil mengimpor {{count}} item",
+    "failure_one": "Gagal {{action}} {{name}}: {{reason}}",
+    "failure_other": "Gagal {{action}} {{name}} + {{extraCount}} lainnya: {{reason}}",
+    "actions": {
+      "enabled": "mengaktifkan",
+      "disabled": "menonaktifkan",
+      "deleted": "menghapus",
+      "updated": "memperbarui",
+      "favorited": "menambahkan ke favorit",
+      "unfavorited": "menghapus dari favorit",
+      "pinned": "menyematkan",
+      "unpinned": "melepas sematan"
+    },
+    "failure_actions": {
+      "toggle": "mengubah status",
+      "delete": "menghapus",
+      "update": "memperbarui",
+      "favorite": "mengubah status favorit untuk",
+      "pin": "mengubah status sematan untuk",
+      "import": "mengimpor"
+    }
   },
   "status": {
     "load_error": "Gagal memuat mod",

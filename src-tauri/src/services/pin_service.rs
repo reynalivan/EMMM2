@@ -74,38 +74,6 @@ pub async fn verify_pin(pool: &SqlitePool, pin: &str) -> Result<bool, PinError> 
     Ok(false)
 }
 
-/// Verify a recovery code. Same logic as PIN verification.
-pub async fn verify_recovery(pool: &SqlitePool, recovery_code: &str) -> Result<bool, PinError> {
-    let config = pin_repo::get(pool).await?;
-
-    let recovery_hash = match config.recovery_hash {
-        Some(ref h) => h,
-        None => return Ok(false), // No recovery code set
-    };
-
-    let is_valid = verify_hash(recovery_code, recovery_hash);
-
-    if is_valid {
-        // Recovery clears the PIN entirely
-        pin_repo::clear_pin(pool).await?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-/// Clear the PIN (remove protection).
-pub async fn clear_pin(pool: &SqlitePool) -> Result<(), PinError> {
-    pin_repo::clear_pin(pool).await?;
-    Ok(())
-}
-
-/// Check if a PIN is set.
-pub async fn has_pin(pool: &SqlitePool) -> Result<bool, PinError> {
-    let config = pin_repo::get(pool).await?;
-    Ok(config.has_pin())
-}
-
 /// Check if the UI should be locked on boot.
 /// Returns true if Safe Mode is DISABLED and a PIN is set.
 pub async fn check_boot_security(pool: &SqlitePool, is_safe_mode: bool) -> Result<bool, PinError> {
@@ -129,6 +97,26 @@ fn verify_hash(secret: &str, hash: &str) -> bool {
     Argon2::default()
         .verify_password(secret.as_bytes(), &parsed)
         .is_ok()
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Hash a PIN using Argon2id.
+fn hash_pin(pin: &str) -> String {
+    use argon2::{
+        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+        Argon2,
+    };
+
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+
+    argon2
+        .hash_password(pin.as_bytes(), &salt)
+        .expect("Argon2 hashing should not fail")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -177,24 +165,4 @@ mod tests {
         assert!(!safe_locked);
         assert!(unsafe_locked);
     }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Hash a PIN using Argon2id.
-fn hash_pin(pin: &str) -> String {
-    use argon2::{
-        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-        Argon2,
-    };
-
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-
-    argon2
-        .hash_password(pin.as_bytes(), &salt)
-        .expect("Argon2 hashing should not fail")
-        .to_string()
 }

@@ -218,6 +218,8 @@
   },
   "maintenance": {
     "open_optimizer": "打开优化器",
+    "storage_title": "存储优化器",
+    "storage_desc": "查找大型模组、重复文件和可清理项，避免占用过多磁盘空间。",
     "retention_title": "存储保留",
     "trash_title": "回收站管理",
     "trash_desc": "永久移除已删除的模组以释放磁盘空间。",

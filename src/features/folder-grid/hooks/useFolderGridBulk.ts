@@ -12,7 +12,7 @@ import {
   useBulkUpdateInfo,
   useBulkFavorite,
   useBulkPin,
-} from '../../../hooks/useFolderMutations';
+} from '../../../hooks/useBulkModMutations';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import type { ModFolder } from '../../../types/mod';
 

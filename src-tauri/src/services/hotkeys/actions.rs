@@ -13,8 +13,8 @@
 //! result types so callers can wire them to real services.
 
 use super::HotkeyAction;
+use crate::common::path_key::{canonical_name_key, names_equal_by_key};
 use crate::services::keyviewer::generator::StatusFields;
-use crate::services::path_key::{canonical_name_key, names_equal_by_key};
 
 // ─── Action Result ───────────────────────────────────────────────────────────
 
@@ -32,29 +32,6 @@ pub struct ActionResult {
 }
 
 // ─── Safe Mode Toggle ────────────────────────────────────────────────────────
-
-/// Compute the result of toggling Safe Mode.
-///
-/// The caller is responsible for actually flipping the mode via `PrivacyManager`,
-/// recomputing the mod set, and applying the workspace.
-pub fn plan_toggle_safe_mode(
-    current_safe_mode: bool,
-    current_preset_name: Option<&str>,
-) -> ActionResult {
-    let new_safe_mode = !current_safe_mode;
-    let safe_label = if new_safe_mode { "ON" } else { "OFF" };
-
-    ActionResult {
-        action: HotkeyAction::ToggleSafeMode,
-        status: StatusFields {
-            safe_mode: new_safe_mode,
-            preset_name: current_preset_name.map(|s| s.to_string()),
-            ..Default::default()
-        },
-        needs_reload: true,
-        summary: format!("Safe Mode: {safe_label}"),
-    }
-}
 
 // ─── Preset Cycling ──────────────────────────────────────────────────────────
 

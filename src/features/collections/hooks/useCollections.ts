@@ -5,15 +5,14 @@
  *           useSaveCurrentAsCollection, useSaveSnapshotCollectionAsNamed,
  *           useUpdateCollection, useDeleteCollection, useApplyCollection.
  *
- * Collection queries are corridor-explicit so frontend cache keys match the
- * backend command inputs.
+ * Collection queries are game-scoped presets. Safe/unsafe is metadata on
+ * each collection, not a runtime cache dimension.
  */
 
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from '../../../stores/useToastStore';
 import { collectionKeys, corridorKeys } from '../queryKeys';
 import { commands } from '../../../lib/bindings';
-import { useAppStore } from '../../../stores/useAppStore';
 import {
   extractFileInUsePayload,
   extractMissingModsPayload,
@@ -43,27 +42,24 @@ import type { CollectionSaveMode } from '../types';
 async function refetchStrictCorridorState(
   queryClient: ReturnType<typeof useQueryClient>,
   gameId: string,
-  isSafe: boolean,
 ): Promise<CorridorSnapshot> {
   const snapshot = await queryClient.fetchQuery({
-    queryKey: corridorKeys.state(gameId, isSafe),
+    queryKey: corridorKeys.state(gameId),
     queryFn: () =>
       commands.getCorridorState({
         gameId,
-        isSafe,
       }),
     staleTime: 0,
   });
-  queryClient.setQueryData(corridorKeys.state(gameId, isSafe), snapshot);
+  queryClient.setQueryData(corridorKeys.state(gameId), snapshot);
   return snapshot;
 }
 
 async function refetchCollectionList(
   queryClient: ReturnType<typeof useQueryClient>,
   gameId: string,
-  isSafe: boolean,
 ): Promise<void> {
-  await publishQueryInvalidations(queryClient, [collectionKeys.list(gameId, isSafe)], 'active');
+  await publishQueryInvalidations(queryClient, [collectionKeys.list(gameId)], 'active');
 }
 
 async function refetchCollectionPreview(
@@ -80,11 +76,11 @@ async function refetchCollectionPreview(
 
 // ── Query Hooks ────────────────────────────────────────────────────────────
 
-/** List all collections for the current game + corridor. */
-export function useCollections(gameId: string | null, isSafe: boolean) {
+/** List all named collection presets for the current game. */
+export function useCollections(gameId: string | null) {
   return useQuery<CollectionSummary[]>({
-    queryKey: collectionKeys.list(gameId ?? '', isSafe),
-    queryFn: () => commands.listCollections({ gameId: gameId ?? '', isSafe }),
+    queryKey: collectionKeys.list(gameId ?? ''),
+    queryFn: () => commands.listCollections({ gameId: gameId ?? '' }),
     enabled: !!gameId,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
@@ -106,18 +102,13 @@ export function useCollectionPreview(collectionId: string | null, gameId: string
 }
 
 /** Get before/after preview for applying a collection. */
-export function useApplyCollectionPreview(
-  gameId: string | null,
-  collectionId: string | null,
-  isSafe: boolean,
-) {
+export function useApplyCollectionPreview(gameId: string | null, collectionId: string | null) {
   return useQuery<ApplyPreview>({
-    queryKey: [...collectionKeys.previewApply(collectionId ?? ''), gameId ?? '', isSafe],
+    queryKey: [...collectionKeys.previewApply(collectionId ?? ''), gameId ?? ''],
     queryFn: () =>
       commands.previewApplyCollection({
         gameId: gameId ?? '',
         collectionId: collectionId ?? '',
-        isSafe,
       }),
     enabled: !!gameId && !!collectionId,
     // Don't cache this long, we want fresh disk state when viewing the modal
@@ -151,8 +142,8 @@ export function useCreateCollection() {
         'none',
       );
       await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId, result.is_safe),
-        refetchCollectionList(queryClient, variables.gameId, result.is_safe),
+        refetchStrictCorridorState(queryClient, variables.gameId),
+        refetchCollectionList(queryClient, variables.gameId),
         refetchCollectionPreview(queryClient, result.id, variables.gameId),
       ]);
       toast.success(`Created collection: ${result.name}`);
@@ -230,8 +221,8 @@ export function useReplaceCollectionWithCurrentState() {
         'active',
       );
       await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId, result.is_safe),
-        refetchCollectionList(queryClient, variables.gameId, result.is_safe),
+        refetchStrictCorridorState(queryClient, variables.gameId),
+        refetchCollectionList(queryClient, variables.gameId),
         refetchCollectionPreview(queryClient, result.id, variables.gameId),
       ]);
       toast.success(`Updated collection: ${result.name}`);
@@ -258,8 +249,8 @@ export function useDeleteCollection() {
         'none',
       );
       await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId, useAppStore.getState().safeMode),
-        refetchCollectionList(queryClient, variables.gameId, useAppStore.getState().safeMode),
+        refetchStrictCorridorState(queryClient, variables.gameId),
+        refetchCollectionList(queryClient, variables.gameId),
       ]);
       toast.success('Collection deleted');
     },
@@ -273,7 +264,6 @@ export function useDeleteCollection() {
 /** Apply a collection (enable/disable mods to match the snapshot). */
 export function useApplyCollection() {
   const queryClient = useQueryClient();
-  const safeMode = useAppStore((state) => state.safeMode);
 
   const mutation = useMutation({
     mutationFn: ({
@@ -299,8 +289,8 @@ export function useApplyCollection() {
       applyRuntimeEffects(queryClient, descriptor);
       await publishRuntimeDescriptor(queryClient, descriptor, 'active');
       await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId, safeMode),
-        refetchCollectionList(queryClient, variables.gameId, safeMode),
+        refetchStrictCorridorState(queryClient, variables.gameId),
+        refetchCollectionList(queryClient, variables.gameId),
         refetchCollectionPreview(queryClient, variables.collectionId, variables.gameId),
       ]);
 

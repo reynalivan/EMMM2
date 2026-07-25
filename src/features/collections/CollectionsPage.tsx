@@ -13,12 +13,8 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Layers, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useSafeModeToggle } from './hooks/useSafeModeToggle';
-import ModeSwitchConfirmModal from '../safe-mode/ModeSwitchConfirmModal';
-import PinEntryModal from '../safe-mode/PinEntryModal';
 
-import { useCorridor } from './hooks/useCorridor';
-import { useCollections, useDeleteCollection, useUpdateCollection } from './hooks/useCollections';
+import { useCorridor, useCollections, useDeleteCollection, useUpdateCollection } from './hooks';
 import { CollectionList } from './components/CollectionList';
 import { CollectionPreviewPanel } from './components/CollectionPreviewPanel';
 import { SaveCollectionModal } from './components/SaveCollectionModal';
@@ -31,28 +27,16 @@ import {
   type CollectionSaveRequest,
   type CollectionWorkspaceSource,
 } from './types';
-import { getCollectionDisplayName, useUnsavedLabels } from '../../lib/corridorLabels';
 
 export default function CollectionsPage() {
-  const { t } = useTranslation(['collections', 'safe_mode']);
+  const { t } = useTranslation('collections');
   const { activeGame } = useActiveGame();
-  const {
-    toggleSafeMode,
-    handleConfirmSwitch,
-    handlePinSuccess,
-    confirmModalOpen,
-    confirmTargetSafeMode,
-    closeConfirmModal,
-    pinModalOpen,
-    closePinModal,
-    safeMode,
-  } = useSafeModeToggle();
 
   const gameId = activeGame?.id ?? null;
 
   // ── v2 Queries ──
-  const corridor = useCorridor(gameId, safeMode);
-  const collections = useCollections(gameId, safeMode);
+  const corridor = useCorridor(gameId);
+  const collections = useCollections(gameId);
 
   // ── v2 Mutations ──
   const deleteMutation = useDeleteCollection();
@@ -64,14 +48,12 @@ export default function CollectionsPage() {
   const [saveRequest, setSaveRequest] = useState<CollectionSaveRequest | null>(null);
   const [applyTargetId, setApplyTargetId] = useState<string | null>(null);
 
-  // Reset selection when corridor changes so stale cross-corridor IDs don't cause failed preview queries
+  // Reset selection when game changes so stale cross-game IDs don't cause failed preview queries.
   useEffect(() => {
     setSelectedSource(null);
     setApplyTargetId(null);
     setSaveRequest(null);
-  }, [safeMode]);
-
-  const unsavedLabels = useUnsavedLabels();
+  }, [gameId]);
 
   const rows = useMemo<CollectionListRow[]>(() => {
     const collectionRows: CollectionListRow[] = (collections.data ?? []).map((collection) => ({
@@ -84,18 +66,10 @@ export default function CollectionsPage() {
     }
 
     return [
-      buildCurrentRuntimeRow(
-        corridor.data,
-        getCollectionDisplayName({
-          name: null,
-          isUnsaved: true,
-          isSafe: corridor.data.is_safe,
-          labels: unsavedLabels,
-        }),
-      ),
+      buildCurrentRuntimeRow(corridor.data, t('list.item.current_runtime', 'Current Runtime')),
       ...collectionRows,
     ];
-  }, [collections.data, corridor.data, unsavedLabels]);
+  }, [collections.data, corridor.data, t]);
 
   const effectiveSource = useMemo<CollectionWorkspaceSource | null>(() => {
     const hasCurrentRuntime = rows.some((row) => row.kind === 'current_runtime');
@@ -197,15 +171,6 @@ export default function CollectionsPage() {
     [gameId, updateMutation],
   );
 
-  const handleCorridorTabSwitch = useCallback(
-    async (targetSafeMode: boolean) => {
-      if (safeMode === targetSafeMode) return;
-      setSelectedSource(null);
-      await toggleSafeMode();
-    },
-    [safeMode, toggleSafeMode],
-  );
-
   const handleSave = useCallback((request: CollectionSaveRequest) => {
     setSaveRequest(request);
     setSaveModalOpen(true);
@@ -239,26 +204,6 @@ export default function CollectionsPage() {
           </p>
         </div>
 
-        {/* SAFE/UNSAFE Tabs */}
-        <div className="tabs tabs-boxed bg-base-200/50 p-1.5 gap-1 w-full sm:w-auto shrink-0 min-w-70 shadow-sm">
-          <button
-            className={`tab tab-sm flex-1 transition-colors ${safeMode ? 'tab-active bg-success/20 text-success rounded-md! font-medium shadow-sm' : 'text-base-content/60 hover:text-base-content'}`}
-            onClick={() => {
-              void handleCorridorTabSwitch(true);
-            }}
-          >
-            {t('collections:tab.safe')}
-          </button>
-          <button
-            className={`tab tab-sm flex-1 transition-colors ${!safeMode ? 'tab-active bg-error/20 text-error rounded-md! font-medium shadow-sm' : 'text-base-content/60 hover:text-base-content'}`}
-            onClick={() => {
-              void handleCorridorTabSwitch(false);
-            }}
-          >
-            {t('collections:tab.unsafe')}
-          </button>
-        </div>
-
         <div className="flex items-center gap-2">
           <button className="btn btn-secondary btn-sm" onClick={() => setSaveModalOpen(true)}>
             <Save size={14} />
@@ -277,7 +222,6 @@ export default function CollectionsPage() {
                 rows={rows}
                 selectedId={effectiveSelectedId}
                 isLoading={collections.isLoading}
-                safeMode={safeMode}
                 onSelect={handleSelect}
                 onApply={handleApply}
                 onDelete={handleDelete}
@@ -299,21 +243,6 @@ export default function CollectionsPage() {
           />
         </div>
       </div>
-
-      {/* Corridor Switch Modals */}
-      <ModeSwitchConfirmModal
-        open={confirmModalOpen}
-        targetSafeMode={confirmTargetSafeMode}
-        onClose={closeConfirmModal}
-        onConfirm={handleConfirmSwitch}
-      />
-      <PinEntryModal
-        open={pinModalOpen}
-        onClose={closePinModal}
-        onSuccess={async () => {
-          handlePinSuccess();
-        }}
-      />
 
       {saveModalOpen && (
         <SaveCollectionModal

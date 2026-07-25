@@ -12,11 +12,30 @@ import {
 } from './reconcileSelection';
 import { maybeShowExternalChangeToast } from './reconcileToast';
 import { applyWorkspacePathRewrites } from '../workspace-runtime/optimistic/workspaceViewModelRewrite';
+import { toast } from '../../stores/useToastStore';
+
+interface WatchErrorPayload {
+  type: string;
+  error: string;
+  path?: string | null;
+}
 
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
 
+interface QueuedDiskReconcileRefresh {
+  reason: DiskReconcileReason;
+  forceFull: boolean;
+  skipSyncCheck: boolean;
+}
+
 export function useWatcherLifecycle(activeGame: GameConfig | null) {
+  // Recovery: when the mods folder disappears the watcher dies with it.
+  // Re-running the effect once the source is available again restarts it.
+  const diskSourceUnavailable = useAppStore((state) =>
+    Boolean(activeGame?.id && state.diskSourceUnavailableByGame[activeGame.id]),
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -26,7 +45,7 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
         return;
       }
 
-      if (!activeGame?.mod_path || !activeGame?.id) {
+      if (!activeGame?.mod_path || !activeGame?.id || diskSourceUnavailable) {
         return;
       }
 
@@ -46,7 +65,7 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
       cancelled = true;
       commands.stopWatcher().catch(() => {});
     };
-  }, [activeGame?.id, activeGame?.mod_path]);
+  }, [activeGame?.id, activeGame?.mod_path, diskSourceUnavailable]);
 }
 
 export function applyDiskReconcileResult(
@@ -86,6 +105,7 @@ export function useDiskReconcileCoordinator(
   const pendingDiskReconcileByGame = useAppStore((state) => state.pendingDiskReconcileByGame);
   const markDiskReconcilePending = useAppStore((state) => state.markDiskReconcilePending);
   const inFlightRef = useRef(false);
+  const queuedRefreshRef = useRef<QueuedDiskReconcileRefresh | null>(null);
   const lastModsViewSyncKeyRef = useRef<string | null>(null);
   const hydratedModsViewByGameRef = useRef<Record<string, boolean>>({});
   const requiresFullReconcileByGameRef = useRef<Record<string, boolean>>({});
@@ -127,30 +147,54 @@ export function useDiskReconcileCoordinator(
 
   const runRefresh = useCallback(
     async (reason: DiskReconcileReason, forceFull: boolean) => {
-      if (!activeGame?.id || inFlightRef.current) {
+      if (!activeGame?.id) {
         return;
       }
 
-      if (!shouldSync(activeGame.id, forceFull)) {
-        return;
-      }
-
-      inFlightRef.current = true;
-      markDiskReconcilePending(activeGame.id, true);
-
-      try {
-        // Disk Reconcile only. This path must never trigger the Deep Match Scanner.
-        const result = await commands.reconcileDiskState({
-          gameId: activeGame.id,
+      const gameId = activeGame.id;
+      if (inFlightRef.current) {
+        const queued = queuedRefreshRef.current;
+        queuedRefreshRef.current = {
           reason,
-          forceFull,
-        });
-        applyDiskReconcileResult(result, queryClient, activeGame);
-        markGameHydrated(activeGame.id);
-      } catch (error) {
-        console.error('[DiskReconcile] Refresh failed:', error);
-      } finally {
-        inFlightRef.current = false;
+          forceFull: forceFull || (queued?.forceFull ?? false),
+          skipSyncCheck: true,
+        };
+        markDiskReconcilePending(gameId, true);
+        return;
+      }
+
+      let nextRefresh: QueuedDiskReconcileRefresh | null = {
+        reason,
+        forceFull,
+        skipSyncCheck: false,
+      };
+
+      while (nextRefresh) {
+        const currentRefresh = nextRefresh;
+
+        if (!currentRefresh.skipSyncCheck && !shouldSync(gameId, currentRefresh.forceFull)) {
+          return;
+        }
+
+        inFlightRef.current = true;
+        markDiskReconcilePending(gameId, true);
+
+        try {
+          // Disk Reconcile only. This path must never trigger the Deep Match Scanner.
+          const result = await commands.reconcileDiskState({
+            gameId,
+            reason: currentRefresh.reason,
+            forceFull: currentRefresh.forceFull,
+          });
+          applyDiskReconcileResult(result, queryClient, activeGame);
+          markGameHydrated(gameId);
+        } catch (error) {
+          console.error('[DiskReconcile] Refresh failed:', error);
+        } finally {
+          inFlightRef.current = false;
+          nextRefresh = queuedRefreshRef.current;
+          queuedRefreshRef.current = null;
+        }
       }
     },
     [activeGame, markDiskReconcilePending, markGameHydrated, queryClient, shouldSync],
@@ -210,6 +254,28 @@ export function useDiskReconcileCoordinator(
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, [activeGame?.id, activeGame, markGameHydrated, queryClient]);
+
+  useEffect(() => {
+    if (!activeGame?.id) {
+      return;
+    }
+
+    const gameId = activeGame.id;
+    const unlistenPromise = listen<WatchErrorPayload>('mod_watch:event', (event) => {
+      if (event.payload.type !== 'Error') {
+        return;
+      }
+
+      console.error('[Watcher] error:', event.payload.error, event.payload.path);
+      toast.warning(`File watcher error: ${event.payload.error}`);
+      // Mark state dirty so the next TTL sync repairs anything missed.
+      markDiskReconcilePending(gameId, true);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [activeGame?.id, markDiskReconcilePending]);
 
   useEffect(() => {
     if (!activeGame?.id) {

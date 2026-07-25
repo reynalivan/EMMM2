@@ -4,7 +4,7 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 pub mod commands;
-pub mod database;
+pub mod common;
 pub mod domain;
 pub mod pipeline;
 pub mod repo;
@@ -107,8 +107,6 @@ macro_rules! emmm_collect_commands {
             commands::objects::object_cmds::update_object_cmd,
             commands::objects::object_cmds::apply_object_match_cmd,
             commands::objects::object_cmds::delete_object_cmd,
-            commands::collections::cmds::switch_corridor,
-            commands::collections::cmds::preview_corridor_switch,
             commands::collections::cmds::get_corridor_state,
             commands::collections::cmds::get_apply_progress,
             commands::collections::cmds::list_collections,
@@ -118,14 +116,11 @@ macro_rules! emmm_collect_commands {
             commands::collections::cmds::replace_collection_with_current_state,
             commands::collections::cmds::delete_collection,
             commands::collections::cmds::app_startup_check,
-            commands::collections::cmds::check_boot_security,
             commands::collections::cmds::resolve_recovery_task,
             commands::collections::cmds::get_collection_preview,
             commands::collections::cmds::preview_apply_collection,
-            commands::collections::cmds::has_pin,
             commands::collections::cmds::set_pin,
             commands::collections::cmds::verify_pin,
-            commands::collections::cmds::clear_pin,
             commands::collections::cmds::get_pin_status,
             commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
             commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
@@ -147,6 +142,8 @@ macro_rules! emmm_collect_commands {
             commands::app::hotkey_cmds::update_hotkey_config,
             commands::browser::browser_cmds::browser_open_tab,
             commands::browser::browser_cmds::browser_navigate,
+            commands::browser::browser_cmds::browser_go_back,
+            commands::browser::browser_cmds::browser_go_forward,
             commands::browser::browser_cmds::browser_reload_tab,
             commands::browser::browser_cmds::browser_clear_data,
             commands::browser::browser_cmds::browser_get_homepage,
@@ -181,7 +178,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
@@ -198,8 +194,12 @@ pub fn run() {
                     if event.state != ShortcutState::Pressed {
                         return;
                     }
-                    if let Some(hotkey_manager) = app.try_state::<services::hotkeys::manager::HotkeyManager>() {
-                        hotkey_manager.inner().on_shortcut_pressed(app, &shortcut.to_string());
+                    if let Some(hotkey_manager) =
+                        app.try_state::<services::hotkeys::manager::HotkeyManager>()
+                    {
+                        hotkey_manager
+                            .inner()
+                            .on_shortcut_pressed(app, &shortcut.to_string());
                     }
                 })
                 .build(),
@@ -221,29 +221,7 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle();
 
-            if let Some(window) = app_handle.get_webview_window("main") {
-                if let Ok(outer_pos) = window.outer_position() {
-                    let mut is_visible = false;
-                    if let Ok(monitors) = window.available_monitors() {
-                        for monitor in monitors {
-                            let m_pos = monitor.position();
-                            let m_size = monitor.size();
-                            if outer_pos.x >= m_pos.x
-                                && outer_pos.x < m_pos.x + m_size.width as i32
-                                && outer_pos.y >= m_pos.y
-                                && outer_pos.y < m_pos.y + m_size.height as i32
-                            {
-                                is_visible = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !is_visible {
-                        log::warn!("Window spawned off-screen (disconnected monitor). Centering on primary.");
-                        let _ = window.center();
-                    }
-                }
-            }
+            services::bootstrap::center_window_if_offscreen(app_handle);
 
             #[cfg(desktop)]
             app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -252,54 +230,7 @@ pub fn run() {
                 services::images::thumbnail_cache::ThumbnailCache::init(&app_data_dir);
 
                 #[cfg(desktop)]
-                {
-                    use tauri::async_runtime::block_on;
-                    let db_path = app_data_dir.join("app.db");
-                    if !app_data_dir.exists() {
-                        let _ = std::fs::create_dir_all(&app_data_dir);
-                    }
-
-                    let pool = block_on(async {
-                        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-                        let try_init = || async {
-                            let opts = SqliteConnectOptions::new()
-                                .filename(&db_path)
-                                .create_if_missing(true);
-
-                            let pool = SqlitePoolOptions::new()
-                                .max_connections(5)
-                                .connect_with(opts)
-                                .await?;
-
-                            sqlx::migrate!("./migrations")
-                                .run(&pool)
-                                .await?;
-
-                            Ok::<sqlx::SqlitePool, sqlx::Error>(pool)
-                        };
-
-                        let p = match try_init().await {
-                            Ok(pool) => pool,
-                            Err(e) => {
-                                log::error!("Database connection or migration failed: {e}. Attempting recovery...");
-                                let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                                let backup_path = app_data_dir.join(format!("app_corrupt_{}.db", timestamp));
-                                let _ = std::fs::rename(&db_path, &backup_path);
-                                let recovered_pool = try_init().await.expect("Failed to initialize database after recovery");
-                                recovered_pool
-                            }
-                        };
-
-                        if let Err(e) = services::scanner::sync::migrate_to_stable_ids(&p).await {
-                            log::warn!("Stable ID migration skipped: {e}");
-                        }
-                        if let Err(e) = repo::unicode_keys::ensure_unicode_keys(&p).await {
-                            log::warn!("Unicode key backfill skipped: {e}");
-                        }
-                        p
-                    });
-                    app.manage(pool);
-                }
+                app.manage(services::bootstrap::init_pool(&app_data_dir));
             }
 
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
@@ -310,85 +241,27 @@ pub fn run() {
 
             let config_ref: tauri::State<'_, services::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
-            match services::hotkeys::manager::HotkeyManager::new(&hotkey_config) {
-                Ok(hk_manager) => {
-                    let _ = hk_manager.update_bindings(app_handle, &hotkey_config);
-                    app.manage(hk_manager);
-                }
-                Err(_) => {
-                    let disabled_config = services::hotkeys::HotkeyConfig { enabled: false, ..Default::default() };
-                    if let Ok(mgr) = services::hotkeys::manager::HotkeyManager::new(&disabled_config) {
-                        app.manage(mgr);
-                    }
-                }
+            if let Some(hk_manager) =
+                services::bootstrap::init_hotkey_manager(app_handle, &hotkey_config)
+            {
+                app.manage(hk_manager);
             }
 
             {
                 let config_svc: tauri::State<'_, services::config::ConfigService> = app.state();
-                let settings = config_svc.get_settings();
                 let pool_state: tauri::State<'_, sqlx::SqlitePool> = app.state();
-                let pool_clone = pool_state.inner().clone();
                 let watcher_state: tauri::State<'_, services::scanner::watcher::WatcherState> =
                     app.state();
                 let disk_reconcile_state: tauri::State<
                     '_,
                     services::disk_reconcile::orchestrator::DiskReconcileState,
                 > = app.state();
-                use tauri::async_runtime::block_on;
-                block_on(async {
-                    match sqlx::query("DELETE FROM tasks WHERE created_at < datetime('now', '-7 days')")
-                        .execute(&pool_clone)
-                        .await
-                    {
-                        Ok(result) if result.rows_affected() > 0 => {
-                            log::info!(
-                                "startup: purged {} old task log(s) before boot reconcile",
-                                result.rows_affected()
-                            );
-                        }
-                        Ok(_) => {}
-                        Err(error) => {
-                            log::warn!("startup: task GC failed before boot reconcile: {error}");
-                        }
-                    }
-
-                    let Some(active_game_id) = settings.active_game_id.as_deref() else {
-                        return;
-                    };
-                    let Some(game) = settings.games.iter().find(|entry| entry.id == active_game_id) else {
-                        return;
-                    };
-                    let mod_path = game.mod_path.to_string_lossy().to_string();
-                    if mod_path.is_empty() {
-                        return;
-                    }
-
-                    match services::disk_reconcile::orchestrator::reconcile_disk_state(
-                        services::disk_reconcile::orchestrator::DiskReconcileContext {
-                            pool: &pool_clone,
-                            config: config_svc.inner(),
-                            state: &disk_reconcile_state,
-                            watcher_suppressor: watcher_state.suppressor.clone(),
-                        },
-                        services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
-                            game.id.clone(),
-                            services::disk_reconcile::types::DiskReconcileReason::StartupBoot,
-                            Vec::new(),
-                            true,
-                        ),
-                    )
-                    .await
-                    {
-                        Ok(_) => {}
-                        Err(error) => {
-                            log::warn!(
-                                "Startup Disk Reconcile failed for '{}': {}",
-                                game.name,
-                                error
-                            );
-                        }
-                    }
-                });
+                services::bootstrap::run_startup_reconcile(
+                    pool_state.inner(),
+                    config_svc.inner(),
+                    &watcher_state,
+                    &disk_reconcile_state,
+                );
             }
 
             Ok(())
@@ -410,13 +283,18 @@ pub fn run() {}
 mod specta_tests {
     use super::*;
 
+    /// Regenerates the committed frontend type bindings from the Rust command/type
+    /// definitions. CI runs `git diff --exit-code src/lib/bindings.gen.ts` after
+    /// `cargo test`, so any Rust payload change that is not committed to the
+    /// generated file fails the build (type-drift guard).
     #[test]
     fn export_bindings() {
-        let output_path = std::path::Path::new("target").join("specta-bindings.generated.ts");
+        let output_path = std::path::Path::new("..").join("src/lib/bindings.gen.ts");
         tauri_specta::Builder::<tauri::Wry>::new()
             .commands(emmm_collect_commands!())
             .export(
                 specta_typescript::Typescript::default()
+                    .header("// @ts-nocheck\n/* eslint-disable */")
                     .bigint(specta_typescript::BigIntExportBehavior::Number),
                 output_path,
             )

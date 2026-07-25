@@ -126,6 +126,7 @@ export default function TopBar() {
                 return (
                   <button
                     key={item.id}
+                    data-testid={`nav-${item.id}`}
                     onClick={() => {
                       setWorkspaceView(item.id);
                       setMenuOpen(false);

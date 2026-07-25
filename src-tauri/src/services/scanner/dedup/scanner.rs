@@ -144,15 +144,10 @@ fn apply_modpack_filter(
                         .entry(parent_path.clone())
                         .or_insert_with(|| {
                             let (node_type, _, _) =
-                                crate::commands::folder_grid::classifier::classify_folder(
-                                    &parent_path,
-                                );
-                            node_type
-                                == crate::commands::folder_grid::classifier::NodeType::VariantContainer
-                                || node_type
-                                    == crate::commands::folder_grid::classifier::NodeType::ModPackRoot
-                                || node_type
-                                    == crate::commands::folder_grid::classifier::NodeType::FlatModRoot
+                                crate::common::classifier::classify_folder(&parent_path);
+                            node_type == crate::common::classifier::NodeType::VariantContainer
+                                || node_type == crate::common::classifier::NodeType::ModPackRoot
+                                || node_type == crate::common::classifier::NodeType::FlatModRoot
                         });
 
                     if is_variant_container {
@@ -252,9 +247,8 @@ async fn fetch_candidates_from_db(
             None => continue,
         };
 
-        let is_disabled = crate::services::scanner::core::normalizer::is_disabled_folder(&raw_name);
-        let display_name =
-            crate::services::scanner::core::normalizer::normalize_display_name(&raw_name);
+        let is_disabled = crate::common::normalizer::is_disabled_folder(&raw_name);
+        let display_name = crate::common::normalizer::normalize_display_name(&raw_name);
 
         candidates.push(ModCandidate {
             path: path.to_path_buf(),

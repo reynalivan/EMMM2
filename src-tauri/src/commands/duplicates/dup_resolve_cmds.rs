@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::dedup::resolver::{
     ResolutionProgress, ResolutionRequest, ResolutionSummary,
@@ -14,11 +15,10 @@ pub async fn dup_resolve_batch(
     watcher_state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     db: State<'_, sqlx::SqlitePool>,
-) -> Result<ResolutionSummary, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Failed to get app data directory: {error}"))?;
+) -> Result<ResolutionSummary, AppError> {
+    let app_data_dir = app.path().app_data_dir().map_err(|error| {
+        AppError::Internal(format!("Failed to get app data directory: {error}"))
+    })?;
     let trash_dir = app_data_dir.join("trash");
 
     crate::services::scanner::dedup::resolver::resolve_batch(
@@ -33,4 +33,5 @@ pub async fn dup_resolve_batch(
         },
     )
     .await
+    .map_err(AppError::Internal)
 }

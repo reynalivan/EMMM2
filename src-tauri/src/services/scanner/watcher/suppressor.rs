@@ -31,6 +31,13 @@ impl WatcherSuppressor {
             });
     }
 
+    /// Clear manual (frontend-driven) suppression. Called when a new watcher
+    /// session starts so a webview reload mid-operation cannot leave the
+    /// watcher suppressed forever. Backend RAII guards are unaffected.
+    pub fn reset_manual(&self) {
+        self.manual_depth.store(0, Ordering::Release);
+    }
+
     fn increment(&self) {
         self.guard_depth.fetch_add(1, Ordering::AcqRel);
     }

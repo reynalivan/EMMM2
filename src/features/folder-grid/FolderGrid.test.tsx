@@ -40,13 +40,13 @@ vi.mock('../../hooks/useActiveGame', () => ({
 }));
 
 // Mock subcomponents
-vi.mock('./FolderCard', () => ({
+vi.mock('./components/FolderCard', () => ({
   default: ({ folder }: { folder: ModFolder }) => (
     <div data-testid="folder-card">{folder.name}</div>
   ),
 }));
 
-vi.mock('./FolderListRow', () => ({
+vi.mock('./components/FolderListRow', () => ({
   default: ({ item }: { item: ModFolder }) => <div data-testid="folder-row">{item.name}</div>,
 }));
 
@@ -56,7 +56,7 @@ vi.mock('../../components/ui/ContextMenu', () => ({
   ContextMenuSeparator: () => <hr />,
 }));
 
-vi.mock('./DragOverlay', () => ({
+vi.mock('./components/DragOverlay', () => ({
   default: () => <div>DragOverlay</div>,
 }));
 
@@ -64,19 +64,19 @@ vi.mock('../../components/ui/ConfirmDialog', () => ({
   default: ({ open }: { open: boolean }) => (open ? <div>ConfirmDialog</div> : null),
 }));
 
-vi.mock('./BulkTagModal', () => ({
+vi.mock('./modals/BulkTagModal', () => ({
   BulkTagModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div>BulkTagModal</div> : null),
 }));
 
-vi.mock('./BulkActionBar', () => ({
+vi.mock('./components/BulkActionBar', () => ({
   default: () => <div data-testid="bulk-action-bar" />,
 }));
 
-vi.mock('./FolderGridModals', () => ({
+vi.mock('./modals/FolderGridModals', () => ({
   default: () => <div data-testid="folder-grid-modals" />,
 }));
 
-vi.mock('./BulkProgressBar', () => ({
+vi.mock('./components/BulkProgressBar', () => ({
   default: () => <div data-testid="bulk-progress-bar" />,
 }));
 
@@ -206,6 +206,11 @@ describe('FolderGrid', () => {
   it('renders items', () => {
     const mockData: ModFolder[] = [
       {
+        id: null,
+        owner_object_id: null,
+        owner_object_folder_path: null,
+        conflict_group_id: null,
+        conflict_state: null,
         node_type: 'ContainerFolder',
         classification_reasons: [],
         name: 'Mod A',

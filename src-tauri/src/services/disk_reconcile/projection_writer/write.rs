@@ -1,0 +1,93 @@
+//! Entry point: loads the DB index, then runs the object / mod / prune passes
+//! inside the caller's transaction.
+
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+use crate::domain::collection::CollectionReferenceImpact;
+use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
+use crate::services::disk_reconcile::disk_snapshot::DiskProjection;
+use crate::services::disk_reconcile::types::DiskReconcilePathUpdate;
+
+use super::index::DbIndex;
+use super::keys::root_key;
+use super::mods::apply_disk_mods;
+use super::objects::apply_disk_objects;
+use super::prune::{prune_missing_mods, prune_missing_objects};
+use super::state::ProjectionWriteState;
+
+pub(crate) struct ProjectionWriteRequest<'a> {
+    pub game_id: &'a str,
+    pub mods_path: &'a Path,
+    pub safe_mode_keywords: &'a [String],
+    pub projection: &'a DiskProjection,
+    pub changed_roots: &'a [String],
+    pub force_full: bool,
+    pub path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
+    pub collection_reference_impact: &'a mut CollectionReferenceImpact,
+    pub change_summary: &'a mut ChangeSummaryBuilder,
+}
+
+pub(crate) async fn reconcile_projection_in_tx(
+    conn: &mut sqlx::SqliteConnection,
+    request: ProjectionWriteRequest<'_>,
+) -> Result<(bool, bool), String> {
+    let game_id = request.game_id;
+    let mods_path = request.mods_path;
+    let safe_mode_keywords = request.safe_mode_keywords;
+    let projection = request.projection;
+    let changed_roots = request.changed_roots;
+    let force_full = request.force_full;
+
+    let index = DbIndex::load(&mut *conn, game_id).await?;
+    let scope_root_keys = changed_roots
+        .iter()
+        .map(|root| root_key(root))
+        .collect::<HashSet<_>>();
+    let mods_root = mods_path.to_string_lossy().to_string();
+
+    let mut state = ProjectionWriteState {
+        path_updates: request.path_updates,
+        collection_reference_impact: request.collection_reference_impact,
+        change_summary: request.change_summary,
+        object_ids_by_key: HashMap::new(),
+        object_types_by_key: HashMap::new(),
+        seen_object_keys: HashSet::new(),
+        seen_mod_keys: HashSet::new(),
+        deleted_object_keys: HashSet::new(),
+        objects_changed: false,
+        folders_changed: false,
+    };
+
+    apply_disk_objects(&mut *conn, game_id, projection, &index, &mut state).await?;
+    apply_disk_mods(
+        &mut *conn,
+        game_id,
+        &mods_root,
+        safe_mode_keywords,
+        projection,
+        &index,
+        &mut state,
+    )
+    .await?;
+    prune_missing_objects(
+        &mut *conn,
+        game_id,
+        &index,
+        &scope_root_keys,
+        force_full,
+        &mut state,
+    )
+    .await?;
+    prune_missing_mods(
+        &mut *conn,
+        mods_path,
+        &index,
+        &scope_root_keys,
+        force_full,
+        &mut state,
+    )
+    .await?;
+
+    Ok((state.objects_changed, state.folders_changed))
+}

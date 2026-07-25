@@ -142,17 +142,18 @@ fn write_keybind_files_creates_per_sentinel() {
 }
 
 #[test]
-fn write_keybind_files_fallback_shows_safe_mode() {
+fn write_keybind_files_fallback_omits_safe_mode() {
     let dir = TempDir::new().unwrap();
     write_keybind_files(dir.path(), &[], &HashMap::new(), true, "F7".to_string()).unwrap();
     let content = std::fs::read_to_string(dir.path().join("_fallback.txt")).unwrap();
-    assert!(content.contains("Safe Mode: ON"));
+    assert!(content.contains("No character detected"));
+    assert!(!content.contains("Safe Mode"));
 }
 
 // ─── Status Banner ───────────────────────────────────────────────────────────
 
 #[test]
-fn status_text_safe_mode_on() {
+fn status_text_includes_preset_without_safe_mode() {
     let fields = StatusFields {
         safe_mode: true,
         preset_name: Some("Default".to_string()),
@@ -160,12 +161,12 @@ fn status_text_safe_mode_on() {
         ..Default::default()
     };
     let text = generate_status_text(&fields, &crate::services::hotkeys::HotkeyConfig::default());
-    assert!(text.contains("Safe: On"));
     assert!(text.contains("Preset: Default"));
+    assert!(!text.contains("Safe:"));
 }
 
 #[test]
-fn status_text_safe_mode_off_with_folder() {
+fn status_text_with_folder() {
     let fields = StatusFields {
         safe_mode: false,
         preset_name: Some("Main".to_string()),
@@ -174,9 +175,9 @@ fn status_text_safe_mode_off_with_folder() {
         conflict_count: Some(0),
     };
     let text = generate_status_text(&fields, &crate::services::hotkeys::HotkeyConfig::default());
-    assert!(text.contains("Safe: Off"));
     assert!(text.contains("Folder: Cape"));
     assert!(text.contains("Scope: Albedo"));
+    assert!(!text.contains("Safe:"));
 }
 
 #[test]
@@ -210,7 +211,7 @@ fn write_status_file_atomic() {
     .unwrap();
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
-    assert!(content.contains("Safe: On"));
+    assert!(content.contains("Preset: Test"));
 }
 
 #[test]

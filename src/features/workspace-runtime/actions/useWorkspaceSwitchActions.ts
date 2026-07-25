@@ -8,106 +8,32 @@ import {
   restoreObjectListQueries,
   snapshotObjectListQueries,
 } from '../../../hooks/objectQueryCache';
-import { commands } from '../../../lib/bindings';
-import { formatAppError, extractFileInUsePayload } from '../../../lib/appError';
 import { toast } from '../../../stores/useToastStore';
 import type {
-  WorkspaceImpact,
   WorkspaceExplorerNode,
   WorkspaceNode,
   WorkspaceObjectNode,
-  WorkspaceSwitchInput,
-  WorkspaceSwitchResult,
 } from '../../../types/workspace';
 import { toggleDisabledInPath } from '../../../lib/disabledPrefix';
-import { thumbnailKeys } from '../../../hooks/useThumbnail';
 import { updateFolderCache } from '../../../hooks/folderCache';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
-import {
-  buildRuntimeRefreshDescriptor,
-  buildRuntimeMutationDescriptor,
-  buildQueryRemovalDescriptor,
-  buildWorkspacePathRewritesDescriptor,
-  buildObjectCountDeltaDescriptor,
-} from '../optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '../optimistic/descriptor';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
 import {
-  openWorkspaceConflictDialog,
-  openWorkspaceFileInUseDialog,
-} from '../state/workspaceDialogs';
+  applyEnableOnlyThisEffects,
+  applyWorkspaceSwitchEffects,
+  buildExplorerSwitchEffectDescriptor,
+  buildNodePendingKey,
+  buildSwitchRefreshDescriptor,
+  executeWorkspaceSwitch,
+  isWorkspaceObjectNode,
+  stripModsRoot,
+  togglePendingKey,
+  type PathSwitchOptions,
+  type WorkspaceSwitchSurface,
+} from './workspaceSwitchOps';
 
-export type WorkspaceSwitchSurface =
-  | 'folder_grid'
-  | 'preview'
-  | 'object_list'
-  | 'collections'
-  | 'corridor';
-
-interface PathSwitchOptions {
-  syncExplorerPath: boolean;
-}
-
-function isWorkspaceObjectNode(node: WorkspaceNode): node is WorkspaceObjectNode {
-  return node.node_kind === 'object';
-}
-
-function parseRenameConflict(error: unknown) {
-  const raw = error instanceof Error ? error.message : String(error);
-  if (!raw.includes('"type":"RenameConflict"')) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as {
-      type: 'RenameConflict';
-      attempted_target: string;
-      existing_path: string;
-      base_name: string;
-    };
-  } catch {
-    return null;
-  }
-}
-
-function buildNodePendingKey(node: WorkspaceNode): string {
-  if (isWorkspaceObjectNode(node)) {
-    return `object:${node.id}`;
-  }
-
-  return `folder:${node.path}`;
-}
-
-function buildSwitchRefreshDescriptor(
-  impact: WorkspaceImpact | null | undefined,
-  fallbackClass: 'folderSwitch' | 'objectSwitch',
-) {
-  if (!impact || impact.refresh_scopes.length === 0) {
-    return buildRuntimeMutationDescriptor(fallbackClass);
-  }
-
-  return buildRuntimeRefreshDescriptor(impact.refresh_scopes);
-}
-
-function normalizeWorkspaceSwitchPath(path: string): string {
-  return path.replace(/\\/g, '/');
-}
-
-function stripModsRoot(path: string, modsPath: string): string {
-  const normalizedPath = normalizeWorkspaceSwitchPath(path);
-  const normalizedModsPath = normalizeWorkspaceSwitchPath(modsPath);
-  if (normalizedPath === normalizedModsPath) {
-    return normalizedPath;
-  }
-
-  const prefix = `${normalizedModsPath}/`;
-  if (!normalizedPath.startsWith(prefix)) {
-    return normalizedPath;
-  }
-
-  return normalizedPath.slice(prefix.length);
-}
+export type { WorkspaceSwitchSurface } from './workspaceSwitchOps';
 
 export function useWorkspaceSwitchActions() {
   const { t } = useTranslation(['common', 'objects']);
@@ -116,55 +42,8 @@ export function useWorkspaceSwitchActions() {
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
 
   const markPending = useCallback((key: string, pending: boolean) => {
-    setPendingKeys((current) => {
-      if (pending) {
-        return { ...current, [key]: true };
-      }
-
-      if (!current[key]) {
-        return current;
-      }
-
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
+    setPendingKeys((current) => togglePendingKey(current, key, pending));
   }, []);
-
-  const openConflictError = useCallback((error: unknown) => {
-    const renameConflict = parseRenameConflict(error);
-    if (renameConflict) {
-      openWorkspaceConflictDialog(renameConflict);
-      return true;
-    }
-
-    const fileInUse = extractFileInUsePayload(error);
-    if (fileInUse) {
-      openWorkspaceFileInUseDialog({
-        path: fileInUse.path,
-        processes: fileInUse.processes,
-      });
-      return true;
-    }
-
-    return false;
-  }, []);
-
-  const executeSwitch = useCallback(
-    async (input: WorkspaceSwitchInput): Promise<WorkspaceSwitchResult | null> => {
-      try {
-        return await commands.executeWorkspaceSwitch({ input });
-      } catch (error) {
-        if (openConflictError(error)) {
-          return null;
-        }
-
-        toast.error(formatAppError(error));
-        return null;
-      }
-    },
-    [openConflictError],
-  );
 
   const setExplorerNodeEnabled = useCallback(
     async (
@@ -181,7 +60,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      const result = await executeSwitch({
+      const result = await executeWorkspaceSwitch({
         game_id: activeGame.id,
         target: {
           kind: 'mod_path',
@@ -217,19 +96,9 @@ export function useWorkspaceSwitchActions() {
         path: nextPath,
         is_enabled: desiredEnabled,
       }));
-      const countDelta =
-        node.node_kind === 'terminal_mod' &&
-        node.owner_object_id &&
-        node.is_enabled !== desiredEnabled
-          ? buildObjectCountDeltaDescriptor(node.owner_object_id, desiredEnabled ? 1 : -1, [])
-          : null;
       applyRuntimeEffects(
         queryClient,
-        mergeRuntimeEffectDescriptors(
-          buildQueryRemovalDescriptor([thumbnailKeys.folder(node.path)], []),
-          buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-          ...(countDelta ? [countDelta] : []),
-        ),
+        buildExplorerSwitchEffectDescriptor(node, desiredEnabled, result.impact),
       );
       await publishRuntimeDescriptor(
         queryClient,
@@ -239,7 +108,7 @@ export function useWorkspaceSwitchActions() {
 
       return nextPath;
     },
-    [activeGame, executeSwitch, queryClient],
+    [activeGame, queryClient],
   );
 
   const setObjectNodeEnabled = useCallback(
@@ -258,7 +127,7 @@ export function useWorkspaceSwitchActions() {
         enabled: desiredEnabled,
       });
 
-      const result = await executeSwitch({
+      const result = await executeWorkspaceSwitch({
         game_id: activeGame.id,
         target: {
           kind: 'object_id',
@@ -269,37 +138,19 @@ export function useWorkspaceSwitchActions() {
         origin_surface: surface,
       });
 
-      if (!result) {
+      if (!result?.primary_path) {
         restoreObjectListQueries(queryClient, previousQueries);
         return null;
       }
 
       const nextPath = result.primary_path;
-      if (!nextPath) {
-        restoreObjectListQueries(queryClient, previousQueries);
-        return null;
-      }
       patchObjectRootSwitchState(queryClient, {
         objectId: node.id,
         folderPath: stripModsRoot(nextPath, activeGame.mod_path),
         enabled: desiredEnabled,
       });
 
-      applyRuntimeEffects(
-        queryClient,
-        buildQueryRemovalDescriptor([thumbnailKeys.folder(targetPath)], []),
-      );
-      if (nextPath !== targetPath) {
-        applyRuntimeEffects(
-          queryClient,
-          buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-        );
-      }
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildSwitchRefreshDescriptor(result.impact, 'objectSwitch'),
-        'active',
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, targetPath, 'objectSwitch');
       toast.success(
         t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
           count: 1,
@@ -308,7 +159,7 @@ export function useWorkspaceSwitchActions() {
 
       return nextPath;
     },
-    [activeGame, executeSwitch, queryClient, t],
+    [activeGame, queryClient, t],
   );
 
   const setNodeEnabled = useCallback(
@@ -352,7 +203,7 @@ export function useWorkspaceSwitchActions() {
       markPending(pendingKey, true);
 
       try {
-        const result = await executeSwitch({
+        const result = await executeWorkspaceSwitch({
           game_id: activeGame.id,
           target: {
             kind: 'mod_path',
@@ -362,12 +213,8 @@ export function useWorkspaceSwitchActions() {
           resolution: 'normal',
           origin_surface: 'folder_grid',
         });
-        if (!result) {
-          return null;
-        }
-
-        const nextPath = result.primary_path;
-        if (!nextPath) {
+        const nextPath = result?.primary_path;
+        if (!result || !nextPath) {
           return null;
         }
 
@@ -376,29 +223,14 @@ export function useWorkspaceSwitchActions() {
           path: nextPath,
           is_enabled: desiredEnabled,
         }));
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryRemovalDescriptor([thumbnailKeys.folder(path)], []),
-        );
-
-        if (nextPath !== path) {
-          applyRuntimeEffects(
-            queryClient,
-            buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-          );
-        }
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
-          'active',
-        );
+        await applyWorkspaceSwitchEffects(queryClient, result, path, 'folderSwitch');
 
         return nextPath;
       } finally {
         markPending(pendingKey, false);
       }
     },
-    [activeGame, executeSwitch, markPending, queryClient],
+    [activeGame, markPending, queryClient],
   );
 
   const resolveDuplicateForceEnable = useCallback(
@@ -407,7 +239,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      const result = await executeSwitch({
+      const result = await executeWorkspaceSwitch({
         game_id: activeGame.id,
         target: {
           kind: 'mod_path',
@@ -421,25 +253,11 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      applyRuntimeEffects(
-        queryClient,
-        buildQueryRemovalDescriptor([thumbnailKeys.folder(folder.path)], []),
-      );
-      if (result.primary_path !== folder.path) {
-        applyRuntimeEffects(
-          queryClient,
-          buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-        );
-      }
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
-        'active',
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, folder.path, 'folderSwitch');
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, executeSwitch, queryClient],
+    [activeGame, queryClient],
   );
 
   const resolveDuplicateEnableOnly = useCallback(
@@ -448,7 +266,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      const result = await executeSwitch({
+      const result = await executeWorkspaceSwitch({
         game_id: activeGame.id,
         target: {
           kind: 'mod_path',
@@ -462,28 +280,11 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      if (result.changed_folder_paths.length > 0) {
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryRemovalDescriptor(
-            result.changed_folder_paths.map((path) => thumbnailKeys.folder(path)),
-            [],
-          ),
-        );
-      }
-      applyRuntimeEffects(
-        queryClient,
-        buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-      );
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
-        'active',
-      );
+      await applyEnableOnlyThisEffects(queryClient, result);
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, executeSwitch, queryClient],
+    [activeGame, queryClient],
   );
 
   const isPending = useMemo(() => Object.keys(pendingKeys).length > 0, [pendingKeys]);

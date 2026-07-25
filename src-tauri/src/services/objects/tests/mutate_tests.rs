@@ -21,7 +21,7 @@ async fn test_create_object_cmd_inner_success() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path_str),
         },
@@ -69,7 +69,7 @@ async fn test_create_object_cmd_inner_conflict() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path_str),
         },
@@ -115,7 +115,7 @@ async fn test_create_object_cmd_inner_does_not_leave_db_row_when_folder_creation
         &crate::test_utils::TestGameFixture {
             id: "g_fs_fail",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some(&mods_path_str),
         },
@@ -158,7 +158,7 @@ async fn test_toggle_pin_object() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -205,7 +205,7 @@ async fn test_update_object() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -263,7 +263,7 @@ async fn test_delete_object_empty() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -309,7 +309,7 @@ async fn test_delete_object_cascade_mods() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::database::models::GameType::GIMI,
+            game_type: crate::domain::models::GameType::GIMI,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -338,7 +338,7 @@ async fn test_delete_object_cascade_mods() {
             object_id: Some("o1"),
             actual_name: "Mod1",
             folder_path: "p1",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Char"),
             mods_path: Some("/Mods"),
@@ -355,7 +355,7 @@ async fn test_delete_object_cascade_mods() {
             object_id: Some("o1"),
             actual_name: "Mod2",
             folder_path: "p2",
-            status: crate::database::models::ItemStatus::Enabled,
+            status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Char"),
             mods_path: Some("/Mods"),

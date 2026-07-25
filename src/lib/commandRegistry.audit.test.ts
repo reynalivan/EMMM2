@@ -56,6 +56,8 @@ function removedCommandNames(): string[] {
     ['clear', 'pending', 'tasks'].join('_'),
     ['browser', 'close', 'tab'].join('_'),
     ['remove', 'game'].join('_'),
+    ['has', 'pin'].join('_'),
+    ['clear', 'pin'].join('_'),
   ];
 }
 

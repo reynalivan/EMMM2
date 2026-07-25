@@ -131,6 +131,7 @@ describe('dedupService', () => {
                 confidenceScore: 95,
                 signals: [],
                 modId: null,
+                version: 1,
               },
               {
                 folderPath: '/path/mod-b',
@@ -141,6 +142,7 @@ describe('dedupService', () => {
                 confidenceScore: 95,
                 signals: [],
                 modId: null,
+                version: 1,
               },
             ],
           },
@@ -186,14 +188,15 @@ describe('dedupService', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'Keep' as const,
-          targetPath: '/path/mod-a',
-          allMembers: ['/path/mod-a', '/path/mod-b'],
+          action: 'keepA' as const,
+          folderA: '/path/mod-a',
+          folderB: '/path/mod-b',
         },
         {
           groupId: 'group-2',
-          action: 'Ignore' as const,
-          allMembers: ['/path/mod-c', '/path/mod-d'],
+          action: 'ignore' as const,
+          folderA: '/path/mod-c',
+          folderB: '/path/mod-d',
         },
       ];
 
@@ -214,7 +217,7 @@ describe('dedupService', () => {
         errors: [
           {
             groupId: 'group-2',
-            action: { type: 'Keep', targetPath: '/path/mod-a' },
+            action: 'keepA',
             message: 'Permission denied when deleting folder',
           },
         ],
@@ -225,9 +228,9 @@ describe('dedupService', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'Keep' as const,
-          targetPath: '/path/mod-a',
-          allMembers: ['/path/mod-a', '/path/mod-b'],
+          action: 'keepA' as const,
+          folderA: '/path/mod-a',
+          folderB: '/path/mod-b',
         },
       ];
 
@@ -245,9 +248,9 @@ describe('dedupService', () => {
       const requests = [
         {
           groupId: 'group-1',
-          action: 'Keep' as const,
-          targetPath: '/path/mod-a',
-          allMembers: ['/path/mod-a', '/path/mod-b'],
+          action: 'keepA' as const,
+          folderA: '/path/mod-a',
+          folderB: '/path/mod-b',
         },
       ];
 

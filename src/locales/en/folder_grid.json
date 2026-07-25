@@ -74,7 +74,9 @@
     "description": "{{targetName}} already has other enabled mods in the same target. Choose how to proceed.",
     "currently_enabled": "Currently Enabled",
     "enable_only_this": "Enable Only This",
-    "force_enable": "Force Enable Anyway"
+    "force_enable": "Force Enable Anyway",
+    "dont_warn_again": "Don't warn again for this combination",
+    "ignore_failed": "Failed to save ignore rule: {{error}}"
   },
   "drag_overlay": {
     "title": "Move to Object",

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 pub struct GameConfig {
     pub id: String,
     pub name: String,
-    pub game_type: crate::database::models::GameType,
+    pub game_type: crate::domain::models::GameType,
     pub mod_path: PathBuf,
     pub game_exe: PathBuf,
     pub loader_exe: Option<PathBuf>,

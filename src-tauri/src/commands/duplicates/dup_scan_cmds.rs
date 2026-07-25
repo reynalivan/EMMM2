@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::scanner::core::walker;
 use crate::services::scanner::dedup::scanner::DedupScanStatus;
 use crate::types::dup_scan::{DupScanEvent, DupScanReport};
@@ -23,10 +24,10 @@ impl DupScanState {
         }
     }
 
-    pub fn try_start(&self) -> Result<(), String> {
+    pub fn try_start(&self) -> Result<(), AppError> {
         self.is_running
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .map_err(|_| "Duplicate scan already running".to_string())
+            .map_err(|_| AppError::Validation("Duplicate scan already running".to_string()))
             .map(|_| ())
     }
 
@@ -73,13 +74,17 @@ pub async fn dup_scan_start(
     state: State<'_, DupScanState>,
     db: State<'_, sqlx::SqlitePool>,
     on_event: Channel<DupScanEvent>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mods_path = Path::new(&mods_root);
     if !mods_path.exists() {
-        return Err(format!("Mods path does not exist: {mods_root}"));
+        return Err(AppError::NotFound(format!(
+            "Mods path does not exist: {mods_root}"
+        )));
     }
     if !mods_path.is_dir() {
-        return Err(format!("Mods path is not a directory: {mods_root}"));
+        return Err(AppError::Validation(format!(
+            "Mods path is not a directory: {mods_root}"
+        )));
     }
 
     state.try_start()?;
@@ -180,11 +185,10 @@ pub async fn dup_scan_start(
             DedupScanStatus::Completed => {
                 let final_total = outcome.total_folders;
                 let final_current = final_total;
-                let final_percent = if final_total == 0 {
-                    100
-                } else {
-                    ((final_current * 100) / final_total).min(100) as u8
-                };
+                let final_percent = final_current
+                    .checked_mul(100)
+                    .and_then(|value| value.checked_div(final_total))
+                    .map_or(100, |value| value.min(100) as u8);
 
                 let _ = on_event.send(DupScanEvent::Progress {
                     scan_id: scan_id.clone(),
@@ -229,7 +233,7 @@ pub async fn dup_scan_start(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn dup_scan_cancel(state: State<'_, DupScanState>) -> Result<(), String> {
+pub async fn dup_scan_cancel(state: State<'_, DupScanState>) -> Result<(), AppError> {
     state.cancel();
     Ok(())
 }
@@ -240,7 +244,7 @@ pub async fn dup_scan_get_report(
     state: State<'_, DupScanState>,
     config: State<'_, crate::services::config::ConfigService>,
     pin: Option<String>,
-) -> Result<Option<DupScanReport>, String> {
+) -> Result<Option<DupScanReport>, AppError> {
     let mut report = match state.load_report() {
         Some(r) => r,
         None => return Ok(None),

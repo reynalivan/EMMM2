@@ -113,7 +113,7 @@ async fn test_games_persist_in_db() {
     settings.games.push(GameConfig {
         id: "test-game-1".into(),
         name: "Test Game".into(),
-        game_type: emmm_lib::database::models::GameType::GIMI,
+        game_type: emmm_lib::domain::models::GameType::GIMI,
         mod_path: PathBuf::from("C:\\Mods"),
         game_exe: PathBuf::from("C:\\Game\\game.exe"),
         loader_exe: Some(PathBuf::from("C:\\Loader\\loader.exe")),
@@ -155,11 +155,13 @@ async fn test_pin_lockout_persists_after_restart() {
         assert_eq!(status.attempts_remaining, 0);
         assert!(status.locked_seconds_remaining > 0, "Should be locked");
 
-        // Verify lockout is stored in DB
-        let settings = service.get_settings();
+        // Verify lockout is stored in the PIN table.
+        let persisted_status = emmm_lib::services::pin_service::get_status(&pool)
+            .await
+            .expect("pin status should load");
         assert!(
-            settings.safe_mode.lockout_until_ts.is_some(),
-            "Lockout timestamp should be in DB"
+            persisted_status.is_locked,
+            "Lockout timestamp should be in pin_config"
         );
     }
 

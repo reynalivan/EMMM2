@@ -38,7 +38,7 @@ pub enum RecoveryAction {
 pub struct PipelineTask {
     pub id: String,
     pub game_id: String,
-    pub task_type: String, // 'apply_collection', 'switch_corridor'
+    pub task_type: String, // 'apply_collection' (legacy rows may contain 'switch_corridor')
     pub status: TaskStatus,
     pub target_id: Option<String>,
     pub created_at: String,

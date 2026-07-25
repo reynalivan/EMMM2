@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle, Info, Trash2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
-import type { DupScanGroup, ResolutionAction } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 import { formatSize } from '../../../utils/formatters';
 import { useTranslation } from 'react-i18next';
 
@@ -21,8 +21,8 @@ function createRadialProgressStyle(value: number): RadialProgressStyle {
 
 interface Props {
   groups: DupScanGroup[];
-  selections: Map<string, ResolutionAction>;
-  onSelectionChange: (groupId: string, action: ResolutionAction) => void;
+  selections: Map<string, DuplicateSelection>;
+  onSelectionChange: (groupId: string, action: DuplicateSelection) => void;
   disabled?: boolean;
 }
 

@@ -1,7 +1,7 @@
 {
   "pin_entry": {
     "title": "Masukkan PIN",
-    "desc": "PIN diperlukan untuk menonaktifkan Mode Aman.",
+    "desc": "PIN diperlukan untuk melanjutkan.",
     "placeholder": "••••••",
     "error": {
       "length": "PIN harus 6 digit",
@@ -31,7 +31,7 @@
       "desc": "PIN Anda telah dihapus. Buka Pengaturan → Privasi → Atur PIN untuk membuat yang baru."
     },
     "error_match": "PIN tidak cocok",
-    "removed": "PIN Dihapus: Mode Aman sekarang tidak terlindungi.",
+    "removed": "PIN dihapus.",
     "remove_failed": "Gagal menghapus PIN: {{error}}"
   },
   "settings": {
@@ -54,15 +54,15 @@
     },
     "security": {
       "title": "PIN Keamanan",
-      "status_set": "PIN sedang diatur. PIN diperlukan untuk menonaktifkan Mode Aman.",
-      "status_none": "Tidak ada PIN. Siapa pun dapat mengubah Mode Aman secara bebas.",
+      "status_set": "PIN sedang diatur.",
+      "status_none": "Tidak ada PIN.",
       "recovery_configured": "Kode pemulihan telah dikonfigurasi",
       "remove": "Hapus PIN",
       "change": "Ubah PIN",
       "set": "Atur PIN",
       "modal_set_title": "Atur PIN Keamanan",
       "modal_unlock_title": "Buka Kunci Pengaturan",
-      "modal_set_desc": "Buat PIN yang aman untuk melindungi pengaturan Mode Aman.",
+      "modal_set_desc": "Buat PIN yang aman untuk melindungi pengaturan sensitif.",
       "modal_unlock_desc": "Masukkan PIN Anda saat ini untuk melanjutkan."
     }
   },
