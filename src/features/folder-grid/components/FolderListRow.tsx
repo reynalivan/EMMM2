@@ -44,6 +44,8 @@ interface FolderListRowProps {
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
   isSwitchPending?: boolean;
+  /** A switch for this folder is in flight (spinner), as opposed to merely disabled. */
+  isSwitchBusy?: boolean;
   mutationsDisabled?: boolean;
 }
 
@@ -71,6 +73,7 @@ function FolderListRowInner({
   onSyncWithDb,
   hasConflict = false,
   isSwitchPending = false,
+  isSwitchBusy = false,
   mutationsDisabled = false,
 }: FolderListRowProps) {
   const { t } = useTranslation(['grid', 'common']);
@@ -307,6 +310,7 @@ function FolderListRowInner({
                 node={actionItem}
                 policy={switchPolicy}
                 isPending={isSwitchPending || mutationsDisabled}
+                isBusy={isSwitchBusy}
                 size="xs"
                 ariaLabel={t('common:actions.toggle')}
                 onToggle={() => {

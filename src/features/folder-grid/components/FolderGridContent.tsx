@@ -158,6 +158,7 @@ export default function FolderGridContent({
                         isSwitchPending={
                           mutationsDisabled || isSwitchPending || isFolderSwitchPending(folder)
                         }
+                        isSwitchBusy={isFolderSwitchPending(folder)}
                         mutationsDisabled={mutationsDisabled}
                       />
                     </div>
@@ -208,6 +209,7 @@ export default function FolderGridContent({
                   isSwitchPending={
                     mutationsDisabled || isSwitchPending || isFolderSwitchPending(folder)
                   }
+                  isSwitchBusy={isFolderSwitchPending(folder)}
                   mutationsDisabled={mutationsDisabled}
                 />
               </div>

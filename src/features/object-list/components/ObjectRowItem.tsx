@@ -66,6 +66,8 @@ interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Bulk-select state */
   isBulkSelected?: boolean;
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
+  /** An enable/disable switch for this object is waiting on the backend. */
+  isSwitchPending?: boolean;
 }
 
 function ObjectRowItemInner({
@@ -78,6 +80,7 @@ function ObjectRowItemInner({
   isDropTarget,
   isBulkSelected = false,
   onToggleBulkSelect,
+  isSwitchPending = false,
   ...rest
 }: ObjectRowItemProps) {
   const { t } = useTranslation(['objects', 'common']);
@@ -286,6 +289,13 @@ function ObjectRowItemInner({
                 <Sword size={10} className="shrink-0 text-base-content/30" />
                 <span className="truncate text-[11px]">{meta.weapon_type}</span>
               </>
+            )}
+            {isSwitchPending && (
+              <span
+                role="status"
+                aria-label={t('common:status.loading')}
+                className="loading loading-spinner loading-xs text-primary shrink-0"
+              />
             )}
             <WorkspaceSwitchLabel
               node={obj}

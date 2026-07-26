@@ -101,6 +101,9 @@ export default function PreviewHeader({
                 (isWorkspaceExplorerNode(actionFolder) &&
                   actions.isFolderSwitchPending(actionFolder))
               }
+              isBusy={
+                isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder)
+              }
               size={isScrolled ? 'xs' : 'sm'}
               ariaLabel={t('preview:actions.toggle_enabled')}
               onToggle={(node: WorkspaceNode) => {

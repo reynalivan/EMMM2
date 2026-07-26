@@ -296,6 +296,7 @@ export default function ObjectList() {
             isBulkSelected={bulkSelect.isSelected}
             onToggleBulkSelect={bulkSelect.toggleSelection}
             mutationsDisabled={mutationsDisabled}
+            isObjectSwitchPending={handlers.isObjectSwitchPending}
           />
         )}
       </div>

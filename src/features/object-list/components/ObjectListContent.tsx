@@ -37,6 +37,7 @@ interface ContentProps {
   isBulkSelected?: (id: string) => boolean;
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
   mutationsDisabled?: boolean;
+  isObjectSwitchPending?: (node: import('../../../types/workspace').WorkspaceObjectNode) => boolean;
 }
 
 /** Shared props for building ObjectContextMenu */
@@ -90,6 +91,7 @@ export default function ObjectListContent({
   isBulkSelected,
   onToggleBulkSelect,
   mutationsDisabled = false,
+  isObjectSwitchPending,
 }: ContentProps) {
   const ctx = contextMenuProps;
 
@@ -177,6 +179,7 @@ export default function ObjectListContent({
                     isDropTarget={isDragging && hoveredItemId === item.obj.id}
                     isBulkSelected={isBulkSelected?.(item.obj.id)}
                     onToggleBulkSelect={onToggleBulkSelect}
+                    isSwitchPending={isObjectSwitchPending?.(item.obj)}
                   />
                 </ContextMenu>
               </div>

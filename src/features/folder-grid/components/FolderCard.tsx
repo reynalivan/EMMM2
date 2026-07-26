@@ -49,6 +49,8 @@ interface FolderCardProps {
   /** Called when user tries to toggle while locked — opens Enable Parent dialog */
   onRequestEnableParent?: () => void;
   isSwitchPending?: boolean;
+  /** A switch for this folder is in flight (spinner), as opposed to merely disabled. */
+  isSwitchBusy?: boolean;
   mutationsDisabled?: boolean;
 }
 
@@ -83,6 +85,7 @@ function FolderCardInner({
   isLockedByParent = false,
   onRequestEnableParent,
   isSwitchPending = false,
+  isSwitchBusy = false,
   mutationsDisabled = false,
 }: FolderCardProps) {
   const { t } = useTranslation(['grid', 'common']);
@@ -311,6 +314,7 @@ function FolderCardInner({
                 node={actionFolder}
                 policy={switchPolicy}
                 isPending={isSwitchPending || mutationsDisabled}
+                isBusy={isSwitchBusy}
                 size="xs"
                 ariaLabel={t('common:actions.toggle')}
                 onToggle={() => {
