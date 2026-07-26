@@ -5,7 +5,7 @@ use super::naming::{
 };
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
@@ -78,7 +78,7 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
 
     let canonical_path =
-        PathGuard::validate_path(config, game_id, &path).map_err(AppError::Security)?;
+        validate_path(config, game_id, &path).map_err(AppError::Security)?;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?

@@ -1,6 +1,6 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::WatcherState;
 use std::path::Path;
@@ -19,7 +19,7 @@ pub async fn open_in_explorer(
     path: String,
 ) -> Result<(), AppError> {
     let canonical_path =
-        PathGuard::validate_path(&config, &game_id, &path).map_err(AppError::Security)?;
+        validate_path(&config, &game_id, &path).map_err(AppError::Security)?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -49,13 +49,13 @@ pub async fn reveal_object_in_explorer(
 
     if let Some(path_str) = resolve_and_heal_db_path(pool.inner(), &object_id).await {
         let canonical =
-            PathGuard::validate_path(&config, &game_id, &path_str).map_err(AppError::Security)?;
+            validate_path(&config, &game_id, &path_str).map_err(AppError::Security)?;
         return open_explorer_select(&canonical.to_string_lossy());
     }
 
     let candidate_path = find_fallback_path(&mods_path, &object_name)?;
     let canonical =
-        PathGuard::validate_path(&config, &game_id, &candidate_path).map_err(AppError::Security)?;
+        validate_path(&config, &game_id, &candidate_path).map_err(AppError::Security)?;
     open_explorer_select(&canonical.to_string_lossy())
 }
 

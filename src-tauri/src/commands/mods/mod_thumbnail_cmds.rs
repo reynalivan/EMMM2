@@ -1,7 +1,7 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
 use crate::services::mods::metadata;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
@@ -64,7 +64,7 @@ pub async fn paste_thumbnail_inner(
         ));
     }
 
-    let path = PathGuard::validate_path(config, &game_id, &folder_path)
+    let path = validate_path(config, &game_id, &folder_path)
         .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
 
     let img = image::load_from_memory(&image_data).map_err(|e| {

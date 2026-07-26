@@ -9,7 +9,7 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 
 /// Resolve a naming conflict where both "X" and "DISABLED X" exist on disk.
 ///
@@ -30,8 +30,8 @@ pub async fn resolve_conflict(
     duplicate_path: String,
     strategy: String,
 ) -> Result<String, AppError> {
-    PathGuard::validate_path(&config, &game_id, &keep_path).map_err(AppError::Security)?;
-    PathGuard::validate_path(&config, &game_id, &duplicate_path).map_err(AppError::Security)?;
+    validate_path(&config, &game_id, &keep_path).map_err(AppError::Security)?;
+    validate_path(&config, &game_id, &duplicate_path).map_err(AppError::Security)?;
 
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
     let mods_path = crate::repo::game_repo::get_mod_path(pool.inner(), &game_id)
@@ -218,8 +218,8 @@ pub async fn get_conflict_details(
     enabled_path: String,
     disabled_path: String,
 ) -> Result<ConflictDetails, AppError> {
-    PathGuard::validate_path(&config, &game_id, &enabled_path).map_err(AppError::Security)?;
-    PathGuard::validate_path(&config, &game_id, &disabled_path).map_err(AppError::Security)?;
+    validate_path(&config, &game_id, &enabled_path).map_err(AppError::Security)?;
+    validate_path(&config, &game_id, &disabled_path).map_err(AppError::Security)?;
 
     let enabled = scan_folder_detail(&enabled_path, true)?;
     let disabled = scan_folder_detail(&disabled_path, false)?;

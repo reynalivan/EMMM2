@@ -195,7 +195,9 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
     );
     super::steps::batch_rename::rename(ctx).await?;
 
-    // Step 7: Batch update database
+    // Step 7: Verify database projection. The runtime mutation engine already wrote
+    // the filesystem and the DB projection in one operation, so there is nothing to
+    // do here beyond reporting progress.
     crate::services::apply_progress_service::update(
         &ctx.game_id,
         ctx.is_safe,
@@ -204,7 +206,6 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         ctx.to_enable.len() + ctx.to_disable.len(),
         None,
     );
-    super::steps::batch_db_update::update(ctx).await?;
 
     // Step 8: Update corridor pointers
     super::steps::update_corridor::update(ctx).await?;

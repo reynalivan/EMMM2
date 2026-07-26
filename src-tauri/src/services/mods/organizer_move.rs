@@ -1,6 +1,6 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::core_ops::standardize_prefix;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
@@ -219,7 +219,7 @@ async fn move_one_mod_to_object(
     use crate::domain::models::ItemStatus;
 
     let current_path =
-        PathGuard::validate_path(config, game_id, folder_path).map_err(AppError::Security)?;
+        validate_path(config, game_id, folder_path).map_err(AppError::Security)?;
     let old_object_id =
         crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id).await?;
     let mod_folder_name = current_path

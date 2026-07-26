@@ -1,7 +1,7 @@
 use crate::domain::errors::MetadataError;
 use crate::domain::models::ItemStatus;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ pub async fn set_mod_category(
     category: &str,
 ) -> Result<(), MetadataError> {
     let canonical_path =
-        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+        validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
 
     let folder_path_str = canonical_path.to_string_lossy();
 
@@ -72,7 +72,7 @@ pub fn update_mod_thumbnail(
     source_path: &str,
 ) -> Result<String, MetadataError> {
     let target_dir =
-        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+        validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
 
     let source_path_obj = Path::new(source_path);
     if !source_path_obj.exists() || !source_path_obj.is_file() {
@@ -108,7 +108,7 @@ pub async fn toggle_mod_safe(
 ) -> Result<(), MetadataError> {
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let full_path =
-        PathGuard::validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+        validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
 
     let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?

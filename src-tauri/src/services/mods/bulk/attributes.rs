@@ -16,7 +16,7 @@ pub async fn bulk_update_info(
     let mut failures = Vec::new();
     for path in paths {
         let canonical =
-            crate::services::fs_utils::guard::PathGuard::validate_path(config, game_id, &path)
+            crate::services::fs_utils::guard::validate_path(config, game_id, &path)
                 .map_err(AppError::Security)?;
 
         match info_json::update_info_json(&canonical, &update) {

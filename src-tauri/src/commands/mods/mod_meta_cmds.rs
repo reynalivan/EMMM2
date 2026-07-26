@@ -1,7 +1,7 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::{info_json, metadata};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
@@ -58,7 +58,7 @@ pub async fn read_mod_info(
     game_id: String,
     folder_path: String,
 ) -> Result<Option<info_json::ModInfo>, AppError> {
-    let path = PathGuard::validate_path(&config, &game_id, &folder_path)
+    let path = validate_path(&config, &game_id, &folder_path)
         .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
     Ok(info_json::read_info_json(&path)?)
 }
@@ -74,7 +74,7 @@ pub async fn update_mod_info(
     folder_path: String,
     update: info_json::ModInfoUpdate,
 ) -> Result<info_json::ModInfo, AppError> {
-    let path = PathGuard::validate_path(&config, &game_id, &folder_path)
+    let path = validate_path(&config, &game_id, &folder_path)
         .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
     let changed_path = path.join("info.json").to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&state.suppressor);

@@ -1,7 +1,7 @@
 use crate::domain::errors::AppError;
 use crate::repo::game_repo;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::bulk;
 use crate::services::mods::info_json;
@@ -27,7 +27,7 @@ pub async fn bulk_toggle_mods(
 
     // Security validation for all paths
     for p in &paths {
-        PathGuard::validate_path(&config, &game_id, p).map_err(AppError::Security)?;
+        validate_path(&config, &game_id, p).map_err(AppError::Security)?;
     }
 
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
@@ -59,7 +59,7 @@ pub async fn bulk_delete_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     if let Some(ref gid) = game_id {
         for p in &paths {
-            PathGuard::validate_path(&config, gid, p).map_err(AppError::Security)?;
+            validate_path(&config, gid, p).map_err(AppError::Security)?;
         }
     }
 

@@ -4,7 +4,7 @@ use super::naming::{find_existing_sibling_case_insensitive, rename_conflict_erro
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::PathGuard;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
@@ -117,7 +117,7 @@ pub async fn rename_mod_folder_inner_service(
     let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
 
     let canonical_path =
-        PathGuard::validate_path(config, game_id, &old_path).map_err(AppError::Security)?;
+        validate_path(config, game_id, &old_path).map_err(AppError::Security)?;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?

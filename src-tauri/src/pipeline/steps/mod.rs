@@ -1,4 +1,3 @@
-pub mod batch_db_update;
 pub mod batch_rename;
 pub mod compute_diff;
 pub mod resolve_current_state;
