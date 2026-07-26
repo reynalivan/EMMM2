@@ -223,7 +223,7 @@ export function usePreviewActions({
 
     try {
       if (activeGameId) {
-        await commands.openInExplorer({ gameId: activeGameId, path: activePath });
+        await commands.openInExplorer(activeGameId, activePath);
       }
     } catch (error) {
       toast.error(t('preview:errors.open_location_failed', { error: toErrorMessage(error) }));

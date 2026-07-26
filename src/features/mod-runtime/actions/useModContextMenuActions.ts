@@ -23,7 +23,7 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
     }
 
     try {
-      await commands.openInExplorer({ gameId: activeGame.id, path: folder.path });
+      await commands.openInExplorer(activeGame.id, folder.path);
     } catch (error) {
       toast.error(t('preview:errors.open_location_failed', { error: toErrorMessage(error) }));
     }

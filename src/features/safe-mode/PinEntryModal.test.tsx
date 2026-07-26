@@ -9,6 +9,7 @@ vi.mock('../../hooks/useSettings', () => ({
 }));
 
 vi.mock('../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     getPinStatus: vi.fn(),
   },

@@ -7,6 +7,7 @@ const setObjectModsCategory = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     setModCategory: (...args: unknown[]) => setModCategory(...args),
     setObjectModsCategory: (...args: unknown[]) => setObjectModsCategory(...args),
@@ -124,11 +125,7 @@ describe('shared object action operations', () => {
       id: 'object-1',
       updates: { object_type: 'Weapon' },
     });
-    expect(setObjectModsCategory).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      objectId: 'object-1',
-      category: 'Weapon',
-    });
+    expect(setObjectModsCategory).toHaveBeenCalledWith('game-1', 'object-1', 'Weapon');
     expect(setModCategory).not.toHaveBeenCalled();
     expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
   });

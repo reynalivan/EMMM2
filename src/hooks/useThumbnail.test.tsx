@@ -7,6 +7,7 @@ import { commands } from '../lib/bindings';
 vi.unmock('@tanstack/react-query');
 
 vi.mock('../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     getModThumbnail: vi.fn(),
   },
@@ -42,10 +43,7 @@ describe('useThumbnail (TC-41)', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data).toBe(expectedUrl);
-    expect(commands.getModThumbnail).toHaveBeenCalledWith({
-      gameId: 'mock-game-id',
-      folderPath: 'C:\\Mods\\TestMod',
-    });
+    expect(commands.getModThumbnail).toHaveBeenCalledWith('mock-game-id', 'C:\\Mods\\TestMod');
   });
 
   it('TC-41-002: returns null when backend has no thumbnail (fallback)', async () => {

@@ -67,7 +67,7 @@ export default function GeneralTab() {
           throw new Error('Invalid theme format: Missing required fields (id, label, config).');
         }
 
-        await commands.saveCustomTheme({ theme: themeData });
+        await commands.saveCustomTheme(themeData);
         await refreshCustomThemes();
         addToast('success', t('general.appearance.import_success', { name: themeData.label }));
       }
@@ -80,7 +80,7 @@ export default function GeneralTab() {
   const handleExportTheme = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const themeData = await commands.loadCustomTheme({ id });
+      const themeData = await commands.loadCustomTheme(id);
       const fileName = `${themeData.id}.json`;
 
       const savePath = await save({
@@ -109,7 +109,7 @@ export default function GeneralTab() {
     e.stopPropagation();
     if (confirm(t('general.appearance.delete_confirm'))) {
       try {
-        await commands.deleteCustomTheme({ id });
+        await commands.deleteCustomTheme(id);
         await refreshCustomThemes();
         if (selectedTheme === id) {
           handleThemeChange('onyx');

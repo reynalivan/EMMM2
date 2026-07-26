@@ -30,7 +30,7 @@ export default function LogsTab() {
   const loadLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const next = await commands.getLogs({ limit: 300 });
+      const next = await commands.getLogs(300, null);
       setLines(next);
     } catch (error) {
       console.error(error);

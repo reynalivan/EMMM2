@@ -5,10 +5,10 @@
  */
 
 import { useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
-import { commands } from '../lib/bindings';
+import { commands, sparse } from '../lib/bindings';
 import { toast } from '../stores/useToastStore';
 import { thumbnailKeys } from './useThumbnail';
-import { folderKeys, updateFolderCache } from './folderCache';
+import { folderKeys } from './folderCache';
 import { stripDisabledPrefix } from '../lib/disabledPrefix';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../features/workspace-runtime/optimistic/applyOptimisticEffects';
@@ -30,7 +30,7 @@ import {
   formatBulkSuccessMessage,
   type BulkSuccessActionKey,
 } from './bulkToastMessages';
-import { applyModInfoUpdate, resolveTogglePathRewrites } from './folderMutationPayloads';
+import { resolveTogglePathRewrites } from './folderMutationPayloads';
 
 /** Prefers the name already cached for a path, falling back to its folder name. */
 function getBulkToastMessage(
@@ -65,7 +65,7 @@ export function useBulkToggle() {
     // Bulk toggle is an explicit runtime switch path.
     // Global runtime refresh comes from one final publish, not per-item ad-hoc invalidation.
     mutationFn: (params: { gameId: string; paths: string[]; enable: boolean }) =>
-      commands.bulkToggleMods(params),
+      commands.bulkToggleMods(params.gameId, params.paths, params.enable),
 
     onSuccess: async (result, variables) => {
       const pathRewrites = resolveTogglePathRewrites(
@@ -127,7 +127,8 @@ export function useBulkDelete() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { paths: string[]; gameId?: string }) => commands.bulkDeleteMods(params),
+    mutationFn: (params: { paths: string[]; gameId?: string }) =>
+      commands.bulkDeleteMods(params.gameId ?? null, params.paths),
     onSuccess: async (result) => {
       applyRuntimeEffects(
         queryClient,
@@ -136,11 +137,13 @@ export function useBulkDelete() {
           [],
         ),
       );
-      // Targeted cache update instead of full refetch: remove deleted folders
-      updateFolderCache(queryClient, result.success, undefined, true);
       await publishRuntimeDescriptor(
         queryClient,
-        buildRuntimeMutationDescriptor(['workspaceCorridor', 'dashboardKeybindings']),
+        buildRuntimeMutationDescriptor([
+          'workspaceStructure',
+          'workspaceCorridor',
+          'dashboardKeybindings',
+        ]),
         'active',
       );
 
@@ -168,11 +171,12 @@ export function useBulkUpdateInfo() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; paths: string[]; update: ModInfoUpdate }) =>
-      commands.bulkUpdateInfo(params),
-    onSuccess: (result, variables) => {
-      // Targeted cache update instead of full refetch
-      updateFolderCache(queryClient, result.success, (f: ModFolder) =>
-        applyModInfoUpdate(f, variables.update),
+      commands.bulkUpdateInfo(params.gameId, params.paths, sparse(params.update)),
+    onSuccess: async (result) => {
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('folderMetadataPreview'),
+        'active',
       );
       if (result.success.length > 0) {
         toast.success(getBulkToastMessage(queryClient, result.success, 'updated'));
@@ -190,12 +194,13 @@ export function useBulkFavorite() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPaths: string[]; favorite: boolean }) =>
-      commands.bulkToggleFavorite(params),
-    onSuccess: (result, variables) => {
-      updateFolderCache(queryClient, result.success, (f: ModFolder) => ({
-        ...f,
-        is_favorite: variables.favorite,
-      }));
+      commands.bulkToggleFavorite(params.gameId, params.folderPaths, params.favorite),
+    onSuccess: async (result, variables) => {
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('folderMetadataPreview'),
+        'active',
+      );
       if (result.success.length > 0) {
         const action = variables.favorite ? 'favorited' : 'unfavorited';
         toast.success(getBulkToastMessage(queryClient, result.success, action));
@@ -213,12 +218,13 @@ export function useBulkPin() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
-      commands.bulkPinMods(params),
-    onSuccess: (result, variables) => {
-      updateFolderCache(queryClient, result.success, (f: ModFolder) => ({
-        ...f,
-        is_pinned: variables.pin,
-      }));
+      commands.bulkPinMods(params.gameId, params.folderPaths, params.pin),
+    onSuccess: async (result, variables) => {
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('folderMetadataPreview'),
+        'active',
+      );
       if (result.success.length > 0) {
         const action = variables.pin ? 'pinned' : 'unpinned';
         toast.success(getBulkToastMessage(queryClient, result.success, action));

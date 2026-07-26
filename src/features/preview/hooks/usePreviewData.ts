@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '../../../types/mod';
-import { commands } from '../../../lib/bindings';
+import { commands, sparse } from '../../../lib/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 
 export interface IniFileEntry {
@@ -93,7 +93,7 @@ export function useModInfo(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.modInfo(normalizedPath ?? ''),
-    queryFn: () => commands.readModInfo({ gameId, folderPath: normalizedPath ?? '' }),
+    queryFn: () => commands.readModInfo(gameId, normalizedPath ?? ''),
     enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
@@ -105,7 +105,7 @@ export function useModIniFiles(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.iniFiles(normalizedPath ?? ''),
-    queryFn: () => commands.listModIniFiles({ gameId, folderPath: normalizedPath ?? '' }),
+    queryFn: () => commands.listModIniFiles(gameId, normalizedPath ?? ''),
     enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
@@ -118,12 +118,7 @@ export function useModIniDocument(folderPath?: string | null, fileName?: string 
 
   return useQuery({
     queryKey: detailsKeys.iniDocument(normalizedPath ?? '', normalizedName ?? ''),
-    queryFn: () =>
-      commands.readModIni({
-        gameId,
-        folderPath: normalizedPath ?? '',
-        fileName: normalizedName ?? '',
-      }),
+    queryFn: () => commands.readModIni(gameId, normalizedPath ?? '', normalizedName ?? ''),
     enabled: !!normalizedPath && !!normalizedName && !!gameId,
     staleTime: 0,
   });
@@ -137,12 +132,7 @@ export function useAllModIniDocuments(folderPath?: string | null, files?: IniFil
   return useQueries({
     queries: safeFiles.map((file) => ({
       queryKey: detailsKeys.iniDocument(normalizedPath ?? '', file.filename),
-      queryFn: () =>
-        commands.readModIni({
-          gameId,
-          folderPath: normalizedPath ?? '',
-          fileName: file.filename,
-        }),
+      queryFn: () => commands.readModIni(gameId, normalizedPath ?? '', file.filename),
       enabled: !!normalizedPath && !!gameId,
       staleTime: 0,
     })),
@@ -155,7 +145,7 @@ export function usePreviewImages(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.previewImages(normalizedPath ?? ''),
-    queryFn: () => commands.listModPreviewImages({ gameId, folderPath: normalizedPath ?? '' }),
+    queryFn: () => commands.listModPreviewImages(gameId, normalizedPath ?? ''),
     enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
@@ -164,7 +154,8 @@ export function usePreviewImages(folderPath?: string | null) {
 export function useWriteModIni() {
   const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: WriteModIniInput) => commands.writeModIni({ ...input, gameId }),
+    mutationFn: (input: WriteModIniInput) =>
+      commands.writeModIni(gameId, input.folderPath, input.fileName, input.lineUpdates),
   });
 }
 
@@ -172,7 +163,7 @@ export function useSavePreviewImage() {
   const gameId = useActiveGameId();
   return useMutation({
     mutationFn: (input: SavePreviewImageInput) =>
-      commands.saveModPreviewImage({ ...input, gameId }),
+      commands.saveModPreviewImage(gameId, input.folderPath, input.objectName, input.imageData),
   });
 }
 
@@ -180,7 +171,7 @@ export function useRemovePreviewImage() {
   const gameId = useActiveGameId();
   return useMutation({
     mutationFn: (input: RemovePreviewImageInput) =>
-      commands.removeModPreviewImage({ ...input, gameId }),
+      commands.removeModPreviewImage(gameId, input.folderPath, input.imagePath),
   });
 }
 
@@ -188,13 +179,14 @@ export function useClearPreviewImages() {
   const gameId = useActiveGameId();
   return useMutation({
     mutationFn: (input: ClearPreviewImagesInput) =>
-      commands.clearModPreviewImages({ ...input, gameId }),
+      commands.clearModPreviewImages(gameId, input.folderPath),
   });
 }
 
 export function useUpdateModInfoDetails() {
   const gameId = useActiveGameId();
   return useMutation({
-    mutationFn: (input: UpdateModInfoInput) => commands.updateModInfo({ ...input, gameId }),
+    mutationFn: (input: UpdateModInfoInput) =>
+      commands.updateModInfo(gameId, input.folderPath, sparse(input.update)),
   });
 }

@@ -33,11 +33,7 @@ export default function WorkspaceSourceUnavailableBanner({
     if (!activeGame?.id) {
       return;
     }
-    const result = await commands.reconcileDiskState({
-      gameId: activeGame.id,
-      reason: 'ManualRepair',
-      forceFull: true,
-    });
+    const result = await commands.reconcileDiskStateCmd(activeGame.id, 'ManualRepair', null, true);
     applyDiskReconcileResult(result, queryClient, activeGame);
   };
 

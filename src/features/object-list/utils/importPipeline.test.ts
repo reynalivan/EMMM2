@@ -18,9 +18,10 @@ const matchCheckFolder = vi.fn();
 const toastWithAction = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
-    checkPathExists: (...args: unknown[]) => checkPathExists(...args),
-    ensureDir: (...args: unknown[]) => ensureDir(...args),
+    checkPathExistsCmd: (...args: unknown[]) => checkPathExists(...args),
+    ensureDirCmd: (...args: unknown[]) => ensureDir(...args),
     ingestDroppedFolders: (...args: unknown[]) => ingestDroppedFolders(...args),
   },
 }));
@@ -65,7 +66,7 @@ describe('importPipeline', () => {
   describe('ensureDirectoryExists', () => {
     it('creates the directory only when it is missing', async () => {
       await ensureDirectoryExists('E:\\Mods\\.emmm_temp');
-      expect(ensureDir).toHaveBeenCalledWith({ path: 'E:\\Mods\\.emmm_temp' });
+      expect(ensureDir).toHaveBeenCalledWith('E:\\Mods\\.emmm_temp');
 
       checkPathExists.mockResolvedValue(true);
       ensureDir.mockClear();
@@ -88,14 +89,14 @@ describe('importPipeline', () => {
         ingestLooseFiles(activeGame, ['E:\\Drop\\mod.ini'], 'E:\\Mods\\.emmm_temp'),
       ).resolves.toEqual(['E:\\Mods\\.emmm_temp\\mod']);
 
-      expect(ensureDir).toHaveBeenCalledWith({ path: 'E:\\Mods\\.emmm_temp' });
-      expect(ingestDroppedFolders).toHaveBeenCalledWith({
-        paths: ['E:\\Drop\\mod.ini'],
-        modsPath: 'E:\\Mods\\.emmm_temp',
-        gameId: 'game-1',
-        gameName: 'Genshin',
-        gameType: 'GIMI',
-      });
+      expect(ensureDir).toHaveBeenCalledWith('E:\\Mods\\.emmm_temp');
+      expect(ingestDroppedFolders).toHaveBeenCalledWith(
+        ['E:\\Drop\\mod.ini'],
+        'E:\\Mods\\.emmm_temp',
+        'game-1',
+        'Genshin',
+        'GIMI',
+      );
     });
   });
 

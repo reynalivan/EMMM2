@@ -1,8 +1,5 @@
-import type {
-  RuntimeEffectDescriptor,
-  RuntimeRefreshEvent,
-} from '../../../lib/runtimeEffects';
-import { EMPTY_RUNTIME_EFFECT_DESCRIPTOR, mergeRuntimeEffectDescriptors } from './descriptor';
+import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../../lib/runtimeEffects';
+import { EMPTY_RUNTIME_EFFECT_DESCRIPTOR } from './descriptor';
 
 export type RuntimeMutationClass =
   | 'workspaceOnly'
@@ -97,17 +94,22 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
   dashboardKeybindings: ['dashboardChanged', 'activeKeybindingsChanged'],
 };
 
-function buildRefreshDescriptor(events: RuntimeRefreshEvent[]): RuntimeEffectDescriptor {
+export function buildRefreshDescriptor(events: RuntimeRefreshEvent[]): RuntimeEffectDescriptor {
   return {
     ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
     refreshEvents: events,
   };
 }
 
-export function buildRuntimeRefreshDescriptor(
+/**
+ * Refresh events plus one patched effect slice. The base descriptor has an empty
+ * array in every non-refresh field, so spreading the patch replaces those wholesale.
+ */
+function withEffects(
   events: RuntimeRefreshEvent[],
+  patch: Partial<RuntimeEffectDescriptor>,
 ): RuntimeEffectDescriptor {
-  return buildRefreshDescriptor(events);
+  return { ...buildRefreshDescriptor(events), ...patch };
 }
 
 export function buildRuntimeMutationDescriptor(
@@ -125,8 +127,7 @@ export function buildPathRewriteDescriptor(
   newPath: string,
   events: RuntimeRefreshEvent[],
 ): RuntimeEffectDescriptor {
-  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
+  return withEffects(events, {
     rewrites: [{ oldPath, newPath }],
     thumbnailPaths: [oldPath],
   });
@@ -136,12 +137,7 @@ export function buildWorkspacePathRewritesDescriptor(
   rewrites: WorkspacePathRewriteLike[],
   events: RuntimeRefreshEvent[],
 ): RuntimeEffectDescriptor {
-  if (rewrites.length === 0) {
-    return buildRefreshDescriptor(events);
-  }
-
-  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
+  return withEffects(events, {
     rewrites: rewrites.map((rewrite) => ({
       oldPath: rewrite.old_path,
       newPath: rewrite.new_path,
@@ -154,21 +150,9 @@ export function buildPathInvalidationDescriptor(
   path: string,
   events: RuntimeRefreshEvent[],
 ): RuntimeEffectDescriptor {
-  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
+  return withEffects(events, {
     invalidatedPaths: [path],
     thumbnailPaths: [path],
-  });
-}
-
-export function buildObjectCountDeltaDescriptor(
-  objectId: string,
-  delta: number,
-  events: RuntimeRefreshEvent[],
-): RuntimeEffectDescriptor {
-  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
-    objectCountDeltas: [{ objectId, delta }],
   });
 }
 
@@ -176,18 +160,12 @@ export function buildQueryInvalidationDescriptor(
   queryKeys: Array<readonly unknown[]>,
   events: RuntimeRefreshEvent[],
 ): RuntimeEffectDescriptor {
-  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
-    invalidatedQueryKeys: queryKeys,
-  });
+  return withEffects(events, { invalidatedQueryKeys: queryKeys });
 }
 
 export function buildQueryRemovalDescriptor(
   queryKeys: Array<readonly unknown[]>,
   events: RuntimeRefreshEvent[],
 ): RuntimeEffectDescriptor {
-  return mergeRuntimeEffectDescriptors(buildRefreshDescriptor(events), {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
-    removedQueryKeys: queryKeys,
-  });
+  return withEffects(events, { removedQueryKeys: queryKeys });
 }

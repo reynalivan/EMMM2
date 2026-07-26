@@ -37,16 +37,14 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
     queryKey: ['browser-import-objects', selectedGameId],
     queryFn: async () => {
       if (!selectedGameId) return [];
-      const result = await commands.getObjects({
-        filter: {
-          game_id: selectedGameId,
-          search_query: null,
-          object_type: null,
-          safe_mode: true,
-          meta_filters: null,
-          sort_by: null,
-          status_filter: null,
-        },
+      const result = await commands.getObjectsCmd({
+        game_id: selectedGameId,
+        search_query: null,
+        object_type: null,
+        safe_mode: true,
+        meta_filters: null,
+        sort_by: null,
+        status_filter: null,
       });
       return result.objects;
     },

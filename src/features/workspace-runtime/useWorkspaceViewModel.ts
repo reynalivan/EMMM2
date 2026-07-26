@@ -122,10 +122,7 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
       selection.explorerSubPath,
       selection.selectedModPath,
     ),
-    queryFn: () =>
-      commands.getWorkspaceViewModel({
-        input: buildWorkspaceViewModelInput(filter, selection),
-      }),
+    queryFn: () => commands.getWorkspaceViewModel(buildWorkspaceViewModelInput(filter, selection)),
     enabled: !!filterInput.gameId,
     staleTime: 30_000,
     refetchOnWindowFocus: false,

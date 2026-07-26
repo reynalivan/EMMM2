@@ -7,7 +7,6 @@ import {
   executeWorkspaceSwitch,
   isWorkspaceObjectNode,
   parseRenameConflict,
-  stripModsRoot,
   togglePendingKey,
 } from './workspaceSwitchOps';
 
@@ -17,6 +16,7 @@ const openWorkspaceFileInUseDialog = vi.fn();
 const toastError = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
   },
@@ -110,17 +110,6 @@ describe('workspace switch ops', () => {
     });
   });
 
-  describe('stripModsRoot', () => {
-    it('normalizes separators and strips the mods root prefix', () => {
-      expect(stripModsRoot('E:\\Mods\\ALBEDO\\Variant', 'E:/Mods')).toBe('ALBEDO/Variant');
-    });
-
-    it('keeps the path when it is the root itself or outside it', () => {
-      expect(stripModsRoot('E:/Mods', 'E:/Mods')).toBe('E:/Mods');
-      expect(stripModsRoot('E:/Other/A', 'E:/Mods')).toBe('E:/Other/A');
-    });
-  });
-
   describe('buildSwitchRefreshDescriptor', () => {
     it('falls back to the mutation class when impact carries no scopes', () => {
       const fallback = buildSwitchRefreshDescriptor(null, 'objectSwitch');
@@ -140,31 +129,11 @@ describe('workspace switch ops', () => {
   describe('buildExplorerSwitchEffectDescriptor', () => {
     const impact = { rewrites: [], refresh_scopes: [] } as unknown as WorkspaceImpact;
 
-    it('adds an owner object count delta when a terminal mod flips state', () => {
-      const descriptor = buildExplorerSwitchEffectDescriptor(createExplorerNode(), true, impact);
+    it('drops the stale thumbnail for the switched node', () => {
+      const descriptor = buildExplorerSwitchEffectDescriptor(createExplorerNode(), impact);
 
-      expect(descriptor.objectCountDeltas).toEqual([{ objectId: 'object-1', delta: 1 }]);
       expect(descriptor.removedQueryKeys).toHaveLength(1);
-    });
-
-    it('skips the delta when the node is already in the desired state', () => {
-      const descriptor = buildExplorerSwitchEffectDescriptor(
-        createExplorerNode({ is_enabled: true }),
-        true,
-        impact,
-      );
-
-      expect(descriptor.objectCountDeltas).toEqual([]);
-    });
-
-    it('skips the delta for non terminal mods', () => {
-      const descriptor = buildExplorerSwitchEffectDescriptor(
-        createExplorerNode({ node_kind: 'container' }),
-        true,
-        impact,
-      );
-
-      expect(descriptor.objectCountDeltas).toEqual([]);
+      expect(descriptor.refreshEvents).toEqual([]);
     });
   });
 

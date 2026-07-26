@@ -39,6 +39,6 @@ export function useMetadataSyncMutation() {
  */
 export function useAssetFetch() {
   return useMutation({
-    mutationFn: (assetName: string) => commands.fetchMissingAsset({ assetName }),
+    mutationFn: (assetName: string) => commands.fetchMissingAsset(assetName),
   });
 }

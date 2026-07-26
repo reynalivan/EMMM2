@@ -20,10 +20,9 @@ import type {
 } from '../../../types/workspace';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import {
-  buildObjectCountDeltaDescriptor,
   buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
-  buildRuntimeRefreshDescriptor,
+  buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../optimistic/descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from '../optimistic/descriptor';
@@ -101,46 +100,20 @@ export function buildSwitchRefreshDescriptor(
     return buildRuntimeMutationDescriptor(fallbackClass);
   }
 
-  return buildRuntimeRefreshDescriptor(impact.refresh_scopes);
-}
-
-function normalizeWorkspaceSwitchPath(path: string): string {
-  return path.replace(/\\/g, '/');
-}
-
-export function stripModsRoot(path: string, modsPath: string): string {
-  const normalizedPath = normalizeWorkspaceSwitchPath(path);
-  const normalizedModsPath = normalizeWorkspaceSwitchPath(modsPath);
-  if (normalizedPath === normalizedModsPath) {
-    return normalizedPath;
-  }
-
-  const prefix = `${normalizedModsPath}/`;
-  if (!normalizedPath.startsWith(prefix)) {
-    return normalizedPath;
-  }
-
-  return normalizedPath.slice(prefix.length);
+  return buildRefreshDescriptor(impact.refresh_scopes);
 }
 
 /**
- * Explorer switches fold the thumbnail drop, path rewrites and the owning
- * object's mod-count delta into a single optimistic descriptor.
+ * Explorer switches fold the thumbnail drop and path rewrites into a single
+ * effect descriptor; the refreshed counts come from the follow-up refetch.
  */
 export function buildExplorerSwitchEffectDescriptor(
   node: WorkspaceExplorerNode,
-  desiredEnabled: boolean,
   impact: WorkspaceImpact,
 ) {
-  const countDelta =
-    node.node_kind === 'terminal_mod' && node.owner_object_id && node.is_enabled !== desiredEnabled
-      ? [buildObjectCountDeltaDescriptor(node.owner_object_id, desiredEnabled ? 1 : -1, [])]
-      : [];
-
   return mergeRuntimeEffectDescriptors(
     buildQueryRemovalDescriptor([thumbnailKeys.folder(node.path)], []),
     buildWorkspacePathRewritesDescriptor(impact.rewrites, []),
-    ...countDelta,
   );
 }
 
@@ -149,7 +122,7 @@ export async function executeWorkspaceSwitch(
   input: WorkspaceSwitchInput,
 ): Promise<WorkspaceSwitchResult | null> {
   try {
-    return await commands.executeWorkspaceSwitch({ input });
+    return await commands.executeWorkspaceSwitch(input);
   } catch (error) {
     const renameConflict = parseRenameConflict(error);
     if (renameConflict) {

@@ -1,4 +1,4 @@
-import { commands, type MatchedDbEntry } from '../../../lib/bindings';
+import { commands, sparse, type MatchedDbEntry } from '../../../lib/bindings';
 import type { QueryClient, UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { GameConfig } from '../../../types/game';
 import type { JsonValue, UpdateObjectInput } from '../../../types/object';
@@ -46,22 +46,14 @@ export async function applyObjectCategoryAndRefresh(params: {
   updateObject: UpdateObjectMutationLike;
 }): Promise<void> {
   if (params.itemType === 'folder') {
-    await commands.setModCategory({
-      gameId: params.activeGame.id,
-      folderPath: params.objectId,
-      category: params.category,
-    });
+    await commands.setModCategory(params.activeGame.id, params.objectId, params.category);
   } else {
     await params.updateObject.mutateAsync({
       id: params.objectId,
       updates: { object_type: params.category },
     });
 
-    await commands.setObjectModsCategory({
-      gameId: params.activeGame.id,
-      objectId: params.objectId,
-      category: params.category,
-    });
+    await commands.setObjectModsCategory(params.activeGame.id, params.objectId, params.category);
   }
 
   await publishRuntimeDescriptor(
@@ -76,21 +68,18 @@ export async function revealObjectInExplorer(params: {
   objectId: string;
   objectFolderPath: string | undefined;
 }): Promise<void> {
-  await commands.revealObjectInExplorer({
-    gameId: params.activeGame.id,
-    objectId: params.objectId,
-    objectName: params.objectFolderPath ?? params.objectId,
-  });
+  await commands.revealObjectInExplorer(
+    params.activeGame.id,
+    params.objectId,
+    params.objectFolderPath ?? params.objectId,
+  );
 }
 
 export async function loadObjectSyncMatch(params: {
   activeGame: GameConfig;
   objectName: string;
 }): Promise<MatchedDbEntry | null> {
-  const match = await commands.matchObjectWithDb({
-    gameType: params.activeGame.game_type,
-    objectName: params.objectName,
-  });
+  const match = await commands.matchObjectWithDb(params.activeGame.game_type, params.objectName);
 
   return match ?? null;
 }
@@ -101,16 +90,16 @@ export async function applyObjectSyncMatch(params: {
   match: MatchedDbEntry;
   updateObject: UpdateObjectMutationLike;
 }): Promise<void> {
-  await commands.applyObjectMatch({
-    input: {
+  await commands.applyObjectMatchCmd(
+    sparse({
       game_id: params.activeGame.id,
       object_id: params.objectId,
       matched_entry_key: params.match.matched_entry_key ?? null,
       matched_alias_name: params.match.matched_alias_name ?? params.match.name,
       matched_reason: params.match.match_detail,
       matched_source: 'manual_match',
-    },
-  });
+    }),
+  );
 
   await params.updateObject.mutateAsync({
     id: params.objectId,

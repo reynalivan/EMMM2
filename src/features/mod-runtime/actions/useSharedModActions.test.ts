@@ -96,6 +96,7 @@ vi.mock('../operations/sharedOperations', () => ({
 }));
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     matchObjectWithDb: (...args: unknown[]) => matchObjectWithDb(...args),
     toggleModSafe: vi.fn(),

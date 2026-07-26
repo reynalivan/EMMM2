@@ -88,6 +88,7 @@ vi.mock('../../runtime-sync/queryRefresh', () => ({
 }));
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     pinObject: vi.fn(),
   },

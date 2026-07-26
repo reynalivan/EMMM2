@@ -67,11 +67,12 @@ export function useScanReviewFlow() {
     setIsSyncing(true);
     try {
       // Disk Reconcile only. This path repairs disk truth and must not run Deep Match Scanner.
-      const result = await commands.reconcileDiskState({
-        gameId: activeGame.id,
-        reason: 'ManualRepair',
-        forceFull: true,
-      });
+      const result = await commands.reconcileDiskStateCmd(
+        activeGame.id,
+        'ManualRepair',
+        null,
+        true,
+      );
       applyDiskReconcileResult(result, queryClient, activeGame);
     } catch (e) {
       console.error('Background sync failed:', e);

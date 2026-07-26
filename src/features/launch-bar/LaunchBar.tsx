@@ -34,7 +34,7 @@ export default function LaunchBar() {
     setError(null);
 
     try {
-      await commands.launchGame({ gameId: activeGame.id });
+      await commands.launchGame(activeGame.id);
 
       if (autoCloseLauncher) {
         await exit(0);

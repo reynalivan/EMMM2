@@ -9,6 +9,7 @@ const applyRuntimePathInvalidationMutationResultMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     toggleModSafe: (...args: unknown[]) => toggleModSafeMock(...args),
   },
@@ -72,7 +73,6 @@ describe('runSharedModActiveContextToggle', () => {
         warnings: [],
       },
       queryClient,
-      removeFromCurrentView: true,
       switchSurface: 'preview',
       switchActions: { setNodeEnabled },
       hasPin: false,
@@ -80,11 +80,11 @@ describe('runSharedModActiveContextToggle', () => {
       translate: (key: string) => key,
     });
 
-    expect(toggleModSafeMock).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      folderPath: 'E:/Mods/DISABLED Private Outfit',
-      safe: true,
-    });
+    expect(toggleModSafeMock).toHaveBeenCalledWith(
+      'game-1',
+      'E:/Mods/DISABLED Private Outfit',
+      true,
+    );
     expect(applyRuntimePathInvalidationMutationResultMock).toHaveBeenCalledWith(
       queryClient,
       ['E:/Mods/DISABLED Private Outfit'],

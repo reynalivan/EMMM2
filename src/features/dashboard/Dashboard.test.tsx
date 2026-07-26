@@ -39,6 +39,7 @@ vi.mock('./hooks/useDashboardStats', () => ({
 }));
 
 vi.mock('./hooks/useActiveKeybindings', () => ({
+  sparse: (value: unknown) => value,
   useActiveKeybindings: vi.fn(),
 }));
 

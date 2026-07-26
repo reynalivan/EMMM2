@@ -3,8 +3,8 @@ import {
   publishRuntimeDescriptor,
   type QueryRefetchType,
 } from '../features/runtime-sync/queryRefresh';
-import { buildRuntimeRefreshDescriptor } from '../features/workspace-runtime/optimistic/descriptorBuilders';
-import { workspaceKeys } from '../features/workspace-runtime/useWorkspaceViewModel';
+import { buildRefreshDescriptor } from '../features/workspace-runtime/optimistic/descriptorBuilders';
+import type { RuntimeRefreshEvent } from '../lib/runtimeEffects';
 import type {
   CategoryCount,
   CreateObjectInput,
@@ -14,7 +14,6 @@ import type {
   UpdateObjectInput,
 } from '../types/object';
 import type { GameType } from '../types/game';
-import type { WorkspaceObjectNode, WorkspaceViewModel } from '../types/workspace';
 
 export const objectKeys = {
   all: ['objects'] as const,
@@ -25,39 +24,16 @@ export const objectKeys = {
   schema: (gameType: GameType) => ['schema', gameType] as const,
 };
 
-export interface ObjectListSnapshot {
-  objectQueries: Array<readonly [readonly unknown[], ObjectSummary[] | undefined]>;
-  workspaceQueries: Array<readonly [readonly unknown[], WorkspaceViewModel | undefined]>;
-}
-
 export interface ObjectListRefreshOptions {
   includeFolders?: boolean;
   includeCorridor?: boolean;
   includeCollections?: boolean;
   includeDashboard?: boolean;
-  includeActiveKeybindings?: boolean;
   refetchType?: QueryRefetchType;
-  folderRefetchType?: QueryRefetchType;
-}
-
-type ObjectSummaryUpdater = (object: ObjectSummary) => ObjectSummary;
-type WorkspaceObjectNodeUpdater = (object: WorkspaceObjectNode) => WorkspaceObjectNode;
-
-interface ObjectRootSwitchPatch {
-  objectId: string;
-  folderPath: string;
-  enabled: boolean;
 }
 
 export function buildObjectListRefreshDescriptor(options: ObjectListRefreshOptions = {}) {
-  const events = ['workspaceChanged'] as Array<
-    | 'workspaceChanged'
-    | 'corridorChanged'
-    | 'collectionsChanged'
-    | 'dashboardChanged'
-    | 'activeKeybindingsChanged'
-    | 'folderStructureChanged'
-  >;
+  const events: RuntimeRefreshEvent[] = ['workspaceChanged'];
 
   if (options.includeCorridor) {
     events.push('corridorChanged');
@@ -68,227 +44,31 @@ export function buildObjectListRefreshDescriptor(options: ObjectListRefreshOptio
   if (options.includeDashboard) {
     events.push('dashboardChanged');
   }
-  if (options.includeActiveKeybindings) {
-    events.push('activeKeybindingsChanged');
-  }
   if (options.includeFolders) {
     events.push('folderStructureChanged');
   }
 
-  return buildRuntimeRefreshDescriptor(events);
-}
-
-function serializeMetadata(metadata: UpdateObjectInput['metadata'], fallback: string): string {
-  if (metadata === undefined) {
-    return fallback;
-  }
-  if (metadata === null) {
-    return '{}';
-  }
-
-  return JSON.stringify(metadata);
-}
-
-function serializeTags(tags: UpdateObjectInput['tags'], fallback: string): string {
-  if (tags === undefined) {
-    return fallback;
-  }
-  if (tags === null) {
-    return '[]';
-  }
-
-  return JSON.stringify(tags);
-}
-
-export function patchObjectSummary(
-  object: ObjectSummary,
-  updates: UpdateObjectInput,
-): ObjectSummary {
-  return {
-    ...object,
-    name: updates.name ?? object.name,
-    object_type: updates.object_type ?? object.object_type,
-    sub_category: updates.sub_category ?? object.sub_category,
-    status: updates.status ?? object.status,
-    metadata: serializeMetadata(updates.metadata, object.metadata),
-    tags: serializeTags(updates.tags, object.tags),
-    hash_db: updates.hash_db === undefined ? object.hash_db : updates.hash_db,
-    custom_skins: updates.custom_skins === undefined ? object.custom_skins : updates.custom_skins,
-    thumbnail_path:
-      updates.thumbnail_path === undefined ? object.thumbnail_path : updates.thumbnail_path,
-    is_auto_sync: updates.is_auto_sync ?? object.is_auto_sync,
-  };
-}
-
-export function snapshotObjectListQueries(queryClient: QueryClient): ObjectListSnapshot {
-  return {
-    objectQueries: queryClient.getQueriesData<ObjectSummary[]>({ queryKey: objectKeys.lists() }),
-    workspaceQueries: queryClient.getQueriesData<WorkspaceViewModel>({
-      queryKey: workspaceKeys.all,
-    }),
-  };
-}
-
-export function restoreObjectListQueries(
-  queryClient: QueryClient,
-  snapshot: ObjectListSnapshot,
-): void {
-  for (const [queryKey, data] of snapshot.objectQueries) {
-    queryClient.setQueryData(queryKey, data);
-  }
-  for (const [queryKey, data] of snapshot.workspaceQueries) {
-    queryClient.setQueryData(queryKey, data);
-  }
-}
-
-export function patchObjectListQueries(
-  queryClient: QueryClient,
-  objectId: string,
-  updater: ObjectSummaryUpdater,
-): void {
-  queryClient.setQueriesData<ObjectSummary[]>({ queryKey: objectKeys.lists() }, (current) => {
-    if (!current) {
-      return current;
-    }
-
-    return current.map((object) => (object.id === objectId ? updater(object) : object));
-  });
-  queryClient.setQueriesData<WorkspaceViewModel>({ queryKey: workspaceKeys.all }, (current) => {
-    if (!current) {
-      return current;
-    }
-
-    return {
-      ...current,
-      objects: current.objects.map((object) => {
-        if (object.id !== objectId) {
-          return object;
-        }
-
-        const patchedObject = updater(object);
-        return {
-          ...object,
-          ...patchedObject,
-          display_name: patchedObject.name,
-        };
-      }),
-    };
-  });
-}
-
-export function patchWorkspaceObjectQueries(
-  queryClient: QueryClient,
-  objectId: string,
-  updater: WorkspaceObjectNodeUpdater,
-): void {
-  queryClient.setQueriesData<WorkspaceViewModel>({ queryKey: workspaceKeys.all }, (current) => {
-    if (!current) {
-      return current;
-    }
-
-    return {
-      ...current,
-      objects: current.objects.map((object) => (object.id === objectId ? updater(object) : object)),
-    };
-  });
-}
-
-function clampEnabledCount(enabledCount: number, modCount: number): number {
-  if (enabledCount < 0) {
-    return 0;
-  }
-  if (enabledCount > modCount) {
-    return modCount;
-  }
-
-  return enabledCount;
-}
-
-export function patchObjectEnabledCount(
-  queryClient: QueryClient,
-  objectId: string,
-  delta: number,
-): void {
-  patchObjectListQueries(queryClient, objectId, (object) => ({
-    ...object,
-    enabled_count: clampEnabledCount(object.enabled_count + delta, object.mod_count),
-  }));
-}
-
-export function patchObjectRootSwitchState(
-  queryClient: QueryClient,
-  patch: ObjectRootSwitchPatch,
-): void {
-  patchObjectListQueries(queryClient, patch.objectId, (object) => ({
-    ...object,
-    folder_path: patch.folderPath,
-    is_object_disabled: !patch.enabled,
-    enabled_count: patch.enabled ? object.mod_count : 0,
-  }));
-  patchWorkspaceObjectQueries(queryClient, patch.objectId, (object) => ({
-    ...object,
-    folder_path: patch.folderPath,
-    is_object_disabled: !patch.enabled,
-    enabled_count: patch.enabled ? object.mod_count : 0,
-    is_effectively_active: patch.enabled,
-    switch_state: patch.enabled ? 'enabled' : 'disabled',
-    inactive_reason: patch.enabled ? null : object.inactive_reason,
-    switch_reason: patch.enabled ? null : object.switch_reason,
-  }));
+  return buildRefreshDescriptor(events);
 }
 
 interface ObjectBatchMutationOptions {
   queryClient: QueryClient;
-  applyOptimisticUpdate: (object: ObjectSummary) => ObjectSummary;
-  applyWorkspaceOptimisticUpdate?: WorkspaceObjectNodeUpdater;
   mutation: () => Promise<void>;
   refreshOptions?: ObjectListRefreshOptions;
 }
 
+/**
+ * Runs a bulk object mutation and schedules the refetches that make its result
+ * visible. Invalidation-only: no optimistic cache patching, so a thrown
+ * mutation needs no rollback — the caller reports it and the caches were never
+ * touched.
+ */
 export async function runObjectBatchMutation({
   queryClient,
-  applyOptimisticUpdate,
-  applyWorkspaceOptimisticUpdate,
   mutation,
   refreshOptions,
 }: ObjectBatchMutationOptions): Promise<void> {
-  const snapshot = snapshotObjectListQueries(queryClient);
-  queryClient.setQueriesData<ObjectSummary[]>({ queryKey: objectKeys.lists() }, (current) => {
-    if (!current) {
-      return current;
-    }
-
-    return current.map(applyOptimisticUpdate);
-  });
-  queryClient.setQueriesData<WorkspaceViewModel>({ queryKey: workspaceKeys.all }, (current) => {
-    if (!current) {
-      return current;
-    }
-
-    return {
-      ...current,
-      objects: current.objects.map((object) => {
-        if (applyWorkspaceOptimisticUpdate) {
-          return applyWorkspaceOptimisticUpdate(object);
-        }
-
-        const patchedObject = applyOptimisticUpdate(object);
-        return {
-          ...object,
-          ...patchedObject,
-          display_name: patchedObject.name,
-        };
-      }),
-    };
-  });
-
-  try {
-    await mutation();
-  } catch (error) {
-    restoreObjectListQueries(queryClient, snapshot);
-    throw error;
-  }
-
+  await mutation();
   await publishRuntimeDescriptor(
     queryClient,
     buildObjectListRefreshDescriptor(refreshOptions),
@@ -296,11 +76,4 @@ export async function runObjectBatchMutation({
   );
 }
 
-export type {
-  CategoryCount,
-  CreateObjectInput,
-  GameSchema,
-  ObjectFilter,
-  ObjectSummary,
-  UpdateObjectInput,
-};
+export type { CategoryCount, CreateObjectInput, GameSchema, ObjectSummary, UpdateObjectInput };

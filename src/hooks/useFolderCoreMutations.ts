@@ -13,7 +13,6 @@ import {
   buildRuntimeMutationDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
 import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
-import { updateFolderCache } from './folderCache';
 import {
   hasCollectionReferenceImpact,
   notifyCollectionReferenceImpact,
@@ -29,11 +28,7 @@ async function runDiskRepairRecovery(
 
   toast.info('Syncing changes from disk...', 3000);
   try {
-    const result = await commands.reconcileDiskState({
-      gameId,
-      reason: 'ManualRepair',
-      forceFull: true,
-    });
+    const result = await commands.reconcileDiskStateCmd(gameId, 'ManualRepair', null, true);
     const settings = await commands.getSettings();
     const activeGame: GameConfig | null = settings.games.find((game) => game.id === gameId) ?? null;
     applyDiskReconcileResult(result, queryClient, activeGame);
@@ -78,21 +73,12 @@ export function useRenameMod() {
 
   const mutation = useMutation({
     mutationFn: (params: { folderPath: string; newName: string; gameId: string }) =>
-      commands.renameModFolder({
-        folderPath: params.folderPath,
-        newName: params.newName,
-        gameId: params.gameId,
-      }),
+      commands.renameModFolder(params.folderPath, params.newName, params.gameId),
     onSuccess: async (result, variables) => {
       applyRuntimeEffects(
         queryClient,
         buildQueryRemovalDescriptor([thumbnailKeys.folder(variables.folderPath)], []),
       );
-      updateFolderCache(queryClient, [variables.folderPath], (folder) => ({
-        ...folder,
-        name: result.new_name,
-        path: result.new_path,
-      }));
       applyRuntimeEffects(
         queryClient,
         buildPathRewriteDescriptor(variables.folderPath, result.new_path, []),
@@ -141,17 +127,17 @@ export function useDeleteMod() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (params: { path: string; gameId?: string }) => commands.deleteMod(params),
+    mutationFn: (params: { path: string; gameId?: string }) =>
+      commands.deleteMod(params.path, params.gameId ?? null),
     onSuccess: async (result, variables) => {
       applyRuntimeEffects(
         queryClient,
         buildQueryRemovalDescriptor([thumbnailKeys.folder(variables.path)], []),
       );
-      updateFolderCache(queryClient, [variables.path], undefined, true);
       applyRuntimeEffects(queryClient, buildPathInvalidationDescriptor(variables.path, []));
       await publishRuntimeDescriptor(
         queryClient,
-        buildRuntimeMutationDescriptor('workspaceOnly'),
+        buildRuntimeMutationDescriptor('workspaceStructure'),
         'active',
       );
       await publishRuntimeDescriptor(
@@ -194,7 +180,7 @@ export function useRestoreMod() {
 
   const mutation = useMutation({
     mutationFn: (params: { trashId: string; gameId?: string }) =>
-      commands.restoreMod({ trashId: params.trashId, gameId: params.gameId }),
+      commands.restoreMod(params.trashId, params.gameId ?? null),
     onSuccess: async () => {
       await publishRuntimeDescriptor(
         queryClient,

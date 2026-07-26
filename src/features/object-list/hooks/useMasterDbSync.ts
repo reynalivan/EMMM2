@@ -68,11 +68,7 @@ export function useMasterDbSync(
     queryFn: async () => {
       if (!activeGame || !originalName) return [];
       try {
-        const res = await commands.searchMasterDb({
-          gameType: activeGame.game_type,
-          query: originalName,
-          objectType: undefined,
-        });
+        const res = await commands.searchMasterDb(activeGame.game_type, originalName, null);
 
         // Take top 4 that meet a threshold
         const FUZZY_THRESHOLD = 0.25;
@@ -105,11 +101,11 @@ export function useMasterDbSync(
     queryFn: async () => {
       if (!activeGame) return [];
       try {
-        const res = await commands.searchMasterDb({
-          gameType: activeGame.game_type,
-          query: dbSearch.trim(),
-          objectType: objectType || undefined,
-        });
+        const res = await commands.searchMasterDb(
+          activeGame.game_type,
+          dbSearch.trim(),
+          objectType || null,
+        );
         return mapToUiFormat(res.map((r) => r.item));
       } catch (e) {
         console.error('[useMasterDbSync] Failed to search MasterDB:', e);

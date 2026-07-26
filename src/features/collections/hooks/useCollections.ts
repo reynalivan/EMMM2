@@ -45,10 +45,7 @@ async function refetchStrictCorridorState(
 ): Promise<CorridorSnapshot> {
   const snapshot = await queryClient.fetchQuery({
     queryKey: corridorKeys.state(gameId),
-    queryFn: () =>
-      commands.getCorridorState({
-        gameId,
-      }),
+    queryFn: () => commands.getCorridorState(gameId, null),
     staleTime: 0,
   });
   queryClient.setQueryData(corridorKeys.state(gameId), snapshot);
@@ -80,7 +77,7 @@ async function refetchCollectionPreview(
 export function useCollections(gameId: string | null) {
   return useQuery<CollectionSummary[]>({
     queryKey: collectionKeys.list(gameId ?? ''),
-    queryFn: () => commands.listCollections({ gameId: gameId ?? '' }),
+    queryFn: () => commands.listCollections(gameId ?? '', null),
     enabled: !!gameId,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
@@ -91,11 +88,7 @@ export function useCollections(gameId: string | null) {
 export function useCollectionPreview(collectionId: string | null, gameId: string | null) {
   return useQuery<CollectionPreview>({
     queryKey: [...collectionKeys.preview(collectionId ?? ''), gameId],
-    queryFn: () =>
-      commands.getCollectionPreview({
-        collectionId: collectionId ?? '',
-        gameId: gameId ?? '',
-      }),
+    queryFn: () => commands.getCollectionPreview(collectionId ?? '', gameId ?? ''),
     enabled: !!collectionId && !!gameId,
     staleTime: 30_000,
   });
@@ -105,11 +98,7 @@ export function useCollectionPreview(collectionId: string | null, gameId: string
 export function useApplyCollectionPreview(gameId: string | null, collectionId: string | null) {
   return useQuery<ApplyPreview>({
     queryKey: [...collectionKeys.previewApply(collectionId ?? ''), gameId ?? ''],
-    queryFn: () =>
-      commands.previewApplyCollection({
-        gameId: gameId ?? '',
-        collectionId: collectionId ?? '',
-      }),
+    queryFn: () => commands.previewApplyCollection(gameId ?? '', collectionId ?? '', null),
     enabled: !!gameId && !!collectionId,
     // Don't cache this long, we want fresh disk state when viewing the modal
     staleTime: 0,
@@ -133,7 +122,7 @@ export function useCreateCollection() {
       name: string;
       saveMode?: CollectionSaveMode;
       sourceCollectionId?: string | null;
-    }) => commands.createCollection({ gameId, name, saveMode, sourceCollectionId }),
+    }) => commands.createCollection(gameId, name, saveMode ?? null, sourceCollectionId ?? null),
 
     onSuccess: async (result: CollectionSummary, variables) => {
       await publishRuntimeDescriptor(
@@ -158,10 +147,7 @@ export function useCreateCollection() {
 export function useApplyProgress(gameId: string | null, enabled: boolean) {
   return useQuery<ApplyProgressSnapshot | null>({
     queryKey: collectionKeys.applyProgress(gameId ?? ''),
-    queryFn: () =>
-      commands.getApplyProgress({
-        gameId: gameId ?? '',
-      }),
+    queryFn: () => commands.getApplyProgress(gameId ?? ''),
     enabled: !!gameId && enabled,
     staleTime: 0,
     refetchInterval: (query) => {
@@ -185,11 +171,7 @@ export function useUpdateCollection() {
 
   return useMutation({
     mutationFn: ({ gameId, id, name }: { gameId: string; id: string; name?: string }) =>
-      commands.updateCollection({
-        gameId,
-        id,
-        name,
-      }),
+      commands.updateCollection(gameId, id, name ?? null),
 
     onSuccess: async (result: CollectionSummary) => {
       await publishRuntimeDescriptor(
@@ -212,7 +194,7 @@ export function useReplaceCollectionWithCurrentState() {
 
   return useMutation({
     mutationFn: ({ gameId, collectionId }: { gameId: string; collectionId: string }) =>
-      commands.replaceCollectionWithCurrentState({ gameId, collectionId }),
+      commands.replaceCollectionWithCurrentState(gameId, collectionId),
 
     onSuccess: async (result: CollectionSummary, variables) => {
       await publishRuntimeDescriptor(
@@ -240,7 +222,7 @@ export function useDeleteCollection() {
 
   return useMutation({
     mutationFn: ({ gameId: _gameId, id }: { gameId: string; id: string }) =>
-      commands.deleteCollection({ id }),
+      commands.deleteCollection(id),
 
     onSuccess: async (_result, variables) => {
       await publishRuntimeDescriptor(
@@ -274,12 +256,7 @@ export function useApplyCollection() {
       gameId: string;
       collectionId: string;
       ignoreMissing?: boolean;
-    }) =>
-      commands.applyCollection({
-        gameId,
-        collectionId,
-        ignoreMissing: ignoreMissing ?? false,
-      }),
+    }) => commands.applyCollection(gameId, collectionId, ignoreMissing ?? false),
 
     onSuccess: async (result: ApplyResult, variables) => {
       const descriptor = mergeRuntimeEffectDescriptors(

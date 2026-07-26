@@ -13,7 +13,8 @@ export function useImportQueue() {
 
   const query = useQuery({
     queryKey: IMPORT_QUEUE_KEY,
-    queryFn: () => commands.browserListImportQueue(),
+    // Refine the wire DTO's plain-string status to the frontend union once, here.
+    queryFn: async () => (await commands.browserListImportQueue()) as ImportJobItem[],
     refetchOnWindowFocus: false,
   });
 
@@ -55,18 +56,12 @@ export function useImportQueue() {
       gameId: string;
       category: string;
       objectId?: string | null;
-    }) =>
-      commands.browserConfirmImport({
-        jobId,
-        gameId,
-        category,
-        objectId: objectId ?? undefined,
-      }),
+    }) => commands.browserConfirmImport(jobId, gameId, category, objectId ?? null),
     onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
   });
 
   const skipMutation = useMutation({
-    mutationFn: (jobId: string) => commands.browserCancelImport({ jobId }),
+    mutationFn: (jobId: string) => commands.browserCancelImport(jobId),
     onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
   });
 

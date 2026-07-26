@@ -53,9 +53,7 @@ export function BrowserPage() {
       setIsNavigating(true);
       try {
         if (asNewTab || tabs.length === 0) {
-          const label = await commands.browserOpenTab({
-            url: normalized,
-          });
+          const label = await commands.browserOpenTab(normalized, null);
 
           addTab({
             id: label,
@@ -63,10 +61,7 @@ export function BrowserPage() {
             url: normalized,
           });
         } else if (activeTabId) {
-          await commands.browserNavigate({
-            label: activeTabId,
-            url: normalized,
-          });
+          await commands.browserNavigate(activeTabId, normalized);
           useBrowserStore.getState().updateTab(activeTabId, { url: normalized });
         }
       } catch (err) {
@@ -122,7 +117,7 @@ export function BrowserPage() {
     if (!activeTabId) return;
     setIsRefreshing(true);
     try {
-      await commands.browserReloadTab({ label: activeTabId });
+      await commands.browserReloadTab(activeTabId);
     } catch (err) {
       console.error('Failed to reload:', err);
     } finally {
@@ -133,7 +128,7 @@ export function BrowserPage() {
   const handleGoBack = async () => {
     if (!activeTabId) return;
     try {
-      await commands.browserGoBack({ label: activeTabId });
+      await commands.browserGoBack(activeTabId);
     } catch (err) {
       console.error('Failed to go back:', err);
     }
@@ -142,7 +137,7 @@ export function BrowserPage() {
   const handleGoForward = async () => {
     if (!activeTabId) return;
     try {
-      await commands.browserGoForward({ label: activeTabId });
+      await commands.browserGoForward(activeTabId);
     } catch (err) {
       console.error('Failed to go forward:', err);
     }
@@ -164,7 +159,7 @@ export function BrowserPage() {
     if (!confirmed) return;
 
     try {
-      await commands.browserClearData({ label: activeTabId });
+      await commands.browserClearData(activeTabId);
       // Reload to apply changes
       handleReload();
     } catch (err) {
@@ -200,10 +195,7 @@ export function BrowserPage() {
 
   const handleGameConfirm = async (gameId: string) => {
     try {
-      await commands.browserImportSelected({
-        ids: importIds,
-        gameId,
-      });
+      await commands.browserImportSelected(importIds, gameId);
     } catch (err) {
       console.error('Bulk import failed:', err);
     }

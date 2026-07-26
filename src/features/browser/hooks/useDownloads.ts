@@ -13,7 +13,8 @@ export function useDownloads() {
 
   const query = useQuery({
     queryKey: DOWNLOADS_QUERY_KEY,
-    queryFn: () => commands.browserListDownloads(),
+    // Refine the wire DTO's plain-string status to the frontend union once, here.
+    queryFn: async () => (await commands.browserListDownloads()) as BrowserDownloadItem[],
     refetchOnWindowFocus: false,
   });
 
@@ -64,12 +65,12 @@ export function useDownloads() {
 
   const deleteMutation = useMutation({
     mutationFn: ({ id, deleteFile }: { id: string; deleteFile: boolean }) =>
-      commands.browserDeleteDownload({ id, deleteFile }),
+      commands.browserDeleteDownload(id, deleteFile),
     onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (id: string) => commands.browserCancelDownload({ id, deleteFile: false }),
+    mutationFn: (id: string) => commands.browserCancelDownload(id, false),
     onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
   });
 

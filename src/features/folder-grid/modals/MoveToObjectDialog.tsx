@@ -56,11 +56,7 @@ export default function MoveToObjectDialog({
 
   const { data: moveTargetsData, isFetching: targetsLoading } = useQuery({
     queryKey: ['workspace-move-targets', activeGame?.id, selectedObjectId],
-    queryFn: () =>
-      commands.listMoveTargetsForObject({
-        gameId: activeGame?.id ?? '',
-        objectId: selectedObjectId,
-      }),
+    queryFn: () => commands.listMoveTargetsForObject(activeGame?.id ?? '', selectedObjectId),
     enabled: isOpen && !!activeGame?.id && !!selectedObjectId,
   });
   const moveTargets = Array.isArray(moveTargetsData) ? moveTargetsData : [];

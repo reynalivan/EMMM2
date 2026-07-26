@@ -6,12 +6,11 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { commands } from '../lib/bindings';
+import { commands, sparse } from '../lib/bindings';
 import i18n from '../lib/i18n';
 import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
-import { updateFolderCache } from './folderCache';
 import { detailsKeys } from '../features/preview/hooks/usePreviewData';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../features/workspace-runtime/optimistic/applyOptimisticEffects';
@@ -19,12 +18,11 @@ import {
   buildQueryInvalidationDescriptor,
   buildRuntimeMutationDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
-import { ModInfoUpdate, TrashEntry, ConflictInfo, ModFolder } from '../types/mod';
+import { ModInfoUpdate, TrashEntry, ConflictInfo } from '../types/mod';
 import { useAppStore } from '../stores/useAppStore';
 import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
 import { withWatcherSuppression } from '../features/file-watcher/watcherSuppression';
 import { formatBulkFailureMessage } from './bulkToastMessages';
-import { applyModInfoUpdate } from './folderMutationPayloads';
 
 /**
  * Getter for the active game id that throws when there is none.
@@ -87,16 +85,11 @@ export function useUpdateModCategory() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; category: string }) =>
-      commands.setModCategory(params),
-    onSuccess: (_data, variables) => {
-      // Targeted: update category in cache instead of full re-listing
-      updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) => ({
-        ...f,
-        category: variables.category,
-      }));
+      commands.setModCategory(params.gameId, params.folderPath, params.category),
+    onSuccess: () => {
       void publishRuntimeDescriptor(
         queryClient,
-        buildRuntimeMutationDescriptor('workspaceOnly'),
+        buildRuntimeMutationDescriptor('folderMetadataPreview'),
         'active',
       );
     },
@@ -110,7 +103,7 @@ export function useUpdateModThumbnail() {
 
   return useMutation({
     mutationFn: (params: { folderPath: string; sourcePath: string }) =>
-      commands.updateModThumbnail({ ...params, gameId: requireGameId() }),
+      commands.updateModThumbnail(requireGameId(), params.folderPath, params.sourcePath),
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
         [thumbnailKeys.folder(variables.folderPath)],
@@ -127,12 +120,8 @@ export function useToggleModSafe() {
 
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
-      commands.toggleModSafe(params),
+      commands.toggleModSafe(params.gameId, params.folderPath, params.safe),
     onSuccess: async (_data, variables) => {
-      // Phase 24 barrier: The mod just switched contexts.
-      // Remove it from the current grid view aggressively so it doesn't linger.
-      updateFolderCache(queryClient, [variables.folderPath], undefined, true);
-
       // If it was selected, clear the selection pane as well
       const appStore = useAppStore.getState();
       if (appStore.gridSelection?.has(variables.folderPath)) {
@@ -159,7 +148,7 @@ export function useDeleteModThumbnail() {
       // Rust resolves the path itself here, but deleting a thumbnail with no
       // active game still means the caller is in an invalid state.
       requireGameId();
-      await commands.deleteModThumbnail({ folderPath });
+      await commands.deleteModThumbnail(folderPath);
     },
     onSuccess: async (_data, folderPath) => {
       const descriptor = buildQueryInvalidationDescriptor(
@@ -178,7 +167,7 @@ export function usePasteThumbnail() {
 
   return useMutation({
     mutationFn: (params: { folderPath: string; imageData: number[] }) =>
-      commands.pasteThumbnail({ ...params, gameId: requireGameId() }),
+      commands.pasteThumbnail(requireGameId(), params.folderPath, params.imageData),
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
         [thumbnailKeys.folder(variables.folderPath)],
@@ -197,11 +186,12 @@ export function useUpdateModInfo() {
 
   return useMutation({
     mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) =>
-      commands.updateModInfo({ ...params, gameId: requireGameId() }),
-    onSuccess: (_data, variables) => {
-      // Targeted: update the specific folder in cache
-      updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) =>
-        applyModInfoUpdate(f, variables.update),
+      commands.updateModInfo(requireGameId(), params.folderPath, sparse(params.update)),
+    onSuccess: async () => {
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('folderMetadataPreview'),
+        'active',
       );
     },
   });
@@ -223,10 +213,12 @@ export function useImportMods() {
       dbJson?: string | null;
     }) => {
       return withWatcherSuppression({ releaseDelayMs: null }, async () => {
-        return commands.importModsFromPaths({
-          ...params,
-          dbJson: params.dbJson ?? undefined,
-        });
+        return commands.importModsFromPaths(
+          params.paths,
+          params.targetDir,
+          params.strategy,
+          params.dbJson ?? null,
+        );
       });
     },
     onSuccess: (result) => {
@@ -259,9 +251,7 @@ export function useActiveConflicts() {
   return useQuery<ConflictInfo[]>({
     queryKey: ['conflicts', activeGame?.id],
     queryFn: () =>
-      activeGame?.id
-        ? commands.getActiveModConflicts({ gameId: activeGame.id })
-        : Promise.resolve([]),
+      activeGame?.id ? commands.getActiveModConflicts(activeGame.id) : Promise.resolve([]),
     enabled: !!activeGame?.id,
     staleTime: 60_000, // Conflicts rarely change — watcher invalidates on toggle
   });

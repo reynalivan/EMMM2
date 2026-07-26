@@ -1,4 +1,4 @@
-import { commands, type GameObject } from '../bindings';
+import { commands, sparse, type GameObject } from '../bindings';
 import type {
   ObjectFilter,
   ObjectSummary,
@@ -13,7 +13,7 @@ import type {
  * of handing callers a half-typed object.
  */
 async function readBack(id: string): Promise<GameObject> {
-  const object = await commands.getObject({ id });
+  const object = await commands.getObject(id);
   if (!object) {
     throw new Error(`Object ${id} disappeared immediately after being written.`);
   }
@@ -52,7 +52,7 @@ export function validateObjectName(name: string): string | null {
 }
 
 export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]> {
-  const res = await commands.getObjects({ filter });
+  const res = await commands.getObjectsCmd(filter);
   return res.objects;
 }
 
@@ -60,14 +60,14 @@ export function getCategoryCounts(
   gameId: string,
   safeMode: boolean = false,
 ): Promise<CategoryCount[]> {
-  return commands.getCategoryCounts({ gameId, safeMode });
+  return commands.getCategoryCountsCmd(gameId, safeMode);
 }
 
 export async function createObject(input: CreateObjectInput): Promise<GameObject> {
   const nameError = validateObjectName(input.name);
   if (nameError) throw new Error(nameError);
 
-  const id = await commands.createObject({ input });
+  const id = await commands.createObjectCmd(input);
   // Re-fetch since create_object_cmd only returns ID
   return readBack(id);
 }
@@ -78,10 +78,10 @@ export async function updateObject(id: string, updates: UpdateObjectInput): Prom
     if (nameError) throw new Error(nameError);
   }
 
-  await commands.updateObject({ id, updates });
+  await commands.updateObjectCmd(id, sparse(updates));
   return readBack(id);
 }
 
 export function deleteObject(id: string, force: boolean): Promise<void> {
-  return commands.deleteObject({ id, force });
+  return commands.deleteObjectCmd(id, force);
 }

@@ -22,15 +22,16 @@ export type RuntimeRefreshEvent =
   | 'scannerChanged'
   | 'pinsChanged';
 
-export interface ObjectCountDeltaEffect {
-  objectId: string;
-  delta: number;
-}
-
+/**
+ * Invalidation-only contract: effects either evict caches (`thumbnailPaths`,
+ * `removedQueryKeys`), update store-side selection state (`rewrites`,
+ * `invalidatedPaths`), or schedule refetches (`refreshEvents`,
+ * `invalidatedQueryKeys`). Nothing here writes domain data into the query
+ * cache — fresh data always comes from a refetch.
+ */
 export interface RuntimeEffectDescriptor {
   rewrites: Array<{ oldPath: string; newPath: string }>;
   invalidatedPaths: string[];
-  objectCountDeltas: ObjectCountDeltaEffect[];
   thumbnailPaths: string[];
   removedQueryKeys: Array<readonly unknown[]>;
   invalidatedQueryKeys: Array<readonly unknown[]>;

@@ -25,7 +25,7 @@ export const DynamicThemeInjector: React.FC = () => {
     const loadAndInject = async () => {
       try {
         if (!theme) return;
-        const customTheme = await commands.loadCustomTheme({ id: theme });
+        const customTheme = await commands.loadCustomTheme(theme);
         const css = generateThemeCss(customTheme);
 
         let styleTag = existingStyle as HTMLStyleElement;

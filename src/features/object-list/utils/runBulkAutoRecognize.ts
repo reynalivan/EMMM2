@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Dispatch, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
-import { commands } from '../../../lib/bindings';
+import { commands, sparse } from '../../../lib/bindings';
 import type { GameConfig } from '../../../types/game';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import { toast } from '../../../stores/useToastStore';
@@ -48,17 +48,14 @@ export async function runBulkAutoRecognize({
     let skipped = 0;
 
     for (const object of objects.filter((candidate) => ids.has(candidate.id))) {
-      const match = await commands.matchObjectWithDb({
-        gameType: activeGame.game_type,
-        objectName: object.name,
-      });
+      const match = await commands.matchObjectWithDb(activeGame.game_type, object.name);
       if (!match) {
         skipped += 1;
         continue;
       }
 
-      await commands.applyObjectMatch({
-        input: {
+      await commands.applyObjectMatchCmd(
+        sparse({
           game_id: activeGame.id,
           object_id: object.id,
           matched_entry_key: match.matched_entry_key ?? null,
@@ -66,17 +63,17 @@ export async function runBulkAutoRecognize({
           matched_confidence: matchConfidenceValue(match.match_confidence),
           matched_reason: match.match_detail,
           matched_source: 'auto_recognize',
-        },
-      });
-      await commands.updateObject({
-        id: object.id,
-        updates: {
+        }),
+      );
+      await commands.updateObjectCmd(
+        object.id,
+        sparse({
           object_type: match.object_type || null,
           metadata: (match.metadata ?? null) as JsonValue,
           tags: match.tags,
           thumbnail_path: match.thumbnail_path,
-        },
-      });
+        }),
+      );
       matched += 1;
     }
 

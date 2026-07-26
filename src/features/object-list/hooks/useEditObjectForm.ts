@@ -100,11 +100,11 @@ export function useEditObjectForm(
         if (!activeGame?.id) return null;
         return {
           type: 'folder',
-          data: await commands.readModInfo({ gameId: activeGame.id, folderPath: folder.path }),
+          data: await commands.readModInfo(activeGame.id, folder.path),
         };
       } else {
         const obj = object as ObjectSummary;
-        return { type: 'object', data: await commands.getObject({ id: obj.id }) };
+        return { type: 'object', data: await commands.getObject(obj.id) };
       }
     },
     enabled: !!open && !!object,

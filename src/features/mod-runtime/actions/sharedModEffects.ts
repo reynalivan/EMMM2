@@ -1,6 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { commands, type MatchedDbEntry } from '../../../lib/bindings';
-import { updateFolderCache } from '../../../hooks/folderCache';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import type { ModFolder } from '../../../types/mod';
@@ -27,10 +26,7 @@ export async function loadSharedModSyncMatch(params: {
   currentData: SyncCurrentData;
 }): Promise<MatchedDbEntry | null> {
   try {
-    const match = await commands.matchObjectWithDb({
-      gameType: params.gameType,
-      objectName: params.folder.name,
-    });
+    const match = await commands.matchObjectWithDb(params.gameType, params.folder.name);
     return match ?? null;
   } catch {
     return null;
@@ -41,7 +37,6 @@ export async function runSharedModActiveContextToggle(params: {
   activeGameId: string;
   folder: ModFolder;
   queryClient: QueryClient;
-  removeFromCurrentView: boolean;
   switchSurface: 'folder_grid' | 'preview' | 'object_list' | 'collections' | 'corridor';
   switchActions: SharedModSwitchActions;
   hasPin: boolean;
@@ -66,15 +61,7 @@ export async function runSharedModActiveContextToggle(params: {
     };
   }
 
-  await commands.toggleModSafe({
-    gameId: params.activeGameId,
-    folderPath: newPath,
-    safe: targetSafeStatus,
-  });
-
-  if (params.removeFromCurrentView) {
-    updateFolderCache(params.queryClient, [params.folder.path, newPath], undefined, true);
-  }
+  await commands.toggleModSafe(params.activeGameId, newPath, targetSafeStatus);
 
   const store = useAppStore.getState();
   if (store.gridSelection?.has(params.folder.path) || store.gridSelection?.has(newPath)) {

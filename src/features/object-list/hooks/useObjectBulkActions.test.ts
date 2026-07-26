@@ -14,9 +14,10 @@ const toastSuccess = vi.fn();
 const toastError = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     pinObject: (...args: unknown[]) => pinObject(...args),
-    updateObject: (...args: unknown[]) => updateObject(...args),
+    updateObjectCmd: (...args: unknown[]) => updateObject(...args),
     bulkToggleFavorite: vi.fn(),
     bulkUpdateInfo: vi.fn(),
   },
@@ -90,7 +91,7 @@ describe('handleBulkPin', () => {
     await setup().current.handleBulkPin(new Set(['a']), true);
 
     // `isPinned` here instead of `pin` is what failed serde silently before.
-    expect(pinObject).toHaveBeenCalledWith({ id: 'a', pin: true });
+    expect(pinObject).toHaveBeenCalledWith('a', true);
   });
 
   it('reports success once every id succeeded', async () => {
@@ -112,7 +113,7 @@ describe('handleBulkPin', () => {
   });
 
   it('reports an error on partial failure rather than a success toast', async () => {
-    pinObject.mockImplementation(({ id }: { id: string }) =>
+    pinObject.mockImplementation((id: string) =>
       id === 'b' ? Promise.reject(new Error('gone')) : Promise.resolve(undefined),
     );
 
@@ -140,7 +141,7 @@ describe('bulk tag handlers', () => {
 
     await setup().current.handleBulkRemoveTags(new Set(['a']), ['old']);
 
-    expect(updateObject).toHaveBeenCalledWith({ id: 'a', updates: { tags: [] } });
+    expect(updateObject).toHaveBeenCalledWith('a', { tags: [] });
     expect(toastSuccess).toHaveBeenCalledTimes(1);
     expect(toastError).not.toHaveBeenCalled();
   });

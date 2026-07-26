@@ -51,17 +51,11 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
         await Promise.all([
           queryClient.prefetchQuery({
             queryKey: corridorKeys.state(settings.active_game_id),
-            queryFn: () =>
-              commands.getCorridorState({
-                gameId: settings.active_game_id as string,
-              }),
+            queryFn: () => commands.getCorridorState(settings.active_game_id as string, null),
           }),
           queryClient.prefetchQuery({
             queryKey: collectionKeys.list(settings.active_game_id),
-            queryFn: () =>
-              commands.listCollections({
-                gameId: settings.active_game_id as string,
-              }),
+            queryFn: () => commands.listCollections(settings.active_game_id as string, null),
           }),
         ]);
       }
@@ -94,19 +88,16 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
     });
 
     try {
-      await commands.setActiveGame({ gameId: id });
+      await commands.setActiveGame(id);
       if (id) {
         await Promise.all([
           queryClient.prefetchQuery({
             queryKey: corridorKeys.state(id),
-            queryFn: () =>
-              commands.getCorridorState({
-                gameId: id as string,
-              }),
+            queryFn: () => commands.getCorridorState(id as string, null),
           }),
           queryClient.prefetchQuery({
             queryKey: collectionKeys.list(id),
-            queryFn: () => commands.listCollections({ gameId: id as string }),
+            queryFn: () => commands.listCollections(id as string, null),
           }),
         ]);
       }
@@ -121,7 +112,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
       // This saves the entire AppSettings backend representation since we don't have a
       // dedicated command for just autoCloseLauncher. It's safe to use `update_settings`
       // but if that command doesn't exist, we fallback.
-      await commands.setAutoCloseLauncher({ enabled });
+      await commands.setAutoCloseLauncher(enabled);
     } catch (e) {
       console.error('Failed to sync auto close launcher to backend', e);
     }

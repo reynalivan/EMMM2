@@ -25,10 +25,11 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 vi.mock('../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     stopWatcher: vi.fn().mockResolvedValue(undefined),
     startWatcher: vi.fn().mockResolvedValue(undefined),
-    reconcileDiskState: vi.fn().mockResolvedValue(undefined),
+    reconcileDiskStateCmd: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -112,7 +113,7 @@ describe('ExternalChangeHandler integration', () => {
         return Promise.resolve(vi.fn());
       },
     );
-    (commands.reconcileDiskState as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+    (commands.reconcileDiskStateCmd as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
       createResult({ reason: 'ModsViewEntered' }),
     );
   });
@@ -128,12 +129,7 @@ describe('ExternalChangeHandler integration', () => {
       </QueryClientProvider>,
     );
 
-    await waitFor(() =>
-      expect(commands.startWatcher).toHaveBeenCalledWith({
-        gameId: 'game-1',
-        path: 'E:/Mods',
-      }),
-    );
+    await waitFor(() => expect(commands.startWatcher).toHaveBeenCalledWith('E:/Mods', 'game-1'));
 
     await act(async () => {
       eventHandlers['disk_reconcile:result']({

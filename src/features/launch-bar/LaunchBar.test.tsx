@@ -29,6 +29,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     launchGame: (...args: unknown[]) => launchGame(...args),
   },
@@ -55,7 +56,7 @@ describe('LaunchBar', () => {
     fireEvent.click(screen.getByText('Play'));
 
     await waitFor(() => {
-      expect(launchGame).toHaveBeenCalledWith({ gameId: 'game-1' });
+      expect(launchGame).toHaveBeenCalledWith('game-1');
     });
 
     expect(exit).toHaveBeenCalledWith(0);

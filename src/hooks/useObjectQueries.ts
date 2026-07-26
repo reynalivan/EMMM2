@@ -32,7 +32,7 @@ export function useGameSchema() {
 
   return useQuery<GameSchema>({
     queryKey: objectKeys.schema(gameType as GameType),
-    queryFn: () => commands.getGameSchema({ gameType: gameType! }),
+    queryFn: () => commands.getGameSchema(gameType!),
     enabled: gameType !== undefined,
     staleTime: Infinity,
   });
@@ -65,7 +65,7 @@ export function useMasterDb() {
 
   return useQuery<string>({
     queryKey: ['master-db', gameType],
-    queryFn: () => commands.getMasterDb({ gameType: gameType! }),
+    queryFn: () => commands.getMasterDb(gameType!),
     enabled: !!gameType,
     staleTime: Infinity,
   });

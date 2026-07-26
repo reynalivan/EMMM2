@@ -7,7 +7,7 @@
 
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands, sparse } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { runObjectBatchMutation } from '../../../hooks/objectQueryCache';
@@ -117,19 +117,11 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
 
       await runObjectBatchMutation({
         queryClient,
-        applyOptimisticUpdate: (object) =>
-          ids.has(object.id)
-            ? {
-                ...object,
-                is_pinned: pin,
-              }
-            : object,
-        // Tally per id rather than throwing: letting the error escape would make
-        // runObjectBatchMutation roll back the whole optimistic patch, discarding
-        // the pins that did land. Its trailing refresh reconciles the cache, so a
-        // partial failure only needs to be reported, not undone.
+        // Tally per id rather than throwing: the trailing refresh must still run
+        // so the pins that did land become visible; a partial failure only needs
+        // to be reported.
         mutation: async () => {
-          outcome = await runPerId(ids, (id) => commands.pinObject({ id, pin }));
+          outcome = await runPerId(ids, (id) => commands.pinObject(id, pin));
         },
       });
 
@@ -196,10 +188,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
         const obj = objects.find((o) => o.id === id);
         if (!obj) throw new Error(`Object ${id} is no longer in the list`);
 
-        await commands.updateObject({
-          id,
-          updates: { tags: transform(parseTagList(obj.tags)) },
-        });
+        await commands.updateObjectCmd(id, sparse({ tags: transform(parseTagList(obj.tags)) }));
       });
       await refreshObjectRows();
 
@@ -264,11 +253,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
       if (!activeGame) return;
       const paths = objects.filter((o) => ids.has(o.id)).map((o) => o.folder_path);
       try {
-        await commands.bulkToggleFavorite({
-          gameId: activeGame.id,
-          folderPaths: paths,
-          favorite,
-        });
+        await commands.bulkToggleFavorite(activeGame.id, paths, favorite);
         await refreshObjectRows();
         toast.success(
           t(
@@ -292,11 +277,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
       if (!activeGame) return;
       const paths = objects.filter((o) => ids.has(o.id)).map((o) => o.folder_path);
       try {
-        await commands.bulkUpdateInfo({
-          gameId: activeGame.id,
-          paths,
-          update: { is_safe: safe },
-        });
+        await commands.bulkUpdateInfo(activeGame.id, paths, sparse({ is_safe: safe }));
         await refreshObjectRows();
         toast.success(
           t(safe ? 'objects:toasts.mark_safe' : 'objects:toasts.mark_unsafe', {

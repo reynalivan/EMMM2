@@ -5,7 +5,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
-import { dedupService } from '../../../lib/services/dedupService';
+import { Channel } from '@tauri-apps/api/core';
+import { commands } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
 import type { DupScanReport, ResolutionRequest, DupScanEvent } from '../../../types/scanner';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
@@ -29,7 +30,7 @@ export const dedupKeys = {
 export function useIgnoredPairs(gameId: string) {
   return useQuery({
     queryKey: dedupKeys.ignored(gameId),
-    queryFn: () => dedupService.getIgnoredPairs(gameId),
+    queryFn: () => commands.getIgnoredPairs(gameId),
     staleTime: 60_000,
     enabled: !!gameId,
   });
@@ -42,7 +43,7 @@ export function useRemoveIgnoredPair() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (entryId: string) => dedupService.removeIgnoredPair(entryId),
+    mutationFn: (entryId: string) => commands.removeIgnoredPair(entryId),
     onSuccess: async (_, _entryId) => {
       await publishQueryScopes(queryClient, ['dedupAll']);
       toast.success(i18next.t('scanner:dedup.toast.recover_success'));
@@ -62,7 +63,7 @@ export function useRemoveIgnoredPair() {
 export function useDedupReport(pin?: string) {
   return useQuery<DupScanReport | null>({
     queryKey: dedupKeys.report(pin),
-    queryFn: () => dedupService.getReport(pin),
+    queryFn: () => commands.dupScanGetReport(pin ?? null),
     staleTime: 30_000, // Report valid for 30 seconds
     refetchOnWindowFocus: false,
   });
@@ -84,7 +85,12 @@ export function useStartDedupScan() {
       gameId: string;
       modsRoot: string;
       onEvent: (event: DupScanEvent) => void;
-    }) => dedupService.startDedupScan(params.gameId, params.modsRoot, params.onEvent),
+    }) => {
+      const channel = new Channel<DupScanEvent>();
+      channel.onmessage = (message) => params.onEvent(message);
+
+      return commands.dupScanStart(params.gameId, params.modsRoot, channel);
+    },
 
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['dedupReport']);
@@ -106,7 +112,7 @@ export function useCancelDedupScan() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => dedupService.cancelDedupScan(),
+    mutationFn: () => commands.dupScanCancel(),
 
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['dedupReport']);
@@ -135,7 +141,7 @@ export function useResolveDuplicates() {
 
   return useMutation({
     mutationFn: (params: { requests: ResolutionRequest[]; gameId: string }) =>
-      dedupService.resolveBatch(params.requests, params.gameId),
+      commands.dupResolveBatch(params.requests, params.gameId),
 
     onSuccess: async (summary) => {
       await publishQueryScopes(queryClient, ['folderStructure', 'trash', 'dedupAll']);

@@ -22,14 +22,14 @@ export const scanService = {
    * Get the MasterDB JSON for a game type (e.g. "GIMI", "SRMI").
    */
   async getMasterDb(gameType: GameType): Promise<string> {
-    return commands.getMasterDb({ gameType });
+    return commands.getMasterDb(gameType);
   },
 
   /**
    * Detect archives in the mod directory.
    */
   async detectArchives(modsPath: string): Promise<ArchiveInfo[]> {
-    return commands.detectArchives({ modsPath });
+    return commands.detectArchivesCmd(modsPath);
   },
 
   /**
@@ -49,16 +49,16 @@ export const scanService = {
     if (onFileProgress) {
       channel.onmessage = onFileProgress;
     }
-    return commands.extractArchive({
+    return commands.extractArchiveCmd(
       archivePath,
       modsDir,
-      password: password || null,
+      password || null,
       overwrite,
-      customName: customName || null,
+      customName || null,
       disableAfter,
       unpackNested,
-      onProgress: channel,
-    });
+      channel,
+    );
   },
 
   /**
@@ -194,7 +194,7 @@ export const scanService = {
    * Analyze an archive before extraction.
    */
   async analyzeArchive(archivePath: string): Promise<ArchiveAnalysis> {
-    return commands.analyzeArchive({ archivePath });
+    return commands.analyzeArchiveCmd(archivePath);
   },
 
   /**
@@ -206,32 +206,28 @@ export const scanService = {
     gameType: GameType,
   ): Promise<MatchCheckResult> {
     const dbJson = await this.getMasterDb(gameType);
-    return commands.matchCheckFolder({
-      folderPath,
-      targetObjectName,
-      dbJson,
-    });
+    return commands.matchCheckFolderCmd(folderPath, targetObjectName, dbJson);
   },
 
   /**
    * Detect conflicts in INI files.
    */
   async detectConflicts(iniPaths: string[]): Promise<ConflictInfo[]> {
-    return commands.detectConflicts({ iniPaths });
+    return commands.detectConflictsCmd(iniPaths);
   },
 
   /**
    * Detect conflicts in the entire mods folder.
    */
   async detectConflictsInFolder(modsPath: string): Promise<ConflictInfo[]> {
-    return commands.detectConflictsInFolder({ modsPath });
+    return commands.detectConflictsInFolderCmd(modsPath);
   },
 
   /**
    * Cancel the currently running scan.
    */
   async cancelScan(): Promise<void> {
-    return commands.cancelScan();
+    return commands.cancelScanCmd();
   },
 
   /**
@@ -249,15 +245,15 @@ export const scanService = {
       channel.onmessage = onEvent;
     }
     const dbJson = await this.getMasterDb(gameType);
-    return commands.runDeepmatchScanner({
+    return commands.deepmatchScannerCmd(
       gameId,
       gameName,
-      gameType: getGameTypeKey(gameType),
+      getGameTypeKey(gameType),
       modsPath,
       dbJson,
-      preserveExistingMappings: false,
-      onProgress: channel,
-    });
+      false,
+      channel,
+    );
   },
 
   /**
@@ -275,13 +271,7 @@ export const scanService = {
       channel.onmessage = onEvent;
     }
     const dbJson = await this.getMasterDb(gameType);
-    return commands.runDeepmatchPreview({
-      gameId,
-      modsPath,
-      dbJson,
-      onProgress: channel,
-      specificPaths: specificPaths ?? undefined,
-    });
+    return commands.deepmatchPreviewCmd(gameId, modsPath, dbJson, channel, specificPaths ?? null);
   },
 
   /**
@@ -299,15 +289,15 @@ export const scanService = {
       channel.onmessage = onEvent;
     }
     const dbJson = await this.getMasterDb(gameType);
-    return commands.runDeepmatchPreviewForObjects({
-      input: {
+    return commands.deepmatchPreviewForObjectsCmd(
+      {
         gameId,
         modsPath,
         dbJson,
         objectIds,
       },
-      onProgress: channel,
-    });
+      channel,
+    );
   },
 
   /**
@@ -320,13 +310,7 @@ export const scanService = {
     modsPath: string,
     items: ConfirmedScanItem[],
   ): Promise<SyncResult> {
-    return commands.commitScan({
-      gameId,
-      gameName,
-      gameType: getGameTypeKey(gameType),
-      modsPath,
-      items,
-    });
+    return commands.commitScanCmd(gameId, gameName, getGameTypeKey(gameType), modsPath, items);
   },
 
   /**
@@ -338,10 +322,6 @@ export const scanService = {
     gameType: GameType,
   ): Promise<Partial<Record<string, number>>> {
     const dbJson = await this.getMasterDb(gameType);
-    return commands.scoreCandidatesBatch({
-      folderPath,
-      candidateNames,
-      dbJson,
-    });
+    return commands.scoreCandidatesBatchCmd(folderPath, candidateNames, dbJson);
   },
 };

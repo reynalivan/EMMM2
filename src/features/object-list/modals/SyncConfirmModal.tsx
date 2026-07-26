@@ -13,6 +13,18 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { MatchedDbEntry } from '../../../lib/bindings';
 
+/**
+ * `MatchedDbEntry.metadata` crosses the wire as `JsonValue`, but the editor
+ * treats it as the string-keyed record the master DB actually stores.
+ */
+type EditableMatch = Omit<MatchedDbEntry, 'metadata'> & {
+  metadata: Record<string, unknown> | null;
+};
+
+function toEditable(match: MatchedDbEntry): EditableMatch {
+  return { ...match, metadata: (match.metadata ?? null) as Record<string, unknown> | null };
+}
+
 /** Current object/folder data for diff comparison */
 interface CurrentData {
   name: string;
@@ -83,12 +95,12 @@ export default function SyncConfirmModal({
 }: SyncConfirmModalProps) {
   const { t } = useTranslation(['objects', 'common']);
   // Editable copy of the match — user can tweak fields before applying
-  const [editedMatch, setEditedMatch] = useState<MatchedDbEntry | null>(null);
+  const [editedMatch, setEditedMatch] = useState<EditableMatch | null>(null);
 
   // Reset editable state when match changes
   useEffect(() => {
     if (match) {
-      setEditedMatch({ ...match, metadata: match.metadata ? { ...match.metadata } : null });
+      setEditedMatch(toEditable(match));
     } else {
       setEditedMatch(null);
     }
@@ -100,7 +112,7 @@ export default function SyncConfirmModal({
     ? `asset://${editedMatch.thumbnail_path}`
     : null;
 
-  const setField = (key: keyof MatchedDbEntry, value: string) => {
+  const setField = (key: keyof EditableMatch, value: string) => {
     if (!editedMatch) return;
     setEditedMatch({ ...editedMatch, [key]: value });
   };
@@ -112,7 +124,7 @@ export default function SyncConfirmModal({
 
   const resetToOriginal = () => {
     if (match) {
-      setEditedMatch({ ...match, metadata: match.metadata ? { ...match.metadata } : null });
+      setEditedMatch(toEditable(match));
     }
   };
 
@@ -255,7 +267,10 @@ export default function SyncConfirmModal({
                 <Edit size={14} />
                 {t('context.sync.edit_manually')}
               </button>
-              <button className="btn btn-sm btn-primary" onClick={() => onApply(editedMatch)}>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => onApply(editedMatch as MatchedDbEntry)}
+              >
                 <Check size={14} />
                 {hasEdits ? t('context.sync.apply_edited') : t('context.sync.apply_match')}
               </button>

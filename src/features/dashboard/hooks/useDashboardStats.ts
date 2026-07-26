@@ -20,7 +20,7 @@ export function useDashboardStats() {
 
   const query = useQuery<DashboardPayload>({
     queryKey: [...dashboardKeys.all, safeMode],
-    queryFn: () => commands.getDashboardStats({ safeMode }),
+    queryFn: () => commands.getDashboardStats(safeMode),
     staleTime: 30_000,
   });
 

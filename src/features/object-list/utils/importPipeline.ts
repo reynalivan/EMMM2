@@ -46,11 +46,11 @@ export function tempStagingPath(modPath: string): string {
 }
 
 export async function ensureDirectoryExists(path: string): Promise<void> {
-  if (await commands.checkPathExists({ path })) {
+  if (await commands.checkPathExistsCmd(path)) {
     return;
   }
 
-  await commands.ensureDir({ path });
+  await commands.ensureDirCmd(path);
 }
 
 /**
@@ -67,13 +67,13 @@ export async function ingestLooseFiles(
   }
 
   await ensureDirectoryExists(targetPath);
-  const ingestResult: IngestResult = await commands.ingestDroppedFolders({
-    paths: looseFiles,
-    modsPath: targetPath,
-    gameId: activeGame.id,
-    gameName: activeGame.name,
-    gameType: getGameTypeKey(activeGame.game_type),
-  });
+  const ingestResult: IngestResult = await commands.ingestDroppedFolders(
+    looseFiles,
+    targetPath,
+    activeGame.id,
+    activeGame.name,
+    getGameTypeKey(activeGame.game_type),
+  );
 
   return ingestResult.moved;
 }

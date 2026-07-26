@@ -1,7 +1,7 @@
 /**
  * Tests for Epic 9 dedup hooks.
  * Covers: useDedupReport, useStartDedupScan, useCancelDedupScan, useResolveDuplicates
- * Uses React Testing Library renderHook with mocked dedupService and React Query.
+ * Uses React Testing Library renderHook with mocked IPC commands and React Query.
  */
 
 import { renderHook, waitFor } from '@testing-library/react';
@@ -12,19 +12,27 @@ import {
   useCancelDedupScan,
   useResolveDuplicates,
 } from './useDedup';
-import * as dedupService from '../../../lib/services/dedupService';
+import { commands } from '../../../lib/bindings';
 import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../../types/scanner';
 import { createWrapper } from '../../../testing/test-utils';
 
 vi.unmock('@tanstack/react-query');
 
-// Mock the service
-vi.mock('../../../lib/services/dedupService', () => ({
-  dedupService: {
-    getReport: vi.fn(),
-    startDedupScan: vi.fn(),
-    cancelDedupScan: vi.fn(),
-    resolveBatch: vi.fn(),
+// The hook constructs a Channel, so the local core mock must provide one.
+vi.mock('@tauri-apps/api/core', () => {
+  class ChannelMock {
+    onmessage: ((message: unknown) => void) | null = null;
+  }
+  return { invoke: vi.fn(), Channel: ChannelMock };
+});
+
+vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
+  commands: {
+    dupScanGetReport: vi.fn(),
+    dupScanStart: vi.fn(),
+    dupScanCancel: vi.fn(),
+    dupResolveBatch: vi.fn(),
   },
 }));
 
@@ -86,7 +94,7 @@ describe('useDedup hooks', () => {
         ],
       };
 
-      vi.mocked(dedupService.dedupService.getReport).mockResolvedValue(mockReport);
+      vi.mocked(commands.dupScanGetReport).mockResolvedValue(mockReport);
 
       const { result } = renderHook(() => useDedupReport(), {
         wrapper: createWrapper,
@@ -94,11 +102,11 @@ describe('useDedup hooks', () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data).toEqual(mockReport);
-      expect(dedupService.dedupService.getReport).toHaveBeenCalledOnce();
+      expect(commands.dupScanGetReport).toHaveBeenCalledOnce();
     });
 
     it('handles null report (no scan completed)', async () => {
-      vi.mocked(dedupService.dedupService.getReport).mockResolvedValue(null);
+      vi.mocked(commands.dupScanGetReport).mockResolvedValue(null);
 
       const { result } = renderHook(() => useDedupReport(), {
         wrapper: createWrapper,
@@ -110,7 +118,7 @@ describe('useDedup hooks', () => {
 
     it('handles fetch error', async () => {
       const error = new Error('Failed to fetch report');
-      vi.mocked(dedupService.dedupService.getReport).mockRejectedValue(error);
+      vi.mocked(commands.dupScanGetReport).mockRejectedValue(error);
 
       const { result } = renderHook(() => useDedupReport(), {
         wrapper: createWrapper,
@@ -123,7 +131,7 @@ describe('useDedup hooks', () => {
 
   describe('useStartDedupScan', () => {
     it('starts a scan and invalidates report cache on success', async () => {
-      vi.mocked(dedupService.dedupService.startDedupScan).mockResolvedValue(undefined);
+      vi.mocked(commands.dupScanStart).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useStartDedupScan(), {
         wrapper: createWrapper,
@@ -133,17 +141,17 @@ describe('useDedup hooks', () => {
       result.current.mutate({ gameId: 'genshin', modsRoot: '/path/to/mods', onEvent });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(dedupService.dedupService.startDedupScan).toHaveBeenCalledWith(
+      expect(commands.dupScanStart).toHaveBeenCalledWith(
         'genshin',
         '/path/to/mods',
-        onEvent,
+        expect.anything(),
       );
     });
 
     it('handles scan error with toast notification', async () => {
       const { toast } = await import('../../../stores/useToastStore');
       const error = new Error('Scan failed: invalid path');
-      vi.mocked(dedupService.dedupService.startDedupScan).mockRejectedValue(error);
+      vi.mocked(commands.dupScanStart).mockRejectedValue(error);
 
       const { result } = renderHook(() => useStartDedupScan(), {
         wrapper: createWrapper,
@@ -168,12 +176,10 @@ describe('useDedup hooks', () => {
         },
       };
 
-      vi.mocked(dedupService.dedupService.startDedupScan).mockImplementation(
-        (_gameId, _modsRoot, onEvent) => {
-          onEvent(mockEvent);
-          return Promise.resolve();
-        },
-      );
+      vi.mocked(commands.dupScanStart).mockImplementation((_gameId, _modsRoot, channel) => {
+        channel.onmessage?.(mockEvent);
+        return Promise.resolve();
+      });
 
       const onEvent = vi.fn();
       const { result } = renderHook(() => useStartDedupScan(), {
@@ -189,7 +195,7 @@ describe('useDedup hooks', () => {
 
   describe('useCancelDedupScan', () => {
     it('cancels the running scan', async () => {
-      vi.mocked(dedupService.dedupService.cancelDedupScan).mockResolvedValue(undefined);
+      vi.mocked(commands.dupScanCancel).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
         wrapper: createWrapper,
@@ -198,12 +204,12 @@ describe('useDedup hooks', () => {
       result.current.mutate();
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(dedupService.dedupService.cancelDedupScan).toHaveBeenCalledOnce();
+      expect(commands.dupScanCancel).toHaveBeenCalledOnce();
     });
 
     it('shows success toast on cancel', async () => {
       const { toast } = await import('../../../stores/useToastStore');
-      vi.mocked(dedupService.dedupService.cancelDedupScan).mockResolvedValue(undefined);
+      vi.mocked(commands.dupScanCancel).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
         wrapper: createWrapper,
@@ -218,7 +224,7 @@ describe('useDedup hooks', () => {
     it('handles cancel error with toast', async () => {
       const { toast } = await import('../../../stores/useToastStore');
       const error = new Error('Cancel failed');
-      vi.mocked(dedupService.dedupService.cancelDedupScan).mockRejectedValue(error);
+      vi.mocked(commands.dupScanCancel).mockRejectedValue(error);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
         wrapper: createWrapper,
@@ -240,7 +246,7 @@ describe('useDedup hooks', () => {
         errors: [],
       };
 
-      vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);
+      vi.mocked(commands.dupResolveBatch).mockResolvedValue(mockSummary);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
         wrapper: createWrapper,
@@ -259,7 +265,7 @@ describe('useDedup hooks', () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data).toEqual(mockSummary);
-      expect(dedupService.dedupService.resolveBatch).toHaveBeenCalledWith(requests, 'genshin');
+      expect(commands.dupResolveBatch).toHaveBeenCalledWith(requests, 'genshin');
     });
 
     it('shows success toast with resolution summary', async () => {
@@ -271,7 +277,7 @@ describe('useDedup hooks', () => {
         errors: [],
       };
 
-      vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);
+      vi.mocked(commands.dupResolveBatch).mockResolvedValue(mockSummary);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
         wrapper: createWrapper,
@@ -292,7 +298,7 @@ describe('useDedup hooks', () => {
         errors: [{ groupId: 'group-1', message: '', action: 'ignore' }],
       };
 
-      vi.mocked(dedupService.dedupService.resolveBatch).mockResolvedValue(mockSummary);
+      vi.mocked(commands.dupResolveBatch).mockResolvedValue(mockSummary);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
         wrapper: createWrapper,
@@ -307,7 +313,7 @@ describe('useDedup hooks', () => {
     it('handles resolution error with toast', async () => {
       const { toast } = await import('../../../stores/useToastStore');
       const error = new Error('Resolution service unavailable');
-      vi.mocked(dedupService.dedupService.resolveBatch).mockRejectedValue(error);
+      vi.mocked(commands.dupResolveBatch).mockRejectedValue(error);
 
       const { result } = renderHook(() => useResolveDuplicates(), {
         wrapper: createWrapper,

@@ -28,10 +28,7 @@ export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
 
     setPendingAction(action);
     try {
-      await commands.resolveRecoveryTask({
-        taskId: primaryTask.id,
-        action,
-      });
+      await commands.resolveRecoveryTask(primaryTask.id, action);
       const successKey =
         action === 'RETRY'
           ? 'recovery.toast.resumed'

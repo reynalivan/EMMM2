@@ -41,9 +41,7 @@ export default function WelcomeScreen({
       setIsScanning(true);
       setView('auto-detect');
 
-      const games = await commands.autoDetectGames({
-        rootPath: selectedPath,
-      });
+      const games = await commands.autoDetectGames(selectedPath);
 
       setDetectedGames(games);
       setView('result');
@@ -84,16 +82,12 @@ export default function WelcomeScreen({
       setIsIndexing(true);
 
       // Save the games to DB — this is mandatory
-      await commands.saveOnboardingGames({ games });
+      await commands.saveOnboardingGames(games);
 
       // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
       for (const game of games) {
         try {
-          await commands.reconcileDiskState({
-            gameId: game.id,
-            reason: 'OnboardingCompleted',
-            forceFull: true,
-          });
+          await commands.reconcileDiskStateCmd(game.id, 'OnboardingCompleted', null, true);
         } catch (refreshErr) {
           console.warn(
             `[onboarding] reconcileDiskState failed for "${game.name}", Disk Reconcile will retry on next entry:`,

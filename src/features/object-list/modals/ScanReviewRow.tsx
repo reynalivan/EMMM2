@@ -69,9 +69,7 @@ export default function ScanReviewRow({
         icon={ExternalLink}
         onClick={() => {
           if (activeGame?.id) {
-            commands
-              .openInExplorer({ gameId: activeGame.id, path: item.folderPath })
-              .catch(console.error);
+            commands.openInExplorer(activeGame.id, item.folderPath).catch(console.error);
           }
         }}
       >
@@ -274,13 +272,7 @@ function revealMatchedObject(
   const objectId =
     entry?.metadata && typeof entry.metadata.id === 'string' ? entry.metadata.id : objectName;
 
-  commands
-    .revealObjectInExplorer({
-      gameId: activeGame.id,
-      objectId,
-      objectName,
-    })
-    .catch(console.error);
+  commands.revealObjectInExplorer(activeGame.id, objectId, objectName).catch(console.error);
 }
 
 function stripDisabledPrefix(value: string): string {

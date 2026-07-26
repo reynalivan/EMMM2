@@ -3,11 +3,6 @@ import { createObject, deleteObject, updateObject } from '../lib/services/object
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import {
   buildObjectListRefreshDescriptor,
-  objectKeys,
-  patchObjectListQueries,
-  patchObjectSummary,
-  restoreObjectListQueries,
-  snapshotObjectListQueries,
   type CreateObjectInput,
   type UpdateObjectInput,
 } from './objectQueryCache';
@@ -18,20 +13,6 @@ export function useUpdateObject() {
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: UpdateObjectInput }) =>
       updateObject(id, updates),
-    onMutate: async ({ id, updates }) => {
-      await queryClient.cancelQueries({ queryKey: objectKeys.lists() });
-      const previousQueries = snapshotObjectListQueries(queryClient);
-      patchObjectListQueries(queryClient, id, (object) => patchObjectSummary(object, updates));
-
-      return { previousQueries };
-    },
-    onError: (_error, _variables, context) => {
-      if (!context?.previousQueries) {
-        return;
-      }
-
-      restoreObjectListQueries(queryClient, context.previousQueries);
-    },
     onSuccess: async () => {
       await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
     },

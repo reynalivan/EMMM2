@@ -1,588 +1,97 @@
 /**
- * Types & IPC bindings for EMMM.
- * Directly sourced from `src/types/*` to avoid giant monolithic files.
- * Completely Type-Safe.
+ * IPC bindings for EMMM.
+ *
+ * `bindings.gen.ts` (tauri-specta) is the single source of truth for command
+ * names, parameter order, and payload types. This module adds exactly one thing:
+ * `Result<T, AppError>` unwrapping, so call sites keep the conventional
+ * resolve/reject promise contract instead of branching on `status` everywhere.
+ *
+ * There is no hand-written per-command code here — the wrapper is derived from
+ * the generated signatures, so any drift is a compile error at the call site.
  */
 
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { commands as gen } from './bindings.gen';
+import type { Result } from './bindings.gen';
 
-// Command payload types sourced from the generated bindings so they cannot drift
-// from the Rust definitions.
-import type {
+// Re-export the generated types that callers historically imported from this
+// module, so `import type { X } from '../lib/bindings'` keeps working.
+export type {
+  ApplyObjectMatchInput,
   ConfigStatus,
   CreateCollectionMode,
+  CustomTheme,
+  DeepmatchPreviewForObjectsInput,
+  DiskReconcileChangeCounts,
+  DiskReconcileChangeSummary,
+  DiskReconcilePathKind,
+  DiskReconcilePathUpdate,
+  DiskReconcileReason,
+  DiskReconcileResult,
+  DiskReconcileStatus,
   GameObject,
-  IniFileEntry,
   ImportStrategy,
+  IngestResult,
+  IniDocument,
+  IniFileEntry,
+  IniLineUpdate,
+  IniVariable,
+  KeyBinding,
+  MatchedDbEntry,
+  MoveModsToObjectInput,
+  PipelineTask,
+  RandomModProposal,
+  TaskStatus,
+  ThemeConfig,
+  ThemeMetadata,
+  WorkspaceMoveTarget,
 } from './bindings.gen';
-export type { ConfigStatus, CreateCollectionMode, GameObject, IniFileEntry, ImportStrategy };
 
-// Internal types that are too small for separate files
-export type TaskStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
-export type PipelineTask = {
-  id: string;
-  game_id: string;
-  task_type: string;
-  status: TaskStatus;
-  target_id: string | null;
-  created_at: string;
-  updated_at: string;
+type OkOf<T> = Extract<T, { status: 'ok' }>;
+
+/** Rust unit `()` serialises as `null`; callers treat those commands as void. */
+type NullToVoid<D> = [D] extends [null] ? void : D;
+
+/** `Result<D, E>` -> `D`; anything else passes through unchanged. */
+type Unwrapped<T> = [OkOf<T>] extends [never]
+  ? T
+  : OkOf<T> extends { status: 'ok'; data: infer D }
+    ? NullToVoid<D>
+    : T;
+
+type Commands = {
+  [K in keyof typeof gen]: (
+    ...args: Parameters<(typeof gen)[K]>
+  ) => Promise<Unwrapped<Awaited<ReturnType<(typeof gen)[K]>>>>;
 };
 
-export type IngestResult = {
-  moved: string[];
-  failed: string[];
-  skipped: string[];
-};
-
-export interface IniVariable {
-  name: string;
-  value: string;
-  line_idx: number;
+/**
+ * Serde defaults a missing `Option` field to `None`, exactly as if `null` had
+ * been sent, so a sparse patch object is a valid payload for an all-nullable
+ * update type. This cast records that wire contract in one place.
+ */
+export function sparse<T>(patch: NoInfer<Partial<T>>): T {
+  return patch as T;
 }
 
-export interface KeyBinding {
-  section_name: string;
-  key: string | null;
-  back: string | null;
-  key_line_idx: number | null;
-  back_line_idx: number | null;
+function isResult(value: unknown): value is Result<unknown, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'status' in value &&
+    ((value as { status: unknown }).status === 'ok' ||
+      (value as { status: unknown }).status === 'error')
+  );
 }
 
-export interface IniDocument {
-  file_path: string;
-  raw_lines: string[];
-  variables: IniVariable[];
-  key_bindings: KeyBinding[];
-  had_bom: boolean;
-  newline_style: 'Lf' | 'CrLf';
-  mode: 'Structured' | 'RawFallback';
+function unwrap(value: unknown): unknown {
+  if (!isResult(value)) return value;
+  if (value.status === 'ok') return value.data;
+  throw value.error;
 }
 
-export interface IniLineUpdate {
-  line_idx: number;
-  content: string;
-}
-
-/** Shape returned by Rust `match_object_with_db` command. */
-export interface MatchedDbEntry {
-  name: string;
-  matched_entry_key?: string | null;
-  matched_alias_name?: string | null;
-  object_type: string;
-  tags: string[];
-  metadata: Record<string, unknown> | null;
-  thumbnail_path: string | null;
-  /** Pipeline level: "L1Name" | "L2Token" | "L5Fuzzy" */
-  match_level: string;
-  /** Confidence: "High" | "Medium" | "Low" */
-  match_confidence: string;
-  /** Human-readable match detail */
-  match_detail: string;
-}
-
-export interface ApplyObjectMatchInput {
-  game_id: string;
-  object_id?: string | null;
-  folder_path?: string | null;
-  matched_entry_key?: string | null;
-  matched_alias_name?: string | null;
-  matched_confidence?: number | null;
-  matched_reason?: string | null;
-  matched_source?: string | null;
-}
-
-export type DiskReconcileReason =
-  | 'StartupBoot'
-  | 'OnboardingCompleted'
-  | 'ModsViewEntered'
-  | 'WindowRefocused'
-  | 'WatcherBatch'
-  | 'ManualRepair'
-  | 'GameSwitched'
-  | 'InternalMutation';
-
-export type DiskReconcilePathKind = 'Object' | 'Mod';
-export type DiskReconcileStatus = 'Applied' | 'SourceUnavailable';
-
-export interface DiskReconcilePathUpdate {
-  from: string;
-  to: string;
-  kind: DiskReconcilePathKind;
-}
-
-export interface DiskReconcileChangeCounts {
-  added: number;
-  removed: number;
-  renamed: number;
-  modified: number;
-}
-
-export interface DiskReconcileChangeSummary {
-  object_changes: DiskReconcileChangeCounts;
-  mod_changes: DiskReconcileChangeCounts;
-  object_sample_names: string[];
-  mod_sample_names: string[];
-  has_user_visible_changes: boolean;
-}
-
-export interface DiskReconcileResult {
-  game_id: string;
-  reason: DiskReconcileReason;
-  status: DiskReconcileStatus;
-  error_message: string | null;
-  changed_roots: string[];
-  objects_changed: boolean;
-  folders_changed: boolean;
-  collections_changed: boolean;
-  runtime_file_changed: boolean;
-  overlay_refresh_triggered: boolean;
-  thumbnail_roots: string[];
-  cleared_selection_paths: string[];
-  path_updates: DiskReconcilePathUpdate[];
-  collection_reference_impact: CollectionReferenceImpact;
-  change_summary: DiskReconcileChangeSummary;
-}
-
-// Domain Types
-import type { FolderEntry } from '../types/scanner';
-import type { GameConfig } from '../types/game';
-import type {
-  DbEntry,
-  GameSchema,
-  ObjectSummary,
-  CategoryCount,
-  ModInfo,
-  RenameResult,
-  ObjectFilter,
-  CreateObjectInput,
-  UpdateObjectInput,
-  ModInfoUpdate,
-} from '../types/object';
-import type {
-  WorkspaceSwitchInput,
-  WorkspaceSwitchResult,
-  WorkspaceViewModel,
-  WorkspaceViewModelInput,
-} from '../types/workspace';
-import type {
-  CollectionSummary,
-  CorridorSnapshot,
-  CollectionPreview,
-  ApplyProgressSnapshot,
-  ApplyPreview,
-  ApplyResult,
-  CollectionReferenceImpact,
-  PinStatus,
-} from '../types/collection';
-import type {
-  ArchiveInfo,
-  ArchiveAnalysis,
-  ExtractionResult,
-  ConflictInfo,
-  ScanPreviewItem,
-  ConflictDetails,
-  SyncResult,
-  TrashMetadata,
-  DeleteModResult,
-  BulkResult,
-  DupScanReport,
-  ResolutionSummary,
-  MetadataSyncResult,
-  MatchCheckResult,
-  ResolutionRequest,
-  ScanEvent,
-  ExtractionEvent,
-  DupScanEvent,
-  ConfirmedScanItem,
-  WhitelistEntry,
-  IgnoredConflict,
-} from '../types/scanner';
-import type { DashboardPayload } from '../types/dashboard';
-import type { AppSettings, ActiveKeyBinding } from '../types/settings';
-
-export interface ThemeMetadata {
-  id: string;
-  label: string;
-}
-
-export interface ThemeConfig {
-  colors: Record<string, string>;
-  glass: Record<string, string>;
-}
-
-export interface CustomTheme {
-  id: string;
-  label: string;
-  config: ThemeConfig;
-}
-import type { BrowserDownloadItem, ImportJobItem } from '../features/browser/types';
-import type { RecoveryAction } from '../types/task';
-
-export interface RandomModProposal {
-  object_id: string;
-  object_name: string;
-  mod_id: string;
-  name: string;
-  display_name: string;
-  thumbnail_path?: string | null;
-  folder_path: string;
-}
-
-export interface DeepmatchPreviewForObjectsInput {
-  gameId: string;
-  modsPath: string;
-  dbJson: string;
-  objectIds: string[];
-}
-
-export interface WorkspaceMoveTarget {
-  object_id: string;
-  object_name: string;
-  object_folder_path: string;
-  target_subpath: string | null;
-  display_path: string;
-  depth: number;
-}
-
-export interface MoveModsToObjectInput {
-  game_id: string;
-  folder_paths: string[];
-  target_object_id: string;
-  target_subpath: string | null;
-  status: string | null;
-}
-
-// ----- COMMANDS REGISTRY -----
-export const commands = {
-  // App & System
-  appStartupCheck: () => invoke<PipelineTask[]>('app_startup_check'),
-  checkConfigStatus: () => invoke<ConfigStatus>('check_config_status'),
-  checkMetadataUpdate: () => invoke<MetadataSyncResult>('check_metadata_update'),
-  closeSplashscreen: () => invoke<void>('close_splashscreen'),
-  getLogs: (params: { limit?: number | null; count?: number | null }) =>
-    invoke<string[]>('get_logs', params),
-  openLogFolder: () => invoke<void>('open_log_folder'),
-  resetDatabase: () => invoke<void>('reset_database'),
-  fetchMissingAsset: (params: { assetName: string }) => invoke<void>('fetch_missing_asset', params),
-  checkPathExists: (params: { path: string }) => invoke<boolean>('check_path_exists_cmd', params),
-  ensureDir: (params: { path: string }) => invoke<void>('ensure_dir_cmd', params),
-  getSettings: () => invoke<AppSettings>('get_settings'),
-  saveSettings: (params: { settings: AppSettings }) => invoke<void>('save_settings', params),
-  runMaintenance: () => invoke<[number, number]>('run_maintenance'),
-  clearOldThumbnails: () => invoke<number>('clear_old_thumbnails'),
-  updateHotkeyConfig: () => invoke<void>('update_hotkey_config'),
-  getDashboardStats: (params: { safeMode: boolean }) =>
-    invoke<DashboardPayload>('get_dashboard_stats', params),
-  getActiveKeybindings: (params: { gameId: string }) =>
-    invoke<ActiveKeyBinding[]>('get_active_keybindings', params),
-  getWorkspaceViewModel: (params: { input: WorkspaceViewModelInput }) =>
-    invoke<WorkspaceViewModel>('get_workspace_view_model', params),
-  executeWorkspaceSwitch: (params: { input: WorkspaceSwitchInput }) =>
-    invoke<WorkspaceSwitchResult>('execute_workspace_switch', params),
-
-  // Game Management
-  getGames: () => invoke<GameConfig[]>('get_games'),
-  autoDetectGames: (params: { rootPath: string }) =>
-    invoke<GameConfig[]>('auto_detect_games', params),
-  addGameManual: (params: { gameType: string; path: string }) =>
-    invoke<GameConfig>('add_game_manual', params),
-  saveOnboardingGames: (params: { games: GameConfig[] }) =>
-    invoke<void>('save_onboarding_games', params),
-  launchGame: (params: { gameId: string }) => invoke<void>('launch_game', params),
-  setActiveGame: (params: { gameId: string | null }) => invoke<void>('set_active_game', params),
-  setAutoCloseLauncher: (params: { enabled: boolean }) =>
-    invoke<void>('set_auto_close_launcher', params),
-
-  // Master DB & Objects
-  getGameSchema: (params: { gameType: number }) => invoke<GameSchema>('get_game_schema', params),
-  getMasterDb: (params: { gameType: number }) => invoke<string>('get_master_db', params),
-  searchMasterDb: (params: { gameType: number; query: string; objectType?: string | null }) =>
-    invoke<{ score: number; item: DbEntry }[]>('search_master_db', params),
-  getObject: (params: { id: string }) => invoke<GameObject | null>('get_object', params),
-  getObjects: (params: { filter: ObjectFilter }) =>
-    invoke<{ objects: ObjectSummary[]; lost_objects: string[] }>('get_objects_cmd', params),
-  getCategoryCounts: (params: { gameId: string; safeMode: boolean }) =>
-    invoke<CategoryCount[]>('get_category_counts_cmd', params),
-  createObject: (params: { input: CreateObjectInput }) =>
-    invoke<string>('create_object_cmd', params),
-  updateObject: (params: { id: string; updates: UpdateObjectInput }) =>
-    invoke<void>('update_object_cmd', params),
-  applyObjectMatch: (params: { input: ApplyObjectMatchInput }) =>
-    invoke<void>('apply_object_match_cmd', params),
-  deleteObject: (params: { id: string; force: boolean }) =>
-    invoke<void>('delete_object_cmd', params),
-  pinObject: (params: { id: string; pin: boolean }) => invoke<void>('pin_object', params),
-  matchObjectWithDb: (params: { gameType: number; objectName: string }) =>
-    invoke<MatchedDbEntry | null>('match_object_with_db', params),
-
-  // Mod Management (Core)
-  renameModFolder: (params: { folderPath: string; newName: string; gameId: string }) =>
-    invoke<RenameResult>('rename_mod_folder', params),
-  deleteMod: (params: { path: string; gameId?: string | null }) =>
-    invoke<DeleteModResult>('delete_mod', params),
-  openInExplorer: (params: { gameId: string; path: string }) =>
-    invoke<void>('open_in_explorer', params),
-  revealObjectInExplorer: (params: { gameId: string; objectId: string; objectName: string }) =>
-    invoke<string>('reveal_object_in_explorer', params),
-
-  // Mod Metadata & Tags
-  setModCategory: (params: { gameId: string; folderPath: string; category: string }) =>
-    invoke<void>('set_mod_category', params),
-  setObjectModsCategory: (params: { gameId: string; objectId: string; category: string }) =>
-    invoke<number>('set_object_mods_category', params),
-  toggleModSafe: (params: { gameId: string; folderPath: string; safe: boolean }) =>
-    invoke<void>('toggle_mod_safe', params),
-  getActiveModConflicts: (params: { gameId: string }) =>
-    invoke<ConflictInfo[]>('get_active_mod_conflicts', params),
-  suggestRandomMods: (params: { gameId: string; isSafe: boolean }) =>
-    invoke<RandomModProposal[]>('suggest_random_mods', params),
-  listMoveTargetsForObject: (params: { gameId: string; objectId: string }) =>
-    invoke<WorkspaceMoveTarget[]>('list_move_targets_for_object', params),
-  moveModsToObject: (params: { input: MoveModsToObjectInput }) =>
-    invoke<BulkResult>('move_mods_to_object', params),
-
-  // Previews & Ini
-  readModInfo: (params: { gameId: string; folderPath: string }) =>
-    invoke<ModInfo | null>('read_mod_info', params),
-  updateModInfo: (params: { gameId: string; folderPath: string; update: ModInfoUpdate }) =>
-    invoke<ModInfo>('update_mod_info', params),
-  listModIniFiles: (params: { gameId: string; folderPath: string }) =>
-    invoke<IniFileEntry[]>('list_mod_ini_files', params),
-  readModIni: (params: { gameId: string; folderPath: string; fileName: string }) =>
-    invoke<IniDocument>('read_mod_ini', params),
-  writeModIni: (params: {
-    gameId: string;
-    folderPath: string;
-    fileName: string;
-    lineUpdates: IniLineUpdate[];
-  }) => invoke<void>('write_mod_ini', params),
-  listModPreviewImages: (params: { gameId: string; folderPath: string }) =>
-    invoke<string[]>('list_mod_preview_images', params),
-  saveModPreviewImage: (params: {
-    gameId: string;
-    folderPath: string;
-    objectName: string;
-    imageData: number[];
-  }) => invoke<string>('save_mod_preview_image', params),
-  removeModPreviewImage: (params: { gameId: string; folderPath: string; imagePath: string }) =>
-    invoke<void>('remove_mod_preview_image', params),
-  clearModPreviewImages: (params: { gameId: string; folderPath: string }) =>
-    invoke<string[]>('clear_mod_preview_images', params),
-
-  // Thumbnails
-  getModThumbnail: (params: { gameId: string; folderPath: string }) =>
-    invoke<string | null>('get_mod_thumbnail', params),
-  updateModThumbnail: (params: { gameId: string; folderPath: string; sourcePath: string }) =>
-    invoke<string>('update_mod_thumbnail', params),
-  deleteModThumbnail: (params: { folderPath: string }) =>
-    invoke<void>('delete_mod_thumbnail', params),
-  pasteThumbnail: (params: { gameId: string; folderPath: string; imageData: number[] }) =>
-    invoke<string>('paste_thumbnail', params),
-
-  // Bulk Operations
-  bulkToggleMods: (params: { gameId: string; paths: string[]; enable: boolean }) =>
-    invoke<BulkResult>('bulk_toggle_mods', params),
-  bulkDeleteMods: (params: { paths: string[]; gameId?: string }) =>
-    invoke<BulkResult>('bulk_delete_mods', params),
-  bulkUpdateInfo: (params: { gameId: string; paths: string[]; update: ModInfoUpdate }) =>
-    invoke<BulkResult>('bulk_update_info', params),
-  bulkToggleFavorite: (params: { gameId: string; folderPaths: string[]; favorite: boolean }) =>
-    invoke<BulkResult>('bulk_toggle_favorite', params),
-  bulkPinMods: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
-    invoke<BulkResult>('bulk_pin_mods', params),
-
-  // Scanner (Archives)
-  detectArchives: (params: { modsPath: string }) =>
-    invoke<ArchiveInfo[]>('detect_archives_cmd', params),
-  extractArchive: (params: {
-    archivePath: string;
-    modsDir: string;
-    password?: string | null;
-    overwrite: boolean;
-    customName?: string | null;
-    disableAfter: boolean;
-    unpackNested: boolean;
-    onProgress: Channel<ExtractionEvent>;
-  }) => invoke<ExtractionResult>('extract_archive_cmd', params),
-  analyzeArchive: (params: { archivePath: string }) =>
-    invoke<ArchiveAnalysis>('analyze_archive_cmd', params),
-  matchCheckFolder: (params: { folderPath: string; targetObjectName: string; dbJson: string }) =>
-    invoke<MatchCheckResult>('match_check_folder_cmd', params),
-  listFolderEntries: (params: { folderPath: string; gameId: string }) =>
-    invoke<FolderEntry[]>('list_folder_entries_cmd', params),
-  abortExtraction: () => invoke<void>('abort_extraction_cmd'),
-
-  // Scanner (General)
-  cancelScan: () => invoke<void>('cancel_scan_cmd'),
-  runDeepmatchScanner: (params: {
-    gameId: string;
-    gameName: string;
-    gameType: string;
-    modsPath: string;
-    dbJson: string;
-    preserveExistingMappings: boolean;
-    onProgress: Channel<ScanEvent>;
-  }) => invoke<SyncResult>('deepmatch_scanner_cmd', params),
-  runDeepmatchPreview: (params: {
-    gameId: string;
-    modsPath: string;
-    dbJson: string;
-    onProgress: Channel<ScanEvent>;
-    specificPaths?: string[];
-  }) => invoke<ScanPreviewItem[]>('deepmatch_preview_cmd', params),
-  runDeepmatchPreviewForObjects: (params: {
-    input: DeepmatchPreviewForObjectsInput;
-    onProgress: Channel<ScanEvent>;
-  }) => invoke<ScanPreviewItem[]>('deepmatch_preview_for_objects_cmd', params),
-  commitScan: (params: {
-    gameId: string;
-    gameName: string;
-    gameType: string;
-    modsPath: string;
-    items: ConfirmedScanItem[];
-  }) => invoke<SyncResult>('commit_scan_cmd', params),
-  scoreCandidatesBatch: (params: {
-    folderPath: string;
-    candidateNames: string[];
-    dbJson: string;
-  }) => invoke<Partial<Record<string, number>>>('score_candidates_batch_cmd', params),
-  reconcileDiskState: (params: {
-    gameId: string;
-    reason: DiskReconcileReason;
-    changedPaths?: string[];
-    forceFull?: boolean;
-  }) => invoke<DiskReconcileResult>('reconcile_disk_state_cmd', params),
-  importModsFromPaths: (params: {
-    paths: string[];
-    targetDir: string;
-    strategy: ImportStrategy;
-    dbJson?: string | null;
-  }) => invoke<BulkResult>('import_mods_from_paths', params),
-  ingestDroppedFolders: (params: {
-    paths: string[];
-    modsPath: string;
-    gameId: string;
-    gameName: string;
-    gameType: string;
-  }) => invoke<IngestResult>('ingest_dropped_folders', params),
-  // Conflicts & Duplicates
-  detectConflicts: (params: { iniPaths: string[] }) =>
-    invoke<ConflictInfo[]>('detect_conflicts_cmd', params),
-  detectConflictsInFolder: (params: { modsPath: string }) =>
-    invoke<ConflictInfo[]>('detect_conflicts_in_folder_cmd', params),
-  getConflictDetails: (params: { gameId: string; enabledPath: string; disabledPath: string }) =>
-    invoke<ConflictDetails>('get_conflict_details', params),
-  resolveConflict: (params: {
-    gameId: string;
-    keepPath: string;
-    duplicatePath: string;
-    strategy: string;
-  }) => invoke<void>('resolve_conflict', params),
-  ignoreObjectConflict: (params: { gameId: string; objectId: string; modIds: string[] }) =>
-    invoke<void>('ignore_object_conflict', params),
-  revokeObjectConflict: (params: { gameId: string; objectId: string }) =>
-    invoke<void>('revoke_object_conflict', params),
-  listIgnoredObjectConflicts: (params: { gameId: string }) =>
-    invoke<IgnoredConflict[]>('list_ignored_object_conflicts', params),
-
-  // Duplicates Scanner
-  dupScanStart: (params: { gameId: string; modsRoot: string; onEvent: Channel<DupScanEvent> }) =>
-    invoke<void>('dup_scan_start', params),
-  dupScanCancel: () => invoke<void>('dup_scan_cancel'),
-  dupScanGetReport: (params: { pin?: string }) =>
-    invoke<DupScanReport | null>('dup_scan_get_report', params),
-  dupResolveBatch: (params: { gameId: string; requests: ResolutionRequest[] }) =>
-    invoke<ResolutionSummary>('dup_resolve_batch', params),
-  getIgnoredPairs: (params: { gameId: string }) =>
-    invoke<WhitelistEntry[]>('get_ignored_pairs', params),
-  removeIgnoredPair: (params: { entryId: string }) => invoke<number>('remove_ignored_pair', params),
-
-  // Watcher
-  startWatcher: (params: { gameId: string; path: string }) => invoke<void>('start_watcher', params),
-  stopWatcher: () => invoke<void>('stop_watcher'),
-  setWatcherSuppression: (params: { suppressed: boolean }) =>
-    invoke<void>('set_watcher_suppression', params),
-
-  // Collections
-  getCorridorState: (params: { gameId: string; isSafe?: boolean | null }) =>
-    invoke<CorridorSnapshot>('get_corridor_state', params),
-  getApplyProgress: (params: { gameId: string }) =>
-    invoke<ApplyProgressSnapshot | null>('get_apply_progress', params),
-  listCollections: (params: { gameId: string; isSafe?: boolean | null }) =>
-    invoke<CollectionSummary[]>('list_collections', params),
-  getCollectionPreview: (params: { collectionId: string; gameId: string }) =>
-    invoke<CollectionPreview>('get_collection_preview', params),
-  previewApplyCollection: (params: {
-    gameId: string;
-    collectionId: string;
-    isSafe?: boolean | null;
-  }) => invoke<ApplyPreview>('preview_apply_collection', params),
-  createCollection: (params: {
-    gameId: string;
-    name: string;
-    saveMode?: CreateCollectionMode | null;
-    sourceCollectionId?: string | null;
-  }) => invoke<CollectionSummary>('create_collection', params),
-  updateCollection: (params: { gameId: string; id: string; name?: string | null }) =>
-    invoke<CollectionSummary>('update_collection', params),
-  replaceCollectionWithCurrentState: (params: { gameId: string; collectionId: string }) =>
-    invoke<CollectionSummary>('replace_collection_with_current_state', params),
-  deleteCollection: (params: { id: string }) => invoke<void>('delete_collection', params),
-  applyCollection: (params: {
-    gameId: string;
-    collectionId: string;
-    ignoreMissing?: boolean | null;
-  }) => invoke<ApplyResult>('apply_collection', params),
-  resolveRecoveryTask: (params: { taskId: string; action: RecoveryAction }) =>
-    invoke<void>('resolve_recovery_task', params),
-
-  // Security (PIN)
-  setPin: (params: { pin: string; recoveryCode?: string | null }) =>
-    invoke<void>('set_pin', params),
-  verifyPin: (params: { pin: string }) => invoke<boolean>('verify_pin', params),
-  getPinStatus: () => invoke<PinStatus>('get_pin_status'),
-  resetPinWithRecoveryCode: (params: { code: string }) =>
-    invoke<boolean>('reset_pin_with_recovery_code', params),
-
-  // Browser
-  browserOpenTab: (params: { url: string; sessionId?: string | null }) =>
-    invoke<string>('browser_open_tab', params),
-  browserNavigate: (params: { label: string; url: string }) =>
-    invoke<void>('browser_navigate', params),
-  browserGoBack: (params: { label: string }) => invoke<void>('browser_go_back', params),
-  browserGoForward: (params: { label: string }) => invoke<void>('browser_go_forward', params),
-  browserReloadTab: (params: { label: string }) => invoke<void>('browser_reload_tab', params),
-  browserClearData: (params: { label: string }) => invoke<void>('browser_clear_data', params),
-  browserGetHomepage: () => invoke<string>('browser_get_homepage'),
-  browserSetHomepage: (params: { url: string }) => invoke<void>('browser_set_homepage', params),
-  browserImportSelected: (params: { ids: string[]; gameId: string }) =>
-    invoke<void>('browser_import_selected', params),
-  browserListDownloads: () => invoke<BrowserDownloadItem[]>('browser_list_downloads'),
-  browserDeleteDownload: (params: { id: string; deleteFile: boolean }) =>
-    invoke<void>('browser_delete_download', params),
-  browserCancelDownload: (params: { id: string; deleteFile?: boolean | null }) =>
-    invoke<void>('browser_cancel_download', params),
-  browserClearImported: () => invoke<void>('browser_clear_imported'),
-  browserClearOldDownloads: () => invoke<void>('browser_clear_old_downloads'),
-  browserListImportQueue: () => invoke<ImportJobItem[]>('browser_list_import_queue'),
-  browserConfirmImport: (params: {
-    jobId: string;
-    gameId: string;
-    category: string;
-    objectId?: string | null;
-  }) => invoke<void>('browser_confirm_import', params),
-  browserCancelImport: (params: { jobId: string }) => invoke<void>('browser_cancel_import', params),
-
-  // Trash
-  listTrash: () => invoke<TrashMetadata[]>('list_trash'),
-  emptyTrash: () => invoke<number>('empty_trash'),
-  restoreMod: (params: { trashId: string; gameId?: string | null }) =>
-    invoke<void>('restore_mod', params),
-
-  // Themes
-  listCustomThemes: () => invoke<ThemeMetadata[]>('list_custom_themes'),
-  loadCustomTheme: (params: { id: string }) => invoke<CustomTheme>('load_custom_theme', params),
-  saveCustomTheme: (params: { theme: CustomTheme }) => invoke<void>('save_custom_theme', params),
-  deleteCustomTheme: (params: { id: string }) => invoke<void>('delete_custom_theme', params),
-};
+export const commands: Commands = new Proxy({} as Commands, {
+  get(_target, name: string) {
+    const command = gen[name as keyof typeof gen] as (...args: unknown[]) => Promise<unknown>;
+    return (...args: unknown[]) => command(...args).then(unwrap);
+  },
+});

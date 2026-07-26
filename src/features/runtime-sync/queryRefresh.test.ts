@@ -18,7 +18,6 @@ describe('queryRefresh', () => {
     const objectDescriptor: RuntimeEffectDescriptor = {
       rewrites: [],
       invalidatedPaths: [],
-      objectCountDeltas: [],
       thumbnailPaths: [],
       removedQueryKeys: [],
       invalidatedQueryKeys: [],
@@ -27,7 +26,6 @@ describe('queryRefresh', () => {
     const folderDescriptor: RuntimeEffectDescriptor = {
       rewrites: [],
       invalidatedPaths: [],
-      objectCountDeltas: [],
       thumbnailPaths: [],
       removedQueryKeys: [],
       invalidatedQueryKeys: [],
@@ -67,7 +65,6 @@ describe('queryRefresh', () => {
     const activeDescriptor: RuntimeEffectDescriptor = {
       rewrites: [],
       invalidatedPaths: [],
-      objectCountDeltas: [],
       thumbnailPaths: [],
       removedQueryKeys: [],
       invalidatedQueryKeys: [],
@@ -76,7 +73,6 @@ describe('queryRefresh', () => {
     const passiveDescriptor: RuntimeEffectDescriptor = {
       rewrites: [],
       invalidatedPaths: [],
-      objectCountDeltas: [],
       thumbnailPaths: [],
       removedQueryKeys: [],
       invalidatedQueryKeys: [],
@@ -103,7 +99,6 @@ describe('queryRefresh', () => {
     const descriptor: RuntimeEffectDescriptor = {
       rewrites: [],
       invalidatedPaths: [],
-      objectCountDeltas: [],
       thumbnailPaths: [],
       removedQueryKeys: [],
       invalidatedQueryKeys: [],

@@ -6,9 +6,10 @@ const updateObjectCmd = vi.fn();
 const getObject = vi.fn();
 
 vi.mock('../bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
-    createObject: (...args: unknown[]) => createObjectCmd(...args),
-    updateObject: (...args: unknown[]) => updateObjectCmd(...args),
+    createObjectCmd: (...args: unknown[]) => createObjectCmd(...args),
+    updateObjectCmd: (...args: unknown[]) => updateObjectCmd(...args),
     getObject: (...args: unknown[]) => getObject(...args),
   },
 }));
@@ -125,7 +126,7 @@ describe('create/update read-back', () => {
       id: 'obj-1',
       name: 'Ayaka',
     });
-    expect(getObject).toHaveBeenCalledWith({ id: 'obj-1' });
+    expect(getObject).toHaveBeenCalledWith('obj-1');
   });
 
   it('throws when the created row cannot be read back', async () => {

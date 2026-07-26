@@ -68,7 +68,7 @@ describe('useCollections', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_collections', { gameId: 'g-1' });
+    expect(invoke).toHaveBeenCalledWith('list_collections', { gameId: 'g-1', isSafe: null });
     expect(result.current.data?.[0].name).toBe('Abyss Team');
   });
 
@@ -190,6 +190,7 @@ describe('useCollections', () => {
       expect(invoke).toHaveBeenCalledWith('preview_apply_collection', {
         gameId: 'g-1',
         collectionId: 'c-1',
+        isSafe: null,
       }),
     );
 
@@ -200,6 +201,7 @@ describe('useCollections', () => {
       expect(invoke).toHaveBeenCalledWith('preview_apply_collection', {
         gameId: 'g-2',
         collectionId: 'c-1',
+        isSafe: null,
       }),
     );
   });

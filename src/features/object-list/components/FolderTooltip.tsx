@@ -46,7 +46,7 @@ export default function FolderTooltip({
 
       setLoading(true);
       commands
-        .listFolderEntries({ folderPath, gameId })
+        .listFolderEntriesCmd(folderPath, gameId)
         .then((result: FolderEntry[]) => {
           entryCache.set(folderPath, result);
           setEntries(result);

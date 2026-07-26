@@ -3,19 +3,12 @@ import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../../hooks/useActiveGame';
-import {
-  patchObjectRootSwitchState,
-  restoreObjectListQueries,
-  snapshotObjectListQueries,
-} from '../../../hooks/objectQueryCache';
 import { toast } from '../../../stores/useToastStore';
 import type {
   WorkspaceExplorerNode,
   WorkspaceNode,
   WorkspaceObjectNode,
 } from '../../../types/workspace';
-import { toggleDisabledInPath } from '../../../lib/disabledPrefix';
-import { updateFolderCache } from '../../../hooks/folderCache';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
@@ -27,7 +20,6 @@ import {
   buildSwitchRefreshDescriptor,
   executeWorkspaceSwitch,
   isWorkspaceObjectNode,
-  stripModsRoot,
   togglePendingKey,
   type PathSwitchOptions,
   type WorkspaceSwitchSurface,
@@ -91,15 +83,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      updateFolderCache(queryClient, [node.path], (folder) => ({
-        ...folder,
-        path: nextPath,
-        is_enabled: desiredEnabled,
-      }));
-      applyRuntimeEffects(
-        queryClient,
-        buildExplorerSwitchEffectDescriptor(node, desiredEnabled, result.impact),
-      );
+      applyRuntimeEffects(queryClient, buildExplorerSwitchEffectDescriptor(node, result.impact));
       await publishRuntimeDescriptor(
         queryClient,
         buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
@@ -119,14 +103,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      const previousQueries = snapshotObjectListQueries(queryClient);
       const targetPath = await join(activeGame.mod_path, node.folder_path);
-      patchObjectRootSwitchState(queryClient, {
-        objectId: node.id,
-        folderPath: toggleDisabledInPath(node.folder_path, desiredEnabled),
-        enabled: desiredEnabled,
-      });
-
       const result = await executeWorkspaceSwitch({
         game_id: activeGame.id,
         target: {
@@ -139,17 +116,10 @@ export function useWorkspaceSwitchActions() {
       });
 
       if (!result?.primary_path) {
-        restoreObjectListQueries(queryClient, previousQueries);
         return null;
       }
 
       const nextPath = result.primary_path;
-      patchObjectRootSwitchState(queryClient, {
-        objectId: node.id,
-        folderPath: stripModsRoot(nextPath, activeGame.mod_path),
-        enabled: desiredEnabled,
-      });
-
       await applyWorkspaceSwitchEffects(queryClient, result, targetPath, 'objectSwitch');
       toast.success(
         t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
@@ -218,11 +188,6 @@ export function useWorkspaceSwitchActions() {
           return null;
         }
 
-        updateFolderCache(queryClient, [path], (folder) => ({
-          ...folder,
-          path: nextPath,
-          is_enabled: desiredEnabled,
-        }));
         await applyWorkspaceSwitchEffects(queryClient, result, path, 'folderSwitch');
 
         return nextPath;

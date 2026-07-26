@@ -69,7 +69,6 @@ export default function PreviewPanel() {
     updateEditorField,
   } = usePreviewPanelState();
   const actions = useSharedModActions({
-    removeFromCurrentView: true,
     switchSurface: 'preview',
   });
   const canEdit = Boolean(activePath) && !sourceUnavailableMessage;

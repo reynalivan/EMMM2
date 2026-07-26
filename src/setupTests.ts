@@ -26,26 +26,10 @@ vi.mock('@tauri-apps/api/event', () => ({
   emit: vi.fn(),
 }));
 
-// Mock typed commands bridge
-vi.mock('@/lib/bindings', () => ({
-  commands: new Proxy(
-    {},
-    {
-      get: () => vi.fn().mockResolvedValue(null),
-    },
-  ),
-  GameType: {
-    GIMI: 0,
-    SRMI: 1,
-    WWMI: 2,
-    ZZMI: 3,
-    EFMI: 4,
-  },
-  ItemStatus: {
-    Disabled: 0,
-    Enabled: 1,
-  },
-}));
+// NOTE: there is deliberately no global mock of `src/lib/bindings` here. The
+// project has no `@/` path alias, so tests that need `commands` stubbed mock
+// the module by its relative path themselves — keep it that way, a global stub
+// would silently absorb calls the test meant to assert on.
 
 // Mock lucide-react dynamically
 vi.mock('lucide-react', async (importOriginal) => {

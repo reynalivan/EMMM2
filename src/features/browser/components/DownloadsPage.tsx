@@ -20,7 +20,7 @@ export default function DownloadsPage() {
 
   const handleGameConfirm = async (gameId: string) => {
     try {
-      await commands.browserImportSelected({ ids: importIds, gameId });
+      await commands.browserImportSelected(importIds, gameId);
     } catch (err) {
       console.error('Failed to import:', err);
     } finally {

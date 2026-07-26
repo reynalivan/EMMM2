@@ -9,7 +9,7 @@ import { applyRuntimeEffects } from '../workspace-runtime/optimistic/applyOptimi
 import {
   buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
-  buildRuntimeRefreshDescriptor,
+  buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../workspace-runtime/optimistic/descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from '../workspace-runtime/optimistic/descriptor';
@@ -48,10 +48,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     setError(null);
 
     try {
-      const res = await commands.suggestRandomMods({
-        gameId,
-        isSafe: safe,
-      });
+      const res = await commands.suggestRandomMods(gameId, safe);
 
       if (res && res.length > 0) {
         setProposals(res);
@@ -126,16 +123,14 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
       for (const proposal of toApply) {
         const result = await commands.executeWorkspaceSwitch({
-          input: {
-            game_id: gameId,
-            target: {
-              kind: 'mod_path',
-              value: proposal.folder_path,
-            },
-            desired_enabled: true,
-            resolution: 'enable_only_this',
-            origin_surface: 'collections',
+          game_id: gameId,
+          target: {
+            kind: 'mod_path',
+            value: proposal.folder_path,
           },
+          desired_enabled: true,
+          resolution: 'enable_only_this',
+          origin_surface: 'collections',
         });
         if (result.status === 'applied') {
           applyRuntimeEffects(
@@ -288,7 +283,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
 function buildRandomizerRefreshDescriptor(impact: WorkspaceImpact) {
   if (impact.refresh_scopes.length > 0) {
-    return buildRuntimeRefreshDescriptor(impact.refresh_scopes);
+    return buildRefreshDescriptor(impact.refresh_scopes);
   }
 
   return buildRuntimeMutationDescriptor(['folderSwitch', 'collectionsCatalog']);

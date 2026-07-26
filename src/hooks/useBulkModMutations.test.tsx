@@ -16,6 +16,7 @@ const bulkToggleMods = vi.fn();
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
 
 vi.mock('../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     bulkToggleMods: (...args: unknown[]) => bulkToggleMods(...args),
   },
@@ -202,18 +203,11 @@ describe('useBulkToggle', () => {
       });
     });
 
-    expect(bulkToggleMods).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      paths: ['E:\\Mods\\ALBEDO\\Variant'],
-      enable: false,
-    });
+    expect(bulkToggleMods).toHaveBeenCalledWith('game-1', ['E:\\Mods\\ALBEDO\\Variant'], false);
     await waitFor(() => {
       expect(useAppStore.getState().selectedModPath).toBe(newPath);
     });
     expect(useAppStore.getState().gridSelection.has(newPath)).toBe(true);
     expect(useAppStore.getState().gridSelection.has('E:\\Mods\\ALBEDO\\Variant')).toBe(false);
-    expect(queryClient.getQueryData<WorkspaceViewModel>(workspaceKey)?.preview.selected_path).toBe(
-      newPath,
-    );
   });
 });

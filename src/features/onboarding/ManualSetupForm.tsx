@@ -55,10 +55,7 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
     setIsSubmitting(true);
     setServerError(null);
     try {
-      const game = await commands.addGameManual({
-        gameType: data.gameType,
-        path: data.path,
-      });
+      const game = await commands.addGameManual(data.gameType, data.path);
       onSuccess(game);
     } catch (err) {
       setServerError(String(err));

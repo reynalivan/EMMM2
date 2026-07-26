@@ -1,7 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands, sparse } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
-import { updateFolderCache } from '../../../hooks/folderCache';
 import type { GameConfig } from '../../../types/game';
 import type { MasterDbEntry } from '../../object-list/modals/scanReviewHelpers';
 import type { MatchedDbEntry } from '../../../lib/bindings';
@@ -42,7 +41,6 @@ export async function moveModToObjectAndRefresh(params: {
   targetObjectId: string;
   status: 'disabled' | 'only-enable' | 'keep';
   targetSubpath?: string | null;
-  removeFromCurrentView?: boolean;
 }): Promise<void> {
   await moveModsToObjectAndRefresh({
     queryClient: params.queryClient,
@@ -51,7 +49,6 @@ export async function moveModToObjectAndRefresh(params: {
     targetObjectId: params.targetObjectId,
     targetSubpath: params.targetSubpath ?? null,
     status: params.status,
-    removeFromCurrentView: params.removeFromCurrentView,
   });
 }
 
@@ -62,21 +59,14 @@ export async function moveModsToObjectAndRefresh(params: {
   targetObjectId: string;
   targetSubpath: string | null;
   status: 'disabled' | 'only-enable' | 'keep';
-  removeFromCurrentView?: boolean;
 }): Promise<void> {
   const result = await commands.moveModsToObject({
-    input: {
-      game_id: params.gameId,
-      folder_paths: params.folderPaths,
-      target_object_id: params.targetObjectId,
-      target_subpath: params.targetSubpath,
-      status: params.status,
-    },
+    game_id: params.gameId,
+    folder_paths: params.folderPaths,
+    target_object_id: params.targetObjectId,
+    target_subpath: params.targetSubpath,
+    status: params.status,
   });
-
-  if (params.removeFromCurrentView) {
-    updateFolderCache(params.queryClient, params.folderPaths, undefined, true);
-  }
 
   applyRuntimeEffects(
     params.queryClient,
@@ -102,23 +92,23 @@ export async function applyFolderDbSyncMatchAndRefresh(params: {
   folderPath: string;
   match: MatchedDbEntry;
 }): Promise<void> {
-  await commands.applyObjectMatch({
-    input: {
+  await commands.applyObjectMatchCmd(
+    sparse({
       game_id: params.activeGame.id,
       folder_path: params.folderPath,
       matched_entry_key: params.match.matched_entry_key ?? null,
       matched_alias_name: params.match.matched_alias_name ?? params.match.name,
       matched_reason: params.match.match_detail,
       matched_source: 'manual_match',
-    },
-  });
+    }),
+  );
 
   if (params.match.object_type) {
-    await commands.setModCategory({
-      gameId: params.activeGame.id,
-      folderPath: params.folderPath,
-      category: params.match.object_type,
-    });
+    await commands.setModCategory(
+      params.activeGame.id,
+      params.folderPath,
+      params.match.object_type,
+    );
     await applyRuntimeMutationResult(params.queryClient, 'workspaceStructure');
   }
 
@@ -129,19 +119,19 @@ export async function applyFolderDbSyncMatchAndRefresh(params: {
         metaStrings[key] = String(value);
       }
     });
-    await commands.updateModInfo({
-      gameId: params.activeGame.id,
-      folderPath: params.folderPath,
-      update: { metadata: metaStrings },
-    });
+    await commands.updateModInfo(
+      params.activeGame.id,
+      params.folderPath,
+      sparse({ metadata: metaStrings }),
+    );
   }
 
   if (params.match.thumbnail_path) {
-    await commands.updateModThumbnail({
-      gameId: params.activeGame.id,
-      folderPath: params.folderPath,
-      sourcePath: params.match.thumbnail_path,
-    });
+    await commands.updateModThumbnail(
+      params.activeGame.id,
+      params.folderPath,
+      params.match.thumbnail_path,
+    );
   }
 
   await applyRuntimeMutationResult(params.queryClient, 'folderMetadataThumbnail');
@@ -156,12 +146,7 @@ export async function executeImportAndInvalidate(
     objectName?: string;
   },
 ): Promise<void> {
-  const result = await commands.importModsFromPaths({
-    paths,
-    targetDir,
-    strategy: 'Raw',
-    dbJson: undefined,
-  });
+  const result = await commands.importModsFromPaths(paths, targetDir, 'Raw', null);
 
   await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
 

@@ -241,7 +241,7 @@ export default function ScannerFeature() {
           passwordError={passwordError}
           onStop={async () => {
             try {
-              await commands.abortExtraction();
+              await commands.abortExtractionCmd();
             } catch (e) {
               console.error('Failed to abort scan extraction', e);
             }
@@ -267,7 +267,7 @@ export default function ScannerFeature() {
               onOpenFolder={(path) => {
                 if (!activeGame?.id) return;
                 commands
-                  .openInExplorer({ gameId: activeGame.id, path })
+                  .openInExplorer(activeGame.id, path)
                   .catch((e) => console.error('Failed to open folder:', e));
               }}
               onRename={(path, newName) => {

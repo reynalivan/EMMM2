@@ -30,7 +30,7 @@ export function useThumbnail(gameId: string, folderPath: string, enabled = true)
   return useQuery<string | null>({
     queryKey: thumbnailKeys.folder(folderPath),
     queryFn: async () => {
-      const res = await commands.getModThumbnail({ gameId, folderPath });
+      const res = await commands.getModThumbnail(gameId, folderPath);
       return res ? convertFileSrc(res) : null;
     },
     enabled: enabled && !!gameId,

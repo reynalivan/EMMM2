@@ -14,10 +14,7 @@ import { corridorKeys } from '../queryKeys';
 export function useCorridor(gameId: string | null) {
   return useQuery<CorridorSnapshot>({
     queryKey: corridorKeys.state(gameId ?? ''),
-    queryFn: () =>
-      commands.getCorridorState({
-        gameId: gameId ?? '',
-      }),
+    queryFn: () => commands.getCorridorState(gameId ?? '', null),
     enabled: !!gameId,
     staleTime: 5_000,
     placeholderData: keepPreviousData,

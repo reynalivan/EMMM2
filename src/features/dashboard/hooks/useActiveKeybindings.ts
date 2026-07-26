@@ -14,7 +14,7 @@ export function useActiveKeybindings() {
 
   const query = useQuery<ActiveKeyBinding[]>({
     queryKey: ['active-keybindings', activeGame?.id],
-    queryFn: () => commands.getActiveKeybindings({ gameId: activeGame!.id }),
+    queryFn: () => commands.getActiveKeybindings(activeGame!.id),
     enabled: !!activeGame?.id,
     staleTime: 60_000,
   });

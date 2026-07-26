@@ -76,7 +76,7 @@ export function useArchiveImportFlow({
         archivePaths.map(async (path) => {
           const name = await basename(path);
           try {
-            const analysis = await commands.analyzeArchive({ archivePath: path });
+            const analysis = await commands.analyzeArchiveCmd(path);
             return buildArchiveInfo(path, name, analysis);
           } catch (e) {
             console.error(`Failed to analyze archive ${path}:`, e);
@@ -251,7 +251,7 @@ export function useArchiveImportFlow({
 
   const handleStopExtraction = useCallback(async () => {
     try {
-      await commands.abortExtraction();
+      await commands.abortExtractionCmd();
     } catch (e) {
       console.error('Failed to abort extraction:', e);
     }

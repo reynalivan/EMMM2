@@ -14,9 +14,9 @@ vi.mock('../../../hooks/useActiveGame', () => ({
 }));
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
-    listMoveTargetsForObject: (params: { gameId: string; objectId: string }) =>
-      listMoveTargetsForObject(params),
+    listMoveTargetsForObject: (...args: unknown[]) => listMoveTargetsForObject(...args),
   },
 }));
 
@@ -104,9 +104,7 @@ describe('MoveToObjectDialog', () => {
     );
 
     fireEvent.click(screen.getByText('Alpha'));
-    await waitFor(() =>
-      expect(listMoveTargetsForObject).toHaveBeenCalledWith({ gameId: 'g1', objectId: '2' }),
-    );
+    await waitFor(() => expect(listMoveTargetsForObject).toHaveBeenCalledWith('g1', '2'));
     fireEvent.click(await screen.findByText('Alpha/Variants'));
     fireEvent.click(screen.getByText('Disabled'));
     fireEvent.click(screen.getByText('common:actions.move'));

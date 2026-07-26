@@ -89,7 +89,7 @@ function QuickPlayCard({ activeGame }: { activeGame: GameConfig | null }) {
             <p className="text-xs text-base-content/50 mb-3">{t('activity.last_selected')}</p>
             <button
               onClick={() => {
-                commands.launchGame({ gameId: activeGame.id }).catch(console.error);
+                commands.launchGame(activeGame.id).catch(console.error);
               }}
               className="btn btn-primary btn-sm gap-2 w-full"
             >

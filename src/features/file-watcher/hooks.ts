@@ -49,14 +49,9 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
         return;
       }
 
-      await commands
-        .startWatcher({
-          path: activeGame.mod_path,
-          gameId: activeGame.id,
-        })
-        .catch((error: unknown) => {
-          console.error('[DiskReconcile] Failed to start watcher:', error);
-        });
+      await commands.startWatcher(activeGame.mod_path, activeGame.id).catch((error: unknown) => {
+        console.error('[DiskReconcile] Failed to start watcher:', error);
+      });
     };
 
     void init();
@@ -85,11 +80,7 @@ export function applyDiskReconcileResult(
 
   appStore.setDiskSourceUnavailable(result.game_id, null);
   appStore.setDiskReconcileTimestamp(result.game_id, Date.now());
-  applyWorkspacePathRewrites(
-    queryClient,
-    buildDiskReconcilePathRewrites(result, activeGame),
-    'disk_reconcile',
-  );
+  applyWorkspacePathRewrites(buildDiskReconcilePathRewrites(result, activeGame), 'disk_reconcile');
   clearStaleSelections(result, activeGame);
   publishDiskReconcileRefresh(queryClient, result, isPreviewAffected(result, activeGame));
 
@@ -181,11 +172,12 @@ export function useDiskReconcileCoordinator(
 
         try {
           // Disk Reconcile only. This path must never trigger the Deep Match Scanner.
-          const result = await commands.reconcileDiskState({
+          const result = await commands.reconcileDiskStateCmd(
             gameId,
-            reason: currentRefresh.reason,
-            forceFull: currentRefresh.forceFull,
-          });
+            currentRefresh.reason,
+            null,
+            currentRefresh.forceFull,
+          );
           applyDiskReconcileResult(result, queryClient, activeGame);
           markGameHydrated(gameId);
         } catch (error) {

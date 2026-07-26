@@ -50,11 +50,11 @@ export default function ConflictResolveDialog() {
     setDetailsLoading(true);
     setDetails(null);
     try {
-      const result = await commands.getConflictDetails({
-        gameId: activeGameId,
-        enabledPath: conflict.attempted_target,
-        disabledPath: conflict.existing_path,
-      });
+      const result = await commands.getConflictDetails(
+        activeGameId,
+        conflict.attempted_target,
+        conflict.existing_path,
+      );
       setDetails(result);
     } catch (err) {
       toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
@@ -85,12 +85,7 @@ export default function ConflictResolveDialog() {
       const duplicatePath =
         strategy === 'keep_disabled' ? conflict.attempted_target : conflict.existing_path;
 
-      await commands.resolveConflict({
-        gameId: activeGameId,
-        keepPath,
-        duplicatePath,
-        strategy,
-      });
+      await commands.resolveConflict(activeGameId, keepPath, duplicatePath, strategy);
 
       await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
 

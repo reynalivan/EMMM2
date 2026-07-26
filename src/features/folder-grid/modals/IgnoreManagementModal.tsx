@@ -21,7 +21,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
 
   const { data: ignoredConflicts = [], refetch } = useQuery<IgnoredConflict[]>({
     queryKey: ['ignored-conflicts', activeGameId],
-    queryFn: () => commands.listIgnoredObjectConflicts({ gameId: activeGameId! }),
+    queryFn: () => commands.listIgnoredObjectConflicts(activeGameId!),
     enabled: open && !!activeGameId,
   });
 
@@ -40,7 +40,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
   const handleRevoke = async (objectId: string) => {
     if (!activeGameId) return;
     try {
-      await commands.revokeObjectConflict({ gameId: activeGameId, objectId });
+      await commands.revokeObjectConflict(activeGameId, objectId);
       toast.success(t('ignore_management.toast_revoked'));
       refetch();
       void applyRuntimeMutationResult(queryClient, ['workspaceStructure', 'conflictsOnly']);

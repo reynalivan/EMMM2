@@ -45,7 +45,6 @@ import {
 } from './sharedModEffects';
 
 interface SharedModActionsOptions {
-  removeFromCurrentView?: boolean;
   onRenameSuccess?: () => void;
   onDeleteSuccess?: () => void;
   onMoveSuccess?: () => void;
@@ -94,11 +93,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
           try {
             // No cache invalidation needed: the ignored-conflicts query is
             // gated on the management modal being open and refetches on open.
-            await commands.ignoreObjectConflict({
-              gameId: activeGame.id,
-              objectId: duplicates[0].object_id,
-              modIds,
-            });
+            await commands.ignoreObjectConflict(activeGame.id, duplicates[0].object_id, modIds);
           } catch (error) {
             toast.error(t('folder_grid:duplicate_warning.ignore_failed', { error: String(error) }));
           }
@@ -155,7 +150,6 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
         targetObjectId,
         targetSubpath: targetSubpath ?? null,
         status,
-        removeFromCurrentView: options.removeFromCurrentView,
       });
       options.onMoveSuccess?.();
     },
@@ -304,7 +298,6 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
         activeGameId: activeGame.id,
         folder,
         queryClient,
-        removeFromCurrentView: options.removeFromCurrentView ?? false,
         switchSurface: resolvedSwitchSurface,
         switchActions: {
           setNodeEnabled: switchActions.setNodeEnabled,

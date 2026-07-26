@@ -192,10 +192,8 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
       try {
         await runObjectBatchMutation({
           queryClient,
-          applyOptimisticUpdate: (candidate) =>
-            candidate.id === id ? { ...candidate, is_pinned: !object.is_pinned } : candidate,
           mutation: async () => {
-            await commands.pinObject({ id, pin: !object.is_pinned });
+            await commands.pinObject(id, !object.is_pinned);
           },
         });
 

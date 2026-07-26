@@ -54,7 +54,7 @@ export function DashboardQuickActions({
     <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-4">
       <button
         onClick={() => {
-          if (activeGameId) commands.launchGame({ gameId: activeGameId }).catch(console.error);
+          if (activeGameId) commands.launchGame(activeGameId).catch(console.error);
         }}
         disabled={!activeGameId}
         className="flex flex-col items-center gap-3 py-6 px-4 rounded-2xl bg-base-200/60 border border-base-300 hover:bg-success/10 hover:border-success/30 hover:shadow-lg hover:shadow-success/5 hover:scale-[1.04] active:scale-[0.96] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed group"

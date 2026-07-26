@@ -31,7 +31,7 @@ export default function BrowserTab() {
   });
 
   const setHomepageMutation = useMutation({
-    mutationFn: (url: string) => commands.browserSetHomepage({ url }),
+    mutationFn: (url: string) => commands.browserSetHomepage(url),
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['browserHomepage']);
       addToast('success', t('settings:browser.homepage_success'));

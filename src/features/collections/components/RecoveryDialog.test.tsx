@@ -8,6 +8,7 @@ const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     resolveRecoveryTask: (...args: unknown[]) => resolveRecoveryTaskMock(...args),
     appStartupCheck: () => appStartupCheckMock(),
@@ -51,10 +52,7 @@ describe('RecoveryDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
 
     await waitFor(() => {
-      expect(resolveRecoveryTaskMock).toHaveBeenCalledWith({
-        taskId: 'task-1',
-        action: 'ROLLBACK',
-      });
+      expect(resolveRecoveryTaskMock).toHaveBeenCalledWith('task-1', 'ROLLBACK');
     });
 
     expect(onResolved).toHaveBeenCalledWith([]);

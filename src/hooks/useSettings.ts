@@ -27,7 +27,7 @@ export function useSettings() {
   });
 
   const saveSettingsMutation = useMutation({
-    mutationFn: (newSettings: AppSettings) => commands.saveSettings({ settings: newSettings }),
+    mutationFn: (newSettings: AppSettings) => commands.saveSettings(newSettings),
     onSuccess: (_, newSettings) => {
       queryClient.setQueryData(settingsKeys.all, newSettings);
       addToast('success', t('settings:toast.save_success'));
@@ -44,7 +44,7 @@ export function useSettings() {
   });
 
   const setPinMutation = useMutation({
-    mutationFn: (pin: string) => commands.setPin({ pin, recoveryCode: undefined }),
+    mutationFn: (pin: string) => commands.setPin(pin, null),
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['settings']);
       addToast('success', t('settings:toast.pin_success'));
@@ -64,7 +64,7 @@ export function useSettings() {
     mutationFn: async (pin: string) => {
       // Generate a recovery code client-side, pass to backend for hashing
       const code = `EMMM-${crypto.randomUUID().slice(0, 4).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
-      await commands.setPin({ pin, recoveryCode: code });
+      await commands.setPin(pin, code);
       return code;
     },
     onSuccess: async () => {
@@ -82,7 +82,7 @@ export function useSettings() {
   });
 
   const resetPinWithRecoveryMutation = useMutation({
-    mutationFn: (code: string) => commands.resetPinWithRecoveryCode({ code }),
+    mutationFn: (code: string) => commands.resetPinWithRecoveryCode(code),
     onSuccess: async (valid) => {
       if (valid) {
         await publishQueryScopes(queryClient, ['settings']);
@@ -94,7 +94,7 @@ export function useSettings() {
   });
 
   const verifyPinMutation = useMutation({
-    mutationFn: (pin: string) => commands.verifyPin({ pin }),
+    mutationFn: (pin: string) => commands.verifyPin(pin),
   });
 
   const maintenanceMutation = useMutation({
@@ -127,7 +127,7 @@ export function useSettings() {
         ...settingsQuery.data,
         ai: { ...settingsQuery.data.ai, ...newAiConfig },
       };
-      return commands.saveSettings({ settings: newSettings });
+      return commands.saveSettings(newSettings);
     },
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['settings']);
@@ -152,7 +152,7 @@ export function useSettings() {
         theme: normalizeThemeSetting(theme),
       };
 
-      return commands.saveSettings({ settings: newSettings });
+      return commands.saveSettings(newSettings);
     },
     onSuccess: async () => {
       await publishQueryScopes(queryClient, ['settings']);
@@ -192,7 +192,7 @@ export function useSettings() {
           ...settingsQuery.data,
           language,
         };
-        await commands.saveSettings({ settings: newSettings });
+        await commands.saveSettings(newSettings);
         await i18n.changeLanguage(language);
         return newSettings;
       },

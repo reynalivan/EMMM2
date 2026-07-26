@@ -24,6 +24,7 @@ let activeGame: { id: string } | null = { id: 'game-1' };
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
 
 vi.mock('../lib/bindings', () => ({
+  sparse: (value: unknown) => value,
   commands: {
     updateModThumbnail: (...args: unknown[]) => updateModThumbnail(...args),
     pasteThumbnail: (...args: unknown[]) => pasteThumbnail(...args),
@@ -53,11 +54,7 @@ describe('gameId injection', () => {
 
     await result.current.mutateAsync({ folderPath: 'C:/Mods/Ayaka', sourcePath: 'C:/pic.png' });
 
-    expect(updateModThumbnail).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      folderPath: 'C:/Mods/Ayaka',
-      sourcePath: 'C:/pic.png',
-    });
+    expect(updateModThumbnail).toHaveBeenCalledWith('game-1', 'C:/Mods/Ayaka', 'C:/pic.png');
   });
 
   it('sends gameId with pasted thumbnail bytes', async () => {
@@ -66,11 +63,7 @@ describe('gameId injection', () => {
 
     await result.current.mutateAsync({ folderPath: 'C:/Mods/Ayaka', imageData: [1, 2, 3] });
 
-    expect(pasteThumbnail).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      folderPath: 'C:/Mods/Ayaka',
-      imageData: [1, 2, 3],
-    });
+    expect(pasteThumbnail).toHaveBeenCalledWith('game-1', 'C:/Mods/Ayaka', [1, 2, 3]);
   });
 
   it('sends gameId with the info.json update', async () => {
@@ -82,11 +75,7 @@ describe('gameId injection', () => {
       update: { is_favorite: true },
     });
 
-    expect(updateModInfo).toHaveBeenCalledWith({
-      gameId: 'game-1',
-      folderPath: 'C:/Mods/Ayaka',
-      update: { is_favorite: true },
-    });
+    expect(updateModInfo).toHaveBeenCalledWith('game-1', 'C:/Mods/Ayaka', { is_favorite: true });
   });
 });
 

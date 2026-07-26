@@ -1,18 +1,7 @@
-/** Pure payload/patch derivations shared by the folder mutation hooks. */
+/** Pure payload derivations shared by the folder mutation hooks. */
 
 import { toggleDisabledInPath } from '../lib/disabledPrefix';
-import type { ModFolder, ModInfoUpdate } from '../types/mod';
 import type { WorkspacePathRewrite } from '../types/workspace';
-
-/** Cache patch for an info.json update — only the fields the update carries win. */
-export function applyModInfoUpdate(folder: ModFolder, update: ModInfoUpdate): ModFolder {
-  return {
-    ...folder,
-    is_favorite: update.is_favorite ?? folder.is_favorite,
-    is_safe: update.is_safe ?? folder.is_safe,
-    metadata: update.metadata ? { ...folder.metadata, ...update.metadata } : folder.metadata,
-  };
-}
 
 /**
  * Path rewrites for a bulk toggle. The backend reports them when it can; older

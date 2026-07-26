@@ -97,8 +97,7 @@ export default function TopBar() {
               {/* Quick Play */}
               <button
                 onClick={() => {
-                  if (activeGame)
-                    commands.launchGame({ gameId: activeGame.id }).catch(console.error);
+                  if (activeGame) commands.launchGame(activeGame.id).catch(console.error);
                   setMenuOpen(false);
                 }}
                 disabled={!activeGame}

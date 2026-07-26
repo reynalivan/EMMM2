@@ -40,7 +40,6 @@ export function useFolderGridActions({
 }: UseFolderGridActionsOptions) {
   const queryClient = useQueryClient();
   const actions = useSharedModActions({
-    removeFromCurrentView: true,
     onRenameSuccess: clearGridSelection,
     onDeleteSuccess: clearGridSelection,
     onMoveSuccess: clearGridSelection,
@@ -88,11 +87,11 @@ export function useFolderGridActions({
 
       const object = objects.find((candidate) => candidate.id === objectId);
       try {
-        await commands.revealObjectInExplorer({
-          gameId: activeGame.id,
+        await commands.revealObjectInExplorer(
+          activeGame.id,
           objectId,
-          objectName: object?.folder_path ?? objectId,
-        });
+          object?.folder_path ?? objectId,
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         toast.error(message);
@@ -108,7 +107,7 @@ export function useFolderGridActions({
     }
 
     try {
-      await commands.openInExplorer({ gameId: activeGame.id, path: currentAbsPath });
+      await commands.openInExplorer(activeGame.id, currentAbsPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(message);
