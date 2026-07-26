@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO browser_downloads (id, filename, status, started_at) VALUES\n            ('dl-live', 'a.zip', 'in_progress', '2025'),\n            ('dl-new',  'b.zip', 'requested',   '2025'),\n            ('dl-done', 'c.zip', 'finished',    '2025')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "f544b6b905743707d45de14eb6f9f06b3b94af925ff93e8453e43aeb7f0a534b"
+}

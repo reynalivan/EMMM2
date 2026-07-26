@@ -1,20 +1,20 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT game_type FROM games WHERE id = ?",
+  "query": "SELECT status FROM browser_downloads WHERE id = 'dl-done'",
   "describe": {
     "columns": [
       {
-        "name": "game_type",
+        "name": "status",
         "ordinal": 0,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       false
     ]
   },
-  "hash": "cbe64eb4fe75e7aad23479d8e2b4c0e1d0d37a77cdbca4c11816bd2028a07977"
+  "hash": "0c59a5f556b26f29bc54053ab024231bee6f8f6513505ff9783a2181d9036f84"
 }

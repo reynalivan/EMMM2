@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) FROM browser_downloads WHERE status IN ('requested', 'in_progress')\n         UNION ALL\n         SELECT COUNT(*) FROM import_jobs WHERE status IN ('queued', 'extracting', 'matching', 'placing')",
+  "describe": {
+    "columns": [
+      {
+        "name": "COUNT(*)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "41ada357430ae793957fa6e4e5f45c978e769650f315d86c19bcf337dd7fe62e"
+}

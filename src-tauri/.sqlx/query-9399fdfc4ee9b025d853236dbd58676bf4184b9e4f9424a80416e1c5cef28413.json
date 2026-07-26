@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO import_jobs (id, download_id, archive_path, status, created_at, updated_at) \n             VALUES (?, 'dl-1', 'C:\\dummy.zip', 'queued', '2025-01-01T00:00:00', '2025-01-01T00:00:00')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "9399fdfc4ee9b025d853236dbd58676bf4184b9e4f9424a80416e1c5cef28413"
+}

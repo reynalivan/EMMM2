@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT CAST(value AS INTEGER) FROM browser_settings WHERE key = 'retention_days'",
+  "query": "SELECT is_duplicate FROM import_jobs WHERE id = 'job-new'",
   "describe": {
     "columns": [
       {
-        "name": "CAST(value AS INTEGER)",
+        "name": "is_duplicate",
         "ordinal": 0,
         "type_info": "Integer"
       }
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "2564c54a63e0267fcd5ac5b7873dfbbf5d5833595fbb0663b082dcbda2b22b6d"
+  "hash": "31570e3acda1d332551d6bbef1b849da3737b9f9f2bfe0cca255dbc37cac2bd3"
 }

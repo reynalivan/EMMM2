@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT game_type FROM games WHERE id = ?",
+  "query": "SELECT status FROM import_jobs WHERE id = ?",
   "describe": {
     "columns": [
       {
-        "name": "game_type",
+        "name": "status",
         "ordinal": 0,
         "type_info": "Text"
       }
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "cbe64eb4fe75e7aad23479d8e2b4c0e1d0d37a77cdbca4c11816bd2028a07977"
+  "hash": "7366b6071c52be96d67edc7947b109d9d4e83f58c21a95850ddf37d018209cb4"
 }

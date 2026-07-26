@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO browser_downloads (id, filename, status, started_at) VALUES ('dl-1', 'test.zip', 'finished', '2025-01-01T00:00:00')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "8164118b22e9a32ec51aca79763b7b53da168b088ba5530bf1b81ae3d4a34377"
+}

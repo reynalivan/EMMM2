@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT game_type FROM games WHERE id = ?",
+  "query": "SELECT value FROM browser_settings WHERE key = ?",
   "describe": {
     "columns": [
       {
-        "name": "game_type",
+        "name": "value",
         "ordinal": 0,
         "type_info": "Text"
       }
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "cbe64eb4fe75e7aad23479d8e2b4c0e1d0d37a77cdbca4c11816bd2028a07977"
+  "hash": "d10e6439745c9071dc3bc88544b319297a605a182ad9ee38cc6d5046b910735b"
 }

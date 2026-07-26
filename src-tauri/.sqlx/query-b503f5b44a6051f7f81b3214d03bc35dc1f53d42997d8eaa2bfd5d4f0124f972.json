@@ -1,15 +1,15 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT game_id, folder_path FROM objects WHERE id = ?",
+  "query": "SELECT status, error_msg FROM import_jobs WHERE id = ?",
   "describe": {
     "columns": [
       {
-        "name": "game_id",
+        "name": "status",
         "ordinal": 0,
         "type_info": "Text"
       },
       {
-        "name": "folder_path",
+        "name": "error_msg",
         "ordinal": 1,
         "type_info": "Text"
       }
@@ -17,7 +17,10 @@
     "parameters": {
       "Right": 1
     },
-    "nullable": [false, true]
+    "nullable": [
+      false,
+      true
+    ]
   },
-  "hash": "bf22be78f92ae87543a23c28259b97fce44c52fd94b845160f18dec607daed39"
+  "hash": "b503f5b44a6051f7f81b3214d03bc35dc1f53d42997d8eaa2bfd5d4f0124f972"
 }

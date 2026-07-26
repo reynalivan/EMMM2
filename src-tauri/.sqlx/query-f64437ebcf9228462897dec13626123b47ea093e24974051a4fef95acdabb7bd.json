@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE import_jobs\n            SET status = 'failed',\n                error_msg = COALESCE(error_msg, 'Interrupted by app restart'),\n                updated_at = datetime('now')\n          WHERE status IN ('queued', 'extracting', 'matching', 'placing')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "f64437ebcf9228462897dec13626123b47ea093e24974051a4fef95acdabb7bd"
+}

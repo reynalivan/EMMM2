@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE browser_downloads\n            SET status = 'failed',\n                error_msg = COALESCE(error_msg, 'Interrupted by app restart'),\n                finished_at = COALESCE(finished_at, datetime('now'))\n          WHERE status IN ('requested', 'in_progress')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "a8cef36dec6c3761771a415f95a1f088b911d26b5743201bb4919a2d1509f0e3"
+}
