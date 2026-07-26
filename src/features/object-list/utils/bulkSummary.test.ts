@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { othersSuffix, parseTagList, resolveObjectNames, truncateNameList } from './bulkSummary';
+import { parseTagList, resolveObjectNames, truncateNameList } from './bulkSummary';
+
+const others = (extra: number) => `+ ${extra} others`;
 
 const objects = [
   { id: 'a', name: 'Ayaka' },
@@ -18,20 +20,18 @@ describe('resolveObjectNames', () => {
 
 describe('truncateNameList', () => {
   it('lists everything up to four names', () => {
-    expect(truncateNameList(['a', 'b', 'c', 'd'], othersSuffix)).toBe('a, b, c, d');
+    expect(truncateNameList(['a', 'b', 'c', 'd'], others)).toBe('a, b, c, d');
   });
 
   it('truncates longer selections with the caller-supplied tail', () => {
-    expect(truncateNameList(['a', 'b', 'c', 'd', 'e', 'f'], othersSuffix)).toBe(
-      'a, b, c, d + 2 others',
-    );
+    expect(truncateNameList(['a', 'b', 'c', 'd', 'e', 'f'], others)).toBe('a, b, c, d + 2 others');
     expect(truncateNameList(['a', 'b', 'c', 'd', 'e'], (extra) => `and ${extra} more`)).toBe(
       'a, b, c, d and 1 more',
     );
   });
 
   it('handles an empty selection', () => {
-    expect(truncateNameList([], othersSuffix)).toBe('');
+    expect(truncateNameList([], others)).toBe('');
   });
 });
 

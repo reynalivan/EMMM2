@@ -1,5 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { validateObjectName } from './objectService';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createObject, updateObject, validateObjectName } from './objectService';
+
+const createObjectCmd = vi.fn();
+const updateObjectCmd = vi.fn();
+const getObject = vi.fn();
+
+vi.mock('../bindings', () => ({
+  commands: {
+    createObject: (...args: unknown[]) => createObjectCmd(...args),
+    updateObject: (...args: unknown[]) => updateObjectCmd(...args),
+    getObject: (...args: unknown[]) => getObject(...args),
+  },
+}));
 
 /**
  * Tests for validateObjectName — pure function, no mocking needed.
@@ -92,5 +104,46 @@ describe('validateObjectName', () => {
   // Edge: trims whitespace
   it('trims whitespace before validation', () => {
     expect(validateObjectName('  Raiden  ')).toBeNull();
+  });
+});
+
+/**
+ * `get_object` returns `Option<GameObject>`, so the read-back after a write can
+ * come back empty. The wrapper used to declare it non-null, which let a missing
+ * row flow onward as a half-typed object.
+ */
+describe('create/update read-back', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns the row read back after creating', async () => {
+    createObjectCmd.mockResolvedValue('obj-1');
+    getObject.mockResolvedValue({ id: 'obj-1', name: 'Ayaka' });
+
+    await expect(createObject({ name: 'Ayaka' } as never)).resolves.toEqual({
+      id: 'obj-1',
+      name: 'Ayaka',
+    });
+    expect(getObject).toHaveBeenCalledWith({ id: 'obj-1' });
+  });
+
+  it('throws when the created row cannot be read back', async () => {
+    createObjectCmd.mockResolvedValue('obj-1');
+    getObject.mockResolvedValue(null);
+
+    await expect(createObject({ name: 'Ayaka' } as never)).rejects.toThrow('obj-1');
+  });
+
+  it('throws when the updated row cannot be read back', async () => {
+    updateObjectCmd.mockResolvedValue(undefined);
+    getObject.mockResolvedValue(null);
+
+    await expect(updateObject('obj-2', {})).rejects.toThrow('obj-2');
+  });
+
+  it('rejects an invalid rename before touching the backend', async () => {
+    await expect(updateObject('obj-3', { name: 'a' })).rejects.toThrow();
+    expect(updateObjectCmd).not.toHaveBeenCalled();
   });
 });

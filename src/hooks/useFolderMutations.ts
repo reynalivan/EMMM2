@@ -26,6 +26,25 @@ import { withWatcherSuppression } from '../features/file-watcher/watcherSuppress
 import { formatBulkFailureMessage } from './bulkToastMessages';
 import { applyModInfoUpdate } from './folderMutationPayloads';
 
+/**
+ * Getter for the active game id that throws when there is none.
+ *
+ * Every mod mutation below is scoped to the active game on the Rust side, and
+ * the check has to run when the mutation fires rather than at render time — so
+ * this hands back a getter instead of the id itself.
+ */
+function useRequireActiveGameId(): () => string {
+  const { activeGame } = useActiveGame();
+
+  return () => {
+    if (!activeGame?.id) {
+      throw new Error('No active game selected');
+    }
+
+    return activeGame.id;
+  };
+}
+
 // ── Trash ───────────────────────────────────────────────────────
 
 /** Query key for trash listing. */
@@ -87,13 +106,11 @@ export function useUpdateModCategory() {
 /** Hook to update a mod's thumbnail. */
 export function useUpdateModThumbnail() {
   const queryClient = useQueryClient();
-  const { activeGame } = useActiveGame();
+  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; sourcePath: string }) => {
-      if (!activeGame?.id) throw new Error('No active game selected');
-      return commands.updateModThumbnail({ ...params, gameId: activeGame.id });
-    },
+    mutationFn: (params: { folderPath: string; sourcePath: string }) =>
+      commands.updateModThumbnail({ ...params, gameId: requireGameId() }),
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
         [thumbnailKeys.folder(variables.folderPath)],
@@ -135,14 +152,13 @@ export function useToggleModSafe() {
 /** Hook to delete a mod's thumbnail file. */
 export function useDeleteModThumbnail() {
   const queryClient = useQueryClient();
-  const { activeGame } = useActiveGame();
+  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
     mutationFn: async (folderPath: string) => {
-      if (!activeGame?.id) {
-        throw new Error('No active game selected');
-      }
-
+      // Rust resolves the path itself here, but deleting a thumbnail with no
+      // active game still means the caller is in an invalid state.
+      requireGameId();
       await commands.deleteModThumbnail({ folderPath });
     },
     onSuccess: async (_data, folderPath) => {
@@ -158,13 +174,11 @@ export function useDeleteModThumbnail() {
 /** Hook to paste a thumbnail from clipboard bytes. */
 export function usePasteThumbnail() {
   const queryClient = useQueryClient();
-  const { activeGame } = useActiveGame();
+  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; imageData: number[] }) => {
-      if (!activeGame?.id) throw new Error('No active game selected');
-      return commands.pasteThumbnail({ ...params, gameId: activeGame.id });
-    },
+    mutationFn: (params: { folderPath: string; imageData: number[] }) =>
+      commands.pasteThumbnail({ ...params, gameId: requireGameId() }),
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
         [thumbnailKeys.folder(variables.folderPath)],
@@ -179,13 +193,11 @@ export function usePasteThumbnail() {
 
 export function useUpdateModInfo() {
   const queryClient = useQueryClient();
-  const { activeGame } = useActiveGame();
+  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) => {
-      if (!activeGame?.id) throw new Error('No active game selected');
-      return commands.updateModInfo({ ...params, gameId: activeGame.id });
-    },
+    mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) =>
+      commands.updateModInfo({ ...params, gameId: requireGameId() }),
     onSuccess: (_data, variables) => {
       // Targeted: update the specific folder in cache
       updateFolderCache(queryClient, [variables.folderPath], (f: ModFolder) =>

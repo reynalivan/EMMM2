@@ -22,11 +22,6 @@ export function truncateNameList(names: string[], more: (extra: number) => strin
   return `${names.slice(0, MAX_LISTED_NAMES).join(', ')} ${more(names.length - MAX_LISTED_NAMES)}`;
 }
 
-/** Default tail used by delete/tag toasts. */
-export function othersSuffix(extra: number): string {
-  return `+ ${extra} others`;
-}
-
 /** Object tags are stored as a JSON array string; bad data reads as no tags. */
 export function parseTagList(raw: string | null | undefined): string[] {
   try {
