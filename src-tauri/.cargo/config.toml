@@ -1,0 +1,14 @@
+# Compile sqlx queries against the committed .sqlx cache, the same way CI does.
+#
+# Without this, anyone holding a local src-tauri/.env gets DATABASE_URL from it,
+# sqlx connects to the live database, and the macros never consult .sqlx. A cache
+# left stale by a query change then stays invisible locally and only surfaces as a
+# red CI build — which is exactly how it slipped through once already.
+#
+# Added or changed a query? Refresh the cache and commit the result:
+#   SQLX_OFFLINE=false cargo sqlx prepare -- --all-targets
+#
+# `force` is left at its default of false, so an explicit SQLX_OFFLINE in the
+# environment still wins — that is what makes the line above work.
+[env]
+SQLX_OFFLINE = "true"
