@@ -76,10 +76,12 @@ pub async fn bulk_update_info(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
+    op_lock: State<'_, OperationLock>,
     game_id: String,
     paths: Vec<String>,
     update: info_json::ModInfoUpdate,
 ) -> Result<bulk::BulkResult, AppError> {
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
     let result = bulk::bulk_update_info(&config, &game_id, paths, update).await?;
 
     if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &game_id).await? {
@@ -102,10 +104,13 @@ pub async fn bulk_update_info(
 #[tauri::command]
 pub async fn bulk_toggle_favorite(
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    op_lock: State<'_, OperationLock>,
     game_id: String,
     folder_paths: Vec<String>,
     favorite: bool,
 ) -> Result<bulk::BulkResult, AppError> {
+    // Writes info.json inside folders a concurrent toggle/delete may be renaming.
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
     bulk::bulk_toggle_favorite(&pool, game_id, folder_paths, favorite).await
 }
 
@@ -113,9 +118,12 @@ pub async fn bulk_toggle_favorite(
 #[tauri::command]
 pub async fn bulk_pin_mods(
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    op_lock: State<'_, OperationLock>,
     game_id: String,
     folder_paths: Vec<String>,
     pin: bool,
 ) -> Result<bulk::BulkResult, AppError> {
+    // Paths are resolved against the mods root a concurrent toggle/delete may be moving.
+    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
     bulk::bulk_pin(&pool, game_id, folder_paths, pin).await
 }
