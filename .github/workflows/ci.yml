@@ -50,3 +50,42 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  e2e:
+    runs-on: windows-latest
+    # The WDIO suite drives the real Tauri binary through tauri-driver +
+    # msedgedriver. It has no green history on CI yet, so it reports without
+    # blocking the pipeline; drop this flag once it has proven stable.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Separate cache key: this job builds the app with `tauri build --debug`,
+          # which produces different artifacts than the test job's `cargo test`.
+          key: e2e
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Build debug app for WebDriver
+        # Debug build keeps devtools enabled, which tauri-driver requires.
+        # wdio.conf.ts skips its own build step when this binary already exists.
+        run: pnpm tauri build --debug
+
+      - name: Run E2E suite
+        run: pnpm test:e2e
