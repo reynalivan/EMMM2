@@ -1,78 +1,27 @@
-import { useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '../../hooks/useActiveGame';
-import { useStartDedupScan, useCancelDedupScan } from './hooks/useDedup';
-import type { DupScanEvent } from '../../types/scanner';
 import DuplicateReport from './components/DuplicateReport';
 
-export interface DedupFeatureRef {
-  startScan: () => void;
-  cancelScan: () => void;
+export interface DedupScanProgress {
   isScanning: boolean;
+  totalFolders: number;
+  scannedFolders: number;
+  currentFolder: string;
 }
 
-export interface DedupFeatureProps {
+export interface DedupFeatureProps extends DedupScanProgress {
   activeFilter?: 'all' | 'high' | 'medium' | 'low';
 }
 
-const DedupFeature = forwardRef<DedupFeatureRef, DedupFeatureProps>(({ activeFilter }, ref) => {
+// ponytail: presentational only. The scan state lives in the page that owns the
+// start/stop buttons, so there is nothing to mirror back up through a ref.
+export default function DedupFeature({
+  activeFilter,
+  isScanning,
+  totalFolders,
+  scannedFolders,
+  currentFolder,
+}: DedupFeatureProps) {
   const { t } = useTranslation();
-  const { activeGame } = useActiveGame();
-  const startScan = useStartDedupScan();
-  const cancelScan = useCancelDedupScan();
-
-  const [isScanning, setIsScanning] = useState(false);
-  const [totalFolders, setTotalFolders] = useState(0);
-  const [scannedFolders, setScannedFolders] = useState(0);
-  const [currentFolder, setCurrentFolder] = useState('');
-
-  const handleEvent = useCallback((event: DupScanEvent) => {
-    switch (event.event) {
-      case 'started':
-        setTotalFolders(event.data.totalFolders);
-        setScannedFolders(0);
-        break;
-      case 'progress':
-        setScannedFolders(event.data.processedFolders);
-        setCurrentFolder(event.data.currentFolder);
-        break;
-      case 'finished':
-      case 'cancelled':
-        setIsScanning(false);
-        break;
-    }
-  }, []);
-
-  const handleStartScan = useCallback(() => {
-    if (!activeGame) return;
-    setIsScanning(true);
-    setScannedFolders(0);
-    setTotalFolders(0);
-    setCurrentFolder('');
-
-    startScan.mutate(
-      {
-        gameId: activeGame.id,
-        modsRoot: activeGame.mod_path,
-        onEvent: handleEvent,
-      },
-      {
-        onError: () => setIsScanning(false),
-      },
-    );
-  }, [activeGame, handleEvent, startScan]);
-
-  const handleCancelScan = useCallback(() => {
-    cancelScan.mutate(undefined, {
-      onSettled: () => setIsScanning(false),
-    });
-  }, [cancelScan]);
-
-  useImperativeHandle(ref, () => ({
-    startScan: handleStartScan,
-    cancelScan: handleCancelScan,
-    isScanning,
-  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -108,7 +57,4 @@ const DedupFeature = forwardRef<DedupFeatureRef, DedupFeatureProps>(({ activeFil
       {!isScanning && <DuplicateReport activeFilter={activeFilter} />}
     </div>
   );
-});
-
-DedupFeature.displayName = 'DedupFeature';
-export default DedupFeature;
+}

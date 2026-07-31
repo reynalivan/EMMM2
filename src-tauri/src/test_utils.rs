@@ -2,7 +2,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Pool, Sqlite};
 use std::sync::Once;
 
-use crate::common::path_key::{collection_name_key, folder_path_key, object_name_key};
+use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::domain::collection::ProjectedCollectionState;
 use crate::repo::game_repo::{upsert_game, GameRow};
 
@@ -108,7 +108,7 @@ pub async fn insert_test_object(
     .bind(fixture.id)
     .bind(fixture.game_id)
     .bind(fixture.name)
-    .bind(object_name_key(fixture.name))
+    .bind(canonical_name_key(fixture.name))
     .bind(fixture.folder_path)
     .bind(folder_path_key(fixture.folder_path, None))
     .bind(fixture.object_type)
@@ -148,9 +148,7 @@ pub async fn set_test_collection_snapshot(
     state: &ProjectedCollectionState,
 ) -> Result<(), sqlx::Error> {
     let snapshot_json = crate::services::projected_state_service::serialize_snapshot_json(state)
-        .unwrap_or_else(|| {
-            "{\"object_states\":[],\"active_roots\":[],\"summary\":{\"object_count\":0,\"enabled_object_count\":0,\"active_root_count\":0,\"missing_root_count\":0}}".to_string()
-        });
+        .unwrap_or_default();
     let signature = crate::services::projected_state_service::signature_for_projected_state(state);
     let active_root_count = state.summary.active_root_count as i32;
 
@@ -168,31 +166,29 @@ pub async fn set_test_collection_snapshot(
     Ok(())
 }
 
-pub async fn set_test_corridor_pointers_unchecked(
+/// Seeds `corridor_state.active_collection_id`, allowing ids that do not exist
+/// so stale-pointer paths can be exercised.
+pub async fn set_test_corridor_active_unchecked(
     pool: &Pool<Sqlite>,
     game_id: &str,
     is_safe: bool,
     active_collection_id: Option<&str>,
-    undo_collection_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(pool)
         .await?;
 
     let result = sqlx::query(
         r#"
-        INSERT INTO corridor_state (game_id, is_safe, active_collection_id, undo_collection_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO corridor_state (game_id, is_safe, active_collection_id)
+        VALUES (?, ?, ?)
         ON CONFLICT(game_id, is_safe) DO UPDATE SET
-            active_collection_id = excluded.active_collection_id,
-            undo_collection_id = excluded.undo_collection_id
+            active_collection_id = excluded.active_collection_id
         "#,
     )
     .bind(game_id)
-    .bind(is_safe_i32)
+    .bind(is_safe)
     .bind(active_collection_id)
-    .bind(undo_collection_id)
     .execute(pool)
     .await;
 
@@ -231,7 +227,7 @@ pub async fn insert_test_collection(
     )
     .bind(fixture.id)
     .bind(fixture.name)
-    .bind(collection_name_key(fixture.name))
+    .bind(canonical_name_key(fixture.name))
     .bind(fixture.game_id)
     .bind(fixture.is_safe)
     .bind(fixture.is_last_unsaved)

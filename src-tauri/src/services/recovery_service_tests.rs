@@ -36,7 +36,9 @@ async fn pending_startup_tasks_lists_only_open_work() {
         .await
         .expect("complete task");
 
-    let pending = pending_startup_tasks(&pool).await.expect("list pending");
+    let pending = crate::repo::task_repo::get_all_pending_tasks_global(&pool)
+        .await
+        .expect("list pending");
 
     let ids: Vec<_> = pending.iter().map(|task| task.id.as_str()).collect();
     assert_eq!(ids, vec!["t-open"]);
@@ -70,7 +72,9 @@ async fn ignore_marks_the_task_failed_without_touching_the_filesystem() {
         .expect("task exists");
     assert_eq!(task.status, TaskStatus::Failed);
     // An ignored task must not stay in the startup queue.
-    let pending = pending_startup_tasks(&pool).await.expect("list pending");
+    let pending = crate::repo::task_repo::get_all_pending_tasks_global(&pool)
+        .await
+        .expect("list pending");
     assert!(pending.is_empty());
 }
 

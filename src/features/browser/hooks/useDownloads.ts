@@ -19,30 +19,19 @@ export function useDownloads() {
   });
 
   useEffect(() => {
-    // Status changes (finished, failed, canceled, imported)
-    const unlistenStatus = listen<DownloadStatusEvent>('browser:download-status', (event) => {
-      queryClient.setQueryData<BrowserDownloadItem[]>(DOWNLOADS_QUERY_KEY, (old) => {
-        if (!old) return old;
-        return old.map((d) =>
-          d.id === event.payload.id
-            ? {
-                ...d,
-                status: event.payload.status,
-                file_path:
-                  event.payload.file_path !== undefined
-                    ? (event.payload.file_path ?? d.file_path)
-                    : d.file_path,
-              }
-            : d,
-        );
-      });
+    // Status changes (finished, failed, canceled, imported). The backend commits the
+    // row before emitting, so a refetch always reads the new state.
+    const unlistenStatus = listen<DownloadStatusEvent>('browser:download-status', () => {
+      void publishQueryScopes(queryClient, ['browserDownloads']);
     });
 
-    // Progress updates (bytes_received / bytes_total)
+    // ponytail: byte counters are the one thing still patched into the cache.
+    // download_handler.rs emits progress at ~10Hz per active download; invalidating
+    // on each would refetch the whole list dozens of times a second. Every other
+    // field on the row still comes from a refetch driven by the status event.
     const unlistenProgress = listen<DownloadProgressEvent>('browser:download-progress', (event) => {
-      queryClient.setQueryData<BrowserDownloadItem[]>(DOWNLOADS_QUERY_KEY, (old) => {
-        if (!old) return old;
-        return old.map((d) =>
+      queryClient.setQueryData<BrowserDownloadItem[]>(DOWNLOADS_QUERY_KEY, (old) =>
+        old?.map((d) =>
           d.id === event.payload.id
             ? {
                 ...d,
@@ -51,8 +40,8 @@ export function useDownloads() {
                 bytes_total: event.payload.bytes_total,
               }
             : d,
-        );
-      });
+        ),
+      );
     });
 
     return () => {

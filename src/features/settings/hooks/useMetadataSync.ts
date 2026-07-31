@@ -33,12 +33,3 @@ export function useMetadataSyncMutation() {
     },
   });
 }
-
-/**
- * Fetch a missing asset file from the CDN on demand.
- */
-export function useAssetFetch() {
-  return useMutation({
-    mutationFn: (assetName: string) => commands.fetchMissingAsset(assetName),
-  });
-}

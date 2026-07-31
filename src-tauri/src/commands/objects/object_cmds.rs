@@ -63,20 +63,9 @@ pub async fn create_object_cmd(
     watcher: State<'_, crate::services::scanner::watcher::WatcherState>,
     op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
 ) -> Result<String, AppError> {
-    let _lock = op_lock
-        .acquire()
-        .await
-        .map_err(|error| AppError::Io(format!("Operation in progress: {error}")))?;
+    let _lock = op_lock.acquire().await?;
     let _guard = crate::services::scanner::watcher::SuppressionGuard::new(&watcher.suppressor);
-    create_object_cmd_inner(input, &pool, Some(&app)).await
-}
-
-pub async fn create_object_cmd_inner(
-    input: CreateObjectInput,
-    pool: &sqlx::SqlitePool,
-    app_handle: Option<&tauri::AppHandle>,
-) -> Result<String, AppError> {
-    crate::services::objects::mutate::create_object_cmd_inner(pool, app_handle, input).await
+    crate::services::objects::mutate::create_object_cmd_inner(&pool, Some(&app), input).await
 }
 
 #[tauri::command]
@@ -86,15 +75,7 @@ pub async fn update_object_cmd(
     updates: UpdateObjectInput,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> Result<(), AppError> {
-    update_object_cmd_inner(id, &updates, &pool).await
-}
-
-pub async fn update_object_cmd_inner(
-    id: String,
-    updates: &UpdateObjectInput,
-    pool: &sqlx::SqlitePool,
-) -> Result<(), AppError> {
-    crate::services::objects::mutate::update_object(pool, &id, updates).await
+    crate::services::objects::mutate::update_object(&pool, &id, &updates).await
 }
 
 #[tauri::command]

@@ -5,7 +5,7 @@ use super::path_transition::{
     classify_collection_path_transition, logical_collection_path, unique_reference_candidates,
     CollectionPathTransitionKind,
 };
-use super::projection::build_projected_state_from_members;
+use super::projection::persist_projected_state;
 use crate::domain::collection::{CollectionPathRewrite, CollectionReferenceImpact};
 use crate::domain::errors::CollectionError;
 use crate::repo::collection_repo;
@@ -210,25 +210,15 @@ async fn recompute_signature_tx(
         collection_repo::get_corridor_context(&mut *conn, collection_id).await?;
     let mods = collection_repo::get_mods_tx(&mut *conn, collection_id).await?;
     let objects = collection_repo::get_objects_tx(&mut *conn, collection_id).await?;
-    let projected_state = build_projected_state_from_members(&mods, &objects, mods_path.as_deref());
-    let signature = projected_state_service::signature_for_projected_state(&projected_state);
-    let snapshot_json = projected_state_service::serialize_snapshot_json(&projected_state);
-    let roots = projected_state_service::roots_from_projected_state(
-        collection_id,
-        is_safe != 0,
-        &projected_state,
-    );
-    collection_repo::replace_all_state_tx(
+    let projected_state =
+        projected_state_service::build_projected_state(&mods, &objects, mods_path.as_deref());
+    persist_projected_state(
         &mut *conn,
         collection_id,
+        is_safe != 0,
         &mods,
         &objects,
-        &roots,
-        Some(&signature),
-        snapshot_json.as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
-    .await?;
-
-    Ok(())
+    .await
 }

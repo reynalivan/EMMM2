@@ -30,10 +30,10 @@ pub async fn resolve_conflict(
     duplicate_path: String,
     strategy: String,
 ) -> Result<String, AppError> {
-    validate_path(&config, &game_id, &keep_path).map_err(AppError::Security)?;
-    validate_path(&config, &game_id, &duplicate_path).map_err(AppError::Security)?;
+    validate_path(&config, &game_id, &keep_path)?;
+    validate_path(&config, &game_id, &duplicate_path)?;
 
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     let mods_path = crate::repo::game_repo::get_mod_path(pool.inner(), &game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
@@ -218,8 +218,8 @@ pub async fn get_conflict_details(
     enabled_path: String,
     disabled_path: String,
 ) -> Result<ConflictDetails, AppError> {
-    validate_path(&config, &game_id, &enabled_path).map_err(AppError::Security)?;
-    validate_path(&config, &game_id, &disabled_path).map_err(AppError::Security)?;
+    validate_path(&config, &game_id, &enabled_path)?;
+    validate_path(&config, &game_id, &disabled_path)?;
 
     let enabled = scan_folder_detail(&enabled_path, true)?;
     let disabled = scan_folder_detail(&disabled_path, false)?;

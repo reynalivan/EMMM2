@@ -3,23 +3,29 @@ import { commands } from '../../lib/bindings';
 import { queryClient } from '../../lib/queryClient';
 import type { AppSliceCreator } from './sliceTypes';
 
+/** Disk Reconcile bookkeeping for one game. */
+export interface DiskReconcileEntry {
+  /** Epoch ms of the last successful reconcile. */
+  at: number;
+  /** Disk changed since that reconcile, so the next read must re-sync. */
+  pending: boolean;
+  /** Non-null while the mods folder is gone; the message explains why. */
+  unavailable: string | null;
+}
+
+const EMPTY_DISK_RECONCILE: DiskReconcileEntry = { at: 0, pending: false, unavailable: null };
+
 export interface GameSlice {
   // Global Settings (Persisted in config.json)
   activeGameId: string | null;
-  safeMode: boolean;
   autoCloseLauncher: boolean;
-  isStoreInitialized: boolean;
-  theme: 'onyx' | 'light';
 
-  // Disk Reconcile bookkeeping
-  lastDiskReconcileAtByGame: Record<string, number>;
-  pendingDiskReconcileByGame: Record<string, boolean>;
-  diskSourceUnavailableByGame: Record<string, string | null>;
+  // One entry per game so the three fields can never drift apart.
+  diskReconcileByGame: Record<string, DiskReconcileEntry>;
 
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
   setAutoCloseLauncher: (enabled: boolean) => Promise<void>;
-  setTheme: (theme: 'onyx' | 'light') => void;
   setDiskReconcileTimestamp: (gameId: string, timestamp: number) => void;
   markDiskReconcilePending: (gameId: string, dirty: boolean) => void;
   setDiskSourceUnavailable: (gameId: string, message: string | null) => void;
@@ -27,14 +33,9 @@ export interface GameSlice {
 
 export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
   activeGameId: null,
-  safeMode: true,
   autoCloseLauncher: false,
-  isStoreInitialized: false,
-  theme: 'onyx',
 
-  lastDiskReconcileAtByGame: {},
-  pendingDiskReconcileByGame: {},
-  diskSourceUnavailableByGame: {},
+  diskReconcileByGame: {},
 
   initStore: async () => {
     try {
@@ -42,9 +43,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
 
       set({
         activeGameId: settings.active_game_id,
-        safeMode: settings.safe_mode.enabled ?? false,
         autoCloseLauncher: settings.auto_close_launcher ?? false,
-        isStoreInitialized: true,
       });
 
       if (settings.active_game_id) {
@@ -61,7 +60,6 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
       }
     } catch (err) {
       console.error('Failed to init store from backend:', err);
-      set({ isStoreInitialized: true });
     }
   },
 
@@ -118,39 +116,33 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
     }
   },
 
-  setTheme: (theme) => set({ theme }),
-
+  // A successful reconcile resets the whole entry, so it replaces rather than patches.
   setDiskReconcileTimestamp: (gameId, timestamp) =>
     set((state) => ({
-      lastDiskReconcileAtByGame: {
-        ...state.lastDiskReconcileAtByGame,
-        [gameId]: timestamp,
-      },
-      pendingDiskReconcileByGame: {
-        ...state.pendingDiskReconcileByGame,
-        [gameId]: false,
-      },
-      diskSourceUnavailableByGame: {
-        ...state.diskSourceUnavailableByGame,
-        [gameId]: null,
+      diskReconcileByGame: {
+        ...state.diskReconcileByGame,
+        [gameId]: { at: timestamp, pending: false, unavailable: null },
       },
     })),
   markDiskReconcilePending: (gameId, dirty) =>
     set((state) => ({
-      pendingDiskReconcileByGame: {
-        ...state.pendingDiskReconcileByGame,
-        [gameId]: dirty,
+      diskReconcileByGame: {
+        ...state.diskReconcileByGame,
+        [gameId]: {
+          ...(state.diskReconcileByGame[gameId] ?? EMPTY_DISK_RECONCILE),
+          pending: dirty,
+        },
       },
     })),
   setDiskSourceUnavailable: (gameId, message) =>
     set((state) => ({
-      diskSourceUnavailableByGame: {
-        ...state.diskSourceUnavailableByGame,
-        [gameId]: message,
-      },
-      pendingDiskReconcileByGame: {
-        ...state.pendingDiskReconcileByGame,
-        [gameId]: false,
+      diskReconcileByGame: {
+        ...state.diskReconcileByGame,
+        [gameId]: {
+          ...(state.diskReconcileByGame[gameId] ?? EMPTY_DISK_RECONCILE),
+          unavailable: message,
+          pending: false,
+        },
       },
     })),
 });

@@ -56,7 +56,7 @@ pub async fn get_live_active_mod_rows(
     let rows = if let Some(is_safe) = is_safe {
         sqlx::query_as(&format!("{base} AND is_safe = ?"))
             .bind(game_id)
-            .bind(if is_safe { 1i32 } else { 0i32 })
+            .bind(is_safe)
             .fetch_all(pool)
             .await?
     } else {

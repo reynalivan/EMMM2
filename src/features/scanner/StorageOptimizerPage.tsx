@@ -1,32 +1,77 @@
-import { useRef, useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
 import { ChevronLeft, HardDrive, Play, StopCircle, EyeOff } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useIgnoredPairs } from './hooks/useDedup';
-import DedupFeature, { type DedupFeatureRef } from './DedupFeature';
+import { useCancelDedupScan, useIgnoredPairs, useStartDedupScan } from './hooks/useDedup';
+import type { DupScanEvent } from '../../types/scanner';
+import DedupFeature, { type DedupScanProgress } from './DedupFeature';
 import { IgnoredPairsModal } from './components/IgnoredPairsModal';
 import { useTranslation } from 'react-i18next';
+
+const IDLE_PROGRESS: DedupScanProgress = {
+  isScanning: false,
+  totalFolders: 0,
+  scannedFolders: 0,
+  currentFolder: '',
+};
 
 export default function StorageOptimizerPage() {
   const { t } = useTranslation(['scanner']);
   const { setWorkspaceView } = useAppStore();
   const { activeGame } = useActiveGame();
-  const scannerRef = useRef<DedupFeatureRef>(null);
-  const [isScanning, setIsScanning] = useState(false);
+  const startScan = useStartDedupScan();
+  const cancelScan = useCancelDedupScan();
+  const [progress, setProgress] = useState<DedupScanProgress>(IDLE_PROGRESS);
   const [showIgnoredModal, setShowIgnoredModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'high' | 'medium' | 'low'>('all');
 
   const { data: ignoredPairs } = useIgnoredPairs(activeGame?.id || '');
+  const isScanning = progress.isScanning;
 
-  // Sync internal state with ref for UI responsiveness
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (scannerRef.current) {
-        setIsScanning(scannerRef.current.isScanning);
-      }
-    }, 100);
-    return () => clearInterval(interval);
+  const handleEvent = useCallback((event: DupScanEvent) => {
+    switch (event.event) {
+      case 'started':
+        setProgress((current) => ({
+          ...current,
+          totalFolders: event.data.totalFolders,
+          scannedFolders: 0,
+        }));
+        break;
+      case 'progress':
+        setProgress((current) => ({
+          ...current,
+          scannedFolders: event.data.processedFolders,
+          currentFolder: event.data.currentFolder,
+        }));
+        break;
+      case 'finished':
+      case 'cancelled':
+        setProgress((current) => ({ ...current, isScanning: false }));
+        break;
+    }
   }, []);
+
+  const handleStartScan = useCallback(() => {
+    if (!activeGame) return;
+    setProgress({ ...IDLE_PROGRESS, isScanning: true });
+
+    startScan.mutate(
+      {
+        gameId: activeGame.id,
+        modsRoot: activeGame.mod_path,
+        onEvent: handleEvent,
+      },
+      {
+        onError: () => setProgress((current) => ({ ...current, isScanning: false })),
+      },
+    );
+  }, [activeGame, handleEvent, startScan]);
+
+  const handleCancelScan = useCallback(() => {
+    cancelScan.mutate(undefined, {
+      onSettled: () => setProgress((current) => ({ ...current, isScanning: false })),
+    });
+  }, [cancelScan]);
 
   return (
     <div className="h-full overflow-y-auto bg-base-100 animate-in fade-in duration-500">
@@ -70,7 +115,7 @@ export default function StorageOptimizerPage() {
             {!isScanning ? (
               <button
                 className="btn btn-primary btn-md shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all gap-2 px-6 h-12 rounded-xl"
-                onClick={() => scannerRef.current?.startScan()}
+                onClick={handleStartScan}
               >
                 <Play size={18} fill="currentColor" />
                 <span className="text-sm font-black uppercase tracking-wider">
@@ -80,7 +125,7 @@ export default function StorageOptimizerPage() {
             ) : (
               <button
                 className="btn btn-error btn-outline btn-md shadow-xl shadow-error/10 hover:bg-error hover:text-error-content hover:scale-105 active:scale-95 transition-all gap-2 px-6 h-12 rounded-xl"
-                onClick={() => scannerRef.current?.cancelScan()}
+                onClick={handleCancelScan}
               >
                 <StopCircle size={18} />
                 <span className="text-sm font-black uppercase tracking-wider">
@@ -116,7 +161,7 @@ export default function StorageOptimizerPage() {
 
         {/* ── Main Feature Content ────────────────────────────────────── */}
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
-          <DedupFeature ref={scannerRef} activeFilter={activeTab} />
+          <DedupFeature activeFilter={activeTab} {...progress} />
         </div>
       </div>
 

@@ -29,8 +29,6 @@ export type {
   DiskReconcileResult,
   DiskReconcileStatus,
   GameObject,
-  ImportStrategy,
-  IngestResult,
   IniDocument,
   IniFileEntry,
   IniLineUpdate,

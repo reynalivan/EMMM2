@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { commands } from '../../lib/bindings';
 import { useActiveGame } from '../../hooks/useActiveGame';
+import { useSafeMode } from '../../hooks/settingsQuery';
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
 import { ItemStatus, type ObjectFilter } from '../../types/object';
@@ -99,8 +100,8 @@ export function useWorkspaceSelectionInput(): WorkspaceViewModelSelectionInput {
 
 export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
   const { activeGame } = useActiveGame();
-  const { safeMode, selectedObjectType, objectMetaFilters, objectSortBy, objectStatusFilter } =
-    useAppStore();
+  const safeMode = useSafeMode();
+  const { selectedObjectType, objectMetaFilters, objectSortBy, objectStatusFilter } = useAppStore();
   const selection = useWorkspaceSelectionInput();
   const filterInput = {
     gameId: options?.filterOverrides?.gameId ?? activeGame?.id ?? null,

@@ -1,6 +1,6 @@
 import { FolderOpen, AlertTriangle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictGroup } from '../../../types/mod';
+import type { ConflictGroup } from '../../../types/object';
 import { openWorkspaceConflictDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import WorkspaceSourceUnavailableBanner from './WorkspaceSourceUnavailableBanner';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalPathKey, pathStartsWith, pathsEqual, relativePathFromRoot } from './pathKey';
+import { canonicalPathKey, pathStartsWith, pathsEqual } from './pathKey';
 
 describe('pathKey', () => {
   it('canonicalizes path with ASCII-only case folding and preserves unicode', () => {
@@ -18,8 +18,5 @@ describe('pathKey', () => {
     expect(
       pathStartsWith('E:/Mods/한국Character', 'e:\\mods\\한국character\\日本語MOD\\Assets'),
     ).toBe(true);
-    expect(
-      relativePathFromRoot('E:/Mods/한국Character', 'e:\\mods\\한국character\\日本語MOD\\Assets'),
-    ).toBe('日本語mod/assets');
   });
 });

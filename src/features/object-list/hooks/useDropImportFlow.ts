@@ -123,11 +123,7 @@ export function useDropImportFlow({
       try {
         await withWatcherSuppression({ releaseDelayMs: null }, async () => {
           folderPaths.push(
-            ...(await ingestLooseFiles(
-              activeGame,
-              looseFiles,
-              tempStagingPath(activeGame.mod_path),
-            )),
+            ...(await ingestLooseFiles(looseFiles, tempStagingPath(activeGame.mod_path))),
           );
 
           setIsSyncing(true);

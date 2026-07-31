@@ -46,44 +46,27 @@ async fn test_mod_repo_crud() {
     .unwrap();
 
     // Insert Mod
-    insert_new_mod(
+    crate::test_utils::insert_test_mod(
         &pool,
-        "mod1",
-        "g1",
-        "obj1",
-        "My Mod",
-        "Mods/Obj1/Mod1",
-        Some("C:"),
-        crate::domain::models::ItemStatus::Enabled,
-        true,
-        "manual",
+        &crate::test_utils::TestModFixture {
+            id: "mod1",
+            game_id: "g1",
+            object_id: Some("obj1"),
+            actual_name: "My Mod",
+            folder_path: "Mods/Obj1/Mod1",
+            status: crate::domain::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some("C:"),
+        },
     )
     .await
     .unwrap();
-
-    // Set mod object id manually
-    // (Already set in insert_new_mod)
-
-    // Test get_object_id_by_path
-    // We pass "Mods/Obj1/Mod1" as the relative path.
-    // And "C:" as the mods_path to get a consistent key.
-    let obj_id = get_object_id_by_path(&pool, "g1", "Mods/Obj1/Mod1")
-        .await
-        .unwrap();
-    assert_eq!(obj_id.as_deref(), Some("obj1"));
 
     // Test get_mod_by_object_id
     let mod_info = get_mod_by_object_id(&pool, "obj1").await.unwrap();
     assert!(mod_info.is_some());
     assert_eq!(mod_info.unwrap().1, "Mods/Obj1/Mod1");
-
-    // Test favorite & pin
-    set_favorite_by_path(&pool, "g1", "Mods/Obj1/Mod1", true)
-        .await
-        .unwrap();
-    set_pinned_by_path(&pool, "g1", "Mods/Obj1/Mod1", true)
-        .await
-        .unwrap();
 
     // Update path and status
     update_mod_path_status_and_reason(
@@ -138,17 +121,19 @@ async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
     .await
     .unwrap();
 
-    insert_new_mod(
+    crate::test_utils::insert_test_mod(
         &pool,
-        "child_mod",
-        "g_unicode",
-        "obj_unicode", // dummy object id
-        "日本語Variant",
-        "한국Character/日本語Root/VariantA",
-        Some("C:"),
-        crate::domain::models::ItemStatus::Enabled,
-        true,
-        "manual",
+        &crate::test_utils::TestModFixture {
+            id: "child_mod",
+            game_id: "g_unicode",
+            object_id: Some("obj_unicode"),
+            actual_name: "日本語Variant",
+            folder_path: "한국Character/日本語Root/VariantA",
+            status: crate::domain::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some("C:"),
+        },
     )
     .await
     .unwrap();
@@ -179,77 +164,6 @@ async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
         updated_key,
         folder_path_key("한국Renamed/日本語Root/VariantA", Some("C:"))
     );
-}
-
-#[tokio::test]
-async fn update_status_for_object_matches_unicode_object_folder_with_ascii_case_variants() {
-    let pool = setup_pool().await;
-
-    let game = GameRow {
-        id: "g_status".into(),
-        name: "Game Status".into(),
-        game_type: crate::domain::models::GameType::GIMI,
-        path: "C:\\GameStatus".into(),
-        mods_path: Some("C:".into()),
-        game_exe: None,
-        launcher_path: None,
-        loader_exe: None,
-        launch_args: None,
-    };
-    upsert_game(&pool, &game).await.unwrap();
-
-    // Create object for FK
-    create_object(
-        &pool,
-        "obj_status",
-        "g_status",
-        "Obj",
-        "한국Character",
-        "Character",
-        None,
-        None,
-        "{}",
-        None,
-        None,
-        None,
-    )
-    .await
-    .unwrap();
-
-    insert_new_mod(
-        &pool,
-        "status_mod",
-        "g_status",
-        "obj_status", // dummy object id
-        "中文Mod",
-        "한국Character/中文Mod",
-        Some("C:"),
-        crate::domain::models::ItemStatus::Enabled,
-        true,
-        "manual",
-    )
-    .await
-    .unwrap();
-
-    let mut conn = pool.acquire().await.unwrap();
-    update_status_for_object(
-        &mut conn,
-        "g_status",
-        "한국character",
-        crate::domain::models::ItemStatus::Disabled,
-    )
-    .await
-    .unwrap();
-    drop(conn);
-
-    let status: crate::domain::models::ItemStatus =
-        sqlx::query_scalar("SELECT status FROM mods WHERE id = ?")
-            .bind("status_mod")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-
-    assert_eq!(status, crate::domain::models::ItemStatus::Disabled);
 }
 
 #[tokio::test]
@@ -288,33 +202,37 @@ async fn test_repo_mod_status_consistency() {
     .unwrap();
 
     // 1. Insert Enabled mod
-    insert_new_mod(
+    crate::test_utils::insert_test_mod(
         &pool,
-        "mod_enabled",
-        "g_consist",
-        "obj_consist",
-        "Enabled Mod",
-        "Mods/EnabledMod",
-        Some("C:"),
-        crate::domain::models::ItemStatus::Enabled,
-        true,
-        "manual",
+        &crate::test_utils::TestModFixture {
+            id: "mod_enabled",
+            game_id: "g_consist",
+            object_id: Some("obj_consist"),
+            actual_name: "Enabled Mod",
+            folder_path: "Mods/EnabledMod",
+            status: crate::domain::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some("C:"),
+        },
     )
     .await
     .unwrap();
 
     // 2. Insert Disabled mod
-    insert_new_mod(
+    crate::test_utils::insert_test_mod(
         &pool,
-        "mod_disabled",
-        "g_consist",
-        "obj_consist",
-        "Disabled Mod",
-        "Mods/DisabledMod",
-        Some("C:"),
-        crate::domain::models::ItemStatus::Disabled,
-        true,
-        "manual",
+        &crate::test_utils::TestModFixture {
+            id: "mod_disabled",
+            game_id: "g_consist",
+            object_id: Some("obj_consist"),
+            actual_name: "Disabled Mod",
+            folder_path: "Mods/DisabledMod",
+            status: crate::domain::models::ItemStatus::Disabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some("C:"),
+        },
     )
     .await
     .unwrap();

@@ -20,7 +20,10 @@ async fn test_lock_contention() {
     let result = lock2.acquire().await;
     assert!(result.is_err(), "Second acquisition should fail");
     assert!(
-        result.unwrap_err().contains("Operation in progress"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Operation in progress"),
         "Error should mention operation in progress"
     );
 }

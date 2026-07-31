@@ -14,43 +14,6 @@ pub struct MoveModsToObjectParams<'a> {
     pub status: Option<&'a str>,
 }
 
-pub struct MoveModToObjectParams<'a> {
-    pub game_id: &'a str,
-    pub folder_path: &'a str,
-    pub target_object_id: &'a str,
-    pub status: Option<&'a str>,
-}
-
-pub async fn move_mod_to_object_service(
-    config: &ConfigService,
-    pool: &sqlx::SqlitePool,
-    op_lock: &OperationLock,
-    watcher: &WatcherState,
-    params: MoveModToObjectParams<'_>,
-) -> Result<(), AppError> {
-    let folder_paths = vec![params.folder_path.to_string()];
-    let result = move_mods_to_object_service(
-        config,
-        pool,
-        op_lock,
-        watcher,
-        MoveModsToObjectParams {
-            game_id: params.game_id,
-            folder_paths: &folder_paths,
-            target_object_id: params.target_object_id,
-            target_subpath: None,
-            status: params.status,
-        },
-    )
-    .await?;
-
-    if let Some(failure) = result.failures.into_iter().next() {
-        return Err(failure.error);
-    }
-
-    Ok(())
-}
-
 pub async fn move_mods_to_object_service(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
@@ -58,7 +21,7 @@ pub async fn move_mods_to_object_service(
     watcher: &WatcherState,
     params: MoveModsToObjectParams<'_>,
 ) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
-    let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
+    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
 
     if params.folder_paths.is_empty() {
@@ -218,8 +181,7 @@ async fn move_one_mod_to_object(
     use crate::common::normalizer::is_disabled_folder;
     use crate::domain::models::ItemStatus;
 
-    let current_path =
-        validate_path(config, game_id, folder_path).map_err(AppError::Security)?;
+    let current_path = validate_path(config, game_id, folder_path)?;
     let old_object_id =
         crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id).await?;
     let mod_folder_name = current_path
@@ -265,7 +227,7 @@ async fn move_one_mod_to_object(
     }
 
     let mod_id_status =
-        crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, &old_rel, game_id).await?;
+        crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, &old_rel, game_id).await?;
     if let Some((mod_id, _, _)) = mod_id_status {
         crate::repo::mod_repo::set_mod_object(pool, &mod_id, target_object_id).await?;
     }

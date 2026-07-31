@@ -9,19 +9,22 @@
  * each collection, not a runtime cache dimension.
  */
 
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  keepPreviousData,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { toast } from '../../../stores/useToastStore';
-import { collectionKeys, corridorKeys } from '../queryKeys';
+import { collectionKeys } from '../queryKeys';
 import { commands } from '../../../lib/bindings';
 import {
   extractFileInUsePayload,
   extractMissingModsPayload,
   formatAppError,
 } from '../../../lib/appError';
-import {
-  publishQueryInvalidations,
-  publishRuntimeDescriptor,
-} from '../../runtime-sync/queryRefresh';
+import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
@@ -29,46 +32,32 @@ import {
 import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import { openWorkspaceFileInUseDialog } from '../../workspace-runtime/state/workspaceDialogs';
+import type { RuntimeEffectDescriptor } from '../../../lib/runtimeEffects';
 import type {
   CollectionSummary,
   CollectionPreview,
   ApplyPreview,
   ApplyResult,
   ApplyProgressSnapshot,
-  CorridorSnapshot,
 } from '../../../types/collection';
 import type { CollectionSaveMode } from '../types';
 
-async function refetchStrictCorridorState(
-  queryClient: ReturnType<typeof useQueryClient>,
-  gameId: string,
-): Promise<CorridorSnapshot> {
-  const snapshot = await queryClient.fetchQuery({
-    queryKey: corridorKeys.state(gameId),
-    queryFn: () => commands.getCorridorState(gameId, null),
-    staleTime: 0,
-  });
-  queryClient.setQueryData(corridorKeys.state(gameId), snapshot);
-  return snapshot;
+/**
+ * Every collection mutation refreshes through the runtime bus, so the refreshed
+ * key set lives in the descriptor table and nowhere else. `collectionsChanged`
+ * already invalidates the whole `collectionKeys.all` prefix — list, preview and
+ * apply-preview included.
+ */
+async function publishCollectionMutation(
+  queryClient: QueryClient,
+  descriptor: RuntimeEffectDescriptor,
+): Promise<void> {
+  applyRuntimeEffects(queryClient, descriptor);
+  await publishRuntimeDescriptor(queryClient, descriptor, 'active');
 }
 
-async function refetchCollectionList(
-  queryClient: ReturnType<typeof useQueryClient>,
-  gameId: string,
-): Promise<void> {
-  await publishQueryInvalidations(queryClient, [collectionKeys.list(gameId)], 'active');
-}
-
-async function refetchCollectionPreview(
-  queryClient: ReturnType<typeof useQueryClient>,
-  collectionId: string,
-  gameId: string,
-): Promise<void> {
-  await publishQueryInvalidations(
-    queryClient,
-    [[...collectionKeys.preview(collectionId), gameId]],
-    'active',
-  );
+function toastMutationError(err: unknown): void {
+  toast.error(formatAppError(err));
 }
 
 // ── Query Hooks ────────────────────────────────────────────────────────────
@@ -124,23 +113,15 @@ export function useCreateCollection() {
       sourceCollectionId?: string | null;
     }) => commands.createCollection(gameId, name, saveMode ?? null, sourceCollectionId ?? null),
 
-    onSuccess: async (result: CollectionSummary, variables) => {
-      await publishRuntimeDescriptor(
+    onSuccess: async (result: CollectionSummary) => {
+      await publishCollectionMutation(
         queryClient,
         buildRuntimeMutationDescriptor('collectionsCatalog'),
-        'none',
       );
-      await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId),
-        refetchCollectionList(queryClient, variables.gameId),
-        refetchCollectionPreview(queryClient, result.id, variables.gameId),
-      ]);
       toast.success(`Created collection: ${result.name}`);
     },
 
-    onError: (err: unknown) => {
-      toast.error(formatAppError(err));
-    },
+    onError: toastMutationError,
   });
 }
 
@@ -174,17 +155,14 @@ export function useUpdateCollection() {
       commands.updateCollection(gameId, id, name ?? null),
 
     onSuccess: async (result: CollectionSummary) => {
-      await publishRuntimeDescriptor(
+      await publishCollectionMutation(
         queryClient,
         buildRuntimeMutationDescriptor('collectionsOnly'),
-        'none',
       );
       toast.success(`Updated collection: ${result.name}`);
     },
 
-    onError: (err: unknown) => {
-      toast.error(formatAppError(err));
-    },
+    onError: toastMutationError,
   });
 }
 
@@ -196,23 +174,15 @@ export function useReplaceCollectionWithCurrentState() {
     mutationFn: ({ gameId, collectionId }: { gameId: string; collectionId: string }) =>
       commands.replaceCollectionWithCurrentState(gameId, collectionId),
 
-    onSuccess: async (result: CollectionSummary, variables) => {
-      await publishRuntimeDescriptor(
+    onSuccess: async (result: CollectionSummary) => {
+      await publishCollectionMutation(
         queryClient,
         buildRuntimeMutationDescriptor('collectionsState'),
-        'active',
       );
-      await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId),
-        refetchCollectionList(queryClient, variables.gameId),
-        refetchCollectionPreview(queryClient, result.id, variables.gameId),
-      ]);
       toast.success(`Updated collection: ${result.name}`);
     },
 
-    onError: (err: unknown) => {
-      toast.error(formatAppError(err));
-    },
+    onError: toastMutationError,
   });
 }
 
@@ -224,22 +194,15 @@ export function useDeleteCollection() {
     mutationFn: ({ gameId: _gameId, id }: { gameId: string; id: string }) =>
       commands.deleteCollection(id),
 
-    onSuccess: async (_result, variables) => {
-      await publishRuntimeDescriptor(
+    onSuccess: async () => {
+      await publishCollectionMutation(
         queryClient,
         buildRuntimeMutationDescriptor('collectionsCatalog'),
-        'none',
       );
-      await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId),
-        refetchCollectionList(queryClient, variables.gameId),
-      ]);
       toast.success('Collection deleted');
     },
 
-    onError: (err: unknown) => {
-      toast.error(formatAppError(err));
-    },
+    onError: toastMutationError,
   });
 }
 
@@ -258,18 +221,14 @@ export function useApplyCollection() {
       ignoreMissing?: boolean;
     }) => commands.applyCollection(gameId, collectionId, ignoreMissing ?? false),
 
-    onSuccess: async (result: ApplyResult, variables) => {
-      const descriptor = mergeRuntimeEffectDescriptors(
-        buildRuntimeMutationDescriptor('collectionsState'),
-        buildWorkspacePathRewritesDescriptor(result.runtime_path_rewrites ?? [], []),
+    onSuccess: async (result: ApplyResult) => {
+      await publishCollectionMutation(
+        queryClient,
+        mergeRuntimeEffectDescriptors(
+          buildRuntimeMutationDescriptor('collectionsState'),
+          buildWorkspacePathRewritesDescriptor(result.runtime_path_rewrites ?? [], []),
+        ),
       );
-      applyRuntimeEffects(queryClient, descriptor);
-      await publishRuntimeDescriptor(queryClient, descriptor, 'active');
-      await Promise.all([
-        refetchStrictCorridorState(queryClient, variables.gameId),
-        refetchCollectionList(queryClient, variables.gameId),
-        refetchCollectionPreview(queryClient, variables.collectionId, variables.gameId),
-      ]);
 
       const total = result.mods_enabled + result.mods_disabled;
       const suffix = result.final_state_name ? ` -> ${result.final_state_name}` : '';
@@ -291,7 +250,7 @@ export function useApplyCollection() {
         return;
       }
 
-      toast.error(formatAppError(err));
+      toastMutationError(err);
     },
   });
 

@@ -9,16 +9,30 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../stores/useAppStore', () => ({
-  useAppStore: vi.fn((selector) => {
-    const state = {
-      explorerSubPath: 'root',
-      gridSelection: new Set(),
-      setMobilePane: vi.fn(),
-    };
-    return typeof selector === 'function' ? selector(state) : state;
-  }),
-}));
+vi.mock('../../../stores/useAppStore', () => {
+  // One shared state object with the workspace runtime slice, so `getState()`
+  // and the selector hook see the same store the app does.
+  const state = {
+    explorerSubPath: 'root',
+    gridSelection: new Set(),
+    setMobilePane: vi.fn(),
+    selectedObjectFolderPath: null,
+    selectedModPath: null,
+    currentPath: [] as string[],
+    mobileActivePane: 'sidebar' as const,
+    workspacePreviewDirty: false,
+    workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
+    workspaceDialogState: { kind: 'none' },
+    dispatchWorkspaceRuntime: vi.fn(),
+  };
+
+  return {
+    useAppStore: Object.assign(
+      vi.fn((selector) => (typeof selector === 'function' ? selector(state) : state)),
+      { getState: () => state },
+    ),
+  };
+});
 
 vi.mock('../../../stores/useToastStore', () => ({
   toast: {
@@ -37,7 +51,6 @@ vi.mock('../../../hooks/useSettings', () => ({
 
 vi.mock('./usePreviewData', () => ({
   useModIniFiles: vi.fn(),
-  useModIniDocument: vi.fn(),
   useAllModIniDocuments: vi.fn(),
   usePreviewImages: vi.fn(),
   useRemovePreviewImage: vi.fn(),

@@ -44,23 +44,6 @@ export type ArchiveInfo = GenArchiveInfo & { entries?: GenArchiveEntryInfo[] };
 /** FE enrichment: flag set by the temp-import flow, not part of the wire payload. */
 export type ScanPreviewItem = GenScanPreviewItem & { moveFromTemp?: boolean };
 
-/** Frontend-only view row for the legacy scan review table (no Rust counterpart). */
-export interface ScanResultItem {
-  path: string;
-  rawName: string;
-  displayName: string;
-  isDisabled: boolean;
-  matchedAliasName: string | null;
-  matchLevel: 'AutoMatched' | 'NeedsReview' | 'NoMatch';
-  confidence: 'High' | 'Medium' | 'Low' | 'None';
-  confidenceScore: number;
-  matchDetail: string | null;
-  detectedSkin: string | null;
-  /** Canonical folder name for this skin variant (first alias). */
-  skinFolderName: string | null;
-  thumbnailPath: string | null;
-}
-
 export type DuplicateInfo = {
   mod_id: string;
   object_id: string;

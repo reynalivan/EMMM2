@@ -15,9 +15,7 @@ pub async fn bulk_update_info(
     let mut success = Vec::new();
     let mut failures = Vec::new();
     for path in paths {
-        let canonical =
-            crate::services::fs_utils::guard::validate_path(config, game_id, &path)
-                .map_err(AppError::Security)?;
+        let canonical = crate::services::fs_utils::guard::validate_path(config, game_id, &path)?;
 
         match info_json::update_info_json(&canonical, &update) {
             Ok(_) => success.push(path),
@@ -100,15 +98,15 @@ fn partition_info_json_writes(
 
     let (success, failures): (Vec<_>, Vec<_>) = folder_paths
         .into_par_iter()
-        .map(|folder_path| {
-            match info_json::update_info_json(Path::new(&folder_path), update) {
+        .map(
+            |folder_path| match info_json::update_info_json(Path::new(&folder_path), update) {
                 Ok(_) => Ok(folder_path),
                 Err(e) => Err(BulkActionError {
                     path: folder_path,
                     error: AppError::Metadata(e),
                 }),
-            }
-        })
+            },
+        )
         .partition(Result::is_ok);
 
     BulkResult::new(

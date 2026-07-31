@@ -1,5 +1,5 @@
 use super::types::*;
-use crate::common::path_key::{folder_path_key, object_name_key};
+use crate::common::path_key::{canonical_name_key, folder_path_key};
 
 pub async fn ensure_object_exists(
     conn: &mut sqlx::SqliteConnection,
@@ -18,7 +18,7 @@ pub async fn ensure_object_exists(
         db_hash_db_json,
         db_custom_skins_json,
     } = input;
-    let name_key = object_name_key(obj_name);
+    let name_key = canonical_name_key(obj_name);
     let folder_key = folder_path_key(folder_path, None);
 
     let match_name = sqlx::query(

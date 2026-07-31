@@ -77,25 +77,22 @@ describe('importPipeline', () => {
 
   describe('ingestLooseFiles', () => {
     it('skips every filesystem call when nothing is loose', async () => {
-      await expect(ingestLooseFiles(activeGame, [], 'E:\\Mods\\.emmm_temp')).resolves.toEqual([]);
+      await expect(ingestLooseFiles([], 'E:\\Mods\\.emmm_temp')).resolves.toEqual([]);
       expect(checkPathExists).not.toHaveBeenCalled();
       expect(ingestDroppedFolders).not.toHaveBeenCalled();
     });
 
     it('stages loose files and returns the moved folders', async () => {
-      ingestDroppedFolders.mockResolvedValue({ moved: ['E:\\Mods\\.emmm_temp\\mod'] });
+      ingestDroppedFolders.mockResolvedValue(['E:\\Mods\\.emmm_temp\\mod']);
 
       await expect(
-        ingestLooseFiles(activeGame, ['E:\\Drop\\mod.ini'], 'E:\\Mods\\.emmm_temp'),
+        ingestLooseFiles(['E:\\Drop\\mod.ini'], 'E:\\Mods\\.emmm_temp'),
       ).resolves.toEqual(['E:\\Mods\\.emmm_temp\\mod']);
 
       expect(ensureDir).toHaveBeenCalledWith('E:\\Mods\\.emmm_temp');
       expect(ingestDroppedFolders).toHaveBeenCalledWith(
         ['E:\\Drop\\mod.ini'],
         'E:\\Mods\\.emmm_temp',
-        'game-1',
-        'Genshin',
-        'GIMI',
       );
     });
   });

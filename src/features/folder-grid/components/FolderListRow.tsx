@@ -1,24 +1,16 @@
-import { memo, useState, useEffect, useMemo } from 'react';
+import { memo } from 'react';
 import { Folder, File, Copy, AlertTriangle, Star } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import BulkContextMenu from './BulkContextMenu';
-import { useAppStore } from '../../../stores/useAppStore';
 import { useModContextMenuItems } from '../../../hooks/useModContextMenuItems';
 import { useModContextMenuActions } from '../../mod-runtime/actions/useModContextMenuActions';
 
 import { ContextMenu } from '../../../components/ui/ContextMenu';
-import { useThumbnail } from '../../../hooks/useThumbnail';
-import {
-  formatWorkspaceReason,
-  formatWorkspaceWarning,
-} from '../../workspace-runtime/workspaceSemantics';
-import { buildWorkspaceSwitchPolicy } from '../../workspace-runtime/actions/workspaceSwitchPolicy';
+import { formatWorkspaceReason } from '../../workspace-runtime/workspaceSemantics';
 import { WorkspaceSwitchControl } from '../../workspace-runtime/components/WorkspaceSwitchControl';
 import { WorkspaceSwitchLabel } from '../../workspace-runtime/components/WorkspaceSwitchLabel';
-import { maskWorkspaceNodeCapabilities } from '../../workspace-runtime/actions/workspaceActionAvailability';
-import { getFolderTypeChip } from '../utils/FolderTypeChip';
+import { useFolderNodeView } from '../hooks/useFolderNodeView';
 
 interface FolderListRowProps {
   item: WorkspaceExplorerNode;
@@ -76,25 +68,38 @@ function FolderListRowInner({
   isSwitchBusy = false,
   mutationsDisabled = false,
 }: FolderListRowProps) {
-  const { t } = useTranslation(['grid', 'common']);
-  const typeChip = getFolderTypeChip(item.type_chip, t, 'row');
+  const {
+    t,
+    typeChip,
+    actionNode: actionItem,
+    primaryWarningText,
+    switchPolicy,
+    thumbnailSrc,
+    thumbLoading,
+    setImgError,
+    isBulkSelection,
+    bulkMenuProps,
+    handleClick,
+  } = useFolderNodeView({
+    node: item,
+    variant: 'row',
+    isSelected,
+    selectionSize,
+    mutationsDisabled,
+    toggleSelection,
+    onActivate,
+    bulk: {
+      onBulkToggle,
+      onBulkDelete,
+      onBulkTag,
+      onBulkFavorite,
+      onBulkSafe,
+      onBulkPin,
+      onBulkMoveToObject,
+    },
+  });
   const inactiveReasonText = formatWorkspaceReason(t, item.inactive_reason);
-  const primaryWarningText = formatWorkspaceWarning(t, item.primary_warning);
-  const actionItem = useMemo(
-    () => maskWorkspaceNodeCapabilities(item, mutationsDisabled),
-    [item, mutationsDisabled],
-  );
-  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, actionItem), [actionItem, t]);
-  const activeGameId = useAppStore((state) => state.activeGameId);
-  const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(
-    activeGameId || '',
-    item.path,
-  );
   const contextActions = useModContextMenuActions(item);
-  const [imgError, setImgError] = useState(false);
-  const thumbnailSrc = thumbnailPath && !imgError ? thumbnailPath : null;
-  const isBulkSelection =
-    isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
   const contextItems = useModContextMenuItems({
     folder: actionItem,
     onRename: () => !mutationsDisabled && onRename?.(item),
@@ -110,22 +115,6 @@ function FolderListRowInner({
     onPasteThumbnail: mutationsDisabled ? undefined : contextActions.pasteThumbnailFromClipboard,
     onImportThumbnail: mutationsDisabled ? undefined : contextActions.importThumbnail,
   });
-
-  // Reset error state when thumbnail path changes
-  useEffect(() => {
-    setImgError(false);
-  }, [thumbnailPath]);
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (item.display_mode === 'internal_assets') {
-      return;
-    }
-    if (e.ctrlKey || e.shiftKey) {
-      toggleSelection(item.path, true, e.shiftKey);
-    } else {
-      onActivate?.(item.path);
-    }
-  };
 
   const handleContextClick = (_: React.MouseEvent) => {
     if (item.display_mode === 'internal_assets') {
@@ -144,16 +133,7 @@ function FolderListRowInner({
     <ContextMenu
       content={
         isBulkSelection ? (
-          <BulkContextMenu
-            count={selectionSize}
-            onToggle={mutationsDisabled ? undefined : onBulkToggle}
-            onDelete={mutationsDisabled ? undefined : onBulkDelete}
-            onTag={mutationsDisabled ? undefined : onBulkTag}
-            onFavorite={mutationsDisabled ? undefined : onBulkFavorite}
-            onSafe={mutationsDisabled ? undefined : onBulkSafe}
-            onPin={mutationsDisabled ? undefined : onBulkPin}
-            onMoveToObject={mutationsDisabled ? undefined : onBulkMoveToObject}
-          />
+          <BulkContextMenu {...bulkMenuProps} />
         ) : (
           <>
             {contextItems.map((contextItem) => {

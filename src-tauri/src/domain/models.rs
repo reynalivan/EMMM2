@@ -58,13 +58,6 @@ impl ItemStatus {
             ItemStatus::Enabled
         }
     }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ItemStatus::Enabled => "active",
-            ItemStatus::Disabled => "disabled",
-        }
-    }
 }
 
 impl FromStr for ItemStatus {
@@ -126,26 +119,11 @@ pub struct GameInfo {
     pub mods_path: String,
 }
 
-/// Full game configuration stored in DB + config
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-pub struct GameConfig {
-    pub id: String,
-    pub name: String,
-    pub game_type: GameType,
-    pub path: String,
-    pub mods_path: String,
-    pub launcher_path: String,
-    pub launch_args: Option<String>,
-}
-
-// (AppError removed because it moved to domain/errors.rs and was causing specta::Type issues with std::io::Error)
-
 /// Startup config status returned to frontend
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 pub enum ConfigStatus {
     FreshInstall,
     HasConfig,
-    CorruptConfig,
 }
 
 /// Strongly-typed payload for an object's known hashed files

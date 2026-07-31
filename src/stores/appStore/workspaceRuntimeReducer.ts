@@ -1,4 +1,5 @@
 import { rewriteWorkspacePathValue } from '../../features/workspace-runtime/pathRewrite';
+import { pathStartsWith } from '../../lib/pathKey';
 import type { WorkspaceRuntimeEvent } from '../../features/workspace-runtime/state/workspaceEvents';
 import {
   INITIAL_WORKSPACE_DIALOG_STATE,
@@ -138,19 +139,10 @@ export function reduceWorkspaceRuntimeState(
   }
 
   if (event.type === 'TARGETS_INVALIDATED') {
-    const invalidPaths = event.paths.map((path) => path.replace(/\\/g, '/'));
-    const normalizedObjectPath = state.selectedObjectFolderPath?.replace(/\\/g, '/');
-    const normalizedModPath = state.selectedModPath?.replace(/\\/g, '/');
-    const objectInvalid =
-      !!normalizedObjectPath &&
-      invalidPaths.some(
-        (path) => normalizedObjectPath === path || normalizedObjectPath.startsWith(`${path}/`),
-      );
-    const modInvalid =
-      !!normalizedModPath &&
-      invalidPaths.some(
-        (path) => normalizedModPath === path || normalizedModPath.startsWith(`${path}/`),
-      );
+    const objectInvalid = event.paths.some((path) =>
+      pathStartsWith(path, state.selectedObjectFolderPath),
+    );
+    const modInvalid = event.paths.some((path) => pathStartsWith(path, state.selectedModPath));
     const previewTargetInvalid = objectInvalid || modInvalid;
 
     return {
@@ -163,7 +155,7 @@ export function reduceWorkspaceRuntimeState(
       previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
       dialogState: previewTargetInvalid
         ? INITIAL_WORKSPACE_DIALOG_STATE
-        : closeDialogIfTargetRemoved(state, invalidPaths),
+        : closeDialogIfTargetRemoved(state, event.paths),
     };
   }
 

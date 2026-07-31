@@ -43,11 +43,6 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
         game_id
     );
 
-    // 1. Recompute corridor signature
-    let signature = corridor_service::recompute_signature(pool, game_id, is_safe)
-        .await
-        .map_err(|e| format!("Sig recompute failed: {e}"))?;
-
     crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id)
         .await
         .map_err(|e| format!("Projection rebuild failed: {e}"))?;
@@ -174,7 +169,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
     // 4. Update Runtime Status (Req-42)
     let mut preset_name = None;
     if let Ok(snapshot) = corridor_service::get_corridor_state(pool, game_id, is_safe).await {
-        if !snapshot.is_dirty && !snapshot.active_collection_is_unsaved {
+        if !snapshot.is_dirty {
             preset_name = snapshot.active_collection_name;
         }
     }
@@ -203,9 +198,8 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), String> {
     generator::write_status_file(&status_dir, &status, &ctx.settings.hotkeys)?;
 
     log::info!(
-        "[post_apply] Completed post-apply tasks for game={}, sig={}",
-        game_id,
-        &signature[..8]
+        "[post_apply] Completed post-apply tasks for game={}",
+        game_id
     );
     Ok(())
 }

@@ -107,10 +107,6 @@ pub async fn bulk_toggle(
         let _ = crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await;
     }
 
-    // Recompute corridor signatures so dirty detection stays in sync
-    let _ = crate::services::corridor_service::recompute_signature(pool, game_id, true).await;
-    let _ = crate::services::corridor_service::recompute_signature(pool, game_id, false).await;
-
     // Trigger Dirty State: Register unsaved changes for the affected corridors
     if !db_updates.is_empty() {
         // Collect subset of relative paths to check which corridors are affected

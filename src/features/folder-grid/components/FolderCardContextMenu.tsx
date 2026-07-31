@@ -1,6 +1,6 @@
 import React from 'react';
 import { ContextMenuItem, ContextMenuSeparator } from '../../../components/ui/ContextMenu';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { useModContextMenuItems } from '../../../hooks/useModContextMenuItems';
 import { useModContextMenuActions } from '../../mod-runtime/actions/useModContextMenuActions';

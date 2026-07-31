@@ -1,8 +1,8 @@
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import MoveToObjectDialog from './MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import IgnoreManagementModal from './IgnoreManagementModal';
-import { BulkTagModal } from './BulkTagModal';
+import BulkTagModal from '../../object-list/modals/BulkTagModal';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
 import ActiveModContextDialog from './ActiveModContextDialog';
 import SyncConfirmModal from '../../object-list/modals/SyncConfirmModal';
@@ -28,6 +28,7 @@ export interface FolderGridModalsProps {
   handleBulkDeleteConfirm: () => void;
   bulkTagOpen: boolean;
   setBulkTagOpen: (open: boolean) => void;
+  handleBulkTagSubmit: (tags: string[]) => void;
   gridSelection: Set<string>;
   isIgnoreManagementOpen: boolean;
   setIsIgnoreManagementOpen: (open: boolean) => void;
@@ -68,6 +69,7 @@ export default function FolderGridModals({
   handleBulkDeleteConfirm,
   bulkTagOpen,
   setBulkTagOpen,
+  handleBulkTagSubmit,
   gridSelection,
   isIgnoreManagementOpen,
   setIsIgnoreManagementOpen,
@@ -142,13 +144,13 @@ export default function FolderGridModals({
         onCancel={() => setBulkDeleteConfirm(false)}
       />
 
-      {bulkTagOpen && (
-        <BulkTagModal
-          isOpen={true}
-          onClose={() => setBulkTagOpen(false)}
-          selectedPaths={Array.from(gridSelection)}
-        />
-      )}
+      <BulkTagModal
+        open={bulkTagOpen}
+        mode="add"
+        existingTags={[]}
+        onSubmit={handleBulkTagSubmit}
+        onClose={() => setBulkTagOpen(false)}
+      />
 
       {/* Ignore Management Modal */}
       <IgnoreManagementModal

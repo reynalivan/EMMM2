@@ -60,8 +60,7 @@ async fn resolve_mod_target_path(
 
     let mut changed_object_ids = Vec::new();
     if let Some((_, Some(object_id), _)) =
-        crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, &relative_path, game_id)
-            .await?
+        crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, &relative_path, game_id).await?
     {
         changed_object_ids.push(object_id);
     }
@@ -70,19 +69,6 @@ async fn resolve_mod_target_path(
         resolved_target.to_string_lossy().to_string(),
         changed_object_ids,
     ))
-}
-
-async fn resolve_switch_target_path(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    target_kind: WorkspaceSwitchTargetKind,
-    target_value: &str,
-    desired_enabled: bool,
-) -> Result<(String, Vec<String>), AppError> {
-    if matches!(target_kind, WorkspaceSwitchTargetKind::ModPath) {
-        return resolve_mod_target_path(pool, game_id, target_value, desired_enabled).await;
-    }
-    Ok((target_value.to_string(), vec![target_value.to_string()]))
 }
 
 async fn run_enable_only_this(
@@ -94,10 +80,7 @@ async fn run_enable_only_this(
     game_id: &str,
     changed_object_ids: Vec<String>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
-    let _lock = op_lock
-        .acquire()
-        .await
-        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let _lock = op_lock.acquire().await?;
 
     let result = crate::services::scanner::conflict::enable_only_this_service(
         config,
@@ -116,7 +99,6 @@ async fn run_enable_only_this(
         primary_path.as_deref(),
         &changed_folder_paths,
         &changed_object_ids,
-        false,
     );
     if !rewrites.is_empty() {
         impact.rewrites = rewrites;
@@ -151,7 +133,6 @@ fn build_switch_impact(
     primary_path: Option<&str>,
     changed_folder_paths: &[String],
     changed_object_ids: &[String],
-    projection_dirty: bool,
 ) -> WorkspaceImpact {
     let rewrites = match (original_path, primary_path) {
         (Some(old_path), Some(new_path)) if old_path != new_path => {
@@ -165,11 +146,9 @@ fn build_switch_impact(
 
     WorkspaceImpact {
         rewrites,
-        cleared_targets: Vec::new(),
         changed_object_ids: changed_object_ids.to_vec(),
         changed_folder_paths: changed_folder_paths.to_vec(),
         refresh_scopes: default_switch_refresh_scopes(),
-        projection_dirty,
         warnings: Vec::new(),
     }
 }
@@ -251,15 +230,13 @@ pub async fn execute_switch(
                 Some(&next_path),
                 std::slice::from_ref(&next_path),
                 std::slice::from_ref(&object_id),
-                false,
             ),
         });
     }
 
-    let (target_path, changed_object_ids) = resolve_switch_target_path(
+    let (target_path, changed_object_ids) = resolve_mod_target_path(
         pool,
         &input.game_id,
-        input.target.kind,
         &input.target.value,
         input.desired_enabled,
     )
@@ -307,7 +284,7 @@ pub async fn execute_switch(
                 changed_folder_paths: Vec::new(),
                 changed_object_ids: changed_object_ids.clone(),
                 duplicates: map_duplicates(duplicates),
-                impact: build_switch_impact(None, None, &[], &changed_object_ids, false),
+                impact: build_switch_impact(None, None, &[], &changed_object_ids),
             });
         }
         Err(error) => return Err(error),
@@ -340,7 +317,6 @@ pub async fn execute_switch(
             Some(&next_path),
             std::slice::from_ref(&next_path),
             &changed_object_ids,
-            false,
         ),
     })
 }
@@ -368,7 +344,6 @@ mod tests {
             Some("Alice/Blue Dress"),
             &["Alice/Blue Dress".to_string()],
             &["o1".to_string()],
-            false,
         );
 
         assert_eq!(impact.rewrites.len(), 1);

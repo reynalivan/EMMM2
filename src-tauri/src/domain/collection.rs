@@ -6,40 +6,12 @@ use crate::domain::workspace::WorkspacePathRewrite;
 // Collection — A named loadout snapshot
 // ---------------------------------------------------------------------------
 
-/// The kind of collection. Replaces the `is_last_unsaved` boolean flag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, specta::Type)]
-#[sqlx(rename_all = "snake_case")]
-#[serde(rename_all = "snake_case")]
-pub enum CollectionKind {
-    Named,
-    UndoSnapshot,
-    Unsaved,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewTreeNodeKind {
     Object,
     Folder,
     Mod,
-}
-
-impl CollectionKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Named => "named",
-            Self::UndoSnapshot => "undo_snapshot",
-            Self::Unsaved => "unsaved",
-        }
-    }
-
-    pub fn from_db_value(s: &str) -> Self {
-        match s {
-            "undo_snapshot" => Self::UndoSnapshot,
-            "unsaved" => Self::Unsaved,
-            _ => Self::Named,
-        }
-    }
 }
 
 /// The kind of member in a collection.
@@ -51,26 +23,6 @@ pub enum MemberKind {
     Nested,
     Object,
     Root,
-}
-
-impl MemberKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Mod => "mod",
-            Self::Nested => "nested",
-            Self::Object => "object",
-            Self::Root => "root",
-        }
-    }
-
-    pub fn from_db_value(s: &str) -> Self {
-        match s {
-            "nested" => Self::Nested,
-            "object" => Self::Object,
-            "root" => Self::Root,
-            _ => Self::Mod,
-        }
-    }
 }
 
 /// Full collection row from the `collections` table.
@@ -100,8 +52,7 @@ pub struct CollectionSummary {
     pub name: String,
     pub is_safe: bool,
     pub is_unsaved: bool,
-    pub is_active: bool,      // Derived from corridor_state
-    pub is_undo_target: bool, // Derived from corridor_state
+    pub is_active: bool, // Derived from corridor_state
     pub signature: Option<String>,
     pub updated_at: String,
     pub raw_member_count: i32,
@@ -246,7 +197,6 @@ pub struct ApplyResult {
     pub mods_disabled: usize,
     #[specta(type = f64)]
     pub objects_toggled: usize,
-    pub undo_collection_id: Option<String>,
     pub new_signature: String,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
@@ -335,7 +285,7 @@ pub struct ApplyPreview {
     pub target_projected_state: ProjectedCollectionState,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct ApplyProgressSnapshot {
     pub game_id: String,
     pub is_safe: bool,

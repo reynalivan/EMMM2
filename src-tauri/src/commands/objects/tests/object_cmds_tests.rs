@@ -174,7 +174,8 @@ async fn test_create_object_cmd() -> CommandResult<()> {
         custom_skins: None,
     };
 
-    let obj_id_result = create_object_cmd_inner(payload, &pool, None).await?;
+    let obj_id_result =
+        crate::services::objects::mutate::create_object_cmd_inner(&pool, None, payload).await?;
 
     // Verify it exists in DB
     let filter = ObjectFilter {
@@ -241,7 +242,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         custom_skins: None,
     };
 
-    update_object_cmd_inner(obj_id.to_string(), &payload, &pool).await?;
+    crate::services::objects::mutate::update_object(&pool, obj_id, &payload).await?;
 
     let filter = ObjectFilter {
         game_id: game_id.clone(),

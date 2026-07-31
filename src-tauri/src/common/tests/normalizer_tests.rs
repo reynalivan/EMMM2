@@ -35,17 +35,6 @@ fn test_preprocess_text_empty() {
     assert!(tokens.is_empty());
 }
 
-// Covers: DI-2.01 — Filename sanitization
-#[test]
-fn test_sanitize_filename() {
-    assert_eq!(
-        sanitize_filename(r#"mod:name*test"file"#),
-        "mod_name_test_file"
-    );
-    assert_eq!(sanitize_filename("normal_name"), "normal_name");
-    assert_eq!(sanitize_filename("path\\to/file"), "path_to_file");
-}
-
 #[test]
 fn test_normalize_display_name() {
     assert_eq!(normalize_display_name("DISABLED raiden_mod"), "raiden_mod");

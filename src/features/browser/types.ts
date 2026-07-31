@@ -2,6 +2,8 @@
 // Epic 44: Browser Feature — Shared TypeScript types
 // ──────────────────────────────────────────────────────────────────────────────
 
+import type { BrowserDownloadDto, ImportJobDto } from '../../lib/bindings.gen';
+
 export type DownloadStatus =
   | 'requested'
   | 'in_progress'
@@ -10,19 +12,10 @@ export type DownloadStatus =
   | 'canceled'
   | 'imported';
 
-export interface BrowserDownloadItem {
-  id: string;
-  session_id: string | null;
-  filename: string;
-  file_path: string | null;
-  source_url: string | null;
-  status: DownloadStatus;
-  bytes_total: number | null;
-  bytes_received: number;
-  error_msg: string | null;
-  started_at: string;
-  finished_at: string | null;
-}
+// ponytail: derived from codegen so a Rust schema change breaks the build here
+// instead of drifting silently. Only `status` is narrowed — the DTO types it as
+// the raw `String` the backend serializes.
+export type BrowserDownloadItem = Omit<BrowserDownloadDto, 'status'> & { status: DownloadStatus };
 
 export type ImportJobStatus =
   | 'queued'
@@ -34,23 +27,7 @@ export type ImportJobStatus =
   | 'failed'
   | 'canceled';
 
-export interface ImportJobItem {
-  id: string;
-  download_id: string | null;
-  game_id: string | null;
-  archive_path: string;
-  status: ImportJobStatus;
-  match_category: string | null;
-  match_entry_key: string | null;
-  match_alias_name: string | null;
-  match_confidence: number | null;
-  match_reason: string | null;
-  placed_path: string | null;
-  error_msg: string | null;
-  is_duplicate: boolean;
-  created_at: string;
-  updated_at: string;
-}
+export type ImportJobItem = Omit<ImportJobDto, 'status'> & { status: ImportJobStatus };
 
 // Runtime download progress event
 export interface DownloadProgressEvent {

@@ -9,7 +9,7 @@
 //! # Covers: navigablefoldergrid.md §5
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::common::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
 
@@ -41,28 +41,29 @@ const MOD_ASSET_EXTENSIONS: &[&str] = &["buf", "ib", "dds", "hlsl", "vb"];
 /// Section prefixes that indicate a valid 3DMigoto mod ini.
 const MOD_SECTION_PREFIXES: &[&str] = &["textureoverride", "shaderoverride", "resource"];
 
-/// Returns the node type, a list of diagnostic reasons, and a list of warnings.
-pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
-    if !path.is_dir() {
-        return (NodeType::ContainerFolder, vec![], vec![]);
-    }
+/// One directory pass: the folder's mod ini candidates, child dirs and asset presence.
+struct FolderScan {
+    /// `.ini` files directly inside the folder, `desktop.ini` excluded.
+    ini_files: Vec<PathBuf>,
+    child_dirs: Vec<PathBuf>,
+    has_assets: bool,
+}
 
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return (NodeType::ContainerFolder, vec![], vec![]),
+fn scan_folder(path: &Path) -> Option<FolderScan> {
+    let entries = fs::read_dir(path).ok()?;
+
+    let mut scan = FolderScan {
+        ini_files: Vec::new(),
+        child_dirs: Vec::new(),
+        has_assets: false,
     };
-
-    // Single pass: collect ini files, asset presence, and child dir paths
-    let mut ini_files: Vec<std::path::PathBuf> = Vec::new();
-    let mut has_assets = false;
-    let mut child_dirs: Vec<std::path::PathBuf> = Vec::new();
 
     for entry in entries.filter_map(|e| e.ok()) {
         let p = entry.path();
         if p.is_dir() {
             let fname = path_file_name_lossy(&p).unwrap_or_default();
             if !fname.starts_with('.') {
-                child_dirs.push(p);
+                scan.child_dirs.push(p);
             }
         } else if p.is_file() {
             let ext = p
@@ -74,13 +75,62 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
             if ext == "ini" {
                 let fname = path_file_name_lossy(&p).unwrap_or_default();
                 if !names_equal_by_key(&fname, "desktop.ini") {
-                    ini_files.push(p);
+                    scan.ini_files.push(p);
                 }
-            } else if !has_assets && MOD_ASSET_EXTENSIONS.contains(&ext.as_str()) {
-                has_assets = true;
+            } else if !scan.has_assets && MOD_ASSET_EXTENSIONS.contains(&ext.as_str()) {
+                scan.has_assets = true;
             }
         }
     }
+
+    Some(scan)
+}
+
+/// What a single `.ini` file inside a mod folder contributes to classification.
+struct IniScan {
+    is_mod: bool,
+    /// A 0 KB ini counts as a mod ini, but is reported as corrupt.
+    is_corrupt: bool,
+    referenced_subs: Vec<String>,
+}
+
+fn scan_ini_file(path: &Path) -> IniScan {
+    let mut scan = IniScan {
+        is_mod: false,
+        is_corrupt: false,
+        referenced_subs: Vec::new(),
+    };
+
+    if fs::metadata(path).map(|m| m.len() == 0).unwrap_or(false) {
+        scan.is_mod = true;
+        scan.is_corrupt = true;
+        return scan;
+    }
+
+    let Ok(content) = fs::read_to_string(path) else {
+        return scan;
+    };
+
+    let (is_mod, referenced_subs) = scan_ini_content(&content);
+    scan.is_mod = is_mod;
+    scan.referenced_subs = referenced_subs;
+    scan
+}
+
+/// Returns the node type, a list of diagnostic reasons, and a list of warnings.
+pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
+    if !path.is_dir() {
+        return (NodeType::ContainerFolder, vec![], vec![]);
+    }
+
+    let Some(FolderScan {
+        ini_files,
+        child_dirs,
+        has_assets,
+    }) = scan_folder(path)
+    else {
+        return (NodeType::ContainerFolder, vec![], vec![]);
+    };
 
     // Scan ini files for mod sections and referenced subfolders
     let mut has_mod_ini = false;
@@ -90,29 +140,20 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
 
     for ini_path in &ini_files {
         let fname = path_file_name_lossy(ini_path).unwrap_or_default();
+        let scan = scan_ini_file(ini_path);
 
-        let meta = fs::metadata(ini_path);
-        let is_empty = meta.as_ref().map(|m| m.len() == 0).unwrap_or(false);
-
-        if is_empty {
-            // A 0KB INI is treated as a mod INI but flagged as corrupt
+        if scan.is_corrupt {
             has_mod_ini = true;
             warnings.push(format!("[WARNING] Corrupt INI file: {} (0 KB)", fname));
             reasons.push(format!("Corrupt Mod ini: {fname}"));
             continue;
         }
 
-        let content = match fs::read_to_string(ini_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let (found_mod, subs) = scan_ini_content(&content, &fname);
-        if found_mod {
+        if scan.is_mod {
             has_mod_ini = true;
             reasons.push(format!("Mod ini: {fname}"));
         }
-        referenced_subs.extend(subs);
+        referenced_subs.extend(scan.referenced_subs);
     }
 
     if !referenced_subs.is_empty() {
@@ -170,47 +211,15 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
 /// Quick check: does a directory contain at least one valid mod ini file?
 /// Used for variant-container detection (called on child dirs only when needed).
 fn has_any_mod_ini(path: &Path) -> bool {
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-
-    for entry in entries.filter_map(|e| e.ok()) {
-        let p = entry.path();
-        if !p.is_file() {
-            continue;
-        }
-        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or_default();
-        if !ext.eq_ignore_ascii_case("ini") {
-            continue;
-        }
-        let fname = path_file_name_lossy(&p).unwrap_or_default();
-        if names_equal_by_key(&fname, "desktop.ini") {
-            continue;
-        }
-        let meta = match fs::metadata(&p) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-
-        if meta.len() == 0 {
-            return true;
-        }
-
-        if let Ok(content) = fs::read_to_string(&p) {
-            let (has_mod, _) = scan_ini_content(&content, &fname);
-            if has_mod {
-                return true;
-            }
-        }
-    }
-    false
+    scan_folder(path)
+        .map(|scan| scan.ini_files.iter().any(|p| scan_ini_file(p).is_mod))
+        .unwrap_or(false)
 }
 
 /// Scan INI content for mod section headers and `filename=` references.
 ///
 /// Returns: (has_mod_section, referenced_subfolder_names)
-fn scan_ini_content(content: &str, _ini_filename: &str) -> (bool, Vec<String>) {
+fn scan_ini_content(content: &str) -> (bool, Vec<String>) {
     let mut has_mod_section = false;
     let mut referenced_subs: Vec<String> = Vec::new();
 

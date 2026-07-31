@@ -36,7 +36,6 @@ function createCollection(partial: Partial<CollectionSummary>): CollectionSummar
     is_safe: true,
     is_unsaved: true,
     is_active: true,
-    is_undo_target: false,
     signature: null,
     updated_at: '2026-03-25T15:30:00Z',
     raw_member_count: 4,

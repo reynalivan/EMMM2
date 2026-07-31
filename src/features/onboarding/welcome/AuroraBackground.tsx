@@ -1,17 +1,7 @@
-import { motion, useTime, useTransform } from 'motion/react';
-import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion';
-
+// ponytail: the drift is three CSS keyframe animations (see App.css), so the
+// welcome path renders without the motion runtime. `prefers-reduced-motion` is
+// handled by the media query next to those keyframes.
 export default function AuroraBackground() {
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const time = useTime();
-
-  // If reduced motion is preferred, we use a static value (e.g., 0)
-  // Otherwise, we do a slow drift.
-  // 60000ms = 1 rotation per minute
-  const rotate1 = useTransform(time, [0, 60000], [0, 360], { clamp: false });
-  const rotate2 = useTransform(time, [0, 75000], [0, -360], { clamp: false });
-  const rotate3 = useTransform(time, [0, 90000], [90, 450], { clamp: false });
-
   return (
     <div
       data-testid="aurora-bg"
@@ -29,24 +19,21 @@ export default function AuroraBackground() {
         }}
       >
         {/* Blob 1: Primary color */}
-        <motion.div
-          className="absolute -top-1/4 -left-1/4 w-[150vw] h-[150vh] rounded-full opacity-50 
+        <div
+          className="aurora-blob-1 absolute -top-1/4 -left-1/4 w-[150vw] h-[150vh] rounded-full opacity-50
                      bg-[radial-gradient(circle_at_center,var(--color-primary)_0%,transparent_50%)]"
-          style={{ rotate: prefersReducedMotion ? 0 : rotate1 }}
         />
 
         {/* Blob 2: Secondary color */}
-        <motion.div
-          className="absolute -bottom-1/4 -right-1/4 w-[150vw] h-[150vh] rounded-full opacity-50 
+        <div
+          className="aurora-blob-2 absolute -bottom-1/4 -right-1/4 w-[150vw] h-[150vh] rounded-full opacity-50
                      bg-[radial-gradient(circle_at_center,var(--color-secondary)_0%,transparent_50%)]"
-          style={{ rotate: prefersReducedMotion ? 0 : rotate2 }}
         />
 
         {/* Blob 3: Accent/Tertiary color to blend */}
-        <motion.div
-          className="absolute top-1/4 left-1/4 w-screen h-screen rounded-full opacity-30 
+        <div
+          className="aurora-blob-3 absolute top-1/4 left-1/4 w-screen h-screen rounded-full opacity-30
                      bg-[radial-gradient(circle_at_center,var(--color-accent)_0%,transparent_50%)]"
-          style={{ rotate: prefersReducedMotion ? 0 : rotate3 }}
         />
       </div>
 

@@ -18,8 +18,7 @@ pub async fn open_in_explorer(
     game_id: String,
     path: String,
 ) -> Result<(), AppError> {
-    let canonical_path =
-        validate_path(&config, &game_id, &path).map_err(AppError::Security)?;
+    let canonical_path = validate_path(&config, &game_id, &path)?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -48,14 +47,12 @@ pub async fn reveal_object_in_explorer(
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
 
     if let Some(path_str) = resolve_and_heal_db_path(pool.inner(), &object_id).await {
-        let canonical =
-            validate_path(&config, &game_id, &path_str).map_err(AppError::Security)?;
+        let canonical = validate_path(&config, &game_id, &path_str)?;
         return open_explorer_select(&canonical.to_string_lossy());
     }
 
     let candidate_path = find_fallback_path(&mods_path, &object_name)?;
-    let canonical =
-        validate_path(&config, &game_id, &candidate_path).map_err(AppError::Security)?;
+    let canonical = validate_path(&config, &game_id, &candidate_path)?;
     open_explorer_select(&canonical.to_string_lossy())
 }
 

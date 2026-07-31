@@ -146,7 +146,7 @@ export async function executeImportAndInvalidate(
     objectName?: string;
   },
 ): Promise<void> {
-  const result = await commands.importModsFromPaths(paths, targetDir, 'Raw', null);
+  const result = await commands.importModsFromPaths(paths, targetDir);
 
   await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
 

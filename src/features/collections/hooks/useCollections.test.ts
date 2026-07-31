@@ -72,7 +72,7 @@ describe('useCollections', () => {
     expect(result.current.data?.[0].name).toBe('Abyss Team');
   });
 
-  it('apply resolves with backend-authoritative runtime snapshot', async () => {
+  it('apply invalidates corridor state and applies backend path rewrites', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -87,7 +87,6 @@ describe('useCollections', () => {
           mods_enabled: 1,
           mods_disabled: 0,
           objects_toggled: 0,
-          undo_collection_id: null,
           new_signature: 'backend-sig',
           warnings: [],
           final_state_name: 'Backend Runtime',
@@ -114,8 +113,6 @@ describe('useCollections', () => {
           is_safe: true,
           active_collection_id: 'c-1',
           active_collection_name: 'Backend Runtime',
-          active_collection_is_unsaved: false,
-          undo_collection_id: null,
           current_signature: 'backend-sig',
           is_dirty: false,
           current_mods: [],
@@ -133,8 +130,6 @@ describe('useCollections', () => {
       is_safe: true,
       active_collection_id: null,
       active_collection_name: 'Old Snapshot',
-      active_collection_is_unsaved: false,
-      undo_collection_id: null,
       current_signature: 'old',
       is_dirty: false,
       current_mods: [],
@@ -156,8 +151,11 @@ describe('useCollections', () => {
       });
     });
 
-    const snapshot = queryClient.getQueryData<CorridorSnapshot>(corridorKeys.state('g-1'));
-    expect(snapshot?.active_collection_name).toBe('Backend Runtime');
+    // Invalidation-only: the stale snapshot is marked for refetch, never patched.
+    expect(queryClient.getQueryState(corridorKeys.state('g-1'))?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryData<CorridorSnapshot>(corridorKeys.state('g-1'))).toMatchObject({
+      active_collection_name: 'Old Snapshot',
+    });
     expect(useAppStore.getState().selectedModPath).toBe('E:/Mods/ALBEDO/DISABLED Variant');
     expect(useAppStore.getState().gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
   });

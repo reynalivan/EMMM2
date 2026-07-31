@@ -1,8 +1,6 @@
 import { useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceViewModel } from '../../workspace-runtime/useWorkspaceViewModel';
 import {
-  detailsKeys,
   useAllModIniDocuments,
   useClearPreviewImages,
   useModIniFiles,
@@ -20,8 +18,6 @@ import {
   type WorkspaceViewModel,
 } from '../../../types/workspace';
 import type { IniDocumentLike } from '../previewPanelUtils';
-import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
-import { buildQueryInvalidationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../../workspace-runtime/actions/workspaceActionAvailability';
 
 interface PreviewIniDocument {
@@ -49,7 +45,6 @@ interface PreviewRuntimeState {
 }
 
 export function usePreviewRuntime(): PreviewRuntimeState {
-  const queryClient = useQueryClient();
   const { data: workspace } = useWorkspaceViewModel();
   const activePath = workspace?.preview.selected_path ?? null;
   const previewSummary = workspace?.preview ?? null;
@@ -65,11 +60,12 @@ export function usePreviewRuntime(): PreviewRuntimeState {
 
   const iniFilesQuery = useModIniFiles(activePath);
   const previewImagesQuery = usePreviewImages(activePath);
-  const updateModInfoRaw = useUpdateModInfoDetails();
-  const savePreviewImageRaw = useSavePreviewImage();
-  const removePreviewImageRaw = useRemovePreviewImage();
-  const clearPreviewImagesRaw = useClearPreviewImages();
-  const writeModIniRaw = useWriteModIni();
+  // Each mutation invalidates its own detail queries in `usePreviewData`.
+  const updateModInfo = useUpdateModInfoDetails();
+  const savePreviewImage = useSavePreviewImage();
+  const removePreviewImage = useRemovePreviewImage();
+  const clearPreviewImages = useClearPreviewImages();
+  const writeModIni = useWriteModIni();
 
   const iniFiles = useMemo<IniFileEntry[]>(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
 
@@ -84,87 +80,6 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   );
 
   const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
-
-  const updateModInfo = useMemo(
-    () => ({
-      ...updateModInfoRaw,
-      mutateAsync: async (input: Parameters<typeof updateModInfoRaw.mutateAsync>[0]) => {
-        const result = await updateModInfoRaw.mutateAsync(input);
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryInvalidationDescriptor([detailsKeys.modInfo(input.folderPath)], []),
-        );
-        return result;
-      },
-    }),
-    [queryClient, updateModInfoRaw],
-  );
-
-  const savePreviewImage = useMemo(
-    () => ({
-      ...savePreviewImageRaw,
-      mutateAsync: async (input: Parameters<typeof savePreviewImageRaw.mutateAsync>[0]) => {
-        const result = await savePreviewImageRaw.mutateAsync(input);
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryInvalidationDescriptor([detailsKeys.previewImages(input.folderPath)], []),
-        );
-        return result;
-      },
-    }),
-    [queryClient, savePreviewImageRaw],
-  );
-
-  const removePreviewImage = useMemo(
-    () => ({
-      ...removePreviewImageRaw,
-      mutateAsync: async (input: Parameters<typeof removePreviewImageRaw.mutateAsync>[0]) => {
-        const result = await removePreviewImageRaw.mutateAsync(input);
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryInvalidationDescriptor([detailsKeys.previewImages(input.folderPath)], []),
-        );
-        return result;
-      },
-    }),
-    [queryClient, removePreviewImageRaw],
-  );
-
-  const clearPreviewImages = useMemo(
-    () => ({
-      ...clearPreviewImagesRaw,
-      mutateAsync: async (input: Parameters<typeof clearPreviewImagesRaw.mutateAsync>[0]) => {
-        const result = await clearPreviewImagesRaw.mutateAsync(input);
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryInvalidationDescriptor([detailsKeys.previewImages(input.folderPath)], []),
-        );
-        return result;
-      },
-    }),
-    [queryClient, clearPreviewImagesRaw],
-  );
-
-  const writeModIni = useMemo(
-    () => ({
-      ...writeModIniRaw,
-      mutateAsync: async (input: Parameters<typeof writeModIniRaw.mutateAsync>[0]) => {
-        const result = await writeModIniRaw.mutateAsync(input);
-        applyRuntimeEffects(
-          queryClient,
-          buildQueryInvalidationDescriptor(
-            [
-              detailsKeys.iniDocument(input.folderPath, input.fileName),
-              detailsKeys.iniFiles(input.folderPath),
-            ],
-            [],
-          ),
-        );
-        return result;
-      },
-    }),
-    [queryClient, writeModIniRaw],
-  );
 
   return {
     activePath,

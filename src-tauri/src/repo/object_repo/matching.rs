@@ -1,15 +1,5 @@
 use sqlx::SqlitePool;
 
-pub async fn get_object_name_by_id(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT name FROM objects WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-}
-
 pub async fn get_matched_entry_key_by_id(
     pool: &sqlx::SqlitePool,
     id: &str,

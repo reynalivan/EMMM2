@@ -15,7 +15,7 @@ pub fn standardize_prefix(folder_name: &str, target_enabled: bool) -> String {
         return valid_name.to_string();
     }
 
-    format!("DISABLED {valid_name}")
+    format!("{}{valid_name}", crate::DISABLED_PREFIX)
 }
 
 pub(crate) fn find_existing_sibling_case_insensitive(

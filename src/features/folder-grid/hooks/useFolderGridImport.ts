@@ -48,7 +48,7 @@ export function useFolderGridImport({
       // Non-archive paths → import directly via shared hook
       const nonArchivePaths = [...classified.folders, ...classified.iniFiles, ...classified.images];
       if (nonArchivePaths.length > 0) {
-        importMods.mutate({ paths: nonArchivePaths, targetDir, strategy: 'Raw' });
+        importMods.mutate({ paths: nonArchivePaths, targetDir });
       }
     },
     [activeModPath, explorerSubPath, importMods],

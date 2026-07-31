@@ -2,7 +2,6 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { isModFolder } from './pathUtils';
 import { applyDiskReconcileResult, useDiskReconcileCoordinator } from './hooks';
 import { isPreviewAffected } from './reconcileSelection';
 import type { DiskReconcileResult } from '../../lib/bindings';
@@ -27,18 +26,25 @@ vi.mock('../../stores/useAppStore', () => {
     selectedObjectFolderPath: null as string | null,
     selectedModPath: null as string | null,
     gridSelection: new Set<string>(),
-    lastDiskReconcileAtByGame: {} as Record<string, number>,
-    pendingDiskReconcileByGame: {} as Record<string, boolean>,
-    diskSourceUnavailableByGame: {} as Record<string, string | null>,
+    diskReconcileByGame: {} as Record<
+      string,
+      { at: number; pending: boolean; unavailable: string | null }
+    >,
     setDiskReconcileTimestamp: vi.fn(),
     markDiskReconcilePending: vi.fn(),
     setDiskSourceUnavailable: vi.fn(),
     setExplorerSubPath: vi.fn(),
     setCurrentPath: vi.fn(),
     setSelectedObjectFolderPath: vi.fn(),
-    replaceGridSelection: vi.fn(),
     replaceGridSelections: vi.fn(),
     clearGridSelection: vi.fn(),
+    // Workspace runtime slice: the bridge dispatches straight into the store.
+    currentPath: [] as string[],
+    mobileActivePane: 'sidebar' as const,
+    workspacePreviewDirty: false,
+    workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
+    workspaceDialogState: { kind: 'none' },
+    dispatchWorkspaceRuntime: vi.fn(),
   };
 
   const useAppStore = Object.assign(
@@ -127,8 +133,7 @@ describe('applyDiskReconcileResult', () => {
     state.selectedObjectFolderPath = null;
     state.selectedModPath = null;
     state.gridSelection = new Set();
-    state.lastDiskReconcileAtByGame = {};
-    state.pendingDiskReconcileByGame = {};
+    state.diskReconcileByGame = {};
   });
 
   it('refreshes ObjectList when folders change', async () => {
@@ -425,8 +430,7 @@ describe('useDiskReconcileCoordinator', () => {
     vi.clearAllMocks();
     const state = useAppStore.getState();
     state.workspaceView = 'mods';
-    state.lastDiskReconcileAtByGame = {};
-    state.pendingDiskReconcileByGame = {};
+    state.diskReconcileByGame = {};
   });
 
   it('runs a queued focus refresh after the current reconcile completes', async () => {
@@ -462,15 +466,5 @@ describe('useDiskReconcileCoordinator', () => {
 
     await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
     expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WindowRefocused', null, false);
-  });
-});
-
-describe('isModFolder', () => {
-  it('accepts unicode mod folder path with slash and ASCII case variants', () => {
-    expect(isModFolder('e:\\mods\\한국character\\日本語mod', 'E:/Mods')).toBe(true);
-  });
-
-  it('rejects unicode file path under mod root', () => {
-    expect(isModFolder('e:\\mods\\한국character\\日本語mod\\config.ini', 'E:/Mods')).toBe(false);
   });
 });

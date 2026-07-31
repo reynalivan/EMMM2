@@ -3,7 +3,7 @@ import { useObjectListLogic } from './hooks/useObjectListLogic';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
 import ObjectListToolbar from './components/ObjectListToolbar';
-import ObjectListContent from './components/ObjectListContent';
+import ObjectListContent, { type ContextMenuHandlerProps } from './components/ObjectListContent';
 import { useObjectListDropZones } from './hooks/useObjectListDropZones';
 import { useAppStore } from '../../stores/useAppStore';
 import { cn } from '../../lib/utils';
@@ -14,8 +14,7 @@ import ObjectListAuxiliaryModals from './modals/ObjectListAuxiliaryModals';
 import { useObjectListBulkToolbarProps } from './hooks/useObjectListBulkToolbarProps';
 import { useObjectListKeyboard } from './hooks/useObjectListKeyboard';
 import ObjectListPrimaryModals from './modals/ObjectListPrimaryModals';
-import ObjectListStateHost from './components/ObjectListStateHost';
-import { useObjectListContextMenuProps } from './hooks/useObjectListContextMenuProps';
+import ObjectListStates from './components/ObjectListStates';
 
 export default function ObjectList() {
   const { state, filters, nav, virtualizer, modals, handlers, bulkSelect } = useObjectListLogic();
@@ -181,7 +180,9 @@ export default function ObjectList() {
   const showFilterPanel = !!activeGame;
   const conflictObjects = useMemo(() => objects.filter((o) => o.has_naming_conflict), [objects]);
 
-  const contextMenuProps = useObjectListContextMenuProps({
+  // ponytail: plain object, no memo. It is consumed by a component that already
+  // re-renders with this one, so a stable identity bought nothing.
+  const contextMenuProps: ContextMenuHandlerProps = {
     isSyncing,
     categoryNames,
     handleEdit,
@@ -192,7 +193,7 @@ export default function ObjectList() {
     handleRevealInExplorer,
     handleEnableObject,
     handleDisableObject,
-  });
+  };
 
   const activePane = useAppStore((state) => state.activePane);
   const setActivePane = useAppStore((state) => state.setActivePane);
@@ -261,7 +262,7 @@ export default function ObjectList() {
 
       <ObjectListConflictBanner conflictObjects={conflictObjects} activeGame={activeGame} />
 
-      <ObjectListStateHost
+      <ObjectListStates
         isLoading={isLoading}
         isError={isError}
         errorInfo={objectsErrorInfo}

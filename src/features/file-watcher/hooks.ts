@@ -33,7 +33,7 @@ export function useWatcherLifecycle(activeGame: GameConfig | null) {
   // Recovery: when the mods folder disappears the watcher dies with it.
   // Re-running the effect once the source is available again restarts it.
   const diskSourceUnavailable = useAppStore((state) =>
-    Boolean(activeGame?.id && state.diskSourceUnavailableByGame[activeGame.id]),
+    Boolean(activeGame?.id && state.diskReconcileByGame[activeGame.id]?.unavailable),
   );
 
   useEffect(() => {
@@ -92,8 +92,7 @@ export function useDiskReconcileCoordinator(
   queryClient: QueryClient,
 ) {
   const workspaceView = useAppStore((state) => state.workspaceView);
-  const lastDiskReconcileAtByGame = useAppStore((state) => state.lastDiskReconcileAtByGame);
-  const pendingDiskReconcileByGame = useAppStore((state) => state.pendingDiskReconcileByGame);
+  const diskReconcileByGame = useAppStore((state) => state.diskReconcileByGame);
   const markDiskReconcilePending = useAppStore((state) => state.markDiskReconcilePending);
   const inFlightRef = useRef(false);
   const queuedRefreshRef = useRef<QueuedDiskReconcileRefresh | null>(null);
@@ -125,15 +124,14 @@ export function useDiskReconcileCoordinator(
         return true;
       }
 
-      const lastSyncAt = lastDiskReconcileAtByGame[gameId] ?? 0;
-      const isDirty = pendingDiskReconcileByGame[gameId] ?? false;
-      if (isDirty) {
+      const entry = diskReconcileByGame[gameId];
+      if (entry?.pending) {
         return true;
       }
 
-      return Date.now() - lastSyncAt > MODS_VIEW_SYNC_TTL_MS;
+      return Date.now() - (entry?.at ?? 0) > MODS_VIEW_SYNC_TTL_MS;
     },
-    [lastDiskReconcileAtByGame, pendingDiskReconcileByGame],
+    [diskReconcileByGame],
   );
 
   const runRefresh = useCallback(
@@ -280,7 +278,7 @@ export function useDiskReconcileCoordinator(
       }
 
       const gameId = activeGame.id;
-      const pending = pendingDiskReconcileByGame[gameId] ?? false;
+      const pending = diskReconcileByGame[gameId]?.pending ?? false;
       const requiresFull = requiresFullReconcileByGameRef.current[gameId] ?? false;
       const isHydrated = hydratedModsViewByGameRef.current[gameId] ?? false;
       const lastBlurAt = lastWindowBlurAtRef.current;
@@ -299,5 +297,5 @@ export function useDiskReconcileCoordinator(
       unlistenFocusPromise.then((unlisten) => unlisten());
       unlistenBlurPromise.then((unlisten) => unlisten());
     };
-  }, [activeGame?.id, activeGame, pendingDiskReconcileByGame, runRefresh, workspaceView]);
+  }, [activeGame?.id, activeGame, diskReconcileByGame, runRefresh, workspaceView]);
 }

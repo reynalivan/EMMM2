@@ -4,9 +4,7 @@ use super::resolve::resolve_object_root_path;
 use crate::domain::errors::AppError;
 use crate::domain::models::ItemStatus;
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::mods::core_ops::{
-    find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
-};
+use crate::services::mods::core_ops::rename_toggle_on_disk;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 
@@ -14,24 +12,6 @@ pub struct ObjectSwitchOutcome {
     pub object_id: String,
     pub original_path: String,
     pub next_path: String,
-}
-
-fn map_toggle_error(path: &Path, source_path: &str, error: std::io::Error) -> AppError {
-    if error.kind() == std::io::ErrorKind::PermissionDenied {
-        let processes = crate::services::fs_utils::locking::get_locking_processes(path);
-        if !processes.is_empty() {
-            return AppError::FileInUse {
-                path: source_path.to_string(),
-                processes,
-            };
-        }
-
-        return AppError::PathBusy {
-            path: source_path.to_string(),
-        };
-    }
-
-    AppError::Io(format!("Failed to rename object folder: {error}"))
 }
 
 /// Workspace Switch owns explicit object-root enable/disable.
@@ -45,7 +25,7 @@ pub async fn toggle_object_root_service(
     object_id: &str,
     enable: bool,
 ) -> Result<ObjectSwitchOutcome, AppError> {
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher_state.suppressor);
 
     let (object, mods_path, current_absolute_path) =
@@ -61,13 +41,8 @@ pub async fn toggle_object_root_service(
         });
     }
 
-    let old_name = current_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let new_name = standardize_prefix(&old_name, enable);
-    if new_name == old_name {
+    let Some(next_absolute_path) = rename_toggle_on_disk(current_path, enable, "object folder")?
+    else {
         crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
             pool,
             game_id,
@@ -80,28 +55,7 @@ pub async fn toggle_object_root_service(
             original_path: original_absolute_path,
             next_path: current_absolute_path,
         });
-    }
-
-    let parent = current_path
-        .parent()
-        .ok_or_else(|| AppError::Io("Invalid object root path".to_string()))?;
-    let next_absolute_path = parent.join(&new_name);
-    if let Some(existing_path) =
-        find_existing_sibling_case_insensitive(parent, &new_name, current_path)
-    {
-        let base_name = crate::common::normalizer::normalize_display_name(&old_name);
-        return Err(rename_conflict_error(
-            &next_absolute_path,
-            &existing_path,
-            &base_name,
-        ));
-    }
-
-    crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
-        current_path,
-        &next_absolute_path,
-    )
-    .map_err(|error| map_toggle_error(current_path, &current_absolute_path, error))?;
+    };
 
     let mods_root = Path::new(&mods_path);
     let old_relative_path = current_path
@@ -123,22 +77,16 @@ pub async fn toggle_object_root_service(
         &new_relative_path,
     )
     .await?;
-    crate::repo::mod_repo::update_child_paths_tx(
-        &mut tx,
-        game_id,
-        &format!("{old_relative_path}\\"),
-        &format!("{new_relative_path}\\"),
-        Some(&mods_path),
-    )
-    .await?;
-    crate::repo::mod_repo::update_child_paths_tx(
-        &mut tx,
-        game_id,
-        &format!("{old_relative_path}/"),
-        &format!("{new_relative_path}/"),
-        Some(&mods_path),
-    )
-    .await?;
+    for sep in ["\\", "/"] {
+        crate::repo::mod_repo::update_child_paths_tx(
+            &mut tx,
+            game_id,
+            &format!("{old_relative_path}{sep}"),
+            &format!("{new_relative_path}{sep}"),
+            Some(&mods_path),
+        )
+        .await?;
+    }
     crate::repo::mod_repo::update_status_and_reason_for_object(
         &mut tx,
         game_id,

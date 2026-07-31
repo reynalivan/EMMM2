@@ -85,9 +85,6 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
             }
         };
 
-        if let Err(e) = repo::stable_ids::migrate_to_stable_ids(&p).await {
-            log::warn!("Stable ID migration skipped: {e}");
-        }
         if let Err(e) = repo::unicode_keys::ensure_unicode_keys(&p).await {
             log::warn!("Unicode key backfill skipped: {e}");
         }

@@ -12,21 +12,21 @@ fn progress_key(game_id: &str, is_safe: bool) -> String {
     format!("{game_id}:{is_safe}")
 }
 
-pub fn start(game_id: &str, is_safe: bool) {
-    let snapshot = ApplyProgressSnapshot {
+fn new_snapshot(game_id: &str, is_safe: bool) -> ApplyProgressSnapshot {
+    ApplyProgressSnapshot {
         game_id: game_id.to_string(),
         is_safe,
         phase: "preparing".to_string(),
-        completed: 0,
-        total: 0,
-        current_item: None,
-        warnings: Vec::new(),
-        final_state_name: None,
-        final_mode: None,
-        success: false,
-    };
+        ..Default::default()
+    }
+}
+
+pub fn start(game_id: &str, is_safe: bool) {
     if let Ok(mut store) = progress_store().lock() {
-        store.insert(progress_key(game_id, is_safe), snapshot);
+        store.insert(
+            progress_key(game_id, is_safe),
+            new_snapshot(game_id, is_safe),
+        );
     }
 }
 
@@ -41,18 +41,7 @@ pub fn update(
     if let Ok(mut store) = progress_store().lock() {
         let entry = store
             .entry(progress_key(game_id, is_safe))
-            .or_insert_with(|| ApplyProgressSnapshot {
-                game_id: game_id.to_string(),
-                is_safe,
-                phase: phase.to_string(),
-                completed,
-                total,
-                current_item: current_item.clone(),
-                warnings: Vec::new(),
-                final_state_name: None,
-                final_mode: None,
-                success: false,
-            });
+            .or_insert_with(|| new_snapshot(game_id, is_safe));
         entry.phase = phase.to_string();
         entry.completed = completed;
         entry.total = total;
@@ -64,18 +53,7 @@ pub fn set_warnings(game_id: &str, is_safe: bool, warnings: Vec<String>) {
     if let Ok(mut store) = progress_store().lock() {
         let entry = store
             .entry(progress_key(game_id, is_safe))
-            .or_insert_with(|| ApplyProgressSnapshot {
-                game_id: game_id.to_string(),
-                is_safe,
-                phase: "preparing".to_string(),
-                completed: 0,
-                total: 0,
-                current_item: None,
-                warnings: Vec::new(),
-                final_state_name: None,
-                final_mode: None,
-                success: false,
-            });
+            .or_insert_with(|| new_snapshot(game_id, is_safe));
         entry.warnings = warnings;
     }
 }
@@ -91,18 +69,7 @@ pub fn finish(
     if let Ok(mut store) = progress_store().lock() {
         let entry = store
             .entry(progress_key(game_id, is_safe))
-            .or_insert_with(|| ApplyProgressSnapshot {
-                game_id: game_id.to_string(),
-                is_safe,
-                phase: "done".to_string(),
-                completed: 0,
-                total: 0,
-                current_item: None,
-                warnings: warnings.clone(),
-                final_state_name: final_state_name.clone(),
-                final_mode: final_mode.clone(),
-                success,
-            });
+            .or_insert_with(|| new_snapshot(game_id, is_safe));
         entry.phase = if success {
             "done".to_string()
         } else {

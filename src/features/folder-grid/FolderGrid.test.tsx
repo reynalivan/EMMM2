@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import FolderGrid from './FolderGrid';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { createWrapper } from '../../testing/test-utils';
-import { ModFolder } from '../../types/mod';
+import { ModFolder } from '../../types/object';
 
 // Mock the hook!
 const mockUseFolderGrid = vi.fn();
@@ -11,7 +11,6 @@ vi.mock('./hooks/useFolderGrid', () => ({
 }));
 
 const mockAppStoreState = {
-  safeMode: true,
   activePane: 'folderGrid',
   setActivePane: vi.fn(),
 };

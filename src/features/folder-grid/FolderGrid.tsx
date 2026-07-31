@@ -61,6 +61,7 @@ export default function FolderGrid() {
     togglePreview,
     bulkTagOpen,
     setBulkTagOpen,
+    handleBulkTagSubmit,
     bulkDeleteConfirm,
     setBulkDeleteConfirm,
     handleBulkToggle,
@@ -194,6 +195,7 @@ export default function FolderGrid() {
         handleBulkDeleteConfirm={handleBulkDeleteConfirm}
         bulkTagOpen={bulkTagOpen}
         setBulkTagOpen={setBulkTagOpen}
+        handleBulkTagSubmit={handleBulkTagSubmit}
         gridSelection={gridSelection}
         isIgnoreManagementOpen={isIgnoreManagementOpen}
         setIsIgnoreManagementOpen={setIsIgnoreManagementOpen}

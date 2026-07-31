@@ -35,13 +35,7 @@ pub(super) fn serialize_warnings_json(warnings: &[String]) -> String {
     serde_json::to_string(warnings).unwrap_or_else(|_| "[]".to_string())
 }
 
-pub fn to_summary(
-    c: &Collection,
-    active_collection_id: Option<&str>,
-    undo_collection_id: Option<&str>,
-) -> CollectionSummary {
-    let is_undo_target = undo_collection_id == Some(c.id.as_str());
-
+pub fn to_summary(c: &Collection, active_collection_id: Option<&str>) -> CollectionSummary {
     CollectionSummary {
         id: c.id.clone(),
         name: c.name.clone(),
@@ -49,7 +43,6 @@ pub fn to_summary(
         is_unsaved: c.is_unsaved,
         signature: c.signature.clone(),
         is_active: active_collection_id == Some(c.id.as_str()),
-        is_undo_target,
         updated_at: c.updated_at.clone(),
         raw_member_count: c.member_count.unwrap_or(0),
         mod_count: c.display_mod_count,

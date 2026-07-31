@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, sqlx::FromRow)]
 pub struct IgnoredConflict {
@@ -30,19 +31,28 @@ pub async fn list_ignored_object_conflicts(
     .fetch_all(pool)
     .await?;
 
-    for item in &mut list {
-        if let Ok(ids) = serde_json::from_str::<Vec<String>>(&item.mod_ids) {
-            let mut names = Vec::new();
-            for id in ids {
-                // Try to find the mod name in the DB
-                let name_res: Option<String> =
-                    sqlx::query_scalar("SELECT actual_name FROM mods WHERE id = ?")
-                        .bind(&id)
-                        .fetch_optional(pool)
-                        .await?;
+    // Resolve every referenced mod id to its name in one pass. Rows whose
+    // `mod_ids` is not valid JSON simply contribute no names, matching the
+    // previous per-row `serde_json` guard.
+    let name_rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT ic.id, COALESCE(m.actual_name, je.value)
+         FROM ignored_object_conflicts ic
+         JOIN json_each(CASE WHEN json_valid(ic.mod_ids) THEN ic.mod_ids ELSE '[]' END) je
+         LEFT JOIN mods m ON m.id = je.value
+         WHERE ic.game_id = ?
+         ORDER BY ic.id, je.key",
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await?;
 
-                names.push(name_res.unwrap_or(id));
-            }
+    let mut names_by_conflict: HashMap<String, Vec<String>> = HashMap::new();
+    for (conflict_id, name) in name_rows {
+        names_by_conflict.entry(conflict_id).or_default().push(name);
+    }
+
+    for item in &mut list {
+        if let Some(names) = names_by_conflict.remove(&item.id) {
             item.mod_names = names;
         }
     }

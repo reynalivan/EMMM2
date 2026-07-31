@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::domain::corridor::{CorridorRuntime, CorridorSnapshot};
+use crate::domain::corridor::CorridorSnapshot;
 use crate::domain::errors::CorridorError;
 use crate::repo::{collection_repo, corridor_repo};
 use crate::services::projected_state_service;
@@ -30,42 +30,20 @@ pub async fn get_corridor_state(
     let collections = collection_repo::list_for_game(pool, game_id)
         .await
         .map_err(CorridorError::from)?;
-    let named_match = collections.iter().find(|collection| {
+    let matched_collection = collections.iter().find(|collection| {
         !collection.is_unsaved
             && collection.signature.as_deref() == Some(current_signature.as_str())
     });
-    let matched_collection = named_match;
 
     let active_collection_id = matched_collection.map(|collection| collection.id.clone());
     let active_collection_name = matched_collection.map(|collection| collection.name.clone());
-    let active_collection_is_unsaved = false;
     let is_dirty = matched_collection.is_none();
-    let snapshot_json = projected_state_service::serialize_snapshot_json(&projected_state)
-        .unwrap_or_else(|| "{\"object_states\":[],\"active_roots\":[],\"summary\":{\"object_count\":0,\"enabled_object_count\":0,\"active_root_count\":0,\"missing_root_count\":0}}".to_string());
-    let runtime = CorridorRuntime {
-        game_id: game_id.to_string(),
-        is_safe,
-        matched_collection_id: active_collection_id.clone(),
-        state_kind: if active_collection_is_unsaved || is_dirty {
-            "unsaved".to_string()
-        } else {
-            "named".to_string()
-        },
-        state_name: active_collection_name.clone(),
-        signature: current_signature.clone(),
-        snapshot_json,
-        snapshot_source: "live_scan".to_string(),
-        updated_at: String::new(),
-    };
-    let _ = corridor_repo::upsert_runtime(pool, &runtime).await;
 
     Ok(CorridorSnapshot {
         game_id: game_id.to_string(),
         is_safe,
         active_collection_id,
         active_collection_name,
-        active_collection_is_unsaved,
-        undo_collection_id: None,
         current_signature,
         is_dirty,
         current_mods,
@@ -116,32 +94,15 @@ pub(crate) async fn resolve_restore_collection(
     Ok(None)
 }
 
-/// Compute the current corridor signature from enabled mods.
-/// This is used after mod toggles to keep the corridor cache up to date.
-pub async fn recompute_signature(
-    pool: &SqlitePool,
-    game_id: &str,
-    is_safe: bool,
-) -> Result<String, CorridorError> {
-    let (mods, objects) =
-        crate::services::collection_service::load_live_corridor_state(pool, game_id, is_safe)
-            .await
-            .map_err(CorridorError::from)?;
-    let signature = crate::services::collection_service::compute_signature(&mods, &objects);
-    corridor_repo::update_signature(pool, game_id, is_safe, &signature).await?;
-
-    Ok(signature)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{get_corridor_state, resolve_restore_collection};
     use crate::domain::models::{GameType, ItemStatus};
-    use crate::repo::{collection_repo, corridor_repo};
+    use crate::repo::collection_repo;
     use crate::services::projected_state_service;
     use crate::test_utils::{
         init_test_db, insert_test_game, insert_test_mod, insert_test_object,
-        set_test_collection_snapshot, set_test_corridor_pointers_unchecked, TestGameFixture,
+        set_test_collection_snapshot, set_test_corridor_active_unchecked, TestGameFixture,
         TestModFixture, TestObjectFixture,
     };
 
@@ -248,15 +209,9 @@ mod tests {
         .await
         .expect("create unsaved");
 
-        set_test_corridor_pointers_unchecked(
-            &ctx.pool,
-            "game-1",
-            false,
-            Some("missing-active"),
-            None,
-        )
-        .await
-        .expect("set stale active pointer");
+        set_test_corridor_active_unchecked(&ctx.pool, "game-1", false, Some("missing-active"))
+            .await
+            .expect("set stale active pointer");
 
         let resolved = resolve_restore_collection(&ctx.pool, "game-1", false)
             .await
@@ -296,7 +251,7 @@ mod tests {
         .await
         .expect("seed unsaved snapshot");
 
-        corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&unsaved.id), None)
+        set_test_corridor_active_unchecked(&ctx.pool, "game-1", true, Some(&unsaved.id))
             .await
             .expect("set active pointer");
 
@@ -306,6 +261,5 @@ mod tests {
 
         assert_eq!(snapshot.active_collection_id.as_deref(), None);
         assert_eq!(snapshot.active_collection_name.as_deref(), None);
-        assert!(!snapshot.active_collection_is_unsaved);
     }
 }

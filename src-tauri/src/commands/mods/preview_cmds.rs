@@ -1,13 +1,13 @@
-use crate::domain::errors::{AppError, MetadataError};
+use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
 use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::ini::document::IniDocument;
 use crate::services::mods::preview_ops::{
-    clear_mod_preview_images_inner, list_mod_ini_files_inner, list_mod_preview_images_inner,
-    read_mod_ini_inner, remove_mod_preview_image_inner, resolve_image_path,
-    save_mod_preview_image_inner, write_mod_ini_locked_inner,
+    clear_mod_preview_images_inner, ensure_image_size, list_mod_ini_files_inner,
+    list_mod_preview_images_inner, read_mod_ini_inner, remove_mod_preview_image_inner,
+    resolve_image_path, save_mod_preview_image_inner, write_mod_ini_locked_inner,
 };
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use tauri::State;
@@ -21,8 +21,7 @@ pub async fn list_mod_ini_files(
     game_id: String,
     folder_path: String,
 ) -> Result<Vec<IniFileEntry>, AppError> {
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
     list_mod_ini_files_inner(&mod_root)
 }
 
@@ -34,8 +33,7 @@ pub async fn read_mod_ini(
     folder_path: String,
     file_name: String,
 ) -> Result<IniDocument, AppError> {
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
     read_mod_ini_inner(&mod_root, &file_name)
 }
 
@@ -53,8 +51,7 @@ pub async fn write_mod_ini(
     file_name: String,
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let changed_path = mod_root.join(&file_name).to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     write_mod_ini_locked_inner(&op_lock, &mod_root, &file_name, line_updates).await?;
@@ -70,8 +67,7 @@ pub async fn list_mod_preview_images(
     game_id: String,
     folder_path: String,
 ) -> Result<Vec<String>, AppError> {
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
     list_mod_preview_images_inner(&mod_root)
 }
 
@@ -89,17 +85,10 @@ pub async fn save_mod_preview_image(
     object_name: String,
     image_data: Vec<u8>,
 ) -> Result<String, AppError> {
-    const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+    ensure_image_size(&image_data)?;
 
-    if image_data.len() > MAX_IMAGE_BYTES {
-        return Err(AppError::Metadata(MetadataError::Validation(
-            "Image too large. Max 10MB.".to_string(),
-        )));
-    }
-
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
-    let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
     emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![saved.clone()])
@@ -121,10 +110,9 @@ pub async fn remove_mod_preview_image(
     folder_path: String,
     image_path: String,
 ) -> Result<(), AppError> {
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let target = resolve_image_path(&mod_root, &image_path)?;
-    let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
+    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     remove_mod_preview_image_inner(&mod_root, &image_path)?;
     emit_internal_disk_reconcile(
@@ -149,9 +137,8 @@ pub async fn clear_mod_preview_images(
     game_id: String,
     folder_path: String,
 ) -> Result<Vec<String>, AppError> {
-    let mod_root = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(MetadataError::Security(e)))?;
-    let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let removed = clear_mod_preview_images_inner(&mod_root)?;
     let changed_paths = if removed.is_empty() {

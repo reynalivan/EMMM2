@@ -42,8 +42,8 @@ async fn test_ingest_dropped_folders_success() {
     .await
     .unwrap();
 
-    assert_eq!(res.moved.len(), 1);
-    assert_eq!(res.moved[0], "source_mod");
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0], "source_mod");
     assert!(target_dir.join("source_mod").exists());
 }
 

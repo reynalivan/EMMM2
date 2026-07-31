@@ -14,7 +14,7 @@ import {
   useBulkPin,
 } from '../../../hooks/useBulkModMutations';
 import { useActiveGame } from '../../../hooks/useActiveGame';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 
 interface FolderGridBulkOptions {
   gridSelection: Set<string>;
@@ -47,6 +47,13 @@ export function useFolderGridBulk({
 
   const handleBulkTagRequest = () => {
     setBulkTagOpen(true);
+  };
+
+  // Bulk Add Tags — mutation toasts success/failure itself (see useBulkUpdateInfo)
+  const handleBulkTagSubmit = (tags: string[]) => {
+    const paths = Array.from(gridSelection);
+    if (paths.length === 0 || !activeGame?.id) return;
+    bulkUpdateInfo.mutate({ gameId: activeGame.id, paths, update: { tags_add: tags } });
   };
 
   const handleBulkDeleteRequest = () => {
@@ -103,6 +110,7 @@ export function useFolderGridBulk({
     setBulkDeleteConfirm,
     handleBulkToggle,
     handleBulkTagRequest,
+    handleBulkTagSubmit,
     handleBulkDeleteRequest,
     handleBulkDeleteConfirm,
     handleBulkFavorite,

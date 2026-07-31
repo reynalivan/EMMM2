@@ -24,6 +24,18 @@ pub struct IniLineUpdate {
     pub content: String,
 }
 
+const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+
+/// Rejects oversized pasted/saved preview images.
+pub fn ensure_image_size(image_data: &[u8]) -> Result<(), AppError> {
+    if image_data.len() > MAX_IMAGE_BYTES {
+        return Err(AppError::Metadata(MetadataError::Validation(
+            "Image too large. Max 10MB.".to_string(),
+        )));
+    }
+    Ok(())
+}
+
 fn validate_ini_filename(file_name: &str) -> Result<(), AppError> {
     if file_name.trim().is_empty() {
         return Err(AppError::Metadata(MetadataError::Validation(
@@ -162,7 +174,7 @@ pub async fn write_mod_ini_locked_inner(
     file_name: &str,
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
-    let _lock = op_lock.acquire().await.map_err(AppError::Internal)?;
+    let _lock = op_lock.acquire().await?;
     write_mod_ini_inner(mod_root, file_name, line_updates)
 }
 

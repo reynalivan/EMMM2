@@ -1,24 +1,10 @@
-export function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/g, '');
-}
+import { pathsEqual, pathStartsWith } from '../../lib/pathKey';
+import { normalizeWorkspacePath } from '../workspace-runtime/pathRewrite';
 
 export function joinModPath(modsPath: string, relativePath: string): string {
-  const base = normalizePath(modsPath);
-  const relative = normalizePath(relativePath).replace(/^\/+/g, '');
+  const base = normalizeWorkspacePath(modsPath);
+  const relative = normalizeWorkspacePath(relativePath).replace(/^\/+/, '');
   return relative ? `${base}/${relative}` : base;
-}
-
-export function isSameOrDescendantPath(candidatePath: string, rootPath: string): boolean {
-  const normalizedCandidate = normalizePath(candidatePath);
-  const normalizedRoot = normalizePath(rootPath);
-
-  if (!normalizedRoot) {
-    return false;
-  }
-
-  return (
-    normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`)
-  );
 }
 
 export function rewritePath(
@@ -26,35 +12,17 @@ export function rewritePath(
   fromPath: string,
   toPath: string,
 ): string | null {
-  const normalizedCandidate = normalizePath(candidatePath);
-  const normalizedFrom = normalizePath(fromPath);
-  const normalizedTo = normalizePath(toPath);
+  const candidate = normalizeWorkspacePath(candidatePath);
+  const from = normalizeWorkspacePath(fromPath);
+  const to = normalizeWorkspacePath(toPath);
 
-  if (normalizedCandidate === normalizedFrom) {
-    return normalizedTo;
+  if (pathsEqual(candidate, from)) {
+    return to;
   }
 
-  if (!normalizedCandidate.startsWith(`${normalizedFrom}/`)) {
+  if (!pathStartsWith(from, candidate)) {
     return null;
   }
 
-  return `${normalizedTo}${normalizedCandidate.slice(normalizedFrom.length)}`;
-}
-
-export function isModFolder(path: string, modsPath: string): boolean {
-  const normalizedPath = normalizePath(path).toLowerCase();
-  const normalizedModsPath = normalizePath(modsPath).toLowerCase();
-  const prefix = `${normalizedModsPath}/`;
-
-  if (!normalizedPath.startsWith(prefix)) {
-    return false;
-  }
-
-  const relative = normalizedPath.slice(prefix.length);
-  const segments = relative.split('/').filter(Boolean);
-  if (segments.length !== 2) {
-    return false;
-  }
-
-  return !segments[1].includes('.');
+  return `${to}${candidate.slice(from.length)}`;
 }

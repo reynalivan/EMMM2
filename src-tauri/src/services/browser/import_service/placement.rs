@@ -95,7 +95,7 @@ pub(super) async fn place_mod(
             .map_err(|error| format!("Failed to create object shell folder: {error}"))?;
     }
 
-    let dest = target_parent.join(format!("{} {}", crate::DISABLED_PREFIX, mod_name));
+    let dest = target_parent.join(format!("{}{}", crate::DISABLED_PREFIX, mod_name));
 
     // Collision guard
     let dest = resolve_collision(dest);

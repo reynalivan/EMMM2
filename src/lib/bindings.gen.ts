@@ -459,17 +459,17 @@ async renameModFolder(folderPath: string, newName: string, gameId: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
-async importModsFromPaths(paths: string[], targetDir: string, strategy: ImportStrategy, dbJson: string | null) : Promise<Result<BulkResult, string>> {
+async importModsFromPaths(paths: string[], targetDir: string) : Promise<Result<BulkResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("import_mods_from_paths", { paths, targetDir, strategy, dbJson }) };
+    return { status: "ok", data: await TAURI_INVOKE("import_mods_from_paths", { paths, targetDir }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async ingestDroppedFolders(paths: string[], modsPath: string, gameId: string, gameName: string, gameType: string) : Promise<Result<IngestResult, string>> {
+async ingestDroppedFolders(paths: string[], modsPath: string) : Promise<Result<string[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("ingest_dropped_folders", { paths, modsPath, gameId, gameName, gameType }) };
+    return { status: "ok", data: await TAURI_INVOKE("ingest_dropped_folders", { paths, modsPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -574,14 +574,6 @@ async setObjectModsCategory(gameId: string, objectId: string, category: string) 
 async listMoveTargetsForObject(gameId: string, objectId: string) : Promise<Result<WorkspaceMoveTarget[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_move_targets_for_object", { gameId, objectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async moveModToObject(gameId: string, folderPath: string, targetObjectId: string, status: string | null) : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("move_mod_to_object", { gameId, folderPath, targetObjectId, status }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1395,7 +1387,7 @@ export type ApplyProgressSnapshot = { game_id: string; is_safe: boolean; phase: 
 /**
  * Result of applying a collection.
  */
-export type ApplyResult = { success: boolean; mods_enabled: number; mods_disabled: number; objects_toggled: number; undo_collection_id: string | null; new_signature: string; warnings: string[]; final_state_name: string | null; final_mode: string | null; partial_apply: boolean; skipped_missing_paths: string[]; final_state_is_dirty: boolean; runtime_path_rewrites: WorkspacePathRewrite[] }
+export type ApplyResult = { success: boolean; mods_enabled: number; mods_disabled: number; objects_toggled: number; new_signature: string; warnings: string[]; final_state_name: string | null; final_mode: string | null; partial_apply: boolean; skipped_missing_paths: string[]; final_state_is_dirty: boolean; runtime_path_rewrites: WorkspacePathRewrite[] }
 /**
  * Result of analyzing an archive before extraction.
  */
@@ -1459,7 +1451,7 @@ export type CategorySlice = { category: string; count: number }
 /**
  * Errors specific to collection operations.
  */
-export type CollectionError = { NotFound: { id: string } } | { DuplicateName: { name: string } } | "CannotModifyUndoSnapshot" | "NoUndoAvailable" | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { Corridor: CorridorError } | { Io: string }
+export type CollectionError = { NotFound: { id: string } } | { DuplicateName: { name: string } } | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { Corridor: CorridorError } | { Io: string }
 /**
  * A unified member type for collections.
  */
@@ -1485,7 +1477,7 @@ export type CollectionRoot = { kind: MemberKind; collection_id: string; root_pat
 /**
  * Summary returned in list views.
  */
-export type CollectionSummary = { id: string; name: string; is_safe: boolean; is_unsaved: boolean; is_active: boolean; is_undo_target: boolean; signature: string | null; updated_at: string; raw_member_count: number; mod_count: number }
+export type CollectionSummary = { id: string; name: string; is_safe: boolean; is_unsaved: boolean; is_active: boolean; signature: string | null; updated_at: string; raw_member_count: number; mod_count: number }
 /**
  * Represents a folder naming collision discovered during sync or organize.
  */
@@ -1513,7 +1505,7 @@ existingModId: string | null }
 /**
  * Startup config status returned to frontend
  */
-export type ConfigStatus = "FreshInstall" | "HasConfig" | "CorruptConfig"
+export type ConfigStatus = "FreshInstall" | "HasConfig"
 /**
  * User-confirmed item sent back from the review modal.
  */
@@ -1583,11 +1575,11 @@ size_bytes: number }
 /**
  * Errors specific to corridor operations.
  */
-export type CorridorError = { NoModsPath: { game_id: string } } | { GameNotFound: { game_id: string } } | { CorridorMismatch: { collection_mode: string; current_mode: string } } | { SwitchInProgress: { game_id: string } } | { RenameFailed: { path: string; error: string } } | { PartialRenameFailed: { succeeded: number; failed: number } } | { Db: string } | { Collection: CollectionError }
+export type CorridorError = { NoModsPath: { game_id: string } } | { GameNotFound: { game_id: string } } | { Db: string } | { Collection: CollectionError }
 /**
  * Lightweight snapshot returned to the frontend.
  */
-export type CorridorSnapshot = { game_id: string; is_safe: boolean; active_collection_id: string | null; active_collection_name: string | null; active_collection_is_unsaved: boolean; undo_collection_id: string | null; current_signature: string; is_dirty: boolean; current_mods: CollectionMod[]; current_objects: CollectionObject[]; current_tree_nodes: PreviewTreeNode[]; projected_state: ProjectedCollectionState }
+export type CorridorSnapshot = { game_id: string; is_safe: boolean; active_collection_id: string | null; active_collection_name: string | null; current_signature: string; is_dirty: boolean; current_mods: CollectionMod[]; current_objects: CollectionObject[]; current_tree_nodes: PreviewTreeNode[]; projected_state: ProjectedCollectionState }
 /**
  * Input for creating a new collection.
  */
@@ -1762,8 +1754,6 @@ export type IgnoredConflict = { id: string; game_id: string; object_id: string; 
  * DTO returned to the frontend for import queue display.
  */
 export type ImportJobDto = { id: string; download_id: string | null; game_id: string | null; archive_path: string; status: string; match_category: string | null; match_entry_key: string | null; match_alias_name: string | null; match_confidence: number | null; match_reason: string | null; placed_path: string | null; error_msg: string | null; is_duplicate: boolean; created_at: string; updated_at: string }
-export type ImportStrategy = "Raw"
-export type IngestResult = { moved: string[]; skipped: string[]; not_dirs: string[]; sync: SyncResult }
 export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; newline_style: NewlineStyle; mode: IniReadMode }
 export type IniFileEntry = { filename: string; path: string }
 export type IniLineUpdate = { line_idx: number; content: string }
@@ -1814,7 +1804,7 @@ export type ObjectSummary = { id: string; name: string; folder_path: string; mat
 /**
  * Errors specific to Pin operations.
  */
-export type PinError = { Validation: string } | { Db: string } | { Locked: string }
+export type PinError = { Db: string }
 /**
  * Frontend-facing PIN status (no hashes leaked).
  */
@@ -1935,7 +1925,7 @@ export type WorkspaceDisplayMode = "container_folder" | "mod_pack" | "variant" |
 export type WorkspaceExplorer = { self_node_type: string | null; self_node_kind: WorkspaceNodeKind; self_display_mode: WorkspaceDisplayMode; self_type_chip: WorkspaceTypeChip | null; self_is_mod: boolean; self_is_enabled: boolean; self_is_effectively_active: boolean; self_owner_object_id: string | null; self_owner_object_folder_path: string | null; self_classification_reasons: string[]; children: WorkspaceExplorerNode[]; conflicts: ConflictGroup[]; ancestor_disabled_by: string | null; ancestor_disabled_path: string | null; inactive_reason: WorkspaceReason | null }
 export type WorkspaceExplorerNode = { node_type: string; classification_reasons: string[]; id: string | null; owner_object_id: string | null; owner_object_folder_path: string | null; name: string; folder_name: string; path: string; is_enabled: boolean; is_directory: boolean; thumbnail_path: string | null; modified_at: number; size_bytes: number; has_info_json: boolean; is_favorite: boolean; is_misplaced: boolean; is_safe: boolean; metadata: Partial<{ [key in string]: string }> | null; category: string | null; conflict_group_id: string | null; conflict_state: string | null; warnings: string[]; node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; ancestor_disabled: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities; can_navigate: boolean }
 export type WorkspaceImageSummary = { image_count: number; primary_image_path: string | null }
-export type WorkspaceImpact = { rewrites: WorkspacePathRewrite[]; cleared_targets: string[]; changed_object_ids: string[]; changed_folder_paths: string[]; refresh_scopes: WorkspaceRefreshScope[]; projection_dirty: boolean; warnings: string[] }
+export type WorkspaceImpact = { rewrites: WorkspacePathRewrite[]; changed_object_ids: string[]; changed_folder_paths: string[]; refresh_scopes: WorkspaceRefreshScope[]; warnings: string[] }
 export type WorkspaceIniSummary = { file_count: number; file_names: string[] }
 export type WorkspaceModInfoSummary = { actual_name: string; author: string; version: string; description: string; is_safe: boolean; is_favorite: boolean; has_info_json: boolean }
 export type WorkspaceMoveTarget = { object_id: string; object_name: string; object_folder_path: string; target_subpath: string | null; display_path: string; depth: number }
@@ -1946,7 +1936,7 @@ export type WorkspacePathRewrite = { old_path: string; new_path: string }
 export type WorkspacePreview = { selected_path: string | null; selected_node: WorkspaceNode | null; is_flat_mod_root: boolean; display_title: string | null; display_subtitle: string | null; mod_info_summary: WorkspaceModInfoSummary | null; ini_summary: WorkspaceIniSummary | null; image_summary: WorkspaceImageSummary | null; warning_summary: WorkspaceWarningSummary }
 export type WorkspaceReason = { code: WorkspaceReasonCode; args: Partial<{ [key in string]: string }> }
 export type WorkspaceReasonCode = "disabled_by_container" | "object_folder_disabled"
-export type WorkspaceRefreshScope = "workspaceChanged" | "objectRowsChanged" | "folderStructureChanged" | "folderMetadataChanged" | "previewChanged" | "thumbnailChanged" | "conflictsChanged" | "corridorChanged" | "collectionsChanged" | "dashboardChanged" | "activeKeybindingsChanged" | "trashChanged" | "settingsChanged" | "browserDownloadsChanged" | "browserImportQueueChanged" | "browserHomepageChanged" | "dedupChanged" | "dedupReportChanged" | "scannerChanged" | "pinsChanged"
+export type WorkspaceRefreshScope = "workspaceChanged" | "objectRowsChanged" | "folderStructureChanged" | "previewChanged" | "conflictsChanged" | "corridorChanged" | "collectionsChanged" | "dashboardChanged" | "activeKeybindingsChanged"
 export type WorkspaceRuntime = { game_id: string; safe_mode: boolean; source_state: WorkspaceSourceState }
 export type WorkspaceSelection = { selected_object_folder_path: string | null; explorer_sub_path: string | null; selected_mod_path: string | null; current_path: string[]; reconciliation_status: WorkspaceSelectionReconciliationStatus; reconciliation_reason: WorkspaceSelectionReconciliationReason | null; affected_paths: string[] }
 export type WorkspaceSelectionReconciliationReason = "missing_object_root" | "missing_explorer_path" | "missing_mod_path" | "corridor_mismatch" | "source_unavailable"

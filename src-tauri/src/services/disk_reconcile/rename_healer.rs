@@ -54,7 +54,7 @@ async fn apply_mod_rename_hints(
     request: ModRenameHintsRequest<'_>,
 ) -> Result<(), String> {
     for (old_relative, new_relative) in &request.hints.mod_renames {
-        let mod_exists = crate::repo::mod_repo::get_mod_id_and_status_by_path(
+        let mod_exists = crate::repo::mod_repo::get_mod_id_and_status_by_path_tx(
             &mut *conn,
             old_relative,
             request.game_id,

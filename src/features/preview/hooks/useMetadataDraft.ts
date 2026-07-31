@@ -21,6 +21,22 @@ interface UseMetadataDraftParams {
   onSave: (activePath: string, draft: MetadataDraftValues) => Promise<MetadataDraftValues>;
 }
 
+const FIELD_LABELS: Record<keyof MetadataDraftValues, string> = {
+  actual_name: 'Title',
+  author: 'Author',
+  version: 'Version',
+  description: 'Description',
+};
+
+const FIELD_KEYS = Object.keys(FIELD_LABELS) as Array<keyof MetadataDraftValues>;
+
+const EMPTY_DRAFT: MetadataDraftValues = {
+  actual_name: '',
+  author: '',
+  version: '',
+  description: '',
+};
+
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -31,138 +47,61 @@ export function useMetadataDraft({
   source,
   onSave,
 }: UseMetadataDraftParams) {
-  const [titleDraft, setTitleDraft] = useState('');
-  const [authorDraft, setAuthorDraft] = useState('');
-  const [versionDraft, setVersionDraft] = useState('');
-  const [descriptionDraft, setDescriptionDraft] = useState('');
-
-  const [syncedTitle, setSyncedTitle] = useState('');
-  const [syncedAuthor, setSyncedAuthor] = useState('');
-  const [syncedVersion, setSyncedVersion] = useState('');
-  const [syncedDescription, setSyncedDescription] = useState('');
+  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const [synced, setSynced] = useState(EMPTY_DRAFT);
 
   const sourceTitle = source?.actual_name ?? fallbackTitle;
   const sourceAuthor = source?.author ?? 'Unknown';
   const sourceVersion = source?.version ?? '1.0';
   const sourceDescription = source?.description ?? '';
 
-  useEffect(() => {
-    if (!activePath) {
-      setTitleDraft('');
-      setAuthorDraft('');
-      setVersionDraft('');
-      setDescriptionDraft('');
-      setSyncedTitle('');
-      setSyncedAuthor('');
-      setSyncedVersion('');
-      setSyncedDescription('');
-      return;
-    }
-
-    setTitleDraft(sourceTitle);
-    setAuthorDraft(sourceAuthor);
-    setVersionDraft(sourceVersion);
-    setDescriptionDraft(sourceDescription);
-    setSyncedTitle(sourceTitle);
-    setSyncedAuthor(sourceAuthor);
-    setSyncedVersion(sourceVersion);
-    setSyncedDescription(sourceDescription);
-  }, [activePath, sourceAuthor, sourceDescription, sourceTitle, sourceVersion]);
-
-  const metadataDirty = useMemo(
-    () =>
-      !!activePath &&
-      (titleDraft !== syncedTitle ||
-        authorDraft !== syncedAuthor ||
-        versionDraft !== syncedVersion ||
-        descriptionDraft !== syncedDescription),
-    [
-      activePath,
-      titleDraft,
-      syncedTitle,
-      authorDraft,
-      syncedAuthor,
-      versionDraft,
-      syncedVersion,
-      descriptionDraft,
-      syncedDescription,
-    ],
+  const sourceValues = useMemo<MetadataDraftValues>(
+    () => ({
+      actual_name: sourceTitle,
+      author: sourceAuthor,
+      version: sourceVersion,
+      description: sourceDescription,
+    }),
+    [sourceAuthor, sourceDescription, sourceTitle, sourceVersion],
   );
+
+  useEffect(() => {
+    const next = activePath ? sourceValues : EMPTY_DRAFT;
+    setDraft(next);
+    setSynced(next);
+  }, [activePath, sourceValues]);
+
+  const metadataDirty = !!activePath && FIELD_KEYS.some((key) => draft[key] !== synced[key]);
 
   const changedFields = useMemo<MetadataFieldChange[]>(() => {
     if (!metadataDirty) {
       return [];
     }
 
-    const changes: MetadataFieldChange[] = [];
-    if (titleDraft !== sourceTitle) {
-      changes.push({
-        label: 'Title',
-        oldValue: sourceTitle,
-        newValue: titleDraft,
-      });
-    }
-    if (authorDraft !== sourceAuthor) {
-      changes.push({
-        label: 'Author',
-        oldValue: sourceAuthor,
-        newValue: authorDraft,
-      });
-    }
-    if (versionDraft !== sourceVersion) {
-      changes.push({
-        label: 'Version',
-        oldValue: sourceVersion,
-        newValue: versionDraft,
-      });
-    }
-    if (descriptionDraft !== sourceDescription) {
-      changes.push({
-        label: 'Description',
-        oldValue: sourceDescription,
-        newValue: descriptionDraft,
-      });
-    }
-
-    return changes;
-  }, [
-    authorDraft,
-    descriptionDraft,
-    metadataDirty,
-    sourceAuthor,
-    sourceDescription,
-    sourceTitle,
-    sourceVersion,
-    titleDraft,
-    versionDraft,
-  ]);
+    return FIELD_KEYS.filter((key) => draft[key] !== sourceValues[key]).map((key) => ({
+      label: FIELD_LABELS[key],
+      oldValue: sourceValues[key],
+      newValue: draft[key],
+    }));
+  }, [draft, metadataDirty, sourceValues]);
 
   const saveMetadata = useCallback(async () => {
     if (!activePath || !metadataDirty) {
       return;
     }
 
-    if (titleDraft.trim() === '') {
+    if (draft.actual_name.trim() === '') {
       toast.warning('Title cannot be empty');
       return;
     }
 
     try {
-      const saved = await onSave(activePath, {
-        actual_name: titleDraft,
-        author: authorDraft,
-        version: versionDraft,
-        description: descriptionDraft,
-      });
-      setSyncedTitle(saved.actual_name);
-      setSyncedAuthor(saved.author);
-      setSyncedVersion(saved.version);
-      setSyncedDescription(saved.description);
+      setSynced(await onSave(activePath, draft));
       toast.success('Metadata auto-saved.');
     } catch (error) {
       toast.error(`Cannot save metadata: ${toErrorMessage(error)}`);
     }
-  }, [activePath, authorDraft, descriptionDraft, metadataDirty, onSave, titleDraft, versionDraft]);
+  }, [activePath, draft, metadataDirty, onSave]);
 
   // Auto-save with long debounce
   useEffect(() => {
@@ -171,7 +110,7 @@ export function useMetadataDraft({
     }
 
     // validasi kalau isinya nol > akan diabaikan
-    if (titleDraft.trim() === '') {
+    if (draft.actual_name.trim() === '') {
       return;
     }
 
@@ -180,24 +119,28 @@ export function useMetadataDraft({
     }, 2500); // 2.5 seconds duration to allow reverting back
 
     return () => clearTimeout(timer);
-  }, [activePath, metadataDirty, saveMetadata, titleDraft]);
+  }, [activePath, draft.actual_name, metadataDirty, saveMetadata]);
 
   const discardMetadata = useCallback(() => {
-    setTitleDraft(syncedTitle);
-    setAuthorDraft(syncedAuthor);
-    setVersionDraft(syncedVersion);
-    setDescriptionDraft(syncedDescription);
-  }, [syncedAuthor, syncedDescription, syncedTitle, syncedVersion]);
+    setDraft(synced);
+  }, [synced]);
+
+  const setters = useMemo(
+    () => ({
+      setTitleDraft: (value: string) => setDraft((prev) => ({ ...prev, actual_name: value })),
+      setAuthorDraft: (value: string) => setDraft((prev) => ({ ...prev, author: value })),
+      setVersionDraft: (value: string) => setDraft((prev) => ({ ...prev, version: value })),
+      setDescriptionDraft: (value: string) => setDraft((prev) => ({ ...prev, description: value })),
+    }),
+    [],
+  );
 
   return {
-    titleDraft,
-    authorDraft,
-    versionDraft,
-    descriptionDraft,
-    setTitleDraft,
-    setAuthorDraft,
-    setVersionDraft,
-    setDescriptionDraft,
+    titleDraft: draft.actual_name,
+    authorDraft: draft.author,
+    versionDraft: draft.version,
+    descriptionDraft: draft.description,
+    ...setters,
     metadataDirty,
     changedFields,
     saveMetadata,

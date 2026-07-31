@@ -1,19 +1,14 @@
-import { useState, memo, useCallback, useMemo } from 'react';
+import { useState, memo, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { ContextMenu } from '../../../components/ui/ContextMenu';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
-import { useThumbnail } from '../../../hooks/useThumbnail';
-import { useAppStore } from '../../../stores/useAppStore';
-import { formatWorkspaceWarning } from '../../workspace-runtime/workspaceSemantics';
-import { buildWorkspaceSwitchPolicy } from '../../workspace-runtime/actions/workspaceSwitchPolicy';
+import { useSafeMode } from '../../../hooks/settingsQuery';
 import { WorkspaceSwitchControl } from '../../workspace-runtime/components/WorkspaceSwitchControl';
 import { WorkspaceSwitchLabel } from '../../workspace-runtime/components/WorkspaceSwitchLabel';
-import { maskWorkspaceNodeCapabilities } from '../../workspace-runtime/actions/workspaceActionAvailability';
-import { getFolderTypeChip } from '../utils/FolderTypeChip';
+import { useFolderNodeView } from '../hooks/useFolderNodeView';
 import FolderCardThumbnail from './FolderCardThumbnail';
 
 interface FolderCardProps {
@@ -88,19 +83,39 @@ function FolderCardInner({
   isSwitchBusy = false,
   mutationsDisabled = false,
 }: FolderCardProps) {
-  const { t } = useTranslation(['grid', 'common']);
-  const typeChip = getFolderTypeChip(folder.type_chip, t, 'card');
-  const actionFolder = useMemo(
-    () => maskWorkspaceNodeCapabilities(folder, mutationsDisabled),
-    [folder, mutationsDisabled],
-  );
-  const primaryWarningText = formatWorkspaceWarning(t, folder.primary_warning);
-  const switchPolicy = useMemo(
-    () => buildWorkspaceSwitchPolicy(t, actionFolder),
-    [actionFolder, t],
-  );
-  const [imgError, setImgError] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const {
+    t,
+    typeChip,
+    actionNode: actionFolder,
+    primaryWarningText,
+    switchPolicy,
+    thumbnailSrc,
+    thumbLoading,
+    imgError,
+    setImgError,
+    imgLoaded,
+    setImgLoaded,
+    isBulkSelection,
+    bulkMenuProps,
+    handleClick,
+  } = useFolderNodeView({
+    node: folder,
+    variant: 'card',
+    isSelected,
+    selectionSize,
+    mutationsDisabled,
+    toggleSelection,
+    onActivate,
+    bulk: {
+      onBulkToggle,
+      onBulkDelete,
+      onBulkTag,
+      onBulkFavorite,
+      onBulkSafe,
+      onBulkPin,
+      onBulkMoveToObject,
+    },
+  });
   const [renameValue, setRenameValue] = useState(folder.name);
 
   const handleToggleClick = useCallback(
@@ -120,23 +135,6 @@ function FolderCardInner({
     [folder, isLockedByParent, mutationsDisabled, onRequestEnableParent, onToggleEnabled],
   );
 
-  // Lazy thumbnail: resolved per-card via separate backend command
-  const activeGameId = useAppStore((state) => state.activeGameId);
-  const { data: thumbnailPath, isLoading: thumbLoading } = useThumbnail(
-    activeGameId || '',
-    folder.path,
-  );
-
-  const thumbnailSrc = thumbnailPath && !imgError ? thumbnailPath : null;
-
-  // Reset image state when thumbnail path changes (e.g. after lazy resolve or update)
-  const [prevThumbnailPath, setPrevThumbnailPath] = useState(thumbnailPath);
-  if (thumbnailPath !== prevThumbnailPath) {
-    setPrevThumbnailPath(thumbnailPath);
-    setImgError(false);
-    setImgLoaded(false);
-  }
-
   // Sync rename value when folder changes or rename starts
   if (!isRenaming && renameValue !== folder.name) {
     setRenameValue(folder.name);
@@ -154,46 +152,23 @@ function FolderCardInner({
     }
   };
 
-  const handleClick = (e: React.MouseEvent) => {
-    if (folder.display_mode === 'internal_assets') {
-      return;
-    }
-
-    if (e.ctrlKey || e.shiftKey) {
-      toggleSelection(folder.path, true, e.shiftKey);
-    } else {
-      onActivate?.(folder.path);
-    }
-  };
-
   const handleDoubleClick = () => {
     if (folder.is_directory && folder.can_navigate) {
       onNavigate(folder.folder_name);
     }
   };
 
-  const isBulkSelection =
-    isSelected && selectionSize > 1 && useAppStore.getState().activePane === 'folderGrid';
   const hasNamingConflict = !!folder.conflict_state;
 
   // Leak guard only: main workspace grid should already be corridor-filtered by the backend.
-  const { safeMode } = useAppStore();
+  const safeMode = useSafeMode();
   const isHiddenByMask = safeMode && !folder.is_safe;
 
   return (
     <ContextMenu
       content={
         isBulkSelection ? (
-          <BulkContextMenu
-            count={selectionSize}
-            onToggle={mutationsDisabled ? undefined : onBulkToggle}
-            onDelete={mutationsDisabled ? undefined : onBulkDelete}
-            onTag={mutationsDisabled ? undefined : onBulkTag}
-            onFavorite={mutationsDisabled ? undefined : onBulkFavorite}
-            onSafe={mutationsDisabled ? undefined : onBulkSafe}
-            onPin={mutationsDisabled ? undefined : onBulkPin}
-            onMoveToObject={mutationsDisabled ? undefined : onBulkMoveToObject}
-          />
+          <BulkContextMenu {...bulkMenuProps} />
         ) : (
           <FolderCardContextMenu
             folder={actionFolder}

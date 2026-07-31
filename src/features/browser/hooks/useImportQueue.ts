@@ -19,25 +19,10 @@ export function useImportQueue() {
   });
 
   useEffect(() => {
-    const unlisten = listen<ImportJobUpdateEvent>('import:job-update', (event) => {
-      queryClient.setQueryData<ImportJobItem[]>(IMPORT_QUEUE_KEY, (old) => {
-        if (!old) return old;
-        return old.map((job) =>
-          job.id === event.payload.job_id
-            ? {
-                ...job,
-                status: event.payload.status,
-                match_category: event.payload.category ?? job.match_category,
-                match_entry_key: event.payload.entry_key ?? job.match_entry_key,
-                match_alias_name: event.payload.alias_name ?? job.match_alias_name,
-                match_confidence: event.payload.confidence ?? job.match_confidence,
-                match_reason: event.payload.reason ?? job.match_reason,
-                placed_path: event.payload.placed_path ?? job.placed_path,
-                error_msg: event.payload.error ?? job.error_msg,
-              }
-            : job,
-        );
-      });
+    // The event only says a job moved; the refetch brings the whole row back —
+    // including jobs auto-import queued while the panel was open.
+    const unlisten = listen<ImportJobUpdateEvent>('import:job-update', () => {
+      void publishQueryScopes(queryClient, ['browserImportQueue']);
     });
 
     return () => {

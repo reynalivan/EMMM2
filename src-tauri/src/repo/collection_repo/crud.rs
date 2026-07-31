@@ -3,7 +3,7 @@
 use sqlx::{SqliteConnection, SqlitePool};
 
 use super::mapping::row_to_collection;
-use crate::common::path_key::collection_name_key;
+use crate::common::path_key::canonical_name_key;
 use crate::domain::collection::Collection;
 use crate::domain::errors::CollectionError;
 
@@ -33,7 +33,6 @@ pub async fn list_for_corridor(
     is_safe: bool,
     include_unsaved: bool,
 ) -> Result<Vec<Collection>, CollectionError> {
-    let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
     let unsaved_clause = if include_unsaved {
         ""
     } else {
@@ -54,7 +53,7 @@ pub async fn list_for_corridor(
 
     let rows = sqlx::query(&query)
         .bind(game_id)
-        .bind(is_safe_i32)
+        .bind(is_safe)
         .fetch_all(pool)
         .await?;
 
@@ -87,8 +86,7 @@ pub async fn create(
     is_safe: bool,
     is_unsaved: bool,
 ) -> Result<Collection, CollectionError> {
-    let name_key = collection_name_key(name);
-    let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
+    let name_key = canonical_name_key(name);
     let is_unsaved_i32 = if is_unsaved { 1i32 } else { 0i32 };
 
     // Duplicate check for named collections
@@ -99,7 +97,7 @@ pub async fn create(
         )
         .bind(game_id)
         .bind(&name_key)
-        .bind(is_safe_i32)
+        .bind(is_safe)
         .fetch_optional(pool)
         .await?;
 
@@ -118,7 +116,7 @@ pub async fn create(
     .bind(game_id)
     .bind(name)
     .bind(&name_key)
-    .bind(is_safe_i32)
+    .bind(is_safe)
     .bind(is_unsaved_i32)
     .execute(pool)
     .await?;
@@ -150,8 +148,6 @@ pub async fn find_unsaved_for_corridor(
     is_safe: bool,
     exclude_id: Option<&str>,
 ) -> Result<Option<Collection>, CollectionError> {
-    let is_safe_i32 = if is_safe { 1i32 } else { 0i32 };
-
     let row = if let Some(excluded_id) = exclude_id {
         sqlx::query(
             r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
@@ -162,7 +158,7 @@ pub async fn find_unsaved_for_corridor(
                LIMIT 1"#,
         )
         .bind(game_id)
-        .bind(is_safe_i32)
+        .bind(is_safe)
         .bind(excluded_id)
         .fetch_optional(pool)
         .await?
@@ -176,7 +172,7 @@ pub async fn find_unsaved_for_corridor(
                LIMIT 1"#,
         )
         .bind(game_id)
-        .bind(is_safe_i32)
+        .bind(is_safe)
         .fetch_optional(pool)
         .await?
     };

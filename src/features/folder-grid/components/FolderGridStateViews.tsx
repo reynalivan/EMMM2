@@ -1,5 +1,5 @@
-import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import ListStateView from '../../../components/ui/ListStateView';
 import FolderGridEmpty from './FolderGridEmpty';
 
 interface FolderGridStateViewsProps {
@@ -29,46 +29,29 @@ export default function FolderGridStateViews({
 }: FolderGridStateViewsProps) {
   const { t } = useTranslation(['grid']);
 
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-primary/50" />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4">
-        <p className="text-xs text-error/60">
-          {error instanceof Error ? error.message : String(error) || t('status.load_error')}
-        </p>
-      </div>
-    );
-  }
-
-  if (visibleCount > 0) {
-    return null;
-  }
-
-  if (isFlatModRoot) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-base-content/40">
-        <p className="text-sm font-medium">{t('status.no_subfolders')}</p>
-        <p className="text-xs text-center">{t('status.preview_hint')}</p>
-      </div>
-    );
-  }
-
   return (
-    <FolderGridEmpty
-      explorerSearchQuery={explorerSearchQuery}
-      currentPath={currentPath}
-      setExplorerSearch={setExplorerSearch}
-      handleBreadcrumbClick={handleBreadcrumbClick}
-      handleImportFiles={(paths) => {
-        void handleImportFiles(paths);
-      }}
-    />
+    <ListStateView
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      errorFallback={t('status.load_error')}
+    >
+      {visibleCount > 0 ? null : isFlatModRoot ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-base-content/40">
+          <p className="text-sm font-medium">{t('status.no_subfolders')}</p>
+          <p className="text-xs text-center">{t('status.preview_hint')}</p>
+        </div>
+      ) : (
+        <FolderGridEmpty
+          explorerSearchQuery={explorerSearchQuery}
+          currentPath={currentPath}
+          setExplorerSearch={setExplorerSearch}
+          handleBreadcrumbClick={handleBreadcrumbClick}
+          handleImportFiles={(paths) => {
+            void handleImportFiles(paths);
+          }}
+        />
+      )}
+    </ListStateView>
   );
 }

@@ -4,7 +4,7 @@
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use super::mapping::parse_warnings_json;
-use crate::domain::collection::{CollectionMod, CollectionObject, CollectionRoot};
+use crate::domain::collection::{CollectionMod, CollectionObject};
 use crate::domain::errors::CollectionError;
 
 pub async fn get_mods(
@@ -65,41 +65,6 @@ pub async fn get_objects(
             is_enabled: r.get::<i32, _>("is_enabled") != 0,
             display_name: r.get("display_name"),
             path_key: r.get("path_key"),
-        })
-        .collect())
-}
-
-pub async fn get_roots(
-    pool: &SqlitePool,
-    collection_id: &str,
-) -> Result<Vec<CollectionRoot>, CollectionError> {
-    let rows = sqlx::query(
-        r#"SELECT collection_id, root_path, root_path_key, display_name, display_name_key,
-                  object_id, object_name, object_type, root_kind, is_safe, is_enabled,
-                  thumbnail_hint, corridor_source
-        FROM collection_roots WHERE collection_id = ?"#,
-    )
-    .bind(collection_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| CollectionRoot {
-            kind: crate::domain::collection::MemberKind::Root,
-            collection_id: r.get("collection_id"),
-            root_path: r.get("root_path"),
-            root_path_key: r.get("root_path_key"),
-            display_name: r.get("display_name"),
-            display_name_key: r.get("display_name_key"),
-            object_id: r.get("object_id"),
-            object_name: r.get("object_name"),
-            object_type: r.get("object_type"),
-            root_kind: r.get("root_kind"),
-            is_safe: r.get::<i32, _>("is_safe") != 0,
-            is_enabled: r.get::<i32, _>("is_enabled") != 0,
-            thumbnail_hint: r.get("thumbnail_hint"),
-            corridor_source: r.get("corridor_source"),
         })
         .collect())
 }

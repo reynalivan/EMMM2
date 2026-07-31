@@ -11,15 +11,13 @@ export interface SelectionSlice {
   gridSelection: Set<string>;
 
   setSelectedObjectFolderPath: (folderPath: string | null) => void;
-  setSelectedModPath: (path: string | null) => void;
   toggleGridSelection: (id: string, multi?: boolean) => void;
   clearGridSelection: () => void;
   setGridSelection: (selection: Set<string>) => void;
-  replaceGridSelection: (oldPath: string, newPath: string) => void;
   replaceGridSelections: (rewrites: WorkspacePathRewriteInput[]) => void;
 }
 
-export const createSelectionSlice: AppSliceCreator<SelectionSlice> = (set, get) => ({
+export const createSelectionSlice: AppSliceCreator<SelectionSlice> = (set) => ({
   selectedObjectFolderPath: null,
   selectedModPath: null,
   gridSelection: new Set(),
@@ -30,7 +28,6 @@ export const createSelectionSlice: AppSliceCreator<SelectionSlice> = (set, get) 
       // Auto-navigate to grid on mobile when object selected
       mobileActivePane: folderPath ? 'grid' : 'sidebar',
     }),
-  setSelectedModPath: (path) => set({ selectedModPath: path }),
 
   toggleGridSelection: (id, multi = false) =>
     set((state) => {
@@ -65,8 +62,6 @@ export const createSelectionSlice: AppSliceCreator<SelectionSlice> = (set, get) 
         mobileActivePane: nextMobilePane,
       };
     }),
-
-  replaceGridSelection: (oldPath, newPath) => get().replaceGridSelections([{ oldPath, newPath }]),
 
   replaceGridSelections: (rewrites) =>
     set((state) => {

@@ -22,8 +22,8 @@ pub(super) async fn run_pipeline(
     validate_extension(db, &archive).await?;
 
     // -- Step 2: Hash (BLAKE3) + dedup check --
-    emit_status(app, job_id, "extracting", None);
     set_job_status(db, job_id, "extracting", None).await?;
+    emit_status(app, job_id, "extracting", None);
 
     let hash = hash_file(&archive)?;
 
@@ -34,6 +34,9 @@ pub(super) async fn run_pipeline(
 
     if existing > 0 {
         browser_repo::mark_duplicate(db, job_id).await.ok();
+        // Status must land before the event: this path is terminal, so a refetch
+        // that beat the write would leave the job stuck on "extracting".
+        set_job_status(db, job_id, "needs_review", None).await?;
         // Inform frontend — user must decide what to do with duplicate
         emit_status(
             app,
@@ -44,7 +47,7 @@ pub(super) async fn run_pipeline(
                 "archive_hash": hash,
             })),
         );
-        return set_job_status(db, job_id, "needs_review", None).await;
+        return Ok(());
     }
 
     // Store hash

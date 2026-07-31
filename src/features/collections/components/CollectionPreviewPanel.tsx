@@ -68,7 +68,7 @@ export function CollectionPreviewPanel({
 
     const displayName = getCollectionDisplayName({
       name: corridorSnapshot.is_dirty ? null : corridorSnapshot.active_collection_name,
-      isUnsaved: corridorSnapshot.is_dirty || corridorSnapshot.active_collection_is_unsaved,
+      isUnsaved: corridorSnapshot.is_dirty,
       isSafe: corridorSnapshot.is_safe,
       labels: unsavedLabels,
     });

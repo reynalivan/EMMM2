@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ModFolder } from '../../../types/mod';
+import { useCallback, useEffect, useMemo } from 'react';
+import type { ModFolder } from '../../../types/object';
 import { useFolderNavigation } from './useFolderNavigation';
+import { useRangeSelection } from '../../../hooks/useRangeSelection';
 import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
+
+const getFolderPath = (folder: ModFolder) => folder.path;
 
 interface UseFolderGridSelectionOptions {
   sortedFolders: ModFolder[];
@@ -34,14 +37,14 @@ export function useFolderGridSelection({
   handleDeleteRequest,
   handleRenameRequest,
 }: UseFolderGridSelectionOptions) {
-  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  const { anchorId, setAnchorId, getRange } = useRangeSelection(sortedFolders, getFolderPath);
   const visiblePathKeys = useMemo(
     () => new Set(sortedFolders.map((folder) => normalizeWorkspacePath(folder.path))),
     [sortedFolders],
   );
 
   useEffect(() => {
-    if (!lastSelectedPath || visiblePathKeys.has(normalizeWorkspacePath(lastSelectedPath))) {
+    if (!anchorId || visiblePathKeys.has(normalizeWorkspacePath(anchorId))) {
       return;
     }
 
@@ -49,32 +52,27 @@ export function useFolderGridSelection({
       visiblePathKeys.has(normalizeWorkspacePath(path)),
     );
     if (nextSelectedPath) {
-      setLastSelectedPath(nextSelectedPath);
+      setAnchorId(nextSelectedPath);
     }
-  }, [gridSelection, lastSelectedPath, visiblePathKeys]);
+  }, [anchorId, gridSelection, setAnchorId, visiblePathKeys]);
 
   const handleActivateItem = useCallback(
     (path: string) => {
       setGridSelection(new Set());
       selectMod(path, isMobile ? 'details' : undefined);
-      setLastSelectedPath(path);
+      setAnchorId(path);
     },
-    [isMobile, selectMod, setGridSelection],
+    [isMobile, selectMod, setAnchorId, setGridSelection],
   );
 
   const handleToggleSelection = useCallback(
     (path: string, multi: boolean, isShift?: boolean) => {
-      if (isShift && lastSelectedPath) {
-        const startIdx = sortedFolders.findIndex((folder) => folder.path === lastSelectedPath);
-        const endIdx = sortedFolders.findIndex((folder) => folder.path === path);
-
-        if (startIdx !== -1 && endIdx !== -1) {
-          const min = Math.min(startIdx, endIdx);
-          const max = Math.max(startIdx, endIdx);
+      if (isShift) {
+        const range = getRange(path);
+        if (range) {
           const nextSelection = new Set(gridSelection);
-
-          for (let index = min; index <= max; index += 1) {
-            nextSelection.add(sortedFolders[index].path);
+          for (const rangePath of range) {
+            nextSelection.add(rangePath);
           }
 
           setGridSelection(nextSelection);
@@ -94,9 +92,9 @@ export function useFolderGridSelection({
       const nextSelectedModPath =
         nextSelection.size > 0 ? Array.from(nextSelection)[nextSelection.size - 1] : null;
       selectMod(nextSelectedModPath, isMobile && nextSelection.size === 1 ? 'details' : undefined);
-      setLastSelectedPath(path);
+      setAnchorId(path);
     },
-    [gridSelection, isMobile, lastSelectedPath, selectMod, setGridSelection, sortedFolders],
+    [getRange, gridSelection, isMobile, selectMod, setAnchorId, setGridSelection],
   );
 
   const { focusedId, handleKeyDown } = useFolderNavigation({

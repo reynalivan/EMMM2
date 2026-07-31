@@ -33,15 +33,6 @@
       "failed": "Failed to move: {{error}}"
     }
   },
-  "tags": {
-    "title": "Bulk Tagging",
-    "placeholder": "Type tag & press Enter...",
-    "empty": "No tags added yet",
-    "toast": {
-      "success": "Tags updated for {{count}} mods",
-      "failed": "Failed to update tags: {{error}}"
-    }
-  },
   "resolution": {
     "title": "Name Conflict Detected",
     "description": "Both an enabled and disabled version of {{name}} exist in the same directory. Compare them and choose what to keep.",

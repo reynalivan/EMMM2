@@ -1,5 +1,5 @@
 import type { MatchedDbEntry } from '../../../lib/bindings';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { DuplicateInfo } from '../../../types/scanner';
 import type { WorkspaceExplorerNode, WorkspaceObjectNode } from '../../../types/workspace';
 

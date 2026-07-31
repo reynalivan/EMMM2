@@ -2,8 +2,8 @@
 
 use super::live_state::{live_runtime_is_safe, load_game_mods_path, load_live_runtime_state};
 use super::projection::{
-    build_projected_state_from_members, collection_members_from_projected_state, compute_signature,
-    load_projected_collection_state,
+    collection_members_from_projected_state, compute_signature, load_projected_collection_state,
+    persist_projected_state,
 };
 use crate::domain::collection::{
     CollectionMod, CollectionObject, CollectionSummary, CreateCollectionInput,
@@ -34,7 +34,7 @@ pub async fn list_collections(
 
     let mut summaries = Vec::with_capacity(named_collections.len());
     for c in named_collections {
-        summaries.push(collection_repo::to_summary(&c, active_id.as_deref(), None));
+        summaries.push(collection_repo::to_summary(&c, active_id.as_deref()));
     }
 
     Ok(summaries)
@@ -53,82 +53,72 @@ pub async fn create_collection(
             CreateCollectionMode::SaveCurrentState
         }
     });
-    let (persisted_mods, persisted_objects, roots, projected_state, collection_is_safe) =
-        match save_mode {
-            CreateCollectionMode::CloneSnapshot => {
-                let Some(source_collection_id) = input.source_collection_id.as_deref() else {
-                    return Err(CollectionError::Validation(
-                        "Clone snapshot requires a source collection".to_string(),
-                    ));
-                };
-                let source = collection_repo::get_by_id(pool, source_collection_id)
-                    .await?
-                    .ok_or_else(|| CollectionError::NotFound {
-                        id: source_collection_id.to_string(),
-                    })?;
-                if source.game_id != input.game_id {
-                    return Err(CollectionError::Validation(
-                        "Snapshot source does not belong to the active game".to_string(),
-                    ));
-                }
-
-                let snapshot =
-                    load_projected_collection_state(pool, &source, mods_path.as_deref()).await?;
-                let (mods, objects, roots) =
-                    collection_members_from_projected_state(&id, source.is_safe, &snapshot);
-                (mods, objects, roots, snapshot, source.is_safe)
+    let (persisted_mods, persisted_objects, projected_state, collection_is_safe) = match save_mode {
+        CreateCollectionMode::CloneSnapshot => {
+            let Some(source_collection_id) = input.source_collection_id.as_deref() else {
+                return Err(CollectionError::Validation(
+                    "Clone snapshot requires a source collection".to_string(),
+                ));
+            };
+            let source = collection_repo::get_by_id(pool, source_collection_id)
+                .await?
+                .ok_or_else(|| CollectionError::NotFound {
+                    id: source_collection_id.to_string(),
+                })?;
+            if source.game_id != input.game_id {
+                return Err(CollectionError::Validation(
+                    "Snapshot source does not belong to the active game".to_string(),
+                ));
             }
-            CreateCollectionMode::SaveCurrentState => {
-                if input.source_collection_id.is_some() {
-                    return Err(CollectionError::Validation(
-                        "Save current state cannot use a source collection".to_string(),
-                    ));
-                }
 
-                let (mods, objects) = load_live_runtime_state(pool, &input.game_id).await?;
-                if mods.is_empty() {
-                    return Err(CollectionError::Validation(
-                        "A collection must contain at least 1 active mod".to_string(),
-                    ));
-                }
-                let collection_is_safe = live_runtime_is_safe(pool, &input.game_id).await?;
-
-                let persisted_mods: Vec<CollectionMod> = mods
-                    .iter()
-                    .map(|entry| CollectionMod {
-                        collection_id: id.clone(),
-                        ..entry.clone()
-                    })
-                    .collect();
-                let persisted_objects: Vec<CollectionObject> = objects
-                    .iter()
-                    .map(|entry| CollectionObject {
-                        collection_id: id.clone(),
-                        ..entry.clone()
-                    })
-                    .collect();
-                let projected_state = build_projected_state_from_members(
-                    &persisted_mods,
-                    &persisted_objects,
-                    mods_path.as_deref(),
-                );
-                let roots = projected_state_service::roots_from_projected_state(
-                    &id,
-                    collection_is_safe,
-                    &projected_state,
-                );
-                (
-                    persisted_mods,
-                    persisted_objects,
-                    roots,
-                    projected_state,
-                    collection_is_safe,
-                )
+            let snapshot =
+                load_projected_collection_state(pool, &source, mods_path.as_deref()).await?;
+            let (mods, objects, _roots) =
+                collection_members_from_projected_state(&id, source.is_safe, &snapshot);
+            (mods, objects, snapshot, source.is_safe)
+        }
+        CreateCollectionMode::SaveCurrentState => {
+            if input.source_collection_id.is_some() {
+                return Err(CollectionError::Validation(
+                    "Save current state cannot use a source collection".to_string(),
+                ));
             }
-        };
 
-    let signature = projected_state_service::signature_for_projected_state(&projected_state);
-    let snapshot_json = projected_state_service::serialize_snapshot_json(&projected_state);
+            let (mods, objects) = load_live_runtime_state(pool, &input.game_id).await?;
+            if mods.is_empty() {
+                return Err(CollectionError::Validation(
+                    "A collection must contain at least 1 active mod".to_string(),
+                ));
+            }
+            let collection_is_safe = live_runtime_is_safe(pool, &input.game_id).await?;
+
+            let persisted_mods: Vec<CollectionMod> = mods
+                .iter()
+                .map(|entry| CollectionMod {
+                    collection_id: id.clone(),
+                    ..entry.clone()
+                })
+                .collect();
+            let persisted_objects: Vec<CollectionObject> = objects
+                .iter()
+                .map(|entry| CollectionObject {
+                    collection_id: id.clone(),
+                    ..entry.clone()
+                })
+                .collect();
+            let projected_state = projected_state_service::build_projected_state(
+                &persisted_mods,
+                &persisted_objects,
+                mods_path.as_deref(),
+            );
+            (
+                persisted_mods,
+                persisted_objects,
+                projected_state,
+                collection_is_safe,
+            )
+        }
+    };
 
     // 3. Save to DB
     collection_repo::create(
@@ -140,15 +130,13 @@ pub async fn create_collection(
         false,
     )
     .await?;
-    collection_repo::replace_all_state(
+    persist_projected_state(
         pool,
         &id,
+        collection_is_safe,
         &persisted_mods,
         &persisted_objects,
-        &roots,
-        Some(&signature),
-        snapshot_json.as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await?;
 
@@ -165,7 +153,6 @@ pub async fn create_collection(
     Ok(collection_repo::to_summary(
         &collection,
         active_collection_id.as_deref(),
-        None,
     ))
 }
 
@@ -177,7 +164,7 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str) -> Result<(), Collec
     corridor_repo::clear_collection_references_tx(&mut tx, id)
         .await
         .map_err(CollectionError::Corridor)?;
-    corridor_repo::update_pointers_tx(&mut tx, &collection.game_id, collection.is_safe, None, None)
+    corridor_repo::update_pointers_tx(&mut tx, &collection.game_id, collection.is_safe, None)
         .await
         .map_err(CollectionError::Corridor)?;
     collection_repo::delete_tx(&mut tx, id).await?;
@@ -205,5 +192,5 @@ pub async fn update_collection(
             id: input.id.clone(),
         })?;
 
-    Ok(collection_repo::to_summary(&collection, None, None))
+    Ok(collection_repo::to_summary(&collection, None))
 }

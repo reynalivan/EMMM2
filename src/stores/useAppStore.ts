@@ -22,6 +22,11 @@ export interface AppState
     ExplorerSlice,
     WorkspaceRuntimeSlice {}
 
+/** What actually lands in LocalStorage: `partialize`'s output after JSON round-trip. */
+type PersistedAppState = Omit<Partial<AppState>, 'collapsedCategories'> & {
+  collapsedCategories?: string[];
+};
+
 // Custom debounced storage to prevent LocalStorage spam
 const debouncedStorage = {
   getItem: (name: string) => {
@@ -66,28 +71,20 @@ export const useAppStore = create<AppState>()(
         currentPath: state.currentPath,
         explorerSubPath: state.explorerSubPath,
         explorerScrollOffset: state.explorerScrollOffset,
-        theme: state.theme,
 
         // Epic 3: Persist collapsed categories (serializable array)
         collapsedCategories: Array.from(state.collapsedCategories),
       }),
+      // The default shallow merge already restores everything `partialize` wrote;
+      // only `collapsedCategories` needs a hand because a Set can't survive JSON.
+      // ponytail: keep it this thin — a new persisted key belongs in `partialize` alone.
       merge: (persistedState: unknown, currentState) => {
-        const pState = persistedState as Partial<AppState>;
+        const pState = (persistedState ?? {}) as PersistedAppState;
 
         return {
           ...currentState,
-          leftPanelWidth: pState.leftPanelWidth ?? currentState.leftPanelWidth,
-          rightPanelWidth: pState.rightPanelWidth ?? currentState.rightPanelWidth,
-          isPreviewOpen: pState.isPreviewOpen ?? currentState.isPreviewOpen,
-          sortField: pState.sortField ?? currentState.sortField,
-          sortOrder: pState.sortOrder ?? currentState.sortOrder,
-          viewMode: pState.viewMode ?? currentState.viewMode,
-          currentPath: pState.currentPath ?? currentState.currentPath,
-          explorerSubPath: pState.explorerSubPath ?? currentState.explorerSubPath,
-          explorerScrollOffset: pState.explorerScrollOffset ?? currentState.explorerScrollOffset,
-          theme: pState.theme ?? currentState.theme,
-          // Deserialize array back to Set when loading
-          collapsedCategories: pState?.collapsedCategories
+          ...pState,
+          collapsedCategories: pState.collapsedCategories
             ? new Set(pState.collapsedCategories)
             : currentState.collapsedCategories,
         };

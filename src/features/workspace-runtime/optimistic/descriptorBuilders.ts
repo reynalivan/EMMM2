@@ -1,5 +1,4 @@
 import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../../lib/runtimeEffects';
-import { EMPTY_RUNTIME_EFFECT_DESCRIPTOR } from './descriptor';
 
 export type RuntimeMutationClass =
   | 'workspaceOnly'
@@ -96,7 +95,11 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
 
 export function buildRefreshDescriptor(events: RuntimeRefreshEvent[]): RuntimeEffectDescriptor {
   return {
-    ...EMPTY_RUNTIME_EFFECT_DESCRIPTOR,
+    rewrites: [],
+    invalidatedPaths: [],
+    thumbnailPaths: [],
+    removedQueryKeys: [],
+    invalidatedQueryKeys: [],
     refreshEvents: events,
   };
 }

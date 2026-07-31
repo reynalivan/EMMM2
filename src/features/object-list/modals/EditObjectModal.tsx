@@ -1,6 +1,6 @@
 import { useGameSchema } from '../../../hooks/useObjectQueries';
 import type { ObjectSummary, FilterDef } from '../../../types/object';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import { X } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';

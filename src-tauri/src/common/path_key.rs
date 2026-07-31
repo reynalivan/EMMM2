@@ -17,17 +17,7 @@ pub(crate) fn canonical_path_key_for_path(path: &Path) -> String {
 }
 
 pub(crate) fn canonical_name_key(value: &str) -> String {
-    let normalized = crate::common::normalizer::normalize_display_name(value);
-    normalized
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_uppercase() {
-                ch.to_ascii_lowercase()
-            } else {
-                ch
-            }
-        })
-        .collect()
+    crate::common::normalizer::normalize_display_name(value).to_ascii_lowercase()
 }
 
 pub(crate) fn names_equal_by_key(left: &str, right: &str) -> bool {
@@ -37,14 +27,6 @@ pub(crate) fn names_equal_by_key(left: &str, right: &str) -> bool {
 pub fn folder_path_key(folder_path: &str, mods_path: Option<&str>) -> String {
     canonical_collection_path_key(folder_path, mods_path)
         .unwrap_or_else(|| canonical_path_key_for_path(Path::new(folder_path)))
-}
-
-pub(crate) fn object_name_key(name: &str) -> String {
-    canonical_name_key(name.trim())
-}
-
-pub(crate) fn collection_name_key(name: &str) -> String {
-    canonical_name_key(name.trim())
 }
 
 pub(crate) fn resolve_collection_path(
@@ -66,17 +48,7 @@ pub(crate) fn path_file_name_lossy(path: &Path) -> Option<String> {
 }
 
 pub(crate) fn path_starts_with_key(path: &str, prefix: &str, mods_path: Option<&str>) -> bool {
-    let path_components = normalized_components(path, mods_path);
-    let prefix_components = normalized_components(prefix, mods_path);
-    if prefix_components.is_empty() || prefix_components.len() > path_components.len() {
-        return false;
-    }
-
-    path_components.iter().zip(prefix_components.iter()).all(
-        |(path_component, prefix_component)| {
-            canonical_name_key(path_component) == canonical_name_key(prefix_component)
-        },
-    )
+    strip_path_prefix_preserve_display(path, prefix, mods_path).is_some()
 }
 
 pub(crate) fn strip_path_prefix_preserve_display(

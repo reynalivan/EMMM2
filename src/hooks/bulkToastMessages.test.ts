@@ -15,6 +15,7 @@ import {
   BULK_TOAST_PREVIEW_LIMIT,
   formatBulkFailureMessage,
   formatBulkSuccessMessage,
+  truncateNameList,
 } from './bulkToastMessages';
 
 describe('formatBulkSuccessMessage', () => {
@@ -47,6 +48,25 @@ describe('formatBulkSuccessMessage', () => {
           names: names.slice(0, BULK_TOAST_PREVIEW_LIMIT).join(', '),
         }),
     );
+  });
+});
+
+describe('truncateNameList', () => {
+  const others = (extra: number) => `+ ${extra} others`;
+
+  it('lists everything up to the preview limit', () => {
+    expect(truncateNameList(['a', 'b', 'c', 'd'], others)).toBe('a, b, c, d');
+  });
+
+  it('truncates longer selections with the caller-supplied tail', () => {
+    expect(truncateNameList(['a', 'b', 'c', 'd', 'e', 'f'], others)).toBe('a, b, c, d + 2 others');
+    expect(truncateNameList(['a', 'b', 'c', 'd', 'e'], (extra) => `and ${extra} more`)).toBe(
+      'a, b, c, d and 1 more',
+    );
+  });
+
+  it('handles an empty selection', () => {
+    expect(truncateNameList([], others)).toBe('');
   });
 });
 

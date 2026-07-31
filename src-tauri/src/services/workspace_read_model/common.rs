@@ -8,19 +8,12 @@ use crate::domain::workspace::{
 };
 use crate::repo::object_repo::ObjectSummary;
 
-pub(crate) fn build_workspace_args(entries: &[(&str, &str)]) -> HashMap<String, String> {
-    entries
-        .iter()
-        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-        .collect()
-}
-
 pub(crate) fn build_disabled_by_container_reason(
     ancestor_disabled_by: Option<&str>,
 ) -> Option<WorkspaceReason> {
     ancestor_disabled_by.map(|value| WorkspaceReason {
         code: WorkspaceReasonCode::DisabledByContainer,
-        args: build_workspace_args(&[("container_name", value)]),
+        args: HashMap::from([("container_name".to_string(), value.to_string())]),
     })
 }
 
@@ -28,7 +21,7 @@ pub(crate) fn build_object_inactive_reason(object: &ObjectSummary) -> Option<Wor
     if object.is_object_disabled {
         return Some(WorkspaceReason {
             code: WorkspaceReasonCode::ObjectFolderDisabled,
-            args: build_workspace_args(&[]),
+            args: HashMap::new(),
         });
     }
 
@@ -55,7 +48,7 @@ pub(crate) fn build_inactive_warning(reason: &WorkspaceReason) -> WorkspaceWarni
 pub(crate) fn build_folder_warning(message: &str) -> WorkspaceWarning {
     WorkspaceWarning {
         code: WorkspaceWarningCode::FolderWarning,
-        args: build_workspace_args(&[("message", message)]),
+        args: HashMap::from([("message".to_string(), message.to_string())]),
         state: WorkspaceWarningState::Warning,
     }
 }
@@ -63,7 +56,7 @@ pub(crate) fn build_folder_warning(message: &str) -> WorkspaceWarning {
 pub(crate) fn build_naming_conflict_warning() -> WorkspaceWarning {
     WorkspaceWarning {
         code: WorkspaceWarningCode::NamingConflict,
-        args: build_workspace_args(&[]),
+        args: HashMap::new(),
         state: WorkspaceWarningState::Warning,
     }
 }

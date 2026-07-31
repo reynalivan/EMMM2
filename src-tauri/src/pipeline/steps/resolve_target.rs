@@ -1,14 +1,9 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::repo::collection_repo;
 
 /// Step 2: Load the target collection's members.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let collection = collection_repo::get_by_id(&ctx.pool, &ctx.collection_id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: ctx.collection_id.clone(),
-        })?;
+    let collection = ctx.collection()?.clone();
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
     let snapshot = crate::services::collection_service::load_projected_collection_state(
         &ctx.pool,

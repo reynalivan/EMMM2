@@ -52,6 +52,8 @@ vi.mock('../../../hooks/useObjectMutations', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+  // `hooks/bulkToastMessages` pulls in the i18n singleton, which needs this plugin.
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 vi.mock('../../runtime-sync/queryRefresh', () => ({

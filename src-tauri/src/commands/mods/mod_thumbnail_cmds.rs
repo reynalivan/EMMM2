@@ -54,18 +54,10 @@ pub async fn paste_thumbnail_inner(
     image_data: Vec<u8>,
 ) -> Result<String, AppError> {
     use image::ImageFormat;
-    const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
-    if image_data.len() > MAX_IMAGE_BYTES {
-        return Err(AppError::Metadata(
-            crate::domain::errors::MetadataError::Validation(
-                "Image too large. Max 10MB.".to_string(),
-            ),
-        ));
-    }
+    crate::services::mods::preview_ops::ensure_image_size(&image_data)?;
 
-    let path = validate_path(config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
+    let path = validate_path(config, &game_id, &folder_path)?;
 
     let img = image::load_from_memory(&image_data).map_err(|e| {
         AppError::Metadata(crate::domain::errors::MetadataError::Validation(format!(

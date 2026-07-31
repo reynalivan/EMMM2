@@ -44,26 +44,21 @@ pub async fn get_collection_preview(
     .await
     .map_err(CollectionError::Corridor)?;
     let active_id = corridor_snapshot.active_collection_id.as_deref();
-    let undo_id = corridor_snapshot.undo_collection_id.as_deref();
 
     // Build unified members list for frontend convenience
-    let mut members = Vec::new();
-    for m in &mods {
-        members.push(crate::domain::collection::CollectionMember::Mod(m.clone()));
-    }
-    for o in &objects {
-        members.push(crate::domain::collection::CollectionMember::Object(
-            o.clone(),
-        ));
-    }
-    for r in &roots {
-        members.push(crate::domain::collection::CollectionMember::Root(r.clone()));
-    }
+    use crate::domain::collection::CollectionMember;
+    let members: Vec<CollectionMember> = mods
+        .iter()
+        .cloned()
+        .map(CollectionMember::Mod)
+        .chain(objects.iter().cloned().map(CollectionMember::Object))
+        .chain(roots.iter().cloned().map(CollectionMember::Root))
+        .collect();
     let tree_nodes =
         projected_state_service::build_preview_tree_from_projected_state(&projected_state);
 
     Ok(CollectionPreview {
-        collection: collection_repo::to_summary(&collection, active_id, undo_id),
+        collection: collection_repo::to_summary(&collection, active_id),
         members,
         mods,
         objects,

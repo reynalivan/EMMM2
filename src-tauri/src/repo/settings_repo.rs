@@ -64,9 +64,6 @@ pub async fn reset_all_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let _ = sqlx::query("DELETE FROM collection_nested_items")
         .execute(&mut *tx)
         .await;
-    let _ = sqlx::query("DELETE FROM corridor_runtime_cache")
-        .execute(&mut *tx)
-        .await;
     let _ = sqlx::query("DELETE FROM corridor_state")
         .execute(&mut *tx)
         .await;

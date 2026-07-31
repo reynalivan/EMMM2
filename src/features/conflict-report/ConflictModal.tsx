@@ -1,7 +1,7 @@
 import { AlertTriangle, Folder, X } from 'lucide-react';
 import { useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '../../types/mod';
+import type { ConflictInfo } from '../../types/scanner';
 
 interface ConflictModalProps {
   open: boolean;

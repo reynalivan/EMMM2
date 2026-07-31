@@ -1,7 +1,7 @@
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use super::types::*;
-use crate::common::path_key::{folder_path_key, object_name_key};
+use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::domain::models::ItemStatus;
 
 pub async fn update_object_folder_path<'c, E>(
@@ -26,7 +26,7 @@ where
     .bind(old_path)
     .bind(new_path)
     .bind(old_path)
-    .bind(object_name_key(new_path))
+    .bind(canonical_name_key(new_path))
     .bind(game_id)
     .bind(folder_path_key(old_path, None))
     .execute(executor)
@@ -141,7 +141,7 @@ pub async fn update_object(
         qb.push("name = ");
         qb.push_bind(name.trim().to_string());
         qb.push(", name_key = ");
-        qb.push_bind(object_name_key(name.trim()));
+        qb.push_bind(canonical_name_key(name));
         is_first = false;
     }
     if let Some(obj_type) = &updates.object_type {

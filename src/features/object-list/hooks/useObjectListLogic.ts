@@ -6,7 +6,6 @@ import { useResponsive } from '../../../hooks/useResponsive';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
-import { useSearchWorker } from './useSearchWorker';
 import type { FilterDef } from '../../../types/object';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import { useWorkspaceViewModel } from '../../workspace-runtime/useWorkspaceViewModel';
@@ -44,7 +43,6 @@ export function useObjectListLogic() {
     setSelectedObjectType,
     sidebarSearchQuery,
     setSidebarSearch,
-    safeMode,
     objectMetaFilters,
     setObjectMetaFilters,
     objectSortBy,
@@ -58,7 +56,6 @@ export function useObjectListLogic() {
   const activeStatusFilter = objectStatusFilter ?? 'all';
   const filterScopeRef = useRef<string | null>(null);
 
-  const { filteredIds, search: workerSearch } = useSearchWorker();
   const { data: schema } = useGameSchema();
 
   const categoryFilters: FilterDef[] = useMemo(() => {
@@ -125,21 +122,12 @@ export function useObjectListLogic() {
       : null;
   const sourceAvailable = sourceState?.status !== 'unavailable';
 
-  // Fix 2: Memoize search items outside the effect to avoid redundant array creation.
-  const searchItems = useMemo(
-    () => allObjects.map((o) => ({ id: o.id, name: o.name })),
-    [allObjects],
-  );
-
-  useEffect(() => {
-    const t = setTimeout(() => workerSearch(searchItems, sidebarSearchQuery), 150);
-    return () => clearTimeout(t);
-  }, [searchItems, sidebarSearchQuery, workerSearch]);
-
+  // ponytail: substring filter; bring back a worker only if profiling shows lag on huge lists
   const objects = useMemo(() => {
-    if (!filteredIds) return allObjects;
-    return allObjects.filter((o) => filteredIds.has(o.id));
-  }, [allObjects, filteredIds]);
+    const query = sidebarSearchQuery.trim().toLowerCase();
+    if (!query) return allObjects;
+    return allObjects.filter((o) => o.name.toLowerCase().includes(query));
+  }, [allObjects, sidebarSearchQuery]);
 
   const isLoading = objectsLoading;
   const isError = objectsError;
@@ -214,7 +202,6 @@ export function useObjectListLogic() {
       isLoading,
       isError,
       objectsErrorInfo: isError ? objectsErrorInfo : null,
-      safeMode,
       activeGame,
       isMobile,
       isSyncing: handlers.isSyncing,
@@ -226,7 +213,6 @@ export function useObjectListLogic() {
       isLoading,
       isError,
       objectsErrorInfo,
-      safeMode,
       activeGame,
       isMobile,
       handlers.isSyncing,

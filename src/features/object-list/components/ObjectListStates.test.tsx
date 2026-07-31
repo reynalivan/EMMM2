@@ -6,7 +6,7 @@ describe('ObjectListStates', () => {
   const defaultProps = {
     isLoading: false,
     isError: false,
-    errorMessage: undefined,
+    errorInfo: undefined,
     hasNoGame: false,
     isEmpty: false,
     sidebarSearchQuery: '',
@@ -23,7 +23,9 @@ describe('ObjectListStates', () => {
   });
 
   it('renders error state', () => {
-    render(<ObjectListStates {...defaultProps} isError={true} errorMessage="Custom Error" />);
+    render(
+      <ObjectListStates {...defaultProps} isError={true} errorInfo={new Error('Custom Error')} />,
+    );
     expect(screen.getByText('Custom Error')).toBeInTheDocument();
   });
 

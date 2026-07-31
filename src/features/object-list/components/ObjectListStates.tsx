@@ -1,15 +1,16 @@
 /**
  * ObjectListStates — loading, error, empty, and no-game placeholder states.
- * Extracted from ObjectList for modularity (350-line limit).
+ * Loading/error scaffolding lives in the shared ListStateView.
  */
 
-import { Loader2, AlertCircle, FolderOpen, FolderPlus } from 'lucide-react';
+import { FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import ListStateView, { ListEmptyState } from '../../../components/ui/ListStateView';
 
 interface StatesProps {
   isLoading: boolean;
   isError: boolean;
-  errorMessage: string | undefined;
+  errorInfo: unknown;
   hasNoGame: boolean;
   isEmpty: boolean;
   sidebarSearchQuery: string;
@@ -23,7 +24,7 @@ interface StatesProps {
 export default function ObjectListStates({
   isLoading,
   isError,
-  errorMessage,
+  errorInfo,
   hasNoGame,
   isEmpty,
   sidebarSearchQuery,
@@ -35,35 +36,15 @@ export default function ObjectListStates({
 }: StatesProps) {
   const { t } = useTranslation(['objects']);
 
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center" data-testid="loading-spinner">
-        <Loader2 size={24} className="animate-spin text-primary/50" />
-      </div>
-    );
-  }
+  const renderEmpty = () => {
+    if (hasNoGame) {
+      return <ListEmptyState message={t('states.select_game')} />;
+    }
 
-  if (isError) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4">
-        <AlertCircle size={24} className="text-error/50" />
-        <p className="text-xs text-base-content/50 text-center">
-          {errorMessage ?? t('states.load_error')}
-        </p>
-      </div>
-    );
-  }
+    if (!isEmpty) {
+      return null;
+    }
 
-  if (hasNoGame) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
-        <FolderOpen size={40} className="text-base-content/15" />
-        <p className="text-sm text-base-content/40 text-center">{t('states.select_game')}</p>
-      </div>
-    );
-  }
-
-  if (isEmpty) {
     const hasActiveFilters = Object.values(activeFilters).some((v) => v.length > 0);
     const message = sidebarSearchQuery
       ? t('states.no_search_results')
@@ -72,12 +53,7 @@ export default function ObjectListStates({
         : t('states.empty_hint');
 
     return (
-      <div
-        className="flex-1 flex flex-col items-center justify-center gap-3 p-6"
-        data-testid="empty-state"
-      >
-        <FolderOpen size={40} className="text-base-content/15" />
-        <p className="text-sm text-base-content/40 text-center">{message}</p>
+      <ListEmptyState message={message} testId="empty-state">
         {hasActiveFilters && (
           <button
             className="btn btn-sm btn-ghost gap-2 text-primary"
@@ -108,9 +84,18 @@ export default function ObjectListStates({
             </button>
           </div>
         )}
-      </div>
+      </ListEmptyState>
     );
-  }
+  };
 
-  return null;
+  return (
+    <ListStateView
+      isLoading={isLoading}
+      isError={isError}
+      error={errorInfo}
+      errorFallback={t('states.load_error')}
+    >
+      {renderEmpty()}
+    </ListStateView>
+  );
 }

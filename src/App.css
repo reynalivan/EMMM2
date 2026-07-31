@@ -217,3 +217,46 @@ body {
     opacity: 1;
   }
 }
+
+/* Welcome-screen aurora drift (features/onboarding/welcome/AuroraBackground.tsx).
+   Pure CSS so the welcome path does not pull in the motion runtime. */
+@keyframes aurora-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aurora-spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes aurora-spin-offset {
+  from {
+    transform: rotate(90deg);
+  }
+  to {
+    transform: rotate(450deg);
+  }
+}
+
+.aurora-blob-1 {
+  animation: aurora-spin 60s linear infinite;
+}
+
+.aurora-blob-2 {
+  animation: aurora-spin-reverse 75s linear infinite;
+}
+
+.aurora-blob-3 {
+  animation: aurora-spin-offset 90s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob-1,
+  .aurora-blob-2,
+  .aurora-blob-3 {
+    animation: none;
+  }
+}

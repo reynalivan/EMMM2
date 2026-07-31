@@ -10,21 +10,6 @@ pub struct CorridorState {
     pub game_id: String,
     pub is_safe: bool,
     pub active_collection_id: Option<String>,
-    pub undo_collection_id: Option<String>,
-}
-
-/// Runtime cache of the physical corridor state (table: `corridor_runtime_cache`).
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-pub struct CorridorRuntime {
-    pub game_id: String,
-    pub is_safe: bool,
-    pub matched_collection_id: Option<String>,
-    pub state_kind: String,
-    pub state_name: Option<String>,
-    pub signature: String,
-    pub snapshot_json: String,
-    pub snapshot_source: String,
-    pub updated_at: String,
 }
 
 /// Lightweight snapshot returned to the frontend.
@@ -34,8 +19,6 @@ pub struct CorridorSnapshot {
     pub is_safe: bool,
     pub active_collection_id: Option<String>,
     pub active_collection_name: Option<String>,
-    pub active_collection_is_unsaved: bool,
-    pub undo_collection_id: Option<String>,
     pub current_signature: String,
     pub is_dirty: bool,
     pub current_mods: Vec<crate::domain::collection::CollectionMod>,

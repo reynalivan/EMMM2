@@ -5,7 +5,7 @@ use super::counts::{
 };
 use super::types::*;
 use crate::common::normalizer::is_disabled_folder;
-use crate::common::path_key::object_name_key;
+use crate::common::path_key::canonical_name_key;
 use crate::domain::models::ItemStatus;
 
 pub async fn get_filtered_objects(
@@ -77,7 +77,7 @@ pub async fn get_filtered_objects(
     if let Some(sq) = &filter.search_query {
         let trimmed = sq.trim();
         if !trimmed.is_empty() {
-            let name_search_term = format!("%{}%", object_name_key(trimmed));
+            let name_search_term = format!("%{}%", canonical_name_key(trimmed));
             let tag_search_term = format!("%{}%", trimmed.to_lowercase());
             qb.push(" AND (o.name_key LIKE ");
             qb.push_bind(name_search_term);
@@ -166,10 +166,11 @@ pub async fn get_filtered_objects(
             row.active_mod_paths = active_paths.clone();
         }
 
-        let _ = crate::repo::runtime_projection_repo::refresh_objects_projection(
+        let _ = crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
             pool,
             &filter.game_id,
             &missing_projection_ids,
+            false,
         )
         .await;
     }

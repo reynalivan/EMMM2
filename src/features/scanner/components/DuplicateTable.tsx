@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle, Info, Trash2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
 import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
-import { formatSize } from '../../../utils/formatters';
+import { formatBytes } from '../../../utils/formatters';
 import { useTranslation } from 'react-i18next';
 
 type RadialProgressStyle = CSSProperties & {
@@ -102,7 +102,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-[10px] opacity-70 font-mono">
-                              {formatSize(member.totalSizeBytes)}
+                              {formatBytes(member.totalSizeBytes)}
                             </span>
                             {selectedAction?.type === 'Keep' &&
                             selectedAction.targetPath === member.folderPath ? (

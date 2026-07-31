@@ -379,7 +379,7 @@ async fn execute_cycle_preset(
         .find(|collection| collection.name == target_name)
         .ok_or_else(|| format!("Target preset '{target_name}' not found"))?;
 
-    let _lock = op_lock.inner().acquire().await?;
+    let _lock = op_lock.inner().acquire().await.map_err(|e| e.to_string())?;
 
     let game = settings
         .games

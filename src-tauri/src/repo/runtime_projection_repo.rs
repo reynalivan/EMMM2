@@ -133,7 +133,11 @@ pub async fn refresh_projection_for_object_ids(
         return Ok(());
     }
 
-    refresh_objects_projection(pool, game_id, &unique_ids).await
+    for object_id in &unique_ids {
+        refresh_object_projection(pool, game_id, object_id).await?;
+    }
+
+    Ok(())
 }
 
 pub async fn refresh_object_projection(
@@ -153,17 +157,6 @@ pub async fn refresh_object_projection(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(())
-}
-
-pub async fn refresh_objects_projection(
-    pool: &SqlitePool,
-    game_id: &str,
-    object_ids: &[String],
-) -> Result<(), sqlx::Error> {
-    for object_id in object_ids {
-        refresh_object_projection(pool, game_id, object_id).await?;
-    }
     Ok(())
 }
 

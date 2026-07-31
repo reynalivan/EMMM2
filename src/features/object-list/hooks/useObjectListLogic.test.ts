@@ -10,7 +10,6 @@ const setObjectMetaFilters = vi.fn();
 const appStoreState: {
   selectedObjectFolderPath: string | null;
   setSelectedObjectFolderPath: ReturnType<typeof vi.fn>;
-  setSelectedModPath: ReturnType<typeof vi.fn>;
   selectedObjectType: string | null;
   setSelectedObjectType: ReturnType<typeof vi.fn>;
   sidebarSearchQuery: string;
@@ -19,7 +18,6 @@ const appStoreState: {
   setCurrentPath: ReturnType<typeof vi.fn>;
   clearGridSelection: ReturnType<typeof vi.fn>;
   setExplorerScrollOffset: ReturnType<typeof vi.fn>;
-  safeMode: boolean;
   objectMetaFilters: Record<string, string[]>;
   setObjectMetaFilters: typeof setObjectMetaFilters;
   objectSortBy: 'name' | 'date' | 'rarity';
@@ -29,7 +27,6 @@ const appStoreState: {
 } = {
   selectedObjectFolderPath: null,
   setSelectedObjectFolderPath: vi.fn(),
-  setSelectedModPath: vi.fn(),
   selectedObjectType: null,
   setSelectedObjectType: vi.fn(),
   sidebarSearchQuery: '',
@@ -38,7 +35,6 @@ const appStoreState: {
   setCurrentPath: vi.fn(),
   clearGridSelection: vi.fn(),
   setExplorerScrollOffset: vi.fn(),
-  safeMode: false,
   objectMetaFilters: {},
   setObjectMetaFilters,
   objectSortBy: 'name',
@@ -65,8 +61,11 @@ vi.mock('../../../hooks/useObjectQueries', () => ({
   useGameSchema: () => useGameSchemaMock(),
 }));
 
+const useWorkspaceViewModelMock = vi.fn<
+  () => { data: unknown; isLoading: boolean; isError: boolean }
+>(() => ({ data: { objects: [] }, isLoading: false, isError: false }));
 vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
-  useWorkspaceViewModel: vi.fn(() => ({ data: { objects: [] }, isLoading: false, isError: false })),
+  useWorkspaceViewModel: () => useWorkspaceViewModelMock(),
 }));
 
 vi.mock('../../../hooks/useActiveGame', () => ({
@@ -75,10 +74,6 @@ vi.mock('../../../hooks/useActiveGame', () => ({
 
 vi.mock('../../../hooks/useResponsive', () => ({
   useResponsive: vi.fn(() => ({ isMobile: false })),
-}));
-
-vi.mock('./useSearchWorker', () => ({
-  useSearchWorker: vi.fn(() => ({ filteredIds: null, search: vi.fn() })),
 }));
 
 vi.mock('./useObjectListHandlers', () => ({
@@ -142,8 +137,33 @@ describe('useObjectListLogic', () => {
   beforeEach(() => {
     setObjectMetaFilters.mockClear();
     appStoreState.selectedObjectType = null;
+    appStoreState.sidebarSearchQuery = '';
     appStoreState.objectMetaFilters = {};
     useGameSchemaMock.mockReturnValue({ data: undefined });
+    useWorkspaceViewModelMock.mockReturnValue({
+      data: { objects: [] },
+      isLoading: false,
+      isError: false,
+    });
+  });
+
+  it('filters objects by case-insensitive substring search', () => {
+    useWorkspaceViewModelMock.mockReturnValue({
+      data: {
+        objects: [
+          { id: '1', name: 'Albedo' },
+          { id: '2', name: 'Amber' },
+          { id: '3', name: 'alhaitham' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    appStoreState.sidebarSearchQuery = 'AL';
+
+    const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
+
+    expect(result.current.state.objects.map((o) => o.id)).toEqual(['1', '3']);
   });
 
   it('initializes basic state correctly', () => {

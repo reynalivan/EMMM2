@@ -35,11 +35,6 @@ async fn test_game_crud() {
     let games = get_all_games(&pool).await.unwrap();
     assert_eq!(games.len(), 1);
     assert_eq!(games[0].name, "Updated Game");
-
-    // Delete
-    delete_game(&pool, "test-id").await.unwrap();
-    let games = get_all_games(&pool).await.unwrap();
-    assert!(games.is_empty());
 }
 
 #[tokio::test]

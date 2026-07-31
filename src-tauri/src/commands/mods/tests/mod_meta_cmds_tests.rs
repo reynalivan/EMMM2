@@ -1,4 +1,3 @@
-use super::set_object_mods_category_inner;
 use crate::services::mods::info_json;
 use crate::test_utils::{
     insert_test_game, insert_test_mod, insert_test_object, TestGameFixture, TestModFixture,
@@ -75,12 +74,13 @@ async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
 }
 
 #[tokio::test]
-async fn test_set_object_mods_category_inner_updates_only_target_object_mods() {
+async fn test_set_object_type_for_object_updates_only_target_object_mods() {
     let pool = setup_object_mods_fixture().await;
 
-    let updated = set_object_mods_category_inner(&pool, "g_object_mods", "obj1", "Weapon")
-        .await
-        .unwrap();
+    let updated =
+        crate::repo::mod_repo::set_object_type_for_object(&pool, "g_object_mods", "obj1", "Weapon")
+            .await
+            .unwrap();
 
     assert_eq!(updated, 2);
 
@@ -183,39 +183,6 @@ async fn test_info_json_favorite_flag_writes() {
     assert!(
         info.is_favorite,
         "Expected is_favorite to be true after update"
-    );
-}
-
-// ── TC-40: move_mod_to_object renames folder to target ──────────────────────
-
-#[tokio::test]
-async fn test_move_mod_to_object() {
-    let tmp = TempDir::new().unwrap();
-    let game_mods_root = tmp.path().join("Mods");
-    fs::create_dir(&game_mods_root).unwrap();
-
-    // Source: Mods/Amber/TestMod
-    let source_char_dir = game_mods_root.join("Amber");
-    fs::create_dir(&source_char_dir).unwrap();
-    let source_mod = source_char_dir.join("TestMod");
-    fs::create_dir(&source_mod).unwrap();
-
-    // Target object directory: Mods/Raiden
-    let target_char_dir = game_mods_root.join("Raiden");
-    fs::create_dir(&target_char_dir).unwrap();
-
-    let target_mod_path = target_char_dir.join("TestMod");
-
-    // Simulate move (rename)
-    fs::rename(&source_mod, &target_mod_path).unwrap();
-
-    assert!(
-        target_mod_path.exists(),
-        "Mod should have moved to Raiden dir"
-    );
-    assert!(
-        !source_mod.exists(),
-        "Mod should no longer exist in Amber dir"
     );
 }
 

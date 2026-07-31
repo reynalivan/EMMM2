@@ -2,7 +2,11 @@ import { render, screen, fireEvent } from '../../../testing/test-utils';
 import FolderCard from './FolderCard';
 import { beforeEach, vi, describe, it, expect } from 'vitest';
 import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '../../../types/workspace';
-import { useAppStore } from '../../../stores/useAppStore';
+import { useSafeMode } from '../../../hooks/settingsQuery';
+
+vi.mock('../../../hooks/settingsQuery', () => ({
+  useSafeMode: vi.fn(),
+}));
 
 // Mock dependencies
 vi.mock('@tauri-apps/api/core', () => ({
@@ -93,7 +97,7 @@ const mockFolder: WorkspaceExplorerNode = {
 
 describe('FolderCard', () => {
   beforeEach(() => {
-    useAppStore.setState({ safeMode: false });
+    vi.mocked(useSafeMode).mockReturnValue(false);
   });
 
   it('renders mod name', () => {
@@ -301,7 +305,7 @@ describe('FolderCard', () => {
   });
 
   it('masks unsafe folder names while safe mode leak guard is active', () => {
-    useAppStore.setState({ safeMode: true });
+    vi.mocked(useSafeMode).mockReturnValue(true);
     const unsafeFolder = {
       ...mockFolder,
       is_safe: false,

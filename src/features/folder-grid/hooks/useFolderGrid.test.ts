@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useFolderGrid } from './useFolderGrid';
 import { useAppStore } from '../../../stores/useAppStore';
 import { createWrapper } from '../../../testing/test-utils';
-import { ModFolder } from '../../../types/mod';
+import { ModFolder } from '../../../types/object';
 
 // Provide element dimensions for virtualization
 globalThis.ResizeObserver = class ResizeObserver {
@@ -155,7 +155,6 @@ describe('useFolderGrid array bounds (TC-14)', () => {
     useAppStore.setState({
       gridSelection: new Set(),
       selectedModPath: null,
-      safeMode: false,
       explorerSearchQuery: '',
       sortField: 'name',
       sortOrder: 'asc',

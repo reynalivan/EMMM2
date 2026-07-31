@@ -94,11 +94,7 @@ pub async fn apply_collection(
     collection_id: String,
     ignore_missing: Option<bool>,
 ) -> Result<ApplyResult, AppError> {
-    let _guard = op_lock
-        .inner()
-        .acquire()
-        .await
-        .map_err(AppError::Internal)?;
+    let _guard = op_lock.inner().acquire().await?;
     let settings = config.get_settings();
     let is_safe = settings.safe_mode.enabled;
     let game = settings
@@ -163,11 +159,7 @@ pub async fn delete_collection(
     op_lock: State<'_, OperationLock>,
     id: String,
 ) -> Result<(), AppError> {
-    let _guard = op_lock
-        .inner()
-        .acquire()
-        .await
-        .map_err(AppError::Internal)?;
+    let _guard = op_lock.inner().acquire().await?;
     collection_service::delete_collection(pool.inner(), &id).await?;
     Ok(())
 }
@@ -229,7 +221,7 @@ pub async fn preview_apply_collection(
 pub async fn app_startup_check(
     pool: State<'_, SqlitePool>,
 ) -> Result<Vec<crate::domain::task::PipelineTask>, AppError> {
-    crate::services::recovery_service::pending_startup_tasks(pool.inner()).await
+    crate::repo::task_repo::get_all_pending_tasks_global(pool.inner()).await
 }
 
 #[tauri::command]
@@ -244,11 +236,7 @@ pub async fn resolve_recovery_task(
 ) -> Result<(), AppError> {
     // Resuming an interrupted apply mutates the filesystem, so it must be
     // mutually excluded from concurrent runtime ops just like a normal apply.
-    let _guard = op_lock
-        .inner()
-        .acquire()
-        .await
-        .map_err(AppError::Internal)?;
+    let _guard = op_lock.inner().acquire().await?;
 
     crate::services::recovery_service::resolve_recovery_task(
         pool.inner(),

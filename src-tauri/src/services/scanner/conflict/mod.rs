@@ -241,7 +241,7 @@ pub async fn get_duplicates_for_mod_service(
 
     // Include the target mod ID in the set to check for ignores
     let target_mod_id_search: Result<Option<(String, Option<String>, i64)>, sqlx::Error> =
-        crate::repo::mod_repo::get_mod_id_and_status_by_path_any(pool, folder_path, game_id).await;
+        crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, folder_path, game_id).await;
 
     let target_mod_id = match target_mod_id_search {
         Ok(Some((id, _, _))) => id,
@@ -387,9 +387,6 @@ pub async fn enable_only_this_service(
             );
         }
     }
-
-    let _ = crate::services::corridor_service::recompute_signature(pool, game_id, true).await;
-    let _ = crate::services::corridor_service::recompute_signature(pool, game_id, false).await;
 
     let _ = crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await;
     let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(

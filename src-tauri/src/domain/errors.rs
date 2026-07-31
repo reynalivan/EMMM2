@@ -14,29 +14,6 @@ pub enum CorridorError {
     #[error("Game '{game_id}' not found")]
     GameNotFound { game_id: String },
 
-    #[error("Cannot apply {collection_mode} collection while in {current_mode} corridor")]
-    CorridorMismatch {
-        collection_mode: String,
-        current_mode: String,
-    },
-
-    #[error("Corridor switch already in progress for game '{game_id}'")]
-    SwitchInProgress { game_id: String },
-
-    #[error("Rename failed for '{path}': {error}")]
-    RenameFailed {
-        path: String,
-        error: String, // Converted std::io::Error to String for Serde/Specta
-    },
-
-    #[error("Batch rename partially failed: {succeeded} succeeded, {failed} failed")]
-    PartialRenameFailed {
-        #[specta(type = f64)]
-        succeeded: usize,
-        #[specta(type = f64)]
-        failed: usize,
-    },
-
     #[error("Database error: {0}")]
     Db(String), // Converted sqlx::Error to String for Serde/Specta
 
@@ -64,12 +41,6 @@ pub enum CollectionError {
 
     #[error("Collection name '{name}' already exists in this corridor")]
     DuplicateName { name: String },
-
-    #[error("Cannot modify undo snapshot collection")]
-    CannotModifyUndoSnapshot,
-
-    #[error("No undo snapshot available for this corridor")]
-    NoUndoAvailable,
 
     #[error("Missing mods on disk: {count} mod(s) not found")]
     MissingMods {
@@ -137,14 +108,8 @@ impl From<std::io::Error> for MetadataError {
 /// Errors specific to Pin operations.
 #[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
 pub enum PinError {
-    #[error("Pin validation failed: {0}")]
-    Validation(String),
-
     #[error("Database error: {0}")]
     Db(String),
-
-    #[error("Account locked until {0}")]
-    Locked(String),
 }
 
 impl From<sqlx::Error> for PinError {

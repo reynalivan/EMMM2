@@ -74,7 +74,6 @@ macro_rules! emmm_collect_commands {
             commands::mods::mod_meta_cmds::set_mod_category,
             commands::mods::mod_meta_cmds::set_object_mods_category,
             commands::mods::mod_meta_cmds::list_move_targets_for_object,
-            commands::mods::mod_meta_cmds::move_mod_to_object,
             commands::mods::mod_meta_cmds::move_mods_to_object,
             commands::mods::mod_thumbnail_cmds::update_mod_thumbnail,
             commands::mods::mod_thumbnail_cmds::paste_thumbnail,
@@ -165,16 +164,6 @@ macro_rules! emmm_collect_commands {
 #[cfg(not(test))]
 pub fn run() {
     let builder = tauri_specta::Builder::<tauri::Wry>::new().commands(emmm_collect_commands!());
-
-    /*
-    #[cfg(debug_assertions)]
-    builder
-        .export(
-            specta_typescript::Typescript::default(),
-            "../src/lib/bindings.ts",
-        )
-        .expect("The types could not be exported");
-    */
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useActiveConflicts } from '../../../hooks/useFolderMutations';
 import { useAppStore } from '../../../stores/useAppStore';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
-import { areWorkspaceMutationsDisabled } from '../../workspace-runtime/actions/workspaceActionAvailability';
+import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
 
 interface UseFolderGridViewModelInput {
   sortedFolders: WorkspaceExplorerNode[];
@@ -17,7 +17,7 @@ export function useFolderGridViewModel({
   const activePane = useAppStore((state) => state.activePane);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const diskSourceUnavailableMessage = useAppStore((state) =>
-    activeGameId ? (state.diskSourceUnavailableByGame[activeGameId] ?? null) : null,
+    activeGameId ? (state.diskReconcileByGame[activeGameId]?.unavailable ?? null) : null,
   );
   const setActivePane = useAppStore((state) => state.setActivePane);
   const isIgnoreManagementOpen = useAppStore((state) => state.isIgnoreManagementOpen);
@@ -30,7 +30,7 @@ export function useFolderGridViewModel({
         continue;
       }
       for (const path of conflict.mod_paths) {
-        paths.add(path.replace(/\\/g, '/'));
+        paths.add(normalizeWorkspacePath(path));
       }
     }
     return paths;
@@ -38,7 +38,7 @@ export function useFolderGridViewModel({
 
   const workspaceSourceUnavailableMessage =
     sourceUnavailableMessage ?? diskSourceUnavailableMessage;
-  const mutationsDisabled = areWorkspaceMutationsDisabled(workspaceSourceUnavailableMessage);
+  const mutationsDisabled = Boolean(workspaceSourceUnavailableMessage);
 
   const handleSelectAll = () => {
     useAppStore.getState().setGridSelection(new Set(sortedFolders.map((folder) => folder.path)));

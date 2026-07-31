@@ -1,3 +1,4 @@
+use super::projection::persist_projected_state;
 use super::{
     apply_collection, create_collection, delete_collection, get_collection_preview,
     handle_dirty_state, handle_mod_missing, handle_mod_moved_or_renamed, handle_object_renamed_tx,
@@ -15,8 +16,8 @@ use crate::services::config::AppSettings;
 use crate::services::projected_state_service;
 use crate::services::scanner::watcher::WatcherSuppressor;
 use crate::test_utils::{
-    init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
-    TestModFixture, TestObjectFixture,
+    init_test_db, insert_test_game, insert_test_mod, insert_test_object,
+    set_test_corridor_active_unchecked, TestGameFixture, TestModFixture, TestObjectFixture,
 };
 use std::sync::Arc;
 
@@ -51,11 +52,7 @@ async fn delete_collection_clears_legacy_pointers_without_promoting_unsaved() {
     )
     .await
     .expect("create unsaved");
-    let undo = collection_repo::create(&ctx.pool, "undo-1", "game-1", "Undo Snapshot", true, false)
-        .await
-        .expect("create undo");
-
-    corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&active.id), Some(&undo.id))
+    set_test_corridor_active_unchecked(&ctx.pool, "game-1", true, Some(&active.id))
         .await
         .expect("set pointers");
 
@@ -69,7 +66,6 @@ async fn delete_collection_clears_legacy_pointers_without_promoting_unsaved() {
         .expect("corridor exists");
 
     assert!(snapshot.active_collection_id.is_none());
-    assert!(snapshot.undo_collection_id.is_none());
     assert!(collection_repo::get_by_id(&ctx.pool, &unsaved.id)
         .await
         .expect("query unsaved")
@@ -229,12 +225,11 @@ async fn save_current_state_creates_snapshot_without_touching_legacy_corridor_po
     )
     .await
     .expect("create previous active");
-    corridor_repo::update_pointers(
+    set_test_corridor_active_unchecked(
         &ctx.pool,
         "game-save-no-pointer",
         true,
         Some(&previous_active.id),
-        None,
     )
     .await
     .expect("seed legacy pointer");
@@ -375,7 +370,7 @@ async fn dirty_state_refresh_returns_synthetic_runtime_without_unsaved_collectio
     let unsaved = collection_repo::create(&ctx.pool, "unsaved-1", "game-1", "Unsaved", false, true)
         .await
         .expect("create zero-mod unsaved");
-    corridor_repo::update_pointers(&ctx.pool, "game-1", false, Some(&unsaved.id), None)
+    set_test_corridor_active_unchecked(&ctx.pool, "game-1", false, Some(&unsaved.id))
         .await
         .expect("activate unsaved");
 
@@ -475,7 +470,7 @@ async fn clone_snapshot_does_not_touch_legacy_active_pointer() {
     )
     .await
     .expect("create source snapshot");
-    corridor_repo::update_pointers(&ctx.pool, "game-1", true, Some(&source.id), None)
+    set_test_corridor_active_unchecked(&ctx.pool, "game-1", true, Some(&source.id))
         .await
         .expect("seed legacy active pointer");
 
@@ -594,10 +589,10 @@ async fn delete_in_other_corridor_does_not_create_unsaved_here() {
     .await
     .expect("create unsafe named");
 
-    corridor_repo::update_pointers(&ctx.pool, "game-1", false, Some(&unsafe_named.id), None)
+    set_test_corridor_active_unchecked(&ctx.pool, "game-1", false, Some(&unsafe_named.id))
         .await
         .expect("set unsafe active");
-    corridor_repo::update_pointers(&ctx.pool, "game-1", true, None, None)
+    set_test_corridor_active_unchecked(&ctx.pool, "game-1", true, None)
         .await
         .expect("seed safe corridor");
 
@@ -680,20 +675,13 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         std::slice::from_ref(&object),
         Some(&mods_path),
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[missing_mod],
         &[object],
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");
@@ -799,19 +787,13 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
         &target_objects,
         Some(&mods_path),
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &target_mods,
         &target_objects,
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");
@@ -910,19 +892,13 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
         std::slice::from_ref(&target_object),
         None,
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[target_mod],
         &[target_object],
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");
@@ -1012,22 +988,13 @@ async fn apply_collection_rejects_cross_corridor_request() {
         std::slice::from_ref(&target_object),
         Some(&mods_path),
     );
-    let roots = projected_state_service::roots_from_projected_state(
-        &collection.id,
-        false,
-        &projected_state,
-    );
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        false,
         &[target_mod],
         &[target_object],
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist unsafe collection state");
@@ -1174,19 +1141,13 @@ async fn replace_collection_with_current_state_drops_missing_partial_apply_membe
         &target_objects,
         Some(&mods_path),
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &target_mods,
         &target_objects,
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");
@@ -1395,19 +1356,13 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
         std::slice::from_ref(&object),
         Some("E:/Mods"),
     );
-    let old_roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &old_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[old_mod],
         &[object],
-        &old_roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &old_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&old_state).as_deref(),
-        old_state.summary.active_root_count as i32,
+        &old_state,
     )
     .await
     .expect("persist old state");
@@ -1427,9 +1382,6 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
     let healed_mods = collection_repo::get_mods(&ctx.pool, &collection.id)
         .await
         .expect("load healed mods");
-    let healed_roots = collection_repo::get_roots(&ctx.pool, &collection.id)
-        .await
-        .expect("load healed roots");
     let expected_key = crate::common::path_key::folder_path_key("AINOZ/New Mod", None);
 
     assert_eq!(
@@ -1443,10 +1395,6 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
             .active_roots
             .first()
             .map(|root| root.source_path.as_str()),
-        Some("AINOZ/New Mod")
-    );
-    assert_eq!(
-        healed_roots.first().map(|root| root.root_path.as_str()),
         Some("AINOZ/New Mod")
     );
     assert_eq!(
@@ -1494,19 +1442,13 @@ async fn auto_heal_returns_collection_reference_impact() {
         std::slice::from_ref(&object),
         None,
     );
-    let old_roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &old_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[old_mod],
         &[object],
-        &old_roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &old_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&old_state).as_deref(),
-        old_state.summary.active_root_count as i32,
+        &old_state,
     )
     .await
     .expect("persist old state");
@@ -1562,19 +1504,13 @@ async fn runtime_prefix_toggle_does_not_rewrite_saved_collection_references() {
         std::slice::from_ref(&object),
         None,
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[mod_member],
         &[object],
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");
@@ -1630,19 +1566,13 @@ async fn object_runtime_prefix_toggle_does_not_rewrite_saved_collection_referenc
         std::slice::from_ref(&object),
         None,
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[mod_member],
         &[object],
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");
@@ -1703,19 +1633,13 @@ async fn missing_collection_member_is_preserved_and_reported_as_missing() {
         std::slice::from_ref(&object),
         Some(&mods_path),
     );
-    let roots =
-        projected_state_service::roots_from_projected_state(&collection.id, true, &projected_state);
-    collection_repo::replace_all_state(
+    persist_projected_state(
         &ctx.pool,
         &collection.id,
+        true,
         &[mod_member],
         &[object],
-        &roots,
-        Some(&projected_state_service::signature_for_projected_state(
-            &projected_state,
-        )),
-        projected_state_service::serialize_snapshot_json(&projected_state).as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await
     .expect("persist collection state");

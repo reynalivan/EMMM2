@@ -17,10 +17,6 @@ const DISABLED_CAPABILITIES: WorkspaceCapabilities = {
   can_open_in_explorer: false,
 };
 
-export function areWorkspaceMutationsDisabled(sourceUnavailableMessage: string | null): boolean {
-  return Boolean(sourceUnavailableMessage);
-}
-
 export function maskWorkspaceNodeCapabilities<TNode extends WorkspaceNode>(
   node: TNode,
   mutationsDisabled: boolean,

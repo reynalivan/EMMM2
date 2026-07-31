@@ -36,7 +36,6 @@ describe('runSharedModActiveContextToggle', () => {
     toggleModSafeMock.mockResolvedValue(undefined);
     applyRuntimePathInvalidationMutationResultMock.mockResolvedValue(undefined);
     useAppStore.setState({
-      safeMode: true,
       gridSelection: new Set(['E:/Mods/ALBEDO/Private Outfit']),
       selectedModPath: 'E:/Mods/ALBEDO/Private Outfit',
     });

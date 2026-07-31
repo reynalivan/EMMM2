@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 
-use crate::domain::collection::{ApplyResult, CollectionMod, CollectionObject};
+use crate::domain::collection::{ApplyResult, Collection, CollectionMod, CollectionObject};
 use crate::domain::errors::CollectionError;
 use crate::domain::workspace::WorkspacePathRewrite;
 use crate::services::app::post_apply::PostApplyContext;
@@ -25,9 +25,9 @@ pub struct ApplyContext {
     pub suppressor: std::sync::Arc<WatcherSuppressor>,
     pub ignore_missing: bool,
     pub settings: AppSettings,
-    pub track_task: bool,
 
     // Resolved during pipeline execution
+    pub collection: Option<Collection>,
     pub target_mods: Vec<CollectionMod>,
     pub target_objects: Vec<CollectionObject>,
     pub currently_enabled_path_keys: HashSet<String>,
@@ -57,7 +57,25 @@ pub struct ApplyContextInput {
     pub settings: AppSettings,
 }
 
+/// Human-readable corridor label used in messages and apply results.
+pub fn corridor_label(is_safe: bool) -> &'static str {
+    if is_safe {
+        "SAFE"
+    } else {
+        "UNSAFE"
+    }
+}
+
 impl ApplyContext {
+    /// The collection row loaded once by the `validate_corridor` step.
+    pub fn collection(&self) -> Result<&Collection, CollectionError> {
+        self.collection
+            .as_ref()
+            .ok_or_else(|| CollectionError::NotFound {
+                id: self.collection_id.clone(),
+            })
+    }
+
     pub fn new(input: ApplyContextInput) -> Self {
         Self {
             pool: input.pool,
@@ -68,7 +86,7 @@ impl ApplyContext {
             suppressor: input.suppressor,
             ignore_missing: input.ignore_missing,
             settings: input.settings,
-            track_task: true,
+            collection: None,
             target_mods: Vec::new(),
             target_objects: Vec::new(),
             currently_enabled_path_keys: HashSet::new(),
@@ -95,42 +113,31 @@ impl ApplyContext {
 /// these collection apply renames on passive startup or watcher refresh.
 pub async fn execute(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionError> {
     crate::services::apply_progress_service::start(&ctx.game_id, ctx.is_safe);
-    let task_id = if ctx.track_task {
-        let task_id = uuid::Uuid::new_v4().to_string();
-        crate::repo::task_repo::create_task(
-            &ctx.pool,
-            &task_id,
-            &ctx.game_id,
-            "apply_collection",
-            Some(&ctx.collection_id),
-        )
-        .await
-        .map_err(|e| CollectionError::Db(e.to_string()))?;
-        Some(task_id)
-    } else {
-        None
-    };
+    let task_id = uuid::Uuid::new_v4().to_string();
+    crate::repo::task_repo::create_task(
+        &ctx.pool,
+        &task_id,
+        &ctx.game_id,
+        "apply_collection",
+        Some(&ctx.collection_id),
+    )
+    .await
+    .map_err(|e| CollectionError::Db(e.to_string()))?;
 
     let result = execute_inner(ctx).await;
 
-    if let Some(task_id) = task_id.as_deref() {
-        let status = if result.is_ok() {
-            crate::domain::task::TaskStatus::Completed
-        } else {
-            crate::domain::task::TaskStatus::Failed
-        };
-        let _ = crate::repo::task_repo::update_status(&ctx.pool, task_id, status).await;
-    }
+    let status = if result.is_ok() {
+        crate::domain::task::TaskStatus::Completed
+    } else {
+        crate::domain::task::TaskStatus::Failed
+    };
+    let _ = crate::repo::task_repo::update_status(&ctx.pool, &task_id, status).await;
     if result.is_err() {
         crate::services::apply_progress_service::finish(
             &ctx.game_id,
             ctx.is_safe,
             ctx.final_state_name.clone(),
-            Some(if ctx.is_safe {
-                "SAFE".to_string()
-            } else {
-                "UNSAFE".to_string()
-            }),
+            Some(corridor_label(ctx.is_safe).to_string()),
             ctx.warnings.clone(),
             false,
         );
@@ -227,15 +234,10 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         mods_enabled: ctx.mods_enabled,
         mods_disabled: ctx.mods_disabled,
         objects_toggled: ctx.objects_toggled,
-        undo_collection_id: None,
         new_signature: ctx.new_signature.clone(),
         warnings: ctx.warnings.clone(),
         final_state_name: ctx.final_state_name.clone(),
-        final_mode: Some(if ctx.is_safe {
-            "SAFE".to_string()
-        } else {
-            "UNSAFE".to_string()
-        }),
+        final_mode: Some(corridor_label(ctx.is_safe).to_string()),
         partial_apply: !ctx.skipped_missing_paths.is_empty(),
         skipped_missing_paths: ctx.skipped_missing_paths.clone(),
         final_state_is_dirty: ctx.final_state_is_dirty,

@@ -18,7 +18,9 @@ import {
   buildQueryInvalidationDescriptor,
   buildRuntimeMutationDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
-import { ModInfoUpdate, TrashEntry, ConflictInfo } from '../types/mod';
+import { ModInfoUpdate } from '../types/object';
+import { ConflictInfo } from '../types/scanner';
+import { TrashEntry } from '../types/mod';
 import { useAppStore } from '../stores/useAppStore';
 import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
 import { withWatcherSuppression } from '../features/file-watcher/watcherSuppression';
@@ -199,26 +201,14 @@ export function useUpdateModInfo() {
 
 // ── Import & Organize ───────────────────────────────────────────
 
-export type ImportStrategy = 'Raw';
-
 /** Hook to import mods from external paths (Drag & Drop). */
 export function useImportMods() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (params: {
-      paths: string[];
-      targetDir: string;
-      strategy: ImportStrategy;
-      dbJson?: string | null;
-    }) => {
+    mutationFn: async (params: { paths: string[]; targetDir: string }) => {
       return withWatcherSuppression({ releaseDelayMs: null }, async () => {
-        return commands.importModsFromPaths(
-          params.paths,
-          params.targetDir,
-          params.strategy,
-          params.dbJson ?? null,
-        );
+        return commands.importModsFromPaths(params.paths, params.targetDir);
       });
     },
     onSuccess: (result) => {

@@ -63,15 +63,6 @@ pub async fn upsert_game(pool: &SqlitePool, game: &GameRow) -> Result<(), sqlx::
     Ok(())
 }
 
-/// Delete a game by its ID.
-pub async fn delete_game(pool: &SqlitePool, game_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM games WHERE id = ?")
-        .bind(game_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 /// Count total games (used for check_config_status).
 pub async fn count_games(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games")

@@ -1,9 +1,8 @@
 import type { MatchedDbEntry } from '../../../lib/bindings';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { DuplicateInfo } from '../../../types/scanner';
 import type { WorkspaceDialogState } from '../../workspace-runtime/state/workspaceState';
 import type { SyncCurrentData } from '../../workspace-runtime/state/workspaceState';
-import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
 
 export interface SharedModDialogState {
@@ -42,169 +41,59 @@ const INITIAL_DIALOG_STATE: SharedModDialogState = {
   },
 };
 
+const DIALOG_FIELD = {
+  modMove: 'moveDialog',
+  modRename: 'renameDialog',
+  modDelete: 'deleteConfirm',
+  modPinSafe: 'pinSafeDialog',
+  modActiveContext: 'activeContextDialog',
+  modDuplicateWarning: 'duplicateWarning',
+  modSync: 'syncConfirm',
+} as const satisfies Record<string, keyof SharedModDialogState>;
+
+export type ModDialogKind = keyof typeof DIALOG_FIELD;
+type ModDialog<K extends ModDialogKind> = Extract<WorkspaceDialogState, { kind: K }>;
+type ModDialogPayload<K extends ModDialogKind> = Omit<ModDialog<K>, 'kind'>;
+
+/**
+ * Flatten the active dialog into the seven boolean-flag slices the mod surfaces
+ * render from. Every dialog payload is field-compatible with its slice, so the
+ * spread is a straight merge.
+ */
 export function selectSharedModDialogState(
   dialogState: WorkspaceDialogState,
 ): SharedModDialogState {
-  if (dialogState.kind === 'modMove') {
-    return { ...INITIAL_DIALOG_STATE, moveDialog: { open: true, folder: dialogState.folder } };
+  const field: keyof SharedModDialogState | undefined =
+    DIALOG_FIELD[dialogState.kind as ModDialogKind];
+  if (!field) {
+    return INITIAL_DIALOG_STATE;
   }
 
-  if (dialogState.kind === 'modRename') {
-    return {
-      ...INITIAL_DIALOG_STATE,
-      renameDialog: { open: true, folder: dialogState.folder },
-    };
-  }
-
-  if (dialogState.kind === 'modDelete') {
-    return {
-      ...INITIAL_DIALOG_STATE,
-      deleteConfirm: { open: true, folder: dialogState.folder },
-    };
-  }
-
-  if (dialogState.kind === 'modPinSafe') {
-    return {
-      ...INITIAL_DIALOG_STATE,
-      pinSafeDialog: { open: true, folder: dialogState.folder },
-    };
-  }
-
-  if (dialogState.kind === 'modActiveContext') {
-    return {
-      ...INITIAL_DIALOG_STATE,
-      activeContextDialog: {
-        open: true,
-        folder: dialogState.folder,
-        isProcessing: dialogState.isProcessing,
-      },
-    };
-  }
-
-  if (dialogState.kind === 'modDuplicateWarning') {
-    return {
-      ...INITIAL_DIALOG_STATE,
-      duplicateWarning: {
-        open: true,
-        folder: dialogState.folder,
-        duplicates: dialogState.duplicates,
-      },
-    };
-  }
-
-  if (dialogState.kind === 'modSync') {
-    return {
-      ...INITIAL_DIALOG_STATE,
-      syncConfirm: {
-        open: true,
-        folder: dialogState.folder,
-        match: dialogState.match,
-        isLoading: dialogState.isLoading,
-        currentData: dialogState.currentData,
-      },
-    };
-  }
-
-  return INITIAL_DIALOG_STATE;
+  const { kind: _kind, ...payload } = dialogState;
+  // ponytail: computed-key spreads always widen, so one assertion here beats
+  // seven hand-written branches TypeScript could not check any better.
+  return {
+    ...INITIAL_DIALOG_STATE,
+    [field]: { ...INITIAL_DIALOG_STATE[field], ...payload, open: true },
+  } as SharedModDialogState;
 }
 
-export function openModMoveDialog(folder: ModFolder): void {
+export function openModDialog<K extends ModDialogKind>(
+  kind: K,
+  payload: ModDialogPayload<K>,
+): void {
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_OPENED',
-    dialog: { kind: 'modMove', folder },
+    dialog: { kind, ...payload } as ModDialog<K>,
   });
 }
 
-export function closeModMoveDialog(): void {
-  closeWorkspaceDialog('modMove');
-}
-
-export function openModRenameDialog(folder: ModFolder): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'modRename', folder },
-  });
-}
-
-export function closeModRenameDialog(): void {
-  closeWorkspaceDialog('modRename');
-}
-
-export function openModDeleteDialog(folder: ModFolder): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'modDelete', folder },
-  });
-}
-
-export function closeModDeleteDialog(): void {
-  closeWorkspaceDialog('modDelete');
-}
-
-export function openModPinSafeDialog(folder: ModFolder): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'modPinSafe', folder },
-  });
-}
-
-export function closeModPinSafeDialog(): void {
-  closeWorkspaceDialog('modPinSafe');
-}
-
-export function openModActiveContextDialog(folder: ModFolder): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'modActiveContext', folder, isProcessing: false },
-  });
-}
-
-export function updateModActiveContextDialog(folder: ModFolder, isProcessing: boolean): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_UPDATED',
-    dialog: { kind: 'modActiveContext', folder, isProcessing },
-  });
-}
-
-export function closeModActiveContextDialog(): void {
-  closeWorkspaceDialog('modActiveContext');
-}
-
-export function closeModDuplicateWarningDialog(): void {
-  closeWorkspaceDialog('modDuplicateWarning');
-}
-
-export function openModSyncDialog(folder: ModFolder, currentData: SyncCurrentData): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: {
-      kind: 'modSync',
-      folder,
-      match: null,
-      isLoading: true,
-      currentData,
-    },
-  });
-}
-
-export function updateModSyncDialog(
-  folder: ModFolder,
-  currentData: SyncCurrentData | null,
-  match: MatchedDbEntry | null,
-  isLoading: boolean,
+export function updateModDialog<K extends ModDialogKind>(
+  kind: K,
+  payload: ModDialogPayload<K>,
 ): void {
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_UPDATED',
-    dialog: {
-      kind: 'modSync',
-      folder,
-      match,
-      isLoading,
-      currentData,
-    },
+    dialog: { kind, ...payload } as ModDialog<K>,
   });
-}
-
-export function closeModSyncDialog(): void {
-  closeWorkspaceDialog('modSync');
 }

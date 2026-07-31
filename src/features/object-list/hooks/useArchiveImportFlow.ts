@@ -190,7 +190,6 @@ export function useArchiveImportFlow({
             ];
             folderPaths.push(
               ...(await ingestLooseFiles(
-                activeGame,
                 pendingDropContext.baseLooseFiles || [],
                 extractTarget,
               )),
@@ -301,7 +300,7 @@ export function useArchiveImportFlow({
       setIsSyncing(true);
       await withWatcherSuppression({ releaseDelayMs: null }, async () => {
         folderPaths.push(
-          ...(await ingestLooseFiles(activeGame, looseFiles, tempStagingPath(activeGame.mod_path))),
+          ...(await ingestLooseFiles(looseFiles, tempStagingPath(activeGame.mod_path))),
         );
         setScanReview(await buildScanReviewState(activeGame, folderPaths));
       });

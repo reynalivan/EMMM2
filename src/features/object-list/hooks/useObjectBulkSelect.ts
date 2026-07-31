@@ -1,5 +1,10 @@
 import { useState, useCallback, useMemo } from 'react';
+import { useRangeSelection } from '../../../hooks/useRangeSelection';
 import type { FlatItem } from './useObjectListVirtualizer';
+
+type RowItem = Extract<FlatItem, { type: 'row' }>;
+
+const getRowId = (item: RowItem) => item.obj.id;
 
 /**
  * useObjectBulkSelect — manages multi-selection state for ObjectList rows.
@@ -7,54 +12,41 @@ import type { FlatItem } from './useObjectListVirtualizer';
  */
 export function useObjectBulkSelect(flatItems: FlatItem[]) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  /** Last toggled item (anchor for Shift-range) */
-  const lastToggledId = useState<string | null>(null);
-
-  /** All row-type item IDs in flat order (for range select) */
-  const rowIds = useMemo(
-    () =>
-      flatItems
-        .filter((item): item is Extract<FlatItem, { type: 'row' }> => item.type === 'row')
-        .map((item) => item.obj.id),
+  const rowItems = useMemo(
+    () => flatItems.filter((item): item is RowItem => item.type === 'row'),
     [flatItems],
   );
+  const { ids: rowIds, setAnchorId, getRange } = useRangeSelection(rowItems, getRowId);
 
   const toggleSelection = useCallback(
     (id: string, isCtrl: boolean, isShift: boolean) => {
       setSelectedIds((prev) => {
         const next = new Set(prev);
+        const range = isShift ? getRange(id) : null;
 
-        if (isShift && lastToggledId[0]) {
-          // Range select: from lastToggled to id
-          const startIdx = rowIds.indexOf(lastToggledId[0]);
-          const endIdx = rowIds.indexOf(id);
-          if (startIdx >= 0 && endIdx >= 0) {
-            const [lo, hi] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
-            for (let i = lo; i <= hi; i++) {
-              next.add(rowIds[i]);
-            }
+        if (range) {
+          for (const rangeId of range) {
+            next.add(rangeId);
           }
         } else if (isCtrl) {
-          // Toggle single
           if (next.has(id)) next.delete(id);
           else next.add(id);
         } else {
-          // Plain click: clear + select single
           next.clear();
           next.add(id);
         }
 
         return next;
       });
-      lastToggledId[1](id);
+      setAnchorId(id);
     },
-    [rowIds, lastToggledId],
+    [getRange, setAnchorId],
   );
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
-    lastToggledId[1](null);
-  }, [lastToggledId]);
+    setAnchorId(null);
+  }, [setAnchorId]);
 
   const selectAll = useCallback(() => {
     setSelectedIds(new Set(rowIds));

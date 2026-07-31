@@ -15,7 +15,7 @@ import { useRenameMod } from '../../../hooks/useFolderCoreMutations';
 import { ItemStatus, type JsonValue, type ModInfo } from '../../../types/object';
 import type { GameObject } from '../../../lib/bindings';
 import type { ObjectSummary } from '../../../types/object';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 
 export const schema = z

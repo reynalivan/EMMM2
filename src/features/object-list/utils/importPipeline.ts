@@ -6,9 +6,8 @@
  * steps live here instead of being copy-pasted into each hook.
  */
 
-import { commands, type IngestResult } from '../../../lib/bindings';
+import { commands } from '../../../lib/bindings';
 import type { GameConfig } from '../../../types/game';
-import { getGameTypeKey } from '../../../types/game';
 import type { ScanPreviewItem } from '../../../types/scanner';
 import { scanService } from '../../../lib/services/scanService';
 import { toast } from '../../../stores/useToastStore';
@@ -58,7 +57,6 @@ export async function ensureDirectoryExists(path: string): Promise<void> {
  * as folders. Returns the staged folder paths (empty when nothing was loose).
  */
 export async function ingestLooseFiles(
-  activeGame: GameConfig,
   looseFiles: string[],
   targetPath: string,
 ): Promise<string[]> {
@@ -67,15 +65,7 @@ export async function ingestLooseFiles(
   }
 
   await ensureDirectoryExists(targetPath);
-  const ingestResult: IngestResult = await commands.ingestDroppedFolders(
-    looseFiles,
-    targetPath,
-    activeGame.id,
-    activeGame.name,
-    getGameTypeKey(activeGame.game_type),
-  );
-
-  return ingestResult.moved;
+  return commands.ingestDroppedFolders(looseFiles, targetPath);
 }
 
 /** Deep Match preview + master DB lookup, shaped for the scan review modal. */

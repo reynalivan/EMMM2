@@ -76,7 +76,6 @@ describe('ApplyCollectionModal', () => {
     });
     useAppStore.setState({
       activeGameId: 'game-1',
-      safeMode: true,
     });
   });
 
@@ -111,7 +110,6 @@ describe('ApplyCollectionModal', () => {
       mods_enabled: 1,
       mods_disabled: 0,
       objects_toggled: 0,
-      undo_collection_id: null,
       new_signature: 'partial-signature',
       warnings: ['Missing mod on disk: Mods/Missing'],
       final_state_name: 'Unsaved SAFE Preset',
@@ -127,7 +125,6 @@ describe('ApplyCollectionModal', () => {
       is_safe: true,
       is_unsaved: false,
       is_active: true,
-      is_undo_target: false,
       signature: 'partial-signature',
       updated_at: 'now',
       member_count: 1,

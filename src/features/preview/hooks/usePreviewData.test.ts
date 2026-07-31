@@ -1,12 +1,13 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createWrapper } from '../../../testing/test-utils';
 import { useAppStore } from '../../../stores/useAppStore';
 import {
   useModInfo,
   useModIniFiles,
-  useModIniDocument,
   useAllModIniDocuments,
   usePreviewImages,
   useSavePreviewImage,
@@ -22,6 +23,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+function countInvokes(command: string): number {
+  return vi.mocked(invoke).mock.calls.filter(([name]) => name === command).length;
+}
+
 describe('usePreviewData hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -36,7 +41,10 @@ describe('usePreviewData hooks', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('read_mod_info', { gameId: 'game-1', folderPath: 'E:/Mods/ModA' });
+    expect(invoke).toHaveBeenCalledWith('read_mod_info', {
+      gameId: 'game-1',
+      folderPath: 'E:/Mods/ModA',
+    });
   });
 
   it('fetches ini files list', async () => {
@@ -49,21 +57,9 @@ describe('usePreviewData hooks', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_mod_ini_files', { gameId: 'game-1', folderPath: 'E:/Mods/ModA' });
-  });
-
-  it('fetches ini document for selected file', async () => {
-    vi.mocked(invoke).mockResolvedValue({ mode: 'Structured', raw_lines: [] });
-
-    const { result } = renderHook(() => useModIniDocument('E:/Mods/ModA', 'config.ini'), {
-      wrapper: createWrapper,
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('read_mod_ini', {
+    expect(invoke).toHaveBeenCalledWith('list_mod_ini_files', {
       gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
-      fileName: 'config.ini',
     });
   });
 
@@ -103,7 +99,10 @@ describe('usePreviewData hooks', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_mod_preview_images', { gameId: 'game-1', folderPath: 'E:/Mods/ModA' });
+    expect(invoke).toHaveBeenCalledWith('list_mod_preview_images', {
+      gameId: 'game-1',
+      folderPath: 'E:/Mods/ModA',
+    });
   });
 
   it('writes ini line updates with mutation', async () => {
@@ -174,6 +173,35 @@ describe('usePreviewData hooks', () => {
       gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
     });
+  });
+
+  it('preview image mutations refetch the preview image query instead of patching it', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+
+    vi.mocked(invoke).mockResolvedValue([]);
+
+    const { result } = renderHook(
+      () => ({
+        images: usePreviewImages('E:/Mods/ModA'),
+        save: useSavePreviewImage(),
+      }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.images.isSuccess).toBe(true));
+    const before = countInvokes('list_mod_preview_images');
+
+    await act(async () => {
+      await result.current.save.mutateAsync({
+        folderPath: 'E:/Mods/ModA',
+        objectName: 'Keqing',
+        imageData: [1, 2, 3],
+      });
+    });
+
+    await waitFor(() => expect(countInvokes('list_mod_preview_images')).toBeGreaterThan(before));
   });
 
   it('mutation error is exposed to caller', async () => {

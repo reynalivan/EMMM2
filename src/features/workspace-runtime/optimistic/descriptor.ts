@@ -1,14 +1,8 @@
 import type { RuntimeEffectDescriptor } from '../../../lib/runtimeEffects';
 
-export const EMPTY_RUNTIME_EFFECT_DESCRIPTOR: RuntimeEffectDescriptor = {
-  rewrites: [],
-  invalidatedPaths: [],
-  thumbnailPaths: [],
-  removedQueryKeys: [],
-  invalidatedQueryKeys: [],
-  refreshEvents: [],
-};
-
+// ponytail: six spelled-out lines on purpose. The return-type annotation already
+// fails the build if a descriptor field is added and not merged here, and every
+// keyed-loop form needs an `as RuntimeEffectDescriptor` that throws that away.
 export function mergeRuntimeEffectDescriptors(
   ...descriptors: RuntimeEffectDescriptor[]
 ): RuntimeEffectDescriptor {

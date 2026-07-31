@@ -18,31 +18,14 @@ export interface Toast {
 
 interface ToastState {
   toasts: Toast[];
-  addToast: (type: ToastType, message: string, duration?: number) => string;
-  addToastWithAction: (
-    type: ToastType,
-    message: string,
-    action: ToastAction,
-    duration?: number,
-  ) => string;
+  addToast: (type: ToastType, message: string, duration?: number, action?: ToastAction) => string;
   removeToast: (id: string) => void;
 }
 
 export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
-  addToast: (type, message, duration = 3000) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    set((state) => {
-      if (state.toasts.length >= 5) {
-        console.warn('Toast cap reached. Dropped toast:', type, message);
-        return state;
-      }
-      return { toasts: [...state.toasts, { id, type, message, duration }] };
-    });
-    return id;
-  },
-  addToastWithAction: (type, message, action, duration = 5000) => {
-    const id = Math.random().toString(36).substring(2, 9);
+  addToast: (type, message, duration = 3000, action) => {
+    const id = crypto.randomUUID();
     set((state) => {
       if (state.toasts.length >= 5) {
         console.warn('Toast cap reached. Dropped toast:', type, message);
@@ -66,6 +49,6 @@ export const toast = {
   warning: (msg: string, duration?: number) =>
     useToastStore.getState().addToast('warning', msg, duration),
   /** Show a toast with an action button (e.g. undo). Pass Infinity to duration to keep it open. */
-  withAction: (type: ToastType, msg: string, action: ToastAction, duration?: number) =>
-    useToastStore.getState().addToastWithAction(type, msg, action, duration),
+  withAction: (type: ToastType, msg: string, action: ToastAction, duration = 5000) =>
+    useToastStore.getState().addToast(type, msg, duration, action),
 };

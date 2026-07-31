@@ -2,7 +2,9 @@ import type { DiskReconcileResult } from '../../lib/bindings';
 import { useAppStore } from '../../stores/useAppStore';
 import type { GameConfig } from '../../types/game';
 import { dispatchWorkspaceRuntimeEvent } from '../workspace-runtime/state/workspaceStoreBridge';
-import { isSameOrDescendantPath, joinModPath, normalizePath, rewritePath } from './pathUtils';
+import { pathStartsWith } from '../../lib/pathKey';
+import { normalizeWorkspacePath } from '../workspace-runtime/pathRewrite';
+import { joinModPath, rewritePath } from './pathUtils';
 
 export function buildDiskReconcilePathRewrites(
   result: DiskReconcileResult,
@@ -62,7 +64,7 @@ export function clearStaleSelections(
   const selectedPaths = Array.from(appStore.gridSelection);
   const shouldClearGridSelection = result.cleared_selection_paths.some((path) => {
     const absoluteRoot = joinModPath(modsPath, path);
-    return selectedPaths.some((selectedPath) => isSameOrDescendantPath(selectedPath, absoluteRoot));
+    return selectedPaths.some((selectedPath) => pathStartsWith(absoluteRoot, selectedPath));
   });
 
   if (shouldClearGridSelection) {
@@ -85,9 +87,9 @@ export function isPreviewAffected(
     return false;
   }
 
-  const selectedPath = normalizePath(selectedModPath);
+  const selectedPath = normalizeWorkspacePath(selectedModPath);
   const selectedObjectPath = appStore.selectedObjectFolderPath
-    ? normalizePath(appStore.selectedObjectFolderPath)
+    ? normalizeWorkspacePath(appStore.selectedObjectFolderPath)
     : null;
 
   for (const update of result.path_updates) {
@@ -96,7 +98,7 @@ export function isPreviewAffected(
       const absoluteTo = joinModPath(activeGame.mod_path, update.to);
       if (
         rewritePath(selectedPath, absoluteFrom, absoluteTo) ||
-        isSameOrDescendantPath(selectedPath, absoluteTo)
+        pathStartsWith(absoluteTo, selectedPath)
       ) {
         return true;
       }
@@ -106,31 +108,28 @@ export function isPreviewAffected(
     const objectRewrite = selectedObjectPath
       ? rewritePath(selectedObjectPath, update.from, update.to)
       : null;
-    if (
-      objectRewrite ||
-      (selectedObjectPath && isSameOrDescendantPath(selectedObjectPath, update.to))
-    ) {
+    if (objectRewrite || (selectedObjectPath && pathStartsWith(update.to, selectedObjectPath))) {
       return true;
     }
   }
 
   for (const clearedPath of result.cleared_selection_paths) {
     const absoluteRoot = joinModPath(activeGame.mod_path, clearedPath);
-    if (isSameOrDescendantPath(selectedPath, absoluteRoot)) {
+    if (pathStartsWith(absoluteRoot, selectedPath)) {
       return true;
     }
   }
 
   for (const changedRoot of result.changed_roots) {
     const absoluteRoot = joinModPath(activeGame.mod_path, changedRoot);
-    if (isSameOrDescendantPath(selectedPath, absoluteRoot)) {
+    if (pathStartsWith(absoluteRoot, selectedPath)) {
       return true;
     }
   }
 
   for (const thumbnailRoot of result.thumbnail_roots) {
     const absoluteRoot = joinModPath(activeGame.mod_path, thumbnailRoot);
-    if (isSameOrDescendantPath(selectedPath, absoluteRoot)) {
+    if (pathStartsWith(absoluteRoot, selectedPath)) {
       return true;
     }
   }

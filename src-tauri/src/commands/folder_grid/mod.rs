@@ -3,13 +3,9 @@ use crate::services::config::ConfigService;
 use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 
-pub mod helpers;
 #[cfg(test)]
 #[path = "tests/mod_tests.rs"]
 mod tests;
-pub mod types;
-
-pub use types::ModFolder;
 
 /// Lazily resolve thumbnail for a single mod folder.
 /// Called per-card from the frontend after the folder list is rendered.
@@ -25,7 +21,10 @@ pub async fn get_mod_thumbnail(
     use crate::services::images::thumbnail_cache::ThumbnailCache;
     // Fortify Safe Mode: Do not serve thumbnails for unsafe mods if Safe Mode is locked (enabled)
     if config.get_settings().safe_mode.enabled {
-        let analysis = helpers::analyze_mod_metadata(std::path::Path::new(&folder_path), None);
+        let analysis = crate::services::explorer::helpers::analyze_mod_metadata(
+            std::path::Path::new(&folder_path),
+            None,
+        );
         if !analysis.is_safe {
             return Ok(None);
         }

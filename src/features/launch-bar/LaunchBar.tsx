@@ -1,5 +1,5 @@
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useActiveConflicts } from '../../hooks/useFolderMutations';
 import { useAppStore } from '../../stores/useAppStore';
@@ -18,15 +18,19 @@ export default function LaunchBar() {
   const [error, setError] = useState<string | null>(null);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [showToast, setShowToast] = useState(false);
+  const [toastDismissed, setToastDismissed] = useState(false);
 
   const { data: conflicts } = useActiveConflicts();
   const hasConflicts = conflicts && conflicts.length > 0;
 
-  useEffect(() => {
-    if (hasConflicts) setShowToast(true);
-    else setShowToast(false);
-  }, [hasConflicts]);
+  // Dismissal only lasts as long as the conflicts do; clearing it here (rather
+  // than in an effect) means a fresh batch shows the toast again without an
+  // extra committed render.
+  if (!hasConflicts && toastDismissed) {
+    setToastDismissed(false);
+  }
+
+  const showToast = !!hasConflicts && !toastDismissed;
 
   const handleLaunch = async () => {
     if (!activeGame) return;
@@ -72,7 +76,7 @@ export default function LaunchBar() {
               className="btn btn-warning btn-sm shadow-lg animate-pulse"
               onClick={() => {
                 setConflictOpen(true);
-                setShowToast(false);
+                setToastDismissed(true);
               }}
               title={t('layout:launch_bar.conflict_toast', { count: conflicts.length })}
             >
@@ -80,7 +84,7 @@ export default function LaunchBar() {
               <span className="hidden sm:inline">{t('layout:launch_bar.conflicts')}</span>
             </button>
             {showToast && (
-              <ConflictToast conflicts={conflicts} onDismiss={() => setShowToast(false)} />
+              <ConflictToast conflicts={conflicts} onDismiss={() => setToastDismissed(true)} />
             )}
           </div>
         )}

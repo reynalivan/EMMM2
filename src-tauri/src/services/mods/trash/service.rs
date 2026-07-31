@@ -27,7 +27,7 @@ pub async fn delete_mod_service(
     path: String,
     game_id: Option<String>,
 ) -> Result<DeleteModResult, AppError> {
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
 
     if !trash_dir.exists() {
         fs::create_dir_all(&trash_dir)
@@ -35,7 +35,7 @@ pub async fn delete_mod_service(
     }
 
     if let Some(ref gid) = game_id {
-        validate_path(config, gid, &path).map_err(AppError::Security)?;
+        validate_path(config, gid, &path)?;
     }
 
     let (is_safe, object_id, relative_path) = if let Some(ref gid) = game_id {

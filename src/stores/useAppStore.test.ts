@@ -13,8 +13,6 @@ describe('useAppStore smoke net', () => {
     it('has the expected defaults per domain', () => {
       const s = useAppStore.getState();
       expect(s.activeGameId).toBeNull();
-      expect(s.safeMode).toBe(true);
-      expect(s.theme).toBe('onyx');
       expect(s.workspaceView).toBe('dashboard');
       expect(s.currentPath).toEqual([]);
       expect(s.mobileActivePane).toBe('sidebar');
@@ -87,9 +85,11 @@ describe('useAppStore smoke net', () => {
       expect(useAppStore.getState().selectedModPath).toBeNull();
     });
 
-    it('replaceGridSelection rewrites paths in selection and selectedModPath', () => {
+    it('replaceGridSelections rewrites paths in selection and selectedModPath', () => {
       useAppStore.getState().setGridSelection(new Set(['C:/mods/Old/skin', 'C:/mods/Other']));
-      useAppStore.getState().replaceGridSelection('C:/mods/Old', 'C:/mods/New');
+      useAppStore
+        .getState()
+        .replaceGridSelections([{ oldPath: 'C:/mods/Old', newPath: 'C:/mods/New' }]);
       const s = useAppStore.getState();
       expect(s.gridSelection.has('C:/mods/New/skin')).toBe(true);
       expect(s.gridSelection.has('C:/mods/Other')).toBe(true);
@@ -144,7 +144,7 @@ describe('useAppStore smoke net', () => {
     });
   });
 
-  describe('layout / theme / preview', () => {
+  describe('layout / preview', () => {
     it('togglePreview flips and setPanelWidths sets both widths', () => {
       useAppStore.getState().togglePreview();
       expect(useAppStore.getState().isPreviewOpen).toBe(false);
@@ -153,11 +153,32 @@ describe('useAppStore smoke net', () => {
       expect(useAppStore.getState().rightPanelWidth).toBe(400);
     });
 
-    it('setTheme and setMobilePane update directly', () => {
-      useAppStore.getState().setTheme('light');
+    it('setMobilePane updates directly', () => {
       useAppStore.getState().setMobilePane('details');
-      expect(useAppStore.getState().theme).toBe('light');
       expect(useAppStore.getState().mobileActivePane).toBe('details');
+    });
+  });
+
+  describe('persist rehydration', () => {
+    const merge = (persisted: unknown) =>
+      useAppStore.persist.getOptions().merge!(persisted, useAppStore.getState());
+
+    it('restores persisted keys and revives collapsedCategories as a Set', () => {
+      const merged = merge({ leftPanelWidth: 420, collapsedCategories: ['Weapons', 'UI'] });
+
+      expect(merged.leftPanelWidth).toBe(420);
+      expect(merged.collapsedCategories).toBeInstanceOf(Set);
+      expect(merged.collapsedCategories.has('Weapons')).toBe(true);
+      // Untouched keys still come from the live store, actions included.
+      expect(merged.rightPanelWidth).toBe(320);
+      expect(typeof merged.setPanelWidths).toBe('function');
+    });
+
+    it('falls back to defaults when nothing was persisted', () => {
+      const merged = merge(undefined);
+
+      expect(merged.leftPanelWidth).toBe(260);
+      expect(merged.collapsedCategories.size).toBe(0);
     });
   });
 
@@ -165,14 +186,18 @@ describe('useAppStore smoke net', () => {
     it('timestamp write clears pending and unavailable flags for that game', () => {
       useAppStore.getState().markDiskReconcilePending('g1', true);
       useAppStore.getState().setDiskSourceUnavailable('g1', 'gone');
-      expect(useAppStore.getState().pendingDiskReconcileByGame.g1).toBe(false);
-      expect(useAppStore.getState().diskSourceUnavailableByGame.g1).toBe('gone');
+      expect(useAppStore.getState().diskReconcileByGame.g1).toEqual({
+        at: 0,
+        pending: false,
+        unavailable: 'gone',
+      });
 
       useAppStore.getState().setDiskReconcileTimestamp('g1', 1234);
-      const s = useAppStore.getState();
-      expect(s.lastDiskReconcileAtByGame.g1).toBe(1234);
-      expect(s.pendingDiskReconcileByGame.g1).toBe(false);
-      expect(s.diskSourceUnavailableByGame.g1).toBeNull();
+      expect(useAppStore.getState().diskReconcileByGame.g1).toEqual({
+        at: 1234,
+        pending: false,
+        unavailable: null,
+      });
     });
   });
 

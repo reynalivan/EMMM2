@@ -4,7 +4,7 @@
 use super::live_state::{
     live_runtime_is_safe, load_game_mods_path, load_live_corridor_state, load_live_runtime_state,
 };
-use super::projection::build_projected_state_from_members;
+use super::projection::persist_projected_state;
 use crate::domain::collection::{CollectionMod, CollectionObject, CollectionSummary};
 use crate::domain::errors::CollectionError;
 use crate::repo::{collection_repo, corridor_repo};
@@ -17,7 +17,7 @@ pub async fn handle_dirty_state(
     _is_safe: bool,
 ) -> Result<CollectionSummary, CollectionError> {
     let (mods, objects) = load_live_runtime_state(pool, game_id).await?;
-    let projected_state = build_projected_state_from_members(&mods, &objects, None);
+    let projected_state = projected_state_service::build_projected_state(&mods, &objects, None);
     let signature = projected_state_service::signature_for_projected_state(&projected_state);
 
     Ok(CollectionSummary {
@@ -26,7 +26,6 @@ pub async fn handle_dirty_state(
         is_safe: live_runtime_is_safe(pool, game_id).await?,
         is_unsaved: true,
         is_active: false,
-        is_undo_target: false,
         signature: Some(signature),
         updated_at: chrono::Utc::now().to_rfc3339(),
         raw_member_count: projected_state.summary.active_root_count as i32,
@@ -79,28 +78,18 @@ pub async fn replace_collection_with_current_state(
             ..entry.clone()
         })
         .collect();
-    let projected_state = build_projected_state_from_members(
+    let projected_state = projected_state_service::build_projected_state(
         &persisted_mods,
         &persisted_objects,
         mods_path.as_deref(),
     );
-    let roots = projected_state_service::roots_from_projected_state(
-        &collection.id,
-        collection.is_safe,
-        &projected_state,
-    );
-    let signature = projected_state_service::signature_for_projected_state(&projected_state);
-    let snapshot_json = projected_state_service::serialize_snapshot_json(&projected_state);
-
-    collection_repo::replace_all_state(
+    persist_projected_state(
         pool,
         &collection.id,
+        collection.is_safe,
         &persisted_mods,
         &persisted_objects,
-        &roots,
-        Some(&signature),
-        snapshot_json.as_deref(),
-        projected_state.summary.active_root_count as i32,
+        &projected_state,
     )
     .await?;
 
@@ -115,9 +104,6 @@ pub async fn replace_collection_with_current_state(
     let active_id = corridor
         .as_ref()
         .and_then(|state| state.active_collection_id.as_deref());
-    let undo_id = corridor
-        .as_ref()
-        .and_then(|state| state.undo_collection_id.as_deref());
 
-    Ok(collection_repo::to_summary(&updated, active_id, undo_id))
+    Ok(collection_repo::to_summary(&updated, active_id))
 }

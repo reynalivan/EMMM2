@@ -103,9 +103,7 @@ describe('ExternalChangeHandler integration', () => {
       selectedObjectFolderPath: 'ALBEDO',
       selectedModPath: 'E:/Mods/ALBEDO/Variant',
       gridSelection: new Set(),
-      lastDiskReconcileAtByGame: {},
-      pendingDiskReconcileByGame: {},
-      diskSourceUnavailableByGame: {},
+      diskReconcileByGame: {},
     });
     (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (event: string, callback: EventHandler) => {

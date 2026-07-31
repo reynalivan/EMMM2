@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboardStats } from './useDashboardStats';
-import { useAppStore } from '../../../stores/useAppStore';
+import { useSafeMode } from '../../../hooks/settingsQuery';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../testing/test-utils';
 import type { DashboardPayload } from '../../../types/dashboard';
@@ -14,8 +14,8 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../stores/useAppStore', () => ({
-  useAppStore: vi.fn(),
+vi.mock('../../../hooks/settingsQuery', () => ({
+  useSafeMode: vi.fn(),
 }));
 
 describe('useDashboardStats', () => {
@@ -24,10 +24,7 @@ describe('useDashboardStats', () => {
   });
 
   it('should fetch stats respecting safeMode=false', async () => {
-    vi.mocked(useAppStore).mockImplementation(((selector: unknown) => {
-      const fn = selector as (state: { safeMode: boolean }) => unknown;
-      return fn({ safeMode: false });
-    }) as unknown as typeof useAppStore);
+    vi.mocked(useSafeMode).mockReturnValue(false);
     const mockPayload: DashboardPayload = {
       stats: {
         total_mods: 2,
@@ -55,10 +52,7 @@ describe('useDashboardStats', () => {
   });
 
   it('should fetch stats respecting safeMode=true', async () => {
-    vi.mocked(useAppStore).mockImplementation(((selector: unknown) => {
-      const fn = selector as (state: { safeMode: boolean }) => unknown;
-      return fn({ safeMode: true });
-    }) as unknown as typeof useAppStore);
+    vi.mocked(useSafeMode).mockReturnValue(true);
     const mockPayload: DashboardPayload = {
       stats: {
         total_mods: 1,

@@ -33,15 +33,6 @@
       "failed": "移动失败：{{error}}"
     }
   },
-  "tags": {
-    "title": "批量标签",
-    "placeholder": "输入标签并按回车...",
-    "empty": "尚未添加标签",
-    "toast": {
-      "success": "已更新 {{count}} 个模组的标签",
-      "failed": "更新标签失败：{{error}}"
-    }
-  },
   "resolution": {
     "title": "检测到名称冲突",
     "loading": "正在加载文件夹详情...",

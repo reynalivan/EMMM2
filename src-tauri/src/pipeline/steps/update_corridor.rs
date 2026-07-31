@@ -1,6 +1,5 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::repo::collection_repo;
 
 /// Step 8: Record apply result metadata without mutating legacy corridor pointers.
 pub async fn update(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
@@ -9,13 +8,9 @@ pub async fn update(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         &ctx.target_objects,
     );
     ctx.new_signature = signature.clone();
-    let collection = collection_repo::get_by_id(&ctx.pool, &ctx.collection_id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: ctx.collection_id.clone(),
-        })?;
+    let collection_name = ctx.collection()?.name.clone();
     ctx.final_state_is_dirty = !ctx.skipped_missing_paths.is_empty();
-    ctx.final_state_name = Some(collection.name.clone());
+    ctx.final_state_name = Some(collection_name);
 
     log::info!(
         "apply_pipeline[update_corridor]: collection '{}' applied without legacy pointer mutation (sig='{}')",

@@ -1,9 +1,9 @@
 use crate::domain::errors::CollectionError;
-use crate::pipeline::apply_pipeline::ApplyContext;
+use crate::pipeline::apply_pipeline::{corridor_label, ApplyContext};
 use crate::repo::collection_repo;
 
-/// Step 1: Validate that the collection belongs to the requested game.
-pub async fn validate(ctx: &ApplyContext) -> Result<(), CollectionError> {
+/// Step 1: Load the collection once and validate it belongs to the requested game.
+pub async fn validate(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let collection = collection_repo::get_by_id(&ctx.pool, &ctx.collection_id)
         .await?
         .ok_or_else(|| CollectionError::NotFound {
@@ -35,13 +35,7 @@ pub async fn validate(ctx: &ApplyContext) -> Result<(), CollectionError> {
         ctx.game_id
     );
 
-    Ok(())
-}
+    ctx.collection = Some(collection);
 
-fn corridor_label(is_safe: bool) -> &'static str {
-    if is_safe {
-        "SAFE"
-    } else {
-        "UNSAFE"
-    }
+    Ok(())
 }

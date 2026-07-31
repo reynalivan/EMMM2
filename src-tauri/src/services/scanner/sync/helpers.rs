@@ -16,7 +16,7 @@ pub fn auto_matched_candidate(
 }
 
 pub fn canonical_entry_key(entry_name: &str) -> String {
-    crate::common::path_key::object_name_key(entry_name)
+    crate::common::path_key::canonical_name_key(entry_name)
 }
 
 #[derive(Debug, Clone)]

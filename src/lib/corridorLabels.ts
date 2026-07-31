@@ -14,13 +14,6 @@ type CollectionDisplayNameInput = {
   labels: UnsavedCollectionLabels;
 };
 
-type CorridorStateNameInput = {
-  stateName: string | null | undefined;
-  isUnsaved: boolean | null | undefined;
-  isSafe: boolean | null | undefined;
-  labels: UnsavedCollectionLabels;
-};
-
 export function getUnsavedCollectionLabel(
   isSafe: boolean | null | undefined,
   labels: UnsavedCollectionLabels,
@@ -39,15 +32,6 @@ export function getCollectionDisplayName(input: CollectionDisplayNameInput): str
   }
 
   return getUnsavedCollectionLabel(input.isSafe, input.labels);
-}
-
-export function getCorridorStateName(input: CorridorStateNameInput): string {
-  return getCollectionDisplayName({
-    name: input.stateName,
-    isUnsaved: input.isUnsaved,
-    isSafe: input.isSafe,
-    labels: input.labels,
-  });
 }
 
 // The hook lives here so consumers get both the type and the i18n-resolved

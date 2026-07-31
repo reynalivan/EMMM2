@@ -1,6 +1,5 @@
-import type { FolderGridResponse, ModFolder, SortField, SortOrder } from '../types/mod';
-
-export type { ModFolder, FolderGridResponse };
+import type { ModFolder } from '../types/object';
+import type { SortField, SortOrder } from '../types/mod';
 
 export const folderKeys = {
   all: ['mod-folders'] as const,

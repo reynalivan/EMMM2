@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { ModFolder } from '../types/mod';
+import type { ModFolder } from '../types/object';
 import type { WorkspaceExplorerNode } from '../types/workspace';
 import {
   buildModContextMenuItems,

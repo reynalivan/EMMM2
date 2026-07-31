@@ -156,6 +156,32 @@ describe('workspaceReducer', () => {
     expect(nextState.dialogState.kind).toBe('none');
   });
 
+  it('invalidates selection whose case differs from the invalidated path (Windows)', () => {
+    const nextState = reduceWorkspaceRuntimeState(
+      {
+        ...baseState,
+        selectedObjectFolderPath: 'E:/Mods/ALBEDO',
+        explorerSubPath: 'E:/Mods/ALBEDO',
+        currentPath: ['ALBEDO'],
+        selectedModPath: 'E:/Mods/ALBEDO/Deleted',
+        previewDirty: true,
+        dialogState: { kind: 'previewUnsavedChanges' },
+      },
+      {
+        type: 'TARGETS_INVALIDATED',
+        paths: ['e:\\mods\\albedo'],
+        resetExplorer: true,
+      },
+    );
+
+    expect(nextState.selectedObjectFolderPath).toBeNull();
+    expect(nextState.selectedModPath).toBeNull();
+    expect(nextState.explorerSubPath).toBeUndefined();
+    expect(nextState.currentPath).toEqual([]);
+    expect(nextState.previewDirty).toBe(false);
+    expect(nextState.dialogState.kind).toBe('none');
+  });
+
   it('clears dirty preview when source unavailable reconciliation removes selected target', () => {
     const nextState = reduceWorkspaceRuntimeState(
       {

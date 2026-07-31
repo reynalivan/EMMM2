@@ -7,35 +7,8 @@ use super::mapping::serialize_warnings_json;
 use crate::domain::collection::{CollectionMod, CollectionObject, CollectionRoot};
 use crate::domain::errors::CollectionError;
 
-/// Replace all members in a single transaction.
+/// Replace all members of a collection. Callers wrap this in their own transaction.
 #[allow(clippy::too_many_arguments)] // Snapshot replacement keeps collection member groups explicit at the repo boundary.
-pub async fn replace_all_state(
-    pool: &SqlitePool,
-    id: &str,
-    mods: &[CollectionMod],
-    objects: &[CollectionObject],
-    roots: &[CollectionRoot],
-    signature: Option<&str>,
-    snapshot_json: Option<&str>,
-    display_mod_count: i32,
-) -> Result<(), CollectionError> {
-    let mut tx = pool.begin().await?;
-    replace_all_state_tx(
-        &mut tx,
-        id,
-        mods,
-        objects,
-        roots,
-        signature,
-        snapshot_json,
-        display_mod_count,
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)] // Transactional snapshot replacement mirrors replace_all_state without changing callers.
 pub async fn replace_all_state_tx(
     conn: &mut SqliteConnection,
     id: &str,

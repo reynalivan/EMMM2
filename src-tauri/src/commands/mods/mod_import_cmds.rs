@@ -5,11 +5,6 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
 
-#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
-pub enum ImportStrategy {
-    Raw,
-}
-
 #[specta::specta]
 #[tauri::command]
 pub async fn import_mods_from_paths(
@@ -18,10 +13,8 @@ pub async fn import_mods_from_paths(
     op_lock: State<'_, OperationLock>,
     paths: Vec<String>,
     target_dir: String,
-    _strategy: ImportStrategy,
-    db_json: Option<String>,
 ) -> Result<BulkResult, String> {
-    let _lock = op_lock.acquire().await?;
+    let _lock = op_lock.acquire().await.map_err(|e| e.to_string())?;
     let total = paths.len();
 
     let _ = app.emit(
@@ -41,8 +34,6 @@ pub async fn import_mods_from_paths(
     if !target.exists() || !target.is_dir() {
         return Err(format!("Target directory does not exist: {}", target_dir));
     }
-
-    let _ = db_json;
 
     for (i, path_str) in paths.iter().enumerate() {
         let _ = app.emit(
@@ -170,37 +161,24 @@ fn handle_archive_import(
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-pub struct IngestResult {
-    pub moved: Vec<String>,
-    pub skipped: Vec<String>,
-    pub not_dirs: Vec<String>,
-    pub sync: crate::services::scanner::sync::SyncResult,
-}
-
 #[specta::specta]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps dropped-folder import payload stable.
 pub async fn ingest_dropped_folders(
-    _app: tauri::AppHandle,
-    _pool: tauri::State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     paths: Vec<String>,
     mods_path: String,
-    _game_id: String,
-    _game_name: String,
-    _game_type: String,
-) -> Result<IngestResult, String> {
-    let _lock = op_lock.acquire().await?;
+) -> Result<Vec<String>, String> {
+    let _lock = op_lock.acquire().await.map_err(|e| e.to_string())?;
     ingest_dropped_folders_inner(&state, paths, mods_path).await
 }
 
+/// Moves dropped folders into the mods root; returns the moved folder names.
 pub async fn ingest_dropped_folders_inner(
     state: &WatcherState,
     paths: Vec<String>,
     mods_path: String,
-) -> Result<IngestResult, String> {
+) -> Result<Vec<String>, String> {
     let target = Path::new(&mods_path);
 
     if !target.exists() || !target.is_dir() {
@@ -208,56 +186,30 @@ pub async fn ingest_dropped_folders_inner(
     }
 
     let mut moved = Vec::new();
-    let mut skipped = Vec::new();
-    let mut not_dirs = Vec::new();
 
     let _guard = SuppressionGuard::new(&state.suppressor);
 
     for src_str in &paths {
         let src = Path::new(src_str);
         if !src.is_dir() {
-            not_dirs.push(src_str.clone());
             continue;
         }
 
-        let basename = match src.file_name() {
-            Some(n) => n.to_string_lossy().to_string(),
-            None => {
-                skipped.push(src_str.clone());
-                continue;
-            }
+        let Some(basename) = src.file_name().map(|n| n.to_string_lossy().to_string()) else {
+            continue;
         };
 
         let dest = target.join(&basename);
         if dest.exists() {
-            skipped.push(basename);
             continue;
         }
 
         if crate::services::fs_utils::file_utils::rename_cross_drive_fallback(src, &dest).is_ok() {
             moved.push(basename);
-        } else {
-            skipped.push(basename);
         }
     }
 
-    drop(_guard);
-
-    let sync_result = crate::services::scanner::sync::SyncResult {
-        total_scanned: moved.len(),
-        new_mods: moved.len(),
-        updated_mods: 0,
-        deleted_mods: 0,
-        new_objects: 0,
-        collisions: Vec::new(),
-    };
-
-    Ok(IngestResult {
-        moved,
-        skipped,
-        not_dirs,
-        sync: sync_result,
-    })
+    Ok(moved)
 }
 
 #[cfg(test)]

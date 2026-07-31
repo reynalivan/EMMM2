@@ -1,7 +1,8 @@
-import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
-import type { ModInfoUpdate } from '../../../types/mod';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ModInfoUpdate } from '../../../types/object';
 import { commands, sparse } from '../../../lib/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
+import { publishQueryInvalidations } from '../../runtime-sync/queryRefresh';
 
 export interface IniFileEntry {
   filename: string;
@@ -73,11 +74,6 @@ function normalizeFolderPath(folderPath?: string | null): string | null {
   return value ? value : null;
 }
 
-function normalizeFileName(fileName?: string | null): string | null {
-  const value = fileName?.trim();
-  return value ? value : null;
-}
-
 /**
  * Every preview command is scoped to the active game on the Rust side. The panel
  * only ever renders mods from that game, so resolve it here instead of threading
@@ -85,6 +81,17 @@ function normalizeFileName(fileName?: string | null): string | null {
  */
 function useActiveGameId(): string {
   return useAppStore((state) => state.activeGameId) ?? '';
+}
+
+/**
+ * Invalidation-only refresh for the detail queries a preview mutation touches.
+ * Fire-and-forget so `mutateAsync` still resolves as soon as the command does.
+ */
+function useDetailsInvalidator(): (queryKeys: Array<readonly unknown[]>) => void {
+  const queryClient = useQueryClient();
+  return (queryKeys) => {
+    void publishQueryInvalidations(queryClient, queryKeys, 'active');
+  };
 }
 
 export function useModInfo(folderPath?: string | null) {
@@ -108,19 +115,6 @@ export function useModIniFiles(folderPath?: string | null) {
     queryFn: () => commands.listModIniFiles(gameId, normalizedPath ?? ''),
     enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
-  });
-}
-
-export function useModIniDocument(folderPath?: string | null, fileName?: string | null) {
-  const normalizedPath = normalizeFolderPath(folderPath);
-  const normalizedName = normalizeFileName(fileName);
-  const gameId = useActiveGameId();
-
-  return useQuery({
-    queryKey: detailsKeys.iniDocument(normalizedPath ?? '', normalizedName ?? ''),
-    queryFn: () => commands.readModIni(gameId, normalizedPath ?? '', normalizedName ?? ''),
-    enabled: !!normalizedPath && !!normalizedName && !!gameId,
-    staleTime: 0,
   });
 }
 
@@ -153,40 +147,54 @@ export function usePreviewImages(folderPath?: string | null) {
 
 export function useWriteModIni() {
   const gameId = useActiveGameId();
+  const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: WriteModIniInput) =>
       commands.writeModIni(gameId, input.folderPath, input.fileName, input.lineUpdates),
+    onSuccess: (_result, input) =>
+      invalidate([
+        detailsKeys.iniDocument(input.folderPath, input.fileName),
+        detailsKeys.iniFiles(input.folderPath),
+      ]),
   });
 }
 
 export function useSavePreviewImage() {
   const gameId = useActiveGameId();
+  const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: SavePreviewImageInput) =>
       commands.saveModPreviewImage(gameId, input.folderPath, input.objectName, input.imageData),
+    onSuccess: (_result, input) => invalidate([detailsKeys.previewImages(input.folderPath)]),
   });
 }
 
 export function useRemovePreviewImage() {
   const gameId = useActiveGameId();
+  const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: RemovePreviewImageInput) =>
       commands.removeModPreviewImage(gameId, input.folderPath, input.imagePath),
+    onSuccess: (_result, input) => invalidate([detailsKeys.previewImages(input.folderPath)]),
   });
 }
 
 export function useClearPreviewImages() {
   const gameId = useActiveGameId();
+  const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: ClearPreviewImagesInput) =>
       commands.clearModPreviewImages(gameId, input.folderPath),
+    onSuccess: (_result, input) => invalidate([detailsKeys.previewImages(input.folderPath)]),
   });
 }
 
 export function useUpdateModInfoDetails() {
   const gameId = useActiveGameId();
+  const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: UpdateModInfoInput) =>
       commands.updateModInfo(gameId, input.folderPath, sparse(input.update)),
+    onSuccess: (_result, input) => invalidate([detailsKeys.modInfo(input.folderPath)]),
   });
 }

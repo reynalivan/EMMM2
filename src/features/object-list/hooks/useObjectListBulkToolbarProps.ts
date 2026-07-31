@@ -20,14 +20,6 @@ interface UseObjectListBulkToolbarPropsInput {
   handleBulkSafe: (ids: Set<string>, safe: boolean) => Promise<void>;
 }
 
-function runWhenAvailable(mutationsDisabled: boolean, action: () => Promise<void>): void {
-  if (mutationsDisabled) {
-    return;
-  }
-
-  void action();
-}
-
 export function useObjectListBulkToolbarProps({
   activePane,
   mutationsDisabled,
@@ -41,66 +33,53 @@ export function useObjectListBulkToolbarProps({
   handleBulkFavorite,
   handleBulkSafe,
 }: UseObjectListBulkToolbarPropsInput) {
-  return useMemo(
-    () => ({
+  return useMemo(() => {
+    // Every bulk action is "skip while disabled, run on the selection, then clear".
+    const run =
+      <TArgs extends unknown[]>(action: (ids: Set<string>, ...args: TArgs) => Promise<void>) =>
+      (...args: TArgs): void => {
+        if (mutationsDisabled) {
+          return;
+        }
+
+        void action(bulkSelect.selectedIds, ...args).then(bulkSelect.clearSelection);
+      };
+
+    const openTagModal = (mode: BulkTagModalState['mode']) => () => {
+      if (!mutationsDisabled) {
+        setBulkTagModal({ open: true, mode });
+      }
+    };
+
+    return {
       isAnySelected: activePane === 'objectList' && bulkSelect.isAnySelected,
       selectionCount: bulkSelect.selectionCount,
       mutationsDisabled,
-      onDelete: () =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkDelete(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-        ),
-      onPin: (pin: boolean) =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkPin(bulkSelect.selectedIds, pin).then(bulkSelect.clearSelection),
-        ),
-      onEnable: () =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkEnable(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-        ),
-      onDisable: () =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkDisable(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-        ),
-      onAddTags: () => {
-        if (!mutationsDisabled) {
-          setBulkTagModal({ open: true, mode: 'add' });
-        }
-      },
-      onRemoveTags: () => {
-        if (!mutationsDisabled) {
-          setBulkTagModal({ open: true, mode: 'remove' });
-        }
-      },
-      onAutoRecognize: () =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkAutoRecognize(bulkSelect.selectedIds).then(bulkSelect.clearSelection),
-        ),
-      onFavorite: (favorite: boolean) =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkFavorite(bulkSelect.selectedIds, favorite).then(bulkSelect.clearSelection),
-        ),
-      onMarkSafe: (safe: boolean) =>
-        runWhenAvailable(mutationsDisabled, () =>
-          handleBulkSafe(bulkSelect.selectedIds, safe).then(bulkSelect.clearSelection),
-        ),
+      onDelete: run(handleBulkDelete),
+      onPin: run(handleBulkPin),
+      onEnable: run(handleBulkEnable),
+      onDisable: run(handleBulkDisable),
+      onAddTags: openTagModal('add'),
+      onRemoveTags: openTagModal('remove'),
+      onAutoRecognize: run(handleBulkAutoRecognize),
+      onFavorite: run(handleBulkFavorite),
+      onMarkSafe: run(handleBulkSafe),
       onClear: bulkSelect.clearSelection,
-    }),
-    [
-      activePane,
-      bulkSelect.isAnySelected,
-      bulkSelect.selectionCount,
-      bulkSelect.selectedIds,
-      bulkSelect.clearSelection,
-      handleBulkDelete,
-      handleBulkPin,
-      handleBulkEnable,
-      handleBulkDisable,
-      handleBulkAutoRecognize,
-      handleBulkFavorite,
-      handleBulkSafe,
-      mutationsDisabled,
-      setBulkTagModal,
-    ],
-  );
+    };
+  }, [
+    activePane,
+    bulkSelect.isAnySelected,
+    bulkSelect.selectionCount,
+    bulkSelect.selectedIds,
+    bulkSelect.clearSelection,
+    handleBulkDelete,
+    handleBulkPin,
+    handleBulkEnable,
+    handleBulkDisable,
+    handleBulkAutoRecognize,
+    handleBulkFavorite,
+    handleBulkSafe,
+    mutationsDisabled,
+    setBulkTagModal,
+  ]);
 }

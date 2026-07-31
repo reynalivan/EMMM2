@@ -6,7 +6,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../testing/test-utils';
 import Dashboard from './Dashboard';
-import { useAppStore } from '../../stores/useAppStore';
 
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({
@@ -95,7 +94,6 @@ const mockFullStats = {
 describe('Dashboard - TC-33', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ safeMode: false });
 
     vi.mocked(useActiveKeybindings).mockReturnValue({
       keybindings: [],

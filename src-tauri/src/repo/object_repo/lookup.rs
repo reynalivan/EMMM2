@@ -62,20 +62,6 @@ pub async fn get_characters_for_game(
     Ok(result)
 }
 
-pub async fn get_folder_path(pool: &SqlitePool, id: &str) -> Result<Option<String>, sqlx::Error> {
-    use sqlx::Row;
-    let row = sqlx::query("SELECT folder_path FROM objects WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-
-    if let Some(r) = row {
-        Ok(r.try_get("folder_path").ok())
-    } else {
-        Ok(None)
-    }
-}
-
 pub async fn get_rows_for_reconcile(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,

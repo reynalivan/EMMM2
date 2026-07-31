@@ -5,6 +5,7 @@
 //!
 //! # Covers: TRD §3.6, NC-5.1-04, EC-5.01
 
+use crate::domain::errors::AppError;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -31,12 +32,14 @@ impl Default for OperationLock {
 
 impl OperationLock {
     /// Try to acquire the lock with a 500ms timeout.
-    /// Returns an error string if another operation is in progress.
-    pub async fn acquire(&self) -> Result<OwnedMutexGuard<()>, String> {
+    /// Every caller surfaces contention as the same `AppError::Io`.
+    pub async fn acquire(&self) -> Result<OwnedMutexGuard<()>, AppError> {
         match tokio::time::timeout(Duration::from_millis(500), self.lock.clone().lock_owned()).await
         {
             Ok(guard) => Ok(guard),
-            Err(_) => Err("Operation in progress. Please wait a moment and try again.".to_string()),
+            Err(_) => Err(AppError::Io(
+                "Operation in progress. Please wait a moment and try again.".to_string(),
+            )),
         }
     }
 }

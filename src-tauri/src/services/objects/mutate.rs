@@ -202,7 +202,7 @@ pub async fn delete_object(
     op_lock: &crate::services::fs_utils::operation_lock::OperationLock,
 ) -> Result<(), AppError> {
     // Acquire operation lock + suppress watcher for the entire operation
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     let _guard =
         crate::services::scanner::watcher::SuppressionGuard::new(&watcher_state.suppressor);
     // 1. Fetch object from DB to get game_id and folder_path

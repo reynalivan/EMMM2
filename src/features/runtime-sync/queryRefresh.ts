@@ -79,35 +79,13 @@ const runtimeEventScopes: Record<RuntimeRefreshEvent, RuntimeRefreshScope[]> = {
 
 const pendingRuntimeRefreshes = new WeakMap<QueryClient, PendingRuntimeRefresh>();
 
+// Verified equivalent to the previous hand-written lattice across all 16 pairs:
+// 'none' is the identity, and any two differing non-'none' types widen to 'all'.
 function mergeRefetchType(current: QueryRefetchType, next: QueryRefetchType): QueryRefetchType {
-  if (current === next) {
-    return current;
-  }
-
-  if (current === 'all' || next === 'all') {
-    return 'all';
-  }
-
-  if (
-    (current === 'active' && next === 'inactive') ||
-    (current === 'inactive' && next === 'active')
-  ) {
-    return 'all';
-  }
-
-  if (current === 'none') {
-    return next;
-  }
-
-  if (next === 'none') {
-    return current;
-  }
-
-  if (current === 'active' || next === 'active') {
-    return 'active';
-  }
-
-  return 'inactive';
+  if (current === next) return current;
+  if (current === 'none') return next;
+  if (next === 'none') return current;
+  return 'all';
 }
 
 async function refreshRuntimeQueriesNow(
@@ -141,6 +119,8 @@ function scheduleRuntimeRefresh(
     return current.promise;
   }
 
+  // ponytail: `Promise.withResolvers` would delete this dance, but it needs
+  // `lib: es2024` (project is on es2020) and a Chrome 119+ WebView2 floor.
   let resolvePromise!: () => void;
   let rejectPromise!: (error: unknown) => void;
   const pending: PendingRuntimeRefresh = {

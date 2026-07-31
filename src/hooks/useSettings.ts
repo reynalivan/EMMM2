@@ -7,24 +7,17 @@ import { normalizeThemeSetting, type ThemeSetting } from '../features/settings/t
 import i18n from '../lib/i18n';
 import { useTranslation } from 'react-i18next';
 import { publishQueryScopes } from '../features/runtime-sync/queryRefresh';
+import { settingsKeys, settingsQueryOptions } from './settingsQuery';
 
 // Re-export for consumers
 export type { GameConfig, AppSettings, AiConfig, PinVerifyStatus };
-
-export const settingsKeys = {
-  all: ['settings'] as const,
-};
 
 export function useSettings() {
   const { t } = useTranslation(['settings', 'common', 'layout']);
   const queryClient = useQueryClient();
   const { addToast } = useToastStore();
 
-  const settingsQuery = useQuery<AppSettings>({
-    queryKey: settingsKeys.all,
-    queryFn: () => commands.getSettings(),
-    staleTime: Infinity, // Settings don't change often from outside
-  });
+  const settingsQuery = useQuery<AppSettings>(settingsQueryOptions);
 
   const saveSettingsMutation = useMutation({
     mutationFn: (newSettings: AppSettings) => commands.saveSettings(newSettings),

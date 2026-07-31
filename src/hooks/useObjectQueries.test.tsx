@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { objectKeys, runObjectBatchMutation } from './objectQueryCache';
 import { useCategoryCounts } from './useObjectQueries';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useAppStore } from '../stores/useAppStore';
+import { useSafeMode } from './settingsQuery';
 import React from 'react';
 import type { ObjectSummary } from '../types/object';
 
@@ -21,6 +21,10 @@ vi.mock('../lib/services/objectService', () => ({
     }
     return Promise.resolve([{ category: 'Character', count: 10 }]);
   }),
+}));
+
+vi.mock('./settingsQuery', () => ({
+  useSafeMode: vi.fn(),
 }));
 
 vi.mock('./useActiveGame', () => ({
@@ -45,19 +49,15 @@ describe('useCategoryCounts (TC-30 Privacy & Safe Mode)', () => {
   // TC-30-003: Verify object list counts decrement appropriately when entering safe mode.
   it('TC-30-003: Fetches filtered counts based on safeMode state', async () => {
     // 1. Render hook with safeMode = false
-    act(() => {
-      useAppStore.setState({ safeMode: false });
-    });
+    vi.mocked(useSafeMode).mockReturnValue(false);
 
     const { result, rerender } = renderHook(() => useCategoryCounts(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([{ category: 'Character', count: 10 }]);
 
-    // 2. Enable safeMode (simulating lock)
-    act(() => {
-      useAppStore.setState({ safeMode: true });
-    });
+    // 2. Enable safeMode (simulating a settings save that turns Safe Mode on)
+    vi.mocked(useSafeMode).mockReturnValue(true);
 
     // Clear query client to force refetch or rely on different query keys
     queryClient.clear();

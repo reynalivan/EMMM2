@@ -50,7 +50,6 @@ describe('ContextControls', () => {
 
     useAppStore.setState({
       activeGameId: 'game-1',
-      safeMode: true,
       workspaceView: 'dashboard',
     });
 
@@ -62,7 +61,6 @@ describe('ContextControls', () => {
           is_safe: true,
           is_unsaved: true,
           is_active: true,
-          is_undo_target: false,
           signature: null,
           updated_at: '2026-03-25T12:17:00Z',
           member_count: 12,
@@ -79,10 +77,8 @@ describe('ContextControls', () => {
         is_safe: true,
         active_collection_id: 'unsaved-1',
         active_collection_name: '202603251217',
-        active_collection_is_unsaved: true,
-        undo_collection_id: null,
         current_signature: 'sig-1',
-        is_dirty: false,
+        is_dirty: true,
       },
     });
   });

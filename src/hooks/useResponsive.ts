@@ -1,20 +1,22 @@
 import { useState, useEffect } from 'react';
 
+const MOBILE_QUERY = '(max-width: 767px)';
+
 /**
  * Custom hook to track responsive state.
- * @returns {boolean} isMobile - True if window width < 768px
+ * @returns {boolean} isMobile - True if the viewport is under 768px wide
  */
 export function useResponsive() {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    const media = window.matchMedia(MOBILE_QUERY);
+    const sync = () => setIsMobile(media.matches);
 
-    // Initial check
-    checkMobile();
+    sync();
 
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
   }, []);
 
   return { isMobile };

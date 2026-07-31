@@ -8,6 +8,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from '../../../components/ui/ContextMenu';
+import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
 import type { useFolderGrid } from '../hooks/useFolderGrid';
 
 type FolderGridModel = ReturnType<typeof useFolderGrid>;
@@ -152,7 +153,7 @@ export default function FolderGridContent({
                         onOpenMoveDialog={openMoveDialog}
                         onToggleSafe={() => handleToggleSafeRequest(folder)}
                         onSyncWithDb={handleSyncWithDb}
-                        hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
+                        hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                         isLockedByParent={!!ancestorDisabledBy}
                         onRequestEnableParent={openEnableParentDialog}
                         isSwitchPending={
@@ -205,7 +206,7 @@ export default function FolderGridContent({
                   onOpenMoveDialog={openMoveDialog}
                   onToggleSafe={() => handleToggleSafeRequest(folder)}
                   onSyncWithDb={handleSyncWithDb}
-                  hasConflict={conflictPathSet.has(folder.path.replace(/\\/g, '/'))}
+                  hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                   isSwitchPending={
                     mutationsDisabled || isSwitchPending || isFolderSwitchPending(folder)
                   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatBytes, formatSize } from './formatters';
+import { formatBytes } from './formatters';
 
 describe('formatters', () => {
   describe('formatBytes', () => {
@@ -34,12 +34,6 @@ describe('formatters', () => {
     it('should handle very large numbers', () => {
       expect(formatBytes(1024 ** 4)).toBe('1 TB');
       expect(formatBytes(1024 ** 5)).toBe('1 PB');
-    });
-  });
-
-  describe('formatSize alias', () => {
-    it('should be identical to formatBytes', () => {
-      expect(formatSize).toBe(formatBytes);
     });
   });
 });

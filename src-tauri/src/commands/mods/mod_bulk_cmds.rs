@@ -27,10 +27,10 @@ pub async fn bulk_toggle_mods(
 
     // Security validation for all paths
     for p in &paths {
-        validate_path(&config, &game_id, p).map_err(AppError::Security)?;
+        validate_path(&config, &game_id, p)?;
     }
 
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     let result = bulk::bulk_toggle(
         &app,
         &config,
@@ -59,11 +59,11 @@ pub async fn bulk_delete_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     if let Some(ref gid) = game_id {
         for p in &paths {
-            validate_path(&config, gid, p).map_err(AppError::Security)?;
+            validate_path(&config, gid, p)?;
         }
     }
 
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     let result =
         bulk::bulk_delete(&app, &config, pool.inner(), &state, paths, game_id.clone()).await?;
 
@@ -81,7 +81,7 @@ pub async fn bulk_update_info(
     paths: Vec<String>,
     update: info_json::ModInfoUpdate,
 ) -> Result<bulk::BulkResult, AppError> {
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     let result = bulk::bulk_update_info(&config, &game_id, paths, update).await?;
 
     if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &game_id).await? {
@@ -110,7 +110,7 @@ pub async fn bulk_toggle_favorite(
     favorite: bool,
 ) -> Result<bulk::BulkResult, AppError> {
     // Writes info.json inside folders a concurrent toggle/delete may be renaming.
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     bulk::bulk_toggle_favorite(&pool, game_id, folder_paths, favorite).await
 }
 
@@ -124,6 +124,6 @@ pub async fn bulk_pin_mods(
     pin: bool,
 ) -> Result<bulk::BulkResult, AppError> {
     // Paths are resolved against the mods root a concurrent toggle/delete may be moving.
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
     bulk::bulk_pin(&pool, game_id, folder_paths, pin).await
 }

@@ -18,6 +18,23 @@ describe('useToastStore', () => {
     expect(state.toasts[0].duration).toBe(3000); // default
   });
 
+  it('should give every toast a distinct id', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e'].map((msg) => toast.info(msg));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(useToastStore.getState().toasts.map((t) => t.id)).size).toBe(ids.length);
+  });
+
+  it('withAction should attach the action button and its longer default duration', () => {
+    const onClick = vi.fn();
+    toast.withAction('info', 'Mod disabled', { label: 'Undo', onClick });
+
+    const [entry] = useToastStore.getState().toasts;
+    expect(entry.duration).toBe(5000);
+    expect(entry.action?.label).toBe('Undo');
+    entry.action?.onClick();
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
   it('removeToast should remove a toast by id', () => {
     const id = toast.info('Updating...');
     expect(useToastStore.getState().toasts.length).toBe(1);

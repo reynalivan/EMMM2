@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { useMetadataSyncQuery, useAssetFetch } from './useMetadataSync';
+import { useMetadataSyncQuery } from './useMetadataSync';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../testing/test-utils';
 
@@ -22,23 +22,6 @@ describe('useMetadataSync', () => {
 
       expect(invoke).toHaveBeenCalledWith('check_metadata_update');
       expect(result.current.data).toEqual({ updated: true, version: 2 });
-    });
-  });
-
-  describe('useAssetFetch', () => {
-    it('calls fetch_missing_asset correctly', async () => {
-      const mockMutateFn = vi.mocked(invoke).mockResolvedValue('C:\\temp\\downloaded.png');
-      const { result } = renderHook(() => useAssetFetch(), { wrapper: createWrapper });
-
-      result.current.mutate('character.png');
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockMutateFn).toHaveBeenCalledWith('fetch_missing_asset', {
-        assetName: 'character.png',
-      });
     });
   });
 });

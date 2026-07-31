@@ -3,6 +3,8 @@ import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from './lib/logger';
 import { useAppStore } from './stores/useAppStore';
+import { useSettings } from './hooks/useSettings';
+import i18n from './lib/i18n';
 import { useThemeRuntime } from './features/settings/theme/useThemeRuntime';
 import type { PipelineTask } from './types/task';
 import { RecoveryDialog } from './features/collections/components/RecoveryDialog';
@@ -129,7 +131,6 @@ function AppRouter() {
   );
 }
 
-import { useLanguageRuntime } from './features/settings/hooks/useLanguageRuntime';
 import { ToastContainer } from './components/ui/Toast';
 import ConflictResolveDialog from './features/folder-grid/modals/ConflictResolveDialog';
 import { DynamicThemeInjector } from './features/settings/theme/DynamicThemeInjector';
@@ -137,7 +138,13 @@ import { FileInUseDialog } from './components/dialogs/FileInUseDialog';
 
 export default function App() {
   useThemeRuntime();
-  useLanguageRuntime();
+  const { settings } = useSettings();
+
+  useEffect(() => {
+    if (settings?.language && i18n.language !== settings.language) {
+      i18n.changeLanguage(settings.language).catch(console.error);
+    }
+  }, [settings?.language]);
 
   return (
     <div className="flex flex-col h-screen bg-base-100 text-base-content overflow-hidden font-sans antialiased selection:bg-primary selection:text-primary-content">

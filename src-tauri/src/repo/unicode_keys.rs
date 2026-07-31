@@ -1,7 +1,7 @@
 use sqlx::{Row, SqliteConnection, SqlitePool};
 use std::collections::HashMap;
 
-use crate::common::path_key::{collection_name_key, folder_path_key, object_name_key};
+use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::repo::settings_repo;
 
 const UNICODE_KEY_VERSION_KEY: &str = "unicode_key_version";
@@ -19,7 +19,6 @@ pub async fn ensure_unicode_keys(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     backfill_mod_keys(&mut tx, &game_mod_paths).await?;
     backfill_object_keys(&mut tx, &game_mod_paths).await?;
     backfill_collection_keys(&mut tx).await?;
-    // ensure_unicode_key_indexes(&mut tx).await?;
 
     tx.commit().await?;
     settings_repo::set_app_meta(pool, UNICODE_KEY_VERSION_KEY, UNICODE_KEY_VERSION).await;
@@ -85,7 +84,7 @@ async fn backfill_object_keys(
         let mods_path = game_mod_paths
             .get(&game_id)
             .and_then(|value| value.as_deref());
-        let name_key = object_name_key(&name);
+        let name_key = canonical_name_key(&name);
         let folder_key = folder_path
             .as_deref()
             .map(|path| folder_path_key(path, mods_path));
@@ -109,7 +108,7 @@ async fn backfill_collection_keys(conn: &mut SqliteConnection) -> Result<(), sql
     for row in rows {
         let id: String = row.try_get("id")?;
         let name: String = row.try_get("name")?;
-        let name_key = collection_name_key(&name);
+        let name_key = canonical_name_key(&name);
 
         sqlx::query("UPDATE collections SET name_key = ? WHERE id = ?")
             .bind(name_key)

@@ -114,10 +114,9 @@ pub async fn rename_mod_folder_inner_service(
     new_name: String,
     game_id: &str,
 ) -> Result<RenameResult, AppError> {
-    let _lock = op_lock.acquire().await.map_err(AppError::Io)?;
+    let _lock = op_lock.acquire().await?;
 
-    let canonical_path =
-        validate_path(config, game_id, &old_path).map_err(AppError::Security)?;
+    let canonical_path = validate_path(config, game_id, &old_path)?;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?
@@ -175,41 +174,7 @@ pub async fn rename_mod_folder_inner_service(
     .await
     .unwrap_or_default();
 
-    let rel_components: Vec<_> = Path::new(&old_rel).components().collect();
-    if rel_components.len() == 1 {
-        let _ =
-            crate::repo::object_repo::update_object_folder_path(pool, game_id, &old_rel, &new_rel)
-                .await;
-
-        let old_prefix = format!("{}\\", old_rel);
-        let new_prefix = format!("{}\\", new_rel);
-        let old_prefix_fwd = format!("{}/", old_rel);
-        let new_prefix_fwd = format!("{}/", new_rel);
-
-        if let Err(e) = crate::repo::mod_repo::update_child_paths(
-            pool,
-            game_id,
-            &old_prefix,
-            &new_prefix,
-            Some(&mods_path),
-        )
-        .await
-        {
-            log::warn!("Failed to update child paths (backslash) after rename: {e}");
-        }
-
-        if let Err(e) = crate::repo::mod_repo::update_child_paths(
-            pool,
-            game_id,
-            &old_prefix_fwd,
-            &new_prefix_fwd,
-            Some(&mods_path),
-        )
-        .await
-        {
-            log::warn!("Failed to update child paths (forward-slash) after rename: {e}");
-        }
-    }
+    super::toggle::sync_object_and_child_paths(pool, game_id, &mods_path, &old_rel, &new_rel).await;
 
     let is_safe = crate::repo::mod_repo::get_is_safe_by_folder(pool, game_id, &new_rel)
         .await

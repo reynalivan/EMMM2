@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::common::path_key::{folder_path_key, object_name_key};
+use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::domain::models::ItemStatus;
 
 #[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
@@ -27,7 +27,7 @@ pub async fn create_object(
     .bind(id)
     .bind(game_id)
     .bind(name)
-    .bind(object_name_key(name))
+    .bind(canonical_name_key(name))
     .bind(folder_path)
     .bind(folder_path_key(folder_path, None))
     .bind(status.unwrap_or(ItemStatus::Enabled) as i64) // DEFAULT ENABLED (1)

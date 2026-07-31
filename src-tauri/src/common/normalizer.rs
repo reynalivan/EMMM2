@@ -10,10 +10,6 @@ use std::sync::LazyLock;
 static RE_NON_ALNUM: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[^a-zA-Z0-9\s]").expect("Invalid regex"));
 
-/// Compiled regex for sanitizing filenames (forbidden chars).
-static RE_FORBIDDEN_CHARS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"[\\/:*?"<>|]"#).expect("Invalid regex"));
-
 /// Common noise prefixes to strip from folder names before matching.
 const NOISE_PREFIXES: &[&str] = &["[mod]", "[skin]", "[fix]", "[update]"];
 
@@ -39,7 +35,7 @@ pub fn preprocess_text(text: &str) -> HashSet<String> {
 ///
 /// Strips prefixes like `[Mod]`, `DISABLED `, `[Skin]` etc.
 pub fn strip_noise_prefixes(name: &str) -> String {
-    let disabled_stripped = strip_disabled_prefix(name);
+    let disabled_stripped = normalize_display_name(name);
     if disabled_stripped != name.trim() {
         return disabled_stripped;
     }
@@ -57,32 +53,18 @@ pub fn strip_noise_prefixes(name: &str) -> String {
     result.trim().to_string()
 }
 
-/// Sanitize a filename by replacing forbidden characters with `_`.
-///
-/// Forbidden: `\ / : * ? " < > |`
-///
-/// # Covers: DI-2.01
-pub fn sanitize_filename(name: &str) -> String {
-    RE_FORBIDDEN_CHARS.replace_all(name, "_").to_string()
-}
-
 /// Regex matching canonical and legacy DISABLED folder prefixes.
 static DISABLED_DETECT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^disabled[\s_-]+").unwrap());
 
-/// Strip canonical or legacy DISABLED prefix variants.
-pub fn strip_disabled_prefix(name: &str) -> String {
+/// Normalize a folder name for UI display.
+///
+/// Strips canonical or legacy DISABLED prefix variants and trims whitespace.
+pub fn normalize_display_name(name: &str) -> String {
     DISABLED_DETECT_RE
         .replace(name.trim(), "")
         .trim()
         .to_string()
-}
-
-/// Normalize a folder name for UI display.
-///
-/// Strips the canonical DISABLED prefix and trims whitespace.
-pub fn normalize_display_name(name: &str) -> String {
-    strip_disabled_prefix(name)
 }
 
 /// Check if a folder is disabled based on the canonical DISABLED prefix.
@@ -98,51 +80,30 @@ const NOISE_SKIPWORDS: &[&str] = &[
 /// Normalize text for substring matching.
 ///
 /// Pipeline:
-/// 1. Strip `DISABLED ` prefix
+/// 1. Strip noise/`DISABLED ` prefixes
 /// 2. CJK→Latin transliteration (日本語/中文/한국어 → Latin via deunicode)
 /// 3. Strip non-alphanumeric characters (keep spaces)
 /// 4. Lowercase
-/// 5. Strip all digit characters (if `skip_numbers` is true)
-/// 6. Remove skipwords
+/// 5. Strip all digit characters
+/// 6. Remove `NOISE_SKIPWORDS`
 /// 7. Collapse and trim whitespace
 ///
 /// Returns a continuous cleaned string (NOT tokenized).
-pub fn normalize_for_matching(text: &str, skip_numbers: bool, skipwords: &[&str]) -> String {
-    // Step 1: Strip DISABLED prefix
+pub fn normalize_for_matching_default(text: &str) -> String {
     let stripped = strip_noise_prefixes(text);
-
-    // Step 2: CJK → Latin transliteration
     let latin = deunicode(&stripped);
-
-    // Step 3: Strip non-alphanumeric (keep spaces)
     let clean = RE_NON_ALNUM.replace_all(&latin, " ");
-
-    // Step 4: Lowercase
-    let lower = clean.to_lowercase();
-
-    // Step 5: Strip digits
-    let no_digits = if skip_numbers {
-        lower
-            .chars()
-            .filter(|c| !c.is_ascii_digit())
-            .collect::<String>()
-    } else {
-        lower
-    };
-
-    // Step 6: Remove skipwords
-    let words: Vec<&str> = no_digits
-        .split_whitespace()
-        .filter(|w| !w.is_empty() && !skipwords.contains(w))
+    let no_digits: String = clean
+        .to_lowercase()
+        .chars()
+        .filter(|c| !c.is_ascii_digit())
         .collect();
 
-    // Step 7: Collapse whitespace
-    words.join(" ")
-}
-
-/// Normalize text using the default skipwords list.
-pub fn normalize_for_matching_default(text: &str) -> String {
-    normalize_for_matching(text, true, NOISE_SKIPWORDS)
+    no_digits
+        .split_whitespace()
+        .filter(|word| !NOISE_SKIPWORDS.contains(word))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use crate::domain::errors::MetadataError;
+use crate::domain::errors::AppError;
 use crate::domain::models::ItemStatus;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::validate_path;
@@ -32,9 +32,8 @@ pub async fn set_mod_category(
     game_id: &str,
     folder_path: &str,
     category: &str,
-) -> Result<(), MetadataError> {
-    let canonical_path =
-        validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+) -> Result<(), AppError> {
+    let canonical_path = validate_path(config, game_id, folder_path)?;
 
     let folder_path_str = canonical_path.to_string_lossy();
 
@@ -54,7 +53,7 @@ pub async fn set_mod_category(
         )
         .await?;
     } else {
-        return Err(MetadataError::NotFound(
+        return Err(AppError::NotFound(
             "Mod not found in database. Please sync first.".to_string(),
         ));
     }
@@ -70,13 +69,12 @@ pub fn update_mod_thumbnail(
     game_id: &str,
     folder_path: &str,
     source_path: &str,
-) -> Result<String, MetadataError> {
-    let target_dir =
-        validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+) -> Result<String, AppError> {
+    let target_dir = validate_path(config, game_id, folder_path)?;
 
     let source_path_obj = Path::new(source_path);
     if !source_path_obj.exists() || !source_path_obj.is_file() {
-        return Err(MetadataError::NotFound(format!(
+        return Err(AppError::NotFound(format!(
             "Source file does not exist: {source_path}"
         )));
     }
@@ -84,7 +82,7 @@ pub fn update_mod_thumbnail(
     // Determine the new thumbnail path within the mod folder
     let new_thumbnail_name = source_path_obj
         .file_name()
-        .ok_or_else(|| MetadataError::Validation("Invalid source file name".to_string()))?
+        .ok_or_else(|| AppError::Validation("Invalid source file name".to_string()))?
         .to_string_lossy()
         .to_string();
     let new_thumbnail_path = target_dir.join(&new_thumbnail_name);
@@ -105,14 +103,13 @@ pub async fn toggle_mod_safe(
     game_id: &str,
     folder_path: &str,
     safe: bool,
-) -> Result<(), MetadataError> {
+) -> Result<(), AppError> {
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    let full_path =
-        validate_path(config, game_id, folder_path).map_err(MetadataError::Security)?;
+    let full_path = validate_path(config, game_id, folder_path)?;
 
     let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?
-        .ok_or_else(|| MetadataError::NotFound("Game not found or has no mods_path".to_string()))?;
+        .ok_or_else(|| AppError::NotFound("Game not found or has no mods_path".to_string()))?;
 
     let base = std::path::Path::new(&game_mod_path);
     let rel_path = full_path
@@ -142,9 +139,7 @@ pub async fn toggle_mod_safe(
         true,
     )
     .await;
-    refresh_projection_for_optional_object(pool, game_id, object_id)
-        .await
-        .map_err(MetadataError::from)?;
+    refresh_projection_for_optional_object(pool, game_id, object_id).await?;
 
     Ok(())
 }

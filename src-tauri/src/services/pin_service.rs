@@ -74,14 +74,6 @@ pub async fn verify_pin(pool: &SqlitePool, pin: &str) -> Result<bool, PinError> 
     Ok(false)
 }
 
-/// Check if the UI should be locked on boot.
-/// Returns true if Safe Mode is DISABLED and a PIN is set.
-pub async fn check_boot_security(pool: &SqlitePool, is_safe_mode: bool) -> Result<bool, PinError> {
-    let config = pin_repo::get(pool).await?;
-    // Requirement: IF Unsafe AND PIN is set -> LOCK
-    Ok(!is_safe_mode && config.has_pin())
-}
-
 /// Verify a PIN or recovery code against an Argon2 hash.
 fn verify_hash(secret: &str, hash: &str) -> bool {
     use argon2::{
@@ -121,7 +113,7 @@ fn hash_pin(pin: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_boot_security, get_status, set_pin, verify_pin};
+    use super::{get_status, set_pin, verify_pin};
     use crate::repo::pin_repo;
     use crate::test_utils::init_test_db;
 
@@ -147,22 +139,5 @@ mod tests {
             db_status.lockout_until.is_some(),
             "lockout must survive service restart through pin_config"
         );
-    }
-
-    #[tokio::test]
-    async fn check_boot_security_locks_only_for_unsafe_with_pin() {
-        let ctx = init_test_db().await;
-
-        set_pin(&ctx.pool, "123456", None).await.expect("set pin");
-
-        let safe_locked = check_boot_security(&ctx.pool, true)
-            .await
-            .expect("safe boot status");
-        let unsafe_locked = check_boot_security(&ctx.pool, false)
-            .await
-            .expect("unsafe boot status");
-
-        assert!(!safe_locked);
-        assert!(unsafe_locked);
     }
 }

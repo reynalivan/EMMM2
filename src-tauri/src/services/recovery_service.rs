@@ -11,10 +11,6 @@ use crate::services::config::models::AppSettings;
 use crate::services::config::ConfigService;
 use crate::services::scanner::watcher::WatcherState;
 
-pub async fn pending_startup_tasks(pool: &SqlitePool) -> Result<Vec<PipelineTask>, AppError> {
-    crate::repo::task_repo::get_all_pending_tasks_global(pool).await
-}
-
 /// Resolve one recovery task. The caller is responsible for holding the
 /// operation lock: resuming an apply mutates the filesystem and must be
 /// mutually excluded from concurrent runtime ops.
@@ -163,9 +159,8 @@ async fn rollback_task(
     }
 }
 
-/// Prefer the corridor's recorded undo target, then its active collection (if
-/// it is not the one being rolled back), and only then fall back to whatever
-/// the corridor service can restore.
+/// Prefer the corridor's active collection (if it is not the one being rolled
+/// back), and only then fall back to whatever the corridor service can restore.
 async fn resolve_rollback_target(
     pool: &SqlitePool,
     task: &PipelineTask,
@@ -176,13 +171,8 @@ async fn resolve_rollback_target(
 
     let from_corridor = corridor_state
         .as_ref()
-        .and_then(|state| state.undo_collection_id.as_deref())
-        .or_else(|| {
-            corridor_state
-                .as_ref()
-                .and_then(|state| state.active_collection_id.as_deref())
-                .filter(|candidate| *candidate != collection_id)
-        })
+        .and_then(|state| state.active_collection_id.as_deref())
+        .filter(|candidate| *candidate != collection_id)
         .map(|id| id.to_string());
 
     if let Some(existing_id) = from_corridor {

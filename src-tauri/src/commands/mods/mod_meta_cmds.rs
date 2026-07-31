@@ -58,8 +58,7 @@ pub async fn read_mod_info(
     game_id: String,
     folder_path: String,
 ) -> Result<Option<info_json::ModInfo>, AppError> {
-    let path = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
+    let path = validate_path(&config, &game_id, &folder_path)?;
     Ok(info_json::read_info_json(&path)?)
 }
 
@@ -74,8 +73,7 @@ pub async fn update_mod_info(
     folder_path: String,
     update: info_json::ModInfoUpdate,
 ) -> Result<info_json::ModInfo, AppError> {
-    let path = validate_path(&config, &game_id, &folder_path)
-        .map_err(|e| AppError::Metadata(crate::domain::errors::MetadataError::Security(e)))?;
+    let path = validate_path(&config, &game_id, &folder_path)?;
     let changed_path = path.join("info.json").to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&state.suppressor);
     let info = info_json::update_info_json(&path, &update)?;
@@ -122,7 +120,9 @@ pub async fn set_object_mods_category(
     category: String,
 ) -> Result<usize, AppError> {
     let updated =
-        set_object_mods_category_inner(pool.inner(), &game_id, &object_id, &category).await?;
+        crate::repo::mod_repo::set_object_type_for_object(&pool, &game_id, &object_id, &category)
+            .await
+            .map_err(|error| AppError::Internal(error.to_string()))? as usize;
 
     let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
         &pool,
@@ -136,20 +136,6 @@ pub async fn set_object_mods_category(
     .await;
 
     Ok(updated)
-}
-
-async fn set_object_mods_category_inner(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    object_id: &str,
-    category: &str,
-) -> Result<usize, AppError> {
-    let updated =
-        crate::repo::mod_repo::set_object_type_for_object(pool, game_id, object_id, category)
-            .await
-            .map_err(|error| AppError::Internal(error.to_string()))?;
-
-    Ok(updated as usize)
 }
 
 #[derive(serde::Deserialize, specta::Type)]
@@ -211,44 +197,6 @@ pub async fn move_mods_to_object(
     }
 
     Ok(result)
-}
-
-#[specta::specta]
-#[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
-pub async fn move_mod_to_object(
-    app: tauri::AppHandle,
-    config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    op_lock: tauri::State<'_, OperationLock>,
-    watcher: tauri::State<'_, WatcherState>,
-    game_id: String,
-    folder_path: String,
-    target_object_id: String,
-    status: Option<String>,
-) -> Result<(), AppError> {
-    crate::services::mods::organizer_ext::move_mod_to_object_service(
-        &config,
-        pool.inner(),
-        &op_lock,
-        &watcher,
-        crate::services::mods::organizer_ext::MoveModToObjectParams {
-            game_id: &game_id,
-            folder_path: &folder_path,
-            target_object_id: &target_object_id,
-            status: status.as_deref(),
-        },
-    )
-    .await?;
-
-    // Convergence: reconcile the source root after the move.
-    if let Err(error) =
-        emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![folder_path]).await
-    {
-        log::warn!("Post-move disk reconcile failed: {error}");
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

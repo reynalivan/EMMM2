@@ -33,15 +33,6 @@
       "failed": "Gagal memindahkan: {{error}}"
     }
   },
-  "tags": {
-    "title": "Tag Massal",
-    "placeholder": "Ketik tag & tekan Enter...",
-    "empty": "Belum ada tag yang ditambahkan",
-    "toast": {
-      "success": "Tag diperbarui untuk {{count}} mod",
-      "failed": "Gagal memperbarui tag: {{error}}"
-    }
-  },
   "resolution": {
     "title": "Konflik Nama Terdeteksi",
     "loading": "Memuat detail folder...",

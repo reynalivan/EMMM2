@@ -8,14 +8,6 @@ use crate::repo::collection_repo;
 use crate::services::projected_state_service;
 use sqlx::SqlitePool;
 
-pub(super) fn build_projected_state_from_members(
-    mods: &[CollectionMod],
-    objects: &[CollectionObject],
-    mods_path: Option<&str>,
-) -> ProjectedCollectionState {
-    projected_state_service::build_projected_state(mods, objects, mods_path)
-}
-
 pub(crate) async fn load_projected_collection_state(
     pool: &SqlitePool,
     collection: &crate::domain::collection::Collection,
@@ -38,7 +30,7 @@ pub(crate) async fn load_projected_collection_state(
 
     let mods = collection_repo::get_mods(pool, &collection.id).await?;
     let objects = collection_repo::get_objects(pool, &collection.id).await?;
-    let snapshot = build_projected_state_from_members(&mods, &objects, mods_path);
+    let snapshot = projected_state_service::build_projected_state(&mods, &objects, mods_path);
     if mods_path.is_some() {
         return Ok(snapshot);
     }
@@ -56,6 +48,39 @@ pub(crate) async fn load_projected_collection_state(
     .await?;
 
     Ok(snapshot)
+}
+
+/// Persist a collection's members plus everything derived from its projected
+/// state (roots, signature, snapshot JSON, display count) in one transaction.
+pub(crate) async fn persist_projected_state<'a, A>(
+    conn: A,
+    collection_id: &str,
+    is_safe: bool,
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    state: &ProjectedCollectionState,
+) -> Result<(), CollectionError>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let roots = projected_state_service::roots_from_projected_state(collection_id, is_safe, state);
+    let signature = projected_state_service::signature_for_projected_state(state);
+    let snapshot_json = projected_state_service::serialize_snapshot_json(state);
+
+    let mut tx = conn.begin().await?;
+    collection_repo::replace_all_state_tx(
+        &mut tx,
+        collection_id,
+        mods,
+        objects,
+        &roots,
+        Some(&signature),
+        snapshot_json.as_deref(),
+        state.summary.active_root_count as i32,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 pub(crate) fn collection_members_from_projected_state(

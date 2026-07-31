@@ -20,18 +20,6 @@ function getExtension(path: string): string {
   return afterDot.toLowerCase();
 }
 
-export function isArchivePath(path: string): boolean {
-  return ARCHIVE_EXTENSIONS.has(getExtension(path));
-}
-
-export function isImagePath(path: string): boolean {
-  return IMAGE_EXTENSIONS.has(getExtension(path));
-}
-
-export function isIniPath(path: string): boolean {
-  return INI_EXTENSIONS.has(getExtension(path));
-}
-
 /** Result of classifying dropped file paths */
 export interface ClassifiedPaths {
   folders: string[];
@@ -72,11 +60,6 @@ export function classifyDroppedPaths(paths: string[]): ClassifiedPaths {
   return result;
 }
 
-/** Check if any paths have unsupported file types */
-export function hasUnsupported(classified: ClassifiedPaths): boolean {
-  return classified.unsupported.length > 0;
-}
-
 /** Check if ALL paths are unsupported */
 export function allUnsupported(classified: ClassifiedPaths): boolean {
   return (
@@ -85,31 +68,6 @@ export function allUnsupported(classified: ClassifiedPaths): boolean {
     classified.archives.length === 0 &&
     classified.iniFiles.length === 0 &&
     classified.images.length === 0
-  );
-}
-
-/** Check if there are any archive files */
-export function hasArchives(classified: ClassifiedPaths): boolean {
-  return classified.archives.length > 0;
-}
-
-/** Check if there are ONLY archive files (no folders/ini/images) */
-export function onlyArchives(classified: ClassifiedPaths): boolean {
-  return (
-    classified.archives.length > 0 &&
-    classified.folders.length === 0 &&
-    classified.iniFiles.length === 0 &&
-    classified.images.length === 0
-  );
-}
-
-/** Total count of supported items */
-export function supportedCount(classified: ClassifiedPaths): number {
-  return (
-    classified.folders.length +
-    classified.archives.length +
-    classified.iniFiles.length +
-    classified.images.length
   );
 }
 
@@ -129,7 +87,7 @@ export function validateDropForZone(
     return { valid: false, reason: 'Unsupported file type' };
   }
 
-  if (zone === 'new-object' && hasArchives(classified)) {
+  if (zone === 'new-object' && classified.archives.length > 0) {
     return {
       valid: false,
       reason:

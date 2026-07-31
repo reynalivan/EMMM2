@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCollectionDisplayName, getCorridorStateName } from './corridorLabels';
+import { getCollectionDisplayName } from './corridorLabels';
 
 describe('corridorLabels', () => {
   const labels = {
@@ -42,8 +42,8 @@ describe('corridorLabels', () => {
 
   it('does not generate timestamp-based fallback labels', () => {
     expect(
-      getCorridorStateName({
-        stateName: null,
+      getCollectionDisplayName({
+        name: null,
         isUnsaved: true,
         isSafe: true,
         labels,

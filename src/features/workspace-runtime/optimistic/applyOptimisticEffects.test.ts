@@ -44,9 +44,9 @@ describe('applyRuntimeEffects', () => {
       selectedModPath: 'E:\\Mods\\ALBEDO\\Variant',
     });
 
-    useAppStore
-      .getState()
-      .replaceGridSelection('E:/Mods/ALBEDO/Variant', 'E:/Mods/ALBEDO/DISABLED Variant');
+    useAppStore.getState().replaceGridSelections([
+      { oldPath: 'E:/Mods/ALBEDO/Variant', newPath: 'E:/Mods/ALBEDO/DISABLED Variant' },
+    ]);
 
     const state = useAppStore.getState();
     expect(state.gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
