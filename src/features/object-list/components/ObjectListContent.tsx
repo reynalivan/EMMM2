@@ -33,7 +33,6 @@ interface ContentProps {
   isDragging?: boolean;
   hoveredItemId?: string | null;
   /* Bulk select */
-  isAnyBulkSelected?: boolean;
   isBulkSelected?: (id: string) => boolean;
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
   mutationsDisabled?: boolean;

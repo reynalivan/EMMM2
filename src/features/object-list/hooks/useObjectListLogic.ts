@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useGameSchema } from '../../../hooks/useObjectQueries';
@@ -37,6 +38,8 @@ export function useObjectListLogic() {
   const { isMobile } = useResponsive();
   const { activeGame } = useActiveGame();
 
+  // Selector-scoped: a bare useAppStore() here re-runs the whole list
+  // computation (filter, sort, virtualizer) on any write to any slice.
   const {
     selectedObjectFolderPath,
     selectedObjectType,
@@ -49,7 +52,21 @@ export function useObjectListLogic() {
     setObjectSortBy,
     objectStatusFilter,
     setObjectStatusFilter,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((state) => ({
+      selectedObjectFolderPath: state.selectedObjectFolderPath,
+      selectedObjectType: state.selectedObjectType,
+      setSelectedObjectType: state.setSelectedObjectType,
+      sidebarSearchQuery: state.sidebarSearchQuery,
+      setSidebarSearch: state.setSidebarSearch,
+      objectMetaFilters: state.objectMetaFilters,
+      setObjectMetaFilters: state.setObjectMetaFilters,
+      objectSortBy: state.objectSortBy,
+      setObjectSortBy: state.setObjectSortBy,
+      objectStatusFilter: state.objectStatusFilter,
+      setObjectStatusFilter: state.setObjectStatusFilter,
+    })),
+  );
   const { focusObject } = useWorkspaceRuntime();
   const activeFiltersState = objectMetaFilters ?? EMPTY_OBJECT_META_FILTERS;
   const activeSortBy = objectSortBy ?? 'name';

@@ -51,10 +51,6 @@ function parseMetadata(raw: string | undefined): ParsedMeta {
   }
 }
 
-function formatObjectModCount(enabledCount: number, modCount: number): string {
-  return `${enabledCount}/${modCount}`;
-}
-
 interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
   obj: WorkspaceObjectNode;
   isSelected: boolean;
@@ -254,7 +250,7 @@ function ObjectRowItemInner({
                     : 'bg-base-300/50 text-base-content/40',
                 )}
               >
-                {formatObjectModCount(obj.enabled_count, obj.mod_count)}
+                {`${obj.enabled_count}/${obj.mod_count}`}
               </span>
             ) : null}
           </div>

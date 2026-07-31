@@ -3,6 +3,7 @@
  * Uses react-hook-form + zod for validation, reuses patterns from EditObjectModal.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -112,7 +113,7 @@ export default function CreateObjectModal({
       console.error('Failed to create object:', err);
       toast.error(
         t('create_modal.error_message', {
-          error: err instanceof Error ? err.message : String(err),
+          error: formatAppError(err),
         }),
       );
     }

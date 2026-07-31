@@ -7,6 +7,7 @@
  * pipeline. Scan review state is owned by useScanReviewFlow and passed in.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { basename } from '@tauri-apps/api/path';
@@ -231,7 +232,7 @@ export function useArchiveImportFlow({
         setArchiveModal((prev) => ({
           ...prev,
           isExtracting: false,
-          error: e instanceof Error ? e.message : String(e),
+          error: formatAppError(e),
         }));
       } finally {
         if (pendingDropContext.type === 'auto-organize') setIsSyncing(false);
@@ -306,7 +307,7 @@ export function useArchiveImportFlow({
       });
     } catch (e: unknown) {
       console.error('Auto-organize failed post-skip:', e);
-      toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Auto organize failed: ${formatAppError(e)}`);
     } finally {
       setIsSyncing(false);
     }

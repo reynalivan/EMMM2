@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { commands } from '../../lib/bindings';
@@ -101,7 +102,16 @@ export function useWorkspaceSelectionInput(): WorkspaceViewModelSelectionInput {
 export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
   const { activeGame } = useActiveGame();
   const safeMode = useSafeMode();
-  const { selectedObjectType, objectMetaFilters, objectSortBy, objectStatusFilter } = useAppStore();
+  // Shared by ObjectList and FolderGrid — a bare useAppStore() here re-runs
+  // both panes' filter build on any write to any slice.
+  const { selectedObjectType, objectMetaFilters, objectSortBy, objectStatusFilter } = useAppStore(
+    useShallow((state) => ({
+      selectedObjectType: state.selectedObjectType,
+      objectMetaFilters: state.objectMetaFilters,
+      objectSortBy: state.objectSortBy,
+      objectStatusFilter: state.objectStatusFilter,
+    })),
+  );
   const selection = useWorkspaceSelectionInput();
   const filterInput = {
     gameId: options?.filterOverrides?.gameId ?? activeGame?.id ?? null,

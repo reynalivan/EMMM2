@@ -57,15 +57,10 @@ describe('ObjectContextMenu', () => {
   it('renders unpinned object menu and wires actions', () => {
     const handlers = createHandlers();
     const itemTarget: ContextMenuTarget = {
-      type: 'object',
       id: '1',
       name: 'Zeta',
-      objectType: 'Character',
       isEnabled: true,
-      enabledCount: 5,
-      modCount: 10,
       isPinned: false,
-      category: 'Character',
       capabilities: baseCapabilities,
     };
 
@@ -108,15 +103,10 @@ describe('ObjectContextMenu', () => {
   it('renders pinned disabled object menu with enable action only', () => {
     const handlers = createHandlers();
     const itemTarget: ContextMenuTarget = {
-      type: 'object',
       id: '2',
       name: 'Amber',
-      objectType: 'Character',
       isEnabled: false,
-      enabledCount: 0,
-      modCount: 4,
       isPinned: true,
-      category: 'Character',
       capabilities: baseCapabilities,
     };
 
@@ -140,15 +130,10 @@ describe('ObjectContextMenu', () => {
   it('disables sync action while syncing', () => {
     const handlers = createHandlers();
     const itemTarget: ContextMenuTarget = {
-      type: 'object',
       id: '3',
       name: 'Kaeya',
-      objectType: 'Character',
       isEnabled: true,
-      enabledCount: 1,
-      modCount: 3,
       isPinned: false,
-      category: 'Character',
       capabilities: baseCapabilities,
     };
 

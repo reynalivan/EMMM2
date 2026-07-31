@@ -189,8 +189,6 @@ describe('ObjectListContent', () => {
     expect(targets[0]).toEqual(buildObjectContextMenuTarget(objectRow));
     expect(targets[0]).toMatchObject({
       id: '1',
-      objectType: 'Character',
-      category: 'Character',
       isEnabled: true,
       isPinned: true,
     });

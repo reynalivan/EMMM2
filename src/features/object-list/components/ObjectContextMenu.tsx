@@ -20,15 +20,10 @@ import type { WorkspaceCapabilities } from '../../../types/workspace';
 import type { WorkspaceObjectActionPolicy } from '../../workspace-runtime/actions/workspaceActionPolicy';
 
 export interface ContextMenuTarget {
-  type: 'object';
   id: string;
   name: string;
-  objectType: string;
   isEnabled: boolean;
-  enabledCount: number;
-  modCount: number;
   isPinned: boolean;
-  category?: string;
   capabilities: WorkspaceCapabilities;
   actionPolicy?: WorkspaceObjectActionPolicy;
 }

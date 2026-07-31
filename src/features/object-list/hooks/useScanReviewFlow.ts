@@ -6,6 +6,7 @@
  * setters exposed here.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
@@ -53,7 +54,7 @@ export function useScanReviewFlow() {
       });
     } catch (e) {
       console.error('Scan preview failed:', e);
-      toast.error(t('scanner:scan_failed', { error: e instanceof Error ? e.message : String(e) }));
+      toast.error(t('scanner:scan_failed', { error: formatAppError(e) }));
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);
@@ -110,7 +111,7 @@ export function useScanReviewFlow() {
         setScanReview(CLOSED_SCAN_REVIEW);
       } catch (e) {
         console.error('Commit scan failed:', e);
-        const errMsg = e instanceof Error ? e.message : String(e);
+        const errMsg = formatAppError(e);
         if (errMsg.includes('DUPLICATE|')) {
           const dest = errMsg.split('DUPLICATE|')[1] || '';
           toast.error(t('objects:sync.toast.destination_exists', { dest }));

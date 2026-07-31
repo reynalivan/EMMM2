@@ -5,6 +5,7 @@
  * toast. Name formatting and tag parsing live in utils/bulkSummary.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../lib/bindings';
@@ -265,7 +266,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
           ),
         );
       } catch (e) {
-        toast.error(t('objects:edit_modal.error_message', { error: String(e) }));
+        toast.error(t('objects:edit_modal.error_message', { error: formatAppError(e) }));
       }
     },
     [activeGame, objects, refreshObjectRows, t],
@@ -284,7 +285,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
           }),
         );
       } catch (e) {
-        toast.error(t('objects:edit_modal.error_message', { error: String(e) }));
+        toast.error(t('objects:edit_modal.error_message', { error: formatAppError(e) }));
       }
     },
     [activeGame, objects, refreshObjectRows, t],

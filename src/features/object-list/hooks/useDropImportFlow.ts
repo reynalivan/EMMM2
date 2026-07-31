@@ -5,6 +5,7 @@
  * runs the shared import pipeline directly.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '../../../hooks/useActiveGame';
@@ -131,7 +132,7 @@ export function useDropImportFlow({
         });
       } catch (e) {
         console.error('Auto organize failed:', e);
-        toast.error(`Auto organize failed: ${e instanceof Error ? e.message : String(e)}`);
+        toast.error(`Auto organize failed: ${formatAppError(e)}`);
       } finally {
         setIsSyncing(false);
       }

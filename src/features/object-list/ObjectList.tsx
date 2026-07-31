@@ -293,7 +293,6 @@ export default function ObjectList() {
             contextMenuProps={contextMenuProps}
             isDragging={isDragging}
             hoveredItemId={hoveredItemId}
-            isAnyBulkSelected={bulkSelect.isAnySelected}
             isBulkSelected={bulkSelect.isSelected}
             onToggleBulkSelect={bulkSelect.toggleSelection}
             mutationsDisabled={mutationsDisabled}
