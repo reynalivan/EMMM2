@@ -11,29 +11,11 @@ import { useListTrash, useEmptyTrash } from '../../hooks/useFolderMutations';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { toast } from '../../stores/useToastStore';
 import { formatBytes } from '../../utils/formatters';
+import { formatRelativeDate } from '../../utils/formatters';
 
 interface TrashManagerModalProps {
   open: boolean;
   onClose: () => void;
-}
-
-/** Format ISO date to relative or short date string. */
-function formatDate(
-  isoDate: string,
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  const date = new Date(isoDate);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60_000);
-  const diffHours = Math.floor(diffMs / 3_600_000);
-  const diffDays = Math.floor(diffMs / 86_400_000);
-
-  if (diffMins < 1) return t('common:date.just_now');
-  if (diffMins < 60) return t('common:date.mins_ago', { count: diffMins });
-  if (diffHours < 24) return t('common:date.hours_ago', { count: diffHours });
-  if (diffDays < 7) return t('common:date.days_ago', { count: diffDays });
-  return date.toLocaleDateString();
 }
 
 export default function TrashManagerModal({ open, onClose }: TrashManagerModalProps) {
@@ -146,7 +128,7 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
                   <div className="flex items-center gap-3 mt-0.5">
                     <span className="flex items-center gap-1 text-xs text-base-content/40">
                       <Clock size={10} />
-                      {formatDate(item.deleted_at, t)}
+                      {formatRelativeDate(item.deleted_at, t)}
                     </span>
                     <span className="flex items-center gap-1 text-xs text-base-content/40">
                       <HardDrive size={10} />

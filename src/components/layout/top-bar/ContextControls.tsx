@@ -9,7 +9,8 @@ import { useState } from 'react';
 
 export default function ContextControls() {
   const { t } = useTranslation('layout');
-  const { activeGameId, setWorkspaceView } = useAppStore();
+  const activeGameId = useAppStore((state) => state.activeGameId);
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const { data: collections = [], isLoading } = useCollections(activeGameId);
   const corridorQuery = useCorridor(activeGameId);
 
@@ -23,12 +24,10 @@ export default function ContextControls() {
       ? t('context.loading')
       : getCollectionDisplayName({
           name: corridorQuery.data?.is_dirty ? null : corridorQuery.data?.active_collection_name,
-          isUnsaved:
-            corridorQuery.data?.is_dirty || corridorQuery.data?.active_collection_is_unsaved,
+          isUnsaved: corridorQuery.data?.is_dirty,
           isSafe: corridorQuery.data?.is_safe,
           labels: unsavedLabels,
         });
-  const corridorCollections = collections.filter((collection) => !collection.is_undo_target);
 
   const handleApplyClick = (e: React.MouseEvent, id: string, _name: string) => {
     e.stopPropagation();
@@ -86,13 +85,13 @@ export default function ContextControls() {
               </li>
             ) : (
               (() => {
-                return corridorCollections.length === 0 ? (
+                return collections.length === 0 ? (
                   <li className="disabled">
                     <span className="text-xs opacity-75 px-2">{t('context.no_collections')}</span>
                   </li>
                 ) : (
                   <div className="max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
-                    {corridorCollections.map((c) => (
+                    {collections.map((c) => (
                       <li key={c.id}>
                         <button
                           className={`text-sm justify-between ${

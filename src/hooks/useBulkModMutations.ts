@@ -4,12 +4,10 @@
  * Owner surface for the bulk grid actions (toggle, delete, info, favorite, pin).
  */
 
-import { useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../lib/bindings';
 import { toast } from '../stores/useToastStore';
 import { thumbnailKeys } from './useThumbnail';
-import { folderKeys } from './folderCache';
-import { stripDisabledPrefix } from '../lib/disabledPrefix';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../features/workspace-runtime/optimistic/applyOptimisticEffects';
 import {
@@ -18,44 +16,12 @@ import {
   buildWorkspacePathRewritesDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from '../features/workspace-runtime/optimistic/descriptor';
-import { FolderGridResponse, ModInfoUpdate, ModFolder } from '../types/mod';
-import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
-import { extractFileInUsePayload, formatAppError } from '../lib/appError';
-import {
-  hasCollectionReferenceImpact,
-  notifyCollectionReferenceImpact,
-} from './collectionReferenceImpact';
-import {
-  formatBulkFailureMessage,
-  formatBulkSuccessMessage,
-  type BulkSuccessActionKey,
-} from './bulkToastMessages';
+import type { ModInfoUpdate } from '../types/object';
+import { formatAppError } from '../lib/appError';
+import { openFileInUseRetryDialog } from './fileInUseRetry';
+import { publishCollectionReferenceImpact } from './collectionReferenceImpact';
+import { formatBulkFailureMessage, formatBulkSuccessMessage } from './bulkToastMessages';
 import { resolveTogglePathRewrites } from './folderMutationPayloads';
-
-/** Prefers the name already cached for a path, falling back to its folder name. */
-function getBulkToastMessage(
-  queryClient: QueryClient,
-  paths: string[],
-  actionKey: BulkSuccessActionKey,
-): string {
-  if (paths.length === 0) return '';
-
-  const displayNames = paths.map((p) => {
-    const name = stripDisabledPrefix(p.split(/[/\\]/).pop() || '');
-
-    const prevQueries = queryClient.getQueriesData<FolderGridResponse>({
-      queryKey: folderKeys.all,
-    });
-    for (const [, data] of prevQueries) {
-      if (!data) continue;
-      const match = data.children.find((f: ModFolder) => f.path === p);
-      if (match) return match.name;
-    }
-    return name;
-  });
-
-  return formatBulkSuccessMessage(displayNames, actionKey);
-}
 
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {
@@ -91,28 +57,15 @@ export function useBulkToggle() {
 
       if (result.success.length > 0) {
         const action = variables.enable ? 'enabled' : 'disabled';
-        toast.success(getBulkToastMessage(queryClient, result.success, action));
+        toast.success(formatBulkSuccessMessage(result.success, action));
       }
-      if (hasCollectionReferenceImpact(result.collection_impact)) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('collectionsCatalog'),
-          'active',
-        );
-        notifyCollectionReferenceImpact(result.collection_impact);
-      }
+      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'toggle'));
       }
     },
     onError: (error, variables) => {
-      const payload = extractFileInUsePayload(error);
-      if (payload) {
-        openWorkspaceFileInUseDialog({
-          path: payload.path,
-          processes: payload.processes,
-          onRetry: () => mutation.mutate(variables),
-        });
+      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
         return;
       }
       toast.error(formatAppError(error));
@@ -148,16 +101,9 @@ export function useBulkDelete() {
       );
 
       if (result.success.length > 0) {
-        toast.success(getBulkToastMessage(queryClient, result.success, 'deleted'));
+        toast.success(formatBulkSuccessMessage(result.success, 'deleted'));
       }
-      if (hasCollectionReferenceImpact(result.collection_impact)) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('collectionsCatalog'),
-          'active',
-        );
-        notifyCollectionReferenceImpact(result.collection_impact);
-      }
+      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'delete'));
       }
@@ -179,7 +125,7 @@ export function useBulkUpdateInfo() {
         'active',
       );
       if (result.success.length > 0) {
-        toast.success(getBulkToastMessage(queryClient, result.success, 'updated'));
+        toast.success(formatBulkSuccessMessage(result.success, 'updated'));
       }
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'update'));
@@ -203,7 +149,7 @@ export function useBulkFavorite() {
       );
       if (result.success.length > 0) {
         const action = variables.favorite ? 'favorited' : 'unfavorited';
-        toast.success(getBulkToastMessage(queryClient, result.success, action));
+        toast.success(formatBulkSuccessMessage(result.success, action));
       }
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'favorite'));
@@ -227,7 +173,7 @@ export function useBulkPin() {
       );
       if (result.success.length > 0) {
         const action = variables.pin ? 'pinned' : 'unpinned';
-        toast.success(getBulkToastMessage(queryClient, result.success, action));
+        toast.success(formatBulkSuccessMessage(result.success, action));
       }
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'pin'));

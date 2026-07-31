@@ -7,36 +7,32 @@ import {
   type UpdateObjectInput,
 } from './objectQueryCache';
 
-export function useUpdateObject() {
+/** Every object mutation republishes the same object-list scope on success. */
+function useObjectListMutation<TVariables, TData>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: UpdateObjectInput }) =>
-      updateObject(id, updates),
+    mutationFn,
     onSuccess: async () => {
       await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
     },
   });
+}
+
+export function useUpdateObject() {
+  return useObjectListMutation(({ id, updates }: { id: string; updates: UpdateObjectInput }) =>
+    updateObject(id, updates),
+  );
 }
 
 export function useDeleteObject() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, force }: { id: string; force: boolean }) => deleteObject(id, force),
-    onSuccess: async () => {
-      await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
-    },
-  });
+  return useObjectListMutation(({ id, force }: { id: string; force: boolean }) =>
+    deleteObject(id, force),
+  );
 }
 
 export function useCreateObject() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: CreateObjectInput) => createObject(input),
-    onSuccess: async () => {
-      await publishRuntimeDescriptor(queryClient, buildObjectListRefreshDescriptor({}), 'active');
-    },
-  });
+  return useObjectListMutation((input: CreateObjectInput) => createObject(input));
 }

@@ -6,10 +6,11 @@ let mockView = 'dashboard';
 let mockSelectedObjectFolderPath: unknown = null;
 
 vi.mock('../../stores/useAppStore', () => ({
-  useAppStore: () => ({
-    workspaceView: mockView,
-    selectedObjectFolderPath: mockSelectedObjectFolderPath,
-  }),
+  useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({
+      workspaceView: mockView,
+      selectedObjectFolderPath: mockSelectedObjectFolderPath,
+    }),
 }));
 
 // Mock children

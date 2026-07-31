@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../lib/bindings';
 import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
+import { useSafeMode } from './settingsQuery';
 import { getCategoryCounts } from '../lib/services/objectService';
 import {
   buildObjectListRefreshDescriptor,
@@ -14,7 +15,7 @@ import type { GameType } from '../types/game';
 
 export function useCategoryCounts() {
   const { activeGame } = useActiveGame();
-  const { safeMode } = useAppStore();
+  const safeMode = useSafeMode();
   const gameId = activeGame?.id ?? '';
 
   return useQuery<CategoryCount[]>({
@@ -39,7 +40,7 @@ export function useGameSchema() {
 }
 
 export function useGameSwitch() {
-  const { setActiveGameId } = useAppStore();
+  const setActiveGameId = useAppStore((state) => state.setActiveGameId);
   const queryClient = useQueryClient();
 
   const switchGame = async (gameId: string) => {

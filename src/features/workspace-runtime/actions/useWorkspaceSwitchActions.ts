@@ -21,7 +21,6 @@ import {
   executeWorkspaceSwitch,
   isWorkspaceObjectNode,
   togglePendingKey,
-  type PathSwitchOptions,
   type WorkspaceSwitchSurface,
 } from './workspaceSwitchOps';
 
@@ -42,7 +41,6 @@ export function useWorkspaceSwitchActions() {
       node: WorkspaceExplorerNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
-      _options: PathSwitchOptions,
     ) => {
       if (!activeGame?.id) {
         return null;
@@ -137,7 +135,6 @@ export function useWorkspaceSwitchActions() {
       node: WorkspaceNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
-      options: PathSwitchOptions,
     ) => {
       const pendingKey = buildNodePendingKey(node);
       markPending(pendingKey, true);
@@ -147,7 +144,7 @@ export function useWorkspaceSwitchActions() {
           return await setObjectNodeEnabled(node, desiredEnabled, surface);
         }
 
-        return await setExplorerNodeEnabled(node, desiredEnabled, surface, options);
+        return await setExplorerNodeEnabled(node, desiredEnabled, surface);
       } finally {
         markPending(pendingKey, false);
       }
@@ -156,15 +153,15 @@ export function useWorkspaceSwitchActions() {
   );
 
   const toggleNode = useCallback(
-    async (node: WorkspaceNode, surface: WorkspaceSwitchSurface, options: PathSwitchOptions) => {
+    async (node: WorkspaceNode, surface: WorkspaceSwitchSurface) => {
       const desiredEnabled = node.switch_state !== 'enabled';
-      return setNodeEnabled(node, desiredEnabled, surface, options);
+      return setNodeEnabled(node, desiredEnabled, surface);
     },
     [setNodeEnabled],
   );
 
   const setFolderPathEnabled = useCallback(
-    async (path: string, desiredEnabled: boolean, _options: PathSwitchOptions) => {
+    async (path: string, desiredEnabled: boolean) => {
       if (!activeGame?.id) {
         return null;
       }

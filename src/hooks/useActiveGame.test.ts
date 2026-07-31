@@ -1,16 +1,30 @@
 import { renderHook } from '@testing-library/react';
+import { useQuery } from '@tanstack/react-query';
 import { useActiveGame } from './useActiveGame';
-import { useSettings } from './useSettings';
 import { useAppStore } from '../stores/useAppStore';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-vi.mock('./useSettings', () => ({
-  useSettings: vi.fn(),
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: vi.fn(),
 }));
 
 vi.mock('../stores/useAppStore', () => ({
   useAppStore: vi.fn(),
 }));
+
+function mockActiveGameId(activeGameId: string | null) {
+  vi.mocked(useAppStore).mockImplementation((selector: unknown) =>
+    (selector as (state: { activeGameId: string | null }) => unknown)({ activeGameId }),
+  );
+}
+
+function mockSettingsQuery(result: { data?: unknown; isLoading?: boolean; error?: unknown }) {
+  vi.mocked(useQuery).mockReturnValue({
+    data: result.data ?? null,
+    isLoading: result.isLoading ?? false,
+    error: result.error ?? null,
+  } as unknown as ReturnType<typeof useQuery>);
+}
 
 describe('useActiveGame', () => {
   beforeEach(() => {
@@ -18,14 +32,8 @@ describe('useActiveGame', () => {
   });
 
   it('should return null activeGame when there is no activeGameId', () => {
-    vi.mocked(useAppStore).mockReturnValue({ activeGameId: null } as unknown as ReturnType<
-      typeof useAppStore
-    >);
-    vi.mocked(useSettings).mockReturnValue({
-      settings: null,
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSettings>);
+    mockActiveGameId(null);
+    mockSettingsQuery({ data: null });
 
     const { result } = renderHook(() => useActiveGame());
 
@@ -35,19 +43,15 @@ describe('useActiveGame', () => {
   });
 
   it('should return the correct active game when found in settings', () => {
-    vi.mocked(useAppStore).mockReturnValue({ activeGameId: 'game-2' } as unknown as ReturnType<
-      typeof useAppStore
-    >);
-    vi.mocked(useSettings).mockReturnValue({
-      settings: {
+    mockActiveGameId('game-2');
+    mockSettingsQuery({
+      data: {
         games: [
           { id: 'game-1', name: 'Game 1' },
           { id: 'game-2', name: 'Game 2' },
         ],
       },
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSettings>);
+    });
 
     const { result } = renderHook(() => useActiveGame());
 
@@ -56,36 +60,25 @@ describe('useActiveGame', () => {
   });
 
   it('should return null if activeGameId is set but game not found in settings', () => {
-    vi.mocked(useAppStore).mockReturnValue({ activeGameId: 'game-3' } as unknown as ReturnType<
-      typeof useAppStore
-    >);
-    vi.mocked(useSettings).mockReturnValue({
-      settings: {
+    mockActiveGameId('game-3');
+    mockSettingsQuery({
+      data: {
         games: [
           { id: 'game-1', name: 'Game 1' },
           { id: 'game-2', name: 'Game 2' },
         ],
       },
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSettings>);
+    });
 
     const { result } = renderHook(() => useActiveGame());
 
     expect(result.current.activeGame).toBeNull();
   });
 
-  it('should pass through isLoading and error from useSettings', () => {
-    vi.mocked(useAppStore).mockReturnValue({ activeGameId: null } as unknown as ReturnType<
-      typeof useAppStore
-    >);
+  it('should pass through isLoading and error from the settings query', () => {
+    mockActiveGameId(null);
     const mockError = new Error('test error');
-
-    vi.mocked(useSettings).mockReturnValue({
-      settings: null,
-      isLoading: true,
-      error: mockError,
-    } as unknown as ReturnType<typeof useSettings>);
+    mockSettingsQuery({ data: null, isLoading: true, error: mockError });
 
     const { result } = renderHook(() => useActiveGame());
 

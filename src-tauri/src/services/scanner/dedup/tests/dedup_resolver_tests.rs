@@ -263,6 +263,7 @@ async fn test_nc_9_2_03_lock_contention_returns_clear_error() {
     assert!(result.is_err());
     assert!(result
         .unwrap_err()
+        .to_string()
         .to_ascii_lowercase()
         .contains("operation in progress"));
 }

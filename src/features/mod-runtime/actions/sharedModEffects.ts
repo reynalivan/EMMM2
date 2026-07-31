@@ -2,17 +2,15 @@ import type { QueryClient } from '@tanstack/react-query';
 import { commands, type MatchedDbEntry } from '../../../lib/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { applyRuntimePathInvalidationMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
-import type { SyncCurrentData } from '../../workspace-runtime/state/workspaceState';
 
 export interface SharedModSwitchActions {
   setNodeEnabled: (
     node: WorkspaceExplorerNode,
     enabled: boolean,
     surface: 'folder_grid' | 'preview' | 'object_list' | 'collections' | 'corridor',
-    options: { syncExplorerPath: boolean },
   ) => Promise<string | null | undefined>;
 }
 
@@ -23,7 +21,6 @@ export function hasIllegalCharacters(name: string): boolean {
 export async function loadSharedModSyncMatch(params: {
   gameType: number;
   folder: ModFolder;
-  currentData: SyncCurrentData;
 }): Promise<MatchedDbEntry | null> {
   try {
     const match = await commands.matchObjectWithDb(params.gameType, params.folder.name);
@@ -48,9 +45,6 @@ export async function runSharedModActiveContextToggle(params: {
       params.folder as WorkspaceExplorerNode,
       false,
       params.switchSurface,
-      {
-        syncExplorerPath: false,
-      },
     )) ?? params.folder.path;
 
   const targetSafeStatus = !params.folder.is_safe;

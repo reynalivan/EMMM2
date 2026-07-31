@@ -33,5 +33,4 @@ pub async fn dup_resolve_batch(
         },
     )
     .await
-    .map_err(AppError::Internal)
 }

@@ -5,15 +5,7 @@ import {
   type WorkspaceRuntimeState,
   type WorkspaceTransitionTarget,
 } from '../../features/workspace-runtime/state/workspaceState';
-
-function getWorkspaceObjectDisplayName(folderPath: string): string {
-  const segments = folderPath.split(/[\\/]/).filter(Boolean);
-  if (segments.length === 0) {
-    return folderPath;
-  }
-
-  return segments[segments.length - 1];
-}
+import { pathBasename, pathStartsWith } from '../../lib/pathKey';
 
 export function buildCurrentPath(
   selectedObjectFolderPath: string | null,
@@ -27,7 +19,7 @@ export function buildCurrentPath(
     return explorerSubPath.split(/[\\/]/).filter(Boolean);
   }
 
-  const rootName = getWorkspaceObjectDisplayName(selectedObjectFolderPath);
+  const rootName = pathBasename(selectedObjectFolderPath);
   if (explorerSubPath === selectedObjectFolderPath) {
     return [rootName];
   }
@@ -99,73 +91,57 @@ export function applyTransitionTarget(
   state: WorkspaceRuntimeState,
   target: WorkspaceTransitionTarget,
 ): WorkspaceRuntimeState {
+  // Every branch settles the same way: the queued transition is spent and any
+  // unsaved-changes prompt it raised is answered.
+  const settled: WorkspaceRuntimeState = {
+    ...state,
+    previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
+    dialogState:
+      state.dialogState.kind === 'previewUnsavedChanges'
+        ? INITIAL_WORKSPACE_DIALOG_STATE
+        : state.dialogState,
+  };
+
   if (target.kind === 'focusObject') {
     return {
-      ...state,
+      ...settled,
       selectedObjectFolderPath: target.folderPath,
       explorerSubPath: target.folderPath,
-      currentPath: [getWorkspaceObjectDisplayName(target.folderPath)],
+      currentPath: [pathBasename(target.folderPath)],
       selectedModPath: null,
       mobileActivePane: 'grid',
-      previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-      dialogState:
-        state.dialogState.kind === 'previewUnsavedChanges'
-          ? INITIAL_WORKSPACE_DIALOG_STATE
-          : state.dialogState,
     };
   }
 
   if (target.kind === 'navigateExplorer') {
     return {
-      ...state,
+      ...settled,
       currentPath: target.currentPath,
       explorerSubPath: target.explorerSubPath,
       selectedModPath: null,
-      previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-      dialogState:
-        state.dialogState.kind === 'previewUnsavedChanges'
-          ? INITIAL_WORKSPACE_DIALOG_STATE
-          : state.dialogState,
     };
   }
 
   if (target.kind === 'selectMod') {
     return {
-      ...state,
+      ...settled,
       selectedModPath: target.path,
       mobileActivePane: target.mobilePane ?? state.mobileActivePane,
-      previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-      dialogState:
-        state.dialogState.kind === 'previewUnsavedChanges'
-          ? INITIAL_WORKSPACE_DIALOG_STATE
-          : state.dialogState,
     };
   }
 
   if (target.kind === 'collapseSection') {
-    return {
-      ...state,
-      previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-      dialogState:
-        state.dialogState.kind === 'previewUnsavedChanges'
-          ? INITIAL_WORKSPACE_DIALOG_STATE
-          : state.dialogState,
-    };
+    return settled;
   }
 
   return {
-    ...state,
+    ...settled,
     selectedObjectFolderPath:
       target.clearObjectSelection === false ? state.selectedObjectFolderPath : null,
     selectedModPath: null,
     explorerSubPath: target.resetExplorer ? undefined : state.explorerSubPath,
     currentPath: target.resetExplorer ? [] : state.currentPath,
     mobileActivePane: target.mobilePane ?? state.mobileActivePane,
-    previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-    dialogState:
-      state.dialogState.kind === 'previewUnsavedChanges'
-        ? INITIAL_WORKSPACE_DIALOG_STATE
-        : state.dialogState,
   };
 }
 
@@ -191,14 +167,7 @@ export function closeDialogIfTargetRemoved(
     return state.dialogState;
   }
 
-  const normalizedTargetPath = targetPath.replace(/\\/g, '/');
-  const hit = invalidPaths.some((path) => {
-    const normalizedPath = path.replace(/\\/g, '/');
-    return (
-      normalizedTargetPath === normalizedPath ||
-      normalizedTargetPath.startsWith(`${normalizedPath}/`)
-    );
-  });
+  const hit = invalidPaths.some((path) => pathStartsWith(path, targetPath));
 
   if (!hit) {
     return state.dialogState;
@@ -208,15 +177,9 @@ export function closeDialogIfTargetRemoved(
 }
 
 function pathTouchesTarget(targetPath: string, affectedPaths: string[]): boolean {
-  const normalizedTargetPath = targetPath.replace(/\\/g, '/');
-  return affectedPaths.some((path) => {
-    const normalizedPath = path.replace(/\\/g, '/');
-    return (
-      normalizedTargetPath === normalizedPath ||
-      normalizedTargetPath.startsWith(`${normalizedPath}/`) ||
-      normalizedPath.startsWith(`${normalizedTargetPath}/`)
-    );
-  });
+  return affectedPaths.some(
+    (path) => pathStartsWith(path, targetPath) || pathStartsWith(targetPath, path),
+  );
 }
 
 export function shouldResetDirtyPreviewForReconciliation(

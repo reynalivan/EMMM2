@@ -2,6 +2,7 @@ import { Copy, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DashboardPayload } from '../../types/dashboard';
 import { useAppStore } from '../../stores/useAppStore';
+import { useResolvedTheme } from '../settings/theme/useThemeRuntime';
 import { useDashboardStats } from './hooks/useDashboardStats';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -29,7 +30,8 @@ export default function Dashboard() {
   const { t } = useTranslation(['dashboard', 'common']);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const activeGameId = useAppStore((state) => state.activeGameId);
-  const theme = useAppStore((state) => state.theme);
+  // Chart palettes follow the theme actually applied by useThemeRuntime.
+  const theme = useResolvedTheme();
   const { data, isLoading, isError, refresh } = useDashboardStats();
   const { activeGame } = useActiveGame();
   const { keybindings, isLoading: keybindingsLoading } = useActiveKeybindings();

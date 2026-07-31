@@ -5,14 +5,14 @@ use crate::types::dup_scan::{DupScanEvent, DupScanReport};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
-use tauri::{State, Window};
+use tauri::State;
 
 pub struct DupScanState {
-    is_running: Arc<AtomicBool>,
-    cancel_flag: Arc<AtomicBool>,
-    last_report: Arc<Mutex<Option<DupScanReport>>>,
+    pub(crate) is_running: Arc<AtomicBool>,
+    pub(crate) cancel_flag: Arc<AtomicBool>,
+    pub(crate) last_report: Arc<Mutex<Option<DupScanReport>>>,
 }
 
 impl DupScanState {
@@ -39,23 +39,8 @@ impl DupScanState {
         self.cancel_flag.store(true, Ordering::SeqCst);
     }
 
-    pub fn cancel_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.cancel_flag)
-    }
-
-    pub fn running_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.is_running)
-    }
-
-    pub fn report_store(&self) -> Arc<Mutex<Option<DupScanReport>>> {
-        Arc::clone(&self.last_report)
-    }
-
     pub fn load_report(&self) -> Option<DupScanReport> {
-        self.report_store()
-            .lock()
-            .ok()
-            .and_then(|guard| guard.clone())
+        self.last_report.lock().ok().and_then(|guard| guard.clone())
     }
 }
 
@@ -70,7 +55,6 @@ impl Default for DupScanState {
 pub async fn dup_scan_start(
     game_id: String,
     mods_root: String,
-    _window: Window,
     state: State<'_, DupScanState>,
     db: State<'_, sqlx::SqlitePool>,
     on_event: Channel<DupScanEvent>,
@@ -91,9 +75,9 @@ pub async fn dup_scan_start(
     state.reset_cancel();
 
     let scan_id = dup_scan_build_scan_id();
-    let cancel_flag = state.cancel_flag();
-    let running_flag = state.running_flag();
-    let report_store = state.report_store();
+    let cancel_flag = Arc::clone(&state.cancel_flag);
+    let running_flag = Arc::clone(&state.is_running);
+    let report_store = Arc::clone(&state.last_report);
     let mods_root_for_task = mods_root.clone();
     let game_id_for_task = game_id.clone();
     let db_for_task = db.inner().clone();
@@ -121,81 +105,46 @@ pub async fn dup_scan_start(
             total_folders,
         });
 
-        let mods_root_for_service = mods_root_for_task.clone();
-        let cancel_for_service = Arc::clone(&cancel_flag);
-        let game_id_for_service = game_id_for_task.clone();
-        let service_future = tokio::spawn(async move {
-            crate::services::scanner::dedup::scanner::scan_duplicates(
-                Path::new(&mods_root_for_service),
-                &game_id_for_service,
-                &db_for_task,
-                cancel_for_service,
-            )
-            .await
-        });
-
-        let mut current = 0usize;
-        while !service_future.is_finished() {
-            if total_folders > 0 && current < total_folders.saturating_sub(1) {
-                current += 1;
-                let percent = ((current * 100) / total_folders).min(100) as u8;
-                let _ = on_event.send(DupScanEvent::Progress {
-                    scan_id: scan_id.clone(),
-                    processed_folders: current,
-                    total_folders,
-                    current_folder: format!("Hashing {current}/{total_folders}"),
-                    percent,
-                });
-            }
-
-            tokio::time::sleep(Duration::from_millis(120)).await;
-        }
-
-        let outcome = match service_future.await {
-            Ok(Ok(data)) => data,
-            Ok(Err(error)) => {
-                let _ = on_event.send(DupScanEvent::Cancelled {
-                    scan_id,
-                    processed_folders: current,
-                    total_folders,
-                });
-                log::warn!("Duplicate scan failed: {error}");
-                return;
-            }
+        // ponytail: the dedup service reports no per-folder progress, so the UI
+        // only gets Started -> final Progress -> Finished. Thread a real progress
+        // callback through scan_duplicates if intermediate updates are needed.
+        let outcome = match crate::services::scanner::dedup::scanner::scan_duplicates(
+            Path::new(&mods_root_for_task),
+            &game_id_for_task,
+            &db_for_task,
+            Arc::clone(&cancel_flag),
+        )
+        .await
+        {
+            Ok(data) => data,
             Err(error) => {
                 let _ = on_event.send(DupScanEvent::Cancelled {
                     scan_id,
-                    processed_folders: current,
+                    processed_folders: 0,
                     total_folders,
                 });
-                log::warn!("Duplicate scan task join failed: {error}");
+                log::warn!("Duplicate scan failed: {error}");
                 return;
             }
         };
 
         match outcome.status {
             DedupScanStatus::Cancelled => {
-                let processed = current.min(outcome.total_folders);
                 let _ = on_event.send(DupScanEvent::Cancelled {
                     scan_id,
-                    processed_folders: processed,
+                    processed_folders: 0,
                     total_folders: outcome.total_folders,
                 });
             }
             DedupScanStatus::Completed => {
                 let final_total = outcome.total_folders;
-                let final_current = final_total;
-                let final_percent = final_current
-                    .checked_mul(100)
-                    .and_then(|value| value.checked_div(final_total))
-                    .map_or(100, |value| value.min(100) as u8);
 
                 let _ = on_event.send(DupScanEvent::Progress {
                     scan_id: scan_id.clone(),
-                    processed_folders: final_current,
+                    processed_folders: final_total,
                     total_folders: final_total,
-                    current_folder: format!("Hashing {final_current}/{final_total}"),
-                    percent: final_percent,
+                    current_folder: format!("Hashing {final_total}/{final_total}"),
+                    percent: 100,
                 });
 
                 for group in &outcome.groups {

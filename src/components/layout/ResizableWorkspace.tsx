@@ -13,8 +13,11 @@ export default function ResizableWorkspace({
   mainPanel,
   rightPanel,
 }: ResizableWorkspaceProps) {
-  const { leftPanelWidth, rightPanelWidth, setPanelWidths, mobileActivePane, isPreviewOpen } =
-    useAppStore();
+  const leftPanelWidth = useAppStore((state) => state.leftPanelWidth);
+  const rightPanelWidth = useAppStore((state) => state.rightPanelWidth);
+  const setPanelWidths = useAppStore((state) => state.setPanelWidths);
+  const mobileActivePane = useAppStore((state) => state.mobileActivePane);
+  const isPreviewOpen = useAppStore((state) => state.isPreviewOpen);
 
   // Resize State
   const [widths, setWidths] = useState({ left: leftPanelWidth, right: rightPanelWidth });

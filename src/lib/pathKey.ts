@@ -10,6 +10,15 @@ function asciiCaseFold(value: string): string {
   return result;
 }
 
+/**
+ * Trailing segment of a path, separator-agnostic. Returns the input unchanged
+ * when it holds no segments, so callers can use it for display names directly.
+ */
+export function pathBasename(value: string): string {
+  const segments = value.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? value;
+}
+
 export function canonicalPathKey(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -57,25 +66,4 @@ export function pathStartsWith(
   }
 
   return childKey.startsWith(`${parentKey}/`);
-}
-
-export function relativePathFromRoot(
-  root: string | null | undefined,
-  target: string | null | undefined,
-): string | null {
-  const rootKey = canonicalPathKey(root);
-  const targetKey = canonicalPathKey(target);
-  if (!rootKey || !targetKey) {
-    return null;
-  }
-
-  if (rootKey === targetKey) {
-    return '';
-  }
-
-  if (!targetKey.startsWith(`${rootKey}/`)) {
-    return null;
-  }
-
-  return targetKey.slice(rootKey.length + 1);
 }

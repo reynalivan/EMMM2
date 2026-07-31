@@ -1,10 +1,14 @@
+import { pathBasename } from '../../lib/pathKey';
 export interface WorkspacePathRewriteInput {
   oldPath: string;
   newPath: string;
 }
 
+// ponytail: single path normalizer for the whole app. Trailing slashes are
+// stripped because every consumer prefix-matches against `${base}/`, and a
+// retained trailing slash silently turns that into a never-matching `base//`.
 export function normalizeWorkspacePath(path: string): string {
-  return path.replace(/\\/g, '/');
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
 export function rewriteWorkspacePathValue(
@@ -19,8 +23,8 @@ export function rewriteWorkspacePathValue(
   for (const rewrite of rewrites) {
     const oldPath = normalizeWorkspacePath(rewrite.oldPath);
     const newPath = normalizeWorkspacePath(rewrite.newPath);
-    const oldName = oldPath.split('/').filter(Boolean).pop() ?? oldPath;
-    const newName = newPath.split('/').filter(Boolean).pop() ?? newPath;
+    const oldName = pathBasename(oldPath);
+    const newName = pathBasename(newPath);
 
     if (nextValue === oldPath) {
       nextValue = newPath;

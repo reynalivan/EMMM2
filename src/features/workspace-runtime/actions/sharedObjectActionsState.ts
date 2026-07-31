@@ -3,12 +3,8 @@ import type { WorkspaceObjectNode } from '../../../types/workspace';
 import type { WorkspaceRuntimeEvent } from '../state/workspaceEvents';
 import type { WorkspaceDialogState } from '../state/workspaceState';
 
-export interface ObjectSyncCurrentData {
-  name: string;
-  object_type: string;
-  metadata: Record<string, unknown> | null;
-  thumbnail_path: string | null;
-}
+export type { ObjectSyncCurrentData } from '../state/workspaceState';
+import type { ObjectSyncCurrentData } from '../state/workspaceState';
 
 export interface SyncConfirmState {
   open: boolean;

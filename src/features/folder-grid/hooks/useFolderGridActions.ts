@@ -121,9 +121,7 @@ export function useFolderGridActions({
       }
 
       const targetPath = await join(activeGame.mod_path, explorerSubPath);
-      await switchActions.setFolderPathEnabled(targetPath, enable, {
-        syncExplorerPath: true,
-      });
+      await switchActions.setFolderPathEnabled(targetPath, enable);
     },
     [activeGame, explorerSubPath, sourceAvailable, switchActions],
   );
@@ -152,9 +150,7 @@ export function useFolderGridActions({
       return;
     }
 
-    await switchActions.setFolderPathEnabled(dialogState.ancestorPath, true, {
-      syncExplorerPath: true,
-    });
+    await switchActions.setFolderPathEnabled(dialogState.ancestorPath, true);
     closeWorkspaceDialog('folderEnableParent');
   }, [dialogState, switchActions]);
 

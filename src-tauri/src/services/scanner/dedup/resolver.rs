@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::trash;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherSuppressor};
@@ -64,7 +65,7 @@ pub async fn resolve_batch<F>(
     watcher_suppressor: &Arc<WatcherSuppressor>,
     trash_dir: &Path,
     mut on_progress: F,
-) -> Result<ResolutionSummary, String>
+) -> Result<ResolutionSummary, AppError>
 where
     F: FnMut(ResolutionProgress),
 {
@@ -77,14 +78,11 @@ where
         });
     }
 
-    let _lock = op_lock
-        .acquire()
-        .await
-        .map_err(|error| format!("Operation in progress: {error}"))?;
+    let _lock = op_lock.acquire().await?;
 
     if !trash_dir.exists() {
         fs::create_dir_all(trash_dir)
-            .map_err(|error| format!("Failed to create trash directory: {error}"))?;
+            .map_err(|error| AppError::Io(format!("Failed to create trash directory: {error}")))?;
     }
 
     let _suppression_guard = SuppressionGuard::new(watcher_suppressor);
@@ -251,8 +249,7 @@ async fn persist_whitelist_pair(
 }
 
 async fn fetch_mod_id(db: &SqlitePool, game_id: &str, folder_path: &str) -> Result<String, String> {
-    let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    crate::repo::mod_repo::get_mod_id_and_status_by_path(&mut conn, folder_path, game_id)
+    crate::repo::mod_repo::get_mod_id_and_status_by_path(db, folder_path, game_id)
         .await
         .map_err(|error| format!("Failed to resolve mod id for '{folder_path}': {error}"))?
         .map(|(id, _, _)| id)

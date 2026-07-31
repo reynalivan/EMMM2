@@ -5,12 +5,12 @@ import { commands, type MatchedDbEntry } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useSettings } from '../../../hooks/useSettings';
+import { useSafeMode } from '../../../hooks/settingsQuery';
 import { useBulkFavorite } from '../../../hooks/useBulkModMutations';
 import { useToggleModSafe } from '../../../hooks/useFolderMutations';
 import { useDeleteMod, useRenameMod } from '../../../hooks/useFolderCoreMutations';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
-import { useAppStore } from '../../../stores/useAppStore';
 import {
   applyFolderDbSyncMatchAndRefresh,
   moveModsToObjectAndRefresh,
@@ -20,23 +20,11 @@ import {
   useWorkspaceSwitchActions,
   type WorkspaceSwitchSurface,
 } from '../../workspace-runtime/actions/useWorkspaceSwitchActions';
+import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import {
-  closeModActiveContextDialog,
-  closeModDeleteDialog,
-  closeModDuplicateWarningDialog,
-  closeModMoveDialog,
-  closeModPinSafeDialog,
-  closeModRenameDialog,
-  closeModSyncDialog,
-  openModActiveContextDialog,
-  openModDeleteDialog,
-  openModMoveDialog,
-  openModPinSafeDialog,
-  openModRenameDialog,
-  openModSyncDialog,
+  openModDialog,
   selectSharedModDialogState,
-  updateModActiveContextDialog,
-  updateModSyncDialog,
+  updateModDialog,
 } from './sharedModDialogs';
 import {
   hasIllegalCharacters,
@@ -66,12 +54,11 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
   const state = useMemo(() => selectSharedModDialogState(dialogState), [dialogState]);
   const resolvedSwitchSurface = options.switchSurface ?? 'folder_grid';
   const hasPin = useMemo(() => !!settings?.safe_mode?.pin_hash, [settings?.safe_mode?.pin_hash]);
+  const safeMode = useSafeMode();
 
   const handleToggleEnabled = useCallback(
     async (folder: ModFolder) => {
-      await switchActions.toggleNode(folder as WorkspaceExplorerNode, resolvedSwitchSurface, {
-        syncExplorerPath: false,
-      });
+      await switchActions.toggleNode(folder as WorkspaceExplorerNode, resolvedSwitchSurface);
     },
     [resolvedSwitchSurface, switchActions],
   );
@@ -173,7 +160,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
         newName,
         gameId: activeGame.id,
       });
-      closeModRenameDialog();
+      closeWorkspaceDialog('modRename');
       options.onRenameSuccess?.();
     },
     [activeGame, options, renameMod, state.renameDialog.folder, t],
@@ -186,17 +173,17 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     }
 
     await deleteMod.mutateAsync({ path: folder.path, gameId: activeGame?.id });
-    closeModDeleteDialog();
+    closeWorkspaceDialog('modDelete');
     options.onDeleteSuccess?.();
   }, [activeGame, deleteMod, options, state.deleteConfirm.folder]);
 
   const setDeleteConfirm = useCallback((next: { open: boolean; folder: ModFolder | null }) => {
     if (next.open && next.folder) {
-      openModDeleteDialog(next.folder);
+      openModDialog('modDelete', { folder: next.folder });
       return;
     }
 
-    closeModDeleteDialog();
+    closeWorkspaceDialog('modDelete');
   }, []);
 
   const handleSyncWithDb = useCallback(
@@ -212,13 +199,12 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
         thumbnail_path: folder.thumbnail_path,
       };
 
-      openModSyncDialog(folder, currentData);
+      openModDialog('modSync', { folder, match: null, isLoading: true, currentData });
       const match = await loadSharedModSyncMatch({
         gameType: activeGame.game_type,
         folder,
-        currentData,
       });
-      updateModSyncDialog(folder, currentData, match, false);
+      updateModDialog('modSync', { folder, match, isLoading: false, currentData });
     },
     [activeGame],
   );
@@ -238,7 +224,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
           match,
         });
         toast.success(t('objects:edit_modal.success_message', { name: folder.name }));
-        closeModSyncDialog();
+        closeWorkspaceDialog('modSync');
       } catch (error) {
         toast.error(t('objects:edit_modal.error_message', { error: String(error) }));
       }
@@ -253,13 +239,12 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
       }
 
       if (folder.is_enabled) {
-        openModActiveContextDialog(folder);
+        openModDialog('modActiveContext', { folder, isProcessing: false });
         return;
       }
 
-      const safeMode = useAppStore.getState().safeMode;
       if (safeMode && folder.is_safe && hasPin) {
-        openModPinSafeDialog(folder);
+        openModDialog('modPinSafe', { folder });
         return;
       }
 
@@ -269,7 +254,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
         safe: !folder.is_safe,
       });
     },
-    [activeGame, hasPin, toggleModSafe],
+    [activeGame, hasPin, safeMode, toggleModSafe],
   );
 
   const handleToggleSafeSubmit = useCallback(() => {
@@ -283,7 +268,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
       folderPath: folder.path,
       safe: false,
     });
-    closeModPinSafeDialog();
+    closeWorkspaceDialog('modPinSafe');
   }, [activeGame, state.pinSafeDialog.folder, toggleModSafe]);
 
   const handleActiveContextSubmit = useCallback(async () => {
@@ -293,7 +278,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     }
 
     try {
-      updateModActiveContextDialog(folder, true);
+      updateModDialog('modActiveContext', { folder, isProcessing: true });
       const outcome = await runSharedModActiveContextToggle({
         activeGameId: activeGame.id,
         folder,
@@ -303,16 +288,16 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
           setNodeEnabled: switchActions.setNodeEnabled,
         },
         hasPin,
-        safeMode: useAppStore.getState().safeMode,
+        safeMode,
         translate: t,
       });
 
-      closeModActiveContextDialog();
+      closeWorkspaceDialog('modActiveContext');
       if (outcome.kind === 'requiresPinSafe') {
-        openModPinSafeDialog(outcome.folder);
+        openModDialog('modPinSafe', { folder: outcome.folder });
       }
     } catch (error) {
-      closeModActiveContextDialog();
+      closeWorkspaceDialog('modActiveContext');
       toast.error(t('objects:create_modal.error_message', { error: String(error) }));
     }
   }, [
@@ -321,6 +306,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     options,
     queryClient,
     resolvedSwitchSurface,
+    safeMode,
     state.activeContextDialog.folder,
     switchActions.setNodeEnabled,
     t,
@@ -338,27 +324,27 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     isFolderSwitchPending: switchActions.isNodePending,
     hasPin,
     setDeleteConfirm,
-    openMoveDialog: openModMoveDialog,
-    closeMoveDialog: closeModMoveDialog,
-    closeSyncConfirm: closeModSyncDialog,
+    openMoveDialog: (folder: ModFolder) => openModDialog('modMove', { folder }),
+    closeMoveDialog: () => closeWorkspaceDialog('modMove'),
+    closeSyncConfirm: () => closeWorkspaceDialog('modSync'),
     handleToggleEnabled,
     handleDuplicateForceEnable,
     handleDuplicateEnableOnly,
-    handleDuplicateCancel: closeModDuplicateWarningDialog,
+    handleDuplicateCancel: () => closeWorkspaceDialog('modDuplicateWarning'),
     handleEnableOnlyThis,
     handleToggleFavorite,
     handleMoveToObject,
-    handleRenameRequest: openModRenameDialog,
+    handleRenameRequest: (folder: ModFolder) => openModDialog('modRename', { folder }),
     handleRenameSubmit,
-    handleRenameCancel: closeModRenameDialog,
-    handleDeleteRequest: openModDeleteDialog,
+    handleRenameCancel: () => closeWorkspaceDialog('modRename'),
+    handleDeleteRequest: (folder: ModFolder) => openModDialog('modDelete', { folder }),
     handleDeleteConfirm,
     handleSyncWithDb,
     handleApplySyncMatch,
     handleToggleSafeRequest,
     handleToggleSafeSubmit,
-    handleToggleSafeCancel: closeModPinSafeDialog,
-    handleActiveContextCancel: closeModActiveContextDialog,
+    handleToggleSafeCancel: () => closeWorkspaceDialog('modPinSafe'),
+    handleActiveContextCancel: () => closeWorkspaceDialog('modActiveContext'),
     handleActiveContextSubmit,
   };
 }

@@ -18,7 +18,8 @@ import GlobalActions from './GlobalActions';
 
 export default function TopBar() {
   const { t } = useTranslation('layout');
-  const { workspaceView, setWorkspaceView } = useAppStore();
+  const workspaceView = useAppStore((state) => state.workspaceView);
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const { activeGame } = useActiveGame();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);

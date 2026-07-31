@@ -15,7 +15,8 @@ import { ExternalChangeHandler } from '../../features/file-watcher/ExternalChang
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 
 export default function MainLayout() {
-  const { workspaceView, selectedObjectFolderPath } = useAppStore();
+  const workspaceView = useAppStore((state) => state.workspaceView);
+  const selectedObjectFolderPath = useAppStore((state) => state.selectedObjectFolderPath);
 
   return (
     <div

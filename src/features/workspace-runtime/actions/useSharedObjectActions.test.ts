@@ -70,8 +70,8 @@ vi.mock('./useWorkspaceSwitchActions', () => ({
   useWorkspaceSwitchActions: () => ({
     isPending: false,
     isNodePending: (node: unknown) => switchIsNodePending(node),
-    setNodeEnabled: (node: unknown, desiredEnabled: unknown, surface: unknown, options: unknown) =>
-      switchSetNodeEnabled(node, desiredEnabled, surface, options),
+    setNodeEnabled: (node: unknown, desiredEnabled: unknown, surface: unknown) =>
+      switchSetNodeEnabled(node, desiredEnabled, surface),
   }),
 }));
 
@@ -272,9 +272,7 @@ describe('useSharedObjectActions', () => {
       await result.current.handleEnableObject(object.id);
     });
 
-    expect(switchSetNodeEnabled).toHaveBeenCalledWith(object, true, 'object_list', {
-      syncExplorerPath: false,
-    });
+    expect(switchSetNodeEnabled).toHaveBeenCalledWith(object, true, 'object_list');
   });
 
   it('publishes runtime refresh when reveal in explorer fails', async () => {

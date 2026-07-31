@@ -26,12 +26,16 @@ export function useDragAutoScroll({
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !dragPosition) {
+    const cancelScrollLoop = () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+    };
+
+    const el = containerRef.current;
+    if (!el || !dragPosition) {
+      cancelScrollLoop();
       return;
     }
 
@@ -42,10 +46,7 @@ export function useDragAutoScroll({
     // Usually, during drag and drop, you want scroll to happen even if mouse is slightly off-center
     // but definitely between top and bottom of the element.
     if (y < top || y > bottom) {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+      cancelScrollLoop();
       return;
     }
 
@@ -75,17 +76,9 @@ export function useDragAutoScroll({
         rafRef.current = requestAnimationFrame(scrollLoop);
       }
     } else {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+      cancelScrollLoop();
     }
 
-    return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
+    return cancelScrollLoop;
   }, [dragPosition, containerRef, speed, threshold]);
 }

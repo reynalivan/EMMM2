@@ -4,7 +4,7 @@ import { commands } from '../../../lib/bindings';
 import type { GameConfig } from '../../../types/game';
 import type { DashboardPayload } from '../../../types/dashboard';
 import type { ActiveKeyBinding } from '../../../types/settings';
-import { formatRelativeDate } from '../dashboardViewUtils';
+import { formatRelativeDate } from '../../../utils/formatters';
 
 interface DashboardActivityProps {
   activeGame: GameConfig | null;

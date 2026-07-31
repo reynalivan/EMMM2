@@ -14,6 +14,7 @@ import {
   rewriteWorkspacePathValue,
   type WorkspacePathRewriteInput,
 } from './pathRewrite';
+import { pathBasename } from '../../lib/pathKey';
 
 export interface WorkspaceViewModelSelectionInput {
   selectedObjectFolderPath: string | null;
@@ -86,8 +87,7 @@ function pruneSelectionReconciliationEffects(nowMs: number): void {
 }
 
 function normalizedLastSegment(path: string): string {
-  const segments = normalizeWorkspacePath(path).split('/').filter(Boolean);
-  return segments[segments.length - 1] ?? normalizeWorkspacePath(path);
+  return pathBasename(normalizeWorkspacePath(path));
 }
 
 function normalizeAffectedPaths(paths: string[]): string[] {

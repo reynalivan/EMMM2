@@ -35,10 +35,6 @@ import {
 export type WorkspaceSwitchSurface =
   'folder_grid' | 'preview' | 'object_list' | 'collections' | 'corridor';
 
-export interface PathSwitchOptions {
-  syncExplorerPath: boolean;
-}
-
 export type WorkspaceSwitchFallbackClass = 'folderSwitch' | 'objectSwitch';
 
 export interface WorkspaceRenameConflictPayload {

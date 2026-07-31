@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../lib/bindings';
 import { applyDiskReconcileResult } from '../features/file-watcher/hooks';
 import { toast } from '../stores/useToastStore';
@@ -12,11 +13,9 @@ import {
   buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
-import { openWorkspaceFileInUseDialog } from '../features/workspace-runtime/state/workspaceDialogs';
-import {
-  hasCollectionReferenceImpact,
-  notifyCollectionReferenceImpact,
-} from './collectionReferenceImpact';
+import { formatAppError } from '../lib/appError';
+import { openFileInUseRetryDialog } from './fileInUseRetry';
+import { publishCollectionReferenceImpact } from './collectionReferenceImpact';
 
 async function runDiskRepairRecovery(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -39,33 +38,24 @@ async function runDiskRepairRecovery(
   }
 }
 
-function openFileInUseRetryDialog<TVariables>(
-  error: string,
-  variables: TVariables,
-  retry: (variables: TVariables) => void,
-): boolean {
-  if (!error.includes('"type":"FileInUse"')) {
-    return false;
-  }
+/** A missing path means the DB drifted from disk — repair instead of erroring. */
+function isMissingOnDisk(message: string): boolean {
+  const lowered = message.toLowerCase();
+  return lowered.includes('not found') || lowered.includes('os error 2');
+}
 
-  try {
-    const body = JSON.parse(error) as {
-      payload?: { path?: string; processes?: string[] };
-    };
-    const payload = body.payload;
-    if (!payload?.path || !payload.processes) {
-      return false;
-    }
-
-    openWorkspaceFileInUseDialog({
-      path: payload.path,
-      processes: payload.processes,
-      onRetry: () => retry(variables),
-    });
-    return true;
-  } catch {
-    return false;
-  }
+/** Structure + conflict republish shared by every single-folder mutation. */
+async function publishFolderStructureChange(queryClient: QueryClient): Promise<void> {
+  await publishRuntimeDescriptor(
+    queryClient,
+    buildRuntimeMutationDescriptor('workspaceStructure'),
+    'active',
+  );
+  await publishRuntimeDescriptor(
+    queryClient,
+    buildRuntimeMutationDescriptor('folderConflictState'),
+    'none',
+  );
 }
 
 export function useRenameMod() {
@@ -83,35 +73,16 @@ export function useRenameMod() {
         queryClient,
         buildPathRewriteDescriptor(variables.folderPath, result.new_path, []),
       );
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('workspaceStructure'),
-        'active',
-      );
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('folderConflictState'),
-        'none',
-      );
-      if (hasCollectionReferenceImpact(result.collection_impact)) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('collectionsCatalog'),
-          'active',
-        );
-        notifyCollectionReferenceImpact(result.collection_impact);
-      }
+      await publishFolderStructureChange(queryClient);
+      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
     },
     onError: (error, variables) => {
-      const errorMessage = String(error);
-      if (openFileInUseRetryDialog(errorMessage, variables, mutation.mutate)) {
+      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
         return;
       }
 
-      if (
-        errorMessage.toLowerCase().includes('not found') ||
-        errorMessage.toLowerCase().includes('os error 2')
-      ) {
+      const errorMessage = formatAppError(error);
+      if (isMissingOnDisk(errorMessage)) {
         void runDiskRepairRecovery(queryClient, variables.gameId);
         return;
       }
@@ -135,35 +106,16 @@ export function useDeleteMod() {
         buildQueryRemovalDescriptor([thumbnailKeys.folder(variables.path)], []),
       );
       applyRuntimeEffects(queryClient, buildPathInvalidationDescriptor(variables.path, []));
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('workspaceStructure'),
-        'active',
-      );
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('folderConflictState'),
-        'none',
-      );
-      if (hasCollectionReferenceImpact(result.collection_impact)) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('collectionsCatalog'),
-          'active',
-        );
-        notifyCollectionReferenceImpact(result.collection_impact);
-      }
+      await publishFolderStructureChange(queryClient);
+      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
     },
     onError: (error, variables) => {
-      const errorMessage = String(error);
-      if (openFileInUseRetryDialog(errorMessage, variables, mutation.mutate)) {
+      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
         return;
       }
 
-      if (
-        errorMessage.toLowerCase().includes('not found') ||
-        errorMessage.toLowerCase().includes('os error 2')
-      ) {
+      const errorMessage = formatAppError(error);
+      if (isMissingOnDisk(errorMessage)) {
         void runDiskRepairRecovery(queryClient, variables.gameId ?? null);
         return;
       }
@@ -189,12 +141,11 @@ export function useRestoreMod() {
       );
     },
     onError: (error, variables) => {
-      const errorMessage = String(error);
-      if (openFileInUseRetryDialog(errorMessage, variables, mutation.mutate)) {
+      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
         return;
       }
 
-      toast.error(`Restore failed: ${errorMessage}`);
+      toast.error(`Restore failed: ${formatAppError(error)}`);
     },
   });
 

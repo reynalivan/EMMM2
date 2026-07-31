@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../stores/useAppStore';
-import type { ModFolder } from '../../../types/mod';
+import type { ModFolder } from '../../../types/object';
 import type { DuplicateInfo } from '../../../types/scanner';
 import { useSharedModActions } from './useSharedModActions';
 
@@ -46,6 +46,7 @@ vi.mock('../../../hooks/useSettings', () => ({
   useSettings: () => ({
     settings: {
       safe_mode: {
+        enabled: true,
         pin_hash: '1234',
       },
     },
@@ -159,7 +160,6 @@ describe('useSharedModActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.setState({
-      safeMode: true,
       gridSelection: new Set(),
       workspaceDialogState: { kind: 'none' },
       workspacePreviewDirty: false,
@@ -200,9 +200,7 @@ describe('useSharedModActions', () => {
       await result.current.handleToggleEnabled(folder);
     });
 
-    expect(switchToggleNode).toHaveBeenCalledWith(folder, 'folder_grid', {
-      syncExplorerPath: false,
-    });
+    expect(switchToggleNode).toHaveBeenCalledWith(folder, 'folder_grid');
   });
 
   it('routes duplicate resolution to the shared switch engine', async () => {

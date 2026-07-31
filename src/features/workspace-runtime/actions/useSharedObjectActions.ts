@@ -236,9 +236,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
         return;
       }
 
-      await switchActions.setNodeEnabled(object, enable, 'object_list', {
-        syncExplorerPath: false,
-      });
+      await switchActions.setNodeEnabled(object, enable, 'object_list');
     },
     [options.objects, switchActions],
   );

@@ -10,7 +10,6 @@ import type {
   CreateObjectInput,
   GameSchema,
   ObjectFilter,
-  ObjectSummary,
   UpdateObjectInput,
 } from '../types/object';
 import type { GameType } from '../types/game';
@@ -19,7 +18,6 @@ export const objectKeys = {
   all: ['objects'] as const,
   lists: () => [...objectKeys.all, 'list'] as const,
   list: (filter: ObjectFilter) => [...objectKeys.lists(), filter] as const,
-  countsAll: () => [...objectKeys.all, 'counts'] as const,
   counts: (gameId: string) => [...objectKeys.all, 'counts', gameId] as const,
   schema: (gameType: GameType) => ['schema', gameType] as const,
 };
@@ -76,4 +74,4 @@ export async function runObjectBatchMutation({
   );
 }
 
-export type { CategoryCount, CreateObjectInput, GameSchema, ObjectSummary, UpdateObjectInput };
+export type { CategoryCount, CreateObjectInput, GameSchema, UpdateObjectInput };

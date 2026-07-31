@@ -18,7 +18,8 @@ import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimist
 import { useWorkspaceSwitchActions } from '../../workspace-runtime/actions/useWorkspaceSwitchActions';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import { runBulkAutoRecognize } from '../utils/runBulkAutoRecognize';
-import { parseTagList, resolveObjectNames, truncateNameList } from '../utils/bulkSummary';
+import { parseTagList, resolveObjectNames } from '../utils/bulkSummary';
+import { truncateNameList } from '../../../hooks/bulkToastMessages';
 
 interface BulkDeps {
   objects: WorkspaceObjectNode[];
@@ -140,9 +141,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
       let successCount = 0;
       let failedCount = 0;
       for (const object of objects.filter((candidate) => ids.has(candidate.id))) {
-        const nextPath = await switchActions.setNodeEnabled(object, enable, 'object_list', {
-          syncExplorerPath: false,
-        });
+        const nextPath = await switchActions.setNodeEnabled(object, enable, 'object_list');
         if (nextPath) {
           successCount += 1;
           continue;

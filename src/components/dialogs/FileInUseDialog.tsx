@@ -3,6 +3,7 @@ import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { closeWorkspaceDialog } from '../../features/workspace-runtime/state/workspaceDialogs';
 import { useWorkspaceRuntimeSelector } from '../../features/workspace-runtime/state/workspaceStoreBridge';
+import { pathBasename } from '../../lib/pathKey';
 
 export const FileInUseDialog: React.FC = () => {
   const { t } = useTranslation('common');
@@ -24,7 +25,7 @@ export const FileInUseDialog: React.FC = () => {
     closeDialog();
   };
 
-  const folderName = path?.split(/[/\\]/).pop() || t('file_in_use.folder_fallback');
+  const folderName = pathBasename(path ?? '') || t('file_in_use.folder_fallback');
 
   return (
     <div className="modal modal-open">

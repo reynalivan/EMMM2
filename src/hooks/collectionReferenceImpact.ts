@@ -1,5 +1,8 @@
+import type { QueryClient } from '@tanstack/react-query';
 import type { CollectionReferenceImpact } from '../types/collection';
 import { toast } from '../stores/useToastStore';
+import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '../features/workspace-runtime/optimistic/descriptorBuilders';
 
 export function hasCollectionReferenceImpact(
   impact: CollectionReferenceImpact | null | undefined,
@@ -37,4 +40,24 @@ export function notifyCollectionReferenceImpact(impact: CollectionReferenceImpac
   if (message) {
     toast.info(message, 5000);
   }
+}
+
+/**
+ * Republish the collections catalog and tell the user which collections a
+ * mutation touched. Every mutation returning a `collection_impact` ends this way.
+ */
+export async function publishCollectionReferenceImpact(
+  queryClient: QueryClient,
+  impact: CollectionReferenceImpact | null | undefined,
+): Promise<void> {
+  if (!impact || !hasCollectionReferenceImpact(impact)) {
+    return;
+  }
+
+  await publishRuntimeDescriptor(
+    queryClient,
+    buildRuntimeMutationDescriptor('collectionsCatalog'),
+    'active',
+  );
+  notifyCollectionReferenceImpact(impact);
 }
