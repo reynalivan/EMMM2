@@ -11,7 +11,7 @@ vi.mock('./EditObjectModal', () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div data-testid="edit-modal">Edit Modal</div> : null,
 }));
-vi.mock('./SyncConfirmModal', () => ({
+vi.mock('../../../components/modals/SyncConfirmModal', () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div data-testid="sync-modal">Sync Modal</div> : null,
 }));

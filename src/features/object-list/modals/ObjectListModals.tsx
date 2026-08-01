@@ -5,7 +5,7 @@
 
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import EditObjectModal from './EditObjectModal';
-import SyncConfirmModal from './SyncConfirmModal';
+import SyncConfirmModal from '../../../components/modals/SyncConfirmModal';
 import CreateObjectModal from './CreateObjectModal';
 import ScanReviewModal from './ScanReviewModal';
 import AutoSetupModal from './AutoSetupModal';

@@ -1,5 +1,6 @@
+import { parseTagList } from '../utils/bulkSummary';
 import ArchiveModal from '../../scanner/components/ArchiveModal';
-import BulkTagModal from './BulkTagModal';
+import BulkTagModal from '../../../components/modals/BulkTagModal';
 import DropConfirmModal, { type DropValidation } from './DropConfirmModal';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import type { ArchiveInfo } from '../../../types/scanner';
@@ -51,21 +52,6 @@ interface ObjectListAuxiliaryModalsProps {
   onClearBulkSelection: () => void;
 }
 
-function parseObjectTags(tags: string | null | undefined): string[] {
-  if (!tags) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(tags);
-    return Array.isArray(parsed)
-      ? parsed.filter((tag): tag is string => typeof tag === 'string')
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function ObjectListAuxiliaryModals({
   dropValidation,
   onMoveAnyway,
@@ -89,7 +75,7 @@ export default function ObjectListAuxiliaryModals({
     : undefined;
 
   const existingTags = [...selectedIds].flatMap((id) =>
-    parseObjectTags(objects.find((object) => object.id === id)?.tags),
+    parseTagList(objects.find((object) => object.id === id)?.tags),
   );
 
   return (

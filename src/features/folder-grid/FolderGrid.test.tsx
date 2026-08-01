@@ -63,7 +63,7 @@ vi.mock('../../components/ui/ConfirmDialog', () => ({
   default: ({ open }: { open: boolean }) => (open ? <div>ConfirmDialog</div> : null),
 }));
 
-vi.mock('./modals/BulkTagModal', () => ({
+vi.mock('../../components/modals/BulkTagModal', () => ({
   BulkTagModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div>BulkTagModal</div> : null),
 }));
 

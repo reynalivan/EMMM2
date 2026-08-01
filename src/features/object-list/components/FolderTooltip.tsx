@@ -3,8 +3,9 @@
  * Shows full path, thumbnail preview, and lazy-loaded folder contents.
  */
 
-import { useState, useRef, useCallback, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands } from '../../../lib/bindings';
@@ -18,9 +19,6 @@ interface FolderTooltipProps {
   children: ReactNode;
 }
 
-// Module-level cache to avoid re-fetching
-const entryCache = new Map<string, FolderEntry[]>();
-
 export default function FolderTooltip({
   folderPath,
   thumbnailPath,
@@ -28,34 +26,21 @@ export default function FolderTooltip({
   children,
 }: FolderTooltipProps) {
   const { t } = useTranslation('objects');
-  const [entries, setEntries] = useState<FolderEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const fetchedRef = useRef(false);
+  // Contents load on first hover and stay cached per folder — react-query
+  // handles the keying, dedup and loading flag the manual Map used to.
+  const [hasOpened, setHasOpened] = useState(false);
+  const { data: entries, isLoading: loading } = useQuery<FolderEntry[]>({
+    queryKey: ['folder-entries', gameId, folderPath],
+    queryFn: () => commands.listFolderEntriesCmd(folderPath, gameId),
+    enabled: hasOpened,
+    staleTime: Infinity,
+  });
 
-  const handleOpen = useCallback(
-    (open: boolean) => {
-      if (!open || fetchedRef.current) return;
-      fetchedRef.current = true;
-
-      // Check cache first
-      const cached = entryCache.get(folderPath);
-      if (cached) {
-        setEntries(cached);
-        return;
-      }
-
-      setLoading(true);
-      commands
-        .listFolderEntriesCmd(folderPath, gameId)
-        .then((result: FolderEntry[]) => {
-          entryCache.set(folderPath, result);
-          setEntries(result);
-        })
-        .catch(() => setEntries([]))
-        .finally(() => setLoading(false));
-    },
-    [folderPath, gameId],
-  );
+  const handleOpen = (open: boolean) => {
+    if (open) {
+      setHasOpened(true);
+    }
+  };
 
   return (
     <Tooltip.Provider>

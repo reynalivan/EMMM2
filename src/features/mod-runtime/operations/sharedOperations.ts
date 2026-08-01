@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
 import type { GameConfig } from '../../../types/game';
-import type { MasterDbEntry } from '../../object-list/modals/scanReviewHelpers';
+import type { MasterDbEntry } from '../../../types/scanner';
 import type { MatchedDbEntry } from '../../../lib/bindings';
 import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
 import { formatAppError } from '../../../lib/appError';

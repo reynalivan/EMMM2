@@ -58,3 +58,13 @@ export type DuplicateInfo = {
  * the Rust wire contract is per PAIR. `buildResolutionRequests` translates.
  */
 export type DuplicateSelection = { type: 'Keep'; targetPath: string } | { type: 'Ignore' } | null;
+
+/** MasterDB entry used by the scan-review override search and mod-runtime import. */
+export interface MasterDbEntry {
+  matched_entry_key: string;
+  name: string;
+  object_type: string;
+  tags: string[];
+  metadata: Record<string, unknown> | null;
+  thumbnail_path: string | null;
+}

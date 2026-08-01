@@ -80,26 +80,6 @@ export default function ScanReviewModal({
     [],
   );
 
-  const { matchedCount, unmatchedCount, alreadyMatchedCount } = useMemo(() => {
-    let matched = 0;
-    let unmatched = 0;
-    let alreadyMatched = 0;
-    for (const item of items) {
-      if (item.alreadyMatched) {
-        alreadyMatched++;
-      } else if (overrides[item.folderPath] || item.matchedEntryKey) {
-        matched++;
-      } else {
-        unmatched++;
-      }
-    }
-    return {
-      matchedCount: matched,
-      unmatchedCount: unmatched,
-      alreadyMatchedCount: alreadyMatched,
-    };
-  }, [items, overrides]);
-
   const handleConfirm = useCallback(() => {
     const confirmed: ConfirmedScanItem[] = items.map((item) => {
       const ov = overrides[item.folderPath];
@@ -405,9 +385,7 @@ export default function ScanReviewModal({
             )}
             {isCommitting
               ? t('objects:scan_review.committing_state')
-              : t('objects:scan_review.confirm_button_label', {
-                  count: matchedCount + unmatchedCount + alreadyMatchedCount,
-                })}
+              : t('objects:scan_review.confirm_button_label', { count: items.length })}
           </button>
         </div>
       </div>

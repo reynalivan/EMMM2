@@ -11,7 +11,7 @@
 import { X, Check, Edit, AlertTriangle, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { MatchedDbEntry } from '../../../lib/bindings';
+import type { MatchedDbEntry } from '../../lib/bindings';
 
 /**
  * `MatchedDbEntry.metadata` crosses the wire as `JsonValue`, but the editor

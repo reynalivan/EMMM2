@@ -25,6 +25,15 @@ export interface UseObjectListDropZonesProps {
   setCreateModalOpen: (open: boolean) => void;
 }
 
+/** Nearest ancestor of the point that carries a data-object-id. */
+function findObjectIdAtPoint(position: DragPosition): string | null {
+  let current = document.elementFromPoint(position.x, position.y) as HTMLElement | null;
+  while (current && !current.dataset.objectId) {
+    current = current.parentElement;
+  }
+  return current?.dataset.objectId ?? null;
+}
+
 export function useObjectListDropZones({
   activeGame,
   objects,
@@ -94,18 +103,12 @@ export function useObjectListDropZones({
     async (paths: string[], position: DragPosition) => {
       if (!activeGame || !contentRef.current) return;
 
-      // Resolve target object from position
-      const element = document.elementFromPoint(position.x, position.y);
-      let current: HTMLElement | null = element as HTMLElement;
-      while (current && !current.dataset.objectId) {
-        current = current.parentElement;
-      }
-      if (!current?.dataset.objectId) {
+      const targetId = findObjectIdAtPoint(position);
+      if (!targetId) {
         toast.info('Drop on a specific object to move items there.');
         return;
       }
 
-      const targetId = current.dataset.objectId;
       const targetObj = objects.find((o) => o.id === targetId);
       if (!targetObj) {
         toast.error('Target object not found.');
@@ -230,12 +233,7 @@ export function useObjectListDropZones({
 
       // Track which object row the cursor is over (for per-item highlight)
       if (zone === 'item') {
-        const el = document.elementFromPoint(pos.x, pos.y);
-        let current: HTMLElement | null = el as HTMLElement;
-        while (current && !current.dataset.objectId) {
-          current = current.parentElement;
-        }
-        setHoveredItemId(current?.dataset.objectId ?? null);
+        setHoveredItemId(findObjectIdAtPoint(pos));
         // Calculate tooltip Y relative to sidebar root
         const sidebarRect = contentRef.current?.parentElement?.getBoundingClientRect();
         setTooltipTop(sidebarRect ? pos.y - sidebarRect.top - 16 : pos.y);

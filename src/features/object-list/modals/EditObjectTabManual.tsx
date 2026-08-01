@@ -1,3 +1,4 @@
+import { DynamicMetadataFields } from './DynamicMetadataFields';
 import { UseFormReturn, Controller } from 'react-hook-form';
 import type { EditObjectFormData } from '../hooks/useEditObjectForm';
 import type { GameSchema, FilterDef } from '../../../types/object';
@@ -91,32 +92,7 @@ export function EditObjectTabManual({
       </div>
 
       {/* Dynamic Metadata Fields */}
-      {categoryFilters.map((filter) => (
-        <div key={filter.key} className="form-control w-full">
-          <label className="label py-1">
-            <span className="label-text">{filter.label}</span>
-          </label>
-          {filter.options && filter.options.length > 0 ? (
-            <select
-              className="select select-bordered w-full select-sm"
-              {...register(`metadata.${filter.key}`)}
-            >
-              <option value="">{t('common:actions.none')}</option>
-              {filter.options.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              className="input input-bordered input-sm"
-              {...register(`metadata.${filter.key}`)}
-            />
-          )}
-        </div>
-      ))}
+      <DynamicMetadataFields filters={categoryFilters} register={register} />
 
       {/* Tags */}
       <div className="form-control w-full mt-2">

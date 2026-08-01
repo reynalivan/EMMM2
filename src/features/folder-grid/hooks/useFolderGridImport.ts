@@ -9,7 +9,7 @@ import { useImportMods } from '../../../hooks/useFolderMutations';
 import { useFileDrop } from '../../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../../hooks/useDragAutoScroll';
 import { join } from '@tauri-apps/api/path';
-import { classifyDroppedPaths } from '../../object-list/utils/dropUtils';
+import { classifyDroppedPaths } from '../../../lib/dropClassification';
 import { publishWorkspaceIntent } from '../../workspace-runtime/workspaceIntentBus';
 
 interface FolderGridImportOptions {

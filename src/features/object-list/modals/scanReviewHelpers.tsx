@@ -1,14 +1,6 @@
 import { CheckCircle, Info, AlertTriangle } from 'lucide-react';
 
-/** MasterDB entry for the override search dropdown. */
-export interface MasterDbEntry {
-  matched_entry_key: string;
-  name: string;
-  object_type: string;
-  tags: string[];
-  metadata: Record<string, unknown> | null;
-  thumbnail_path: string | null;
-}
+export type { MasterDbEntry } from '../../../types/scanner';
 
 /** Confidence color and icon mapping. */
 export function getConfidenceColor(confidence: string) {

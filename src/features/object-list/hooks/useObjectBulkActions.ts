@@ -248,23 +248,19 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
     [activeGame, objects, queryClient, setIsSyncing, t],
   );
 
-  const handleBulkFavorite = useCallback(
-    async (ids: Set<string>, favorite: boolean) => {
+  /** Run a bulk folder-path command, refresh the rows, and report the outcome. */
+  const runBulkFolderCommand = useCallback(
+    async (
+      ids: Set<string>,
+      run: (gameId: string, paths: string[]) => Promise<unknown>,
+      successKey: string,
+    ) => {
       if (!activeGame) return;
       const paths = objects.filter((o) => ids.has(o.id)).map((o) => o.folder_path);
       try {
-        await commands.bulkToggleFavorite(activeGame.id, paths, favorite);
+        await run(activeGame.id, paths);
         await refreshObjectRows();
-        toast.success(
-          t(
-            favorite
-              ? 'objects:toasts.favorite_added_other'
-              : 'objects:toasts.favorite_removed_other',
-            {
-              count: ids.size,
-            },
-          ),
-        );
+        toast.success(t(successKey, { count: ids.size }));
       } catch (e) {
         toast.error(t('objects:edit_modal.error_message', { error: formatAppError(e) }));
       }
@@ -272,23 +268,24 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
     [activeGame, objects, refreshObjectRows, t],
   );
 
+  const handleBulkFavorite = useCallback(
+    (ids: Set<string>, favorite: boolean) =>
+      runBulkFolderCommand(
+        ids,
+        (gameId, paths) => commands.bulkToggleFavorite(gameId, paths, favorite),
+        favorite ? 'objects:toasts.favorite_added_other' : 'objects:toasts.favorite_removed_other',
+      ),
+    [runBulkFolderCommand],
+  );
+
   const handleBulkSafe = useCallback(
-    async (ids: Set<string>, safe: boolean) => {
-      if (!activeGame) return;
-      const paths = objects.filter((o) => ids.has(o.id)).map((o) => o.folder_path);
-      try {
-        await commands.bulkUpdateInfo(activeGame.id, paths, sparse({ is_safe: safe }));
-        await refreshObjectRows();
-        toast.success(
-          t(safe ? 'objects:toasts.mark_safe' : 'objects:toasts.mark_unsafe', {
-            count: ids.size,
-          }),
-        );
-      } catch (e) {
-        toast.error(t('objects:edit_modal.error_message', { error: formatAppError(e) }));
-      }
-    },
-    [activeGame, objects, refreshObjectRows, t],
+    (ids: Set<string>, safe: boolean) =>
+      runBulkFolderCommand(
+        ids,
+        (gameId, paths) => commands.bulkUpdateInfo(gameId, paths, sparse({ is_safe: safe })),
+        safe ? 'objects:toasts.mark_safe' : 'objects:toasts.mark_unsafe',
+      ),
+    [runBulkFolderCommand],
   );
 
   return {

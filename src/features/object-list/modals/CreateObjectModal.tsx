@@ -3,6 +3,7 @@
  * Uses react-hook-form + zod for validation, reuses patterns from EditObjectModal.
  */
 
+import { DynamicMetadataFields } from './DynamicMetadataFields';
 import { formatAppError } from '../../../lib/appError';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -191,32 +192,7 @@ export default function CreateObjectModal({
           {categoryFilters.length > 0 && (
             <div className="divider text-xs opacity-50 my-1">{t('create_modal.metadata')}</div>
           )}
-          {categoryFilters.map((filter) => (
-            <div key={filter.key} className="form-control w-full">
-              <label className="label py-1">
-                <span className="label-text">{filter.label}</span>
-              </label>
-              {filter.options && filter.options.length > 0 ? (
-                <select
-                  className="select select-bordered w-full select-sm"
-                  {...register(`metadata.${filter.key}`)}
-                >
-                  <option value="">{t('common:actions.none')}</option>
-                  {filter.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  className="input input-bordered input-sm w-full"
-                  {...register(`metadata.${filter.key}`)}
-                />
-              )}
-            </div>
-          ))}
+          <DynamicMetadataFields filters={categoryFilters} register={register} />
           {/* Error feedback */}
           {createObject.isError && (
             <div className="alert alert-error text-sm">

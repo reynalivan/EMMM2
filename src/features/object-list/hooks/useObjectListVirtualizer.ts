@@ -29,6 +29,11 @@ function sortObjectRows(left: WorkspaceObjectNode, right: WorkspaceObjectNode): 
   return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
 }
 
+/** Sorted copy — the source arrays are query data and must not be mutated. */
+function sortedRows(rows: WorkspaceObjectNode[]): WorkspaceObjectNode[] {
+  return rows.slice().sort(sortObjectRows);
+}
+
 export function useObjectListVirtualizer({
   objects,
   schema,
@@ -84,7 +89,7 @@ export function useObjectListVirtualizer({
         }
 
         for (const subCat of Object.keys(subGroups).sort()) {
-          const subObjects = subGroups[subCat].slice().sort(sortObjectRows);
+          const subObjects = sortedRows(subGroups[subCat]);
           items.push({
             type: 'sub-header',
             label: subCat,
@@ -96,12 +101,12 @@ export function useObjectListVirtualizer({
           }
         }
 
-        const sortedNoSubCat = noSubCat.slice().sort(sortObjectRows);
+        const sortedNoSubCat = sortedRows(noSubCat);
         for (const obj of sortedNoSubCat) {
           items.push({ type: 'row', obj });
         }
       } else {
-        const sortedCatObjects = catObjects.slice().sort(sortObjectRows);
+        const sortedCatObjects = sortedRows(catObjects);
         for (const obj of sortedCatObjects) {
           items.push({ type: 'row', obj });
         }
@@ -122,7 +127,7 @@ export function useObjectListVirtualizer({
         category: { name: 'Uncategorized', icon: 'HelpCircle', color: 'warning' },
         count: uncategorized.length,
       });
-      const sortedUncategorized = uncategorized.slice().sort(sortObjectRows);
+      const sortedUncategorized = sortedRows(uncategorized);
       for (const obj of sortedUncategorized) {
         items.push({ type: 'row', obj });
       }

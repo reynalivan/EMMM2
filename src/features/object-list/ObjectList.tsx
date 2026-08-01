@@ -136,7 +136,9 @@ export default function ObjectList() {
     threshold: 50,
   });
 
-  const handleConfirmMoveAnyway = useCallback(() => {
+  // Shared by "Move Anyway" (warning state) and "Skip Validation" (validating
+  // state) — mutually exclusive buttons that both mean "drop on the target".
+  const handleProceedWithDrop = useCallback(() => {
     if (!dropValidation) return;
     const { targetId, paths } = dropValidation;
     setDropValidation(null);
@@ -153,13 +155,6 @@ export default function ObjectList() {
   const handleCancelDrop = useCallback(() => {
     setDropValidation(null);
   }, [setDropValidation]);
-
-  const handleSkipValidation = useCallback(() => {
-    if (!dropValidation) return;
-    const { targetId, paths } = dropValidation;
-    setDropValidation(null);
-    handleDropOnItem(targetId, paths);
-  }, [dropValidation, handleDropOnItem, setDropValidation]);
 
   const handleRefresh = useCallback(async () => {
     if (activeGame) {
@@ -330,10 +325,10 @@ export default function ObjectList() {
 
       <ObjectListAuxiliaryModals
         dropValidation={dropValidation}
-        onMoveAnyway={handleConfirmMoveAnyway}
+        onMoveAnyway={handleProceedWithDrop}
         onMoveToSuggested={handleConfirmMoveToSuggested}
         onCancelDrop={handleCancelDrop}
-        onSkipValidation={handleSkipValidation}
+        onSkipValidation={handleProceedWithDrop}
         archiveModal={archiveModal}
         objects={objects}
         onArchiveExtractSubmit={handleArchiveExtractSubmit}
