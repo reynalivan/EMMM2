@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { useSettings } from '../../../hooks/useSettings';
-import { commands, type CustomTheme } from '../../../lib/bindings';
+import { type CustomTheme } from '../../../lib/bindings';
+import { useCustomTheme } from './useCustomThemes';
+
+const BUILTIN_THEME_IDS = new Set(['onyx', 'light', 'system']);
 
 /**
  * DynamicThemeInjector
@@ -10,40 +13,34 @@ import { commands, type CustomTheme } from '../../../lib/bindings';
 export const DynamicThemeInjector: React.FC = () => {
   const { settings } = useSettings();
   const theme = settings?.theme;
+  const isBuiltin = !theme || BUILTIN_THEME_IDS.has(theme);
+  const { data: customTheme, isError } = useCustomTheme(isBuiltin ? null : theme);
 
   useEffect(() => {
     const existingStyle = document.getElementById('dynamic-theme-style');
 
-    // Built-in themes don't need injection
-    if (theme === 'onyx' || theme === 'light' || theme === 'system') {
+    if (isBuiltin || isError) {
+      if (isError) {
+        console.error(`[DynamicTheme] Failed to load custom theme "${theme}"`);
+      }
       if (existingStyle) {
         existingStyle.innerHTML = '';
       }
       return;
     }
 
-    const loadAndInject = async () => {
-      try {
-        if (!theme) return;
-        const customTheme = await commands.loadCustomTheme(theme);
-        const css = generateThemeCss(customTheme);
+    if (!customTheme) {
+      return;
+    }
 
-        let styleTag = existingStyle as HTMLStyleElement;
-        if (!styleTag) {
-          styleTag = document.createElement('style');
-          styleTag.id = 'dynamic-theme-style';
-          document.head.appendChild(styleTag);
-        }
-        styleTag.innerHTML = css;
-      } catch (err) {
-        console.error(`[DynamicTheme] Failed to load custom theme "${theme}":`, err);
-        // Fallback or cleanup
-        if (existingStyle) existingStyle.innerHTML = '';
-      }
-    };
-
-    loadAndInject();
-  }, [theme]);
+    let styleTag = existingStyle as HTMLStyleElement | null;
+    if (!styleTag) {
+      styleTag = document.createElement('style');
+      styleTag.id = 'dynamic-theme-style';
+      document.head.appendChild(styleTag);
+    }
+    styleTag.innerHTML = generateThemeCss(customTheme);
+  }, [customTheme, isBuiltin, isError, theme]);
 
   return null;
 };

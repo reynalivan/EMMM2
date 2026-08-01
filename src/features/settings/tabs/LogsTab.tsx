@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../lib/bindings';
+import { formatAppError } from '../../../lib/appError';
 import { ExternalLink, RefreshCcw } from 'lucide-react';
 import { useToastStore } from '../../../stores/useToastStore';
 
@@ -23,35 +25,36 @@ function detectLevel(line: string): Exclude<LogLevel, 'ALL'> | null {
 export default function LogsTab() {
   const { t } = useTranslation(['settings', 'common']);
   const { addToast } = useToastStore();
-  const [isLoading, setIsLoading] = useState(false);
   const [level, setLevel] = useState<LogLevel>('ALL');
-  const [lines, setLines] = useState<string[]>([]);
 
-  const loadLogs = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const next = await commands.getLogs(300, null);
-      setLines(next);
-    } catch (error) {
-      console.error(error);
-      addToast('error', t('settings:logs.load_failed', { error: String(error) }));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addToast, t]);
+  // Logs are read on demand, so they are never cached across mounts.
+  const {
+    data: lines = [],
+    isFetching: isLoading,
+    error,
+    refetch: loadLogs,
+  } = useQuery<string[]>({
+    queryKey: ['app-logs'],
+    queryFn: () => commands.getLogs(300, null),
+    staleTime: 0,
+    gcTime: 0,
+  });
 
   const openLogFolder = async () => {
     try {
       await commands.openLogFolder();
     } catch (error) {
       console.error(error);
-      addToast('error', t('settings:logs.folder_failed', { error: String(error) }));
+      addToast('error', t('settings:logs.folder_failed', { error: formatAppError(error) }));
     }
   };
 
   useEffect(() => {
-    void loadLogs();
-  }, [loadLogs]);
+    if (error) {
+      console.error(error);
+      addToast('error', t('settings:logs.load_failed', { error: formatAppError(error) }));
+    }
+  }, [error, addToast, t]);
 
   const visibleLines = useMemo(() => {
     if (level === 'ALL') {
