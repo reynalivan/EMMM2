@@ -1,3 +1,4 @@
+use crate::common::sync::lock;
 use crate::domain::errors::AppError;
 use sqlx::SqlitePool;
 use std::sync::Mutex;
@@ -64,17 +65,11 @@ impl ConfigService {
 
     /// Resets the in-memory state to defaults. Should be called after a database reset.
     pub fn reset_to_default(&self) {
-        *self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = AppSettings::default();
+        *lock(&self.settings) = AppSettings::default();
     }
 
     pub fn get_settings(&self) -> AppSettings {
-        self.settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        lock(&self.settings).clone()
     }
 
     pub fn save_settings(&self, mut new_settings: AppSettings) -> Result<(), AppError> {
@@ -85,29 +80,18 @@ impl ConfigService {
         Self::run_async(async { Self::write_settings_to_db(&pool, &new_settings).await })?;
 
         // Update in-memory state
-        *self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = new_settings;
+        *lock(&self.settings) = new_settings;
         Ok(())
     }
 
     pub fn set_active_game(&self, game_id: Option<String>) -> Result<(), AppError> {
-        let mut settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let mut settings = lock(&self.settings).clone();
         settings.active_game_id = game_id;
         self.save_settings(settings)
     }
 
     pub fn set_auto_close_launcher(&self, enabled: bool) -> Result<(), AppError> {
-        let mut settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let mut settings = lock(&self.settings).clone();
         settings.auto_close_launcher = enabled;
         self.save_settings(settings)
     }

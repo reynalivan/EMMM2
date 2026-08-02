@@ -220,12 +220,14 @@ fn apply_disabled_prefix(dest_paths: Vec<String>) -> Vec<String> {
             continue;
         };
 
-        if folder_name.starts_with("DISABLED ") {
+        // The canonical matcher also covers the legacy `disabled_`/`Disabled-`
+        // spellings; a plain starts_with would prefix those a second time.
+        if crate::common::normalizer::is_disabled_folder(folder_name) {
             renamed_paths.push(dest_path);
             continue;
         }
 
-        let disabled_path = path.with_file_name(format!("DISABLED {folder_name}"));
+        let disabled_path = path.with_file_name(format!("{}{folder_name}", crate::DISABLED_PREFIX));
         match fs::rename(path, &disabled_path) {
             Ok(()) => renamed_paths.push(disabled_path.to_string_lossy().to_string()),
             Err(error) => {

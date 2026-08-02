@@ -1,3 +1,4 @@
+use crate::common::sync::lock;
 use crate::domain::errors::AppError;
 
 use super::pin_guard::{validate_pin_format, PinVerifyStatus};
@@ -57,11 +58,7 @@ impl ConfigService {
             .map_err(|e| AppError::Internal(e.to_string()))?
             .to_string();
 
-        let mut settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let mut settings = lock(&self.settings).clone();
         settings.safe_mode.pin_hash = Some(password_hash);
 
         self.save_settings(settings)?;
@@ -82,10 +79,7 @@ impl ConfigService {
         use sha2::{Digest, Sha256};
 
         let stored_hash = {
-            let settings = self
-                .settings
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let settings = lock(&self.settings);
             settings.safe_mode.recovery_code_hash.clone()
         };
 
@@ -106,11 +100,7 @@ impl ConfigService {
         }
 
         // Valid — clear PIN and recovery code
-        let mut settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let mut settings = lock(&self.settings).clone();
         settings.safe_mode.pin_hash = None;
         settings.safe_mode.recovery_code_hash = None;
         settings.safe_mode.failed_attempts = None;

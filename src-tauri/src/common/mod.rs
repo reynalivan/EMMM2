@@ -4,3 +4,4 @@ pub mod classifier;
 pub mod corridor_constants;
 pub mod normalizer;
 pub mod path_key;
+pub mod sync;

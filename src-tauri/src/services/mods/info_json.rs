@@ -125,12 +125,11 @@ pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, MetadataErro
         .ok_or_else(|| MetadataError::Validation("Invalid folder path".to_string()))?
         .to_string_lossy();
 
-    // Strip "DISABLED " prefix if present
-    let clean_name = folder_name
-        .strip_prefix("DISABLED ")
-        .unwrap_or(&folder_name);
+    // Canonical stripper: also handles the legacy `disabled_`/`Disabled-` forms
+    // that a literal prefix match would leave in the generated name.
+    let clean_name = crate::common::normalizer::normalize_display_name(&folder_name);
 
-    let info = ModInfo::from_folder_name(clean_name);
+    let info = ModInfo::from_folder_name(&clean_name);
 
     let json = serde_json::to_string_pretty(&info)
         .map_err(|e| MetadataError::Validation(format!("Failed to serialize info.json: {e}")))?;

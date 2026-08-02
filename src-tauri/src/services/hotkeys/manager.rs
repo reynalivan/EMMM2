@@ -10,11 +10,12 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
+use crate::common::sync::lock;
 use crate::services::config::ConfigService;
 
 use crate::services::keyviewer::generator::StatusFields;
@@ -46,15 +47,6 @@ pub fn parse_hotkey(key_str: &str) -> Result<String, String> {
 
 fn normalize_shortcut(key_str: &str) -> String {
     key_str.trim().replace(' ', "").to_ascii_lowercase()
-}
-
-/// A poisoned hotkey mutex only means some earlier handler panicked mid-update;
-/// the guarded state is still usable, so every lock here recovers rather than
-/// taking the whole manager down.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// `Some` for the two preset-cycling actions, `None` for everything else.

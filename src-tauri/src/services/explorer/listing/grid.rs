@@ -1,9 +1,47 @@
-use std::path::Path;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::common::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
+use crate::services::explorer::types::ConflictMember;
 
 use super::scan::{find_disabled_ancestor, scan_fs_folders};
+
+/// Case-insensitive child lookup: some volumes resolve paths case-sensitively
+/// even when the filesystem claims otherwise.
+fn find_child_by_name_key(parent: &Path, needle: &str) -> Option<PathBuf> {
+    std::fs::read_dir(parent)
+        .ok()?
+        .flatten()
+        .find(|entry| names_equal_by_key(&entry.file_name().to_string_lossy(), needle))
+        .map(|entry| entry.path())
+}
+
+/// Stable id for a conflict group, derived from where it lives plus its
+/// normalized base name so the same clash keeps the same id across listings.
+fn conflict_group_id(directory: &Path, base_key: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    directory.to_string_lossy().hash(&mut hasher);
+    base_key.hash(&mut hasher);
+    format!("cg_{:016x}", hasher.finish())
+}
+
+fn conflict_member_from_disk(path: &Path, folder_name: String, is_enabled: bool) -> ConflictMember {
+    let metadata = std::fs::metadata(path).ok();
+    ConflictMember {
+        path: path.to_string_lossy().to_string(),
+        folder_name,
+        is_enabled,
+        modified_at: metadata
+            .as_ref()
+            .and_then(|value| value.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0),
+        size_bytes: metadata.as_ref().map(|value| value.len()).unwrap_or(0),
+    }
+}
 
 pub async fn list_mod_folders_inner(
     mods_path: String,
@@ -59,31 +97,10 @@ pub async fn list_mod_folders_inner(
         target
     } else if let (Some(parent), Some(name)) = (target.parent(), target.file_name()) {
         let needle = name.to_string_lossy().to_string();
-        // Fallback 1: Case-insensitive match on exact name
-        let case_insensitive_match = std::fs::read_dir(parent)
-            .ok()
-            .and_then(|entries| {
-                entries
-                    .flatten()
-                    .find(|e| names_equal_by_key(&e.file_name().to_string_lossy(), &needle))
-            })
-            .map(|e| e.path());
-
-        if let Some(path) = case_insensitive_match {
-            path
-        } else {
-            // Fallback 2: Check for DISABLED prefix variant
-            let disabled_needle = format!("DISABLED {}", needle);
-            std::fs::read_dir(parent)
-                .ok()
-                .and_then(|entries| {
-                    entries.flatten().find(|e| {
-                        names_equal_by_key(&e.file_name().to_string_lossy(), &disabled_needle)
-                    })
-                })
-                .map(|e| e.path())
-                .unwrap_or(target)
-        }
+        let disabled_needle = format!("{}{}", crate::DISABLED_PREFIX, needle);
+        find_child_by_name_key(parent, &needle)
+            .or_else(|| find_child_by_name_key(parent, &disabled_needle))
+            .unwrap_or(target)
     } else {
         target
     };
@@ -146,13 +163,7 @@ pub async fn list_mod_folders_inner(
                 continue;
             }
         }
-        // Compute stable group_id from parent path + base_key
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        target.to_string_lossy().hash(&mut hasher);
-        base_key.hash(&mut hasher);
-        let group_id = format!("cg_{:016x}", hasher.finish());
-
+        let group_id = conflict_group_id(&target, base_key);
         let base_name = normalize_display_name(&folders[indices[0]].folder_name);
 
         let members: Vec<ConflictMember> = indices
@@ -218,47 +229,17 @@ pub async fn list_mod_folders_inner(
                     // Fall through without adding to conflicts.
                 } else {
                     // Found a REAL sibling conflict (same prefix state).
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    parent_dir.to_string_lossy().hash(&mut hasher);
-                    canonical_name_key(&self_base).hash(&mut hasher);
-                    let group_id = format!("cg_{:016x}", hasher.finish());
-
-                    let self_meta = std::fs::metadata(&target);
-                    let sibling_meta = std::fs::metadata(&sibling_path);
-
-                    let self_member = ConflictMember {
-                        path: target.to_string_lossy().to_string(),
-                        folder_name: self_name.clone(),
-                        is_enabled: !self_disabled,
-                        modified_at: self_meta
-                            .as_ref()
-                            .ok()
-                            .and_then(|m| m.modified().ok())
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0),
-                        size_bytes: self_meta.as_ref().ok().map(|m| m.len()).unwrap_or(0),
-                    };
-
-                    let sibling_member = ConflictMember {
-                        path: sibling_path.to_string_lossy().to_string(),
-                        folder_name: sibling_name.clone(),
-                        is_enabled: self_disabled, // opposite of self
-                        modified_at: sibling_meta
-                            .as_ref()
-                            .ok()
-                            .and_then(|m| m.modified().ok())
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0),
-                        size_bytes: sibling_meta.as_ref().ok().map(|m| m.len()).unwrap_or(0),
-                    };
-
                     conflicts.push(ConflictGroup {
-                        group_id,
+                        group_id: conflict_group_id(parent_dir, &canonical_name_key(&self_base)),
                         base_name: self_base,
-                        members: vec![self_member, sibling_member],
+                        members: vec![
+                            conflict_member_from_disk(&target, self_name.clone(), !self_disabled),
+                            conflict_member_from_disk(
+                                &sibling_path,
+                                sibling_name.clone(),
+                                self_disabled,
+                            ),
+                        ],
                     });
                 }
             }

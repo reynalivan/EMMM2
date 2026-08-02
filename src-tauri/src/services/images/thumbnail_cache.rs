@@ -240,64 +240,56 @@ impl ThumbnailCache {
         base_dir: &Path,
         valid_paths: &[String],
     ) -> Result<usize, String> {
-        fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
+        let keep_hashes: std::collections::HashSet<String> = valid_paths
+            .iter()
+            .map(|path| blake3::hash(path.as_bytes()).to_string())
+            .collect();
 
-        let mut keep_hashes = std::collections::HashSet::new();
-        for path in valid_paths {
-            let hash = blake3::hash(path.as_bytes()).to_string();
-            keep_hashes.insert(hash);
-        }
-
-        let mut deleted_count = 0;
-        let entries = fs::read_dir(base_dir).map_err(|e| e.to_string())?;
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            // Check if it's a webp file
-            if path.extension().is_some_and(|e| e == "webp") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    // It's a hash.webp. If hash not in keep_hashes, delete.
-                    if !keep_hashes.contains(stem) && fs::remove_file(&path).is_ok() {
-                        deleted_count += 1;
-                    }
-                }
-            }
-        }
-        Ok(deleted_count)
+        // A file whose stem is not readable is left alone rather than guessed at.
+        Self::remove_webp_entries(base_dir, |path| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_none_or(|stem| keep_hashes.contains(stem))
+        })
     }
 
     /// Prune thumbnails older than `max_age_days`.
     /// Returns number of deleted files.
     pub fn clear_old_cache(max_age_days: u64) -> Result<usize, String> {
-        let cache = Self::get_instance().lock().unwrap();
-        let base_dir = cache.base_dir.as_ref().ok_or("Cache not initialized")?;
-        fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
+        // Copy the directory out before walking it: holding the cache lock across
+        // a full directory scan would stall every concurrent L1 lookup.
+        let base_dir = {
+            let cache = Self::get_instance().lock().unwrap();
+            cache.base_dir.clone().ok_or("Cache not initialized")?
+        };
 
         let cutoff = SystemTime::now()
             .checked_sub(std::time::Duration::from_secs(max_age_days * 86400))
             .ok_or_else(|| "Failed to compute cutoff time".to_string())?;
 
-        let mut deleted_count = 0;
-        let entries = fs::read_dir(base_dir).map_err(|e| e.to_string())?;
+        // An unreadable timestamp is treated as "recent" so a stat failure never
+        // deletes a live thumbnail.
+        Self::remove_webp_entries(&base_dir, |path| {
+            fs::metadata(path)
+                .ok()
+                .and_then(|meta| meta.accessed().or_else(|_| meta.modified()).ok())
+                .is_none_or(|accessed| accessed >= cutoff)
+        })
+    }
 
-        for entry in entries.flatten() {
+    /// Removes every `.webp` in `base_dir` that `keep` rejects, returning the
+    /// number deleted. Non-files and other extensions are never touched.
+    fn remove_webp_entries(base_dir: &Path, keep: impl Fn(&Path) -> bool) -> Result<usize, String> {
+        fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
+
+        let mut deleted_count = 0;
+        for entry in fs::read_dir(base_dir).map_err(|e| e.to_string())?.flatten() {
             let path = entry.path();
-            if !path.is_file() {
+            if !path.is_file() || path.extension().is_none_or(|ext| ext != "webp") {
                 continue;
             }
-
-            if path.extension().is_some_and(|e| e == "webp") {
-                if let Ok(meta) = fs::metadata(&path) {
-                    if let Ok(accessed) = meta.accessed().or_else(|_| meta.modified()) {
-                        if accessed < cutoff && fs::remove_file(&path).is_ok() {
-                            deleted_count += 1;
-                        }
-                    }
-                }
+            if !keep(&path) && fs::remove_file(&path).is_ok() {
+                deleted_count += 1;
             }
         }
         Ok(deleted_count)
