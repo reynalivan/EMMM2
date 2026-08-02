@@ -1,19 +1,11 @@
+import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
 import { useShallow } from 'zustand/react/shallow';
 import { useBrowserStore } from '../../../stores/useBrowserStore';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useDownloads } from '../hooks/useDownloads';
 import { useTranslation } from 'react-i18next';
-import type { BrowserDownloadItem, DownloadStatus } from '../types';
+import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '../../../utils/formatters';
-
-const STATUS_BADGE: Record<DownloadStatus, { labelKey: string; cls: string }> = {
-  requested: { labelKey: 'downloads.status.queued', cls: 'badge-neutral' },
-  in_progress: { labelKey: 'downloads.status.downloading', cls: 'badge-info' },
-  finished: { labelKey: 'downloads.status.ready', cls: 'badge-success' },
-  failed: { labelKey: 'downloads.status.failed', cls: 'badge-error' },
-  canceled: { labelKey: 'downloads.status.canceled', cls: 'badge-warning' },
-  imported: { labelKey: 'downloads.status.imported', cls: 'badge-ghost' },
-};
 
 interface Props {
   onImportSelected: (ids: string[], gameId: string) => void;
@@ -207,7 +199,7 @@ interface RowProps {
 
 function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }: RowProps) {
   const { t } = useTranslation(['browser']);
-  const badge = STATUS_BADGE[item.status];
+  const badge = DOWNLOAD_STATUS_BADGE[item.status];
   const progress =
     item.bytes_total && item.bytes_total > 0
       ? Math.round((item.bytes_received / item.bytes_total) * 100)

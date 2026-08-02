@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   useApplyCollectionPreview,
   useApplyCollection,
@@ -10,6 +11,7 @@ import {
 } from '../hooks/useCollections';
 import { useAppStore } from '../../../stores/useAppStore';
 import { CollectionTreeView } from './CollectionTreeView';
+import type { PreviewTreeNode } from '../../../types/collection';
 import { ApplyCollectionActions } from './ApplyCollectionActions';
 import { extractMissingModsPayload, formatAppError } from '../../../lib/appError';
 import type { ApplyResult } from '../../../types/collection';
@@ -24,6 +26,63 @@ function SummaryStat({ label, value }: { label: string; value: number }) {
     <div className="rounded-xl border border-base-content/8 bg-base-300/20 px-3 py-2">
       <div className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">{label}</div>
       <div className="mt-1 text-sm font-semibold text-base-content/85">{value}</div>
+    </div>
+  );
+}
+
+interface StatePanelProps {
+  containerClass: string;
+  heading: string;
+  title: string;
+  titleClass: string;
+  summary: { active_root_count: number; enabled_object_count: number; object_count: number };
+  nodes?: PreviewTreeNode[];
+  colorClass: string;
+  emptyMessage: string;
+  t: TFunction;
+}
+
+/** One side of the before/after comparison. Both sides render identically. */
+function StatePanel({
+  containerClass,
+  heading,
+  title,
+  titleClass,
+  summary,
+  nodes,
+  colorClass,
+  emptyMessage,
+  t,
+}: StatePanelProps) {
+  return (
+    <div className={`flex-1 flex flex-col max-h-full overflow-hidden ${containerClass}`}>
+      <div className="p-4 bg-base-300/30 border-b border-base-content/5 shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-base-content/45">
+              {heading}
+            </div>
+            <div className={`mt-1 text-lg font-semibold ${titleClass}`}>{title}</div>
+          </div>
+          <SummaryStat
+            label={t('collections:apply.summary.mods', 'Active Roots')}
+            value={summary.active_root_count}
+          />
+        </div>
+      </div>
+      <div className="p-4 grid grid-cols-2 gap-3 border-b border-base-content/5 bg-base-100/30">
+        <SummaryStat
+          label={t('collections:apply.summary.objects_on', 'Objects On')}
+          value={summary.enabled_object_count}
+        />
+        <SummaryStat
+          label={t('collections:apply.summary.objects', 'Objects')}
+          value={summary.object_count}
+        />
+      </div>
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <CollectionTreeView nodes={nodes} colorClass={colorClass} emptyMessage={emptyMessage} />
+      </div>
     </div>
   );
 }
@@ -210,41 +269,17 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
             </div>
           ) : preview ? (
             <div className="flex w-full divide-x divide-base-content/5">
-              <div className="flex-1 flex flex-col max-h-full overflow-hidden bg-base-100/30">
-                <div className="p-4 bg-base-300/30 border-b border-base-content/5 shrink-0">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-base-content/45">
-                        {t('collections:apply.panels.before', 'Current State')}
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-base-content/85">
-                        {currentStateLabel}
-                      </div>
-                    </div>
-                    <SummaryStat
-                      label={t('collections:apply.summary.mods', 'Active Roots')}
-                      value={preview.current_projected_state.summary.active_root_count}
-                    />
-                  </div>
-                </div>
-                <div className="p-4 grid grid-cols-2 gap-3 border-b border-base-content/5 bg-base-100/30">
-                  <SummaryStat
-                    label={t('collections:apply.summary.objects_on', 'Objects On')}
-                    value={preview.current_projected_state.summary.enabled_object_count}
-                  />
-                  <SummaryStat
-                    label={t('collections:apply.summary.objects', 'Objects')}
-                    value={preview.current_projected_state.summary.object_count}
-                  />
-                </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                  <CollectionTreeView
-                    nodes={preview.current_tree_nodes}
-                    colorClass="text-error/70"
-                    emptyMessage={t('collections:apply.panels.empty_before')}
-                  />
-                </div>
-              </div>
+              <StatePanel
+                containerClass="bg-base-100/30"
+                heading={t('collections:apply.panels.before', 'Current State')}
+                title={currentStateLabel}
+                titleClass="text-base-content/85"
+                summary={preview.current_projected_state.summary}
+                nodes={preview.current_tree_nodes}
+                colorClass="text-error/70"
+                emptyMessage={t('collections:apply.panels.empty_before')}
+                t={t}
+              />
 
               <div className="flex items-center justify-center -mx-3 z-10 w-0">
                 <div className="w-8 h-8 rounded-full bg-base-300 border border-base-content/10 flex items-center justify-center shadow-lg text-base-content/50">
@@ -252,41 +287,17 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 </div>
               </div>
 
-              <div className="flex-1 flex flex-col max-h-full overflow-hidden bg-base-200/20">
-                <div className="p-4 bg-base-300/30 border-b border-base-content/5 shrink-0">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-base-content/45">
-                        {t('collections:apply.panels.after', 'Target State')}
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-primary">
-                        {preview.collection_name}
-                      </div>
-                    </div>
-                    <SummaryStat
-                      label={t('collections:apply.summary.mods', 'Active Roots')}
-                      value={preview.target_projected_state.summary.active_root_count}
-                    />
-                  </div>
-                </div>
-                <div className="p-4 grid grid-cols-2 gap-3 border-b border-base-content/5 bg-base-100/30">
-                  <SummaryStat
-                    label={t('collections:apply.summary.objects_on', 'Objects On')}
-                    value={preview.target_projected_state.summary.enabled_object_count}
-                  />
-                  <SummaryStat
-                    label={t('collections:apply.summary.objects', 'Objects')}
-                    value={preview.target_projected_state.summary.object_count}
-                  />
-                </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                  <CollectionTreeView
-                    nodes={preview.target_tree_nodes}
-                    colorClass="text-success/70"
-                    emptyMessage={t('collections:apply.panels.empty_after')}
-                  />
-                </div>
-              </div>
+              <StatePanel
+                containerClass="bg-base-200/20"
+                heading={t('collections:apply.panels.after', 'Target State')}
+                title={preview.collection_name}
+                titleClass="text-primary"
+                summary={preview.target_projected_state.summary}
+                nodes={preview.target_tree_nodes}
+                colorClass="text-success/70"
+                emptyMessage={t('collections:apply.panels.empty_after')}
+                t={t}
+              />
             </div>
           ) : null}
         </div>

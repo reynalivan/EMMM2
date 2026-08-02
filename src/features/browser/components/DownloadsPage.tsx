@@ -1,6 +1,8 @@
+import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
 import { useState } from 'react';
 import { useDownloads } from '../hooks/useDownloads';
-import { Download, PlayCircle, Trash2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Download, PlayCircle, Trash2 } from 'lucide-react';
+import type { DownloadStatus } from '../types';
 import { GamePickerModal } from './GamePickerModal';
 import { commands } from '../../../lib/bindings';
 import type { BrowserDownloadItem } from '../types';
@@ -29,33 +31,15 @@ export default function DownloadsPage() {
     }
   };
 
-  const renderStatus = (status: string) => {
-    switch (status) {
-      case 'in_progress':
-        return (
-          <span className="badge badge-info gap-1">
-            <RefreshCw size={12} className="animate-spin" /> {t('downloads.status.downloading')}
-          </span>
-        );
-      case 'finished':
-        return (
-          <span className="badge badge-success gap-1">
-            <CheckCircle2 size={12} /> {t('downloads.status.ready')}
-          </span>
-        );
-      case 'failed':
-        return (
-          <span className="badge badge-error gap-1">
-            <AlertCircle size={12} /> {t('downloads.status.failed')}
-          </span>
-        );
-      case 'canceled':
-        return <span className="badge badge-warning gap-1">{t('downloads.status.canceled')}</span>;
-      case 'imported':
-        return <span className="badge badge-ghost gap-1">{t('downloads.status.imported')}</span>;
-      default:
-        return <span className="badge badge-neutral gap-1">{t('downloads.status.queued')}</span>;
-    }
+  const renderStatus = (status: DownloadStatus) => {
+    const badge = DOWNLOAD_STATUS_BADGE[status] ?? DOWNLOAD_STATUS_BADGE.requested;
+    const Icon = badge.icon;
+    return (
+      <span className={`badge ${badge.cls} gap-1`}>
+        {Icon && <Icon size={12} className={badge.spin ? 'animate-spin' : undefined} />}
+        {t(badge.labelKey)}
+      </span>
+    );
   };
 
   return (
