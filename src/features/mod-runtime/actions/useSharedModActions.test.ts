@@ -13,7 +13,6 @@ const bulkFavoriteMutate = vi.fn();
 const renameMutateAsync = vi.fn();
 const deleteMutateAsync = vi.fn();
 const toggleSafeMutate = vi.fn();
-const moveModToObjectAndRefresh = vi.fn();
 const applyFolderDbSyncMatchAndRefresh = vi.fn();
 const matchObjectWithDb = vi.fn();
 const toastError = vi.fn();
@@ -91,7 +90,6 @@ vi.mock('../../workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
 }));
 
 vi.mock('../operations/sharedOperations', () => ({
-  moveModToObjectAndRefresh: (...args: unknown[]) => moveModToObjectAndRefresh(...args),
   applyFolderDbSyncMatchAndRefresh: (...args: unknown[]) =>
     applyFolderDbSyncMatchAndRefresh(...args),
 }));
@@ -166,7 +164,6 @@ describe('useSharedModActions', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
     });
     matchObjectWithDb.mockResolvedValue({ id: 'db-1', name: 'Alpha' });
-    moveModToObjectAndRefresh.mockResolvedValue(undefined);
     applyFolderDbSyncMatchAndRefresh.mockResolvedValue(undefined);
     renameMutateAsync.mockResolvedValue(undefined);
     deleteMutateAsync.mockResolvedValue(undefined);

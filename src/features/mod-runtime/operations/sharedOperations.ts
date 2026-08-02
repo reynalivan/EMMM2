@@ -1,3 +1,4 @@
+import type { MoveStatus } from '../../../types/mod';
 import type { QueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
@@ -34,31 +35,13 @@ export function parseMasterDb(dbJson: string): MasterDbEntry[] {
   }
 }
 
-export async function moveModToObjectAndRefresh(params: {
-  queryClient: QueryClient;
-  gameId: string;
-  folderPath: string;
-  targetObjectId: string;
-  status: 'disabled' | 'only-enable' | 'keep';
-  targetSubpath?: string | null;
-}): Promise<void> {
-  await moveModsToObjectAndRefresh({
-    queryClient: params.queryClient,
-    gameId: params.gameId,
-    folderPaths: [params.folderPath],
-    targetObjectId: params.targetObjectId,
-    targetSubpath: params.targetSubpath ?? null,
-    status: params.status,
-  });
-}
-
 export async function moveModsToObjectAndRefresh(params: {
   queryClient: QueryClient;
   gameId: string;
   folderPaths: string[];
   targetObjectId: string;
   targetSubpath: string | null;
-  status: 'disabled' | 'only-enable' | 'keep';
+  status: MoveStatus;
 }): Promise<void> {
   const result = await commands.moveModsToObject({
     game_id: params.gameId,

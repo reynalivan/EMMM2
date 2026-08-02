@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useFolderGridNav } from './useFolderGridNav';
@@ -11,6 +12,8 @@ import { useFolderGridSelection } from './useFolderGridSelection';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../../workspace-runtime/actions/workspaceActionAvailability';
 
 export function useFolderGrid() {
+  // Selector-scoped: a bare useAppStore() here re-runs the whole grid
+  // computation on any write to any slice.
   const {
     currentPath,
     gridSelection,
@@ -31,7 +34,29 @@ export function useFolderGrid() {
     togglePreview,
     setGridSelection,
     selectedObjectFolderPath,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((state) => ({
+      currentPath: state.currentPath,
+      gridSelection: state.gridSelection,
+      clearGridSelection: state.clearGridSelection,
+      setMobilePane: state.setMobilePane,
+      sortField: state.sortField,
+      sortOrder: state.sortOrder,
+      setSortField: state.setSortField,
+      setSortOrder: state.setSortOrder,
+      viewMode: state.viewMode,
+      setViewMode: state.setViewMode,
+      explorerSearchQuery: state.explorerSearchQuery,
+      setExplorerSearch: state.setExplorerSearch,
+      explorerSubPath: state.explorerSubPath,
+      explorerScrollOffset: state.explorerScrollOffset,
+      setExplorerScrollOffset: state.setExplorerScrollOffset,
+      isPreviewOpen: state.isPreviewOpen,
+      togglePreview: state.togglePreview,
+      setGridSelection: state.setGridSelection,
+      selectedObjectFolderPath: state.selectedObjectFolderPath,
+    })),
+  );
   const runtime = useWorkspaceRuntime();
   const { activeGame } = useActiveGame();
 
@@ -202,10 +227,6 @@ export function useFolderGrid() {
     currentAbsPath,
     handleOpenCurrentFolderInExplorer,
     handleToggleSelf,
-    duplicateWarning: actions.duplicateWarning,
-    handleDuplicateForceEnable: actions.handleDuplicateForceEnable,
-    handleDuplicateEnableOnly: actions.handleDuplicateEnableOnly,
-    handleDuplicateCancel: actions.handleDuplicateCancel,
     ...bulk,
     objects,
     isDragging,

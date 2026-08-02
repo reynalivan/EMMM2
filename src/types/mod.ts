@@ -19,3 +19,6 @@ export type SortOrder = 'asc' | 'desc';
 
 /** Explorer view mode. */
 export type ViewMode = 'grid' | 'list';
+
+/** What happens to a mod's enabled state when it is moved to another object. */
+export type MoveStatus = 'disabled' | 'only-enable' | 'keep';

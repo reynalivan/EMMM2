@@ -1,3 +1,4 @@
+import type { MoveStatus } from '../../../types/mod';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/object';
@@ -16,7 +17,7 @@ interface PreviewPanelModalsProps {
   handleMoveToObject: (
     folder: ModFolder,
     targetId: string,
-    status: 'disabled' | 'only-enable' | 'keep',
+    status: MoveStatus,
     targetSubpath?: string | null,
     targetModPaths?: string[],
   ) => Promise<void> | void;
@@ -98,7 +99,7 @@ export default function PreviewPanelModals({
           currentObjectId={objectId || undefined}
           onSubmit={async (
             targetId: string,
-            status: 'disabled' | 'only-enable' | 'keep',
+            status: MoveStatus,
             targetSubpath: string | null,
           ) => {
             if (!moveDialog.folder) return;

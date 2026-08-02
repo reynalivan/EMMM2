@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useCallback } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
@@ -6,10 +7,6 @@ import { usePasteThumbnail, useUpdateModThumbnail } from '../../../hooks/useFold
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { toast } from '../../../stores/useToastStore';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
   const { t } = useTranslation(['grid', 'preview', 'common']);
@@ -25,7 +22,7 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
     try {
       await commands.openInExplorer(activeGame.id, folder.path);
     } catch (error) {
-      toast.error(t('preview:errors.open_location_failed', { error: toErrorMessage(error) }));
+      toast.error(t('preview:errors.open_location_failed', { error: formatAppError(error) }));
     }
   }, [activeGame, folder.path, t]);
 
@@ -61,7 +58,7 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
       });
       toast.success(t('preview:gallery.thumbnail_pasted'));
     } catch (error) {
-      toast.error(t('preview:gallery.paste_error', { error: toErrorMessage(error) }));
+      toast.error(t('preview:gallery.paste_error', { error: formatAppError(error) }));
     }
   }, [folder.path, pasteThumbnail, t]);
 
@@ -82,7 +79,7 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
       });
       toast.success(t('preview:gallery.menu.thumbnail_imported'));
     } catch (error) {
-      toast.error(t('preview:gallery.import_error', { error: toErrorMessage(error) }));
+      toast.error(t('preview:gallery.import_error', { error: formatAppError(error) }));
     }
   }, [folder.path, t, updateModThumbnail]);
 

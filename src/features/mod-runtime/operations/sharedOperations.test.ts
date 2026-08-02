@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { moveModToObjectAndRefresh } from './sharedOperations';
+import { moveModsToObjectAndRefresh } from './sharedOperations';
 
 const moveModsToObject = vi.fn();
 const applyRuntimeEffects = vi.fn();
@@ -36,12 +36,13 @@ describe('shared mod runtime operations', () => {
     applyRuntimeMutationResult.mockResolvedValue(undefined);
   });
 
-  it('moves mod to object and publishes runtime refresh', async () => {
-    await moveModToObjectAndRefresh({
+  it('moves mods to object and publishes runtime refresh', async () => {
+    await moveModsToObjectAndRefresh({
       queryClient: {} as never,
       gameId: 'game-1',
-      folderPath: 'Mods/Diluc/mod-a',
+      folderPaths: ['Mods/Diluc/mod-a'],
       targetObjectId: 'object-2',
+      targetSubpath: null,
       status: 'disabled',
     });
 

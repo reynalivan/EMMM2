@@ -139,8 +139,8 @@ export default function FolderGridContent({
                         isRenaming={renamingId === folder.path}
                         onRenameSubmit={handleRenameSubmit}
                         onRenameCancel={handleRenameCancel}
-                        onRename={() => handleRenameRequest(folder)}
-                        onDelete={() => handleDeleteRequest(folder)}
+                        onRename={handleRenameRequest}
+                        onDelete={handleDeleteRequest}
                         isFocused={focusedId === folder.path}
                         selectionSize={gridSelection.size}
                         onBulkToggle={handleBulkToggle}
@@ -151,7 +151,7 @@ export default function FolderGridContent({
                         onBulkPin={handleBulkPin}
                         onBulkMoveToObject={handleBulkMoveToObject}
                         onOpenMoveDialog={openMoveDialog}
-                        onToggleSafe={() => handleToggleSafeRequest(folder)}
+                        onToggleSafe={handleToggleSafeRequest}
                         onSyncWithDb={handleSyncWithDb}
                         hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                         isLockedByParent={!!ancestorDisabledBy}
@@ -187,9 +187,7 @@ export default function FolderGridContent({
                   isSelected={gridSelection.has(folder.path)}
                   isActive={selectedModPath === folder.path}
                   onActivate={activateGridItem}
-                  toggleSelection={(id: string, multi: boolean, isShift?: boolean) =>
-                    toggleGridSelection(id, multi, isShift)
-                  }
+                  toggleSelection={toggleGridSelection}
                   onToggleEnabled={handleToggleEnabledGuarded}
                   selectionSize={gridSelection.size}
                   onBulkToggle={handleBulkToggle}
@@ -199,12 +197,12 @@ export default function FolderGridContent({
                   onBulkSafe={handleBulkSafe}
                   onBulkPin={handleBulkPin}
                   onBulkMoveToObject={handleBulkMoveToObject}
-                  onRename={() => handleRenameRequest(folder)}
-                  onDelete={() => handleDeleteRequest(folder)}
+                  onRename={handleRenameRequest}
+                  onDelete={handleDeleteRequest}
                   onToggleFavorite={handleToggleFavorite}
                   onEnableOnlyThis={handleEnableOnlyThis}
                   onOpenMoveDialog={openMoveDialog}
-                  onToggleSafe={() => handleToggleSafeRequest(folder)}
+                  onToggleSafe={handleToggleSafeRequest}
                   onSyncWithDb={handleSyncWithDb}
                   hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                   isSwitchPending={

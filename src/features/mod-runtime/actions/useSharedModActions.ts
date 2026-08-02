@@ -1,3 +1,5 @@
+import { formatAppError } from '../../../lib/appError';
+import type { MoveStatus } from '../../../types/mod';
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +33,17 @@ import {
   loadSharedModSyncMatch,
   runSharedModActiveContextToggle,
 } from './sharedModEffects';
+
+// Dialog open/close take no closure state, so they live at module scope and keep
+// a stable identity — these are spread into memoized card props.
+const closeMoveDialog = () => closeWorkspaceDialog('modMove');
+const closeSyncConfirm = () => closeWorkspaceDialog('modSync');
+const handleDuplicateCancel = () => closeWorkspaceDialog('modDuplicateWarning');
+const handleRenameCancel = () => closeWorkspaceDialog('modRename');
+const handleToggleSafeCancel = () => closeWorkspaceDialog('modPinSafe');
+const handleActiveContextCancel = () => closeWorkspaceDialog('modActiveContext');
+const handleRenameRequest = (folder: ModFolder) => openModDialog('modRename', { folder });
+const handleDeleteRequest = (folder: ModFolder) => openModDialog('modDelete', { folder });
 
 interface SharedModActionsOptions {
   onRenameSuccess?: () => void;
@@ -82,7 +95,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
             // gated on the management modal being open and refetches on open.
             await commands.ignoreObjectConflict(activeGame.id, duplicates[0].object_id, modIds);
           } catch (error) {
-            toast.error(t('folder_grid:duplicate_warning.ignore_failed', { error: String(error) }));
+            toast.error(t('folder_grid:duplicate_warning.ignore_failed', { error: formatAppError(error) }));
           }
         }
 
@@ -122,7 +135,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     async (
       folder: ModFolder,
       targetObjectId: string,
-      status: 'disabled' | 'only-enable' | 'keep',
+      status: MoveStatus,
       targetSubpath?: string | null,
       targetModPaths?: string[],
     ) => {
@@ -226,7 +239,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
         toast.success(t('objects:edit_modal.success_message', { name: folder.name }));
         closeWorkspaceDialog('modSync');
       } catch (error) {
-        toast.error(t('objects:edit_modal.error_message', { error: String(error) }));
+        toast.error(t('objects:edit_modal.error_message', { error: formatAppError(error) }));
       }
     },
     [activeGame, queryClient, state.syncConfirm.folder, t],
@@ -298,12 +311,11 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
       }
     } catch (error) {
       closeWorkspaceDialog('modActiveContext');
-      toast.error(t('objects:create_modal.error_message', { error: String(error) }));
+      toast.error(t('objects:create_modal.error_message', { error: formatAppError(error) }));
     }
   }, [
     activeGame,
     hasPin,
-    options,
     queryClient,
     resolvedSwitchSurface,
     safeMode,
@@ -325,26 +337,26 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     hasPin,
     setDeleteConfirm,
     openMoveDialog: (folder: ModFolder) => openModDialog('modMove', { folder }),
-    closeMoveDialog: () => closeWorkspaceDialog('modMove'),
-    closeSyncConfirm: () => closeWorkspaceDialog('modSync'),
+    closeMoveDialog,
+    closeSyncConfirm,
     handleToggleEnabled,
     handleDuplicateForceEnable,
     handleDuplicateEnableOnly,
-    handleDuplicateCancel: () => closeWorkspaceDialog('modDuplicateWarning'),
+    handleDuplicateCancel,
     handleEnableOnlyThis,
     handleToggleFavorite,
     handleMoveToObject,
-    handleRenameRequest: (folder: ModFolder) => openModDialog('modRename', { folder }),
+    handleRenameRequest,
     handleRenameSubmit,
-    handleRenameCancel: () => closeWorkspaceDialog('modRename'),
-    handleDeleteRequest: (folder: ModFolder) => openModDialog('modDelete', { folder }),
+    handleRenameCancel,
+    handleDeleteRequest,
     handleDeleteConfirm,
     handleSyncWithDb,
     handleApplySyncMatch,
     handleToggleSafeRequest,
     handleToggleSafeSubmit,
-    handleToggleSafeCancel: () => closeWorkspaceDialog('modPinSafe'),
-    handleActiveContextCancel: () => closeWorkspaceDialog('modActiveContext'),
+    handleToggleSafeCancel,
+    handleActiveContextCancel,
     handleActiveContextSubmit,
   };
 }

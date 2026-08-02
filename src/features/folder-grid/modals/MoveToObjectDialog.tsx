@@ -1,3 +1,5 @@
+import { formatAppError } from '../../../lib/appError';
+import type { MoveStatus } from '../../../types/mod';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Check, MoveRight, FolderTree } from 'lucide-react';
@@ -7,7 +9,6 @@ import { toast } from '../../../stores/useToastStore';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import type { ObjectSummary } from '../../../types/object';
 
-export type MoveStatus = 'keep' | 'disabled' | 'only-enable';
 
 interface MoveToObjectDialogProps {
   isOpen: boolean;
@@ -77,7 +78,7 @@ export default function MoveToObjectDialog({
       );
       onClose();
     } catch (error) {
-      toast.error(t('folder_grid:move.toast.failed', { error: String(error) }));
+      toast.error(t('folder_grid:move.toast.failed', { error: formatAppError(error) }));
     } finally {
       setIsSubmitting(false);
     }

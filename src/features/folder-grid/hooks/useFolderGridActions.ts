@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useCallback, useMemo } from 'react';
 import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
@@ -93,7 +94,7 @@ export function useFolderGridActions({
           object?.folder_path ?? objectId,
         );
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = formatAppError(error);
         toast.error(message);
         handleRefresh();
       }
@@ -109,7 +110,7 @@ export function useFolderGridActions({
     try {
       await commands.openInExplorer(activeGame.id, currentAbsPath);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = formatAppError(error);
       toast.error(message);
     }
   }, [activeGame, currentAbsPath]);

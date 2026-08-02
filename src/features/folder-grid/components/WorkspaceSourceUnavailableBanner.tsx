@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
 import { AlertTriangle, FolderSearch, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -45,7 +46,7 @@ export default function WorkspaceSourceUnavailableBanner({
     try {
       await reconcile();
     } catch (error) {
-      toast.error(t('grid:banners.source_action_failed', { error: String(error) }));
+      toast.error(t('grid:banners.source_action_failed', { error: formatAppError(error) }));
     } finally {
       setBusy(false);
     }
@@ -74,7 +75,7 @@ export default function WorkspaceSourceUnavailableBanner({
       await reconcile();
       toast.success(t('grid:banners.source_relocated'));
     } catch (error) {
-      toast.error(t('grid:banners.source_action_failed', { error: String(error) }));
+      toast.error(t('grid:banners.source_action_failed', { error: formatAppError(error) }));
     } finally {
       setBusy(false);
     }

@@ -5,6 +5,7 @@
  * and provides 3 resolution strategies: Keep Enabled, Keep Disabled, Separate.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../lib/bindings';
@@ -57,7 +58,7 @@ export default function ConflictResolveDialog() {
       );
       setDetails(result);
     } catch (err) {
-      toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
+      toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: formatAppError(err) }));
     } finally {
       setDetailsLoading(false);
     }
@@ -92,7 +93,7 @@ export default function ConflictResolveDialog() {
       toast.success(t('folder_grid:conflicts.toast.resolved'));
       closeWorkspaceDialog('conflict');
     } catch (err) {
-      toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: String(err) }));
+      toast.error(t('folder_grid:conflicts.toast.resolve_failed', { error: formatAppError(err) }));
     } finally {
       setLoading(false);
     }

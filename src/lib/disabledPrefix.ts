@@ -23,6 +23,18 @@ export function stripDisabledPrefix(name: string): string {
 }
 
 /**
+ * Deliberately looser than `stripDisabledPrefix`: it sanitizes what a user
+ * TYPES into a rename field, where `dis_`, `disable-` and `DISABLED ` are all
+ * plausible attempts at the same thing. Never use it to detect the canonical
+ * convention — `isDisabledName` stays strict so `distance_mod` is not a match.
+ */
+const TYPED_DISABLED_RE = /^(disabled|disable|dis)[_\-\s]+/i;
+
+export function stripTypedDisabledPrefix(value: string): string {
+  return value.replace(TYPED_DISABLED_RE, '');
+}
+
+/**
  * Apply or remove the DISABLED prefix from a folder path's basename.
  * Returns the updated full path (with `/` separators).
  */

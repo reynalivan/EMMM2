@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useRef, useEffect } from 'react';
 import { X, Trash2, ShieldAlert, Ghost, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -45,7 +46,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
       refetch();
       void applyRuntimeMutationResult(queryClient, ['workspaceStructure', 'conflictsOnly']);
     } catch (err) {
-      toast.error(t('ignore_management.toast_revoke_failed', { error: String(err) }));
+      toast.error(t('ignore_management.toast_revoke_failed', { error: formatAppError(err) }));
     }
   };
 

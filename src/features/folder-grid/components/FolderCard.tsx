@@ -1,3 +1,4 @@
+import { stripTypedDisabledPrefix } from '../../../lib/disabledPrefix';
 import { useState, memo, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ContextMenu } from '../../../components/ui/ContextMenu';
@@ -36,7 +37,7 @@ interface FolderCardProps {
   onBulkPin?: (pin: boolean) => void;
   onBulkMoveToObject?: () => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
-  onToggleSafe?: () => void;
+  onToggleSafe?: (folder: ModFolder) => void;
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
   /** True when an ancestor folder in the current path has DISABLED prefix */
@@ -185,7 +186,7 @@ function FolderCardInner({
             }
             onOpenMoveDialog={mutationsDisabled ? undefined : onOpenMoveDialog}
             onNavigate={onNavigate}
-            onToggleSafe={mutationsDisabled ? undefined : onToggleSafe}
+            onToggleSafe={mutationsDisabled ? undefined : () => onToggleSafe?.(folder)}
             onSyncWithDb={
               onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(folder) : undefined
             }
@@ -262,13 +263,7 @@ function FolderCardInner({
                 type="text"
                 className="input input-xs input-bordered w-full h-6 px-1 text-sm"
                 value={renameValue}
-                onChange={(e) => {
-                  let val = e.target.value;
-                  if (/^(disabled|disable|dis)[_\-\s]+/i.test(val)) {
-                    val = val.replace(/^(disabled|disable|dis)[_\-\s]+/i, '');
-                  }
-                  setRenameValue(val);
-                }}
+                onChange={(e) => setRenameValue(stripTypedDisabledPrefix(e.target.value))}
                 onKeyDown={handleRenameKeyDown}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={() => onRenameCancel?.()}

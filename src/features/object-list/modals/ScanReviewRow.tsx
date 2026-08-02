@@ -1,3 +1,4 @@
+import { stripTypedDisabledPrefix } from '../../../lib/disabledPrefix';
 import { useCallback, useRef, useState, type RefObject } from 'react';
 import { Check, ExternalLink, FolderOpen, Pencil, SkipForward, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -200,7 +201,7 @@ function RenameControls({
         ref={inputRef}
         className="input input-xs input-bordered w-full text-sm font-medium"
         value={value}
-        onChange={(event) => onChange(stripDisabledPrefix(event.target.value))}
+        onChange={(event) => onChange(stripTypedDisabledPrefix(event.target.value))}
         onKeyDown={(event) => {
           if (event.key === 'Enter') onCommit();
           if (event.key === 'Escape') onCancel();
@@ -275,6 +276,3 @@ function revealMatchedObject(
   commands.revealObjectInExplorer(activeGame.id, objectId, objectName).catch(console.error);
 }
 
-function stripDisabledPrefix(value: string): string {
-  return value.replace(/^(disabled|disable|dis)[_\-\s]+/i, '');
-}

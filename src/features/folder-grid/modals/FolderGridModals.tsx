@@ -1,3 +1,4 @@
+import type { MoveStatus } from '../../../types/mod';
 import type { ModFolder } from '../../../types/object';
 import MoveToObjectDialog from './MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
@@ -16,7 +17,7 @@ export interface FolderGridModalsProps {
   handleMoveToObject: (
     folder: ModFolder,
     targetId: string,
-    status: 'disabled' | 'only-enable' | 'keep',
+    status: MoveStatus,
     targetSubpath?: string | null,
     targetModPaths?: string[],
   ) => Promise<void> | void;
@@ -104,7 +105,7 @@ export default function FolderGridModals({
           objects={objects}
           onSubmit={async (
             targetId: string,
-            status: 'disabled' | 'only-enable' | 'keep',
+            status: MoveStatus,
             targetSubpath: string | null,
           ) => {
             if (!moveDialog.folder) return;

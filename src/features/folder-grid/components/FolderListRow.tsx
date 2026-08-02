@@ -31,7 +31,7 @@ interface FolderListRowProps {
   onRename?: (folder: ModFolder) => void;
   onDelete?: (folder: ModFolder) => void;
   onOpenMoveDialog?: (folder: ModFolder) => void;
-  onToggleSafe?: () => void;
+  onToggleSafe?: (folder: ModFolder) => void;
   onEnableOnlyThis?: (folder: ModFolder) => void;
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
@@ -109,7 +109,7 @@ function FolderListRowInner({
     onEnableOnlyThis:
       onEnableOnlyThis && !mutationsDisabled ? () => onEnableOnlyThis(item) : undefined,
     onOpenMoveDialog: mutationsDisabled ? undefined : onOpenMoveDialog,
-    onToggleSafe: mutationsDisabled ? undefined : onToggleSafe,
+    onToggleSafe: mutationsDisabled ? undefined : () => onToggleSafe?.(item),
     onSyncWithDb: onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(item) : undefined,
     onOpenExplorer: contextActions.openExplorer,
     onPasteThumbnail: mutationsDisabled ? undefined : contextActions.pasteThumbnailFromClipboard,
