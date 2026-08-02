@@ -5,8 +5,6 @@
 export const corridorKeys = {
   all: ['v2-corridor'] as const,
   state: (gameId: string) => [...corridorKeys.all, 'state', gameId] as const,
-  switchPreview: (gameId: string, currentSafe: boolean, targetSafe: boolean) =>
-    [...corridorKeys.all, 'switch-preview', gameId, currentSafe, targetSafe] as const,
 };
 
 export const collectionKeys = {

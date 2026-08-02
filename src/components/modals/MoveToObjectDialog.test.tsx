@@ -3,17 +3,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import MoveToObjectDialog from './MoveToObjectDialog';
-import type { ObjectSummary } from '../../../types/object';
+import type { ObjectSummary } from '../../types/object';
 
 vi.unmock('@tanstack/react-query');
 
 const listMoveTargetsForObject = vi.fn();
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: () => ({ activeGame: { id: 'g1' } }),
 }));
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../lib/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     listMoveTargetsForObject: (...args: unknown[]) => listMoveTargetsForObject(...args),

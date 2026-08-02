@@ -30,7 +30,7 @@ export function SaveCollectionModal({
   sourceCollectionId,
 }: SaveCollectionModalProps) {
   const { t } = useTranslation('collections');
-  const { activeGameId } = useAppStore();
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const [name, setName] = useState(buildDefaultCollectionName());
   const createMutation = useCreateCollection();
   const isSnapshotSave = saveMode === 'clone_snapshot';

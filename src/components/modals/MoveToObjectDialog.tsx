@@ -1,13 +1,13 @@
-import { formatAppError } from '../../../lib/appError';
-import type { MoveStatus } from '../../../types/mod';
+import { formatAppError } from '../../lib/appError';
+import type { MoveStatus } from '../../types/mod';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Check, MoveRight, FolderTree } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
-import { toast } from '../../../stores/useToastStore';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import type { ObjectSummary } from '../../../types/object';
+import { commands } from '../../lib/bindings';
+import { toast } from '../../stores/useToastStore';
+import { useActiveGame } from '../../hooks/useActiveGame';
+import type { ObjectSummary } from '../../types/object';
 
 
 interface MoveToObjectDialogProps {

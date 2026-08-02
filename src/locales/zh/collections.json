@@ -31,7 +31,8 @@
       "apply": "应用",
       "delete": "删除收藏集",
       "mod_count": "{{count}} 个 Mod"
-    }
+    },
+    "load_failed": "加载合集失败"
   },
   "preview": {
     "title": "收藏集预览",

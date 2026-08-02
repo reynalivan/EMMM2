@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useEffect, useMemo, useState } from 'react';
 import { validateKeyBinding } from '../keybindingValidator';
 import { toast } from '../../../stores/useToastStore';
@@ -13,10 +14,6 @@ import {
   useWorkspaceRuntimeSelector,
 } from '../../workspace-runtime/state/workspaceStoreBridge';
 import { usePreviewRuntime } from './usePreviewRuntime';
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function areFieldMapsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
   const leftKeys = Object.keys(left);
@@ -197,13 +194,12 @@ export function usePreviewPanelState() {
     }
 
     try {
-      for (const [fileName, lineUpdates] of updatesEntries) {
-        await writeModIni.mutateAsync({
-          folderPath: activePath,
-          fileName,
-          lineUpdates,
-        });
-      }
+      // Each entry targets a different ini file — write them concurrently.
+      await Promise.all(
+        updatesEntries.map(([fileName, lineUpdates]) =>
+          writeModIni.mutateAsync({ folderPath: activePath, fileName, lineUpdates }),
+        ),
+      );
 
       setInitialByField({ ...draftByField });
       setDraftByField({ ...draftByField });
@@ -211,7 +207,7 @@ export function usePreviewPanelState() {
       toast.success('INI editor saved.');
       return true;
     } catch (error) {
-      toast.error(`Cannot save INI: ${toErrorMessage(error)}`);
+      toast.error(`Cannot save INI: ${formatAppError(error)}`);
       return false;
     }
   };

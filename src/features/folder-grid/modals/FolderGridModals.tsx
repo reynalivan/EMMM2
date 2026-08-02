@@ -1,11 +1,11 @@
 import type { MoveStatus } from '../../../types/mod';
 import type { ModFolder } from '../../../types/object';
-import MoveToObjectDialog from './MoveToObjectDialog';
+import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import IgnoreManagementModal from './IgnoreManagementModal';
 import BulkTagModal from '../../../components/modals/BulkTagModal';
 import PinEntryModal from '../../safe-mode/PinEntryModal';
-import ActiveModContextDialog from './ActiveModContextDialog';
+import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
 import SyncConfirmModal from '../../../components/modals/SyncConfirmModal';
 import type { MatchedDbEntry } from '../../../lib/bindings';
 import type { ObjectSummary } from '../../../types/object';

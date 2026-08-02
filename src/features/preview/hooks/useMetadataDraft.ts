@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from '../../../stores/useToastStore';
 
@@ -36,10 +37,6 @@ const EMPTY_DRAFT: MetadataDraftValues = {
   version: '',
   description: '',
 };
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function useMetadataDraft({
   activePath,
@@ -99,7 +96,7 @@ export function useMetadataDraft({
       setSynced(await onSave(activePath, draft));
       toast.success('Metadata auto-saved.');
     } catch (error) {
-      toast.error(`Cannot save metadata: ${toErrorMessage(error)}`);
+      toast.error(`Cannot save metadata: ${formatAppError(error)}`);
     }
   }, [activePath, draft, metadataDirty, onSave]);
 

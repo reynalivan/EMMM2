@@ -222,6 +222,8 @@ export default function CollectionsPage() {
                 rows={rows}
                 selectedId={effectiveSelectedId}
                 isLoading={collections.isLoading}
+                isError={collections.isError}
+                error={collections.error}
                 onSelect={handleSelect}
                 onApply={handleApply}
                 onDelete={handleDelete}

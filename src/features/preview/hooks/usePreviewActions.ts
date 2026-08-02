@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useCallback, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
@@ -30,10 +31,6 @@ interface UsePreviewActionsOptions {
   clearPreviewImages: PreviewMutationLike<{
     folderPath: string;
   }>;
-}
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export function usePreviewActions({
@@ -101,7 +98,7 @@ export function usePreviewActions({
       await saveImageBytes(bytes);
       toast.success(t('preview:gallery.thumbnail_pasted'));
     } catch (error) {
-      toast.error(t('preview:gallery.paste_error', { error: toErrorMessage(error) }));
+      toast.error(t('preview:gallery.paste_error', { error: formatAppError(error) }));
     }
   }, [activePath, saveImageBytes, t]);
 
@@ -128,7 +125,7 @@ export function usePreviewActions({
         await saveImageBytes(bytes);
         toast.success(t('preview:gallery.menu.thumbnail_imported'));
       } catch (error) {
-        toast.error(t('preview:gallery.import_error', { error: toErrorMessage(error) }));
+        toast.error(t('preview:gallery.import_error', { error: formatAppError(error) }));
       }
     },
     [saveImageBytes, t],
@@ -157,7 +154,7 @@ export function usePreviewActions({
       setCurrentImageIndex((current) => Math.max(0, current - 1));
       toast.success(t('preview:gallery.thumbnail_removed'));
     } catch (error) {
-      toast.error(t('preview:gallery.remove_error', { error: toErrorMessage(error) }));
+      toast.error(t('preview:gallery.remove_error', { error: formatAppError(error) }));
     }
   }, [activePath, currentImagePath, removePreviewImage, setCurrentImageIndex, t]);
 
@@ -181,7 +178,7 @@ export function usePreviewActions({
       setCurrentImageIndex(0);
       toast.success(t('preview:gallery.all_thumbnails_cleared'));
     } catch (error) {
-      toast.error(t('preview:gallery.clear_all_error', { error: toErrorMessage(error) }));
+      toast.error(t('preview:gallery.clear_all_error', { error: formatAppError(error) }));
     }
   }, [activePath, clearPreviewImages, setCurrentImageIndex, t]);
 
@@ -226,7 +223,7 @@ export function usePreviewActions({
         await commands.openInExplorer(activeGameId, activePath);
       }
     } catch (error) {
-      toast.error(t('preview:errors.open_location_failed', { error: toErrorMessage(error) }));
+      toast.error(t('preview:errors.open_location_failed', { error: formatAppError(error) }));
     }
   }, [activeGameId, activePath, t]);
 

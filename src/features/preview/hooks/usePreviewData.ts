@@ -128,7 +128,7 @@ export function useAllModIniDocuments(folderPath?: string | null, files?: IniFil
       queryKey: detailsKeys.iniDocument(normalizedPath ?? '', file.filename),
       queryFn: () => commands.readModIni(gameId, normalizedPath ?? '', file.filename),
       enabled: !!normalizedPath && !!gameId,
-      staleTime: 0,
+      staleTime: 10_000,
     })),
   });
 }

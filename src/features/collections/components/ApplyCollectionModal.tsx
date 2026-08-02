@@ -11,7 +11,7 @@ import {
 import { useAppStore } from '../../../stores/useAppStore';
 import { CollectionTreeView } from './CollectionTreeView';
 import { ApplyCollectionActions } from './ApplyCollectionActions';
-import { extractMissingModsPayload } from '../../../lib/appError';
+import { extractMissingModsPayload, formatAppError } from '../../../lib/appError';
 import type { ApplyResult } from '../../../types/collection';
 
 interface ApplyCollectionModalProps {
@@ -30,7 +30,7 @@ function SummaryStat({ label, value }: { label: string; value: number }) {
 
 export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionModalProps) {
   const { t } = useTranslation(['collections', 'layout', 'common']);
-  const { activeGameId } = useAppStore();
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const [missingPaths, setMissingPaths] = useState<string[] | null>(null);
   const [result, setResult] = useState<ApplyResult | null>(null);
   const applyMutation = useApplyCollection();
@@ -88,9 +88,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
             <AlertTriangle size={20} /> {t('collections:apply.failed.title')}
           </h3>
           <p className="py-4 text-sm text-base-content/80">
-            {previewQuery.error instanceof Error
-              ? previewQuery.error.message
-              : String(previewQuery.error)}
+            {formatAppError(previewQuery.error)}
           </p>
           <div className="modal-action">
             <button className="btn btn-neutral" onClick={onClose}>

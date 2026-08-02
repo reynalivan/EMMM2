@@ -5,6 +5,7 @@
  * Uses v2 types directly — no intermediary transformation.
  */
 
+import ListStateView from '../../../components/ui/ListStateView';
 import { Layers, Trash2, Edit2, Check, X, PlayCircle, Loader2, Save } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +17,8 @@ interface CollectionListProps {
   rows: CollectionListRow[];
   selectedId: string | null;
   isLoading: boolean;
+  isError?: boolean;
+  error?: unknown;
   onSelect: (id: string) => void;
   onApply: (id: string, name: string) => void;
   onDelete: (id: string) => void;
@@ -29,6 +32,8 @@ export function CollectionList({
   rows,
   selectedId,
   isLoading,
+  isError = false,
+  error = null,
   onSelect,
   onApply,
   onDelete,
@@ -64,11 +69,14 @@ export function CollectionList({
     setEditingId(null);
   };
 
-  if (isLoading) {
+  if (isLoading || isError) {
     return (
-      <div className="flex items-center justify-center h-full text-base-content/50">
-        <Loader2 size={24} className="animate-spin" />
-      </div>
+      <ListStateView
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+        errorFallback={t('collections:list.load_failed')}
+      />
     );
   }
 

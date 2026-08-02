@@ -31,7 +31,8 @@
       "apply": "Apply",
       "delete": "Delete collection",
       "mod_count": "{{count}} mods"
-    }
+    },
+    "load_failed": "Failed to load collections"
   },
   "preview": {
     "title": "Collection Preview",

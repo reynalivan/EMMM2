@@ -31,7 +31,8 @@
       "apply": "Terapkan",
       "delete": "Hapus koleksi",
       "mod_count": "{{count}} mod"
-    }
+    },
+    "load_failed": "Gagal memuat koleksi"
   },
   "preview": {
     "title": "Pratinjau Koleksi",
