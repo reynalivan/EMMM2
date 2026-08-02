@@ -1,3 +1,5 @@
+use crate::services::config::ConfigService;
+use crate::services::fs_utils::guard::validate_dir_in_configured_roots;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::archive::{extract_archive, ArchiveFormat};
 use crate::services::mods::bulk::{BulkActionError, BulkProgressPayload, BulkResult};
@@ -11,10 +13,12 @@ pub async fn import_mods_from_paths(
     app: AppHandle,
     state: tauri::State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
+    config: State<'_, ConfigService>,
     paths: Vec<String>,
     target_dir: String,
 ) -> Result<BulkResult, String> {
     let _lock = op_lock.acquire().await.map_err(|e| e.to_string())?;
+    validate_dir_in_configured_roots(&config, &target_dir).map_err(|e| e.to_string())?;
     let total = paths.len();
 
     let _ = app.emit(
@@ -166,10 +170,12 @@ fn handle_archive_import(
 pub async fn ingest_dropped_folders(
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
+    config: State<'_, ConfigService>,
     paths: Vec<String>,
     mods_path: String,
 ) -> Result<Vec<String>, String> {
     let _lock = op_lock.acquire().await.map_err(|e| e.to_string())?;
+    validate_dir_in_configured_roots(&config, &mods_path).map_err(|e| e.to_string())?;
     ingest_dropped_folders_inner(&state, paths, mods_path).await
 }
 

@@ -1,4 +1,6 @@
 use crate::domain::errors::AppError;
+use crate::services::config::ConfigService;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::dedup::resolver::{
     ResolutionProgress, ResolutionRequest, ResolutionSummary,
@@ -14,8 +16,16 @@ pub async fn dup_resolve_batch(
     game_id: String,
     watcher_state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
+    config: State<'_, ConfigService>,
     db: State<'_, sqlx::SqlitePool>,
 ) -> Result<ResolutionSummary, AppError> {
+    // Every request path must stay inside this game's mods root before any
+    // trash move or hardlink touches the filesystem.
+    for request in &requests {
+        validate_path(&config, &game_id, &request.folder_a)?;
+        validate_path(&config, &game_id, &request.folder_b)?;
+    }
+
     let app_data_dir = app.path().app_data_dir().map_err(|error| {
         AppError::Internal(format!("Failed to get app data directory: {error}"))
     })?;

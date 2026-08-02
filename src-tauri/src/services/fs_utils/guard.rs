@@ -47,3 +47,39 @@ pub fn validate_path(
 
     Ok(canonical_candidate)
 }
+
+/// Validates that `candidate_path` is within the mods root of ANY configured
+/// game. For commands that receive a target directory without a game id
+/// (import/drop flows) — the invariant is that writes may only land inside a
+/// configured mods tree, whichever game it belongs to.
+pub fn validate_dir_in_configured_roots(
+    config: &ConfigService,
+    candidate_path: &str,
+) -> Result<PathBuf, AppError> {
+    let canonical_candidate = Path::new(candidate_path)
+        .canonicalize()
+        .map_err(|e| AppError::Security(format!("Path does not exist or invalid: {}", e)))?;
+
+    let settings = config.get_settings();
+    for game in &settings.games {
+        if game.mod_path.as_os_str().is_empty() {
+            continue;
+        }
+
+        let Ok(canonical_root) = game.mod_path.canonicalize() else {
+            continue;
+        };
+
+        if canonical_candidate.starts_with(&canonical_root) {
+            return Ok(canonical_candidate);
+        }
+    }
+
+    Err(AppError::Security(
+        "Security Violation: Target is outside every configured mods directory".to_string(),
+    ))
+}
+
+#[cfg(test)]
+#[path = "tests/guard_tests.rs"]
+mod tests;
