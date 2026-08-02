@@ -17,7 +17,7 @@ export function useFolderNavigation<T>({
   items,
   gridColumns,
   onNavigate,
-  onSelectionChange: _onSelectionChange,
+  onSelectionChange,
   onSelectAll,
   onDelete,
   onRename,
@@ -40,18 +40,23 @@ export function useFolderNavigation<T>({
 
       const currentIndex = items.findIndex((item) => getId(item) === focusedId);
       let nextIndex: number;
+      // Shift+Tab means "focus backwards", not "extend selection".
+      let extendsSelection = false;
 
       switch (e.key) {
         case 'ArrowRight':
           e.preventDefault();
+          extendsSelection = e.shiftKey;
           nextIndex = currentIndex === -1 ? 0 : Math.min(items.length - 1, currentIndex + 1);
           break;
         case 'ArrowLeft':
           e.preventDefault();
+          extendsSelection = e.shiftKey;
           nextIndex = currentIndex === -1 ? 0 : Math.max(0, currentIndex - 1);
           break;
         case 'ArrowDown':
           e.preventDefault();
+          extendsSelection = e.shiftKey;
           if (currentIndex === -1) {
             nextIndex = 0;
           } else {
@@ -60,6 +65,7 @@ export function useFolderNavigation<T>({
           break;
         case 'ArrowUp':
           e.preventDefault();
+          extendsSelection = e.shiftKey;
           if (currentIndex === -1) {
             nextIndex = items.length - 1;
           } else {
@@ -68,10 +74,12 @@ export function useFolderNavigation<T>({
           break;
         case 'Home':
           e.preventDefault();
+          extendsSelection = e.shiftKey;
           nextIndex = 0;
           break;
         case 'End':
           e.preventDefault();
+          extendsSelection = e.shiftKey;
           nextIndex = items.length - 1;
           break;
         case 'Enter':
@@ -119,6 +127,9 @@ export function useFolderNavigation<T>({
         const nextId = getId(nextItem);
         setFocusedId(nextId);
         onFocusChange?.(nextId);
+        if (extendsSelection) {
+          onSelectionChange?.(nextItem, false, true);
+        }
 
         // Scroll into view logic should happen in parent via onFocusChange
       } else if (currentIndex === -1 && items.length > 0) {
@@ -139,6 +150,7 @@ export function useFolderNavigation<T>({
       onRename,
       onSelectAll,
       onFocusChange,
+      onSelectionChange,
     ],
   );
 

@@ -87,6 +87,62 @@ describe('useFolderNavigation', () => {
     expect(defaultProps.onGoUp).toHaveBeenCalled();
   });
 
+  it('Shift+Arrow extends the selection to the newly focused item', () => {
+    const onSelectionChange = vi.fn();
+    const { result } = renderHook(() =>
+      useFolderNavigation({ ...defaultProps, onSelectionChange }),
+    );
+
+    act(() => {
+      result.current.setFocusedId(mockItems[2].path);
+    });
+
+    act(() => {
+      result.current.handleKeyDown(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true }),
+      );
+    });
+
+    expect(result.current.focusedId).toBe(mockItems[3].path);
+    expect(onSelectionChange).toHaveBeenCalledWith(mockItems[3], false, true);
+  });
+
+  it('plain Arrow moves focus without touching the selection', () => {
+    const onSelectionChange = vi.fn();
+    const { result } = renderHook(() =>
+      useFolderNavigation({ ...defaultProps, onSelectionChange }),
+    );
+
+    act(() => {
+      result.current.setFocusedId(mockItems[2].path);
+    });
+
+    act(() => {
+      result.current.handleKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    });
+
+    expect(result.current.focusedId).toBe(mockItems[3].path);
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('Shift+Tab moves focus backwards without extending the selection', () => {
+    const onSelectionChange = vi.fn();
+    const { result } = renderHook(() =>
+      useFolderNavigation({ ...defaultProps, onSelectionChange }),
+    );
+
+    act(() => {
+      result.current.setFocusedId(mockItems[2].path);
+    });
+
+    act(() => {
+      result.current.handleKeyDown(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }));
+    });
+
+    expect(result.current.focusedId).toBe(mockItems[1].path);
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
   it('F2 calls onRename', () => {
     const { result } = renderHook(() => useFolderNavigation(defaultProps));
 
