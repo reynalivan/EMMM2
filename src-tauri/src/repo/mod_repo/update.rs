@@ -62,6 +62,10 @@ pub async fn update_child_paths(
     update_child_paths_tx(&mut conn, game_id, old_prefix, new_prefix, mods_path).await
 }
 
+/// Rewrites every mod path nested under `old_prefix` to sit under `new_prefix`.
+/// Pass the bare folder paths: any trailing separator is stripped here and the
+/// rebuilt paths always use `/`, so calling this once per separator only repeats
+/// the same query.
 pub async fn update_child_paths_tx(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,

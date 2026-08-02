@@ -77,16 +77,14 @@ pub async fn toggle_object_root_service(
         &new_relative_path,
     )
     .await?;
-    for sep in ["\\", "/"] {
-        crate::repo::mod_repo::update_child_paths_tx(
-            &mut tx,
-            game_id,
-            &format!("{old_relative_path}{sep}"),
-            &format!("{new_relative_path}{sep}"),
-            Some(&mods_path),
-        )
-        .await?;
-    }
+    crate::repo::mod_repo::update_child_paths_tx(
+        &mut tx,
+        game_id,
+        &old_relative_path,
+        &new_relative_path,
+        Some(&mods_path),
+    )
+    .await?;
     crate::repo::mod_repo::update_status_and_reason_for_object(
         &mut tx,
         game_id,

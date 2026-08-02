@@ -78,22 +78,14 @@ async fn heal_object_root_path(
     )
     .await?;
 
-    for (old_sep, new_sep) in [
-        (
-            format!("{old_folder_path}\\"),
-            format!("{new_folder_path}\\"),
-        ),
-        (format!("{old_folder_path}/"), format!("{new_folder_path}/")),
-    ] {
-        crate::repo::mod_repo::update_child_paths(
-            pool,
-            game_id,
-            &old_sep,
-            &new_sep,
-            Some(mods_path),
-        )
-        .await?;
-    }
+    crate::repo::mod_repo::update_child_paths(
+        pool,
+        game_id,
+        old_folder_path,
+        new_folder_path,
+        Some(mods_path),
+    )
+    .await?;
 
     if crate::services::collection_service::classify_collection_path_transition(
         old_folder_path,

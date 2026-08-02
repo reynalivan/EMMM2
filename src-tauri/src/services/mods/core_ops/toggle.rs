@@ -76,18 +76,11 @@ pub(crate) async fn sync_object_and_child_paths(
     let _ =
         crate::repo::object_repo::update_object_folder_path(pool, game_id, old_rel, new_rel).await;
 
-    for sep in ["\\", "/"] {
-        if let Err(e) = crate::repo::mod_repo::update_child_paths(
-            pool,
-            game_id,
-            &format!("{old_rel}{sep}"),
-            &format!("{new_rel}{sep}"),
-            Some(mods_path),
-        )
-        .await
-        {
-            log::warn!("Failed to update child paths ({old_rel}{sep} -> {new_rel}{sep}): {e}");
-        }
+    if let Err(e) =
+        crate::repo::mod_repo::update_child_paths(pool, game_id, old_rel, new_rel, Some(mods_path))
+            .await
+    {
+        log::warn!("Failed to update child paths ({old_rel} -> {new_rel}): {e}");
     }
 }
 

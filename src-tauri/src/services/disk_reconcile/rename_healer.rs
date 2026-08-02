@@ -172,20 +172,15 @@ async fn apply_object_rename_hints(
         .await
         .map_err(|error| format!("Failed to update object folder path: {error}"))?;
 
-        for (old_sep, new_sep) in [
-            (format!("{old_folder}\\"), format!("{new_folder}\\")),
-            (format!("{old_folder}/"), format!("{new_folder}/")),
-        ] {
-            crate::repo::mod_repo::update_child_paths_tx(
-                &mut *conn,
-                game_id,
-                &old_sep,
-                &new_sep,
-                Some(mods_root),
-            )
-            .await
-            .map_err(|error| format!("Failed to update child paths: {error}"))?;
-        }
+        crate::repo::mod_repo::update_child_paths_tx(
+            &mut *conn,
+            game_id,
+            old_folder,
+            new_folder,
+            Some(mods_root),
+        )
+        .await
+        .map_err(|error| format!("Failed to update child paths: {error}"))?;
 
         let impact = crate::services::collection_service::handle_object_renamed_tx(
             &mut *conn, old_folder, new_folder,

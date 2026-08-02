@@ -96,8 +96,7 @@ pub async fn create_object_cmd_inner(
         }
         Err(e) => {
             cleanup_created_object_folder(&target_dir, created_folder);
-            let msg = e.to_string().to_lowercase();
-            if msg.contains("unique constraint failed") || msg.contains("idx_objects_game_name") {
+            if is_object_name_conflict(&e) {
                 Err(AppError::Db(format!(
                     "An object named '{}' already exists for this game.",
                     input.name.trim()
@@ -107,6 +106,13 @@ pub async fn create_object_cmd_inner(
             }
         }
     }
+}
+
+/// SQLite names the objects(game_id, name) unique index differently across
+/// versions; both spellings mean the same collision.
+fn is_object_name_conflict(error: &sqlx::Error) -> bool {
+    let message = error.to_string().to_lowercase();
+    message.contains("unique constraint failed") || message.contains("idx_objects_game_name")
 }
 
 fn validate_relative_object_folder(folder_path: &str) -> Result<(), AppError> {
@@ -124,15 +130,15 @@ fn validate_relative_object_folder(folder_path: &str) -> Result<(), AppError> {
         ));
     }
 
-    for component in path.components() {
-        match component {
-            std::path::Component::Normal(_) => {}
-            _ => {
-                return Err(AppError::Validation(
-                    "Object folder path contains invalid components".to_string(),
-                ));
-            }
-        }
+    // Anything but plain names — `..`, a root, a drive prefix — could escape the
+    // mods tree once joined onto it.
+    if !path
+        .components()
+        .all(|component| matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(AppError::Validation(
+            "Object folder path contains invalid components".to_string(),
+        ));
     }
 
     Ok(())
@@ -180,16 +186,10 @@ pub async fn update_object(
             }
             Ok(())
         }
-        Err(e) => {
-            let msg = e.to_string().to_lowercase();
-            if msg.contains("unique constraint failed") || msg.contains("idx_objects_game_name") {
-                Err(AppError::Db(
-                    "An object with that name already exists.".to_string(),
-                ))
-            } else {
-                Err(e.into())
-            }
-        }
+        Err(e) if is_object_name_conflict(&e) => Err(AppError::Db(
+            "An object with that name already exists.".to_string(),
+        )),
+        Err(e) => Err(e.into()),
     }
 }
 /// Delete an object: move its folder to trash, cascade-delete child mods, then remove the DB record.

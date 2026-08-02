@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -46,6 +46,24 @@ pub fn parse_hotkey(key_str: &str) -> Result<String, String> {
 
 fn normalize_shortcut(key_str: &str) -> String {
     key_str.trim().replace(' ', "").to_ascii_lowercase()
+}
+
+/// A poisoned hotkey mutex only means some earlier handler panicked mid-update;
+/// the guarded state is still usable, so every lock here recovers rather than
+/// taking the whole manager down.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// `Some` for the two preset-cycling actions, `None` for everything else.
+fn preset_cycle_direction(action: HotkeyAction) -> Option<CycleDirection> {
+    match action {
+        HotkeyAction::NextPreset => Some(CycleDirection::Next),
+        HotkeyAction::PrevPreset => Some(CycleDirection::Previous),
+        _ => None,
+    }
 }
 
 // ─── Registration Map ────────────────────────────────────────────────────────
@@ -110,8 +128,8 @@ impl HotkeyManager {
             key_map.insert(shortcut.clone(), *action);
         }
 
-        *self.key_map.lock().unwrap_or_else(|p| p.into_inner()) = key_map;
-        *self.enabled.lock().unwrap_or_else(|p| p.into_inner()) = true;
+        *lock(&self.key_map) = key_map;
+        *lock(&self.enabled) = true;
 
         log::info!("Registered {} global shortcuts", entries.len());
 
@@ -125,8 +143,8 @@ impl HotkeyManager {
             .unregister_all()
             .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
 
-        *self.key_map.lock().unwrap_or_else(|p| p.into_inner()) = HashMap::new();
-        *self.enabled.lock().unwrap_or_else(|p| p.into_inner()) = false;
+        *lock(&self.key_map) = HashMap::new();
+        *lock(&self.enabled) = false;
 
         log::info!("Unregistered all global shortcuts");
 
@@ -147,47 +165,36 @@ impl HotkeyManager {
         }
 
         // Update cooldown
-        self.state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .update_cooldown(config.cooldown_ms);
+        lock(&self.state).update_cooldown(config.cooldown_ms);
 
         Ok(())
     }
 
     /// Check if the manager is currently enabled and listening.
     pub fn is_enabled(&self) -> bool {
-        *self.enabled.lock().unwrap_or_else(|p| p.into_inner())
+        *lock(&self.enabled)
     }
 
     #[cfg(test)]
     pub fn set_enabled_for_test(&self, enabled: bool) {
-        *self.enabled.lock().unwrap_or_else(|p| p.into_inner()) = enabled;
+        *lock(&self.enabled) = enabled;
     }
 
     /// Look up which action corresponds to a shortcut string.
     pub fn lookup_action(&self, shortcut: &str) -> Option<HotkeyAction> {
-        self.key_map
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+        lock(&self.key_map)
             .get(&normalize_shortcut(shortcut))
             .copied()
     }
 
     /// Try to acquire the action lock (debounce + switch_lock).
     pub fn try_acquire(&self) -> bool {
-        self.state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .try_acquire()
+        lock(&self.state).try_acquire()
     }
 
     /// Release the action lock after an action completes.
     pub fn release(&self) {
-        self.state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .release();
+        lock(&self.state).release();
     }
 
     /// Called by plugin event handler when a shortcut is pressed.
@@ -214,7 +221,7 @@ impl HotkeyManager {
         if !focus::is_active_game_focused(&settings) {
             return;
         }
-        if matches!(action, HotkeyAction::NextPreset | HotkeyAction::PrevPreset) {
+        if let Some(direction) = preset_cycle_direction(action) {
             if !self.try_acquire() {
                 log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
                 return;
@@ -222,17 +229,7 @@ impl HotkeyManager {
 
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                let result = match action {
-                    HotkeyAction::NextPreset => {
-                        execute_cycle_preset(&app_handle, CycleDirection::Next).await
-                    }
-                    HotkeyAction::PrevPreset => {
-                        execute_cycle_preset(&app_handle, CycleDirection::Previous).await
-                    }
-                    _ => unreachable!("guarded by matches!"),
-                };
-
-                match result {
+                match execute_cycle_preset(&app_handle, direction).await {
                     Ok(summary) => log::info!("Hotkey {:?} → {}", action, summary),
                     Err(e) => log::error!("Preset cycle hotkey {:?} failed: {e}", action),
                 }
@@ -271,27 +268,17 @@ impl HotkeyManager {
         }
 
         let result = match action {
-            HotkeyAction::NextPreset => {
-                match actions::resolve_next_preset(
-                    available_presets,
-                    current_preset,
-                    CycleDirection::Next,
-                ) {
-                    Some(next) => actions::plan_cycle_preset(&next, safe_mode),
+            HotkeyAction::NextPreset | HotkeyAction::PrevPreset => {
+                let direction = if action == HotkeyAction::NextPreset {
+                    CycleDirection::Next
+                } else {
+                    CycleDirection::Previous
+                };
+                match actions::resolve_next_preset(available_presets, current_preset, direction) {
+                    Some(target) => actions::plan_cycle_preset(&target, safe_mode),
                     None => actions::plan_noop(action, "No presets available", safe_mode),
                 }
             }
-            HotkeyAction::PrevPreset => {
-                match actions::resolve_next_preset(
-                    available_presets,
-                    current_preset,
-                    CycleDirection::Previous,
-                ) {
-                    Some(prev) => actions::plan_cycle_preset(&prev, safe_mode),
-                    None => actions::plan_noop(action, "No presets available", safe_mode),
-                }
-            }
-
             HotkeyAction::ToggleOverlay => {
                 // Overlay toggle is handled directly by 3DMigoto INI — no backend work needed.
                 // Just emit the event status for logging purposes.
