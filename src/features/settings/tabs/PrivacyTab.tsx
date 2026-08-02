@@ -6,7 +6,7 @@ import { useSettings } from '../../../hooks/useSettings';
 import PinModal from '../modals/PinModal';
 import { useToastStore } from '../../../stores/useToastStore';
 import { commands } from '../../../lib/bindings';
-import RecoveryCodeModal from '../../safe-mode/RecoveryCodeModal';
+import RecoveryCodeModal from '../../../components/modals/RecoveryCodeModal';
 
 type SafeModePendingAction = (() => Promise<void>) | null;
 

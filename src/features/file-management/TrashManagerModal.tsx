@@ -3,8 +3,9 @@
  * Uses native <dialog> with DaisyUI modal styling (consistent with ConfirmDialog).
  */
 
+import { useDialogSync } from '../../hooks/useDialogSync';
 import { formatAppError } from '../../lib/appError';
-import { useRef, useEffect, useMemo } from 'react';
+import { useRef, useMemo } from 'react';
 import { Trash2, RotateCcw, Loader2, FolderOpen, Clock, HardDrive, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useRestoreMod } from '../../hooks/useFolderCoreMutations';
@@ -36,12 +37,7 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
     }
   };
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
-  }, [open]);
+  useDialogSync(dialogRef, open);
 
   // Sort by newest first
   const sortedItems = useMemo(

@@ -7,7 +7,7 @@ import {
   BUILTIN_THEMES,
   normalizeThemeSetting,
   type ThemeSetting,
-} from '../theme/themeOptions';
+} from '../../../lib/themeOptions';
 import { useTranslation } from 'react-i18next';
 import { useCustomThemes } from '../theme/useCustomThemes';
 import { commands, type CustomTheme } from '../../../lib/bindings';

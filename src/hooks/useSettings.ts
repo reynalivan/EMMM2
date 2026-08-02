@@ -3,7 +3,7 @@ import { commands } from '../lib/bindings';
 import type { AppSettings, AiConfig, PinVerifyStatus } from '../types/settings';
 import type { GameConfig } from '../types/game';
 import { useToastStore } from '../stores/useToastStore';
-import { normalizeThemeSetting, type ThemeSetting } from '../features/settings/theme/themeOptions';
+import { normalizeThemeSetting, type ThemeSetting } from '../lib/themeOptions';
 import i18n from '../lib/i18n';
 import { useTranslation } from 'react-i18next';
 import { publishQueryScopes } from '../features/runtime-sync/queryRefresh';

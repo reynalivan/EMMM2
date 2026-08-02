@@ -4,7 +4,7 @@ import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import IgnoreManagementModal from './IgnoreManagementModal';
 import BulkTagModal from '../../../components/modals/BulkTagModal';
-import PinEntryModal from '../../safe-mode/PinEntryModal';
+import PinEntryModal from '../../../components/modals/PinEntryModal';
 import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
 import SyncConfirmModal from '../../../components/modals/SyncConfirmModal';
 import type { MatchedDbEntry } from '../../../lib/bindings';

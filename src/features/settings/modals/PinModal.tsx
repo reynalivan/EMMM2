@@ -1,3 +1,4 @@
+import { useDialogSync } from '../../../hooks/useDialogSync';
 import { useState, useEffect, useRef } from 'react';
 import { X, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -26,13 +27,7 @@ export default function PinModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      dialogRef.current?.showModal();
-    } else {
-      dialogRef.current?.close();
-    }
-  }, [isOpen]);
+  useDialogSync(dialogRef, isOpen);
 
   // Reset state when modal opens
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);

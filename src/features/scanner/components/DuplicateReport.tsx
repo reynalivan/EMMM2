@@ -14,7 +14,7 @@ import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
 import { toast } from '../../../stores/useToastStore';
 import { useSettings } from '../../../hooks/useSettings';
-import PinEntryModal from '../../safe-mode/PinEntryModal';
+import PinEntryModal from '../../../components/modals/PinEntryModal';
 import { useTranslation } from 'react-i18next';
 
 interface Props {

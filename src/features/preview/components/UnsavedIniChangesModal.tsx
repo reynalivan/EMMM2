@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useDialogSync } from '../../../hooks/useDialogSync';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export interface IniChange {
@@ -42,16 +43,7 @@ export default function UnsavedIniChangesModal({
   const iniFields = changedIniFields ?? [];
   const metadataFields = changedMetadataFields ?? [];
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
+  useDialogSync(dialogRef, open);
 
   const hasChanges = iniFields.length > 0 || metadataFields.length > 0;
 

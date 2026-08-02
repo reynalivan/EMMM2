@@ -1,5 +1,6 @@
+import { useDialogSync } from '../../../hooks/useDialogSync';
 import { formatAppError } from '../../../lib/appError';
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { X, Trash2, ShieldAlert, Ghost, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
@@ -26,17 +27,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
     enabled: open && !!activeGameId,
   });
 
-  useEffect(() => {
-    if (open) {
-      if (dialogRef.current && !dialogRef.current.open) {
-        dialogRef.current.showModal();
-      }
-    } else {
-      if (dialogRef.current && dialogRef.current.open) {
-        dialogRef.current.close();
-      }
-    }
-  }, [open]);
+  useDialogSync(dialogRef, open);
 
   const handleRevoke = async (objectId: string) => {
     if (!activeGameId) return;

@@ -6,7 +6,7 @@ import type { DuplicateInfo } from '../../../types/scanner';
 import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import DuplicateWarningModal from './DuplicateWarningModal';
-import PinEntryModal from '../../safe-mode/PinEntryModal';
+import PinEntryModal from '../../../components/modals/PinEntryModal';
 import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
 import type { ObjectSummary } from '../../../types/object';
 

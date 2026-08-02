@@ -1,3 +1,4 @@
+import { useDialogSync } from '../../../hooks/useDialogSync';
 import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -62,13 +63,7 @@ export default function GameFormModal({
 
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      dialogRef.current?.showModal();
-    } else {
-      dialogRef.current?.close();
-    }
-  }, [isOpen]);
+  useDialogSync(dialogRef, isOpen);
 
   const modPathField = register('mod_path', {
     validate: (value) => {

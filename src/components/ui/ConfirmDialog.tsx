@@ -3,7 +3,8 @@
  * Covers: NC-3.3-02 (Delete non-empty folder prompt)
  */
 
-import { useRef, useEffect } from 'react';
+import { useDialogSync } from '../../hooks/useDialogSync';
+import { useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -31,16 +32,7 @@ export default function ConfirmDialog({
   const { t } = useTranslation(['common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
+  useDialogSync(dialogRef, open);
 
   return (
     <dialog ref={dialogRef} className="modal modal-bottom sm:modal-middle" onClose={onCancel}>

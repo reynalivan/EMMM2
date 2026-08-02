@@ -1,5 +1,6 @@
+import { useDialogSync } from '../../hooks/useDialogSync';
 import { AlertTriangle, Folder, X } from 'lucide-react';
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ConflictInfo } from '../../types/scanner';
 
@@ -13,12 +14,7 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
   const { t } = useTranslation(['scanner', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
-  }, [open]);
+  useDialogSync(dialogRef, open);
 
   return (
     <dialog ref={dialogRef} className="modal bg-overlay-mask backdrop-blur-sm" onClose={onClose}>

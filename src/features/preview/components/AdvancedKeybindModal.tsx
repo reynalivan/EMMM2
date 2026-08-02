@@ -1,3 +1,4 @@
+import { useDialogSync } from '../../../hooks/useDialogSync';
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Keyboard, Check, X, Lightbulb } from 'lucide-react';
@@ -39,17 +40,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // Handle modal open/close
-  useEffect(() => {
-    if (isOpen) {
-      if (dialogRef.current && !dialogRef.current.open) {
-        dialogRef.current.showModal();
-      }
-    } else {
-      if (dialogRef.current && dialogRef.current.open) {
-        dialogRef.current.close();
-      }
-    }
-  }, [isOpen]);
+  useDialogSync(dialogRef, isOpen);
 
   // Focus the overlay when listening
   useEffect(() => {
