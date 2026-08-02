@@ -4,6 +4,7 @@
  * Covers: TC-9.5-01, TC-9.5-02, TC-9.5-03 (UI presentation and user actions)
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
 import { AlertCircle, Loader2, ShieldOff, Lock } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
@@ -71,7 +72,7 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
           toast.success(t('scanner:report.toast.actions_applied'));
         },
         onError: (err) => {
-          toast.error(t('scanner:report.toast.action_failed', { error: String(err) }));
+          toast.error(t('scanner:report.toast.action_failed', { error: formatAppError(err) }));
         },
       },
     );
@@ -98,7 +99,7 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
         <AlertCircle className="w-5 h-5" />
         <div>
           <h3 className="font-bold">{t('scanner:report.error_title')}</h3>
-          <div className="text-xs">{String(error)}</div>
+          <div className="text-xs">{formatAppError(error)}</div>
         </div>
       </div>
     );

@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { RefreshCw, Download, CheckCircle, AlertTriangle, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppUpdater } from '../hooks/useAppUpdater';
@@ -44,7 +45,7 @@ export default function UpdateTab() {
         }
       },
       onError: (err) => {
-        addToast('error', t('settings:update.sync_failed', { error: String(err) }));
+        addToast('error', t('settings:update.sync_failed', { error: formatAppError(err) }));
       },
     });
   };

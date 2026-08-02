@@ -1,3 +1,4 @@
+import { formatAppError } from '../../lib/appError';
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../../hooks/useSettings';
@@ -84,7 +85,7 @@ export default function PinEntryModal({
         setPin('');
       }
     } catch (err) {
-      setErrorMsg(String(err));
+      setErrorMsg(formatAppError(err));
     }
   };
 
@@ -105,7 +106,7 @@ export default function PinEntryModal({
         setRecoveryError(t('safe_mode:recovery.error.invalid'));
       }
     } catch (err) {
-      setRecoveryError(String(err));
+      setRecoveryError(formatAppError(err));
     }
   };
 

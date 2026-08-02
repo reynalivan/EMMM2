@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { listen } from '@tauri-apps/api/event';
@@ -28,6 +29,8 @@ export function BrowserPage() {
   const [importIds, setImportIds] = useState<string[]>([]);
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
 
+  // Selector-scoped: the browser store also holds persisted settings, so a
+  // bare call re-renders this page whenever any of those change.
   const {
     openDownloadPanel,
     isDownloadPanelOpen,
@@ -36,7 +39,17 @@ export function BrowserPage() {
     addTab,
     removeTab,
     setActiveTab,
-  } = useBrowserStore();
+  } = useBrowserStore(
+    useShallow((state) => ({
+      openDownloadPanel: state.openDownloadPanel,
+      isDownloadPanelOpen: state.isDownloadPanelOpen,
+      tabs: state.tabs,
+      activeTabId: state.activeTabId,
+      addTab: state.addTab,
+      removeTab: state.removeTab,
+      setActiveTab: state.setActiveTab,
+    })),
+  );
 
   // Native webviews always paint above the DOM, so any overlay that must sit
   // on top of the page content requires hiding them while it's open.

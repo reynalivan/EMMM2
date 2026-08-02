@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useState, useCallback } from 'react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
@@ -21,7 +22,7 @@ export function useAppUpdater() {
       const found = await check();
       setUpdate(found);
     } catch (e) {
-      setError(String(e));
+      setError(formatAppError(e));
     } finally {
       setIsChecking(false);
     }
@@ -51,7 +52,7 @@ export function useAppUpdater() {
       // Restart the app after install
       await relaunch();
     } catch (e) {
-      setError(String(e));
+      setError(formatAppError(e));
       setIsInstalling(false);
     }
   }, [update]);

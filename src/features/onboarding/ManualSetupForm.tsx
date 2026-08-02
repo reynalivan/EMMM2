@@ -1,3 +1,4 @@
+import { formatAppError } from '../../lib/appError';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
@@ -58,7 +59,7 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
       const game = await commands.addGameManual(data.gameType, data.path);
       onSuccess(game);
     } catch (err) {
-      setServerError(String(err));
+      setServerError(formatAppError(err));
     } finally {
       setIsSubmitting(false);
     }

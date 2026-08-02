@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useBrowserStore } from '../../../stores/useBrowserStore';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useDownloads } from '../hooks/useDownloads';
@@ -27,7 +28,16 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
     toggleSelectDownload,
     selectAll,
     clearSelection,
-  } = useBrowserStore();
+  } = useBrowserStore(
+    useShallow((state) => ({
+      isDownloadPanelOpen: state.isDownloadPanelOpen,
+      closeDownloadPanel: state.closeDownloadPanel,
+      selectedDownloadIds: state.selectedDownloadIds,
+      toggleSelectDownload: state.toggleSelectDownload,
+      selectAll: state.selectAll,
+      clearSelection: state.clearSelection,
+    })),
+  );
 
   const { downloads, deleteDownload, cancelDownload, clearImported } = useDownloads();
 

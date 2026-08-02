@@ -17,7 +17,7 @@ const IDLE_PROGRESS: DedupScanProgress = {
 
 export default function StorageOptimizerPage() {
   const { t } = useTranslation(['scanner']);
-  const { setWorkspaceView } = useAppStore();
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const { activeGame } = useActiveGame();
   const startScan = useStartDedupScan();
   const cancelScan = useCancelDedupScan();

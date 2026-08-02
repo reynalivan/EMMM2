@@ -1,3 +1,4 @@
+import { formatAppError } from '../../lib/appError';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../lib/bindings';
@@ -59,7 +60,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
         setError(t('randomizer.no_eligible'));
       }
     } catch (e) {
-      setError(String(e));
+      setError(formatAppError(e));
     } finally {
       setLoading(false);
     }
@@ -153,7 +154,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
       onClose();
     } catch (e) {
-      setError(String(e));
+      setError(formatAppError(e));
     } finally {
       setApplying(false);
     }

@@ -29,7 +29,7 @@ export function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
 
 export function DashboardEmptyState() {
   const { t } = useTranslation(['dashboard']);
-  const { setWorkspaceView } = useAppStore();
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
 
   return (
     <div className="flex flex-col items-center justify-center h-full bg-base-100 relative overflow-hidden">

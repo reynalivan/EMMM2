@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
 import { Shield, KeyRound, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -23,13 +24,6 @@ function normalizeKeywordList(values: string[]): string[] {
     next.push(normalized);
   }
   return next;
-}
-
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }
 
 export default function PrivacyTab() {
@@ -138,7 +132,7 @@ export default function PrivacyTab() {
       console.error(error);
       addToast(
         'error',
-        t('settings:privacy.keywords_update_failed', { error: toErrorMessage(error) }),
+        t('settings:privacy.keywords_update_failed', { error: formatAppError(error) }),
       );
     }
   };
@@ -151,7 +145,7 @@ export default function PrivacyTab() {
       console.error(error);
       addToast(
         'error',
-        t('settings:privacy.keywords_update_failed', { error: toErrorMessage(error) }),
+        t('settings:privacy.keywords_update_failed', { error: formatAppError(error) }),
       );
     }
   };
@@ -165,7 +159,7 @@ export default function PrivacyTab() {
       console.error(error);
       addToast(
         'error',
-        t('settings:privacy.protection_update_failed', { error: toErrorMessage(error) }),
+        t('settings:privacy.protection_update_failed', { error: formatAppError(error) }),
       );
     }
   };
@@ -290,7 +284,7 @@ export default function PrivacyTab() {
                     } catch (e) {
                       addToast(
                         'error',
-                        t('safe_mode:recovery.remove_failed', { error: String(e) }),
+                        t('safe_mode:recovery.remove_failed', { error: formatAppError(e) }),
                       );
                     }
                   }}

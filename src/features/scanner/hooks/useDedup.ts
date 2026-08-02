@@ -3,6 +3,7 @@
  * Provides dedup query keys plus report and resolution hooks.
  */
 
+import { formatAppError } from '../../../lib/appError';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
 import { Channel } from '@tauri-apps/api/core';
@@ -49,7 +50,7 @@ export function useRemoveIgnoredPair() {
       toast.success(i18next.t('scanner:dedup.toast.recover_success'));
     },
     onError: (error) => {
-      toast.error(i18next.t('scanner:dedup.toast.recover_failed', { error: String(error) }));
+      toast.error(i18next.t('scanner:dedup.toast.recover_failed', { error: formatAppError(error) }));
     },
   });
 }
@@ -97,7 +98,7 @@ export function useStartDedupScan() {
     },
 
     onError: (error) => {
-      toast.error(i18next.t('scanner:dedup.toast.scan_failed', { error: String(error) }));
+      toast.error(i18next.t('scanner:dedup.toast.scan_failed', { error: formatAppError(error) }));
     },
   });
 }
@@ -120,7 +121,7 @@ export function useCancelDedupScan() {
     },
 
     onError: (error) => {
-      toast.error(i18next.t('scanner:dedup.toast.cancel_failed', { error: String(error) }));
+      toast.error(i18next.t('scanner:dedup.toast.cancel_failed', { error: formatAppError(error) }));
     },
   });
 }
@@ -172,7 +173,7 @@ export function useResolveDuplicates() {
     },
 
     onError: (error) => {
-      toast.error(i18next.t('scanner:dedup.toast.resolve_failed', { error: String(error) }));
+      toast.error(i18next.t('scanner:dedup.toast.resolve_failed', { error: formatAppError(error) }));
     },
   });
 }

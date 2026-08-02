@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useState, useRef } from 'react';
 import { Trash2, Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +23,7 @@ export default function MaintenanceTab() {
       addToast('success', t('settings:maintenance.trash_success'));
     } catch (e) {
       console.error(e);
-      addToast('error', t('settings:maintenance.trash_failed', { error: String(e) }));
+      addToast('error', t('settings:maintenance.trash_failed', { error: formatAppError(e) }));
     } finally {
       setIsProcessing(false);
     }
@@ -48,7 +49,7 @@ export default function MaintenanceTab() {
       );
     } catch (e) {
       console.error(e);
-      addToast('error', t('settings:maintenance.clear_failed', { error: String(e) }));
+      addToast('error', t('settings:maintenance.clear_failed', { error: formatAppError(e) }));
     } finally {
       setIsProcessing(false);
     }
@@ -65,7 +66,7 @@ export default function MaintenanceTab() {
       window.location.reload();
     } catch (e) {
       console.error(e);
-      addToast('error', t('settings:maintenance.reset_failed', { error: String(e) }));
+      addToast('error', t('settings:maintenance.reset_failed', { error: formatAppError(e) }));
       setIsProcessing(false);
     }
   };

@@ -1,3 +1,4 @@
+import { formatAppError } from '../../lib/appError';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../lib/bindings';
@@ -46,7 +47,7 @@ export default function WelcomeScreen({
       setDetectedGames(games);
       setView('result');
     } catch (err) {
-      setError(String(err));
+      setError(formatAppError(err));
       setView('welcome');
     } finally {
       setIsScanning(false);
@@ -99,7 +100,7 @@ export default function WelcomeScreen({
       onComplete(games);
     } catch (err) {
       // Only the save_onboarding_games failure is a hard blocker
-      setError(String(err));
+      setError(formatAppError(err));
       setIsIndexing(false);
     }
   };

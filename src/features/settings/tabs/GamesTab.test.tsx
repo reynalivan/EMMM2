@@ -69,10 +69,12 @@ describe('GamesTab (TC-02)', () => {
       saveSettings: mockSaveSettings,
     });
 
-    (useAppStore as any).mockReturnValue({
+    (useAppStore as any).mockImplementation(
+      (selector: (state: Record<string, unknown>) => unknown) => selector({
       activeGameId: null,
       setActiveGameId: mockSetActiveGameId,
-    });
+    }),
+    );
 
     (useToastStore as any).mockReturnValue({
       addToast: mockAddToast,
@@ -108,10 +110,12 @@ describe('GamesTab (TC-02)', () => {
       },
       saveSettings: mockSaveSettings,
     });
-    (useAppStore as any).mockReturnValue({
+    (useAppStore as any).mockImplementation(
+      (selector: (state: Record<string, unknown>) => unknown) => selector({
       activeGameId: 'g1',
       setActiveGameId: mockSetActiveGameId,
-    });
+    }),
+    );
 
     render(<GamesTab />);
     expect(screen.getByText('Genshin Impact')).toBeInTheDocument();
@@ -158,10 +162,12 @@ describe('GamesTab (TC-02)', () => {
       },
       saveSettings: mockSaveSettings,
     });
-    (useAppStore as any).mockReturnValue({
+    (useAppStore as any).mockImplementation(
+      (selector: (state: Record<string, unknown>) => unknown) => selector({
       activeGameId: 'g1',
       setActiveGameId: mockSetActiveGameId,
-    });
+    }),
+    );
 
     render(<GamesTab />);
 
@@ -187,10 +193,12 @@ describe('GamesTab (TC-02)', () => {
       },
       saveSettings: mockSaveSettings,
     });
-    (useAppStore as any).mockReturnValue({
+    (useAppStore as any).mockImplementation(
+      (selector: (state: Record<string, unknown>) => unknown) => selector({
       activeGameId: 'g1',
       setActiveGameId: mockSetActiveGameId,
-    });
+    }),
+    );
 
     render(<GamesTab />);
 
@@ -218,10 +226,12 @@ describe('GamesTab (TC-02)', () => {
       },
       saveSettings: mockSaveSettings,
     });
-    (useAppStore as any).mockReturnValue({
+    (useAppStore as any).mockImplementation(
+      (selector: (state: Record<string, unknown>) => unknown) => selector({
       activeGameId: 'g1',
       setActiveGameId: mockSetActiveGameId,
-    });
+    }),
+    );
     (scanService.runDeepmatchScanner as ReturnType<typeof vi.fn>).mockResolvedValue({
       new_mods: 1,
       updated_mods: 2,

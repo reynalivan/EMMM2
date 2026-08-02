@@ -3,6 +3,7 @@
  * Uses native <dialog> with DaisyUI modal styling (consistent with ConfirmDialog).
  */
 
+import { formatAppError } from '../../lib/appError';
 import { useRef, useEffect, useMemo } from 'react';
 import { Trash2, RotateCcw, Loader2, FolderOpen, Clock, HardDrive, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +32,7 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
       const count = await emptyTrashMutation.mutateAsync();
       toast.success(t('objects:trash.toasts.empty_success', { count }));
     } catch (err) {
-      toast.error(t('objects:trash.toasts.empty_failed', { error: String(err) }));
+      toast.error(t('objects:trash.toasts.empty_failed', { error: formatAppError(err) }));
     }
   };
 
@@ -56,7 +57,7 @@ export default function TrashManagerModal({ open, onClose }: TrashManagerModalPr
       await restoreMutation.mutateAsync({ trashId, gameId: activeGame?.id });
       toast.success(t('objects:trash.toasts.restore_success', { name }));
     } catch (err) {
-      toast.error(t('objects:trash.toasts.restore_failed', { error: String(err) }));
+      toast.error(t('objects:trash.toasts.restore_failed', { error: formatAppError(err) }));
     }
   };
 

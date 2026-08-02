@@ -1,3 +1,4 @@
+import { formatAppError } from '../../lib/appError';
 import { Fragment, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +31,7 @@ type Tab = (typeof TABS)[number]['id'];
 
 export default function SettingsPage() {
   const { t } = useTranslation(['settings', 'common']);
-  const { setWorkspaceView } = useAppStore();
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const { isLoading, error } = useSettings();
   const [activeTab, setActiveTab] = useState<Tab>('general');
 
@@ -43,7 +44,7 @@ export default function SettingsPage() {
   if (error)
     return (
       <div className="p-10 text-center text-error">
-        {t('common:status.error')}: {String(error)}
+        {t('common:status.error')}: {formatAppError(error)}
       </div>
     );
 

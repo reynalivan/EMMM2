@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { Globe, HardDrive, ShieldAlert, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useBrowserStore } from '../../../stores/useBrowserStore';
@@ -37,7 +38,7 @@ export default function BrowserTab() {
       addToast('success', t('settings:browser.homepage_success'));
     },
     onError: (err) => {
-      addToast('error', t('settings:browser.homepage_failed', { error: String(err) }));
+      addToast('error', t('settings:browser.homepage_failed', { error: formatAppError(err) }));
     },
   });
 
@@ -48,7 +49,7 @@ export default function BrowserTab() {
       await publishQueryScopes(queryClient, ['browserDownloads']);
     },
     onError: (err) => {
-      addToast('error', t('settings:browser.clear_failed', { error: String(err) }));
+      addToast('error', t('settings:browser.clear_failed', { error: formatAppError(err) }));
     },
   });
 

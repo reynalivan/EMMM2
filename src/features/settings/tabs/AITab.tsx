@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
@@ -38,7 +39,7 @@ export default function AITab() {
       addToast(
         'error',
         t('settings:ai.status.update_failed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: formatAppError(err),
         }),
       );
     }
@@ -52,7 +53,7 @@ export default function AITab() {
       addToast(
         'error',
         t('settings:ai.status.save_failed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: formatAppError(err),
         }),
       );
     }

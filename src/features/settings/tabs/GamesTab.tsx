@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Play, RefreshCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -12,7 +13,8 @@ import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 export default function GamesTab() {
   const { t } = useTranslation(['settings', 'common']);
   const { settings, saveSettings } = useSettings();
-  const { setActiveGameId, activeGameId } = useAppStore();
+  const setActiveGameId = useAppStore((state) => state.setActiveGameId);
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const { addToast } = useToastStore();
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -88,7 +90,7 @@ export default function GamesTab() {
     } catch (e) {
       console.error(e);
       useToastStore.getState().removeToast(toastId);
-      addToast('error', t('settings:games.actions.scan_failed', { error: String(e) }));
+      addToast('error', t('settings:games.actions.scan_failed', { error: formatAppError(e) }));
     } finally {
       setScanningId(null);
     }

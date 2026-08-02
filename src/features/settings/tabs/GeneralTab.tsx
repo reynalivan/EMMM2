@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { Monitor, Languages, Database, LogOut, Plus, Trash2, Download } from 'lucide-react';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useSettings } from '../../../hooks/useSettings';
@@ -18,7 +19,8 @@ import { useToastStore } from '../../../stores/useToastStore';
 import { useEffect, useState } from 'react';
 
 export default function GeneralTab() {
-  const { autoCloseLauncher, setAutoCloseLauncher } = useAppStore();
+  const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
+  const setAutoCloseLauncher = useAppStore((state) => state.setAutoCloseLauncher);
   const { settings, updateTheme, updateLanguage } = useSettings();
   const { customThemes, refreshCustomThemes } = useCustomThemes();
   const { addToast } = useToastStore();
@@ -73,7 +75,7 @@ export default function GeneralTab() {
       }
     } catch (err) {
       console.error('Failed to import theme:', err);
-      addToast('error', t('general.appearance.import_failed', { error: String(err) }));
+      addToast('error', t('general.appearance.import_failed', { error: formatAppError(err) }));
     }
   };
 
@@ -101,7 +103,7 @@ export default function GeneralTab() {
       }
     } catch (err) {
       console.error('Failed to export theme:', err);
-      addToast('error', t('general.appearance.export_failed', { error: String(err) }));
+      addToast('error', t('general.appearance.export_failed', { error: formatAppError(err) }));
     }
   };
 
@@ -116,7 +118,7 @@ export default function GeneralTab() {
         }
         addToast('success', t('general.appearance.delete_success'));
       } catch (err) {
-        addToast('error', t('general.appearance.delete_failed', { error: String(err) }));
+        addToast('error', t('general.appearance.delete_failed', { error: formatAppError(err) }));
       }
     }
   };

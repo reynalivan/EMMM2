@@ -1,3 +1,4 @@
+import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
 import { Keyboard, Eye, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -103,7 +104,7 @@ export default function HotkeyTab() {
       });
       await commands.updateHotkeyConfig();
     } catch (err) {
-      addToast('error', t('settings:hotkeys.save_failed', { error: String(err) }));
+      addToast('error', t('settings:hotkeys.save_failed', { error: formatAppError(err) }));
     } finally {
       setIsSaving(false);
     }
@@ -118,7 +119,7 @@ export default function HotkeyTab() {
         keyviewer: { ...keyviewer, ...patch },
       });
     } catch (err) {
-      addToast('error', t('settings:hotkeys.viewer_save_failed', { error: String(err) }));
+      addToast('error', t('settings:hotkeys.viewer_save_failed', { error: formatAppError(err) }));
     } finally {
       setIsSaving(false);
     }
@@ -136,7 +137,7 @@ export default function HotkeyTab() {
         await commands.updateHotkeyConfig();
         addToast('success', t('settings:hotkeys.reset_success'));
       } catch (err) {
-        addToast('error', t('settings:hotkeys.save_failed', { error: String(err) }));
+        addToast('error', t('settings:hotkeys.save_failed', { error: formatAppError(err) }));
       }
     })();
   };

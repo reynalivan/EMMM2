@@ -1,3 +1,4 @@
+import { formatAppError } from '../../lib/appError';
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -13,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 export default function LaunchBar() {
   const { t } = useTranslation(['layout']);
   const { activeGame } = useActiveGame();
-  const { autoCloseLauncher } = useAppStore();
+  const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
@@ -44,7 +45,7 @@ export default function LaunchBar() {
         await exit(0);
       }
     } catch (e) {
-      setError(String(e));
+      setError(formatAppError(e));
       setTimeout(() => setError(null), 5000);
     } finally {
       setIsLaunching(false);

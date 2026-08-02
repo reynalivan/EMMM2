@@ -55,10 +55,8 @@ vi.mock('../../../hooks/useSettings', () => ({
 }));
 
 vi.mock('../../../stores/useAppStore', () => ({
-  useAppStore: () => ({
-    autoCloseLauncher: mockAutoClose,
-    setAutoCloseLauncher: mockSetAutoClose,
-  }),
+  useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({ autoCloseLauncher: mockAutoClose, setAutoCloseLauncher: mockSetAutoClose }),
 }));
 
 describe('GeneralTab (TC-04)', () => {
