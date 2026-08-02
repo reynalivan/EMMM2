@@ -29,12 +29,18 @@ export default function FolderTooltip({
   // Contents load on first hover and stay cached per folder — react-query
   // handles the keying, dedup and loading flag the manual Map used to.
   const [hasOpened, setHasOpened] = useState(false);
-  const { data: entries, isLoading: loading } = useQuery<FolderEntry[]>({
+  const {
+    data,
+    isLoading: loading,
+    isError,
+  } = useQuery<FolderEntry[]>({
     queryKey: ['folder-entries', gameId, folderPath],
     queryFn: () => commands.listFolderEntriesCmd(folderPath, gameId),
     enabled: hasOpened,
     staleTime: Infinity,
   });
+  // A failed listing reads as an empty folder rather than a blank panel.
+  const entries = isError ? [] : data;
 
   const handleOpen = (open: boolean) => {
     if (open) {
