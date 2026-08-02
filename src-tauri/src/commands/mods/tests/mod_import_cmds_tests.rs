@@ -20,8 +20,7 @@ async fn test_import_mods_target_not_exists() {
     )
     .await;
 
-    assert!(res.is_err());
-    assert!(res.unwrap_err().contains("does not exist"));
+    assert!(matches!(res, Err(AppError::NotFound(ref msg)) if msg.contains("does not exist")));
 }
 
 #[tokio::test]

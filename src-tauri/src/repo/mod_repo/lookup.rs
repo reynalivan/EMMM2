@@ -56,17 +56,15 @@ pub async fn get_mod_id_and_status_by_path_tx(
     .await
 }
 
+/// Same row as [`get_mod_id_and_status_by_path`] without the status column.
 pub async fn get_mod_id_and_object_id_by_path(
     pool: &sqlx::SqlitePool,
     folder_path: &str,
     game_id: &str,
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
-    let mods_path = get_game_mod_path(pool, game_id).await?;
-    sqlx::query_as("SELECT id, object_id FROM mods WHERE folder_path_key = ? AND game_id = ?")
-        .bind(folder_path_key(folder_path, mods_path.as_deref()))
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await
+    Ok(get_mod_id_and_status_by_path(pool, folder_path, game_id)
+        .await?
+        .map(|(id, object_id, _status)| (id, object_id)))
 }
 
 pub async fn get_mod_id_by_path_tx(

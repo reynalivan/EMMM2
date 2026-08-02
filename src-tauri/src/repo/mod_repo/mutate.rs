@@ -41,11 +41,8 @@ pub async fn insert_mod_with_reason_tx(
 }
 
 pub async fn delete_mod_by_id(pool: &SqlitePool, mod_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM mods WHERE id = ?")
-        .bind(mod_id)
-        .execute(pool)
-        .await?;
-    Ok(())
+    let mut conn = pool.acquire().await?;
+    delete_mod_tx(&mut conn, mod_id).await
 }
 
 /// `folder_path` MUST be absolute: the key is built without a `mods_path`, and

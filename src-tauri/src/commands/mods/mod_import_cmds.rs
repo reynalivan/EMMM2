@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::validate_dir_in_configured_roots;
 use crate::services::fs_utils::operation_lock::OperationLock;
@@ -16,9 +17,9 @@ pub async fn import_mods_from_paths(
     config: State<'_, ConfigService>,
     paths: Vec<String>,
     target_dir: String,
-) -> Result<BulkResult, String> {
-    let _lock = op_lock.acquire().await.map_err(|e| e.to_string())?;
-    validate_dir_in_configured_roots(&config, &target_dir).map_err(|e| e.to_string())?;
+) -> Result<BulkResult, AppError> {
+    let _lock = op_lock.acquire().await?;
+    validate_dir_in_configured_roots(&config, &target_dir)?;
     let total = paths.len();
 
     let _ = app.emit(
@@ -36,7 +37,10 @@ pub async fn import_mods_from_paths(
     let target = Path::new(&target_dir);
 
     if !target.exists() || !target.is_dir() {
-        return Err(format!("Target directory does not exist: {}", target_dir));
+        return Err(AppError::NotFound(format!(
+            "Target directory does not exist: {}",
+            target_dir
+        )));
     }
 
     for (i, path_str) in paths.iter().enumerate() {
@@ -54,9 +58,7 @@ pub async fn import_mods_from_paths(
         if !path.exists() {
             failures.push(BulkActionError {
                 path: path_str.clone(),
-                error: crate::domain::errors::AppError::Io(
-                    "Source path does not exist".to_string(),
-                ),
+                error: AppError::Io("Source path does not exist".to_string()),
             });
             continue;
         }
@@ -71,7 +73,7 @@ pub async fn import_mods_from_paths(
             None => {
                 failures.push(BulkActionError {
                     path: path_str.clone(),
-                    error: crate::domain::errors::AppError::Io("Invalid file name".to_string()),
+                    error: AppError::Io("Invalid file name".to_string()),
                 });
                 continue;
             }
@@ -81,9 +83,7 @@ pub async fn import_mods_from_paths(
         if dest.exists() {
             failures.push(BulkActionError {
                 path: path_str.clone(),
-                error: crate::domain::errors::AppError::Io(
-                    "Destination already exists".to_string(),
-                ),
+                error: AppError::Io("Destination already exists".to_string()),
             });
             continue;
         }
@@ -96,7 +96,7 @@ pub async fn import_mods_from_paths(
             log::warn!("Move failed (fallback failed): {}", e);
             failures.push(BulkActionError {
                 path: path_str.clone(),
-                error: crate::domain::errors::AppError::Io(format!("Failed to move: {}", e)),
+                error: AppError::Io(format!("Failed to move: {}", e)),
             });
         } else {
             success.push(path_str.to_string());
@@ -121,7 +121,7 @@ fn handle_archive_import(
             if !result.success {
                 failures.push(BulkActionError {
                     path: path_str.to_string(),
-                    error: crate::domain::errors::AppError::Io(
+                    error: AppError::Io(
                         result
                             .error
                             .unwrap_or_else(|| "Unknown extraction error".into()),
@@ -160,7 +160,7 @@ fn handle_archive_import(
         }
         Err(e) => failures.push(BulkActionError {
             path: path_str.to_string(),
-            error: crate::domain::errors::AppError::Io(e),
+            error: AppError::Io(e),
         }),
     }
 }
@@ -173,9 +173,9 @@ pub async fn ingest_dropped_folders(
     config: State<'_, ConfigService>,
     paths: Vec<String>,
     mods_path: String,
-) -> Result<Vec<String>, String> {
-    let _lock = op_lock.acquire().await.map_err(|e| e.to_string())?;
-    validate_dir_in_configured_roots(&config, &mods_path).map_err(|e| e.to_string())?;
+) -> Result<Vec<String>, AppError> {
+    let _lock = op_lock.acquire().await?;
+    validate_dir_in_configured_roots(&config, &mods_path)?;
     ingest_dropped_folders_inner(&state, paths, mods_path).await
 }
 
@@ -184,11 +184,13 @@ pub async fn ingest_dropped_folders_inner(
     state: &WatcherState,
     paths: Vec<String>,
     mods_path: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     let target = Path::new(&mods_path);
 
     if !target.exists() || !target.is_dir() {
-        return Err(format!("Mods path does not exist: {mods_path}"));
+        return Err(AppError::NotFound(format!(
+            "Mods path does not exist: {mods_path}"
+        )));
     }
 
     let mut moved = Vec::new();

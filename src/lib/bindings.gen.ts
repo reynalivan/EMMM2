@@ -459,7 +459,7 @@ async renameModFolder(folderPath: string, newName: string, gameId: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
-async importModsFromPaths(paths: string[], targetDir: string) : Promise<Result<BulkResult, string>> {
+async importModsFromPaths(paths: string[], targetDir: string) : Promise<Result<BulkResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("import_mods_from_paths", { paths, targetDir }) };
 } catch (e) {
@@ -467,7 +467,7 @@ async importModsFromPaths(paths: string[], targetDir: string) : Promise<Result<B
     else return { status: "error", error: e  as any };
 }
 },
-async ingestDroppedFolders(paths: string[], modsPath: string) : Promise<Result<string[], string>> {
+async ingestDroppedFolders(paths: string[], modsPath: string) : Promise<Result<string[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("ingest_dropped_folders", { paths, modsPath }) };
 } catch (e) {
