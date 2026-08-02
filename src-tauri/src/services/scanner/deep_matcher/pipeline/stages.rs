@@ -87,6 +87,37 @@ pub fn replenish_candidates_if_needed(
     pool.into_iter().collect()
 }
 
+/// Credits entries whose own name or tags reuse the observed folder tokens.
+/// Both pipelines run the identical scan and differ only in how much each hit
+/// is worth, so the four weights stay caller-supplied.
+pub fn apply_direct_name_support_stage(
+    db: &MasterDb,
+    folder_tokens: &BTreeSet<String>,
+    states: &mut HashMap<usize, ScoreState>,
+    name_weight: f32,
+    tag_weight: f32,
+    name_cap: f32,
+    tag_cap: f32,
+) {
+    for (entry_id, state) in states.iter_mut() {
+        let entry = &db.entries[*entry_id];
+        let name_hits: Vec<String> = normalizer::preprocess_text(&entry.name)
+            .into_iter()
+            .filter(|token| folder_tokens.contains(token))
+            .collect();
+        let tag_hits: Vec<String> = entry
+            .tags
+            .iter()
+            .flat_map(|tag| normalizer::preprocess_text(tag).into_iter())
+            .filter(|token| folder_tokens.contains(token))
+            .collect();
+
+        crate::services::scanner::deep_matcher::analysis::scoring::apply_direct_name_support_contribution(
+            state, &name_hits, &tag_hits, name_weight, tag_weight, name_cap, tag_cap,
+        );
+    }
+}
+
 #[derive(Debug)]
 struct SeedSource<'a> {
     key: String,

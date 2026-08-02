@@ -7,13 +7,11 @@ use crate::services::scanner::deep_matcher::analysis::gamebanana::{self, GameBan
 use crate::services::scanner::deep_matcher::analysis::mechanical_rerank::{
     self, MechanicalRerankConfig,
 };
-use crate::services::scanner::deep_matcher::models::acceptance::{
-    finalize_review, try_stage_accept, FinalizeConfig, StageAcceptConfig,
-};
+use crate::services::scanner::deep_matcher::models::acceptance::StageContext;
 use crate::services::scanner::deep_matcher::pipeline::name_rescue;
 use crate::services::scanner::deep_matcher::pipeline::stages::{
-    replenish_candidates_if_needed, seed_candidates, ObservedTokenBuckets, DEFAULT_MIN_POOL,
-    DEFAULT_SEED_CAP,
+    apply_direct_name_support_stage, replenish_candidates_if_needed, seed_candidates,
+    ObservedTokenBuckets, DEFAULT_MIN_POOL, DEFAULT_SEED_CAP,
 };
 use crate::services::scanner::deep_matcher::state::master_db::MasterDb;
 use crate::services::scanner::deep_matcher::{
@@ -22,8 +20,7 @@ use crate::services::scanner::deep_matcher::{
 use std::collections::{HashMap, HashSet};
 
 use super::scoring_stages::{
-    apply_alias_recheck_stage, apply_direct_name_support_stage, apply_hash_stage,
-    apply_weighted_token_overlap_stage,
+    apply_alias_recheck_stage, apply_hash_stage, apply_weighted_token_overlap_stage,
 };
 
 const FULL_TOP_K: usize = 5;
@@ -36,6 +33,7 @@ const T_DEEP_FULL: f32 = 16.0;
 const M_DEEP_FULL: f32 = 3.0;
 const T_TOKEN_FULL: f32 = 14.0;
 const M_TOKEN_FULL: f32 = 3.0;
+
 pub fn match_folder_full(
     candidate: &ModCandidate,
     db: &MasterDb,
@@ -89,156 +87,72 @@ pub fn match_folder_full_cached(
         .copied()
         .map(|entry_id| (entry_id, ScoreState::new()))
         .collect();
-    apply_hash_stage(db, &signals.ini_hashes, &mut states);
-    if let Some(accepted) = try_stage_accept(
+
+    let stage = StageContext {
         db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_HASH_FULL,
-            margin: M_HASH_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::High,
-        },
-    ) {
+        signals: &signals,
+        buckets: &observed_buckets,
+        mode: MatchMode::FullScoring,
+        review_min_score: REVIEW_MIN_SCORE_FULL,
+        top_k: FULL_TOP_K,
+    };
+
+    apply_hash_stage(db, &signals.ini_hashes, &mut states);
+    if let Some(accepted) = stage.accept(&states, T_HASH_FULL, M_HASH_FULL, Confidence::High) {
         return accepted;
     }
+
     crate::services::scanner::deep_matcher::pipeline::stages::apply_alias_stage(
         db,
         &observed_buckets.folder_tokens,
         &mut states,
     );
-    if let Some(accepted) = try_stage_accept(
-        db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_ALIAS_FULL,
-            margin: M_ALIAS_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::High,
-        },
-    ) {
+    if let Some(accepted) = stage.accept(&states, T_ALIAS_FULL, M_ALIAS_FULL, Confidence::High) {
         return accepted;
     }
+
     // ★ F3A: SubstringNameDeep Pass A — check file/subfolder names via substring matching
     name_rescue::apply_substring_name_pass_a(db, &signals, &mut states);
-    if let Some(accepted) = try_stage_accept(
-        db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_DEEP_FULL,
-            margin: M_DEEP_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::High,
-        },
-    ) {
+    if let Some(accepted) = stage.accept(&states, T_DEEP_FULL, M_DEEP_FULL, Confidence::High) {
         return accepted;
     }
+
     // F4: Deep token overlap
     crate::services::scanner::deep_matcher::pipeline::stages::apply_deep_stage(
         db,
         &observed_buckets,
         &mut states,
     );
-    if let Some(accepted) = try_stage_accept(
-        db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_DEEP_FULL,
-            margin: M_DEEP_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::Medium,
-        },
-    ) {
+    if let Some(accepted) = stage.accept(&states, T_DEEP_FULL, M_DEEP_FULL, Confidence::Medium) {
         return accepted;
     }
+
     // ★ F3B: SubstringNameDeep Pass B — INI-derived strings (section headers + path stems)
     name_rescue::apply_substring_name_pass_b(db, &signals, &mut states);
-    if let Some(accepted) = try_stage_accept(
-        db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_DEEP_FULL,
-            margin: M_DEEP_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::High,
-        },
-    ) {
+    if let Some(accepted) = stage.accept(&states, T_DEEP_FULL, M_DEEP_FULL, Confidence::High) {
         return accepted;
     }
+
     apply_alias_recheck_stage(db, &observed_tokens, &mut states);
-    if let Some(accepted) = try_stage_accept(
-        db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_ALIAS_FULL,
-            margin: M_ALIAS_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::High,
-        },
-    ) {
+    if let Some(accepted) = stage.accept(&states, T_ALIAS_FULL, M_ALIAS_FULL, Confidence::High) {
         return accepted;
     }
+
     apply_weighted_token_overlap_stage(db, &observed_buckets.folder_tokens, &mut states);
-    if let Some(accepted) = try_stage_accept(
-        db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &StageAcceptConfig {
-            mode: MatchMode::FullScoring,
-            threshold: T_TOKEN_FULL,
-            margin: M_TOKEN_FULL,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-            best_confidence: Confidence::Medium,
-        },
-    ) {
+    if let Some(accepted) = stage.accept(&states, T_TOKEN_FULL, M_TOKEN_FULL, Confidence::Medium) {
         return accepted;
     }
-    apply_direct_name_support_stage(db, &observed_buckets.folder_tokens, &mut states);
-    let result = finalize_review(
+
+    apply_direct_name_support_stage(
         db,
-        &states,
-        &signals,
-        &observed_buckets,
-        None,
-        &FinalizeConfig {
-            mode: MatchMode::FullScoring,
-            review_min_score: REVIEW_MIN_SCORE_FULL,
-            top_k: FULL_TOP_K,
-        },
+        &observed_buckets.folder_tokens,
+        &mut states,
+        2.0,
+        1.0,
+        6.0,
+        4.0,
     );
+    let result = stage.finalize(&states);
 
     let result = maybe_apply_ai_rerank(result, &signals, db, MatchMode::FullScoring, ai_config);
 

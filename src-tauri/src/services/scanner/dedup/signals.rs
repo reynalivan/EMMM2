@@ -145,7 +145,8 @@ pub(crate) fn aggregate_signals(
     let file_identity = ((hash_score * 0.8) + (header_score * 0.2)).clamp(0.0, 1.0);
 
     let extension_score = extension_distribution_score(&left.extensions, &right.extensions);
-    let texture_score = texture_similarity(&left_hash.texture_samples, &right_hash.texture_samples);
+    let (texture_score, _) =
+        hash_similarity(&left_hash.texture_samples, &right_hash.texture_samples);
     let (mesh_score, exact_mesh_match) =
         hash_similarity(&left_hash.mesh_hashes, &right_hash.mesh_hashes);
 
@@ -272,18 +273,12 @@ fn phase2_name_and_structure(left: &ModSnapshot, right: &ModSnapshot) -> (f64, f
 fn full_blake3_hash(path: &Path) -> Result<String, String> {
     let file =
         File::open(path).map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
-    let mut reader = BufReader::new(file);
+    // blake3's own reader does the buffering; an 8 KiB hand-rolled loop is
+    // below the 16 KiB the multi-threaded fast path needs.
     let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0_u8; 8192];
-    loop {
-        let read = reader
-            .read(&mut buffer)
-            .map_err(|error| format!("Failed to hash {}: {error}", path.display()))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
+    hasher
+        .update_reader(file)
+        .map_err(|error| format!("Failed to hash {}: {error}", path.display()))?;
     Ok(hasher.finalize().to_string())
 }
 
@@ -379,11 +374,6 @@ fn hash_similarity(
         .count();
     let score = same as f64 / shared.len() as f64;
     (score, score == 1.0 && left.len() == right.len())
-}
-
-fn texture_similarity(left: &BTreeMap<String, String>, right: &BTreeMap<String, String>) -> f64 {
-    let (score, _) = hash_similarity(left, right);
-    score
 }
 
 fn set_overlap_score(left: &BTreeSet<String>, right: &BTreeSet<String>) -> f64 {

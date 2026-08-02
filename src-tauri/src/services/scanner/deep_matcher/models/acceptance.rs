@@ -37,6 +37,59 @@ pub struct FinalizeConfig {
     pub top_k: usize,
 }
 
+/// The half of a stage-accept call that never changes within one pipeline run.
+/// Each stage supplies only its own threshold, margin, and winning confidence;
+/// `states` stays a parameter because it is mutated between stages.
+pub struct StageContext<'a> {
+    pub db: &'a MasterDb,
+    pub signals: &'a FolderSignals,
+    pub buckets: &'a crate::services::scanner::deep_matcher::pipeline::stages::ObservedTokenBuckets,
+    pub mode: MatchMode,
+    pub review_min_score: f32,
+    pub top_k: usize,
+}
+
+impl StageContext<'_> {
+    pub fn accept(
+        &self,
+        states: &HashMap<usize, ScoreState>,
+        threshold: f32,
+        margin: f32,
+        best_confidence: Confidence,
+    ) -> Option<StagedMatchResult> {
+        try_stage_accept(
+            self.db,
+            states,
+            self.signals,
+            self.buckets,
+            None,
+            &StageAcceptConfig {
+                mode: self.mode,
+                threshold,
+                margin,
+                review_min_score: self.review_min_score,
+                top_k: self.top_k,
+                best_confidence,
+            },
+        )
+    }
+
+    pub fn finalize(&self, states: &HashMap<usize, ScoreState>) -> StagedMatchResult {
+        finalize_review(
+            self.db,
+            states,
+            self.signals,
+            self.buckets,
+            None,
+            &FinalizeConfig {
+                mode: self.mode,
+                review_min_score: self.review_min_score,
+                top_k: self.top_k,
+            },
+        )
+    }
+}
+
 pub fn try_stage_accept(
     db: &MasterDb,
     states: &HashMap<usize, ScoreState>,

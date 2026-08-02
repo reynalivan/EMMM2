@@ -7,13 +7,14 @@ use crate::services::scanner::deep_matcher::analysis::ai_rerank::maybe_apply_ai_
 use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::models::acceptance::{finalize_review, FinalizeConfig};
 use crate::services::scanner::deep_matcher::pipeline::name_rescue;
-use crate::services::scanner::deep_matcher::pipeline::stages::ObservedTokenBuckets;
+use crate::services::scanner::deep_matcher::pipeline::stages::{
+    apply_direct_name_support_stage, ObservedTokenBuckets,
+};
 use crate::services::scanner::deep_matcher::state::master_db::MasterDb;
 use crate::services::scanner::deep_matcher::{MatchMode, ScoreState, StagedMatchResult};
 
 use super::scoring_stages::{
-    apply_alias_recheck_stage, apply_direct_name_support_stage, apply_hash_stage,
-    apply_weighted_token_overlap_stage,
+    apply_alias_recheck_stage, apply_hash_stage, apply_weighted_token_overlap_stage,
 };
 
 /// Evaluates specific candidate IDs against all scoring stages without early exits.
@@ -59,7 +60,15 @@ pub fn score_forced_candidates(
     name_rescue::apply_substring_name_pass_b(db, &signals, &mut states);
     apply_alias_recheck_stage(db, &observed_tokens, &mut states);
     apply_weighted_token_overlap_stage(db, &observed_buckets.folder_tokens, &mut states);
-    apply_direct_name_support_stage(db, &observed_buckets.folder_tokens, &mut states);
+    apply_direct_name_support_stage(
+        db,
+        &observed_buckets.folder_tokens,
+        &mut states,
+        2.0,
+        1.0,
+        6.0,
+        4.0,
+    );
 
     let mut result = finalize_review(
         db,

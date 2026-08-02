@@ -34,14 +34,25 @@ pub async fn scan_duplicates(
     db: &SqlitePool,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<DedupScanOutcome, String> {
-    let candidates = fetch_candidates_from_db(db, game_id, mods_root).await?;
+    // One read of the mods table feeds both the scan candidates and the
+    // path -> (mod id, is_safe) lookup used when grouping the results.
+    let mut conn = db.acquire().await.map_err(|error| error.to_string())?;
+    let mod_rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
+        .await
+        .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
+    drop(conn);
+
+    let candidates = build_candidates(&mod_rows, mods_root);
     let total_folders = candidates.len();
 
     if is_cancelled(&cancel_flag) {
         return Ok(cancelled(total_folders));
     }
 
-    let path_to_mod_id = fetch_mod_id_map(db, game_id).await?;
+    let path_to_mod_id: HashMap<String, (String, bool)> = mod_rows
+        .into_iter()
+        .map(|(id, folder_path, is_safe)| (folder_path, (id, is_safe)))
+        .collect();
     let whitelist_pairs = fetch_whitelist_pairs(db, game_id).await?;
 
     let cancel_for_blocking = Arc::clone(&cancel_flag);
@@ -195,42 +206,11 @@ fn apply_whitelist_filter(
         .collect()
 }
 
-async fn fetch_mod_id_map(
-    db: &SqlitePool,
-    game_id: &str,
-) -> Result<HashMap<String, (String, bool)>, String> {
-    let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    let rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
-        .await
-        .map_err(|error| format!("Failed to fetch mod mapping for duplicate scan: {error}"))?;
-
-    let mut mapping = HashMap::new();
-    for (id, folder_path, is_safe) in rows {
-        mapping.insert(folder_path, (id, is_safe));
-    }
-
-    Ok(mapping)
-}
-
-async fn fetch_candidates_from_db(
-    db: &SqlitePool,
-    game_id: &str,
-    mods_root: &Path,
-) -> Result<Vec<ModCandidate>, String> {
-    let mut conn = db.acquire().await.map_err(|e| e.to_string())?;
-    let rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
-        .await
-        .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
-
-    let paths: Vec<(String, bool)> = rows
-        .into_iter()
-        .map(|(_, path, is_safe)| (path, is_safe))
-        .collect();
-
+fn build_candidates(mod_rows: &[(String, String, bool)], mods_root: &Path) -> Vec<ModCandidate> {
     let mut candidates = Vec::new();
 
-    for (folder_path, _is_safe) in paths {
-        let path = Path::new(&folder_path);
+    for (_id, folder_path, _is_safe) in mod_rows {
+        let path = Path::new(folder_path);
 
         // Skip paths that no longer physically exist
         if !path.exists() || !path.is_dir() {
@@ -258,7 +238,7 @@ async fn fetch_candidates_from_db(
         });
     }
 
-    Ok(candidates)
+    candidates
 }
 
 async fn fetch_whitelist_pairs(

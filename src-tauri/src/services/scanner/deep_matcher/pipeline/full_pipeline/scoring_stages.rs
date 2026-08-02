@@ -4,8 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::common::normalizer;
 use crate::services::scanner::deep_matcher::analysis::scoring::{
-    apply_direct_name_support_contribution, apply_hash_contribution,
-    apply_token_overlap_contribution,
+    apply_hash_contribution, apply_token_overlap_contribution,
 };
 use crate::services::scanner::deep_matcher::pipeline::stages::entry_tokens;
 use crate::services::scanner::deep_matcher::state::master_db::MasterDb;
@@ -90,26 +89,5 @@ pub(super) fn apply_weighted_token_overlap_stage(
 
         let ratio = overlap_weight / total_folder_weight;
         apply_token_overlap_contribution(state, ratio, 12.0);
-    }
-}
-
-pub(super) fn apply_direct_name_support_stage(
-    db: &MasterDb,
-    folder_tokens: &BTreeSet<String>,
-    states: &mut HashMap<usize, ScoreState>,
-) {
-    for (entry_id, state) in states.iter_mut() {
-        let entry = &db.entries[*entry_id];
-        let name_hits: Vec<String> = normalizer::preprocess_text(&entry.name)
-            .into_iter()
-            .filter(|token| folder_tokens.contains(token))
-            .collect();
-        let tag_hits: Vec<String> = entry
-            .tags
-            .iter()
-            .flat_map(|tag| normalizer::preprocess_text(tag).into_iter())
-            .filter(|token| folder_tokens.contains(token))
-            .collect();
-        apply_direct_name_support_contribution(state, &name_hits, &tag_hits, 2.0, 1.0, 6.0, 4.0);
     }
 }
