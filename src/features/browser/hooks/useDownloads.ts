@@ -70,8 +70,6 @@ export function useDownloads() {
 
   return {
     downloads: query.data ?? [],
-    isLoading: query.isLoading,
-    isError: query.isError,
     deleteDownload: deleteMutation.mutate,
     cancelDownload: cancelMutation.mutate,
     clearImported: clearImportedMutation.mutate,

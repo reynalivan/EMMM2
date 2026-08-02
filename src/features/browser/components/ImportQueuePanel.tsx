@@ -55,7 +55,6 @@ export function ImportQueuePanel() {
       {reviewingJob && (
         <NeedsReviewModal
           job={reviewingJob}
-          open={!!reviewingJob}
           onClose={() => setReviewingJob(null)}
           onConfirm={(gameId, category, objectId) => {
             confirmJob({ jobId: reviewingJob.id, gameId, category, objectId });

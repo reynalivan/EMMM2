@@ -5,30 +5,26 @@ import { Power } from 'lucide-react';
 import { usePrefersReducedMotion } from '../../../../hooks/usePrefersReducedMotion';
 import { DEMO_MODS } from '../demoTypes';
 
-export default function DemoTogglePreset({ onComplete }: { onComplete?: () => void }) {
+export default function DemoTogglePreset() {
   const { t } = useTranslation('welcome');
   const prefersReduced = usePrefersReducedMotion();
   const [isOn, setIsOn] = useState(() => prefersReduced);
 
   useEffect(() => {
     let toggleTimer: ReturnType<typeof setTimeout>;
-    let endTimer: ReturnType<typeof setTimeout>;
+    let endTimer: ReturnType<typeof setTimeout> | undefined;
 
     if (prefersReduced) {
-      if (onComplete) endTimer = setTimeout(onComplete, 3000);
     } else {
       // Toggle midway
       toggleTimer = setTimeout(() => setIsOn(true), 1800);
-      if (onComplete) {
-        endTimer = setTimeout(onComplete, 4000);
-      }
     }
 
     return () => {
       clearTimeout(toggleTimer);
-      clearTimeout(endTimer);
+      if (endTimer) clearTimeout(endTimer);
     };
-  }, [prefersReduced, onComplete]);
+  }, [prefersReduced]);
 
   return (
     <motion.div

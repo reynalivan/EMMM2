@@ -22,7 +22,6 @@ export interface ArchiveModalProps {
   extractProgress?: { current: number; total: number } | null;
   fileProgress?: { fileName: string; fileIndex: number; totalFiles: number } | null;
   onStop: () => void;
-  existingFolders?: string[];
   targetObjectName?: string;
 }
 

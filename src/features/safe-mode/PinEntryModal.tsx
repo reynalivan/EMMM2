@@ -12,7 +12,6 @@ interface PinEntryModalProps {
   onSuccess: (pin: string) => void;
   title?: string;
   description?: string;
-  cancellable?: boolean;
 }
 
 type View = 'pin' | 'recovery';
@@ -23,7 +22,6 @@ export default function PinEntryModal({
   onSuccess,
   title,
   description,
-  cancellable = true,
 }: PinEntryModalProps) {
   const { t } = useTranslation(['safe_mode', 'common']);
   const [view, setView] = useState<View>('pin');
@@ -117,14 +115,12 @@ export default function PinEntryModal({
   return createPortal(
     <div className="modal modal-open z-1000">
       <div className="modal-box bg-base-300 border border-base-content/10 shadow-2xl safe-mode-modal relative">
-        {cancellable && (
-          <button
-            onClick={onClose}
-            className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-          >
-            <X size={18} />
-          </button>
-        )}
+        <button
+          onClick={onClose}
+          className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+        >
+          <X size={18} />
+        </button>
 
         {/* ── PIN View ── */}
         {view === 'pin' && (
@@ -167,15 +163,13 @@ export default function PinEntryModal({
               </div>
 
               <div className="modal-action mt-6 gap-2">
-                {cancellable && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost hover:bg-base-content/5 flex-1"
-                    onClick={onClose}
-                  >
-                    {t('common:actions.cancel')}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost hover:bg-base-content/5 flex-1"
+                  onClick={onClose}
+                >
+                  {t('common:actions.cancel')}
+                </button>
                 <button
                   type="submit"
                   className="btn btn-primary flex-1 shadow-lg shadow-primary/20"
@@ -275,7 +269,7 @@ export default function PinEntryModal({
         )}
       </div>
       <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-[2px]">
-        <button onClick={cancellable ? onClose : undefined} disabled={!cancellable}>
+        <button onClick={onClose}>
           {t('common:actions.close')}
         </button>
       </form>

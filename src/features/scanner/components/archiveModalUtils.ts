@@ -68,25 +68,6 @@ export function findDuplicateFolderNames(
   return duplicates;
 }
 
-export function buildOverwriteTargets(
-  archives: ArchiveInfo[],
-  selectedPaths: Set<string>,
-  folderNames: Record<string, string>,
-  existingFolders: string[],
-  autoRename: boolean,
-): string[] {
-  if (autoRename || existingFolders.length === 0) {
-    return [];
-  }
-
-  const archiveByPath = new Map(archives.map((archive) => [archive.path, archive]));
-  const existingFolderSet = new Set(existingFolders);
-
-  return Array.from(selectedPaths)
-    .map((path) => folderNames[path] ?? stemName(archiveByPath.get(path)?.name ?? ''))
-    .filter((name) => existingFolderSet.has(name));
-}
-
 export function validateFolderName(
   name: string,
   messages: FolderNameValidationMessages,

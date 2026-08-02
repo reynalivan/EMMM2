@@ -5,7 +5,7 @@ import { Folder } from 'lucide-react';
 import { usePrefersReducedMotion } from '../../../../hooks/usePrefersReducedMotion';
 import { DEMO_MODS } from '../demoTypes';
 
-export default function DemoAutoOrganize({ onComplete }: { onComplete?: () => void }) {
+export default function DemoAutoOrganize() {
   const { t } = useTranslation('welcome');
   const prefersReduced = usePrefersReducedMotion();
   const [isOrganized, setIsOrganized] = useState(() => prefersReduced);
@@ -15,10 +15,9 @@ export default function DemoAutoOrganize({ onComplete }: { onComplete?: () => vo
   useEffect(() => {
     let sweepTimer: ReturnType<typeof setTimeout>;
     let organizeTimer: ReturnType<typeof setTimeout>;
-    let endTimer: ReturnType<typeof setTimeout>;
+    let endTimer: ReturnType<typeof setTimeout> | undefined;
 
     if (prefersReduced) {
-      if (onComplete) endTimer = setTimeout(onComplete, 3500);
     } else {
       // 1. Enter and sweep at 800ms
       sweepTimer = setTimeout(() => setShowSweep(true), 1200);
@@ -28,17 +27,14 @@ export default function DemoAutoOrganize({ onComplete }: { onComplete?: () => vo
         setShowSweep(false);
       }, 3000);
       // 3. Complete at 3600ms
-      if (onComplete) {
-        endTimer = setTimeout(onComplete, 3600);
-      }
     }
 
     return () => {
       clearTimeout(sweepTimer);
       clearTimeout(organizeTimer);
-      clearTimeout(endTimer);
+      if (endTimer) clearTimeout(endTimer);
     };
-  }, [prefersReduced, onComplete]);
+  }, [prefersReduced]);
 
   const containerVariants = {
     hidden: { opacity: 0 },

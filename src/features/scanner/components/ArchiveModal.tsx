@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, useEffect } from 'react';
 import { AlertTriangle, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ArchiveActionFooter from './ArchiveActionFooter';
-import ArchiveCollisionConfirm from './ArchiveCollisionConfirm';
 import ArchiveExtractionOptions from './ArchiveExtractionOptions';
 import ArchiveList from './ArchiveList';
 import ArchiveStopConfirm from './ArchiveStopConfirm';
@@ -20,12 +19,10 @@ export default function ArchiveModal({
   extractProgress,
   fileProgress,
   onStop,
-  existingFolders,
   targetObjectName,
 }: ArchiveModalProps) {
   const { t } = useTranslation(['scanner', 'common']);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const resolvedExistingFolders = useMemo(() => existingFolders ?? [], [existingFolders]);
   const validationMessages = useMemo(
     () => ({
       empty: t('extract.validation.empty'),
@@ -36,7 +33,6 @@ export default function ArchiveModal({
   );
   const archiveState = useArchiveModalState({
     archives,
-    existingFolders: resolvedExistingFolders,
     validationMessages,
   });
 
@@ -55,22 +51,12 @@ export default function ArchiveModal({
   }, [isOpen]);
 
   const submitExtract = useCallback(() => {
-    archiveState.setShowOverwriteConfirm(false);
     void onExtract(
       Array.from(archiveState.selectedPaths),
       archiveState.passwords,
       archiveState.buildExtractOptions(),
     );
   }, [archiveState, onExtract]);
-
-  const handleExtractClick = useCallback(() => {
-    if (archiveState.overwriteTargets.length > 0) {
-      archiveState.setShowOverwriteConfirm(true);
-      return;
-    }
-
-    submitExtract();
-  }, [archiveState, submitExtract]);
 
   const handleConfirmStop = useCallback(() => {
     archiveState.setShowStopConfirm(false);
@@ -148,7 +134,7 @@ export default function ArchiveModal({
           extractProgress={extractProgress}
           fileProgress={fileProgress}
           onSkip={onSkip}
-          onExtract={handleExtractClick}
+          onExtract={submitExtract}
           onRequestStop={() => archiveState.setShowStopConfirm(true)}
         />
 
@@ -156,12 +142,6 @@ export default function ArchiveModal({
           isOpen={archiveState.showStopConfirm}
           onCancel={() => archiveState.setShowStopConfirm(false)}
           onConfirm={handleConfirmStop}
-        />
-        <ArchiveCollisionConfirm
-          isOpen={archiveState.showOverwriteConfirm}
-          overwriteTargets={archiveState.overwriteTargets}
-          onCancel={() => archiveState.setShowOverwriteConfirm(false)}
-          onConfirm={submitExtract}
         />
       </div>
       <form method="dialog" className="modal-backdrop">

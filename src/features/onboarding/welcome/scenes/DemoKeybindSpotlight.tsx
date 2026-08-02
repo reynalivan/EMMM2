@@ -5,7 +5,7 @@ import { Search, Power, HelpCircle } from 'lucide-react';
 import { usePrefersReducedMotion } from '../../../../hooks/usePrefersReducedMotion';
 import { DEMO_KEYBINDS } from '../demoTypes';
 
-export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () => void }) {
+export default function DemoKeybindSpotlight() {
   const { t } = useTranslation('welcome');
   const prefersReduced = usePrefersReducedMotion();
 
@@ -19,12 +19,11 @@ export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () =
   const [showKeys, setShowKeys] = useState(false);
 
   useEffect(() => {
-    let endTimer: ReturnType<typeof setTimeout>;
+    let endTimer: ReturnType<typeof setTimeout> | undefined;
     let keyTimer: ReturnType<typeof setTimeout>;
     let controls: unknown; // Using unknown because explicit AnimationControls differs slightly across motion versions
 
     if (prefersReduced) {
-      if (onComplete) endTimer = setTimeout(onComplete, 3000);
     } else {
       // Animate spotlight moving to 4 points slower
       controls = animate([
@@ -38,22 +37,20 @@ export default function DemoKeybindSpotlight({ onComplete }: { onComplete?: () =
 
       keyTimer = setTimeout(() => setShowKeys(true), 1800);
 
-      if (onComplete) {
-        endTimer = setTimeout(onComplete, 4500);
-      }
-
       return () => {
         const ctrl = controls as Record<string, unknown>;
         if (ctrl && typeof ctrl.stop === 'function') {
           ctrl.stop();
         }
         clearTimeout(keyTimer);
-        clearTimeout(endTimer);
+        if (endTimer) clearTimeout(endTimer);
       };
     }
 
-    return () => clearTimeout(endTimer);
-  }, [spotX, spotY, prefersReduced, onComplete]);
+    return () => {
+      if (endTimer) clearTimeout(endTimer);
+    };
+  }, [spotX, spotY, prefersReduced]);
 
   const containerVariants = {
     hidden: { opacity: 0 },

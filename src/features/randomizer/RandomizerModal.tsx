@@ -1,7 +1,7 @@
 import { formatAppError } from '../../lib/appError';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../lib/bindings';
+import { commands, type RandomModProposal } from '../../lib/bindings';
 import { RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { thumbnailKeys } from '../../hooks/useThumbnail';
@@ -22,14 +22,6 @@ interface RandomizerModalProps {
   gameId: string;
 }
 
-interface RandomModProposal {
-  object_id: string;
-  object_name: string;
-  mod_id: string;
-  name: string;
-  thumbnail_path?: string | null;
-  folder_path: string;
-}
 
 export default function RandomizerModal({ open, onClose, gameId }: RandomizerModalProps) {
   const { t } = useTranslation('collections');

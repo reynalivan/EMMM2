@@ -9,7 +9,6 @@ import type { ObjectSummary } from '../../../types/object';
 
 interface Props {
   job: ImportJobItem;
-  open: boolean;
   onClose: () => void;
   onConfirm: (gameId: string, category: string, objectId?: string | null) => void;
   onSkip: () => void;
@@ -17,7 +16,7 @@ interface Props {
 
 const CATEGORIES = OBJECT_CATEGORIES;
 
-export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Props) {
+export function NeedsReviewModal({ job, onClose, onConfirm, onSkip }: Props) {
   const { t } = useTranslation(['browser']);
   const [selectedGameId, setSelectedGameId] = useState<string>(job.game_id ?? '');
   const [selectedCategory, setSelectedCategory] = useState<string>(
@@ -28,7 +27,6 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
   const gamesQuery = useQuery({
     queryKey: ['games'],
     queryFn: () => commands.getGames(),
-    enabled: open,
   });
 
   const games = gamesQuery.data ?? [];
@@ -48,7 +46,7 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
       });
       return result.objects;
     },
-    enabled: open && !!selectedGameId,
+    enabled: !!selectedGameId,
   });
 
   const objects = objectsQuery.data ?? [];
@@ -56,9 +54,6 @@ export function NeedsReviewModal({ job, open, onClose, onConfirm, onSkip }: Prop
   useEffect(() => {
     setSelectedObjectId('');
   }, [selectedGameId]);
-
-  if (!open) return null;
-
   return (
     <dialog
       id="needs-review-modal"

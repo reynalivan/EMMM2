@@ -4,7 +4,6 @@ import type { ExtractOptions, FolderNameValidationMessages } from './archiveModa
 import {
   buildInitialFolderNames,
   buildInitialSelectedPaths,
-  buildOverwriteTargets,
   findDuplicateFolderNames,
   groupArchivesByEncryption,
   validateFolderName,
@@ -12,13 +11,11 @@ import {
 
 interface UseArchiveModalStateInput {
   archives: ArchiveInfo[];
-  existingFolders: string[];
   validationMessages: FolderNameValidationMessages;
 }
 
 export function useArchiveModalState({
   archives,
-  existingFolders,
   validationMessages,
 }: UseArchiveModalStateInput) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() =>
@@ -32,7 +29,6 @@ export function useArchiveModalState({
   );
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
-  const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [unpackNested, setUnpackNested] = useState(true);
 
   useEffect(() => {
@@ -41,7 +37,6 @@ export function useArchiveModalState({
     setPasswords({});
     setEditingPath(null);
     setShowStopConfirm(false);
-    setShowOverwriteConfirm(false);
   }, [archives]);
 
   const groups = useMemo(() => groupArchivesByEncryption(archives), [archives]);
@@ -52,10 +47,6 @@ export function useArchiveModalState({
   const duplicateNames = useMemo(
     () => findDuplicateFolderNames(selectedPaths, folderNames),
     [selectedPaths, folderNames],
-  );
-  const overwriteTargets = useMemo(
-    () => buildOverwriteTargets(archives, selectedPaths, folderNames, existingFolders, autoRename),
-    [archives, selectedPaths, folderNames, existingFolders, autoRename],
   );
 
   const validateArchiveFolderName = useCallback(
@@ -117,14 +108,11 @@ export function useArchiveModalState({
     setEditingPath,
     showStopConfirm,
     setShowStopConfirm,
-    showOverwriteConfirm,
-    setShowOverwriteConfirm,
     unpackNested,
     setUnpackNested,
     groups,
     hasNestedArchives,
     duplicateNames,
-    overwriteTargets,
     hasValidationErrors,
     toggleSelection,
     setPasswordForPath,

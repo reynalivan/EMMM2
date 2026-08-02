@@ -50,13 +50,8 @@ export function useImportQueue() {
     onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
   });
 
-  // Jobs pending user decision
-  const needsReview = (query.data ?? []).filter((j: ImportJobItem) => j.status === 'needs_review');
-
   return {
     jobs: query.data ?? [],
-    isLoading: query.isLoading,
-    needsReview,
     confirmJob: confirmMutation.mutate,
     skipJob: skipMutation.mutate,
   };
