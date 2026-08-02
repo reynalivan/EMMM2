@@ -80,5 +80,10 @@
     "warning": {
       "naming_conflict": "Naming conflict detected"
     }
+  },
+  "fields": {
+    "name": "Name",
+    "category": "Category",
+    "thumbnail": "Thumbnail"
   }
 }

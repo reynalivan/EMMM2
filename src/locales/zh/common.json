@@ -80,5 +80,10 @@
     "warning": {
       "naming_conflict": "检测到命名冲突"
     }
+  },
+  "fields": {
+    "name": "名称",
+    "category": "类别",
+    "thumbnail": "缩略图"
   }
 }

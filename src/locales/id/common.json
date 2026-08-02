@@ -80,5 +80,10 @@
     "warning": {
       "naming_conflict": "Konflik penamaan terdeteksi"
     }
+  },
+  "fields": {
+    "name": "Nama",
+    "category": "Kategori",
+    "thumbnail": "Thumbnail"
   }
 }

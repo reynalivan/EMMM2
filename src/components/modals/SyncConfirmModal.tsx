@@ -252,7 +252,7 @@ export default function SyncConfirmModal({
                 />
               ))}
               <DiffField
-                label="Thumbnail"
+                label={t('common:fields.thumbnail')}
                 current={currentData?.thumbnail_path ? '✓ Set' : '—'}
                 incoming={editedMatch.thumbnail_path ? '✓ Set' : '—'}
               />
