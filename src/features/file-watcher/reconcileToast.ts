@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import type { DiskReconcileResult } from '../../lib/bindings';
 import { formatCollectionReferenceImpact } from '../../hooks/collectionReferenceImpact';
 import { toast } from '../../stores/useToastStore';
@@ -44,8 +45,8 @@ export function maybeShowExternalChangeToast(result: DiskReconcileResult): void 
     const names = formatToastNames(result.change_summary.object_sample_names);
     messages.push(
       names
-        ? `${objectCount} object folder changes: ${names}`
-        : `${objectCount} object folder changes detected`,
+        ? i18next.t('common:watcher.toast.object_changes', { count: objectCount, names })
+        : i18next.t('common:watcher.toast.object_changes_detected', { count: objectCount }),
     );
   }
 
@@ -53,8 +54,8 @@ export function maybeShowExternalChangeToast(result: DiskReconcileResult): void 
     const names = formatToastNames(result.change_summary.mod_sample_names);
     messages.push(
       names
-        ? `${modCount} mod folder changes: ${names}`
-        : `${modCount} mod folder changes detected`,
+        ? i18next.t('common:watcher.toast.mod_changes', { count: modCount, names })
+        : i18next.t('common:watcher.toast.mod_changes_detected', { count: modCount }),
     );
   }
 

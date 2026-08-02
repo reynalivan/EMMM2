@@ -1,5 +1,6 @@
 import { formatAppError } from '../../../lib/appError';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { validateKeyBinding } from '../keybindingValidator';
 import { toast } from '../../../stores/useToastStore';
 import {
@@ -40,6 +41,7 @@ function areStringSetsEqual(left: Set<string>, right: Set<string>): boolean {
 }
 
 export function usePreviewPanelState() {
+  const { t } = useTranslation(['preview', 'common']);
   const {
     activePath,
     selectedFolder,
@@ -184,7 +186,7 @@ export function usePreviewPanelState() {
     setFieldErrors(payload.fieldErrors);
 
     if (Object.keys(payload.fieldErrors).length > 0) {
-      toast.error('Fix invalid INI values before saving.');
+      toast.error(t('preview:ini_editor.invalid_values'));
       return false;
     }
 
@@ -204,10 +206,10 @@ export function usePreviewPanelState() {
       setInitialByField({ ...draftByField });
       setDraftByField({ ...draftByField });
       setFieldErrors({});
-      toast.success('INI editor saved.');
+      toast.success(t('preview:ini_editor.saved'));
       return true;
     } catch (error) {
-      toast.error(`Cannot save INI: ${formatAppError(error)}`);
+      toast.error(t('preview:ini_editor.save_error', { error: formatAppError(error) }));
       return false;
     }
   };

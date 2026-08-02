@@ -132,6 +132,13 @@
     "selection_status": "{{selected}} of {{total}} selected",
     "empty_desc": "Click 'Roll Luck' to generate recommendations."
   },
+  "toast": {
+    "created": "Created collection: {{name}}",
+    "updated": "Updated collection: {{name}}",
+    "deleted": "Collection deleted",
+    "applied": "Applied collection ({{count}} changes)",
+    "applied_with_state": "Applied collection ({{count}} changes) -> {{name}}"
+  },
   "mod_row": {
     "unknown": "Unknown Mod",
     "nested": "Nested mod"

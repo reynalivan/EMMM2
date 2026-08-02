@@ -1,5 +1,6 @@
 import { formatAppError } from '../../../lib/appError';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from '../../../stores/useToastStore';
 
 export interface MetadataDraftValues {
@@ -44,6 +45,7 @@ export function useMetadataDraft({
   source,
   onSave,
 }: UseMetadataDraftParams) {
+  const { t } = useTranslation(['preview', 'common']);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [synced, setSynced] = useState(EMPTY_DRAFT);
 
@@ -88,17 +90,17 @@ export function useMetadataDraft({
     }
 
     if (draft.actual_name.trim() === '') {
-      toast.warning('Title cannot be empty');
+      toast.warning(t('preview:metadata.title_required'));
       return;
     }
 
     try {
       setSynced(await onSave(activePath, draft));
-      toast.success('Metadata auto-saved.');
+      toast.success(t('preview:metadata.auto_saved'));
     } catch (error) {
-      toast.error(`Cannot save metadata: ${formatAppError(error)}`);
+      toast.error(t('preview:metadata.save_error', { error: formatAppError(error) }));
     }
-  }, [activePath, draft, metadataDirty, onSave]);
+  }, [activePath, draft, metadataDirty, onSave, t]);
 
   // Auto-save with long debounce
   useEffect(() => {

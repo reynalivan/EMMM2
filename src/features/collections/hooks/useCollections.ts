@@ -16,6 +16,7 @@ import {
   keepPreviousData,
   type QueryClient,
 } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { toast } from '../../../stores/useToastStore';
 import { collectionKeys } from '../queryKeys';
 import { commands } from '../../../lib/bindings';
@@ -99,6 +100,7 @@ export function useApplyCollectionPreview(gameId: string | null, collectionId: s
 /** Create a new named collection. */
 export function useCreateCollection() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
 
   return useMutation({
     mutationFn: ({
@@ -118,7 +120,7 @@ export function useCreateCollection() {
         queryClient,
         buildRuntimeMutationDescriptor('collectionsCatalog'),
       );
-      toast.success(`Created collection: ${result.name}`);
+      toast.success(t('toast.created', { name: result.name }));
     },
 
     onError: toastMutationError,
@@ -149,6 +151,7 @@ export function useApplyProgress(gameId: string | null, enabled: boolean) {
 /** Update an existing collection (rename). */
 export function useUpdateCollection() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
 
   return useMutation({
     mutationFn: ({ gameId, id, name }: { gameId: string; id: string; name?: string }) =>
@@ -159,7 +162,7 @@ export function useUpdateCollection() {
         queryClient,
         buildRuntimeMutationDescriptor('collectionsOnly'),
       );
-      toast.success(`Updated collection: ${result.name}`);
+      toast.success(t('toast.updated', { name: result.name }));
     },
 
     onError: toastMutationError,
@@ -169,6 +172,7 @@ export function useUpdateCollection() {
 /** Replace an existing named collection with the current live corridor state. */
 export function useReplaceCollectionWithCurrentState() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
 
   return useMutation({
     mutationFn: ({ gameId, collectionId }: { gameId: string; collectionId: string }) =>
@@ -179,7 +183,7 @@ export function useReplaceCollectionWithCurrentState() {
         queryClient,
         buildRuntimeMutationDescriptor('collectionsState'),
       );
-      toast.success(`Updated collection: ${result.name}`);
+      toast.success(t('toast.updated', { name: result.name }));
     },
 
     onError: toastMutationError,
@@ -189,6 +193,7 @@ export function useReplaceCollectionWithCurrentState() {
 /** Delete a collection. */
 export function useDeleteCollection() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
 
   return useMutation({
     mutationFn: ({ gameId: _gameId, id }: { gameId: string; id: string }) =>
@@ -199,7 +204,7 @@ export function useDeleteCollection() {
         queryClient,
         buildRuntimeMutationDescriptor('collectionsCatalog'),
       );
-      toast.success('Collection deleted');
+      toast.success(t('toast.deleted'));
     },
 
     onError: toastMutationError,
@@ -209,6 +214,7 @@ export function useDeleteCollection() {
 /** Apply a collection (enable/disable mods to match the snapshot). */
 export function useApplyCollection() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
 
   const mutation = useMutation({
     mutationFn: ({
@@ -231,8 +237,11 @@ export function useApplyCollection() {
       );
 
       const total = result.mods_enabled + result.mods_disabled;
-      const suffix = result.final_state_name ? ` -> ${result.final_state_name}` : '';
-      toast.success(`Applied collection (${total} changes)${suffix}`);
+      toast.success(
+        result.final_state_name
+          ? t('toast.applied_with_state', { count: total, name: result.final_state_name })
+          : t('toast.applied', { count: total }),
+      );
     },
 
     onError: (err: unknown, variables) => {

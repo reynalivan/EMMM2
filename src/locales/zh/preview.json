@@ -32,7 +32,10 @@
     "edit_title": "编辑元数据",
     "double_click_edit": "双击进行编辑",
     "auto_saving_label": "自动保存中…",
-    "done_label": "完成"
+    "done_label": "完成",
+    "title_required": "标题不能为空",
+    "auto_saved": "元数据已自动保存。",
+    "save_error": "无法保存元数据：{{error}}"
   },
   "gallery": {
     "title": "预览图",
@@ -93,7 +96,10 @@
     "alt_restriction_disabled": "Alt 是组合键的一部分，无法限制。",
     "modifier_ctrl": "CTRL",
     "modifier_alt": "ALT",
-    "modifier_shift": "SHIFT"
+    "modifier_shift": "SHIFT",
+    "invalid_values": "请在保存前修正无效的 INI 值。",
+    "saved": "INI 编辑器已保存。",
+    "save_error": "无法保存 INI：{{error}}"
   },
   "modals": {
     "unsaved": {

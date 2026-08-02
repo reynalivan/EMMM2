@@ -132,6 +132,13 @@
     "selection_status": "{{selected}} dari {{total}} terpilih",
     "empty_desc": "Klik 'Coba Keberuntungan' untuk menghasilkan rekomendasi."
   },
+  "toast": {
+    "created": "Koleksi dibuat: {{name}}",
+    "updated": "Koleksi diperbarui: {{name}}",
+    "deleted": "Koleksi dihapus",
+    "applied": "Koleksi diterapkan ({{count}} perubahan)",
+    "applied_with_state": "Koleksi diterapkan ({{count}} perubahan) -> {{name}}"
+  },
   "mod_row": {
     "unknown": "Mod Tidak Diketahui",
     "nested": "Mod bersarang"

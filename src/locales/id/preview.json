@@ -32,7 +32,10 @@
     "edit_title": "Edit Metadata",
     "double_click_edit": "Klik dua kali untuk mengedit",
     "auto_saving_label": "menyimpan otomatis…",
-    "done_label": "Selesai"
+    "done_label": "Selesai",
+    "title_required": "Judul tidak boleh kosong",
+    "auto_saved": "Metadata tersimpan otomatis.",
+    "save_error": "Gagal menyimpan metadata: {{error}}"
   },
   "gallery": {
     "title": "Gambar Pratinjau",
@@ -93,7 +96,10 @@
     "alt_restriction_disabled": "Alt adalah bagian dari kombo, tidak bisa dibatasi.",
     "modifier_ctrl": "CTRL",
     "modifier_alt": "ALT",
-    "modifier_shift": "SHIFT"
+    "modifier_shift": "SHIFT",
+    "invalid_values": "Perbaiki nilai INI yang tidak valid sebelum menyimpan.",
+    "saved": "INI editor tersimpan.",
+    "save_error": "Gagal menyimpan INI: {{error}}"
   },
   "modals": {
     "unsaved": {

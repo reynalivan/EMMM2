@@ -132,6 +132,13 @@
     "selection_status": "已选 {{selected}} / {{total}}",
     "empty_desc": "点击“碰碰运气”生成推荐。"
   },
+  "toast": {
+    "created": "已创建收藏集：{{name}}",
+    "updated": "已更新收藏集：{{name}}",
+    "deleted": "收藏集已删除",
+    "applied": "已应用收藏集（{{count}} 项更改）",
+    "applied_with_state": "已应用收藏集（{{count}} 项更改）-> {{name}}"
+  },
   "mod_row": {
     "unknown": "未知 Mod",
     "nested": "嵌套 Mod"

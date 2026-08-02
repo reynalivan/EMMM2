@@ -32,7 +32,10 @@
     "edit_title": "Edit Metadata",
     "double_click_edit": "Double click to edit",
     "auto_saving_label": "auto-saving…",
-    "done_label": "Done"
+    "done_label": "Done",
+    "title_required": "Title cannot be empty",
+    "auto_saved": "Metadata auto-saved.",
+    "save_error": "Cannot save metadata: {{error}}"
   },
   "gallery": {
     "title": "Preview Images",
@@ -105,7 +108,10 @@
     "modifier_shift": "SHIFT",
     "shift_restriction_disabled": "Shift is part of the combo, cannot restrict.",
     "ctrl_restriction_disabled": "Ctrl is part of the combo, cannot restrict.",
-    "alt_restriction_disabled": "Alt is part of the combo, cannot restrict."
+    "alt_restriction_disabled": "Alt is part of the combo, cannot restrict.",
+    "invalid_values": "Fix invalid INI values before saving.",
+    "saved": "INI editor saved.",
+    "save_error": "Cannot save INI: {{error}}"
   },
   "errors": {
     "open_location_failed": "Failed to open file location: {{error}}"

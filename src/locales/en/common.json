@@ -85,5 +85,14 @@
     "name": "Name",
     "category": "Category",
     "thumbnail": "Thumbnail"
+  },
+  "watcher": {
+    "error": "File watcher error: {{error}}",
+    "toast": {
+      "object_changes": "{{count}} object folder changes: {{names}}",
+      "object_changes_detected": "{{count}} object folder changes detected",
+      "mod_changes": "{{count}} mod folder changes: {{names}}",
+      "mod_changes_detected": "{{count}} mod folder changes detected"
+    }
   }
 }

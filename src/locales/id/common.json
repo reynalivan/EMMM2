@@ -85,5 +85,14 @@
     "name": "Nama",
     "category": "Kategori",
     "thumbnail": "Thumbnail"
+  },
+  "watcher": {
+    "error": "Kesalahan file watcher: {{error}}",
+    "toast": {
+      "object_changes": "{{count}} perubahan folder objek: {{names}}",
+      "object_changes_detected": "{{count}} perubahan folder objek terdeteksi",
+      "mod_changes": "{{count}} perubahan folder mod: {{names}}",
+      "mod_changes_detected": "{{count}} perubahan folder mod terdeteksi"
+    }
   }
 }

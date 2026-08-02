@@ -85,5 +85,14 @@
     "name": "名称",
     "category": "类别",
     "thumbnail": "缩略图"
+  },
+  "watcher": {
+    "error": "文件监视器错误：{{error}}",
+    "toast": {
+      "object_changes": "{{count}} 个对象文件夹更改：{{names}}",
+      "object_changes_detected": "检测到 {{count}} 个对象文件夹更改",
+      "mod_changes": "{{count}} 个模组文件夹更改：{{names}}",
+      "mod_changes_detected": "检测到 {{count}} 个模组文件夹更改"
+    }
   }
 }

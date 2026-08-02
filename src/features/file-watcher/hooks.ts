@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient } from '@tanstack/react-query';
+import i18next from 'i18next';
 import { useAppStore } from '../../stores/useAppStore';
 import type { GameConfig } from '../../types/game';
 import { commands, type DiskReconcileReason, type DiskReconcileResult } from '../../lib/bindings';
@@ -257,7 +258,7 @@ export function useDiskReconcileCoordinator(
       }
 
       console.error('[Watcher] error:', event.payload.error, event.payload.path);
-      toast.warning(`File watcher error: ${event.payload.error}`);
+      toast.warning(i18next.t('common:watcher.error', { error: event.payload.error }));
       // Mark state dirty so the next TTL sync repairs anything missed.
       markDiskReconcilePending(gameId, true);
     });
