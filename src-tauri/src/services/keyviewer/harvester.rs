@@ -92,20 +92,8 @@ pub fn harvest_hashes_from_ini(file_path: &Path) -> Result<Vec<HarvestedHash>, S
     let bytes =
         fs::read(file_path).map_err(|e| format!("Failed to read {}: {e}", file_path.display()))?;
 
-    // Handle BOM
-    let content_bytes = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        &bytes[3..]
-    } else {
-        &bytes[..]
-    };
-
-    let text = match String::from_utf8(content_bytes.to_vec()) {
-        Ok(s) => s,
-        Err(_) => {
-            let (cow, _encoding, _had_errors) = encoding_rs::SHIFT_JIS.decode(content_bytes);
-            cow.into_owned()
-        }
-    };
+    // Hash lines are ASCII, so even the lossy fallback decode scans fine.
+    let (text, _had_bom, _clean) = crate::services::ini::document::decode_ini_bytes(&bytes);
 
     let mut results = Vec::new();
     let mut current_section: Option<String> = None;
@@ -171,7 +159,7 @@ pub fn harvest_hashes_from_mod(
             }
             Err(e) => {
                 // Log but don't fail — a single bad INI shouldn't block the whole mod
-                eprintln!(
+                log::warn!(
                     "[keyviewer] Failed to harvest hashes from {}: {e}",
                     ini_path.display()
                 );

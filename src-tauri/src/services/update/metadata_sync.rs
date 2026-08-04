@@ -68,17 +68,18 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
         anyhow::bail!("Manifest fetch failed: HTTP {}", response.status());
     }
 
-    // Cache new ETag / Last-Modified headers
-    if let Some(new_etag) = response.headers().get("etag") {
-        if let Ok(val) = new_etag.to_str() {
-            set_meta(pool, "etag", val).await;
-        }
-    }
-    if let Some(new_lm) = response.headers().get("last-modified") {
-        if let Ok(val) = new_lm.to_str() {
-            set_meta(pool, "last_modified", val).await;
-        }
-    }
+    // Capture the new validators but do NOT persist them yet: caching the ETag
+    // before the payload lands means a failed download turns every later check
+    // into a 304 and the update is never retried until upstream bumps again.
+    let header_value = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let new_etag = header_value("etag");
+    let new_last_modified = header_value("last-modified");
 
     let manifest: RemoteManifest = response.json().await?;
     let local_version: u64 = get_meta(pool, "metadata_version")
@@ -92,6 +93,8 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
             "Metadata: already at version {} (remote: {})",
             local_version, manifest.db_version
         );
+        // Nothing to download, so the new validators are safe to cache now.
+        persist_validators(pool, &new_etag, &new_last_modified).await;
         return Ok(MetadataSyncResult {
             updated: false,
             version: Some(local_version),
@@ -113,13 +116,28 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
         }
     }
 
-    // Update the local version marker
+    // Update the local version marker, then cache the validators — only now
+    // that the payload made it — so a failed run retries with the old ETag.
     set_meta(pool, "metadata_version", &manifest.db_version.to_string()).await;
+    persist_validators(pool, &new_etag, &new_last_modified).await;
 
     Ok(MetadataSyncResult {
         updated: true,
         version: Some(manifest.db_version),
     })
+}
+
+async fn persist_validators(
+    pool: &SqlitePool,
+    etag: &Option<String>,
+    last_modified: &Option<String>,
+) {
+    if let Some(value) = etag {
+        set_meta(pool, "etag", value).await;
+    }
+    if let Some(value) = last_modified {
+        set_meta(pool, "last_modified", value).await;
+    }
 }
 
 /// GET with conditional headers and exponential backoff on 429.

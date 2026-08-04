@@ -96,6 +96,31 @@ pub fn list_ini_files(mod_path: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(entries)
 }
 
+/// Strip a UTF-8 BOM and decode INI bytes: UTF-8 first, Shift-JIS next (JP mod
+/// tooling still writes it), lossy UTF-8 as the last resort. Returns
+/// `(text, had_bom, clean)`; `clean == false` means the lossy fallback ran and
+/// structured parsing should not trust the text.
+pub fn decode_ini_bytes(bytes: &[u8]) -> (String, bool, bool) {
+    let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
+    let content_bytes = if had_bom { &bytes[3..] } else { bytes };
+
+    match String::from_utf8(content_bytes.to_vec()) {
+        Ok(text) => (text, had_bom, true),
+        Err(_) => {
+            let (cow, _encoding, had_errors) = encoding_rs::SHIFT_JIS.decode(content_bytes);
+            if !had_errors {
+                (cow.into_owned(), had_bom, true)
+            } else {
+                (
+                    String::from_utf8_lossy(content_bytes).to_string(),
+                    had_bom,
+                    false,
+                )
+            }
+        }
+    }
+}
+
 pub fn read_ini_document(file_path: &Path) -> Result<IniDocument, String> {
     if !file_path.exists() {
         return Err(format!("INI file not found: {}", file_path.display()));
@@ -111,26 +136,13 @@ pub fn read_ini_document(file_path: &Path) -> Result<IniDocument, String> {
 
     let bytes = fs::read(file_path).map_err(|e| format!("Failed to read INI file: {e}"))?;
 
-    let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-    let content_bytes = if had_bom { &bytes[3..] } else { &bytes[..] };
-
-    let newline_style = if content_bytes.windows(2).any(|w| w == b"\r\n") {
+    let newline_style = if bytes.windows(2).any(|w| w == b"\r\n") {
         NewlineStyle::CrLf
     } else {
         NewlineStyle::Lf
     };
 
-    let (text, utf8_ok) = match String::from_utf8(content_bytes.to_vec()) {
-        Ok(s) => (s, true),
-        Err(_) => {
-            let (cow, _encoding, had_errors) = encoding_rs::SHIFT_JIS.decode(content_bytes);
-            if !had_errors {
-                (cow.into_owned(), true)
-            } else {
-                (String::from_utf8_lossy(content_bytes).to_string(), false)
-            }
-        }
-    };
+    let (text, had_bom, utf8_ok) = decode_ini_bytes(&bytes);
 
     let raw_lines: Vec<String> = text.lines().map(ToString::to_string).collect();
 
