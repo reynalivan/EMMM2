@@ -1,3 +1,4 @@
+use crate::common::sync::lock;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -41,11 +42,11 @@ pub struct AiRerankCache {
 
 impl AiRerankCache {
     pub fn get(&self, key: &AiRerankCacheKey) -> Option<HashMap<usize, f32>> {
-        self.entries.lock().unwrap().get(key).cloned()
+        lock(&self.entries).get(key).cloned()
     }
 
     pub fn insert(&self, key: AiRerankCacheKey, scores: HashMap<usize, f32>) {
-        self.entries.lock().unwrap().insert(key, scores);
+        lock(&self.entries).insert(key, scores);
     }
 }
 

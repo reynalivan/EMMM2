@@ -1,5 +1,6 @@
 //! Blocking, fail-safe GameBanana API client.
 
+use crate::common::sync::lock;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -206,12 +207,12 @@ fn validate_game_ownership(
 }
 
 fn get_gb_auth_token(client: &reqwest::blocking::Client) -> Option<String> {
-    if *GB_AUTH_FAILED.lock().unwrap() {
+    if *lock(&GB_AUTH_FAILED) {
         return None;
     }
 
     {
-        let lock = GB_AUTH_TOKEN.lock().unwrap();
+        let lock = lock(&GB_AUTH_TOKEN);
         if let Some(token) = lock.as_ref() {
             return Some(token.clone());
         }
@@ -225,7 +226,7 @@ fn get_gb_auth_token(client: &reqwest::blocking::Client) -> Option<String> {
 
     if app_id.is_empty() || user_id.is_empty() || api_password.is_empty() {
         log::debug!("GB: Auth credentials missing in .env, falling back to public API.");
-        *GB_AUTH_FAILED.lock().unwrap() = true;
+        *lock(&GB_AUTH_FAILED) = true;
         return None;
     }
 
@@ -240,18 +241,18 @@ fn get_gb_auth_token(client: &reqwest::blocking::Client) -> Option<String> {
         Ok(json) => {
             if let Some(token) = json.get("_sToken").and_then(|v| v.as_str()) {
                 let token_str = token.to_string();
-                *GB_AUTH_TOKEN.lock().unwrap() = Some(token_str.clone());
+                *lock(&GB_AUTH_TOKEN) = Some(token_str.clone());
                 log::info!("GB: Successfully authenticated as app {}", app_id);
                 Some(token_str)
             } else {
                 log::warn!("GB: Authentication failed, token not found in response.");
-                *GB_AUTH_FAILED.lock().unwrap() = true;
+                *lock(&GB_AUTH_FAILED) = true;
                 None
             }
         }
         Err(e) => {
             log::warn!("GB: Authentication request failed: {e}");
-            *GB_AUTH_FAILED.lock().unwrap() = true;
+            *lock(&GB_AUTH_FAILED) = true;
             None
         }
     }

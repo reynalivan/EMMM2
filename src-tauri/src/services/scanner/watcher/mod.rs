@@ -13,6 +13,7 @@
 //! # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 
 use crate::common::path_key::path_file_name_lossy;
+use crate::common::sync::lock;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
@@ -141,7 +142,7 @@ pub fn watch_mod_directory(
 
                 // Flush any expired pending rename (>100ms old)
                 {
-                    let mut pending = pending_clone.lock().unwrap();
+                    let mut pending = lock(&pending_clone);
                     if let Some((ref from_path, ts)) = *pending {
                         if ts.elapsed() > RENAME_PAIR_TIMEOUT {
                             send(ModWatchEvent::Removed(from_path.clone()));
@@ -155,7 +156,7 @@ pub fn watch_mod_directory(
                     EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
                         if let Some(p) = event.paths.first() {
                             let path_str = p.to_string_lossy().to_string();
-                            let mut pending = pending_clone.lock().unwrap();
+                            let mut pending = lock(&pending_clone);
                             // Flush any existing pending From as Removed
                             if let Some((ref old_from, _)) = *pending {
                                 send(ModWatchEvent::Removed(old_from.clone()));
@@ -165,7 +166,7 @@ pub fn watch_mod_directory(
                             let tx_for_timeout = tx.clone();
                             std::thread::spawn(move || {
                                 std::thread::sleep(RENAME_PAIR_TIMEOUT);
-                                let mut pending = pending_for_timeout.lock().unwrap();
+                                let mut pending = lock(&pending_for_timeout);
                                 let Some((pending_path, pending_at)) = pending.as_ref() else {
                                     return;
                                 };
@@ -186,7 +187,7 @@ pub fn watch_mod_directory(
                     EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
                         if let Some(p) = event.paths.first() {
                             let to_path = p.to_string_lossy().to_string();
-                            let mut pending = pending_clone.lock().unwrap();
+                            let mut pending = lock(&pending_clone);
                             if let Some((from_path, _)) = pending.take() {
                                 // Paired: check if it's a status change
                                 let from_p = Path::new(&from_path);

@@ -1,3 +1,4 @@
+use crate::common::sync::lock;
 use std::fs;
 use std::io::Cursor;
 use std::num::NonZeroUsize;
@@ -48,7 +49,7 @@ impl ThumbnailCache {
     }
 
     pub fn init(app_data_dir: &Path) {
-        let mut cache = Self::get_instance().lock().unwrap();
+        let mut cache = lock(Self::get_instance());
         let cache_dir = thumbnail_cache_dir(app_data_dir);
         if !cache_dir.exists() {
             let _ = fs::create_dir_all(&cache_dir);
@@ -104,7 +105,7 @@ impl ThumbnailCache {
 
     /// Check folder-keyed L1. Returns the hash string if valid.
     fn get_folder_l1_hash(folder_path: &str) -> Option<String> {
-        let mut cache = Self::get_instance().lock().unwrap();
+        let mut cache = lock(Self::get_instance());
         if let Some(entry) = cache.folder_cache.get(folder_path) {
             if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists() {
                 return Some(entry.webp_path.to_string_lossy().to_string());
@@ -135,7 +136,7 @@ impl ThumbnailCache {
         })?;
 
         {
-            let mut cache = Self::get_instance().lock().unwrap();
+            let mut cache = lock(Self::get_instance());
             cache.folder_cache.put(
                 folder_key.to_string(),
                 CachedEntry {
@@ -150,13 +151,13 @@ impl ThumbnailCache {
 
     /// Invalidate folder-keyed L1 entry.
     pub fn invalidate_folder(folder_path: &str) {
-        let mut cache = Self::get_instance().lock().unwrap();
+        let mut cache = lock(Self::get_instance());
         cache.folder_cache.pop(folder_path);
     }
 
     /// Invalidate the parent folder cache for a changed image path.
     pub fn invalidate(original_path: &Path) {
-        let mut cache = Self::get_instance().lock().unwrap();
+        let mut cache = lock(Self::get_instance());
         if let Some(parent) = original_path.parent() {
             cache
                 .folder_cache
@@ -171,7 +172,7 @@ impl ThumbnailCache {
         let original_str = original_path.to_string_lossy().to_string();
 
         let base_dir = {
-            let cache = Self::get_instance().lock().unwrap();
+            let cache = lock(Self::get_instance());
             cache.base_dir.clone().ok_or("Cache not initialized")?
         };
 
@@ -226,7 +227,7 @@ impl ThumbnailCache {
     ) -> Result<usize, String> {
         let cache_dir = thumbnail_cache_dir(app_data_dir);
         {
-            let mut cache = Self::get_instance().lock().unwrap();
+            let mut cache = lock(Self::get_instance());
             if cache.base_dir.as_ref() != Some(&cache_dir) {
                 cache.folder_cache.clear();
             }
@@ -259,7 +260,7 @@ impl ThumbnailCache {
         // Copy the directory out before walking it: holding the cache lock across
         // a full directory scan would stall every concurrent L1 lookup.
         let base_dir = {
-            let cache = Self::get_instance().lock().unwrap();
+            let cache = lock(Self::get_instance());
             cache.base_dir.clone().ok_or("Cache not initialized")?
         };
 

@@ -1,3 +1,4 @@
+use crate::common::sync::lock;
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,7 +67,7 @@ pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), String> {
 pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(), String> {
     let mutex = DISKS_CACHE
         .get_or_init(|| std::sync::Mutex::new(sysinfo::Disks::new_with_refreshed_list()));
-    let mut disks = mutex.lock().unwrap();
+    let mut disks = lock(mutex);
     disks.refresh(true);
 
     let search_path = mods_dir

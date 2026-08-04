@@ -1,5 +1,6 @@
 //! File system watcher commands.
 
+use crate::common::sync::lock;
 use crate::domain::errors::AppError;
 use crate::services::scanner::watcher::WatcherState;
 use std::sync::atomic::Ordering;
@@ -47,7 +48,7 @@ pub async fn start_watcher(
 #[tauri::command]
 #[specta::specta]
 pub async fn stop_watcher(watcher: State<'_, WatcherState>) -> Result<(), AppError> {
-    let mut w = watcher.watcher.lock().unwrap();
+    let mut w = lock(&watcher.watcher);
     if w.is_some() {
         log::info!("Stopping watcher via command");
         *w = None;

@@ -162,8 +162,11 @@ fn apply_hash_stage(
             .get(hash)
             .copied()
             .unwrap_or(posting.len());
-        let score_delta = if df <= 1 { 12.0 } else { 3.0 };
-        let unique_overlap = if df <= 1 { 1 } else { 0 };
+        // `df` is `posting.len()` by construction and a posting list is never
+        // empty, so `df == 1` means "this hash belongs to exactly one entry".
+        // The full pipeline spells the same test the same way.
+        let score_delta = if df == 1 { 12.0 } else { 3.0 };
+        let unique_overlap = if df == 1 { 1 } else { 0 };
 
         for entry_id in posting {
             let Some(state) = states.get_mut(entry_id) else {

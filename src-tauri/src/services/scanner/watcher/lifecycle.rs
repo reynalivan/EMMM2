@@ -6,6 +6,7 @@
 //! - delegate Disk Reconcile to `disk_reconcile`
 //! - emit typed payloads back to the frontend
 
+use crate::common::sync::lock;
 use crate::services::scanner::watcher::{
     ModWatchEvent, WatchEventPayload, WatcherState, WatcherSuppressor,
 };
@@ -37,7 +38,7 @@ pub fn start_watcher(
     {
         // Single lock: stop the old watcher and install the new one atomically
         // so overlapping start/stop commands cannot interleave.
-        let mut active_watcher = state.watcher.lock().unwrap();
+        let mut active_watcher = lock(&state.watcher);
         if active_watcher.is_some() {
             log::info!("Stopping existing watcher");
         }
