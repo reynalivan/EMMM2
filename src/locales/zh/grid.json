@@ -4,7 +4,9 @@
     "search_placeholder": "搜索模组...",
     "item_count_one": "{{count}} 个项目",
     "item_count_other": "{{count}} 个项目",
-    "refresh_title": "刷新"
+    "refresh_title": "刷新",
+    "view_grid": "网格视图",
+    "view_list": "列表视图"
   },
   "banners": {
     "conflict_detected_one": "检测到 {{count}} 个命名冲突",

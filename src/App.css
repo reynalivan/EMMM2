@@ -1,5 +1,12 @@
 @import 'tailwindcss';
-@plugin "daisyui";
+/* themes: false — otherwise daisyUI also emits its built-in `light` and `dark`
+   themes. The built-in `light` collides with ours by name, and any *-content
+   token we forget to declare silently inherits the built-in value computed for
+   daisyUI's teal/pastel palette (e.g. dark-teal accent-content under our purple
+   accent). With the built-ins gone, the two blocks below are the only source. */
+@plugin "daisyui" {
+  themes: false;
+}
 
 /* --- Theme Definitions (DaisyUI 5 Mechanism) --- */
 /* src/App.css */
@@ -22,13 +29,20 @@
   --color-secondary: #8b5cf6; /* Vibrant Purple */
   --color-secondary-content: #ffffff;
   --color-accent: #b15eff; /* Neon Pink/Rose */
+  --color-accent-content: #16171d;
   --color-neutral: #111218;
+  --color-neutral-content: #e2e8f0;
 
-  /* 3. Status Colors */
+  /* 3. Status Colors — bright fills, so their content ink is dark.
+     Every pair clears 4.5:1; white would land at 2.1–3.8. */
   --color-info: #0ea5e9;
+  --color-info-content: #16171d;
   --color-success: #10b981;
+  --color-success-content: #16171d;
   --color-warning: #f59e0b;
+  --color-warning-content: #16171d;
   --color-error: #ef4444;
+  --color-error-content: #16171d;
 
   /* 4. UI Elements & Radius */
   --radius-box: 1.25rem; /* Bubbly, rounded corners like the image */
@@ -46,7 +60,12 @@
   --glow-size: 15px;
   --mask-opacity: 65%;
 }
-/* Modern Light Mode (Slate-based, Classy) */
+/* Modern Light Mode (Slate-based, Classy).
+   Every semantic role here must stay in the SAME hue family as onyx above —
+   light simply steps one shade darker so the colour still holds contrast on
+   white. Previously `secondary` was green in light but purple in dark, and
+   `accent` was near-black in light but neon purple in dark, so `text-secondary`
+   and `badge-accent` meant different things depending on the theme. */
 @plugin "daisyui/theme" {
   name: 'light';
   default: false;
@@ -57,18 +76,28 @@
   --color-base-300: #e2e8f0;
   --color-base-content: #0f172a;
 
-  --color-primary: #5865f2;
+  --color-primary: #2563eb; /* blue, matches onyx */
   --color-primary-content: #ffffff;
-  --color-secondary: #16a34a;
-  --color-accent: #1e293b;
-  --color-neutral: #cbd5e1;
+  --color-secondary: #7c3aed; /* violet, matches onyx */
+  --color-secondary-content: #ffffff;
+  --color-accent: #9333ea; /* purple, matches onyx */
+  --color-accent-content: #ffffff;
+  --color-neutral: #1e293b; /* dark neutral in both themes, per daisyUI's role */
+  --color-neutral-content: #f1f5f9;
 
-  --color-info: #0ea5e9;
-  --color-success: #22c55e;
-  --color-warning: #eab308;
-  --color-error: #ef4444;
+  /* Same hue families as onyx, stepped dark enough to clear 4.5:1 on white —
+     the 500-level shades onyx uses land at 3.2–4.1:1 here. Dark fills, so
+     content ink is white (4.8–5.9:1 on every pair). */
+  --color-info: #0369a1;
+  --color-info-content: #ffffff;
+  --color-success: #047857;
+  --color-success-content: #ffffff;
+  --color-warning: #b45309;
+  --color-warning-content: #ffffff;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
 
-  --radius-box: 0.5rem;
+  --radius-box: 1.25rem; /* same box geometry as onyx */
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(15, 23, 42, 0.08);
   --scrollbar-thumb: #cbd5e1;
@@ -80,23 +109,11 @@
   --mask-opacity: 30%;
 }
 
-/* Shared Design Tokens mapped to Tailwind utility values */
+/* Shared Design Tokens mapped to Tailwind utility values.
+   daisyUI 5 already owns --color-*, --glass-*, --aurora-* and --radius-box via the
+   @plugin theme blocks above; re-declaring them here only shadowed them with the
+   daisyUI 4 short names (--p, --b1, --g-bg) that no longer exist. */
 @theme {
-  --color-primary: var(--p);
-  --color-secondary: var(--s);
-  --color-accent: var(--a);
-  --color-neutral: var(--n);
-  --color-base-100: var(--b1);
-  --color-base-200: var(--b2);
-  --color-base-300: var(--b3);
-  --color-base-content: var(--bc);
-
-  --radius-box: 0.5rem;
-  --glass-bg: var(--g-bg);
-  --glass-border: var(--g-border);
-  --aurora-blend: var(--au-blend);
-  --aurora-opacity: var(--au-opacity);
-
   --glow-color: color-mix(in srgb, var(--color-primary), transparent var(--glow-opacity));
   --glow-blur: var(--glow-size);
 
@@ -118,10 +135,6 @@ body {
   border: 1px solid var(--glass-border);
 }
 
-.glow-active {
-  box-shadow: 0 0 15px -3px var(--color-primary);
-}
-
 .glow-text {
   text-shadow: 0 0 var(--glow-blur) var(--glow-color);
 }
@@ -129,9 +142,9 @@ body {
 .bg-github-gradient {
   background: linear-gradient(
     135deg,
-    oklch(var(--p)) 0%,
-    oklch(var(--s)) 50%,
-    oklch(var(--a)) 100%
+    var(--color-primary) 0%,
+    var(--color-secondary) 50%,
+    var(--color-accent) 100%
   );
 }
 
@@ -154,11 +167,6 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--scrollbar-thumb), black 10%);
-}
-
-/* Card Hover Effect */
-.card-hover-effect {
-  @apply transition-all duration-200 hover:scale-[1.01] hover:shadow-md hover:bg-base-200;
 }
 
 /* Custom Scrollbar (Auto-hiding, Theme Aware) */
@@ -193,6 +201,60 @@ body {
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background-color: var(--scrollbar-thumb);
+}
+
+/* Entrance animations.
+   Toasts, context menus, dropdowns and overlays across the app already used the
+   `animate-in fade-in slide-in-from-* zoom-in-95` vocabulary, but nothing defined
+   it — every one of those elements popped in with no transition. These are the
+   minimum utilities to make the existing markup work; `duration-*` feeds through
+   Tailwind's own --tw-duration so the call sites need no changes. */
+@keyframes enter {
+  from {
+    opacity: var(--enter-opacity, 1);
+    transform: translate3d(var(--enter-x, 0), var(--enter-y, 0), 0) scale(var(--enter-scale, 1));
+  }
+}
+
+@utility animate-in {
+  animation: enter var(--tw-duration, 200ms) var(--tw-ease, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+
+@utility fade-in {
+  --enter-opacity: 0;
+}
+
+@utility fade-in-0 {
+  --enter-opacity: 0;
+}
+
+@utility zoom-in-95 {
+  --enter-scale: 0.95;
+}
+
+@utility slide-in-from-top-* {
+  --enter-y: calc(--value(integer) * -0.25rem);
+}
+
+@utility slide-in-from-bottom-* {
+  --enter-y: calc(--value(integer) * 0.25rem);
+}
+
+@utility slide-in-from-left-* {
+  --enter-x: calc(--value(integer) * -0.25rem);
+}
+
+@utility slide-in-from-right-* {
+  --enter-x: calc(--value(integer) * 0.25rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    --enter-x: 0;
+    --enter-y: 0;
+    --enter-scale: 1;
+    animation-duration: 120ms;
+  }
 }
 
 /* DnD Drop Zone Animations */

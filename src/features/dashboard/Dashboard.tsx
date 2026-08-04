@@ -2,7 +2,6 @@ import { Copy, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DashboardPayload } from '../../types/dashboard';
 import { useAppStore } from '../../stores/useAppStore';
-import { useResolvedTheme } from '../../hooks/useResolvedTheme';
 import { useDashboardStats } from './hooks/useDashboardStats';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 import { useActiveGame } from '../../hooks/useActiveGame';
@@ -30,8 +29,6 @@ export default function Dashboard() {
   const { t } = useTranslation(['dashboard', 'common']);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const activeGameId = useAppStore((state) => state.activeGameId);
-  // Chart palettes follow the theme actually applied by useThemeRuntime.
-  const theme = useResolvedTheme();
   const { data, isLoading, isError, refresh } = useDashboardStats();
   const { activeGame } = useActiveGame();
   const { keybindings, isLoading: keybindingsLoading } = useActiveKeybindings();
@@ -62,7 +59,8 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold tracking-tight">{t('header.title')}</h1>
             <p className="text-sm text-base-content/50">
               {t('header.subtitle')}
-              {activeGameId ? ` • ${activeGameId}` : ''}
+              {/* The game's own name, not its internal slug. */}
+              {activeGameId ? ` • ${activeGame?.name ?? activeGameId}` : ''}
             </p>
           </div>
           <button
@@ -97,7 +95,6 @@ export default function Dashboard() {
         <DashboardCharts
           categoryDistribution={categoryDistribution}
           gameDistribution={gameDistribution}
-          theme={theme}
         />
         <DashboardActivity
           activeGame={activeGame}

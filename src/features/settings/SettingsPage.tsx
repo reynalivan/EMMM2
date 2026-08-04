@@ -1,6 +1,17 @@
 import { formatAppError } from '../../lib/appError';
 import { Fragment, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import {
+  ArrowLeft,
+  DownloadCloud,
+  Gamepad2,
+  Globe,
+  Keyboard,
+  ScrollText,
+  Shield,
+  SlidersHorizontal,
+  Sparkles,
+  Wrench,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../hooks/useSettings';
 import { useAppStore } from '../../stores/useAppStore'; // Import Store
@@ -16,15 +27,15 @@ import BrowserTab from './tabs/BrowserTab';
 
 // `dividerBefore` keeps the visual break above Logs without a second array.
 const TABS = [
-  { id: 'general', Component: GeneralTab },
-  { id: 'games', Component: GamesTab },
-  { id: 'browser', Component: BrowserTab },
-  { id: 'privacy', Component: PrivacyTab },
-  { id: 'hotkeys', Component: HotkeyTab },
-  { id: 'ai', Component: AITab },
-  { id: 'maintenance', Component: MaintenanceTab },
-  { id: 'updates', Component: UpdateTab },
-  { id: 'logs', Component: LogsTab, dividerBefore: true },
+  { id: 'general', Component: GeneralTab, Icon: SlidersHorizontal },
+  { id: 'games', Component: GamesTab, Icon: Gamepad2 },
+  { id: 'browser', Component: BrowserTab, Icon: Globe },
+  { id: 'privacy', Component: PrivacyTab, Icon: Shield },
+  { id: 'hotkeys', Component: HotkeyTab, Icon: Keyboard },
+  { id: 'ai', Component: AITab, Icon: Sparkles },
+  { id: 'maintenance', Component: MaintenanceTab, Icon: Wrench },
+  { id: 'updates', Component: UpdateTab, Icon: DownloadCloud },
+  { id: 'logs', Component: LogsTab, Icon: ScrollText, dividerBefore: true },
 ] as const;
 
 type Tab = (typeof TABS)[number]['id'];
@@ -61,16 +72,18 @@ export default function SettingsPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar Navigation for Settings */}
-        <aside className="w-64 bg-base-200/50 flex flex-col border-r border-base-300 overflow-y-auto">
-          <ul className="menu menu-lg w-full p-2 gap-1.5">
+        <aside className="w-60 bg-base-200/50 flex flex-col border-r border-base-300 overflow-y-auto">
+          <ul className="menu w-full p-2 gap-0.5">
             {TABS.map((tab) => (
               <Fragment key={tab.id}>
                 {'dividerBefore' in tab && <div className="divider my-1"></div>}
                 <li>
                   <button
-                    className={activeTab === tab.id ? 'active' : ''}
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
+                    className={`gap-3 ${activeTab === tab.id ? 'active font-medium' : 'text-base-content/70'}`}
                     onClick={() => setActiveTab(tab.id)}
                   >
+                    <tab.Icon size={16} className="shrink-0" />
                     {t(`tabs.${tab.id}`)}
                   </button>
                 </li>

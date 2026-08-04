@@ -146,6 +146,7 @@ export default function ObjectListToolbar({
                       : 'btn-ghost text-base-content/50 hover:text-primary'
                 }`}
                 onClick={() => setFilterOpen((prev) => !prev)}
+                aria-pressed={filterOpen}
                 title={filterOpen ? t('toolbar.hide_filters') : t('toolbar.show_filters')}
               >
                 <SlidersHorizontal size={15} />

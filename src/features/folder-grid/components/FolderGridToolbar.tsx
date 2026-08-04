@@ -78,6 +78,9 @@ export default function FolderGridToolbar({
               <button
                 data-testid="view-grid"
                 onClick={() => setViewMode('grid')}
+                aria-label={t('toolbar.view_grid')}
+                aria-pressed={viewMode === 'grid'}
+                title={t('toolbar.view_grid')}
                 className={`btn btn-ghost btn-xs btn-square ${viewMode === 'grid' ? 'text-primary' : 'text-base-content/40'}`}
               >
                 <LayoutGrid size={14} />
@@ -85,6 +88,9 @@ export default function FolderGridToolbar({
               <button
                 data-testid="view-list"
                 onClick={() => setViewMode('list')}
+                aria-label={t('toolbar.view_list')}
+                aria-pressed={viewMode === 'list'}
+                title={t('toolbar.view_list')}
                 className={`btn btn-ghost btn-xs btn-square ${viewMode === 'list' ? 'text-primary' : 'text-base-content/40'}`}
               >
                 <List size={14} />

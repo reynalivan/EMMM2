@@ -12,82 +12,70 @@ import {
 } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import type { DashboardPayload } from '../../../types/dashboard';
-import { getChartColors, getChartPalette } from '../dashboardViewUtils';
 
 interface DashboardChartsProps {
   categoryDistribution: DashboardPayload['category_distribution'];
   gameDistribution: DashboardPayload['game_distribution'];
-  theme: string;
 }
 
+/**
+ * Charts read the live daisyUI theme tokens. The previous hard-coded JS palettes
+ * were a third copy of the colours (after the two @plugin blocks in App.css) and
+ * had already drifted out of sync with them, which is how light and dark ended up
+ * with different semantic hues. `neutral` is deliberately not in the series — it
+ * is a near-black brand neutral in both themes and vanished against the card.
+ */
+const CHART_SERIES = [
+  'var(--color-primary)',
+  'var(--color-secondary)',
+  'var(--color-accent)',
+  'var(--color-info)',
+  'var(--color-success)',
+  'var(--color-warning)',
+  'var(--color-error)',
+];
+
 const CHART_TOOLTIP_STYLE = {
-  backgroundColor: 'var(--b2)',
-  border: '1px solid var(--b3)',
+  backgroundColor: 'var(--color-base-200)',
+  border: '1px solid var(--color-base-300)',
   borderRadius: '1rem',
   fontSize: '0.875rem',
-  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+  boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.25)',
   backdropFilter: 'blur(8px)',
 };
 
-const BAR_GRADIENTS = [
-  'url(#gradientPrimary)',
-  'url(#gradientSecondary)',
-  'url(#gradientAccent)',
-  'url(#gradientInfo)',
-  'url(#gradientSuccess)',
-];
+const GRADIENT_SERIES = ['primary', 'secondary', 'accent', 'info', 'success'] as const;
 
-function ChartGradients({ theme }: { theme: string }) {
-  const palette = getChartPalette(theme);
+const BAR_GRADIENTS = GRADIENT_SERIES.map((name) => `url(#gradient-${name})`);
 
+function ChartGradients() {
   return (
     <defs>
-      <linearGradient id="gradientPrimary" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor={palette.primary} stopOpacity={0.9} />
-        <stop offset="95%" stopColor={palette.primary} stopOpacity={0.4} />
-      </linearGradient>
-      <linearGradient id="gradientSecondary" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor={palette.secondary} stopOpacity={0.9} />
-        <stop offset="95%" stopColor={palette.secondary} stopOpacity={0.4} />
-      </linearGradient>
-      <linearGradient id="gradientAccent" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor={palette.accent} stopOpacity={0.9} />
-        <stop offset="95%" stopColor={palette.accent} stopOpacity={0.4} />
-      </linearGradient>
-      <linearGradient id="gradientSuccess" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor={palette.success} stopOpacity={0.9} />
-        <stop offset="95%" stopColor={palette.success} stopOpacity={0.4} />
-      </linearGradient>
-      <linearGradient id="gradientInfo" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor={palette.info} stopOpacity={0.9} />
-        <stop offset="95%" stopColor={palette.info} stopOpacity={0.4} />
-      </linearGradient>
+      {GRADIENT_SERIES.map((name) => (
+        <linearGradient key={name} id={`gradient-${name}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor={`var(--color-${name})`} stopOpacity={0.9} />
+          <stop offset="95%" stopColor={`var(--color-${name})`} stopOpacity={0.4} />
+        </linearGradient>
+      ))}
     </defs>
   );
 }
 
-export function DashboardCharts({
-  categoryDistribution,
-  gameDistribution,
-  theme,
-}: DashboardChartsProps) {
+export function DashboardCharts({ categoryDistribution, gameDistribution }: DashboardChartsProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <CategoryDistributionChart categoryDistribution={categoryDistribution} theme={theme} />
-      <GameDistributionChart gameDistribution={gameDistribution} theme={theme} />
+      <CategoryDistributionChart categoryDistribution={categoryDistribution} />
+      <GameDistributionChart gameDistribution={gameDistribution} />
     </div>
   );
 }
 
 function CategoryDistributionChart({
   categoryDistribution,
-  theme,
 }: {
   categoryDistribution: DashboardPayload['category_distribution'];
-  theme: string;
 }) {
   const { t } = useTranslation(['dashboard']);
-  const colors = getChartColors(theme);
 
   return (
     <div className="card bg-base-200/50 border border-base-300">
@@ -99,7 +87,7 @@ function CategoryDistributionChart({
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <ChartGradients theme={theme} />
+                <ChartGradients />
                 <Pie
                   data={categoryDistribution}
                   cx="50%"
@@ -118,13 +106,16 @@ function CategoryDistributionChart({
                   {categoryDistribution.map((_, index) => (
                     <Cell
                       key={`cat-${index}`}
-                      fill={colors[index % colors.length]}
-                      stroke="var(--b1)"
+                      fill={CHART_SERIES[index % CHART_SERIES.length]}
+                      stroke="var(--color-base-100)"
                       strokeWidth={2}
                     />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} itemStyle={{ color: 'var(--bc)' }} />
+                <Tooltip
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  itemStyle={{ color: 'var(--color-base-content)' }}
+                />
                 <Legend verticalAlign="bottom" height={36} />
               </PieChart>
             </ResponsiveContainer>
@@ -141,10 +132,8 @@ function CategoryDistributionChart({
 
 function GameDistributionChart({
   gameDistribution,
-  theme,
 }: {
   gameDistribution: DashboardPayload['game_distribution'];
-  theme: string;
 }) {
   const { t } = useTranslation(['dashboard']);
 
@@ -158,23 +147,23 @@ function GameDistributionChart({
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={gameDistribution} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <ChartGradients theme={theme} />
+                <ChartGradients />
                 <XAxis
                   dataKey="game_name"
-                  tick={{ fontSize: 11, fill: 'var(--bc)', opacity: 0.6 }}
+                  tick={{ fontSize: 11, fill: 'var(--color-base-content)', opacity: 0.6 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 11, fill: 'var(--bc)', opacity: 0.6 }}
+                  tick={{ fontSize: 11, fill: 'var(--color-base-content)', opacity: 0.6 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <Tooltip
-                  cursor={{ fill: 'var(--bc)', fillOpacity: 0.05 }}
+                  cursor={{ fill: 'var(--color-base-content)', fillOpacity: 0.05 }}
                   contentStyle={CHART_TOOLTIP_STYLE}
-                  itemStyle={{ color: 'var(--bc)' }}
+                  itemStyle={{ color: 'var(--color-base-content)' }}
                 />
                 <Bar
                   dataKey="count"

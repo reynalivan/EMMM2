@@ -54,9 +54,11 @@ export function AutoDetectResult({
         transition={{ type: 'spring', damping: 12, stiffness: 200, delay: 0.1 }}
         className="mb-6 relative"
       >
-        <div className="absolute inset-0 bg-success/20 blur-2xl rounded-full scale-150 animate-pulse" />
+        {/* Static halo: the spring entrance already says "done". A pulse that never
+            stops reads as "still working". */}
+        <div className="absolute inset-0 bg-success/20 blur-2xl rounded-full scale-150" />
         <div className="w-20 h-20 rounded-full bg-linear-to-br from-success/20 to-success/40 border-2 border-success/30 flex items-center justify-center relative z-10 shadow-lg shadow-success/10">
-          <Check size={40} className="text-success drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+          <Check size={40} className="text-success drop-shadow-[0_0_8px_var(--color-success)]" />
         </div>
       </motion.div>
 

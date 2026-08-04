@@ -156,7 +156,7 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
               transition-all duration-200 border-2
               ${
                 isListening
-                  ? 'bg-base-100 border-primary shadow-[0_0_15px_-3px_rgba(var(--p),0.4)] ring-4 ring-primary/20'
+                  ? 'bg-base-100 border-primary shadow-[0_0_15px_-3px_var(--color-primary)] ring-4 ring-primary/20'
                   : 'bg-base-100/50 border-base-content/20 hover:border-primary/50'
               }
             `}

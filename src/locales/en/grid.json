@@ -4,7 +4,9 @@
     "search_placeholder": "Search mods...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} items",
-    "refresh_title": "Refresh"
+    "refresh_title": "Refresh",
+    "view_grid": "Grid view",
+    "view_list": "List view"
   },
   "banners": {
     "conflict_detected_one": "{{count}} naming conflict detected",

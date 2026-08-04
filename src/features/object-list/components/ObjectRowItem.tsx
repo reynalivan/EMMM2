@@ -319,7 +319,7 @@ function ObjectRowItemInner({
 
       {/* Selection indicator bar */}
       {isSelected && !isBulkSelected && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-l-full shadow-[0_0_10px_rgba(var(--p),0.5)]" />
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-l-full shadow-[0_0_10px_-2px_var(--color-primary)]" />
       )}
     </div>
   );

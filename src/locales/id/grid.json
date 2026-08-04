@@ -4,7 +4,9 @@
     "search_placeholder": "Cari mod...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} item",
-    "refresh_title": "Segarkan"
+    "refresh_title": "Segarkan",
+    "view_grid": "Tampilan grid",
+    "view_list": "Tampilan daftar"
   },
   "banners": {
     "conflict_detected_one": "{{count}} konflik penamaan terdeteksi",
