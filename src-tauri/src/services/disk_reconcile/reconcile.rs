@@ -70,26 +70,38 @@ fn runtime_roots(descriptors: &[ObjectRuntimeDescriptor]) -> BTreeSet<String> {
         .collect()
 }
 
-fn diff_cleared_paths(
-    before: &[ObjectRuntimeDescriptor],
-    after: &[ObjectRuntimeDescriptor],
-) -> Vec<String> {
-    let before_roots = runtime_roots(before);
-    let after_roots = runtime_roots(after);
-
-    before_roots.difference(&after_roots).cloned().collect()
-}
-
 fn merge_changed_roots(
     changed_roots: &[String],
-    before: &[ObjectRuntimeDescriptor],
-    after: &[ObjectRuntimeDescriptor],
+    before_roots: &BTreeSet<String>,
+    after_roots: &BTreeSet<String>,
 ) -> Vec<String> {
     let mut roots: BTreeSet<String> = changed_roots.iter().cloned().collect();
-    let before_roots = runtime_roots(before);
-    let after_roots = runtime_roots(after);
-    roots.extend(before_roots.symmetric_difference(&after_roots).cloned());
+    roots.extend(before_roots.symmetric_difference(after_roots).cloned());
     roots.into_iter().collect()
+}
+
+/// The mods root disappeared or could not be read. Everything the caller
+/// already computed from the change list still stands; nothing was written.
+fn source_unavailable(
+    error_message: String,
+    changed_roots: Vec<String>,
+    thumbnail_roots: Vec<String>,
+    runtime_file_changed: bool,
+    change_summary: DiskReconcileChangeSummary,
+) -> ReconcileOutcome {
+    ReconcileOutcome {
+        status: DiskReconcileStatus::SourceUnavailable,
+        error_message: Some(error_message),
+        changed_roots,
+        thumbnail_roots,
+        objects_changed: false,
+        folders_changed: false,
+        runtime_file_changed,
+        cleared_selection_paths: Vec::new(),
+        path_updates: Vec::new(),
+        collection_reference_impact: CollectionReferenceImpact::default(),
+        change_summary,
+    }
 }
 
 fn collect_runtime_file_changed(changed_paths: &[String]) -> bool {
@@ -151,35 +163,31 @@ fn record_runtime_modifications(
 pub async fn reconcile_disk_projection(
     request: ReconcileDiskProjectionRequest<'_>,
 ) -> Result<ReconcileOutcome, String> {
-    let pool = request.pool;
-    let game_id = request.game_id;
-    let mods_path = request.mods_path;
-    let safe_mode_keywords = request.safe_mode_keywords;
-    let reason = request.reason;
-    let changed_paths = request.changed_paths;
-    let force_full = request.force_full;
-    let watcher_events = request.watcher_events;
+    let ReconcileDiskProjectionRequest {
+        pool,
+        game_id,
+        mods_path,
+        safe_mode_keywords,
+        reason,
+        changed_paths,
+        force_full,
+        watcher_events,
+    } = request;
 
     let mut changed_roots = collect_changed_roots(mods_path, changed_paths);
     let thumbnail_roots = collect_thumbnail_roots(mods_path, changed_paths);
     let runtime_file_changed = collect_runtime_file_changed(changed_paths);
     if !mods_path.exists() || !mods_path.is_dir() {
-        return Ok(ReconcileOutcome {
-            status: DiskReconcileStatus::SourceUnavailable,
-            error_message: Some(format!(
+        return Ok(source_unavailable(
+            format!(
                 "Disk Reconcile mods path is unavailable: {}",
                 mods_path.display()
-            )),
+            ),
             changed_roots,
             thumbnail_roots,
-            objects_changed: false,
-            folders_changed: false,
             runtime_file_changed,
-            cleared_selection_paths: Vec::new(),
-            path_updates: Vec::new(),
-            collection_reference_impact: CollectionReferenceImpact::default(),
-            change_summary: ChangeSummaryBuilder::default().build(),
-        });
+            ChangeSummaryBuilder::default().build(),
+        ));
     }
 
     let should_reconcile = force_full
@@ -206,19 +214,13 @@ pub async fn reconcile_disk_projection(
         let projection = match collect_disk_projection(mods_path, &changed_roots, scoped) {
             Ok(value) => value,
             Err(error) if is_source_unavailable_error(&error) => {
-                return Ok(ReconcileOutcome {
-                    status: DiskReconcileStatus::SourceUnavailable,
-                    error_message: Some(error),
+                return Ok(source_unavailable(
+                    error,
                     changed_roots,
                     thumbnail_roots,
-                    objects_changed: false,
-                    folders_changed: false,
                     runtime_file_changed,
-                    cleared_selection_paths: Vec::new(),
-                    path_updates: Vec::new(),
-                    collection_reference_impact: CollectionReferenceImpact::default(),
-                    change_summary: change_summary.build(),
-                });
+                    change_summary.build(),
+                ));
             }
             Err(error) => return Err(error),
         };
@@ -265,11 +267,15 @@ pub async fn reconcile_disk_projection(
         let after_descriptors = crate::repo::object_repo::get_runtime_descriptors(pool, game_id)
             .await
             .map_err(|error| error.to_string())?;
-        cleared_selection_paths = diff_cleared_paths(&before_descriptors, &after_descriptors);
+
+        // Both the cleared-selection diff and the changed-root merge compare the
+        // same two descriptor sets; build each set once.
+        let before_roots = runtime_roots(&before_descriptors);
+        let after_roots = runtime_roots(&after_descriptors);
+        cleared_selection_paths = before_roots.difference(&after_roots).cloned().collect();
 
         if objects_changed || folders_changed {
-            changed_roots =
-                merge_changed_roots(&changed_roots, &before_descriptors, &after_descriptors);
+            changed_roots = merge_changed_roots(&changed_roots, &before_roots, &after_roots);
         }
     }
 

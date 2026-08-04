@@ -40,7 +40,6 @@ pub(super) async fn apply_disk_mods(
         let metadata = load_runtime_mod_metadata(
             &disk_mod.absolute_path,
             &disk_mod.raw_name,
-            disk_mod.object_disabled,
             safe_mode_keywords,
             existing_manual_safe,
         );
@@ -128,6 +127,11 @@ pub(super) async fn apply_disk_mods(
                 .map_err(|error| format!("Failed to heal mod rename in collections: {error}"))?;
                 state.collection_reference_impact.merge(impact);
             }
+
+            // The row may have been found under its old key; retire that one too.
+            state
+                .seen_mod_keys
+                .insert(existing_mod.folder_path_key.clone());
         } else {
             crate::repo::mod_repo::insert_mod_with_reason_tx(
                 &mut *conn,
@@ -154,11 +158,6 @@ pub(super) async fn apply_disk_mods(
             state.change_summary.record_mod_added(&metadata.actual_name);
         }
 
-        if let Some(existing_mod) = &existing {
-            state
-                .seen_mod_keys
-                .insert(existing_mod.folder_path_key.clone());
-        }
         state.seen_mod_keys.insert(disk_mod.folder_path_key.clone());
     }
 

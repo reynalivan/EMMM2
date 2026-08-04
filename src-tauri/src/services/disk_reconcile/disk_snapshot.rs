@@ -16,7 +16,6 @@ pub struct DiskModEntry {
     pub folder_path: String,
     pub folder_path_key: String,
     pub object_folder_path_key: String,
-    pub object_disabled: bool,
     pub raw_name: String,
     pub absolute_path: PathBuf,
 }
@@ -76,7 +75,6 @@ fn collect_terminal_mods(
     projection: &mut DiskProjection,
     mods_path: &Path,
     object_folder_path_key: &str,
-    object_disabled: bool,
     path: &Path,
 ) -> Result<(), String> {
     let (node_type, _reasons, _warnings) = classify_folder(path);
@@ -93,7 +91,6 @@ fn collect_terminal_mods(
                 folder_path: folder_path.clone(),
                 folder_path_key: crate::common::path_key::folder_path_key(&folder_path, None),
                 object_folder_path_key: object_folder_path_key.to_string(),
-                object_disabled,
                 raw_name,
                 absolute_path: path.to_path_buf(),
             });
@@ -102,13 +99,7 @@ fn collect_terminal_mods(
         NodeType::InternalAssets => Ok(()),
         NodeType::ContainerFolder => {
             for (_child_name, child_path) in list_runtime_dirs(path)? {
-                collect_terminal_mods(
-                    projection,
-                    mods_path,
-                    object_folder_path_key,
-                    object_disabled,
-                    &child_path,
-                )?;
+                collect_terminal_mods(projection, mods_path, object_folder_path_key, &child_path)?;
             }
             Ok(())
         }
@@ -152,7 +143,6 @@ pub fn collect_disk_projection(
             is_disabled: is_disabled_runtime_name(&root_name),
         };
         let object_folder_path_key = object_entry.folder_path_key.clone();
-        let object_disabled = object_entry.is_disabled;
         projection.objects.push(object_entry);
 
         for (_mod_name, mod_path) in list_runtime_dirs(&root_path)? {
@@ -160,7 +150,6 @@ pub fn collect_disk_projection(
                 &mut projection,
                 mods_path,
                 &object_folder_path_key,
-                object_disabled,
                 &mod_path,
             )?;
         }

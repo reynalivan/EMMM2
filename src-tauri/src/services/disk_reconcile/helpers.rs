@@ -44,10 +44,12 @@ pub fn classify_runtime_corridor(
     (true, CORRIDOR_SOURCE_UNKNOWN)
 }
 
+/// A mod's status comes from its own folder name only. A disabled parent object
+/// must never cascade into its children: re-enabling the object has to restore
+/// exactly the per-mod states the user left behind.
 pub fn load_runtime_mod_metadata(
     mod_path: &Path,
     raw_folder_name: &str,
-    _object_disabled: bool,
     safe_mode_keywords: &[String],
     existing_manual_safe: Option<bool>,
 ) -> RuntimeModMetadata {
@@ -100,7 +102,7 @@ mod tests {
     fn object_disabled_does_not_mutate_child_mod_status() {
         let temp = tempfile::tempdir().expect("tempdir should be created");
 
-        let metadata = load_runtime_mod_metadata(temp.path(), "Blue Dress", true, &[], None);
+        let metadata = load_runtime_mod_metadata(temp.path(), "Blue Dress", &[], None);
 
         assert_eq!(metadata.status, ItemStatus::Enabled);
     }
@@ -109,8 +111,7 @@ mod tests {
     fn disabled_mod_folder_controls_mod_status() {
         let temp = tempfile::tempdir().expect("tempdir should be created");
 
-        let metadata =
-            load_runtime_mod_metadata(temp.path(), "DISABLED Blue Dress", false, &[], None);
+        let metadata = load_runtime_mod_metadata(temp.path(), "DISABLED Blue Dress", &[], None);
 
         assert_eq!(metadata.status, ItemStatus::Disabled);
     }

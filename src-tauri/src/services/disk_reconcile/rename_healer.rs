@@ -98,7 +98,6 @@ async fn apply_mod_rename_hints(
         let metadata = load_runtime_mod_metadata(
             &request.mods_path.join(new_relative),
             &mod_folder,
-            is_disabled_runtime_name(&object_folder),
             request.safe_mode_keywords,
             existing_manual_safe,
         );
