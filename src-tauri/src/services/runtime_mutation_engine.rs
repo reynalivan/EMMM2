@@ -62,8 +62,9 @@ pub async fn toggle_mods_mixed(
         return Ok(empty_result());
     }
 
+    // Planning either yields a plan, skips a no-op, or aborts the whole batch —
+    // it never produces warnings, so an empty plan set is just an empty result.
     let mut plans = Vec::new();
-    let mut warnings = Vec::new();
     for operation in &request.operations {
         match build_plan(&request.mods_path, operation) {
             Ok(Some(plan)) => plans.push(plan),
@@ -73,12 +74,12 @@ pub async fn toggle_mods_mixed(
     }
 
     if plans.is_empty() {
-        return Ok(RuntimeToggleResult {
-            warnings,
-            ..empty_result()
-        });
+        return Ok(empty_result());
     }
     validate_plans(&plans)?;
+
+    // Only rollback populates warnings, and rollback cannot run before this point.
+    let mut warnings = Vec::new();
 
     let mut renamed = Vec::new();
     for plan in &plans {

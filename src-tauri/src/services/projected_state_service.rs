@@ -117,13 +117,12 @@ pub fn build_projected_state(
             });
     }
 
-    let active_roots = root_map.into_values().collect::<Vec<_>>();
+    let mut active_roots = root_map.into_values().collect::<Vec<_>>();
     let mut root_count_by_object = HashMap::<String, usize>::new();
     for root in &active_roots {
-        let counter = root_count_by_object
+        *root_count_by_object
             .entry(root.object_id.clone())
-            .or_insert(0);
-        *counter += 1;
+            .or_insert(0) += 1;
     }
 
     for object_state in &mut object_states {
@@ -133,23 +132,16 @@ pub fn build_projected_state(
             .unwrap_or(0);
     }
 
-    object_states.sort_by(|left, right| {
-        canonical_name_key(&left.display_name).cmp(&canonical_name_key(&right.display_name))
-    });
-
-    let mut active_roots = active_roots;
-    active_roots.sort_by(|left, right| {
-        let left_key = format!(
-            "{}:{}",
-            canonical_name_key(&left.display_name),
-            canonical_name_key(&left.object_id)
-        );
-        let right_key = format!(
-            "{}:{}",
-            canonical_name_key(&right.display_name),
-            canonical_name_key(&right.object_id)
-        );
-        left_key.cmp(&right_key)
+    // Cached keys: canonical_name_key runs a regex and allocates twice, so
+    // recomputing it inside the comparator costs O(n log n) regex passes where
+    // one pass per element is enough. The root key stays a tuple rather than a
+    // joined string so a display name containing the separator cannot reorder it.
+    object_states.sort_by_cached_key(|object| canonical_name_key(&object.display_name));
+    active_roots.sort_by_cached_key(|root| {
+        (
+            canonical_name_key(&root.display_name),
+            canonical_name_key(&root.object_id),
+        )
     });
 
     let enabled_object_count = object_states
@@ -220,9 +212,7 @@ pub fn build_preview_tree_from_projected_state(
                 .into_iter()
                 .map(projected_root_to_node)
                 .collect::<Vec<_>>();
-            children.sort_by(|left, right| {
-                canonical_name_key(&left.name).cmp(&canonical_name_key(&right.name))
-            });
+            children.sort_by_cached_key(|child| canonical_name_key(&child.name));
 
             PreviewTreeNode {
                 kind: PreviewTreeNodeKind::Object,
