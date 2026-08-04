@@ -135,7 +135,11 @@ pub(super) fn count_ini_files(dir: &Path) -> usize {
     walkdir::WalkDir::new(dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|x| x == "ini").unwrap_or(false))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("ini"))
+        })
         .count()
 }
 
@@ -146,14 +150,18 @@ async fn validate_extension(db: &SqlitePool, path: &Path) -> Result<(), String> 
         .flatten()
         .unwrap_or_else(|| ".zip,.7z,.rar,.tar,.gz".to_string());
 
-    let allowed: Vec<&str> = allowed_raw.split(',').map(str::trim).collect();
+    // Case-insensitive on both sides: browsers regularly hand out `FILE.ZIP`,
+    // and the allowed list is user-edited text.
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| format!(".{e}"))
+        .map(|e| format!(".{}", e.to_ascii_lowercase()))
         .unwrap_or_default();
 
-    if allowed.contains(&ext.as_str()) {
+    if allowed_raw
+        .split(',')
+        .any(|allowed| allowed.trim().eq_ignore_ascii_case(&ext))
+    {
         Ok(())
     } else {
         Err(format!(
@@ -163,8 +171,15 @@ async fn validate_extension(db: &SqlitePool, path: &Path) -> Result<(), String> 
 }
 
 fn hash_file(path: &Path) -> Result<String, String> {
-    let data = std::fs::read(path).map_err(|e| format!("Cannot read file for hashing: {e}"))?;
-    Ok(blake3::hash(&data).to_hex().to_string())
+    // Streaming hash: archives can be multi-GB, so reading the whole file
+    // into memory for one hash is an avoidable spike.
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("Cannot read file for hashing: {e}"))?;
+    let mut hasher = blake3::Hasher::new();
+    hasher
+        .update_reader(file)
+        .map_err(|e| format!("Cannot hash file: {e}"))?;
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 async fn stage_archive(app: &AppHandle, job_id: &str, archive: &Path) -> Result<PathBuf, String> {

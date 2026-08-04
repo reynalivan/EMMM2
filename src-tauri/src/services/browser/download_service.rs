@@ -10,6 +10,10 @@ use crate::services::browser::{download_handler, import_service};
 /// so existing `download_service::BrowserDownloadDto` users keep compiling.
 pub use crate::repo::browser_repo::BrowserDownloadDto;
 
+fn now_stamp() -> String {
+    Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
 /// Insert a new `requested` download record.
 pub async fn create_download(
     db: &SqlitePool,
@@ -19,7 +23,7 @@ pub async fn create_download(
     file_path: &str,
 ) -> Result<String, String> {
     let id = Uuid::new_v4().to_string();
-    let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let now = now_stamp();
 
     browser_repo::insert_download(db, &id, session_id, filename, source_url, file_path, &now)
         .await
@@ -38,12 +42,7 @@ pub async fn update_status(
     error_msg: Option<&str>,
     file_path: Option<&str>,
 ) -> Result<(), String> {
-    let finished_at: Option<String> =
-        if status == "finished" || status == "failed" || status == "canceled" {
-            Some(Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string())
-        } else {
-            None
-        };
+    let finished_at = matches!(status, "finished" | "failed" | "canceled").then(now_stamp);
 
     browser_repo::update_status(
         db,

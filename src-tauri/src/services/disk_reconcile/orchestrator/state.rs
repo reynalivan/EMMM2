@@ -1,6 +1,7 @@
 //! Per-game queue state: version counters, the coalesced pending request, and
 //! the last published result.
 
+use crate::common::sync::lock;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -38,7 +39,7 @@ impl DiskReconcileState {
     }
 
     pub(super) fn lock_for_game(&self, game_id: &str) -> Arc<Mutex<()>> {
-        let mut locks = self.locks.lock().expect("disk reconcile locks poisoned");
+        let mut locks = lock(&self.locks);
         locks
             .entry(game_id.to_string())
             .or_insert_with(|| Arc::new(Mutex::new(())))
@@ -53,7 +54,7 @@ impl DiskReconcileState {
         force_full: bool,
         watcher_events: &[ModWatchEvent],
     ) -> u64 {
-        let mut games = self.games.lock().expect("disk reconcile state poisoned");
+        let mut games = lock(&self.games);
         let state = games.entry(game_id.to_string()).or_default();
         state.next_version += 1;
         let version = state.next_version;
@@ -87,7 +88,7 @@ impl DiskReconcileState {
         game_id: &str,
         requested_version: u64,
     ) -> Result<Option<PendingSyncRequest>, String> {
-        let mut games = self.games.lock().expect("disk reconcile state poisoned");
+        let mut games = lock(&self.games);
         let state = games.entry(game_id.to_string()).or_default();
 
         if state.completed_version >= requested_version {
@@ -104,7 +105,7 @@ impl DiskReconcileState {
     /// Put a taken pending request back after a failed run so queued
     /// waiters and coalesced watcher events are not lost.
     pub(super) fn requeue_pending(&self, game_id: &str, taken: PendingSyncRequest) {
-        let mut games = self.games.lock().expect("disk reconcile state poisoned");
+        let mut games = lock(&self.games);
         let state = games.entry(game_id.to_string()).or_default();
         match state.pending.as_mut() {
             Some(pending) => {
@@ -125,7 +126,7 @@ impl DiskReconcileState {
         completed_version: u64,
         result: &DiskReconcileResult,
     ) -> bool {
-        let mut games = self.games.lock().expect("disk reconcile state poisoned");
+        let mut games = lock(&self.games);
         let state = games.entry(game_id.to_string()).or_default();
         state.completed_version = completed_version;
         state.last_result = Some(result.clone());
@@ -133,7 +134,7 @@ impl DiskReconcileState {
     }
 
     pub(super) fn last_result(&self, game_id: &str) -> Result<DiskReconcileResult, String> {
-        let games = self.games.lock().expect("disk reconcile state poisoned");
+        let games = lock(&self.games);
         games
             .get(game_id)
             .and_then(|state| state.last_result.clone())

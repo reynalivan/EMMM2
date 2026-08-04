@@ -22,7 +22,7 @@ pub fn sanitize_filename(raw: &str) -> String {
     let cleaned: String = raw.chars().filter(|c| !ILLEGAL_CHARS.contains(c)).collect();
     let cleaned = cleaned.trim().to_string();
 
-    if cleaned.len() <= MAX_FILENAME_LEN {
+    if cleaned.chars().count() <= MAX_FILENAME_LEN {
         return if cleaned.is_empty() {
             format!("download_{}", Utc::now().timestamp())
         } else {
@@ -30,7 +30,8 @@ pub fn sanitize_filename(raw: &str) -> String {
         };
     }
 
-    // Preserve extension if present
+    // Preserve extension if present. Truncation counts chars, never bytes —
+    // a byte slice panics mid-character on the CJK names mods commonly have.
     let path = Path::new(&cleaned);
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let stem = path
@@ -39,10 +40,11 @@ pub fn sanitize_filename(raw: &str) -> String {
         .unwrap_or(&cleaned);
 
     if ext.is_empty() {
-        stem[..MAX_FILENAME_LEN].to_string()
+        stem.chars().take(MAX_FILENAME_LEN).collect()
     } else {
-        let max_stem = MAX_FILENAME_LEN.saturating_sub(ext.len() + 1);
-        format!("{}.{}", &stem[..max_stem.min(stem.len())], ext)
+        let max_stem = MAX_FILENAME_LEN.saturating_sub(ext.chars().count() + 1);
+        let truncated: String = stem.chars().take(max_stem).collect();
+        format!("{truncated}.{ext}")
     }
 }
 
@@ -147,6 +149,18 @@ mod tests {
         let clean2 = sanitize_filename(&very_long);
         assert_eq!(clean2.len(), MAX_FILENAME_LEN);
         assert!(clean2.chars().all(|c| c == 'X'));
+    }
+
+    #[test]
+    fn test_sanitize_filename_truncates_multibyte_names_on_char_boundaries() {
+        // 150 three-byte chars: byte-indexed truncation would slice mid-char and panic.
+        let cjk = "模".repeat(150);
+        let clean = sanitize_filename(&format!("{cjk}.zip"));
+        assert!(clean.ends_with(".zip"));
+        assert_eq!(clean.chars().count(), MAX_FILENAME_LEN);
+
+        let no_ext = sanitize_filename(&cjk);
+        assert_eq!(no_ext.chars().count(), MAX_FILENAME_LEN);
     }
 
     #[test]

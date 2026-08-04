@@ -1,3 +1,4 @@
+use crate::common::sync::lock;
 use futures_util::StreamExt;
 use reqwest::Client;
 use sqlx::SqlitePool;
@@ -26,29 +27,19 @@ fn active_downloads() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 
 fn register_download(id: &str) -> Arc<AtomicBool> {
     let flag = Arc::new(AtomicBool::new(false));
-    active_downloads()
-        .lock()
-        .expect("download registry poisoned")
-        .insert(id.to_string(), flag.clone());
+    lock(active_downloads()).insert(id.to_string(), flag.clone());
     flag
 }
 
 fn unregister_download(id: &str) {
-    active_downloads()
-        .lock()
-        .expect("download registry poisoned")
-        .remove(id);
+    lock(active_downloads()).remove(id);
 }
 
 /// Request cancellation of an in-flight download.
 /// Returns true when the download was running; its task then aborts the
 /// transfer, deletes the partial file, and marks the record `canceled`.
 pub fn request_cancel(id: &str) -> bool {
-    match active_downloads()
-        .lock()
-        .expect("download registry poisoned")
-        .get(id)
-    {
+    match lock(active_downloads()).get(id) {
         Some(flag) => {
             flag.store(true, Ordering::Relaxed);
             true
