@@ -119,11 +119,7 @@ fn extract_zip_inner(
     let mut last_progress = Instant::now();
 
     for i in 0..archive.len() {
-        if cancel_token
-            .as_ref()
-            .map(|token| token.load(Ordering::SeqCst))
-            .unwrap_or(false)
-        {
+        if is_cancelled(&cancel_token) {
             return Err("ABORTED".into());
         }
 
@@ -185,11 +181,7 @@ fn extract_7z_inner(
     cancel_token: Option<Arc<AtomicBool>>,
     on_progress: Option<&Channel<ExtractionEvent>>,
 ) -> Result<usize, String> {
-    if cancel_token
-        .as_ref()
-        .map(|token| token.load(Ordering::SeqCst))
-        .unwrap_or(false)
-    {
+    if is_cancelled(&cancel_token) {
         return Err("ABORTED".into());
     }
 
