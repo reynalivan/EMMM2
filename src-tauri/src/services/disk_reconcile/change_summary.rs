@@ -49,32 +49,15 @@ impl ChangeSummaryBuilder {
     }
 
     fn record_object_sample(&mut self, name: &str) {
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-
-        self.object_sample_names.insert(trimmed.to_string());
+        record_sample(&mut self.object_sample_names, name);
     }
 
     fn record_mod_sample(&mut self, name: &str) {
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-
-        self.mod_sample_names.insert(trimmed.to_string());
+        record_sample(&mut self.mod_sample_names, name);
     }
 
     pub(crate) fn build(self) -> DiskReconcileChangeSummary {
-        let has_user_visible_changes = self.object_changes.added > 0
-            || self.object_changes.removed > 0
-            || self.object_changes.renamed > 0
-            || self.object_changes.modified > 0
-            || self.mod_changes.added > 0
-            || self.mod_changes.removed > 0
-            || self.mod_changes.renamed > 0
-            || self.mod_changes.modified > 0;
+        let has_user_visible_changes = self.object_changes.any() || self.mod_changes.any();
 
         DiskReconcileChangeSummary {
             object_changes: self.object_changes,
@@ -83,5 +66,12 @@ impl ChangeSummaryBuilder {
             mod_sample_names: self.mod_sample_names.into_iter().take(8).collect(),
             has_user_visible_changes,
         }
+    }
+}
+
+fn record_sample(samples: &mut BTreeSet<String>, name: &str) {
+    let trimmed = name.trim();
+    if !trimmed.is_empty() {
+        samples.insert(trimmed.to_string());
     }
 }

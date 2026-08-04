@@ -42,6 +42,12 @@ pub struct DiskReconcileChangeCounts {
     pub modified: u32,
 }
 
+impl DiskReconcileChangeCounts {
+    pub fn any(&self) -> bool {
+        self.added > 0 || self.removed > 0 || self.renamed > 0 || self.modified > 0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct DiskReconcileChangeSummary {
     pub object_changes: DiskReconcileChangeCounts,

@@ -117,43 +117,39 @@ fn is_source_unavailable_error(error: &str) -> bool {
         || error.starts_with("Failed to read file type")
 }
 
-fn runtime_mod_sample_name(mods_path: &Path, changed_path: &str) -> Option<String> {
-    let relative = Path::new(changed_path).strip_prefix(mods_path).ok()?;
-    let mut components = relative.components();
-    components.next()?;
-    let mod_component = components.next()?;
-    Some(normalize_runtime_name(
-        &mod_component.as_os_str().to_string_lossy(),
-    ))
-}
-
 fn record_runtime_modifications(
     mods_path: &Path,
     changed_paths: &[String],
     change_summary: &mut ChangeSummaryBuilder,
 ) {
-    let mut seen = BTreeSet::new();
+    let mut seen_parents = BTreeSet::new();
 
     for changed_path in changed_paths {
         if !is_runtime_relevant_file(Path::new(changed_path)) {
             continue;
         }
 
-        let relative = match Path::new(changed_path).strip_prefix(mods_path) {
-            Ok(value) => value,
-            Err(_) => continue,
+        let Ok(relative) = Path::new(changed_path).strip_prefix(mods_path) else {
+            continue;
         };
-        let dedupe_key = relative
-            .components()
-            .take(2)
-            .map(|component| component.as_os_str().to_string_lossy().to_string())
-            .collect::<Vec<_>>();
-        if dedupe_key.len() != 2 || !seen.insert(dedupe_key.join("/")) {
+
+        // The mod a runtime file belongs to is the folder containing it —
+        // fixed-index components misname an ini sitting directly in an object
+        // root (reports the file) or nested under a container (reports the
+        // container). A file directly in the mods root has no parent folder.
+        let Some(parent) = relative
+            .parent()
+            .filter(|value| !value.as_os_str().is_empty())
+        else {
+            continue;
+        };
+        if !seen_parents.insert(parent.to_path_buf()) {
             continue;
         }
 
-        if let Some(sample_name) = runtime_mod_sample_name(mods_path, changed_path) {
-            change_summary.record_mod_modified(&sample_name);
+        if let Some(folder_name) = parent.file_name() {
+            change_summary
+                .record_mod_modified(&normalize_runtime_name(&folder_name.to_string_lossy()));
         }
     }
 }
