@@ -54,17 +54,16 @@ fn needs_review_db() -> deep_matcher::MasterDb {
     deep_matcher::MasterDb::from_json(&db_json).unwrap()
 }
 
-fn confirmed_scan_item(
-    folder_path: String,
-    display_name: &str,
-    matched_entry_key: Option<String>,
-    move_from_temp: bool,
-) -> ConfirmedScanItem {
+/// A confirmed item with the fields most tests do not care about already set.
+///
+/// Tests that do care override them with struct-update syntax, so each one
+/// shows only what it is actually about instead of sixteen fields of noise.
+fn scan_item(folder_path: impl Into<String>, display_name: &str) -> ConfirmedScanItem {
     ConfirmedScanItem {
-        folder_path,
+        folder_path: folder_path.into(),
         display_name: display_name.to_string(),
         is_disabled: false,
-        matched_entry_key,
+        matched_entry_key: None,
         matched_alias_name: None,
         matched_confidence: None,
         matched_reason: None,
@@ -76,7 +75,7 @@ fn confirmed_scan_item(
         custom_skins_json: None,
         db_thumbnail: None,
         skip: false,
-        move_from_temp,
+        move_from_temp: false,
     }
 }
 
@@ -127,22 +126,10 @@ async fn test_commit_scan_results_non_auto_links_to_other() {
     fs::write(mod_dir.join("mod.ini"), "").unwrap();
 
     let items = vec![ConfirmedScanItem {
-        folder_path: mod_dir.to_string_lossy().to_string(),
-        display_name: "Sunset Pack".to_string(),
-        is_disabled: false,
-        matched_entry_key: None,
-        matched_alias_name: None,
-        matched_confidence: None,
-        matched_reason: None,
         object_type: None,
-        thumbnail_path: None,
         tags_json: None,
         metadata_json: None,
-        hash_db_json: None,
-        custom_skins_json: None,
-        db_thumbnail: None,
-        skip: false,
-        move_from_temp: false,
+        ..scan_item(mod_dir.to_string_lossy().to_string(), "Sunset Pack")
     }];
 
     let _result = commit_scan_results(CommitScanRequest {
@@ -193,22 +180,10 @@ async fn test_ensure_object_case_insensitive_merge() {
 
     // First commit: unmatched → obj_name = "hook" (Other, no thumbnail)
     let items_unmatched = vec![ConfirmedScanItem {
-        folder_path: mod_dir.to_string_lossy().to_string(),
-        display_name: "hook".to_string(),
-        is_disabled: false,
-        matched_entry_key: None,
-        matched_alias_name: None,
-        matched_confidence: None,
-        matched_reason: None,
         object_type: None,
-        thumbnail_path: None,
         tags_json: None,
         metadata_json: None,
-        hash_db_json: None,
-        custom_skins_json: None,
-        db_thumbnail: None,
-        skip: false,
-        move_from_temp: false,
+        ..scan_item(mod_dir.to_string_lossy().to_string(), "hook")
     }];
 
     let _r1 = commit_scan_results(CommitScanRequest {
@@ -236,22 +211,14 @@ async fn test_ensure_object_case_insensitive_merge() {
 
     // Second commit enriches the same physical object with canonical relation data.
     let items_matched = vec![ConfirmedScanItem {
-        folder_path: mod_dir.to_string_lossy().to_string(),
-        display_name: "hook".to_string(),
-        is_disabled: false,
         matched_entry_key: Some(canonical_entry_key("Hook")),
         matched_alias_name: Some("Hook".to_string()),
         matched_confidence: Some(0.98),
         matched_reason: Some("ExactAlias".to_string()),
-        object_type: Some("Character".to_string()),
         thumbnail_path: Some("thumbnails/hook.png".to_string()),
         tags_json: Some(r#"["fire"]"#.to_string()),
         metadata_json: Some(r#"{"rarity":"4-Star"}"#.to_string()),
-        hash_db_json: None,
-        custom_skins_json: None,
-        db_thumbnail: None,
-        skip: false,
-        move_from_temp: false,
+        ..scan_item(mod_dir.to_string_lossy().to_string(), "hook")
     }];
 
     let _r2 = commit_scan_results(CommitScanRequest {
@@ -330,22 +297,11 @@ async fn test_commit_creates_new_mods_and_objects_safely() {
     .unwrap();
 
     let items = vec![ConfirmedScanItem {
-        folder_path: mod_dir.to_string_lossy().to_string(),
-        display_name: "Kazuha New".to_string(),
-        is_disabled: false,
         matched_entry_key: Some(canonical_entry_key("Kazuha")),
         matched_alias_name: Some("Kazuha".to_string()),
         matched_confidence: Some(0.91),
         matched_reason: Some("Alias".to_string()),
-        object_type: Some("Character".to_string()),
-        thumbnail_path: None,
-        tags_json: Some("[]".to_string()),
-        metadata_json: Some("{}".to_string()),
-        hash_db_json: None,
-        custom_skins_json: None,
-        db_thumbnail: None,
-        skip: false,
-        move_from_temp: false,
+        ..scan_item(mod_dir.to_string_lossy().to_string(), "Kazuha New")
     }];
 
     let result = commit_scan_results(CommitScanRequest {
@@ -548,12 +504,11 @@ async fn test_commit_temp_collision_includes_existing_mod_id_when_mapped() {
         game_name: "Game",
         game_type: "gimi",
         mods_path: &mods_path,
-        items: vec![confirmed_scan_item(
-            source_mod_path,
-            "Collision Pack",
-            Some(matched_key),
-            true,
-        )],
+        items: vec![ConfirmedScanItem {
+            matched_entry_key: Some(matched_key),
+            move_from_temp: true,
+            ..scan_item(source_mod_path, "Collision Pack")
+        }],
         resource_dir: None,
         safe_mode_keywords: &[],
         preserve_existing_mappings: false,
@@ -628,12 +583,11 @@ async fn test_commit_temp_collision_has_no_existing_mod_id_for_physical_only_tar
         game_name: "Game",
         game_type: "gimi",
         mods_path: &mods_path,
-        items: vec![confirmed_scan_item(
-            source_mod_path,
-            "Physical Only",
-            Some(matched_key),
-            true,
-        )],
+        items: vec![ConfirmedScanItem {
+            matched_entry_key: Some(matched_key),
+            move_from_temp: true,
+            ..scan_item(source_mod_path, "Physical Only")
+        }],
         resource_dir: None,
         safe_mode_keywords: &[],
         preserve_existing_mappings: false,
@@ -706,7 +660,7 @@ async fn test_commit_preserves_missing_db_mod_rows_for_disk_reconcile() {
         game_name: "Game",
         game_type: "gimi",
         mods_path: &mods_path,
-        items: vec![confirmed_scan_item(live_mod_path, "Live Mod", None, false)],
+        items: vec![scan_item(live_mod_path, "Live Mod")],
         resource_dir: None,
         safe_mode_keywords: &[],
         preserve_existing_mappings: false,
@@ -744,40 +698,23 @@ async fn test_commit_rolls_back_on_failure() {
 
     let items = vec![
         ConfirmedScanItem {
-            folder_path: mod1_dir.to_string_lossy().to_string(),
-            display_name: "Valid".to_string(),
-            is_disabled: false,
             matched_entry_key: Some(canonical_entry_key("Valid_Obj")),
             matched_alias_name: Some("Valid_Obj".to_string()),
             matched_confidence: Some(0.75),
             matched_reason: Some("Test".to_string()),
-            object_type: Some("Character".to_string()),
-            thumbnail_path: None,
             tags_json: None,
             metadata_json: None,
-            hash_db_json: None,
-            custom_skins_json: None,
-            db_thumbnail: None,
-            skip: false,
-            move_from_temp: false,
+            ..scan_item(mod1_dir.to_string_lossy().to_string(), "Valid")
         },
         ConfirmedScanItem {
-            folder_path: mod2_dir.to_string_lossy().to_string(),
-            display_name: "Invalid Move".to_string(),
-            is_disabled: false,
             matched_entry_key: Some(canonical_entry_key("Crash_Obj")),
             matched_alias_name: Some("Crash_Obj".to_string()),
             matched_confidence: Some(0.75),
             matched_reason: Some("Test".to_string()),
-            object_type: Some("Character".to_string()),
-            thumbnail_path: None,
             tags_json: None,
             metadata_json: None,
-            hash_db_json: None,
-            custom_skins_json: None,
-            db_thumbnail: None,
-            skip: false,
-            move_from_temp: true, // Will fail because source dir doesn't exist
+            move_from_temp: true,
+            ..scan_item(mod2_dir.to_string_lossy().to_string(), "Invalid Move")
         },
     ];
 
@@ -866,5 +803,78 @@ async fn test_commit_garbage_collects_ghost_objects() {
     assert_eq!(
         obj_count_after, 0,
         "Garbage Collector failed to clean orphan object"
+    );
+}
+
+// A scanned mod's on-disk enabled state has to survive the commit: the folder
+// prefix is the only source of truth for whether a mod is active in-game, and
+// a commit that ignored it would silently arm or disarm mods behind the user.
+#[tokio::test]
+async fn commit_preserves_the_scanned_enabled_state() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let enabled_dir = temp_dir.path().join("Amber Live");
+    let disabled_dir = temp_dir
+        .path()
+        .join(format!("{}Amber Parked", crate::DISABLED_PREFIX));
+    fs::create_dir(&enabled_dir).unwrap();
+    fs::create_dir(&disabled_dir).unwrap();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&temp_dir.path().to_string_lossy()),
+        },
+    )
+    .await
+    .unwrap();
+
+    commit_scan_results(CommitScanRequest {
+        pool: &pool,
+        game_id: "g1",
+        game_name: "Game",
+        game_type: "gimi",
+        mods_path: &temp_dir.path().to_string_lossy(),
+        items: vec![
+            scan_item(enabled_dir.to_string_lossy().to_string(), "Amber Live"),
+            ConfirmedScanItem {
+                is_disabled: true,
+                ..scan_item(disabled_dir.to_string_lossy().to_string(), "Amber Parked")
+            },
+        ],
+        resource_dir: None,
+        safe_mode_keywords: &[],
+        preserve_existing_mappings: false,
+    })
+    .await
+    .unwrap();
+
+    let rows: Vec<(String, i64, Option<String>)> =
+        sqlx::query_as("SELECT actual_name, status, disabled_reason FROM mods WHERE game_id = ?")
+            .bind("g1")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+    let live = rows
+        .iter()
+        .find(|(name, _, _)| name == "Amber Live")
+        .expect("enabled mod committed");
+    let parked = rows
+        .iter()
+        .find(|(name, _, _)| name == "Amber Parked")
+        .expect("disabled mod committed");
+
+    assert_eq!(live.1, 1, "an enabled scan item must commit as enabled");
+    assert_eq!(live.2, None, "an enabled mod carries no disabled reason");
+    assert_eq!(parked.1, 0, "a disabled scan item must commit as disabled");
+    assert_eq!(
+        parked.2.as_deref(),
+        Some(crate::common::corridor_constants::DISABLED_REASON_USER),
+        "the user's own choice is what parked it"
     );
 }
