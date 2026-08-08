@@ -8,7 +8,11 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 const KEY_EXTS: &[&str] = &["ini", "dds", "buf", "ib", "vb"];
-const TEXTURE_EXTS: &[&str] = &["dds"];
+/// Textures carry the colour, meshes carry the shape. The two are hashed into
+/// separate buckets because a pair that shares its meshes but not its textures
+/// is a recolor, and that scores differently from an unrelated pair.
+const TEXTURE_EXT: &str = "dds";
+const MESH_EXTS: &[&str] = &["ib", "buf"];
 const PARTIAL_HASH_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -20,6 +24,13 @@ pub(crate) struct ModSnapshot {
     pub keybindings: BTreeSet<String>,
     pub target_hashes: BTreeSet<String>,
     pub extensions: HashMap<String, u64>,
+    /// The three fields below are per-*snapshot* facts that used to be
+    /// recomputed per *pair*. A mod that lands in k candidate pairs rebuilt its
+    /// file set and re-ran two name normalizations k times; the folder walk
+    /// that produces the snapshot already has everything they need.
+    pub file_set: BTreeSet<String>,
+    pub normalized_name: String,
+    pub version_stripped_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -80,9 +91,14 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
         });
     }
 
+    let file_set: BTreeSet<String> = files.iter().map(|file| file.rel_path.clone()).collect();
+
     Ok(ModSnapshot {
+        normalized_name: normalize_name(&candidate.display_name),
+        version_stripped_name: strip_version(&candidate.display_name),
         candidate: candidate.clone(),
         files,
+        file_set,
         total_size_bytes: total_size,
         ini_headers,
         keybindings,
@@ -97,9 +113,8 @@ pub(crate) fn hash_snapshot(snapshot: &ModSnapshot) -> HashProfile {
         if !KEY_EXTS.contains(&file.extension.as_str()) {
             continue;
         }
-        let hash = if TEXTURE_EXTS.contains(&file.extension.as_str())
-            && file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES
-        {
+        let is_texture = file.extension == TEXTURE_EXT;
+        let hash = if is_texture && file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES {
             partial_blake3_hash(&file.abs_path)
         } else {
             full_blake3_hash(&file.abs_path)
@@ -108,9 +123,9 @@ pub(crate) fn hash_snapshot(snapshot: &ModSnapshot) -> HashProfile {
             profile
                 .key_file_hashes
                 .insert(file.rel_path.clone(), value.clone());
-            if TEXTURE_EXTS.contains(&file.extension.as_str()) {
+            if is_texture {
                 profile.texture_samples.insert(file.rel_path.clone(), value);
-            } else if ["ib", "buf"].contains(&file.extension.as_str()) {
+            } else if MESH_EXTS.contains(&file.extension.as_str()) {
                 profile.mesh_hashes.insert(file.rel_path.clone(), value);
             }
         }
@@ -136,12 +151,24 @@ fn strip_version(name: &str) -> String {
 /// The four `TIER_*` weights sum to 100; the bonuses can push a pair above that
 /// before the clamp, which is why a non-exact match tops out at
 /// [`MAX_INEXACT_SCORE`] rather than 100 — only a full hash match scores 100.
-mod weights {
+pub(super) mod weights {
+    /// Candidate prefilter: the two cheap bounds that decide which pairs are
+    /// worth hashing at all. Widening either one costs scan time quadratically.
+    pub const CANDIDATE_FILE_COUNT_WINDOW: usize = 4;
+    pub const CANDIDATE_MIN_SIZE_RATIO: f64 = 0.70;
+
     /// Tier weights (sum to 100).
     pub const TIER_STRUCTURAL_NAME: f64 = 35.0;
     pub const TIER_FILE_IDENTITY: f64 = 30.0;
     pub const TIER_PHYSICAL: f64 = 20.0;
     pub const TIER_SUPPORTING: f64 = 15.0;
+
+    /// Name mix (sums to 1.0), and how much of the shorter name counts as its
+    /// "front" — mod names diverge at the tail (" v2", " (blue)"), so the head
+    /// is the more honest comparison.
+    pub const NAME_FRONT_MIX: f64 = 0.6;
+    pub const NAME_LEVENSHTEIN_MIX: f64 = 0.4;
+    pub const FRONT_NAME_FRACTION: f64 = 0.6;
 
     /// Intra-tier mixes (each group sums to 1.0).
     pub const FILE_IDENTITY_HASH: f64 = 0.8;
@@ -162,6 +189,11 @@ mod weights {
     pub const MAX_INEXACT_SCORE: f64 = 99.0;
     /// A same-name/different-version pair is a duplicate regardless of content drift.
     pub const VERSION_UPGRADE_FLOOR: u8 = 85;
+    /// Below this a pair is not worth showing the user at all.
+    pub const MIN_REPORTED_SCORE: u8 = 45;
+    /// At or above this the pair is reported as a name/structure match rather
+    /// than as needing manual review.
+    pub const HIGH_SIMILARITY_SCORE: u8 = 80;
 }
 
 pub(crate) fn aggregate_signals(
@@ -200,10 +232,8 @@ pub(crate) fn aggregate_signals(
         + (logical_overlap * w::SUPPORTING_LOGICAL))
         .clamp(0.0, 1.0);
 
-    let left_clean_name = strip_version(&left.candidate.display_name);
-    let right_clean_name = strip_version(&right.candidate.display_name);
-    let is_version_upgrade = left_clean_name == right_clean_name
-        && !left_clean_name.is_empty()
+    let is_version_upgrade = left.version_stripped_name == right.version_stripped_name
+        && !left.version_stripped_name.is_empty()
         && left.candidate.display_name != right.candidate.display_name;
 
     let size_diff = super::size_ratio(left.total_size_bytes, right.total_size_bytes);
@@ -275,9 +305,9 @@ pub(crate) fn aggregate_signals(
         "Potential Recolor / Retexture Variant".to_string()
     } else if is_version_upgrade {
         "Version Upgrade Detected".to_string()
-    } else if logical_overlap > 0.8 {
+    } else if logical_overlap > w::LOGICAL_OVERLAP_BONUS_MIN {
         "Logical INI Hash Override Conflict".to_string()
-    } else if score >= 80 {
+    } else if score >= w::HIGH_SIMILARITY_SCORE {
         "High name + structure similarity".to_string()
     } else {
         "Low confidence - manual review required".to_string()
@@ -287,24 +317,16 @@ pub(crate) fn aggregate_signals(
 }
 
 fn phase2_name_and_structure(left: &ModSnapshot, right: &ModSnapshot) -> (f64, f64) {
-    let first = normalize_name(&left.candidate.display_name);
-    let second = normalize_name(&right.candidate.display_name);
-    let front_score = front_name_similarity(&first, &second);
-    let levenshtein = strsim::normalized_levenshtein(&first, &second);
-    let name_score = (front_score * 0.6) + (levenshtein * 0.4);
+    use weights as w;
 
-    let left_files: BTreeSet<&str> = left
-        .files
-        .iter()
-        .map(|file| file.rel_path.as_str())
-        .collect();
-    let right_files: BTreeSet<&str> = right
-        .files
-        .iter()
-        .map(|file| file.rel_path.as_str())
-        .collect();
-    let overlap = left_files.intersection(&right_files).count() as f64;
-    let max_len = left_files.len().max(right_files.len()) as f64;
+    let first = &left.normalized_name;
+    let second = &right.normalized_name;
+    let front_score = front_name_similarity(first, second);
+    let levenshtein = strsim::normalized_levenshtein(first, second);
+    let name_score = (front_score * w::NAME_FRONT_MIX) + (levenshtein * w::NAME_LEVENSHTEIN_MIX);
+
+    let overlap = left.file_set.intersection(&right.file_set).count() as f64;
+    let max_len = left.file_set.len().max(right.file_set.len()) as f64;
     let structure_score = if max_len == 0.0 {
         0.0
     } else {
@@ -379,7 +401,9 @@ fn front_name_similarity(left: &str, right: &str) -> f64 {
     if base == 0 {
         return 0.0;
     }
-    let front_len = ((base as f64) * 0.6).round().max(1.0) as usize;
+    let front_len = ((base as f64) * weights::FRONT_NAME_FRACTION)
+        .round()
+        .max(1.0) as usize;
     strsim::normalized_levenshtein(
         &left[..front_len.min(left.len())],
         &right[..front_len.min(right.len())],

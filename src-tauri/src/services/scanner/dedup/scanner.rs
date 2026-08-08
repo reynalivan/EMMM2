@@ -116,7 +116,7 @@ fn run_pipeline_blocking(
             let right_hash = hash_profiles.get(&right)?;
             let (score, signals, reason) =
                 aggregate_signals(&snapshots[left], &snapshots[right], left_hash, right_hash);
-            if score < 45 {
+            if score < super::signals::weights::MIN_REPORTED_SCORE {
                 return None;
             }
             Some((left, right, score, signals, reason))
@@ -264,24 +264,53 @@ fn canonical_pair(left: &str, right: &str) -> (String, String) {
     }
 }
 
+/// The pairs cheap enough to be worth hashing and scoring.
+///
+/// Both surviving predicates are one-dimensional range tests, so the pair set
+/// can be *enumerated* rather than filtered out of all N(N-1)/2 combinations —
+/// which is ~50M serial iterations at the 10k-mod design target, sitting
+/// between two `par_iter` phases.
+///
+/// Sorting by file count is what makes the window exact: the count bound is
+/// the tighter of the two and it is integral, so once the delta exceeds the
+/// window every later snapshot is out of range and the run ends. The size
+/// ratio is not monotonic along that order, so it stays a test inside the
+/// window rather than a second bound.
 fn phase1_candidate_filtering(snapshots: &[ModSnapshot]) -> Vec<(usize, usize)> {
+    use super::signals::weights as w;
+
+    // A folder with no files can never pair; dropping it here keeps it out of
+    // every window below.
+    let mut by_file_count: Vec<usize> = (0..snapshots.len())
+        .filter(|index| !snapshots[*index].files.is_empty())
+        .collect();
+    by_file_count.sort_unstable_by_key(|index| snapshots[*index].files.len());
+
     let mut pairs = Vec::new();
-    for left in 0..snapshots.len() {
-        for right in (left + 1)..snapshots.len() {
-            let first = &snapshots[left];
-            let second = &snapshots[right];
-            if first.files.is_empty() || second.files.is_empty() {
+    for (position, &left) in by_file_count.iter().enumerate() {
+        let left_count = snapshots[left].files.len();
+        for &right in &by_file_count[position + 1..] {
+            // Ascending order: once the window closes it stays closed.
+            if snapshots[right].files.len() - left_count > w::CANDIDATE_FILE_COUNT_WINDOW {
+                break;
+            }
+            let ratio = super::size_ratio(
+                snapshots[left].total_size_bytes,
+                snapshots[right].total_size_bytes,
+            );
+            if ratio < w::CANDIDATE_MIN_SIZE_RATIO {
                 continue;
             }
-            if first.files.len().abs_diff(second.files.len()) > 4 {
-                continue;
-            }
-            if super::size_ratio(first.total_size_bytes, second.total_size_bytes) < 0.70 {
-                continue;
-            }
-            pairs.push((left, right));
+            pairs.push((left.min(right), left.max(right)));
         }
     }
+
+    // Emit in the same order the exhaustive loop did. `build_groups` breaks
+    // score ties by position, so preserving the order keeps this a pure
+    // speedup instead of a silent change to the reason text a group reports.
+    // Only the degenerate case (every mod the same size and file count) makes
+    // this sort large, and there the pair hashing dwarfs it.
+    pairs.sort_unstable();
     pairs
 }
 
@@ -295,6 +324,17 @@ fn build_groups(
         union(&mut parent, *left, *right);
     }
 
+    // Bucket the pairs by component once. Re-scanning every pair per component
+    // and testing `members.contains` made assembly
+    // O(#components x #pairs x |members|); the union-find roots the loop above
+    // just computed answer the same question in one pass. Both endpoints of a
+    // pair share a root by construction, so keying on the left one is enough.
+    let mut pairs_by_root: HashMap<usize, Vec<&ScoredPair>> = HashMap::new();
+    for pair in pairs {
+        let root = find(&mut parent, pair.0);
+        pairs_by_root.entry(root).or_default().push(pair);
+    }
+
     let mut components: HashMap<usize, Vec<usize>> = HashMap::new();
     for index in 0..snapshots.len() {
         let root = find(&mut parent, index);
@@ -302,14 +342,13 @@ fn build_groups(
     }
 
     components
-        .into_values()
-        .filter(|members| members.len() > 1)
+        .into_iter()
+        .filter(|(_, members)| members.len() > 1)
         .enumerate()
-        .map(|(group_index, members)| {
-            let component_pairs: Vec<_> = pairs
-                .iter()
-                .filter(|(left, right, _, _, _)| members.contains(left) && members.contains(right))
-                .collect();
+        .map(|(group_index, (root, members))| {
+            let component_pairs: &[&ScoredPair] = pairs_by_root
+                .get(&root)
+                .map_or(&[], |bucket| bucket.as_slice());
             let confidence = component_pairs
                 .iter()
                 .map(|(_, _, score, _, _)| *score)
@@ -322,7 +361,7 @@ fn build_groups(
                 .unwrap_or_else(|| "Low confidence - manual review required".to_string());
 
             let mut signal_map: HashMap<String, DupScanSignal> = HashMap::new();
-            for (_, _, _, signals, _) in &component_pairs {
+            for (_, _, _, signals, _) in component_pairs {
                 for signal in signals {
                     signal_map
                         .entry(signal.key.clone())
@@ -406,3 +445,7 @@ fn union(parent: &mut [usize], left: usize, right: usize) {
 #[cfg(test)]
 #[path = "tests/dedup_scanner_tests.rs"]
 mod dedup_scanner_tests;
+
+#[cfg(test)]
+#[path = "tests/dedup_phase1_tests.rs"]
+mod dedup_phase1_tests;
