@@ -7,7 +7,7 @@ those were fixed and pushed. This is the remaining debt, ordered by value.
 ## Where things stand
 
 Six phases of `docs/architecture-refactor-plan.md` are done and on `main`.
-The invariants below are enforced by **ten gates** in
+The invariants below are enforced by **eleven gates** in
 `src-tauri/tests/arch_audit.rs`, all target-zero. Read that file first: it is
 the fastest way to learn what the layers are allowed to do.
 
@@ -20,6 +20,7 @@ the fastest way to learn what the layers are allowed to do.
 | Errors keep their discriminant | no `Result<_, String>` in `services/` |
 | Repos only do SQL | no `std::fs`, no `specta::Type` in `repo/` |
 | Repos do not decide identity | no `type_is_authoritative` in `repo/` |
+| A stored path is not a filesystem path | `ModFolderPath` (no `AsRef<Path>`) |
 
 ### The loop every change runs
 
@@ -86,6 +87,44 @@ case-insensitive path detection and repeated section-prefix stripping had no
 coverage at all, and the third turned out to be dead code that has since been
 deleted. Rewriting those functions without this step would have shipped two
 silent regressions. Do it for anything in Tier 2.
+
+---
+
+## What the last pass turned up
+
+The three parked items were resolved (see "Decisions" below), and preparing
+that decision uncovered a bug family worth recording, because the shape
+repeats.
+
+**One ambiguous column produced six bugs.** `mods.folder_path` is relative to
+the mods root. Six readers treated it as a complete path. Every one failed
+identically and *silently*: a relative path resolves against the process
+working directory, the existence check says no, and the code takes its
+nothing-found branch. "No conflicts", "no duplicates" and "no keybinds" are
+all ordinary answers, so nothing ever surfaced.
+
+| Reader | What the user saw | Fixed in |
+|---|---|---|
+| `conflicts_for_enabled_paths` | conflict count always zero | `481510b` |
+| `link_disk_to_db` rename pass | every row looked gone from disk | `a6259dd` |
+| `build_candidates` | duplicate scan found **nothing** | `61e6d9a` |
+| `resolve_mod_path_for_object` | **deleted the row** on "reveal in Explorer" | `61e6d9a` |
+| `get_active_keybindings_service` | overlay keybind list empty | `61e6d9a` |
+| scan commit (writer) | wrote absolute, disagreeing with disk reconcile | `a6259dd` |
+
+Two lessons worth more than the fixes:
+
+- **A comment is not a check.** `bulk/attributes.rs` documented the convention
+  correctly — "the form the DB stores" — while four neighbours got it wrong.
+  The convention only became reliable once `ModFolderPath` had no
+  `AsRef<Path>`, at which point the compiler listed every offender.
+- **Fixtures that use a shape production never produces prove nothing.** All
+  thirteen dedup tests passed over a scanner returning zero folders, because
+  every fixture stored an absolute temp path. Registering the relative form
+  makes five of them fail against the old code.
+
+If another column ever grows two conventions, the fix is a newtype, not a
+sweep — the sweep only finds today's callers.
 
 ---
 
@@ -343,3 +382,19 @@ that table actually diverges, not before.
 **3.1** is filler for a slow afternoon, and only the two test files with
 named, measured boilerplate (`sync_tests.rs`, `dedup_scanner_tests.rs`) are
 worth touching. Deduplicate them; do not split them.
+
+---
+
+## Decisions taken
+
+**1.5 — nested INIs stay out of the harvest.** post_apply keeps two walks: the
+conflict scan recurses to depth 3, the KeyViewer harvest reads top-level INIs
+only. Merging them would put keybinds from inactive variant subfolders into
+the overlay. The asymmetry is deliberate and now pinned by
+`a_nested_ini_still_counts_as_a_conflict`. The item is closed, not deferred.
+
+**2.3 — row and wire stay coupled until one diverges.** Split a table into a
+row struct plus a DTO the first time a column actually needs to change
+independently. Six pre-emptive splits is ceremony.
+
+**2.2 — declined**, see the section above.
