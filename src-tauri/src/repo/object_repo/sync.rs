@@ -17,27 +17,26 @@ async fn backfill_empty_columns(
     id: &str,
     input: &EnsureObjectInput<'_>,
 ) -> Result<(), sqlx::Error> {
-    // An incoming value equal to the "nothing set" sentinel is not a value.
-    let incoming_tags = (input.db_tags_json != EMPTY_TAGS).then_some(input.db_tags_json);
-    let incoming_metadata =
-        (input.db_metadata_json != EMPTY_METADATA).then_some(input.db_metadata_json);
-
+    // The `CASE` is what protects a value the user set: it only writes when the
+    // column still holds the "nothing set" sentinel. An incoming sentinel used
+    // to be filtered to NULL first, which changed nothing -- writing `[]` over
+    // `[]` is the same as not writing -- so the guard is spelled once, here.
     sqlx::query(
         "UPDATE objects SET
              thumbnail_path = COALESCE(thumbnail_path, ?),
              hash_db        = COALESCE(hash_db, ?),
              custom_skins   = COALESCE(custom_skins, ?),
-             tags           = CASE WHEN tags = ? THEN COALESCE(?, tags) ELSE tags END,
-             metadata       = CASE WHEN metadata = ? THEN COALESCE(?, metadata) ELSE metadata END
+             tags           = CASE WHEN tags = ? THEN ? ELSE tags END,
+             metadata       = CASE WHEN metadata = ? THEN ? ELSE metadata END
          WHERE id = ?",
     )
     .bind(input.db_thumbnail)
     .bind(input.db_hash_db_json)
     .bind(input.db_custom_skins_json)
     .bind(EMPTY_TAGS)
-    .bind(incoming_tags)
+    .bind(input.db_tags_json)
     .bind(EMPTY_METADATA)
-    .bind(incoming_metadata)
+    .bind(input.db_metadata_json)
     .bind(id)
     .execute(&mut *conn)
     .await?;
