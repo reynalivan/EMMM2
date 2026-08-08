@@ -46,7 +46,9 @@ pub async fn reveal_object_in_explorer(
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
 
-    if let Some(path_str) = resolve_and_heal_db_path(pool.inner(), &object_id).await {
+    if let Some(path_str) =
+        resolve_and_heal_db_path(pool.inner(), &object_id, Path::new(&mods_path)).await
+    {
         let canonical = validate_path(&config, &game_id, &path_str)?;
         return open_explorer_select(&canonical.to_string_lossy());
     }
@@ -56,8 +58,15 @@ pub async fn reveal_object_in_explorer(
     open_explorer_select(&canonical.to_string_lossy())
 }
 
-async fn resolve_and_heal_db_path(pool: &sqlx::SqlitePool, object_id: &str) -> Option<String> {
-    crate::services::mods::stale_mod_service::resolve_mod_path_for_object(pool, object_id).await
+async fn resolve_and_heal_db_path(
+    pool: &sqlx::SqlitePool,
+    object_id: &str,
+    mods_root: &Path,
+) -> Option<String> {
+    crate::services::mods::stale_mod_service::resolve_mod_path_for_object(
+        pool, object_id, mods_root,
+    )
+    .await
 }
 
 fn find_fallback_path(mods_path: &str, object_name: &str) -> Result<String, AppError> {

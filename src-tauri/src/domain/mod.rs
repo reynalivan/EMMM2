@@ -4,6 +4,7 @@ pub mod conflicts;
 pub mod corridor;
 pub mod dashboard;
 pub mod errors;
+pub mod mod_path;
 pub mod models;
 pub mod mods;
 pub mod objects;

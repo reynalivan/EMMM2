@@ -1,7 +1,6 @@
 use crate::services::keyviewer::harvester;
 
 use crate::domain::errors::AppError;
-use std::path::Path;
 
 /// A keybinding entry extracted from an enabled mod's INI file.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -16,6 +15,10 @@ pub async fn get_active_keybindings_service(
     pool: &sqlx::SqlitePool,
     game_id: &str,
 ) -> Result<Vec<ActiveKeyBinding>, AppError> {
+    let mods_root = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
+    let mods_root = std::path::Path::new(&mods_root);
     // 1. Fetch enabled mods' folder paths and names for this game
     let rows = crate::repo::mod_repo::get_enabled_mods_names_and_paths(pool, game_id).await?;
 
@@ -25,7 +28,8 @@ pub async fn get_active_keybindings_service(
     for (mod_name, folder_path) in &rows {
         // `harvest_keybinds_from_mod` owns the list-then-parse walk and its
         // skip-on-error policy; this used to be a second copy of both.
-        let Ok(keybinds) = harvester::harvest_keybinds_from_mod(Path::new(folder_path)) else {
+        let Ok(keybinds) = harvester::harvest_keybinds_from_mod(&folder_path.resolve(mods_root))
+        else {
             continue;
         };
 

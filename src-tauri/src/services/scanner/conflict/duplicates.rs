@@ -42,9 +42,10 @@ pub async fn get_duplicates_for_mod_service(
         let mut is_variant = false;
         let mut parent_path = String::new();
 
-        if let (Some(target_parent), Some(dup_parent)) =
-            (Path::new(folder_path).parent(), Path::new(&path).parent())
-        {
+        if let (Some(target_parent), Some(dup_parent)) = (
+            Path::new(folder_path).parent(),
+            Path::new(path.as_stored()).parent(),
+        ) {
             if target_parent == dup_parent {
                 let (node_type, _, _) = crate::common::classifier::classify_folder(
                     &Path::new(&mods_path).join(target_parent),
@@ -59,7 +60,7 @@ pub async fn get_duplicates_for_mod_service(
         result.push(crate::domain::mods::DuplicateModInfo {
             mod_id: mod_id.clone(),
             object_id: object_id.clone(),
-            folder_path: path,
+            folder_path: path.into_stored(),
             actual_name: name,
             is_variant,
             parent_path,

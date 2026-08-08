@@ -7,7 +7,7 @@ use crate::services::keyviewer::harvester;
 use crate::services::keyviewer::matcher;
 use crate::services::mods::metadata;
 use sqlx::SqlitePool;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Context for post-mutation tasks.
 #[derive(Clone)]
@@ -69,8 +69,8 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
     let mut hash_to_mod_path = std::collections::HashMap::new();
     let mut mod_keybinds = std::collections::HashMap::new();
 
-    for mod_path_str in enabled_mods {
-        let abs_path = mods_path.join(&mod_path_str);
+    for stored_path in enabled_mods {
+        let abs_path = stored_path.resolve(mods_path);
         let Ok(harvest) = harvester::harvest_mod(&abs_path) else {
             continue;
         };
@@ -80,9 +80,9 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
             hash_to_mod_path
                 .entry(hash)
                 .or_insert_with(Vec::new)
-                .push(mod_path_str.clone());
+                .push(stored_path.clone());
         }
-        mod_keybinds.insert(mod_path_str, harvest.keybinds);
+        mod_keybinds.insert(stored_path, harvest.keybinds);
     }
 
     // Load character entries from DB
@@ -140,10 +140,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
                     if seen_mod_paths.insert(mp) {
                         if let Some(kbs) = mod_keybinds.get(mp) {
                             // Use the folder name as the mod name
-                            let mod_name = Path::new(mp)
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_else(|| mp.clone());
+                            let mod_name = mp.folder_name().to_string();
 
                             object_sources.push(generator::SourceKeyBinding {
                                 mod_name,

@@ -1,6 +1,7 @@
 //! Multi-row reads: mod sets scoped by game or object.
 
 use super::types::{Mod, ReconcileModRow};
+use crate::domain::mod_path::ModFolderPath;
 use crate::domain::models::ItemStatus;
 use sqlx::SqlitePool;
 
@@ -36,11 +37,13 @@ pub async fn get_mods_by_object_id(
 pub async fn get_enabled_mods_paths(
     pool: &SqlitePool,
     game_id: &str,
-) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT folder_path FROM mods WHERE game_id = ? AND status = 1")
-        .bind(game_id)
-        .fetch_all(pool)
-        .await
+) -> Result<Vec<ModFolderPath>, sqlx::Error> {
+    let rows: Vec<String> =
+        sqlx::query_scalar("SELECT folder_path FROM mods WHERE game_id = ? AND status = 1")
+            .bind(game_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(ModFolderPath::from_stored).collect())
 }
 
 pub async fn get_enabled_siblings_paths(
@@ -66,8 +69,8 @@ pub async fn get_enabled_duplicates(
     object_id: &str,
     game_id: &str,
     exclude_folder: &str,
-) -> Result<Vec<(String, String, String)>, sqlx::Error> {
-    sqlx::query_as::<_, (String, String, String)>(
+) -> Result<Vec<(String, ModFolderPath, String)>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, (String, String, String)>(
         "SELECT id, folder_path, actual_name FROM mods
          WHERE object_id = ? AND game_id = ? AND status = 1
          AND folder_path != ?",
@@ -76,29 +79,42 @@ pub async fn get_enabled_duplicates(
     .bind(game_id)
     .bind(exclude_folder)
     .fetch_all(pool)
-    .await
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, path, name)| (id, ModFolderPath::from_stored(path), name))
+        .collect())
 }
 
 pub async fn get_enabled_mods_names_and_paths(
     pool: &SqlitePool,
     game_id: &str,
-) -> Result<Vec<(String, String)>, sqlx::Error> {
-    sqlx::query_as::<_, (String, String)>(
+) -> Result<Vec<(String, ModFolderPath)>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, (String, String)>(
         "SELECT actual_name, folder_path FROM mods WHERE game_id = ? AND status = 1",
     )
     .bind(game_id)
     .fetch_all(pool)
-    .await
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(name, path)| (name, ModFolderPath::from_stored(path)))
+        .collect())
 }
 
 pub async fn get_all_mods_id_and_paths_tx(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
-) -> Result<Vec<(String, String, bool)>, sqlx::Error> {
-    sqlx::query_as("SELECT id, folder_path, COALESCE(is_safe, 1) FROM mods WHERE game_id = ?")
-        .bind(game_id)
-        .fetch_all(conn)
-        .await
+) -> Result<Vec<(String, ModFolderPath, bool)>, sqlx::Error> {
+    let rows: Vec<(String, String, bool)> =
+        sqlx::query_as("SELECT id, folder_path, COALESCE(is_safe, 1) FROM mods WHERE game_id = ?")
+            .bind(game_id)
+            .fetch_all(conn)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, path, is_safe)| (id, ModFolderPath::from_stored(path), is_safe))
+        .collect())
 }
 
 pub async fn get_all_mods_sync_info_tx(

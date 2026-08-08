@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::signals::{aggregate_signals, collect_snapshot, hash_snapshot, ModSnapshot};
+use crate::domain::mod_path::ModFolderPath;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -48,9 +49,14 @@ pub async fn scan_duplicates(
         return Ok(cancelled(total_folders));
     }
 
+    // Keyed by the resolved absolute path, because that is what a snapshot
+    // carries. Keying by the stored value made every lookup miss.
     let path_to_mod_id: HashMap<String, (String, bool)> = mod_rows
         .into_iter()
-        .map(|(id, folder_path, is_safe)| (folder_path, (id, is_safe)))
+        .map(|(id, folder_path, is_safe)| {
+            let absolute = folder_path.resolve(mods_root).to_string_lossy().to_string();
+            (absolute, (id, is_safe))
+        })
         .collect();
     let whitelist_pairs = fetch_whitelist_pairs(db, game_id).await?;
 
@@ -206,11 +212,17 @@ fn apply_whitelist_filter(
         .collect()
 }
 
-fn build_candidates(mod_rows: &[(String, String, bool)], mods_root: &Path) -> Vec<ModCandidate> {
+fn build_candidates(
+    mod_rows: &[(String, ModFolderPath, bool)],
+    mods_root: &Path,
+) -> Vec<ModCandidate> {
     let mut candidates = Vec::new();
 
     for (_id, folder_path, _is_safe) in mod_rows {
-        let path = Path::new(folder_path);
+        // Resolving is what makes the checks below mean anything: the stored
+        // value is relative, so testing it as a path found no directory and the
+        // whole scan reported zero candidates.
+        let path = folder_path.resolve(mods_root);
 
         // Skip paths that no longer physically exist (`is_dir` is false for those too).
         if !path.is_dir() {
@@ -232,7 +244,7 @@ fn build_candidates(mod_rows: &[(String, String, bool)], mods_root: &Path) -> Ve
             crate::common::normalizer::normalize_display_name(&raw_name).into_owned();
 
         candidates.push(ModCandidate {
-            path: path.to_path_buf(),
+            path,
             raw_name,
             display_name,
             is_disabled,

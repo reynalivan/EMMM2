@@ -2,19 +2,23 @@
 
 use super::paths::get_game_mod_path;
 use crate::common::path_key::folder_path_key;
+use crate::domain::mod_path::ModFolderPath;
 use sqlx::{Row, SqlitePool};
 
 pub async fn get_mod_by_object_id(
     pool: &SqlitePool,
     object_id: &str,
-) -> Result<Option<(String, String)>, sqlx::Error> {
+) -> Result<Option<(String, ModFolderPath)>, sqlx::Error> {
     let row = sqlx::query("SELECT id, folder_path FROM mods WHERE object_id = ? LIMIT 1")
         .bind(object_id)
         .fetch_optional(pool)
         .await?;
 
     if let Some(r) = row {
-        Ok(Some((r.try_get("id")?, r.try_get("folder_path")?)))
+        Ok(Some((
+            r.try_get("id")?,
+            ModFolderPath::from_stored(r.try_get::<String, _>("folder_path")?),
+        )))
     } else {
         Ok(None)
     }

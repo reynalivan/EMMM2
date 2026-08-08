@@ -70,7 +70,16 @@ async fn register_mods(
                 game_id,
                 object_id: None,
                 actual_name: entry.name,
-                folder_path: entry.folder.to_string_lossy().as_ref(),
+                // Relative, because that is what the database holds. Fixtures
+                // used to store the absolute temp path, so every test here
+                // exercised a shape production never produces -- and the whole
+                // scan silently returning zero folders went unnoticed.
+                folder_path: entry
+                    .folder
+                    .strip_prefix(mods_root)
+                    .unwrap_or(entry.folder)
+                    .to_string_lossy()
+                    .as_ref(),
                 status: crate::domain::models::ItemStatus::Enabled,
                 is_safe: entry.is_safe,
                 object_type: None,

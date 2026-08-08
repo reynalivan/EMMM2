@@ -66,7 +66,7 @@ async fn test_mod_repo_crud() {
     // Test get_mod_by_object_id
     let mod_info = get_mod_by_object_id(&pool, "obj1").await.unwrap();
     assert!(mod_info.is_some());
-    assert_eq!(mod_info.unwrap().1, "Mods/Obj1/Mod1");
+    assert_eq!(mod_info.unwrap().1.as_stored(), "Mods/Obj1/Mod1");
 
     // Update path and status
     update_mod_path_status_and_reason(

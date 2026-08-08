@@ -18,7 +18,7 @@ pub async fn disable_target_duplicates(
         crate::repo::mod_repo::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)
             .await?;
     for (_id, sibling_rel, _name) in siblings {
-        let sibling_path = base_path.join(&sibling_rel);
+        let sibling_path = sibling_rel.resolve(base_path);
         let Some(sibling_name) = sibling_path.file_name().and_then(|value| value.to_str()) else {
             continue;
         };
@@ -44,14 +44,14 @@ pub async fn disable_target_duplicates(
         crate::repo::mod_repo::update_mod_path_status_and_reason(
             pool,
             game_id,
-            &sibling_rel,
+            sibling_rel.as_stored(),
             &sibling_new_rel,
             ItemStatus::Disabled,
             Some("Collision (Only-One-Active)"),
         )
         .await?;
         path_rewrites.push(crate::domain::workspace::WorkspacePathRewrite {
-            old_path: sibling_rel,
+            old_path: sibling_rel.into_stored(),
             new_path: sibling_new_rel,
         });
     }

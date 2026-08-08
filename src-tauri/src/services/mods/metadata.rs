@@ -218,11 +218,11 @@ pub async fn get_active_mod_conflicts(
 /// while the scanner commit still writes absolute paths.
 pub fn conflicts_for_enabled_paths(
     mods_root: &Path,
-    enabled_paths: &[String],
+    enabled_paths: &[crate::domain::mod_path::ModFolderPath],
 ) -> Vec<crate::services::scanner::conflict::ConflictInfo> {
     let mut ini_files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
-    for path_str in enabled_paths {
-        let path = mods_root.join(path_str);
+    for stored in enabled_paths {
+        let path = stored.resolve(mods_root);
         if !path.exists() {
             continue;
         }

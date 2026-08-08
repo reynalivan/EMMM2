@@ -6,6 +6,7 @@
 //! silently, because "no conflicts" is a perfectly ordinary answer.
 
 use super::conflicts_for_enabled_paths;
+use crate::domain::mod_path::ModFolderPath;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -30,7 +31,10 @@ fn conflicts_are_found_when_paths_are_stored_relative() {
     two_conflicting_mods(mods_root);
 
     // Exactly what disk reconcile writes: a path relative to the mods root.
-    let stored = vec!["ModA".to_string(), "ModB".to_string()];
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
 
     let conflicts = conflicts_for_enabled_paths(mods_root, &stored);
 
@@ -49,8 +53,8 @@ fn conflicts_are_found_when_paths_are_stored_absolute() {
     // What the scanner commit writes today. Both conventions are in the table,
     // so the reader has to cope with either.
     let stored = vec![
-        mods_root.join("ModA").to_string_lossy().to_string(),
-        mods_root.join("ModB").to_string_lossy().to_string(),
+        ModFolderPath::from_stored(mods_root.join("ModA").to_string_lossy().to_string()),
+        ModFolderPath::from_stored(mods_root.join("ModB").to_string_lossy().to_string()),
     ];
 
     let conflicts = conflicts_for_enabled_paths(mods_root, &stored);
@@ -68,9 +72,9 @@ fn a_missing_folder_is_skipped_rather_than_guessed_at() {
     two_conflicting_mods(mods_root);
 
     let stored = vec![
-        "ModA".to_string(),
-        "Deleted On Disk".to_string(),
-        "ModB".to_string(),
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("Deleted On Disk"),
+        ModFolderPath::from_stored("ModB"),
     ];
 
     // The stale row contributes nothing; the two real mods still conflict.
@@ -104,7 +108,10 @@ fn a_nested_ini_still_counts_as_a_conflict() {
     )
     .expect("nested ini");
 
-    let stored = vec!["ModA".to_string(), "ModB".to_string()];
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
 
     assert!(
         !conflicts_for_enabled_paths(mods_root, &stored).is_empty(),
@@ -126,7 +133,10 @@ fn unrelated_mods_do_not_conflict() {
         .expect("mod ini");
     }
 
-    let stored = vec!["ModA".to_string(), "ModB".to_string()];
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
 
     assert!(
         conflicts_for_enabled_paths(mods_root, &stored).is_empty(),

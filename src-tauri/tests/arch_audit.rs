@@ -174,6 +174,48 @@ fn repos_do_not_decide_object_identity() {
     );
 }
 
+/// A stored mod path cannot be mistaken for a filesystem path.
+///
+/// `mods.folder_path` is relative to the game's mods root. Six readers treated
+/// it as a complete path, and every one failed identically and silently: the
+/// path resolves against the process working directory, the check says "not
+/// there", and the code takes its nothing-found branch. Conflict detection
+/// reported no conflicts, the duplicate scanner reported no folders, and the
+/// stale-mod resolver concluded the folder was gone and deleted the row.
+///
+/// `ModFolderPath` makes that a compile error by having no conversion to a
+/// path — `resolve(mods_root)` is the only way through, and it cannot be
+/// called without naming a root. This gate guards the absence: adding any of
+/// these impls quietly restores the whole bug family.
+#[test]
+fn the_stored_mod_path_has_no_silent_path_conversion() {
+    let source =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/domain/mod_path.rs"))
+            .expect("domain/mod_path.rs");
+
+    let banned = [
+        "impl AsRef<Path> for ModFolderPath",
+        "impl AsRef<std::path::Path> for ModFolderPath",
+        "impl AsRef<OsStr> for ModFolderPath",
+        "impl Deref for ModFolderPath",
+        "impl std::ops::Deref for ModFolderPath",
+        "impl From<ModFolderPath> for PathBuf",
+        "impl From<ModFolderPath> for std::path::PathBuf",
+    ];
+    let found: Vec<&str> = banned
+        .iter()
+        .copied()
+        .filter(|impl_line| source.contains(impl_line))
+        .collect();
+
+    assert!(
+        found.is_empty(),
+        "ModFolderPath must not convert to a path implicitly; resolve(mods_root) \
+         is the way through:\n{}",
+        found.join("\n")
+    );
+}
+
 /// One owner settles a mutation.
 ///
 /// The runtime projection is a read-model: a mutation that returns without
