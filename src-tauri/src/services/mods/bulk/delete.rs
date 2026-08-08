@@ -17,7 +17,7 @@ pub async fn bulk_delete(
     pool: &SqlitePool,
     state: &WatcherState,
     paths: Vec<String>,
-    game_id: Option<String>,
+    game_id: &str,
 ) -> Result<BulkResult, crate::domain::errors::AppError> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| {
         crate::domain::errors::AppError::Io(format!("Failed to get app data dir: {}", e))
@@ -65,7 +65,14 @@ pub async fn bulk_delete(
             );
         }
 
-        match trash::move_to_trash_guarded(state, &trash_dir, path.clone(), game_id.clone()).await {
+        match trash::move_to_trash_guarded(
+            state,
+            &trash_dir,
+            path.clone(),
+            Some(game_id.to_string()),
+        )
+        .await
+        {
             Ok(_) => {
                 db_deletes.push(path.clone());
                 success.push(path.clone());
@@ -80,9 +87,9 @@ pub async fn bulk_delete(
     if !db_deletes.is_empty() {
         // Detect which corridors were affected BEFORE deleting from DB or after if we still have the paths
         // Report the removed mods to any collection that referenced them.
-        if let Some(gid) = &game_id {
+        {
             // Get mod path to compute relative paths
-            let mp = crate::repo::game_repo::get_mod_path(pool, gid)
+            let mp = crate::repo::game_repo::get_mod_path(pool, game_id)
                 .await
                 .ok()
                 .flatten();
@@ -107,16 +114,16 @@ pub async fn bulk_delete(
             }
         }
 
-        if let Err(e) = mod_repo::batch_delete_by_path(pool, &db_deletes).await {
+        if let Err(e) = mod_repo::batch_delete_by_path(pool, game_id, &db_deletes).await {
             log::error!("Failed batch deleting mod paths from DB: {}", e);
         }
 
-        // Trigger dirty state for cada affected corridor
-        if let Some(gid) = &game_id {
+        // Trigger dirty state for the affected corridor
+        {
             crate::services::app::runtime_effects::finalize_mutation(
                 pool,
                 config,
-                gid,
+                game_id,
                 crate::services::app::runtime_effects::MutationOutcome::full_game(),
             )
             .await;
@@ -136,11 +143,9 @@ pub async fn bulk_delete(
     // Convergence: scoped disk reconcile guarantees DB matches disk even if a
     // manual sync step above missed a case.
     if !success.is_empty() {
-        if let Some(gid) = &game_id {
-            if let Err(error) = emit_internal_disk_reconcile(app, pool, gid, success.clone()).await
-            {
-                log::warn!("Post-bulk-delete disk reconcile failed: {error}");
-            }
+        if let Err(error) = emit_internal_disk_reconcile(app, pool, game_id, success.clone()).await
+        {
+            log::warn!("Post-bulk-delete disk reconcile failed: {error}");
         }
     }
 

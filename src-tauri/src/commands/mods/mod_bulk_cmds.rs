@@ -1,7 +1,6 @@
 use crate::domain::errors::AppError;
 use crate::repo::game_repo;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::bulk;
 use crate::services::mods::info_json;
@@ -52,18 +51,16 @@ pub async fn bulk_delete_mods(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
-    game_id: Option<String>,
+    game_id: String,
     paths: Vec<String>,
 ) -> Result<bulk::BulkResult, AppError> {
-    if let Some(ref gid) = game_id {
-        for p in &paths {
-            validate_path(&config, gid, p)?;
-        }
-    }
+    // Required, like `delete_mod`: it names the mods root the paths must sit
+    // inside, and the game whose index rows may be pruned. Optional, it let a
+    // caller skip containment entirely.
+    crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
 
     let _lock = op_lock.acquire().await?;
-    let result =
-        bulk::bulk_delete(&app, &config, pool.inner(), &state, paths, game_id.clone()).await?;
+    let result = bulk::bulk_delete(&app, &config, pool.inner(), &state, paths, &game_id).await?;
 
     Ok(result)
 }

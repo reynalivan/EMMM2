@@ -70,9 +70,9 @@ export function useFolderGridBulk({
 
   const handleBulkDeleteConfirm = useCallback(() => {
     const paths = Array.from(gridSelection);
-    if (paths.length === 0) return;
+    if (paths.length === 0 || !activeGame?.id) return;
     bulkDelete.mutate(
-      { paths },
+      { paths, gameId: activeGame.id },
       {
         onSuccess: () => {
           setBulkDeleteConfirm(false);
@@ -80,7 +80,7 @@ export function useFolderGridBulk({
         },
       },
     );
-  }, [bulkDelete.mutate, clearGridSelection, gridSelection]);
+  }, [activeGame, bulkDelete.mutate, clearGridSelection, gridSelection]);
 
   // Bulk Favorite/Unfavorite — uses proper mutation hook with targeted cache
   const handleBulkFavorite = useCallback(

@@ -100,7 +100,7 @@ pub async fn bulk_toggle(
     }
 
     if !db_updates.is_empty() {
-        if let Err(e) = mod_repo::batch_update_path_and_status(pool, &db_updates).await {
+        if let Err(e) = mod_repo::batch_update_path_and_status(pool, game_id, &db_updates).await {
             log::error!("Failed batch updating mod paths after bulk toggle: {}", e);
         }
 

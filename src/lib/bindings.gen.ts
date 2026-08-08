@@ -481,7 +481,7 @@ async bulkToggleMods(gameId: string, paths: string[], enable: boolean) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async bulkDeleteMods(gameId: string | null, paths: string[]) : Promise<Result<BulkResult, AppError>> {
+async bulkDeleteMods(gameId: string, paths: string[]) : Promise<Result<BulkResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("bulk_delete_mods", { gameId, paths }) };
 } catch (e) {

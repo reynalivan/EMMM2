@@ -207,7 +207,8 @@ pub async fn enable_only_this_service(
     }
 
     if !db_updates.is_empty() {
-        if let Err(e) = crate::repo::mod_repo::batch_update_path_and_status(pool, &db_updates).await
+        if let Err(e) =
+            crate::repo::mod_repo::batch_update_path_and_status(pool, game_id, &db_updates).await
         {
             log::error!(
                 "Failed batch updating mod paths after enable-only-this: {}",

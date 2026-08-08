@@ -80,8 +80,10 @@ export function useBulkDelete() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { paths: string[]; gameId?: string }) =>
-      commands.bulkDeleteMods(params.gameId ?? null, params.paths),
+    // `gameId` names both the mods root the paths must sit inside and the
+    // game whose index rows get pruned; the backend refuses without it.
+    mutationFn: (params: { paths: string[]; gameId: string }) =>
+      commands.bulkDeleteMods(params.gameId, params.paths),
     onSuccess: async (result) => {
       applyRuntimeEffects(
         queryClient,

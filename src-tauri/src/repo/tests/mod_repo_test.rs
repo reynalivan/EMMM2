@@ -276,3 +276,95 @@ async fn test_repo_mod_status_consistency() {
         "Manual SQL 'status = 0' should find disabled mod"
     );
 }
+
+/// Two games can hold the same mod at the same path relative to their own
+/// mods root, which means the same `folder_path_key`. A batch write scoped
+/// only by that key hits both games' rows.
+async fn seed_same_relative_mod_in_two_games(pool: &SqlitePool) {
+    for (game_id, mods_root) in [("g_a", "C:/GameA/Mods"), ("g_b", "C:/GameB/Mods")] {
+        upsert_game(
+            pool,
+            &GameRow {
+                id: game_id.into(),
+                name: game_id.into(),
+                game_type: crate::domain::models::GameType::GIMI,
+                path: mods_root.into(),
+                mods_path: Some(mods_root.into()),
+                game_exe: None,
+                launcher_path: None,
+                loader_exe: None,
+                launch_args: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::test_utils::insert_test_mod(
+            pool,
+            &crate::test_utils::TestModFixture {
+                id: &format!("mod_{game_id}"),
+                game_id,
+                object_id: None,
+                actual_name: "Blue Dress",
+                // Relative, exactly as disk reconcile stores it.
+                folder_path: "Alice/Blue Dress",
+                status: crate::domain::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
+
+async fn surviving_mod_ids(pool: &SqlitePool) -> Vec<String> {
+    sqlx::query_scalar::<_, String>("SELECT id FROM mods ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn batch_delete_only_touches_the_named_game() {
+    let pool = setup_pool().await;
+    seed_same_relative_mod_in_two_games(&pool).await;
+
+    batch_delete_by_path(&pool, "g_a", &["Alice/Blue Dress".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        surviving_mod_ids(&pool).await,
+        vec!["mod_g_b".to_string()],
+        "deleting in one game must not remove the other game's identically-pathed mod"
+    );
+}
+
+#[tokio::test]
+async fn batch_update_only_touches_the_named_game() {
+    let pool = setup_pool().await;
+    seed_same_relative_mod_in_two_games(&pool).await;
+
+    batch_update_path_and_status(
+        &pool,
+        "g_a",
+        &[(
+            "Alice/Blue Dress".to_string(),
+            "Alice/DISABLED Blue Dress".to_string(),
+            crate::domain::models::ItemStatus::Disabled,
+        )],
+    )
+    .await
+    .unwrap();
+
+    let untouched: String = sqlx::query_scalar("SELECT folder_path FROM mods WHERE id = 'mod_g_b'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        untouched, "Alice/Blue Dress",
+        "toggling in one game must not rewrite the other game's row"
+    );
+}
