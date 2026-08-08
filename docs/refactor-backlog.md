@@ -28,7 +28,7 @@ the fastest way to learn what the layers are allowed to do.
 cd src-tauri
 cargo clippy --all-targets    # must be 0 warnings
 cargo fmt
-cargo test --all-targets      # 612 passing as of this writing
+cargo test --all-targets      # 629 passing as of this writing
 cargo test --lib specta       # regenerates src/lib/bindings.gen.ts
 ```
 
@@ -60,7 +60,14 @@ mutation sitting in your working tree.
 
 ## Done
 
-All of Tier 1 except 1.5, all of 3.2, and 2.1.
+**Tier 1:** 1.1–1.4 implemented. 1.5 is closed as a decision, not as work —
+the second walk is still there, on purpose. See its section.
+
+**Tier 2:** nothing outstanding. 2.1 implemented, 2.2 declined, 2.3 parked by
+decision.
+
+**Tier 3:** 3.2 implemented. 3.1 partly, and its target is not reachable by
+deduplication — see its section for the measurement.
 
 | Item | Commit |
 |---|---|
@@ -70,6 +77,9 @@ All of Tier 1 except 1.5, all of 3.2, and 2.1.
 | 2.1 policy moved to `services/objects/reconcile.rs`, tenth arch gate | `4c97580` |
 | 3.1 dedup-test fixture shared, safe-mode propagation covered | `3bc891a` |
 | 3.1 sync-test base shared, committed enabled state covered | `5344083` |
+| Conflict detection read stored paths as absolute | `481510b` |
+| Scan commit wrote absolute paths; migration + linker | `a6259dd` |
+| `ModFolderPath`, four more readers, eleventh gate | `61e6d9a` |
 
 Two things worth knowing before reading the sections below, which are kept
 for the reasoning rather than as work items:
@@ -216,7 +226,7 @@ Same file, smaller:
 - `:247` `tokenize_structural` returns `Vec<String>`, then `insert_tokens`
   drops most of them. Yield `&str` and `to_string()` only on insert.
 
-### 1.5 post_apply still walks each enabled mod twice
+### 1.5 post_apply still walks each enabled mod twice — DECIDED, NOT DONE
 
 `src-tauri/src/services/app/post_apply.rs`. Already reduced from three walks
 to two and three INI reads to two (`harvester::harvest_mod` does one pass).
@@ -226,8 +236,21 @@ only).
 
 **This one is not a pure refactor.** Merging the walks changes *which* INI
 files get harvested — nested INIs would start contributing hashes and
-keybinds. Decide the intended semantics first; if nested INIs should count,
-that is a behaviour change worth its own commit and its own test.
+keybinds.
+
+**Decided: nested INIs stay out of the harvest.** A mod folder often holds
+`DISABLED` variant subfolders, and harvesting those would put keybinds for
+inactive variants into the overlay. The conflict scan keeps its depth-3 walk
+because nested INIs genuinely do collide in 3DMigoto; the asymmetry is
+deliberate and pinned by `a_nested_ini_still_counts_as_a_conflict`.
+
+**So the double walk remains, and that is the intended state.** The semantics
+question is settled; only the performance item is open, and it is smaller than
+the section above implies. One depth-3 walk whose `ini_files` are then
+filtered to direct children would feed the harvest without changing what it
+sees — but it saves a single `read_dir` per enabled mod, on a directory the
+walk touched moments earlier and the OS has cached. That is not worth coupling
+`conflicts_for_enabled_paths` to the harvest loop. Left alone deliberately.
 
 ---
 
@@ -363,25 +386,22 @@ that wants a name next to it.
 
 ---
 
-## Suggested order
+## What is actually left
 
-Tier 1 (except 1.5), 3.2 and 2.1 are done. What is left, in the order it
-is worth doing:
+Nothing is blocked, and nothing here is a bug.
 
-**2.2** is worth doing when the browser download path and the drag-drop path
-next need the same fix in two places. Until then it is duplication with a
-known shape, which is cheaper to live with than a premature abstraction.
+- **1.5** — settled; see above. The remaining win is one cached `read_dir` per
+  enabled mod and is not worth taking.
+- **2.2, 2.3** — closed as decisions, with the reasoning kept in their
+  sections. Revisit 2.2 if a third import caller appears or the same bug has to
+  be fixed twice; revisit 2.3 when a column actually needs to diverge from its
+  wire shape.
+- **3.1** — eight production files sit over 350 lines. Most of the excess is
+  doc comments added during Tier 1. Not worth trading for a file split.
 
-**1.5** stays parked. It needs a product decision — should INIs nested inside
-a mod folder contribute hashes and keybinds? — not a refactor. Whoever answers
-that owns the commit and its test.
-
-**2.3** stays parked by design. Split a table into a row struct and a DTO when
-that table actually diverges, not before.
-
-**3.1** is filler for a slow afternoon, and only the two test files with
-named, measured boilerplate (`sync_tests.rs`, `dedup_scanner_tests.rs`) are
-worth touching. Deduplicate them; do not split them.
+If you want more ground covered, the honest answer is that the backlog is
+spent and the next pass should come from profiling or from real usage, not
+from this list.
 
 ---
 
