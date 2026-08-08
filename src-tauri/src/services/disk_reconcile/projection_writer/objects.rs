@@ -105,14 +105,14 @@ pub(super) async fn apply_disk_objects(
         }
 
         let mut new_objects_count = 0usize;
-        let object_id = crate::repo::object_repo::ensure_object_exists(
+        let object_id = crate::services::objects::reconcile::ensure_object_exists(
             &mut *conn,
-            crate::repo::object_repo::EnsureObjectInput {
+            crate::domain::objects::EnsureObjectInput {
                 game_id,
                 folder_path: &disk_object.folder_path,
                 obj_name: &disk_object.name,
                 obj_type: "Other",
-                source: crate::repo::object_repo::MatchSource::Disk,
+                source: crate::domain::objects::MatchSource::Disk,
                 db_thumbnail: None,
                 db_tags_json: "[]",
                 db_metadata_json: "{}",

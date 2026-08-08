@@ -92,7 +92,7 @@ pub(super) async fn execute_entries(
                 .or(item.thumbnail_path.as_deref());
             let object_id = ensure_object_exists(
                 &mut *tx,
-                crate::repo::object_repo::EnsureObjectInput {
+                crate::domain::objects::EnsureObjectInput {
                     game_id,
                     folder_path: &object_folder_path,
                     obj_name: &final_obj_name,
@@ -100,9 +100,9 @@ pub(super) async fn execute_entries(
                     // The canonical relation, not the thumbnail: the old
                     // proxy also fired on a preview image found on disk.
                     source: if item.matched_entry_key.is_some() {
-                        crate::repo::object_repo::MatchSource::MasterDb
+                        crate::domain::objects::MatchSource::MasterDb
                     } else {
-                        crate::repo::object_repo::MatchSource::Disk
+                        crate::domain::objects::MatchSource::Disk
                     },
                     db_thumbnail: object_thumbnail,
                     db_tags_json: item.tags_json.as_deref().unwrap_or("[]"),

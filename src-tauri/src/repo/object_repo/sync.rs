@@ -1,26 +1,125 @@
-use super::types::*;
+//! The SQL `ensure_object_exists` is built from.
+//!
+//! Identity resolution -- which row an incoming folder *is*, and what a match
+//! may overwrite -- is domain policy and lives in
+//! `services::objects::reconcile`. This module only knows how to look a row up
+//! and how to write one.
+
 use crate::common::path_key::{canonical_name_key, folder_path_key};
+use crate::domain::objects::EnsureObjectInput;
 
 /// JSON sentinels the schema stores for "nothing set yet".
 const EMPTY_TAGS: &str = "[]";
 const EMPTY_METADATA: &str = "{}";
+
+/// The four columns identity resolution reads.
+///
+/// The lookups used to select nine and read four; the other five were the
+/// row's JSON blobs, fetched twice per object so a since-deleted read-back
+/// could decide what was empty. SQL decides that now.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ObjectIdentityRow {
+    pub id: String,
+    pub name: String,
+    pub folder_path: String,
+    pub object_type: String,
+}
+
+// Spelled out rather than assembled from a shared column list: sqlx caches
+// prepared statements per connection, keyed by the SQL text, so query strings
+// stay fixed. `object_type` is nullable and resolution treats a missing one as
+// "Other". Both column lists must match `ObjectIdentityRow`.
+const FIND_BY_NAME_KEY: &str = "SELECT id, name, folder_path, \
+     COALESCE(object_type, 'Other') AS object_type \
+     FROM objects WHERE game_id = ? AND name_key = ?";
+
+const FIND_BY_FOLDER_KEY: &str = "SELECT id, name, folder_path, \
+     COALESCE(object_type, 'Other') AS object_type \
+     FROM objects WHERE game_id = ? AND folder_path_key = ?";
+
+/// The object whose canonical name key matches, if any.
+pub async fn find_by_name_key(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    name_key: &str,
+) -> Result<Option<ObjectIdentityRow>, sqlx::Error> {
+    sqlx::query_as(FIND_BY_NAME_KEY)
+        .bind(game_id)
+        .bind(name_key)
+        .fetch_optional(conn)
+        .await
+}
+
+/// The object sitting at this folder, if any.
+pub async fn find_by_folder_key(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    folder_key: &str,
+) -> Result<Option<ObjectIdentityRow>, sqlx::Error> {
+    sqlx::query_as(FIND_BY_FOLDER_KEY)
+        .bind(game_id)
+        .bind(folder_key)
+        .fetch_optional(conn)
+        .await
+}
+
+pub async fn update_object_location(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+    folder_path: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE objects SET folder_path = ?, folder_path_key = ? WHERE id = ?")
+        .bind(folder_path)
+        .bind(folder_path_key(folder_path, None))
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_object_name(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+    name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE objects SET name = ?, name_key = ? WHERE id = ?")
+        .bind(name)
+        .bind(canonical_name_key(name))
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_object_type(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+    object_type: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE objects SET object_type = ? WHERE id = ?")
+        .bind(object_type)
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
 
 /// Fills the five columns a matched row left empty, leaving anything the user
 /// already set alone.
 ///
 /// One statement with fixed text, not five built with `format!`: sqlx caches
 /// prepared statements per connection, so a per-column SQL string was a cache
-/// miss and a fresh parse every time. SQL decides what is empty, so the row's
-/// current values no longer have to be read back first.
-async fn backfill_empty_columns(
+/// miss and a fresh parse every time.
+///
+/// The `CASE` is what protects a value the user set: it only writes when the
+/// column still holds the "nothing set" sentinel. An incoming sentinel used to
+/// be filtered to NULL first, which changed nothing -- writing `[]` over `[]`
+/// is the same as not writing -- so the guard is spelled once, here.
+pub async fn backfill_empty_columns(
     conn: &mut sqlx::SqliteConnection,
     id: &str,
     input: &EnsureObjectInput<'_>,
 ) -> Result<(), sqlx::Error> {
-    // The `CASE` is what protects a value the user set: it only writes when the
-    // column still holds the "nothing set" sentinel. An incoming sentinel used
-    // to be filtered to NULL first, which changed nothing -- writing `[]` over
-    // `[]` is the same as not writing -- so the guard is spelled once, here.
     sqlx::query(
         "UPDATE objects SET
              thumbnail_path = COALESCE(thumbnail_path, ?),
@@ -38,151 +137,35 @@ async fn backfill_empty_columns(
     .bind(EMPTY_METADATA)
     .bind(input.db_metadata_json)
     .bind(id)
-    .execute(&mut *conn)
+    .execute(conn)
     .await?;
 
     Ok(())
 }
 
-pub async fn ensure_object_exists(
+/// Insert a brand new object, enabled, and return its id.
+pub async fn insert_object(
     conn: &mut sqlx::SqliteConnection,
-    input: EnsureObjectInput<'_>,
-    new_objects_count: &mut usize,
+    input: &EnsureObjectInput<'_>,
 ) -> Result<String, sqlx::Error> {
-    use sqlx::Row;
-    let EnsureObjectInput {
-        game_id,
-        folder_path,
-        obj_name,
-        obj_type,
-        db_thumbnail,
-        db_tags_json,
-        db_metadata_json,
-        db_hash_db_json,
-        db_custom_skins_json,
-        source: _,
-    } = input;
-    let name_key = canonical_name_key(obj_name);
-    let folder_key = folder_path_key(folder_path, None);
-
-    let match_name = sqlx::query(
-        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata, hash_db, custom_skins
-         FROM objects
-         WHERE game_id = ? AND name_key = ?",
-    )
-    .bind(game_id)
-    .bind(&name_key)
-    .fetch_optional(&mut *conn)
-    .await
-    ?;
-
-    let match_folder = sqlx::query(
-        "SELECT id, name, folder_path, object_type, thumbnail_path, tags, metadata, hash_db, custom_skins
-         FROM objects
-         WHERE game_id = ? AND folder_path_key = ?",
-    )
-    .bind(game_id)
-    .bind(&folder_key)
-    .fetch_optional(&mut *conn)
-    .await
-    ?;
-
-    if let Some(row) = match_name {
-        let id: String = row.try_get("id").unwrap_or_default();
-        let existing_name: String = row.try_get("name").unwrap_or_default();
-        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
-        let existing_type: String = row
-            .try_get("object_type")
-            .unwrap_or_else(|_| "Other".to_string());
-        let has_folder_conflict = match_folder
-            .as_ref()
-            .and_then(|folder_row| folder_row.try_get::<String, _>("id").ok())
-            .is_some_and(|folder_id| folder_id != id);
-
-        if existing_fp != folder_path && !has_folder_conflict {
-            sqlx::query("UPDATE objects SET folder_path = ?, folder_path_key = ? WHERE id = ?")
-                .bind(folder_path)
-                .bind(&folder_key)
-                .bind(&id)
-                .execute(&mut *conn)
-                .await?;
-        }
-
-        if existing_name != obj_name {
-            sqlx::query("UPDATE objects SET name = ?, name_key = ? WHERE id = ?")
-                .bind(obj_name)
-                .bind(&name_key)
-                .bind(&id)
-                .execute(&mut *conn)
-                .await?;
-        }
-
-        if existing_type != obj_type && input.source.type_is_authoritative() {
-            sqlx::query("UPDATE objects SET object_type = ? WHERE id = ?")
-                .bind(obj_type)
-                .bind(&id)
-                .execute(&mut *conn)
-                .await?;
-        }
-
-        backfill_empty_columns(&mut *conn, &id, &input).await?;
-
-        return Ok(id);
-    }
-
-    if let Some(row) = match_folder {
-        let id: String = row.try_get("id").unwrap_or_default();
-        let existing_fp: String = row.try_get("folder_path").unwrap_or_default();
-
-        if existing_fp != folder_path {
-            sqlx::query("UPDATE objects SET folder_path = ?, folder_path_key = ? WHERE id = ?")
-                .bind(folder_path)
-                .bind(&folder_key)
-                .bind(&id)
-                .execute(&mut *conn)
-                .await?;
-        }
-
-        sqlx::query("UPDATE objects SET name = ?, name_key = ? WHERE id = ?")
-            .bind(obj_name)
-            .bind(&name_key)
-            .bind(&id)
-            .execute(&mut *conn)
-            .await?;
-
-        if input.source.type_is_authoritative() {
-            sqlx::query("UPDATE objects SET object_type = ? WHERE id = ?")
-                .bind(obj_type)
-                .bind(&id)
-                .execute(&mut *conn)
-                .await?;
-        }
-
-        backfill_empty_columns(&mut *conn, &id, &input).await?;
-
-        return Ok(id);
-    }
-
     let new_id = uuid::Uuid::new_v4().to_string();
     sqlx::query(
         "INSERT INTO objects (id, game_id, name, name_key, folder_path, folder_path_key, object_type, thumbnail_path, tags, metadata, hash_db, custom_skins, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
     )
     .bind(&new_id)
-    .bind(game_id)
-    .bind(obj_name)
-    .bind(&name_key)
-    .bind(folder_path)
-    .bind(&folder_key)
-    .bind(obj_type)
-    .bind(db_thumbnail)
-    .bind(db_tags_json)
-    .bind(db_metadata_json)
-    .bind(db_hash_db_json)
-    .bind(db_custom_skins_json)
-    .execute(&mut *conn)
-    .await
-    ?;
+    .bind(input.game_id)
+    .bind(input.obj_name)
+    .bind(canonical_name_key(input.obj_name))
+    .bind(input.folder_path)
+    .bind(folder_path_key(input.folder_path, None))
+    .bind(input.obj_type)
+    .bind(input.db_thumbnail)
+    .bind(input.db_tags_json)
+    .bind(input.db_metadata_json)
+    .bind(input.db_hash_db_json)
+    .bind(input.db_custom_skins_json)
+    .execute(conn)
+    .await?;
 
-    *new_objects_count += 1;
     Ok(new_id)
 }

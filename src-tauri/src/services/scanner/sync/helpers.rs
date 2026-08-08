@@ -121,15 +121,15 @@ pub async fn resolve_or_create_object_target_for_match(
 
     let object_id = ensure_object_exists(
         &mut *conn,
-        crate::repo::object_repo::EnsureObjectInput {
+        crate::domain::objects::EnsureObjectInput {
             game_id: input.game_id,
             folder_path: &shell_name,
             obj_name: &shell_name,
             obj_type: input.object_type,
             source: if input.matched_entry_key.is_some() {
-                crate::repo::object_repo::MatchSource::MasterDb
+                crate::domain::objects::MatchSource::MasterDb
             } else {
-                crate::repo::object_repo::MatchSource::Disk
+                crate::domain::objects::MatchSource::Disk
             },
             db_thumbnail: input.db_thumbnail,
             db_tags_json: input.db_tags_json,
@@ -170,10 +170,13 @@ pub async fn ensure_game_exists(
 
 pub async fn ensure_object_exists(
     conn: &mut sqlx::SqliteConnection,
-    input: crate::repo::object_repo::EnsureObjectInput<'_>,
+    input: crate::domain::objects::EnsureObjectInput<'_>,
     new_objects_count: &mut usize,
 ) -> Result<String, ScannerError> {
-    Ok(crate::repo::object_repo::ensure_object_exists(conn, input, new_objects_count).await?)
+    Ok(
+        crate::services::objects::reconcile::ensure_object_exists(conn, input, new_objects_count)
+            .await?,
+    )
 }
 
 pub fn classify_corridor(

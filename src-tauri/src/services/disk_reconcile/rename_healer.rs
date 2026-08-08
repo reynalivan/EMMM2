@@ -75,14 +75,14 @@ async fn apply_mod_rename_hints(
         let mod_folder = components[1].as_os_str().to_string_lossy().to_string();
         let object_name = normalize_display_name(&object_folder);
         let mut new_objects_count = 0usize;
-        let object_id = crate::repo::object_repo::ensure_object_exists(
+        let object_id = crate::services::objects::reconcile::ensure_object_exists(
             &mut *conn,
-            crate::repo::object_repo::EnsureObjectInput {
+            crate::domain::objects::EnsureObjectInput {
                 game_id: request.game_id,
                 folder_path: &object_folder,
                 obj_name: &object_name,
                 obj_type: "Other",
-                source: crate::repo::object_repo::MatchSource::Disk,
+                source: crate::domain::objects::MatchSource::Disk,
                 db_thumbnail: None,
                 db_tags_json: "[]",
                 db_metadata_json: "{}",

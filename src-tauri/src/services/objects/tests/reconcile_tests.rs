@@ -7,7 +7,8 @@
 //! before the policy moves out of the repo.
 
 use crate::domain::models::GameType;
-use crate::repo::object_repo::{ensure_object_exists, EnsureObjectInput, MatchSource};
+use crate::domain::objects::{EnsureObjectInput, MatchSource};
+use crate::services::objects::reconcile::ensure_object_exists;
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 use sqlx::SqlitePool;
 

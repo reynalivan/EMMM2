@@ -149,6 +149,31 @@ fn repos_never_touch_the_filesystem() {
     );
 }
 
+/// The data-access layer does not decide what an object *is*.
+///
+/// `ensure_object_exists` used to resolve identity from inside the repo: match
+/// by name key, else by folder key, refuse a folder another row holds, and
+/// decide which fields a re-match may overwrite. Every scan and every disk
+/// reconcile runs those rules, and getting one wrong silently merges two
+/// objects or splits one in two — which is why they belong somewhere they can
+/// be read on their own, `services::objects::reconcile`.
+///
+/// The repo still runs the lookups and the UPDATEs. What it must not hold is
+/// the choice between them.
+#[test]
+fn repos_do_not_decide_object_identity() {
+    let found = violations(
+        "src/repo",
+        &["type_is_authoritative", "fn ensure_object_exists"],
+    );
+    assert!(
+        found.is_empty(),
+        "identity resolution and merge policy belong in \
+         services::objects::reconcile, not in the repo that stores the row:\n{}",
+        found.join("\n")
+    );
+}
+
 /// One owner settles a mutation.
 ///
 /// The runtime projection is a read-model: a mutation that returns without
