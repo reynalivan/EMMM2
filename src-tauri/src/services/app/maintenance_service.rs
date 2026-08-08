@@ -14,15 +14,21 @@ pub async fn run_maintenance_counts(
     pool: &SqlitePool,
     app_data_dir: &Path,
 ) -> Result<(u64, u64), AppError> {
-    use crate::services::images::thumbnail_cache::ThumbnailCache;
+    use crate::services::images::thumbnail_cache::{ThumbnailCache, THUMBNAIL_RETENTION_DAYS};
 
     // 1. Vacuum DB
     crate::repo::settings_repo::vacuum_database(pool).await?;
 
-    // 2. Prune orphaned thumbnails
-    let valid_paths = crate::repo::settings_repo::get_all_thumbnail_paths(pool).await?;
-
-    let pruned_count = ThumbnailCache::prune_orphans_for_app_data(app_data_dir, &valid_paths)?;
+    // 2. Prune thumbnails nothing has looked at in a while.
+    //
+    // This used to prune "orphans", keeping only cache entries whose key
+    // matched an `objects.thumbnail_path`. But the cache is keyed by the image
+    // file found *inside a mod folder*, and object thumbnails are a different
+    // population entirely — so the keep-set almost never matched and every run
+    // wiped the whole folder-grid cache while reporting it as cleanup. Age is
+    // a predicate this layer can actually evaluate correctly.
+    let pruned_count =
+        ThumbnailCache::clear_old_cache_for_app_data(app_data_dir, THUMBNAIL_RETENTION_DAYS)?;
 
     // 3. Purge empty trash entries older than 30 days
     let trash_dir = app_data_dir.join("trash");

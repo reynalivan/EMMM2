@@ -56,8 +56,8 @@ pub async fn run_maintenance(
 #[specta::specta]
 #[tauri::command]
 pub async fn clear_old_thumbnails() -> Result<u64, AppError> {
-    use crate::services::images::thumbnail_cache::ThumbnailCache;
-    let pruned = ThumbnailCache::clear_old_cache(30)?;
+    use crate::services::images::thumbnail_cache::{ThumbnailCache, THUMBNAIL_RETENTION_DAYS};
+    let pruned = ThumbnailCache::clear_old_cache(THUMBNAIL_RETENTION_DAYS)?;
     Ok(pruned as u64)
 }
 

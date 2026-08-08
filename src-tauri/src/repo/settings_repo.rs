@@ -111,15 +111,6 @@ pub async fn vacuum_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-pub async fn get_all_thumbnail_paths(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
-    use sqlx::Row;
-    let rows =
-        sqlx::query("SELECT DISTINCT thumbnail_path FROM objects WHERE thumbnail_path IS NOT NULL")
-            .fetch_all(pool)
-            .await?;
-    Ok(rows.into_iter().map(|r| r.get("thumbnail_path")).collect())
-}
-
 pub async fn get_app_meta(pool: &SqlitePool, key: &str) -> Option<String> {
     sqlx::query_scalar::<_, String>("SELECT value FROM app_meta WHERE key = ?")
         .bind(key)

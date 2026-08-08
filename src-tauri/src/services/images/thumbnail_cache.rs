@@ -16,6 +16,9 @@ use tokio::sync::Semaphore;
 /// Prevents CPU/IO saturation when the virtualizer mounts many cards at once.
 static GEN_SEMAPHORE: Semaphore = Semaphore::const_new(4);
 
+/// How long an unused thumbnail is kept on disk before maintenance prunes it.
+pub const THUMBNAIL_RETENTION_DAYS: u64 = 30;
+
 /// TTL for L1 entries — skip mtime stat() calls within this window.
 const ENTRY_TTL_SECS: u64 = 60;
 
@@ -227,25 +230,17 @@ impl ThumbnailCache {
 
     /// Prune thumbnails for a specific app data directory.
     /// Returns number of deleted files.
-    pub fn prune_orphans_for_app_data(
+    /// Prune thumbnails older than `max_age_days`, rooting the cache at
+    /// `app_data_dir` first.
+    ///
+    /// Maintenance runs before anything has necessarily resolved a thumbnail,
+    /// so it cannot rely on the base dir having been set by a prior lookup.
+    pub fn clear_old_cache_for_app_data(
         app_data_dir: &Path,
-        valid_paths: &[String],
+        max_age_days: u64,
     ) -> Result<usize, AppError> {
-        let cache_dir = Self::set_base_dir(app_data_dir);
-
-        let keep_keys: std::collections::HashSet<String> = valid_paths
-            .iter()
-            .map(|path| Self::cache_key(path))
-            .collect();
-
-        // A file whose stem is not readable is left alone rather than guessed at.
-        Self::remove_webp_entries(&cache_dir, |entry| {
-            entry
-                .path()
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .is_none_or(|stem| keep_keys.contains(stem))
-        })
+        Self::set_base_dir(app_data_dir);
+        Self::clear_old_cache(max_age_days)
     }
 
     /// Prune thumbnails older than `max_age_days`.
@@ -308,12 +303,12 @@ impl ThumbnailCache {
 }
 
 #[cfg(not(test))]
-fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
+pub(crate) fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("cache").join("thumbnails")
 }
 
 #[cfg(test)]
-fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
+pub(crate) fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
     let key = ThumbnailCache::cache_key(&app_data_dir.to_string_lossy());
     std::env::temp_dir()
         .join("emmm-thumbnail-cache-tests")
