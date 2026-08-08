@@ -26,7 +26,7 @@ the fastest way to learn what the layers are allowed to do.
 cd src-tauri
 cargo clippy --all-targets    # must be 0 warnings
 cargo fmt
-cargo test --all-targets      # 591 passing as of this writing
+cargo test --all-targets      # 598 passing as of this writing
 cargo test --lib specta       # regenerates src/lib/bindings.gen.ts
 ```
 
@@ -38,13 +38,49 @@ node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run   # 683 passing
 ```
 
-### One rule that caught two real mistakes in the last session
+### One rule, and it keeps paying
 
-**Never trust a green test you have not seen fail.** Both times a fix was
-written here, temporarily reverting the fix and re-running proved the test
-actually exercised it. One test passed for the wrong reason (it wrote its
-fixture into the wrong directory) and would have shipped a no-op guarantee.
-Budget the extra minute.
+**Never trust a green test you have not seen fail.** Break the code
+deliberately and confirm the test goes red before believing it.
+
+It has caught five real mistakes across two sessions. Twice a test passed for
+the wrong reason — one wrote its fixture into the wrong directory and would
+have shipped a no-op guarantee. Three times a function was rewritten and
+*nothing at all* was checking the behaviour being preserved, which only became
+visible because a deliberate mutation stayed green.
+
+The cheapest form: a small script that applies each plausible mistake to the
+file, runs the narrowest test filter, and restores. One caveat learned the
+hard way — restore in a `finally`, or an assertion failure mid-run leaves a
+mutation sitting in your working tree.
+
+---
+
+## Done
+
+All of Tier 1 except 1.5, and all of 3.2.
+
+| Item | Commit |
+|---|---|
+| 1.1 pair prefilter windowed, 1.2 group bucketing, 1.3 per-snapshot precompute, 3.2 tunables | `c79a094` |
+| 1.4 `PreparedTokenFilters` + three tokenizer allocations | `f2a76dd` |
+
+Two things worth knowing before reading the sections below, which are kept
+for the reasoning rather than as work items:
+
+**Declined: `Cow<'static, str>` on `DupScanSignal`.** 1.3 suggested it to save
+four small allocations per candidate pair. It is a serde/specta wire type, and
+the allocations it saves are invisible next to BLAKE3-hashing the .dds files
+in the same loop. Churning an IPC contract for an unmeasurable win is the
+ceremony the KISS rule warns about. Revisit only if a profile says otherwise.
+
+**Mutation testing earned its keep.** Every changed function was checked by
+breaking it deliberately and confirming a test went red. On the dedup side all
+four mutations were caught. On the tokenizer, three of five were **not** —
+case-insensitive path detection and repeated section-prefix stripping had no
+coverage at all, and the third turned out to be dead code that has since been
+deleted. Rewriting those functions without this step would have shipped two
+silent regressions. Do it for anything in Tier 2.
 
 ---
 
@@ -53,7 +89,7 @@ Budget the extra minute.
 The scanner is the only place with a genuine algorithmic problem. A 10k-mod
 library is the design target.
 
-### 1.1 Duplicate-scan pair loop is unbucketed O(N²)
+### 1.1 Duplicate-scan pair loop is unbucketed O(N²) — DONE (`c79a094`)
 
 `src-tauri/src/services/scanner/dedup/scanner.rs:266` —
 `phase1_candidate_filtering`:
@@ -85,7 +121,7 @@ implementation is the honest check here, not a hand-written expectation.
 Downstream `canonical_pair` and `build_groups` assume nothing about order,
 but keep the invariant anyway to avoid surprises.
 
-### 1.2 Group assembly re-scans every pair per component
+### 1.2 Group assembly re-scans every pair per component — DONE (`c79a094`)
 
 `scanner.rs:308` — inside `build_groups`:
 
@@ -99,7 +135,7 @@ The union-find `parent` array two lines above already answers it: bucket the
 pairs once into `HashMap<root, Vec<&ScoredPair>>` via `find()`, then index.
 O(#pairs · α).
 
-### 1.3 Per-pair work that belongs per-snapshot
+### 1.3 Per-pair work that belongs per-snapshot — DONE (`c79a094`)
 
 `src-tauri/src/services/scanner/dedup/signals.rs`:
 
@@ -117,7 +153,7 @@ Add `file_set: BTreeSet<String>`, `normalized_name: String` and
 Also: `build_signal` allocates two `String`s from `&'static str` literals
 4–5 times per pair. `DupScanSignal.key`/`.detail` want `Cow<'static, str>`.
 
-### 1.4 Tokenizer rebuilds its filter sets per INI file
+### 1.4 Tokenizer rebuilds its filter sets per INI file — DONE (`f2a76dd`)
 
 `src-tauri/src/services/scanner/deep_matcher/analysis/content/tokenizer.rs:91`
 — `extract_structural_ini_tokens` calls `merged_stopwords`,
@@ -211,20 +247,20 @@ rule warns about. Revisit when a column rename is actually needed.
 566  commands/objects/tests/object_cmds_tests.rs
 521  services/scanner/deep_matcher/tests/required_tests.rs
 493  services/mods/archive/tests/mod_tests.rs
+470  services/scanner/dedup/signals.rs
 457  services/objects/tests/query_tests.rs
+451  services/scanner/dedup/scanner.rs
 449  services/scanner/dedup/tests/dedup_resolver_tests.rs
-446  services/scanner/dedup/signals.rs
 412  commands/mods/tests/mod_meta_cmds_tests.rs
-408  services/scanner/dedup/scanner.rs
 408  repo/tests/dashboard_repo_test.rs
 401  domain/errors.rs
+387  .../deep_matcher/analysis/content/tokenizer.rs
 387  services/objects/tests/mutate_tests.rs
 372  services/scanner/deep_matcher/models/acceptance.rs
 371  services/scanner/master_db.rs
 370  repo/tests/mod_repo_test.rs
 358  commands/scanner/deepmatch_scanner_cmds.rs
 356  services/scanner/deep_matcher/tests/models/acceptance_tests.rs
-354  .../deep_matcher/analysis/content/tokenizer.rs
 352  services/scanner/core/walker.rs
 ```
 
@@ -243,12 +279,17 @@ cover one concern and are roughly 40% repeated fixture boilerplate:
   `actual_name` and `folder_path`. One `register_mod(..)` helper takes it to
   ~380 lines.
 
-Four of these were grown during the last session and are fair game:
+Four of these were grown during the architecture overhaul and are fair game:
 `domain/errors.rs` (two error enums + nine `From` impls),
 `master_db.rs` (the cache), `deepmatch_scanner_cmds.rs`, and
 `repo/tests/mod_repo_test.rs`.
 
-### 3.2 Dedup tunables outside the module that claims to hold them
+`signals.rs` (+24), `scanner.rs` (+43) and `tokenizer.rs` (+33) grew during
+the Tier 1 work. Most of that is the doc comments explaining why the windowed
+prefilter and the prepared filters are shaped the way they are — the kind of
+lines the 350-line rule is not aimed at. Do not trade them for a file split.
+
+### 3.2 Dedup tunables outside the module that claims to hold them — DONE (`c79a094`)
 
 `signals.rs:138` opens `mod weights` with "Every tunable in the
 duplicate-similarity model, in one place". These are not in it:
@@ -272,14 +313,25 @@ that wants a name next to it.
 
 ## Suggested order
 
-1.1 first — it is the only item a user can feel, it is localised, and a
-property test against the current naive loop makes it provable. Then 1.3 and
-1.4 (both pure allocation removal, both cheap). 1.2 is small enough to ride
-along with 1.1.
+Tier 1 and 3.2 are done. What is left, in the order it is worth doing:
 
-Leave 1.5 alone until someone decides whether nested INIs should count.
+**2.1** is the most valuable and the most delicate. Write the pinning
+fixtures first — the name-match arm, the folder-match arm, and the
+`has_folder_conflict` case — and confirm each one fails against a deliberately
+broken `ensure_object_exists` before moving any code. Identity resolution is
+exactly the kind of policy where a rewrite silently changes which row wins.
 
-Tier 2 items each need their pinning tests written first; 2.1 is the most
-valuable and the most delicate. Tier 3 is filler for a slow afternoon,
-except 3.2, which is a five-minute change that makes the dedup model
-tunable without a treasure hunt.
+**2.2** is worth doing when the browser download path and the drag-drop path
+next need the same fix in two places. Until then it is duplication with a
+known shape, which is cheaper to live with than a premature abstraction.
+
+**1.5** stays parked. It needs a product decision — should INIs nested inside
+a mod folder contribute hashes and keybinds? — not a refactor. Whoever answers
+that owns the commit and its test.
+
+**2.3** stays parked by design. Split a table into a row struct and a DTO when
+that table actually diverges, not before.
+
+**3.1** is filler for a slow afternoon, and only the two test files with
+named, measured boilerplate (`sync_tests.rs`, `dedup_scanner_tests.rs`) are
+worth touching. Deduplicate them; do not split them.
