@@ -7,7 +7,7 @@ those were fixed and pushed. This is the remaining debt, ordered by value.
 ## Where things stand
 
 Six phases of `docs/architecture-refactor-plan.md` are done and on `main`.
-The invariants below are enforced by **nine gates** in
+The invariants below are enforced by **ten gates** in
 `src-tauri/tests/arch_audit.rs`, all target-zero. Read that file first: it is
 the fastest way to learn what the layers are allowed to do.
 
@@ -19,6 +19,7 @@ the fastest way to learn what the layers are allowed to do.
 | A mutation settles the projection | `#[must_use] MutationOutcome` + `finalize_mutation` |
 | Errors keep their discriminant | no `Result<_, String>` in `services/` |
 | Repos only do SQL | no `std::fs`, no `specta::Type` in `repo/` |
+| Repos do not decide identity | no `type_is_authoritative` in `repo/` |
 
 ### The loop every change runs
 
@@ -58,12 +59,14 @@ mutation sitting in your working tree.
 
 ## Done
 
-All of Tier 1 except 1.5, and all of 3.2.
+All of Tier 1 except 1.5, all of 3.2, and 2.1.
 
 | Item | Commit |
 |---|---|
 | 1.1 pair prefilter windowed, 1.2 group bucketing, 1.3 per-snapshot precompute, 3.2 tunables | `c79a094` |
 | 1.4 `PreparedTokenFilters` + three tokenizer allocations | `f2a76dd` |
+| 2.1 pins for identity and merge policy | `63381f9` |
+| 2.1 policy moved to `services/objects/reconcile.rs`, tenth arch gate | `4c97580` |
 
 Two things worth knowing before reading the sections below, which are kept
 for the reasoning rather than as work items:
@@ -189,26 +192,26 @@ that is a behaviour change worth its own commit and its own test.
 
 ## Tier 2 — architecture debt named in the plan
 
-### 2.1 Object identity and merge policy still live in the repo
+### 2.1 Object identity and merge policy still live in the repo — DONE (`4c97580`)
 
-`src-tauri/src/repo/object_repo/sync.rs` (189 lines) —
-`ensure_object_exists` decides identity resolution order (match by
-`name_key`, else by `folder_path_key`), conflict handling, and which fields
-a re-match may overwrite. That is domain policy inside the data layer.
+Was `src-tauri/src/repo/object_repo/sync.rs`. `ensure_object_exists` decided
+identity resolution order, the folder-conflict guard, and which fields a
+re-match may overwrite — all inside the data layer.
 
-Already done: `MatchSource::MasterDb | Disk` replaced the
-`db_thumbnail.is_some()` proxy, and the five conditional backfill UPDATEs
-became one fixed-text `COALESCE`/`CASE` statement.
+The rules are now `services/objects/reconcile.rs`. The repo kept
+`find_by_name_key`, `find_by_folder_key`, the three field updates,
+`backfill_empty_columns` and `insert_object`, and nothing that chooses
+between them. `MatchSource` moved to `domain/objects.rs` with them.
 
-Remaining: repo exposes `find_by_name_key`, `find_by_folder_key`,
-`insert_object`, field updates; a new `services/objects/reconcile.rs` owns
-the resolution order.
+Two things the pinning exercise turned up that were not in the plan:
 
-**Pin first.** `services/scanner/tests/sync_tests.rs` already contains
-`test_ensure_object_case_insensitive_merge`, which encodes a real intent: a
-canonical match (`matched_entry_key`) must enrich `object_type`. Add
-fixtures for the name-match arm, the folder-match arm, and the
-`has_folder_conflict` case before moving anything.
+- The lookups selected nine columns and read four. The other five were the
+  row's JSON blobs, fetched twice per object to feed a read-back that had
+  already been deleted when the backfill moved into SQL.
+- An incoming `[]`/`{}` was filtered to NULL before the backfill UPDATE, but
+  the `CASE` beside it already refuses to write unless the column still holds
+  the sentinel. Neither guard was individually pinnable because either alone
+  sufficed; the redundant one is gone.
 
 ### 2.2 The import pipeline is still in the command layer
 
@@ -313,13 +316,8 @@ that wants a name next to it.
 
 ## Suggested order
 
-Tier 1 and 3.2 are done. What is left, in the order it is worth doing:
-
-**2.1** is the most valuable and the most delicate. Write the pinning
-fixtures first — the name-match arm, the folder-match arm, and the
-`has_folder_conflict` case — and confirm each one fails against a deliberately
-broken `ensure_object_exists` before moving any code. Identity resolution is
-exactly the kind of policy where a rewrite silently changes which row wins.
+Tier 1 (except 1.5), 3.2 and 2.1 are done. What is left, in the order it
+is worth doing:
 
 **2.2** is worth doing when the browser download path and the drag-drop path
 next need the same fix in two places. Until then it is duplication with a
