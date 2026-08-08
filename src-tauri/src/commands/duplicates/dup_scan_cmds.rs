@@ -199,20 +199,12 @@ pub async fn dup_scan_get_report(
         None => return Ok(None),
     };
 
-    let settings = config.get_settings();
-    if settings.safe_mode.enabled {
-        let mut reveal_unsafe = false;
-        if let Some(p) = pin {
-            if config.verify_pin(&p) {
-                reveal_unsafe = true;
-            }
-        }
-
-        if !reveal_unsafe {
-            report.groups.retain(|g| !g.is_unsafe);
-            report.total_groups = report.groups.len();
-            report.total_members = report.groups.iter().map(|g| g.members.len()).sum();
-        }
+    // A valid PIN widens the corridor for this response only; otherwise the
+    // unsafe groups stay hidden while Safe Mode is on.
+    if config.corridor_with_elevation(pin.as_deref()).is_safe() {
+        report.groups.retain(|g| !g.is_unsafe);
+        report.total_groups = report.groups.len();
+        report.total_members = report.groups.iter().map(|g| g.members.len()).sum();
     }
 
     Ok(Some(report))

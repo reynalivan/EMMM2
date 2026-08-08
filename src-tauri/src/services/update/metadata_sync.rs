@@ -20,13 +20,11 @@ pub struct MetadataSyncResult {
     pub version: Option<u64>,
 }
 
-/// Base URL for metadata files on GitHub CDN.
-/// Format: raw.githubusercontent.com/{owner}/{repo}/{branch}/data/
-const MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/reynalivan/EMMM/main/data/manifest.json";
-
 /// Maximum number of retries on rate-limit (HTTP 429).
 const MAX_RETRIES: u32 = 3;
+
+/// First backoff interval; doubles on each retry.
+const RETRY_BACKOFF: Duration = Duration::from_millis(500);
 
 /// Check remote manifest and sync metadata if a newer version is available.
 ///
@@ -46,14 +44,24 @@ pub async fn check_and_sync_metadata(pool: &SqlitePool) -> MetadataSyncResult {
 }
 
 async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error> {
-    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
+    let client = super::http_client(super::MANIFEST_TIMEOUT)?;
 
     // Read cached ETag / Last-Modified from DB
-    let etag = get_meta(pool, "etag").await.unwrap_or_default();
-    let last_modified = get_meta(pool, "last_modified").await.unwrap_or_default();
+    let etag = crate::repo::settings_repo::get_app_meta(pool, "etag")
+        .await
+        .unwrap_or_default();
+    let last_modified = crate::repo::settings_repo::get_app_meta(pool, "last_modified")
+        .await
+        .unwrap_or_default();
 
     // Conditional GET with retry logic for rate limiting
-    let response = request_with_retry(&client, MANIFEST_URL, &etag, &last_modified).await?;
+    let response = request_with_retry(
+        &client,
+        &format!("{}data/manifest.json", super::CDN_BASE_URL),
+        &etag,
+        &last_modified,
+    )
+    .await?;
 
     // 304 Not Modified — nothing to do
     if response.status() == reqwest::StatusCode::NOT_MODIFIED {
@@ -82,7 +90,7 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
     let new_last_modified = header_value("last-modified");
 
     let manifest: RemoteManifest = response.json().await?;
-    let local_version: u64 = get_meta(pool, "metadata_version")
+    let local_version: u64 = crate::repo::settings_repo::get_app_meta(pool, "metadata_version")
         .await
         .unwrap_or_default()
         .parse()
@@ -112,13 +120,23 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
         if db_response.status().is_success() {
             let payload: serde_json::Value = db_response.json().await?;
             // Store raw payload in app_meta for downstream consumers
-            set_meta(pool, "metadata_payload", &payload.to_string()).await;
+            crate::repo::settings_repo::set_app_meta(
+                pool,
+                "metadata_payload",
+                &payload.to_string(),
+            )
+            .await;
         }
     }
 
     // Update the local version marker, then cache the validators — only now
     // that the payload made it — so a failed run retries with the old ETag.
-    set_meta(pool, "metadata_version", &manifest.db_version.to_string()).await;
+    crate::repo::settings_repo::set_app_meta(
+        pool,
+        "metadata_version",
+        &manifest.db_version.to_string(),
+    )
+    .await;
     persist_validators(pool, &new_etag, &new_last_modified).await;
 
     Ok(MetadataSyncResult {
@@ -133,10 +151,10 @@ async fn persist_validators(
     last_modified: &Option<String>,
 ) {
     if let Some(value) = etag {
-        set_meta(pool, "etag", value).await;
+        crate::repo::settings_repo::set_app_meta(pool, "etag", value).await;
     }
     if let Some(value) = last_modified {
-        set_meta(pool, "last_modified", value).await;
+        crate::repo::settings_repo::set_app_meta(pool, "last_modified", value).await;
     }
 }
 
@@ -147,7 +165,7 @@ async fn request_with_retry(
     etag: &str,
     last_modified: &str,
 ) -> Result<reqwest::Response, anyhow::Error> {
-    let mut delay = Duration::from_millis(500);
+    let mut delay = RETRY_BACKOFF;
 
     for attempt in 0..=MAX_RETRIES {
         let mut req = client.get(url);
@@ -179,14 +197,4 @@ async fn request_with_retry(
     }
 
     anyhow::bail!("Request failed after {} retries", MAX_RETRIES);
-}
-
-// ── DB helpers for app_meta key-value store ──
-
-async fn get_meta(pool: &SqlitePool, key: &str) -> Option<String> {
-    crate::repo::settings_repo::get_app_meta(pool, key).await
-}
-
-async fn set_meta(pool: &SqlitePool, key: &str, value: &str) {
-    crate::repo::settings_repo::set_app_meta(pool, key, value).await;
 }

@@ -1,7 +1,7 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 
-/// Step 2: Load the target collection's members.
+/// Load the target collection's members.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let collection = ctx.collection()?.clone();
     let mods_path = ctx.mods_path.to_string_lossy().to_string();

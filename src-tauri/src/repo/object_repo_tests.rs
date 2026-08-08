@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::objects::ObjectFilter;
 use crate::repo::game_repo::{upsert_game, GameRow};
 
 #[tokio::test]
@@ -54,19 +55,16 @@ async fn get_filtered_objects_matches_scalar_and_array_metadata_case_insensitive
 
     let filter = ObjectFilter {
         game_id: "g_filters".to_string(),
-        search_query: None,
         object_type: Some("Character".to_string()),
-        safe_mode: false,
         meta_filters: Some(std::collections::HashMap::from([
             ("element".to_string(), vec!["pyro".to_string()]),
             ("weapon".to_string(), vec!["sword".to_string()]),
         ])),
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
 
-    let objects = get_filtered_objects(&pool, &filter).await.unwrap();
+    let page = get_filtered_objects(&pool, &filter).await.unwrap();
 
-    assert_eq!(objects.len(), 1);
-    assert_eq!(objects[0].id, "obj_pyro");
+    assert_eq!(page.objects.len(), 1);
+    assert_eq!(page.objects[0].id, "obj_pyro");
 }

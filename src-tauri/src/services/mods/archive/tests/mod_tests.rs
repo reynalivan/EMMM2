@@ -87,18 +87,7 @@ fn test_extract_zip_basic() {
         ],
     );
 
-    let result = extract_archive(
-        &zip_path,
-        dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
-    )
-    .unwrap();
+    let result = extract_archive(&zip_path, dir.path(), ExtractOptions::default()).unwrap();
     assert!(result.success);
     assert_eq!(result.files_extracted, 2);
     assert!(dir.path().join("mod_pack").join("config.ini").exists());
@@ -120,18 +109,7 @@ fn test_temp_extract_cleaned_up() {
         "cleanup.zip",
         &[("config.ini", b"[TextureOverride]\nkey=val")],
     );
-    let result = extract_archive(
-        &zip_path,
-        dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
-    )
-    .unwrap();
+    let result = extract_archive(&zip_path, dir.path(), ExtractOptions::default()).unwrap();
     assert!(result.success);
     // .temp_extract should be fully cleaned up
     assert!(!dir.path().join(".temp_extract").exists());
@@ -150,18 +128,7 @@ fn test_extract_zip_smart_flatten() {
         ],
     );
 
-    let result = extract_archive(
-        &zip_path,
-        dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
-    )
-    .unwrap();
+    let result = extract_archive(&zip_path, dir.path(), ExtractOptions::default()).unwrap();
     assert!(result.success);
 
     let dest = dir.path().join("WrapperFolder");
@@ -183,18 +150,7 @@ fn test_extract_duplicate_dest() {
     fs::create_dir(dir.path().join("existing_mod")).unwrap();
 
     // Without overwrite (auto-renames to "existing_mod (2)")
-    let result = extract_archive(
-        &zip_path,
-        dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
-    )
-    .unwrap();
+    let result = extract_archive(&zip_path, dir.path(), ExtractOptions::default()).unwrap();
     assert!(result.success);
     println!("DEST PATHS: {:?}", result.dest_paths);
     assert!(result.dest_paths[0].ends_with("existing_mod (2)"));
@@ -216,13 +172,10 @@ fn test_extract_duplicate_dest() {
     let result2 = extract_archive(
         &zip_path2,
         dir.path(),
-        None,
-        true,
-        None,
-        None,
-        false,
-        false,
-        None,
+        ExtractOptions {
+            overwrite: true,
+            ..Default::default()
+        },
     )
     .unwrap();
     assert!(result2.success);
@@ -237,17 +190,7 @@ fn test_extract_corrupt_archive() {
     let zip_path = dir.path().join("corrupt.zip");
     fs::write(&zip_path, b"not a real zip file").unwrap();
 
-    let result = extract_archive(
-        &zip_path,
-        dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
-    );
+    let result = extract_archive(&zip_path, dir.path(), ExtractOptions::default());
     assert!(result.is_err());
 }
 
@@ -298,13 +241,10 @@ fn test_extract_zip_with_password() {
     let result = extract_archive(
         &zip_path,
         dir.path(),
-        Some("mypassword"),
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
+        ExtractOptions {
+            password: Some("mypassword"),
+            ..Default::default()
+        },
     )
     .unwrap();
     assert!(result.success);
@@ -331,13 +271,10 @@ fn test_extract_with_disable_after() {
     let result = extract_archive(
         &zip_path,
         dir.path(),
-        None,
-        false,
-        None,
-        None,
-        true,
-        false,
-        None,
+        ExtractOptions {
+            disable_after: true,
+            ..Default::default()
+        },
     )
     .unwrap();
     assert!(result.success);
@@ -358,13 +295,10 @@ fn test_extract_with_custom_name() {
     let result = extract_archive(
         &zip_path,
         dir.path(),
-        None,
-        false,
-        None,
-        Some("CustomMod"),
-        false,
-        false,
-        None,
+        ExtractOptions {
+            custom_name: Some("CustomMod"),
+            ..Default::default()
+        },
     )
     .unwrap();
     assert!(result.success);
@@ -388,13 +322,10 @@ fn test_extract_cancellation() {
     let result = extract_archive(
         &zip_path,
         dir.path(),
-        None,
-        false,
-        Some(cancel_token),
-        None,
-        false,
-        false,
-        None,
+        ExtractOptions {
+            cancel_token: Some(cancel_token),
+            ..Default::default()
+        },
     )
     .unwrap();
     assert!(result.aborted);
@@ -417,13 +348,10 @@ fn test_extract_wrong_password() {
     let result = extract_archive(
         &zip_path,
         dir.path(),
-        Some("wrong_password"),
-        false,
-        None,
-        None,
-        false,
-        false,
-        None,
+        ExtractOptions {
+            password: Some("wrong_password"),
+            ..Default::default()
+        },
     );
     // Should either error or succeed with garbage (ZipCrypto is weak)
     // The key invariant: it shouldn't silently extract valid-looking content
@@ -470,13 +398,10 @@ fn test_extract_nested_archives_basic() {
     let result = extract_archive(
         &outer_zip_path,
         dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        true, // unpack_nested
-        None,
+        ExtractOptions {
+            unpack_nested: true,
+            ..Default::default()
+        },
     )
     .unwrap();
 
@@ -534,13 +459,10 @@ fn test_extract_nested_archives_max_depth() {
     let result = extract_archive(
         &l1_zip_path,
         dir.path(),
-        None,
-        false,
-        None,
-        None,
-        false,
-        true, // unpack_nested
-        None,
+        ExtractOptions {
+            unpack_nested: true,
+            ..Default::default()
+        },
     )
     .unwrap();
 

@@ -3,15 +3,14 @@
 //! Provides `check_config_status` (DB check for fresh install vs configured)
 //! and `reset_database_service` (backup + full table clear).
 
+use crate::domain::errors::AppError;
 use crate::domain::models::ConfigStatus;
 use std::path::Path;
 
 /// Determine whether the app has games configured.
 /// Returns `HasConfig` when at least one game row exists; `FreshInstall` otherwise.
-pub async fn check_config_status(pool: &sqlx::SqlitePool) -> Result<ConfigStatus, String> {
-    let count = crate::repo::game_repo::count_games(pool)
-        .await
-        .map_err(|e| format!("Failed to check config status: {e}"))?;
+pub async fn check_config_status(pool: &sqlx::SqlitePool) -> Result<ConfigStatus, AppError> {
+    let count = crate::repo::game_repo::count_games(pool).await?;
 
     if count > 0 {
         Ok(ConfigStatus::HasConfig)
@@ -25,14 +24,13 @@ pub async fn check_config_status(pool: &sqlx::SqlitePool) -> Result<ConfigStatus
 pub async fn reset_database_service(
     pool: &sqlx::SqlitePool,
     app_data_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let db_path = app_data_dir.join("app.db");
     let trash_dir = app_data_dir.join("trash");
 
     // Ensure trash directory exists
     if !trash_dir.exists() {
-        std::fs::create_dir_all(&trash_dir)
-            .map_err(|e| format!("Failed to create trash dir: {e}"))?;
+        std::fs::create_dir_all(&trash_dir)?;
     }
 
     // Backup the database file with a timestamp
@@ -43,8 +41,7 @@ pub async fn reset_database_service(
             .as_secs();
         let backup_name = format!("app_backup_{}.db", epoch_secs);
         let backup_path = trash_dir.join(&backup_name);
-        std::fs::copy(&db_path, &backup_path)
-            .map_err(|e| format!("Failed to backup database: {e}"))?;
+        std::fs::copy(&db_path, &backup_path)?;
         log::info!("Database backed up to: {}", backup_path.display());
     }
 
@@ -57,7 +54,5 @@ pub async fn reset_database_service(
     }
 
     // Clear all data from the database (tables only, no file deletion)
-    crate::repo::settings_repo::reset_all_data(pool)
-        .await
-        .map_err(|e| format!("Failed to reset database: {e}"))
+    Ok(crate::repo::settings_repo::reset_all_data(pool).await?)
 }

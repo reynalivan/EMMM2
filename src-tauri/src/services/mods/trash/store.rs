@@ -1,5 +1,27 @@
 //! Filesystem-level trash store: move in, restore out, list and empty.
 
+/// Resolve the app-level trash directory.
+///
+/// The `{app_data}/trash` layout belongs to this module; nine call sites used
+/// to re-derive it, each re-spelling the "failed to get app data dir" error.
+pub fn trash_dir(
+    app: &tauri::AppHandle,
+) -> Result<std::path::PathBuf, crate::domain::errors::AppError> {
+    use tauri::Manager;
+    let app_data_dir = app.path().app_data_dir().map_err(|error| {
+        crate::domain::errors::AppError::Io(format!("Failed to get app data dir: {error}"))
+    })?;
+    Ok(trash_dir_under(&app_data_dir))
+}
+
+/// Same layout, for callers that already hold the app data directory.
+pub fn trash_dir_under(app_data_dir: &std::path::Path) -> std::path::PathBuf {
+    app_data_dir.join(TRASH_DIR_NAME)
+}
+
+/// Directory name the trash lives under, inside the app data directory.
+const TRASH_DIR_NAME: &str = "trash";
+
 use super::timestamp::chrono_format_epoch;
 use super::types::TrashMetadata;
 use crate::domain::errors::AppError;
@@ -78,10 +100,7 @@ pub fn move_to_trash(
             // If rename fails (cross-device), try copy + delete
             log::warn!("rename failed, attempting copy: {e}");
             copy_dir_recursive(source_path, &dest)
-                .and_then(|_| {
-                    fs::remove_dir_all(source_path)
-                        .map_err(|e| format!("Failed to remove source after copy: {e}"))
-                })
+                .and_then(|_| Ok(fs::remove_dir_all(source_path)?))
                 .unwrap_or_else(|copy_err| {
                     log::error!("Copy fallback also failed: {copy_err}");
                 });
@@ -214,18 +233,18 @@ pub fn empty_trash(trash_dir: &Path) -> Result<u64, AppError> {
 }
 
 /// Recursively copy a directory (fallback for cross-device moves).
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
-    fs::create_dir_all(dst).map_err(|e| format!("mkdir failed: {e}"))?;
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), AppError> {
+    fs::create_dir_all(dst)?;
 
-    for entry in fs::read_dir(src).map_err(|e| format!("read_dir failed: {e}"))? {
-        let entry = entry.map_err(|e| format!("entry error: {e}"))?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
 
         if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            fs::copy(&src_path, &dst_path).map_err(|e| format!("copy failed: {e}"))?;
+            fs::copy(&src_path, &dst_path)?;
         }
     }
     Ok(())

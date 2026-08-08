@@ -5,7 +5,7 @@
 
 use crate::domain::errors::AppError;
 use crate::services::scanner::conflict::ConflictInfo;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Detect shader/buffer hash conflicts across INI files.
 ///
@@ -35,10 +35,11 @@ pub async fn detect_conflicts_cmd(ini_paths: Vec<String>) -> Result<Vec<Conflict
 #[tauri::command]
 pub async fn detect_conflicts_in_folder_cmd(
     mods_path: String,
+    config: tauri::State<'_, crate::services::config::ConfigService>,
 ) -> Result<Vec<ConflictInfo>, AppError> {
-    let path = Path::new(&mods_path);
-    crate::services::scanner::conflict::detect::detect_conflicts_in_folder_service(path)
-        .map_err(AppError::Internal)
+    let path =
+        crate::services::fs_utils::guard::validate_dir_in_configured_roots(&config, &mods_path)?;
+    Ok(crate::services::scanner::conflict::detect::detect_conflicts_in_folder_service(&path)?)
 }
 
 #[cfg(test)]

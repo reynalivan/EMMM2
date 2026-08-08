@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::common::normalizer;
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::deep_matcher::analysis::indexes::MatcherIndexes;
 use crate::services::scanner::deep_matcher::models::types::DbEntry;
 
@@ -42,15 +43,13 @@ impl MasterDb {
     /// Supports both legacy array format `[{entry1}, {entry2}]`
     /// and new object format `{"entries": [...], "hash_db": {...}}`.
     /// When hash_db is present, merges hashes into matching entries by name.
-    pub fn from_json(json: &str) -> Result<Self, String> {
-        let value: serde_json::Value = serde_json::from_str(json)
-            .map_err(|e| format!("Failed to parse MasterDb JSON: {}", e))?;
+    pub fn from_json(json: &str) -> Result<Self, ScannerError> {
+        let value: serde_json::Value = serde_json::from_str(json)?;
 
         let (mut entries, hash_db) = match value {
             // New object format: {"entries": [...], "hash_db": {...}}
             serde_json::Value::Object(ref map) if map.contains_key("entries") => {
-                let entries: Vec<DbEntry> = serde_json::from_value(map["entries"].clone())
-                    .map_err(|e| format!("Failed to parse entries: {}", e))?;
+                let entries: Vec<DbEntry> = serde_json::from_value(map["entries"].clone())?;
                 let hash_db: std::collections::HashMap<String, Vec<String>> =
                     serde_json::from_value(map.get("hash_db").cloned().unwrap_or_default())
                         .unwrap_or_default();
@@ -58,15 +57,14 @@ impl MasterDb {
             }
             // Legacy array format: [{entry1}, {entry2}]
             serde_json::Value::Array(_) => {
-                let entries: Vec<DbEntry> = serde_json::from_value(value)
-                    .map_err(|e| format!("Failed to parse entries array: {}", e))?;
+                let entries: Vec<DbEntry> = serde_json::from_value(value)?;
                 (entries, std::collections::HashMap::new())
             }
             _ => {
-                return Err(
-                    "Invalid MasterDb format: expected array or object with 'entries' key"
-                        .to_string(),
-                )
+                return Err(ScannerError::Parse {
+                    what: "MasterDB".to_string(),
+                    detail: "expected an array or an object with an 'entries' key".to_string(),
+                })
             }
         };
 

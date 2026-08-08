@@ -3,7 +3,6 @@
 //! use them without depending on the command layer.
 
 use crate::domain::errors::{AppError, MetadataError};
-use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::ini::document::{self as ini_document, IniDocument};
 use crate::services::ini::write as ini_write;
 use crate::services::mods::preview_image;
@@ -135,7 +134,7 @@ pub fn resolve_image_path(mod_root: &Path, image_path: &str) -> Result<PathBuf, 
 }
 
 pub fn list_mod_ini_files_inner(mod_root: &Path) -> Result<Vec<IniFileEntry>, AppError> {
-    let files = ini_document::list_ini_files(mod_root).map_err(AppError::Io)?;
+    let files = ini_document::list_ini_files(mod_root)?;
     Ok(files
         .into_iter()
         .map(|path| IniFileEntry {
@@ -150,7 +149,7 @@ pub fn list_mod_ini_files_inner(mod_root: &Path) -> Result<Vec<IniFileEntry>, Ap
 
 pub fn read_mod_ini_inner(mod_root: &Path, file_name: &str) -> Result<IniDocument, AppError> {
     let ini_path = resolve_ini_path(mod_root, file_name)?;
-    ini_document::read_ini_document(&ini_path).map_err(AppError::Io)
+    ini_document::read_ini_document(&ini_path)
 }
 
 pub fn write_mod_ini_inner(
@@ -159,22 +158,21 @@ pub fn write_mod_ini_inner(
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
     let ini_path = resolve_ini_path(mod_root, file_name)?;
-    let document = ini_document::read_ini_document(&ini_path).map_err(AppError::Io)?;
+    let document = ini_document::read_ini_document(&ini_path)?;
     let updates: Vec<(usize, String)> = line_updates
         .into_iter()
         .map(|u| (u.line_idx, u.content))
         .collect();
 
-    ini_write::save_ini_with_updates(&document, &updates).map_err(AppError::Io)
+    ini_write::save_ini_with_updates(&document, &updates)
 }
 
 pub async fn write_mod_ini_locked_inner(
-    op_lock: &OperationLock,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     mod_root: &Path,
     file_name: &str,
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
-    let _lock = op_lock.acquire().await?;
     write_mod_ini_inner(mod_root, file_name, line_updates)
 }
 
@@ -197,18 +195,17 @@ pub fn save_mod_preview_image_inner(
     object_name: &str,
     image_data: &[u8],
 ) -> Result<String, AppError> {
-    let saved = preview_image::save_preview_image(mod_root, object_name, image_data)
-        .map_err(AppError::Io)?;
+    let saved = preview_image::save_preview_image(mod_root, object_name, image_data)?;
     Ok(saved.to_string_lossy().to_string())
 }
 
 pub fn remove_mod_preview_image_inner(mod_root: &Path, image_path: &str) -> Result<(), AppError> {
     let target = resolve_image_path(mod_root, image_path)?;
-    preview_image::remove_preview_image(mod_root, &target).map_err(AppError::Io)
+    preview_image::remove_preview_image(mod_root, &target)
 }
 
 pub fn clear_mod_preview_images_inner(mod_root: &Path) -> Result<Vec<String>, AppError> {
-    preview_image::clear_preview_images(mod_root).map_err(AppError::Io)
+    preview_image::clear_preview_images(mod_root)
 }
 
 #[cfg(test)]

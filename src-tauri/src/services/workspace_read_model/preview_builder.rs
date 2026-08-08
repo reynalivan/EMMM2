@@ -9,6 +9,7 @@ use crate::domain::workspace::{
     WorkspaceWarning, WorkspaceWarningState, WorkspaceWarningSummary,
 };
 use crate::services::explorer::listing::build_mod_folder_from_path;
+use crate::services::explorer::types::ModFolder;
 use crate::services::mods::info_json::{read_info_json, ModInfo};
 use crate::services::mods::preview_ops::{list_mod_ini_files_inner, list_mod_preview_images_inner};
 use crate::services::workspace_read_model::common::{
@@ -55,12 +56,22 @@ fn resolve_preview_target_path(
     None
 }
 
-fn resolve_self_mod_path(
+/// The current folder when it is itself a mod, resolved once.
+///
+/// Building the `ModFolder` costs a `metadata`, an `info.json` read, and a
+/// `classify_folder` that walks every child directory — so the built value is
+/// kept alongside the path rather than rebuilt by each consumer.
+struct SelfMod {
+    path: String,
+    folder: ModFolder,
+}
+
+fn resolve_self_mod(
     mods_path: &str,
     explorer_sub_path: Option<&str>,
     explorer: &WorkspaceExplorer,
     safe_mode: bool,
-) -> Option<String> {
+) -> Option<SelfMod> {
     if !explorer.self_is_mod {
         return None;
     }
@@ -72,15 +83,16 @@ fn resolve_self_mod_path(
         return None;
     }
 
-    Some(self_path.to_string_lossy().to_string())
+    Some(SelfMod {
+        path: self_path.to_string_lossy().to_string(),
+        folder,
+    })
 }
 
 fn resolve_preview_node(
     preview_path: Option<&str>,
     explorer: &WorkspaceExplorer,
-    explorer_sub_path: Option<&str>,
-    mods_path: &str,
-    safe_mode: bool,
+    self_mod: Option<&SelfMod>,
 ) -> Option<WorkspaceNode> {
     let target_path = preview_path?;
 
@@ -92,17 +104,15 @@ fn resolve_preview_node(
         return Some(WorkspaceNode::Explorer(child.clone()));
     }
 
-    let self_path = resolve_self_mod_path(mods_path, explorer_sub_path, explorer, safe_mode)?;
-    if !paths_equal_by_key(&self_path, target_path) {
+    let self_mod = self_mod?;
+    if !paths_equal_by_key(&self_mod.path, target_path) {
         return None;
     }
 
-    build_mod_folder_from_path(Path::new(&self_path), explorer_sub_path).map(|folder| {
-        WorkspaceNode::Explorer(map_workspace_node(
-            folder,
-            explorer.ancestor_disabled_by.as_deref(),
-        ))
-    })
+    Some(WorkspaceNode::Explorer(map_workspace_node(
+        self_mod.folder.clone(),
+        explorer.ancestor_disabled_by.as_deref(),
+    )))
 }
 
 fn as_explorer_node(node: Option<&WorkspaceNode>) -> Option<&WorkspaceExplorerNode> {
@@ -219,19 +229,13 @@ pub(crate) fn build_preview(
     selected_mod_path: Option<&str>,
     safe_mode: bool,
 ) -> WorkspacePreview {
-    let self_mod_path = resolve_self_mod_path(mods_path, explorer_sub_path, explorer, safe_mode);
+    let self_mod = resolve_self_mod(mods_path, explorer_sub_path, explorer, safe_mode);
     let selected_path = resolve_preview_target_path(
         selected_mod_path,
-        self_mod_path.as_deref(),
+        self_mod.as_ref().map(|value| value.path.as_str()),
         &explorer.children,
     );
-    let selected_node = resolve_preview_node(
-        selected_path.as_deref(),
-        explorer,
-        explorer_sub_path,
-        mods_path,
-        safe_mode,
-    );
+    let selected_node = resolve_preview_node(selected_path.as_deref(), explorer, self_mod.as_ref());
     let explorer_node = as_explorer_node(selected_node.as_ref());
     let mod_info_summary = explorer_node.map(load_preview_mod_info_summary);
     let display_title = mod_info_summary

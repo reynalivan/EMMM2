@@ -1,48 +1,46 @@
 //! INI save pipeline with backup and atomic replace.
 
+use crate::domain::errors::AppError;
 use crate::services::ini::document::{IniDocument, IniReadMode, NewlineStyle};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn backup_path_for(file_path: &Path) -> Result<PathBuf, String> {
+/// `foo.ini` + `bak` → `foo.ini.bak`, alongside the original.
+fn sibling_with_suffix(file_path: &Path, suffix: &str) -> Result<PathBuf, AppError> {
     let file_name = file_path
         .file_name()
-        .ok_or_else(|| format!("Invalid file path: {}", file_path.display()))?
+        .ok_or_else(|| AppError::Internal(format!("Invalid file path: {}", file_path.display())))?
         .to_string_lossy();
-    Ok(file_path.with_file_name(format!("{}.bak", file_name)))
+    Ok(file_path.with_file_name(format!("{}.{}", file_name, suffix)))
 }
 
-fn temp_path_for(file_path: &Path) -> Result<PathBuf, String> {
-    let file_name = file_path
-        .file_name()
-        .ok_or_else(|| format!("Invalid file path: {}", file_path.display()))?
-        .to_string_lossy();
-    Ok(file_path.with_file_name(format!("{}.tmp", file_name)))
+pub fn backup_path_for(file_path: &Path) -> Result<PathBuf, AppError> {
+    sibling_with_suffix(file_path, "bak")
 }
 
 pub fn save_ini_with_updates(
     document: &IniDocument,
     line_updates: &[(usize, String)],
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if document.mode == IniReadMode::RawFallback {
-        return Err("Cannot save INI while parser is in raw fallback mode".to_string());
+        return Err(AppError::Internal(
+            "Cannot save INI while parser is in raw fallback mode".to_string(),
+        ));
     }
 
-    let original_bytes = fs::read(&document.file_path)
-        .map_err(|e| format!("Failed to read original INI bytes: {e}"))?;
+    let original_bytes = fs::read(&document.file_path)?;
 
     let backup_path = backup_path_for(&document.file_path)?;
-    fs::write(&backup_path, &original_bytes)
-        .map_err(|e| format!("Failed to write backup file: {e}"))?;
+    fs::write(&backup_path, &original_bytes)?;
 
     let mut lines = document.raw_lines.clone();
     for (line_idx, new_line) in line_updates {
         if *line_idx >= lines.len() {
-            return Err(format!(
+            return Err(AppError::Internal(format!(
                 "Line index out of bounds: {} (max {})",
                 line_idx,
                 lines.len().saturating_sub(1)
-            ));
+            )));
         }
         lines[*line_idx] = new_line.clone();
     }
@@ -59,18 +57,17 @@ pub fn save_ini_with_updates(
         output = with_bom;
     }
 
-    let temp_path = temp_path_for(&document.file_path)?;
-    fs::write(&temp_path, output).map_err(|e| format!("Failed to write temp INI file: {e}"))?;
+    let temp_path = sibling_with_suffix(&document.file_path, "tmp")?;
+    fs::write(&temp_path, output)?;
 
     match fs::rename(&temp_path, &document.file_path) {
         Ok(_) => Ok(()),
         Err(_) => {
+            // Windows refuses a rename onto an existing file; drop it and retry.
             if document.file_path.exists() {
-                fs::remove_file(&document.file_path)
-                    .map_err(|e| format!("Failed to replace INI target file: {e}"))?;
+                fs::remove_file(&document.file_path)?;
             }
-            fs::rename(&temp_path, &document.file_path)
-                .map_err(|e| format!("Failed to finalize INI write: {e}"))
+            Ok(fs::rename(&temp_path, &document.file_path)?)
         }
     }
 }

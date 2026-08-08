@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use crate::common::corridor_constants::CORRIDOR_SOURCE_UNKNOWN;
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::models::{GameType, ItemStatus};
+use crate::repo::stable_ids::generate_stable_id;
 use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::services::disk_reconcile::disk_snapshot::collect_disk_projection;
-use crate::services::disk_reconcile::helpers::generate_stable_mod_id;
 use crate::services::disk_reconcile::types::{DiskReconcilePathKind, DiskReconcilePathUpdate};
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
@@ -125,7 +125,7 @@ async fn inserts_new_objects_and_mods_discovered_on_disk() {
     .fetch_one(&ctx.pool)
     .await
     .expect("mod row");
-    assert_eq!(mod_row.0, generate_stable_mod_id("game-1", &expected_rel));
+    assert_eq!(mod_row.0, generate_stable_id("game-1", &expected_rel));
     assert_eq!(mod_row.1, expected_rel);
     assert_eq!(mod_row.2, ItemStatus::Enabled as i64);
     assert_eq!(mod_row.3, CORRIDOR_SOURCE_UNKNOWN);
@@ -185,7 +185,7 @@ async fn heals_disabled_prefix_rename_by_runtime_key_and_records_path_update() {
             .fetch_one(&ctx.pool)
             .await
             .expect("mod row");
-    assert_eq!(mod_row.0, generate_stable_mod_id("game-1", &expected_rel));
+    assert_eq!(mod_row.0, generate_stable_id("game-1", &expected_rel));
     assert_eq!(mod_row.1, expected_rel);
     assert_eq!(mod_row.2, ItemStatus::Disabled as i64);
 

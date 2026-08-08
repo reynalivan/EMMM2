@@ -230,27 +230,13 @@ pub fn run() {
 
             let config_ref: tauri::State<'_, services::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
-            if let Some(hk_manager) =
-                services::bootstrap::init_hotkey_manager(app_handle, &hotkey_config)
-            {
-                app.manage(hk_manager);
-            }
+            app.manage(services::bootstrap::init_hotkey_manager(
+                app_handle,
+                &hotkey_config,
+            ));
 
             {
-                let config_svc: tauri::State<'_, services::config::ConfigService> = app.state();
-                let pool_state: tauri::State<'_, sqlx::SqlitePool> = app.state();
-                let watcher_state: tauri::State<'_, services::scanner::watcher::WatcherState> =
-                    app.state();
-                let disk_reconcile_state: tauri::State<
-                    '_,
-                    services::disk_reconcile::orchestrator::DiskReconcileState,
-                > = app.state();
-                services::bootstrap::run_startup_reconcile(
-                    pool_state.inner(),
-                    config_svc.inner(),
-                    &watcher_state,
-                    &disk_reconcile_state,
-                );
+                services::bootstrap::run_startup_reconcile(app.handle().clone());
             }
 
             Ok(())
@@ -258,7 +244,7 @@ pub fn run() {
         .manage(commands::scanner::scan_control_cmds::ScanState::new())
         .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
         .manage(services::fs_utils::operation_lock::OperationLock::new())
-        .manage(commands::objects::master_db_cmds::MasterDbCache::new())
+        .manage(services::scanner::master_db::MasterDbCache::default())
         .manage(commands::scanner::archive_cmds::ExtractionState::new())
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())

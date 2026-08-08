@@ -147,7 +147,7 @@ fn test_nonexistent_path() {
     let dir = Path::new("Z:\\definitely_does_not_exist_12345");
     let result = validate_instance(dir);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("does not exist"));
+    assert!(result.unwrap_err().to_string().contains("does not exist"));
 }
 
 // Smart resolution: selecting /Mods climbs up to the parent
@@ -187,8 +187,8 @@ fn test_scan_xxmi_partial() {
 
     let results = scan_xxmi_root(&root);
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].2, "GIMI");
-    assert_eq!(results[0].3, "Genshin Impact");
+    assert_eq!(results[0].game_type, GameType::GIMI);
+    assert_eq!(results[0].game_type.display_name(), "Genshin Impact");
 
     let _ = fs::remove_dir_all(&root);
 }

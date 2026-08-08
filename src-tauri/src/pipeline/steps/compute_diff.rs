@@ -1,18 +1,21 @@
+use crate::common::path_key::folder_path_key;
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 use std::collections::HashSet;
 
-/// Step 4: Compute the diff between current state and target collection.
+/// Compute the diff between current state and target collection.
 pub async fn compute(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    // Collect target path_keys from mods
+    // Both sides of the diff must be in the canonical key space —
+    // `currently_enabled_path_keys` holds canonical root keys, so a raw display
+    // path here could only ever land in `to_enable`.
     let target_keys: HashSet<String> = ctx
         .target_mods
         .iter()
-        .filter_map(|member| {
+        .map(|member| {
             member
                 .mod_path_key
                 .clone()
-                .or_else(|| Some(member.mod_path.clone()))
+                .unwrap_or_else(|| folder_path_key(&member.mod_path, None))
         })
         .collect();
 

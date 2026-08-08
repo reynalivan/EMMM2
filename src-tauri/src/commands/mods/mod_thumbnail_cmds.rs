@@ -18,10 +18,9 @@ pub async fn update_mod_thumbnail(
     source_path: String,
 ) -> Result<String, AppError> {
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    let abs_path = metadata::update_mod_thumbnail(&config, &game_id, &folder_path, &source_path)?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![abs_path.clone()])
-        .await
-        .map_err(AppError::Internal)?;
+    let folder = validate_path(&config, &game_id, &folder_path)?;
+    let abs_path = metadata::update_mod_thumbnail(&folder, &source_path)?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![abs_path.clone()]).await?;
 
     // Return the absolute path directly
     Ok(abs_path)
@@ -41,9 +40,7 @@ pub async fn paste_thumbnail(
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let saved_path =
         paste_thumbnail_inner(&config, game_id.clone(), folder_path, image_data).await?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![saved_path.clone()])
-        .await
-        .map_err(AppError::Internal)?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![saved_path.clone()]).await?;
     Ok(saved_path)
 }
 

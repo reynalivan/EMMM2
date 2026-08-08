@@ -51,7 +51,7 @@ fn parse_every_default_binding() {
 #[test]
 fn dispatch_unknown_id_returns_none() {
     let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
+    let manager = HotkeyManager::new(&config);
 
     let result = manager.lookup_action("f5");
     assert!(result.is_none());
@@ -63,7 +63,7 @@ fn dispatch_when_disabled_returns_none() {
         enabled: false,
         ..Default::default()
     };
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
+    let manager = HotkeyManager::new(&config);
 
     // Any action should return None when disabled.
     let result = manager.dispatch_action(HotkeyAction::NextPreset, false, None, &[]);
@@ -73,7 +73,7 @@ fn dispatch_when_disabled_returns_none() {
 #[test]
 fn lookup_action_returns_none_without_runtime_registration() {
     let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
+    let manager = HotkeyManager::new(&config);
 
     // Shortcuts are populated only after runtime plugin registration.
     assert_eq!(manager.lookup_action("f5"), None);
@@ -83,7 +83,7 @@ fn lookup_action_returns_none_without_runtime_registration() {
 #[test]
 fn dispatch_preset_cycle_with_presets() {
     let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
+    let manager = HotkeyManager::new(&config);
 
     manager.set_enabled_for_test(true);
 
@@ -97,7 +97,7 @@ fn dispatch_preset_cycle_with_presets() {
 #[test]
 fn dispatch_preset_cycle_no_presets_returns_noop() {
     let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
+    let manager = HotkeyManager::new(&config);
 
     manager.set_enabled_for_test(true);
 
@@ -114,7 +114,7 @@ fn try_acquire_and_release_cycle() {
         cooldown_ms: 0, // No cooldown for testing
         ..Default::default()
     };
-    let manager = HotkeyManager::new(&config).expect("manager should initialize");
+    let manager = HotkeyManager::new(&config);
 
     // First acquire should succeed
     assert!(manager.try_acquire());

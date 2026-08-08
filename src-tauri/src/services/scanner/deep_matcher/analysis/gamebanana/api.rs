@@ -1,6 +1,7 @@
 //! Blocking, fail-safe GameBanana API client.
 
 use crate::common::sync::lock;
+use crate::domain::errors::ScannerError;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -261,19 +262,17 @@ fn get_gb_auth_token(client: &reqwest::blocking::Client) -> Option<String> {
 fn fetch_json_value(
     client: &reqwest::blocking::Client,
     url: &str,
-) -> Result<serde_json::Value, String> {
-    let response = client
-        .get(url)
-        .send()
-        .map_err(|e| format!("HTTP request failed: {e}"))?;
+) -> Result<serde_json::Value, ScannerError> {
+    let response = client.get(url).send()?;
 
     if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
+        return Err(ScannerError::Validation(format!(
+            "HTTP {}",
+            response.status()
+        )));
     }
 
-    response
-        .json::<serde_json::Value>()
-        .map_err(|e| format!("JSON parse failed: {e}"))
+    Ok(response.json::<serde_json::Value>()?)
 }
 
 fn strip_extension(filename: &str) -> String {

@@ -1,7 +1,7 @@
 //! Projected-state loading and signature computation for a collection.
 
 use crate::domain::collection::{
-    CollectionMod, CollectionObject, CollectionRoot, ProjectedCollectionState,
+    Collection, CollectionMod, CollectionObject, CollectionRoot, ProjectedCollectionState,
 };
 use crate::domain::errors::CollectionError;
 use crate::repo::collection_repo;
@@ -101,4 +101,31 @@ pub(crate) fn collection_members_from_projected_state(
 pub fn compute_signature(mods: &[CollectionMod], objects: &[CollectionObject]) -> String {
     let projected_state = projected_state_service::build_projected_state(mods, objects, None);
     projected_state_service::signature_for_projected_state(&projected_state)
+}
+
+/// Load a collection or report it missing. The `get_by_id` → `NotFound`
+/// pairing was previously written out at nine call sites.
+pub(crate) async fn require_collection(
+    pool: &SqlitePool,
+    collection_id: &str,
+) -> Result<Collection, CollectionError> {
+    collection_repo::get_by_id(pool, collection_id)
+        .await?
+        .ok_or_else(|| CollectionError::NotFound {
+            id: collection_id.to_string(),
+        })
+}
+
+/// Reject a collection that belongs to a different game.
+pub(crate) fn require_game_match(
+    collection: &Collection,
+    game_id: &str,
+) -> Result<(), CollectionError> {
+    if collection.game_id != game_id {
+        return Err(CollectionError::Validation(format!(
+            "Collection '{}' does not belong to game '{}'",
+            collection.id, game_id
+        )));
+    }
+    Ok(())
 }

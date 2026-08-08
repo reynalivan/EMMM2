@@ -40,13 +40,18 @@ pub async fn resolve_recovery_task(
         .mod_path
         .clone();
 
+    // The corridor comes from settings, not from the collection being recovered.
+    // Deriving it from the data would make `validate_corridor` compare a value
+    // with itself, letting a recovery apply an unsafe collection during Safe Mode.
+    let is_safe = settings.safe_mode.enabled;
+
     match action {
         RecoveryAction::Retry => {
-            retry_task(pool, watcher_state, &task, settings, mods_path).await?;
+            retry_task(pool, watcher_state, &task, settings, mods_path, is_safe).await?;
             mark_task(pool, task_id, TaskStatus::Completed).await
         }
         RecoveryAction::Rollback => {
-            rollback_task(pool, watcher_state, &task, settings, mods_path).await?;
+            rollback_task(pool, watcher_state, &task, settings, mods_path, is_safe).await?;
             mark_task(pool, task_id, TaskStatus::Completed).await
         }
         RecoveryAction::Ignore => mark_task(pool, task_id, TaskStatus::Failed).await,
@@ -64,33 +69,25 @@ fn target_collection_id(task: &PipelineTask) -> Result<&str, AppError> {
         .ok_or_else(|| AppError::Validation("Missing target collection ID".to_string()))
 }
 
-async fn load_collection(
-    pool: &SqlitePool,
-    collection_id: &str,
-) -> Result<crate::domain::collection::Collection, AppError> {
-    crate::repo::collection_repo::get_by_id(pool, collection_id)
-        .await?
-        .ok_or_else(|| AppError::Validation(format!("Collection {} not found", collection_id)))
-}
-
 async fn retry_task(
     pool: &SqlitePool,
     watcher_state: &WatcherState,
     task: &PipelineTask,
     settings: AppSettings,
     mods_path: std::path::PathBuf,
+    is_safe: bool,
 ) -> Result<(), AppError> {
     match task.task_type.as_str() {
         "apply_collection" => {
+            // Existence is validated downstream by `validate_corridor`.
             let collection_id = target_collection_id(task)?;
-            let collection = load_collection(pool, collection_id).await?;
 
             crate::services::collection_service::apply_collection(
                 crate::services::collection_service::ApplyCollectionRequest {
                     pool,
                     game_id: &task.game_id,
                     collection_id,
-                    is_safe: collection.is_safe,
+                    is_safe,
                     mods_path,
                     suppressor: watcher_state.suppressor.clone(),
                     ignore_missing: true,
@@ -120,6 +117,7 @@ async fn rollback_task(
     task: &PipelineTask,
     settings: AppSettings,
     mods_path: std::path::PathBuf,
+    is_safe: bool,
 ) -> Result<(), AppError> {
     match task.task_type.as_str() {
         "switch_corridor" => {
@@ -131,18 +129,16 @@ async fn rollback_task(
         }
         "apply_collection" => {
             let collection_id = target_collection_id(task)?;
-            let applied_collection = load_collection(pool, collection_id).await?;
 
             let rollback_collection_id =
-                resolve_rollback_target(pool, task, collection_id, applied_collection.is_safe)
-                    .await?;
+                resolve_rollback_target(pool, task, collection_id, is_safe).await?;
 
             crate::services::collection_service::apply_collection(
                 crate::services::collection_service::ApplyCollectionRequest {
                     pool,
                     game_id: &task.game_id,
                     collection_id: &rollback_collection_id,
-                    is_safe: applied_collection.is_safe,
+                    is_safe,
                     mods_path,
                     suppressor: watcher_state.suppressor.clone(),
                     ignore_missing: true,
@@ -159,8 +155,14 @@ async fn rollback_task(
     }
 }
 
-/// Prefer the corridor's active collection (if it is not the one being rolled
-/// back), and only then fall back to whatever the corridor service can restore.
+/// Pick a *different* collection to apply in place of the failed one.
+///
+/// NOTE: this is not a rollback in the restore-previous-state sense. Nothing
+/// captures the runtime state that existed before the failed apply — `tasks`
+/// has no snapshot column — so a hand-toggled runtime cannot be recovered and
+/// is instead overwritten by whichever saved preset is chosen here. Real
+/// rollback needs the pre-apply `ProjectedCollectionState` persisted on the
+/// task row before the rename step runs.
 async fn resolve_rollback_target(
     pool: &SqlitePool,
     task: &PipelineTask,
@@ -198,5 +200,5 @@ async fn resolve_rollback_target(
 }
 
 #[cfg(test)]
-#[path = "recovery_service_tests.rs"]
+#[path = "tests/recovery_service_tests.rs"]
 mod tests;

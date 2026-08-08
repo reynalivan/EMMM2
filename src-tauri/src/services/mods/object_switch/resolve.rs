@@ -25,7 +25,10 @@ fn build_object_path_candidates(
     candidates.push(mods_path.join(object_name).to_string_lossy().to_string());
     candidates.push(
         mods_path
-            .join(format!("{}{}", crate::DISABLED_PREFIX, object_name))
+            .join(crate::services::mods::core_ops::standardize_prefix(
+                object_name,
+                false,
+            ))
             .to_string_lossy()
             .to_string(),
     );

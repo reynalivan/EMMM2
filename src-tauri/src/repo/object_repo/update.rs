@@ -1,8 +1,8 @@
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
-use super::types::*;
 use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::domain::models::ItemStatus;
+use crate::domain::objects::UpdateObjectInput;
 
 pub async fn update_object_folder_path<'c, E>(
     executor: E,
@@ -126,107 +126,78 @@ where
     Ok(())
 }
 
+/// JSON sentinels persisted when a value fails to serialize.
+const EMPTY_JSON_OBJECT: &str = "{}";
+const EMPTY_JSON_ARRAY: &str = "[]";
+
 pub async fn update_object(
     pool: &SqlitePool,
     id: &str,
     updates: &UpdateObjectInput,
 ) -> Result<(), sqlx::Error> {
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE objects SET ");
-    let mut is_first = true;
+    // `separated` owns the comma, so each field is one line and cannot get the
+    // punctuation wrong; `wrote_any` is all that is left of the old `is_first`
+    // flag that every branch had to remember to clear.
+    let mut sets = qb.separated(", ");
+    let mut wrote_any = false;
 
     if let Some(name) = &updates.name {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("name = ");
-        qb.push_bind(name.trim().to_string());
-        qb.push(", name_key = ");
-        qb.push_bind(canonical_name_key(name));
-        is_first = false;
+        sets.push("name = ")
+            .push_bind_unseparated(name.trim().to_string());
+        sets.push("name_key = ")
+            .push_bind_unseparated(canonical_name_key(name));
+        wrote_any = true;
     }
     if let Some(obj_type) = &updates.object_type {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("object_type = ");
-        qb.push_bind(obj_type);
-        is_first = false;
+        sets.push("object_type = ").push_bind_unseparated(obj_type);
+        wrote_any = true;
     }
     if let Some(st) = &updates.status {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("status = ");
-        qb.push_bind(*st as i64);
-        is_first = false;
+        sets.push("status = ").push_bind_unseparated(*st as i64);
+        wrote_any = true;
     }
     if let Some(sub) = &updates.sub_category {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("sub_category = ");
-        qb.push_bind(sub);
-        is_first = false;
+        sets.push("sub_category = ").push_bind_unseparated(sub);
+        wrote_any = true;
     }
     if let Some(meta) = &updates.metadata {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("metadata = ");
-        qb.push_bind(meta.to_string());
-        is_first = false;
+        sets.push("metadata = ")
+            .push_bind_unseparated(meta.to_string());
+        wrote_any = true;
     }
     if let Some(hash) = &updates.hash_db {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("hash_db = ");
-        qb.push_bind(serde_json::to_string(hash).unwrap_or_else(|_| "{}".to_string()));
-        is_first = false;
+        sets.push("hash_db = ").push_bind_unseparated(
+            serde_json::to_string(hash).unwrap_or_else(|_| EMPTY_JSON_OBJECT.to_string()),
+        );
+        wrote_any = true;
     }
     if let Some(skins) = &updates.custom_skins {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("custom_skins = ");
-        qb.push_bind(serde_json::to_string(skins).unwrap_or_else(|_| "{}".to_string()));
-        is_first = false;
+        sets.push("custom_skins = ").push_bind_unseparated(
+            serde_json::to_string(skins).unwrap_or_else(|_| EMPTY_JSON_OBJECT.to_string()),
+        );
+        wrote_any = true;
     }
     if let Some(thumb) = &updates.thumbnail_path {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("thumbnail_path = ");
-        qb.push_bind(thumb);
-        is_first = false;
+        sets.push("thumbnail_path = ").push_bind_unseparated(thumb);
+        wrote_any = true;
     }
     if let Some(auto) = updates.is_auto_sync {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("is_auto_sync = ");
-        qb.push_bind(auto);
-        is_first = false;
+        sets.push("is_auto_sync = ").push_bind_unseparated(auto);
+        wrote_any = true;
     }
     if let Some(pinned) = updates.is_pinned {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("is_pinned = ");
-        qb.push_bind(pinned);
-        is_first = false;
+        sets.push("is_pinned = ").push_bind_unseparated(pinned);
+        wrote_any = true;
     }
-
     if let Some(tags) = &updates.tags {
-        if !is_first {
-            qb.push(", ");
-        }
-        qb.push("tags = ");
-        qb.push_bind(serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string()));
-        is_first = false;
+        sets.push("tags = ").push_bind_unseparated(
+            serde_json::to_string(tags).unwrap_or_else(|_| EMPTY_JSON_ARRAY.to_string()),
+        );
+        wrote_any = true;
     }
 
-    if is_first {
+    if !wrote_any {
         return Ok(());
     }
 

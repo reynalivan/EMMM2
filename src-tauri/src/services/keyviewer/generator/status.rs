@@ -1,8 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use super::atomic::atomic_write;
+use crate::domain::errors::AppError;
 
 // ─── Status Banner ───────────────────────────────────────────────────────────
+
+/// Limits of the 3DMigoto text resource the overlay renders (req-42).
+const MAX_STATUS_LINES: usize = 10;
+const MAX_STATUS_BYTES: usize = 4096;
 
 /// Status banner fields for `runtime_status.txt`.
 #[derive(Debug, Clone, Default)]
@@ -22,9 +27,10 @@ pub fn generate_status_text(
     let mut segments = Vec::new();
 
     if let Some(ref preset) = fields.preset_name {
-        let shift_f6 = hotkey_config.prev_preset.to_uppercase();
-        let f6 = hotkey_config.next_preset.to_uppercase();
-        segments.push(format!("Preset: {} [{}] [{}]", preset, shift_f6, f6));
+        // Named for the action, not the default key — these are rebindable.
+        let prev_key = hotkey_config.prev_preset.to_uppercase();
+        let next_key = hotkey_config.next_preset.to_uppercase();
+        segments.push(format!("Preset: {} [{}] [{}]", preset, prev_key, next_key));
     }
 
     if let Some(ref folder) = fields.folder_name {
@@ -51,31 +57,23 @@ pub fn write_status_file(
     status_dir: &Path,
     fields: &StatusFields,
     hotkey_config: &crate::services::hotkeys::HotkeyConfig,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, AppError> {
     let content = generate_status_text(fields, hotkey_config);
 
-    // Enforce req-42 constraints
     let line_count = content.lines().count();
-    if line_count > 10 {
-        return Err(format!("Status banner exceeds 10 lines (got {line_count})"));
+    if line_count > MAX_STATUS_LINES {
+        return Err(AppError::Internal(format!(
+            "Status banner exceeds {MAX_STATUS_LINES} lines (got {line_count})"
+        )));
     }
-    if content.len() > 4096 {
-        return Err(format!(
-            "Status banner exceeds 4KB (got {} bytes)",
+    if content.len() > MAX_STATUS_BYTES {
+        return Err(AppError::Internal(format!(
+            "Status banner exceeds {MAX_STATUS_BYTES} bytes (got {} bytes)",
             content.len()
-        ));
+        )));
     }
 
     let path = status_dir.join("runtime_status.txt");
     atomic_write(&path, &content)?;
     Ok(path)
-}
-
-/// Clear the status banner (delete or empty the file).
-pub fn clear_status_file(status_dir: &Path) -> Result<(), String> {
-    let path = status_dir.join("runtime_status.txt");
-    if path.exists() {
-        atomic_write(&path, "")?;
-    }
-    Ok(())
 }

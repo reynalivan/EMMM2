@@ -3,6 +3,7 @@
 //! Centralises the filesystem read + JSON parse + thumbnail resolution
 //! logic for the MasterDB that was previously duplicated across commands.
 
+use crate::domain::errors::ScannerError;
 use serde_json::Value;
 use std::path::Path;
 
@@ -13,7 +14,7 @@ use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationCo
 use crate::services::scanner::deep_matcher::{self, DbEntry, MasterDb, StagedMatchResult};
 
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
-pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String, String> {
+pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String, ScannerError> {
     let canonical = schema_loader::normalize_game_type(game_type);
     let db_path = resource_dir
         .join("databases")
@@ -28,27 +29,25 @@ pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String
         return Ok("[]".to_string());
     }
 
-    let json_content =
-        std::fs::read_to_string(&db_path).map_err(|e| format!("Failed to read MasterDB: {e}"))?;
+    let json_content = std::fs::read_to_string(&db_path)?;
 
-    let parsed: Value = serde_json::from_str(&json_content)
-        .map_err(|e| format!("Failed to parse MasterDB JSON: {e}"))?;
+    let parsed: Value = serde_json::from_str(&json_content)?;
 
     let mut entries: Vec<Value> = match parsed {
         Value::Object(ref map) if map.contains_key("entries") => {
-            serde_json::from_value(map["entries"].clone())
-                .map_err(|e| format!("Failed to parse entries: {e}"))?
+            serde_json::from_value(map["entries"].clone())?
         }
         Value::Array(arr) => arr,
         _ => {
-            return Err(
-                "Invalid MasterDB format: expected array or object with 'entries' key".to_string(),
-            )
+            return Err(ScannerError::Parse {
+                what: "MasterDB".to_string(),
+                detail: "expected an array or an object with an 'entries' key".to_string(),
+            })
         }
     };
 
     resolve_entry_thumbnails(&mut entries, resource_dir);
-    serde_json::to_string(&entries).map_err(|e| format!("Failed to serialize MasterDB: {e}"))
+    Ok(serde_json::to_string(&entries)?)
 }
 
 /// Resolve all thumbnail fields in a slice of serde_json entries to absolute paths.
@@ -169,7 +168,7 @@ pub fn match_object_with_db_service(
     resource_dir: &Path,
     game_type: i32,
     object_name: &str,
-) -> Result<Option<MatchedDbEntry>, String> {
+) -> Result<Option<MatchedDbEntry>, ScannerError> {
     let canonical = schema_loader::normalize_game_type(game_type);
     let db_path = resource_dir
         .join("databases")
@@ -179,8 +178,7 @@ pub fn match_object_with_db_service(
         return Ok(None);
     }
 
-    let json =
-        std::fs::read_to_string(&db_path).map_err(|e| format!("Failed to read MasterDB: {e}"))?;
+    let json = std::fs::read_to_string(&db_path)?;
 
     let db = MasterDb::from_json(&json)?;
 
@@ -238,6 +236,24 @@ pub fn fuzzy_score(query: &str, target: &str) -> f32 {
     lcs / (std::cmp::min(m, n) as f32)
 }
 
+/// Rewrite the entry's resource-relative thumbnail paths to absolute ones for
+/// the frontend. Applied only to entries that survive scoring.
+fn absolutize_thumbnails(mut entry: DbEntry, resource_dir: &Path) -> DbEntry {
+    if let Some(ref thumb) = entry.thumbnail_path {
+        if let Some(abs_path) = resource_dir.join(thumb).to_str() {
+            entry.thumbnail_path = Some(abs_path.to_string());
+        }
+    }
+    for skin in &mut entry.custom_skins {
+        if let Some(ref thumb) = skin.thumbnail_skin_path {
+            if let Some(abs_path) = resource_dir.join(thumb).to_str() {
+                skin.thumbnail_skin_path = Some(abs_path.to_string());
+            }
+        }
+    }
+    entry
+}
+
 pub fn search_master_db_service(
     db: &MasterDb,
     resource_dir: &Path,
@@ -257,24 +273,11 @@ pub fn search_master_db_service(
             }
         }
 
-        let mut entry_clone = entry.clone();
-
-        if let Some(ref thumb) = entry_clone.thumbnail_path {
-            if let Some(abs_path) = resource_dir.join(thumb).to_str() {
-                entry_clone.thumbnail_path = Some(abs_path.to_string());
-            }
-        }
-        for skin in &mut entry_clone.custom_skins {
-            if let Some(ref thumb) = skin.thumbnail_skin_path {
-                if let Some(abs_path) = resource_dir.join(thumb).to_str() {
-                    skin.thumbnail_skin_path = Some(abs_path.to_string());
-                }
-            }
-        }
-
+        // Score first, clone second: a `DbEntry` carries tags, metadata,
+        // custom_skins and hash_db, and most entries are discarded below.
         if query_lower.is_empty() {
             results.push(SearchResultEntry {
-                item: entry_clone,
+                item: absolutize_thumbnails(entry.clone(), resource_dir),
                 score: 1.0,
             });
             continue;
@@ -305,7 +308,7 @@ pub fn search_master_db_service(
 
         if score >= fuzzy_threshold {
             results.push(SearchResultEntry {
-                item: entry_clone,
+                item: absolutize_thumbnails(entry.clone(), resource_dir),
                 score,
             });
         }
@@ -319,4 +322,50 @@ pub fn search_master_db_service(
     });
 
     results.into_iter().take(20).collect()
+}
+
+/// Parsed MasterDB per game type, so a 5 MB JSON is read and parsed once.
+#[derive(Default)]
+pub struct MasterDbCache(
+    tokio::sync::RwLock<std::collections::HashMap<String, std::sync::Arc<deep_matcher::MasterDb>>>,
+);
+
+/// The parsed MasterDB for a game type, loading it on first use.
+///
+/// Returns `None` when the game has no bundled database. This used to be a
+/// `db_json: String` parameter: the frontend fetched the whole database, held
+/// it, and posted it back on every scan command, which then re-parsed it. The
+/// backend has the file — there was never a reason for it to cross IPC.
+pub async fn get_cached(
+    app: &tauri::AppHandle,
+    game_type: i32,
+) -> Result<Option<std::sync::Arc<deep_matcher::MasterDb>>, ScannerError> {
+    use tauri::Manager;
+
+    let canonical = crate::services::game::schema_loader::normalize_game_type(game_type);
+    let cache = app.state::<MasterDbCache>();
+
+    if let Some(hit) = cache.0.read().await.get(&canonical).cloned() {
+        return Ok(Some(hit));
+    }
+
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| ScannerError::Io(format!("failed to resolve resource dir: {error}")))?;
+    let db_path = resource_dir
+        .join("databases")
+        .join(format!("{canonical}.json"));
+    if !db_path.exists() {
+        return Ok(None);
+    }
+
+    let json = std::fs::read_to_string(&db_path)?;
+    let parsed = std::sync::Arc::new(deep_matcher::MasterDb::from_json(&json)?);
+    cache
+        .0
+        .write()
+        .await
+        .insert(canonical, std::sync::Arc::clone(&parsed));
+    Ok(Some(parsed))
 }

@@ -1,5 +1,6 @@
 //! Job listing, status transitions, and the manual review / cancel decisions.
 
+use crate::domain::errors::BrowserError;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
@@ -11,13 +12,11 @@ use super::placement::place_mod;
 
 /// DTO returned to the frontend for import queue display. Defined in
 /// `repo::browser_repo`; re-exported so existing users keep compiling.
-pub use crate::repo::browser_repo::ImportJobDto;
+pub use crate::domain::browser::ImportJobDto;
 
 /// Return all active (non-canceled) import jobs ordered by most recent first.
-pub async fn list_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, String> {
-    browser_repo::list_active_jobs(db)
-        .await
-        .map_err(|e| format!("DB list jobs failed: {e}"))
+pub async fn list_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, BrowserError> {
+    Ok(browser_repo::list_active_jobs(db).await?)
 }
 
 /// Manual confirmation for a needs_review job.
@@ -29,17 +28,16 @@ pub async fn confirm_review(
     game_id: &str,
     category: &str,
     object_id: Option<&str>,
-) -> Result<(), String> {
-    browser_repo::apply_review_decision(db, job_id, game_id, category)
-        .await
-        .map_err(|e| format!("DB confirm_review failed: {e}"))?;
+) -> Result<(), BrowserError> {
+    browser_repo::apply_review_decision(db, job_id, game_id, category).await?;
 
     // Resume placement
-    let archive_opt: Option<String> = browser_repo::require_staging_path(db, job_id)
-        .await
-        .map_err(|e| format!("Job not found: {e}"))?;
+    let archive_opt: Option<String> = browser_repo::require_staging_path(db, job_id).await?;
 
-    let archive = archive_opt.ok_or_else(|| "No staging_path for job".to_string())?;
+    let archive = archive_opt.ok_or_else(|| BrowserError::JobIncomplete {
+        job_id: job_id.to_string(),
+        field: "staging_path".to_string(),
+    })?;
 
     let extract_dir = PathBuf::from(&archive).parent().unwrap().join("extracted");
 
@@ -52,11 +50,12 @@ pub async fn confirm_review(
         match_result.confidence = 1.0;
     }
 
-    place_mod(db, app, job_id, &extract_dir, &match_result, object_id).await
+    let mod_roots = super::pipeline::mod_roots_on_disk(&extract_dir);
+    place_mod(db, app, job_id, &mod_roots, &match_result, object_id).await
 }
 
 /// Cancel a job and clean up its staging folder.
-pub async fn cancel_job(db: &SqlitePool, job_id: &str) -> Result<(), String> {
+pub async fn cancel_job(db: &SqlitePool, job_id: &str) -> Result<(), BrowserError> {
     let staging: Option<String> = browser_repo::get_staging_path(db, job_id)
         .await
         .ok()
@@ -72,15 +71,11 @@ pub async fn cancel_job(db: &SqlitePool, job_id: &str) -> Result<(), String> {
         }
     }
 
-    browser_repo::mark_canceled(db, job_id)
-        .await
-        .map_err(|e| format!("DB cancel_job failed: {e}"))
+    Ok(browser_repo::mark_canceled(db, job_id).await?)
 }
 
-async fn load_job_match_result(db: &SqlitePool, job_id: &str) -> Result<MatchResult, String> {
-    browser_repo::load_match_result(db, job_id)
-        .await
-        .map_err(|e| format!("Failed to load import job match result: {e}"))
+async fn load_job_match_result(db: &SqlitePool, job_id: &str) -> Result<MatchResult, BrowserError> {
+    Ok(browser_repo::load_match_result(db, job_id).await?)
 }
 
 pub(super) fn emit_status(
@@ -103,9 +98,8 @@ pub(super) async fn set_job_status(
     job_id: &str,
     status: &str,
     error_msg: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), BrowserError> {
     let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-    browser_repo::set_status(db, job_id, status, error_msg, &now)
-        .await
-        .map_err(|e| format!("DB update import_job status failed: {e}"))
+    browser_repo::set_status(db, job_id, status, error_msg, &now).await?;
+    Ok(())
 }

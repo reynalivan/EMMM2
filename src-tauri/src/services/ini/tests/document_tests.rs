@@ -123,6 +123,6 @@ fn test_read_ini_aborts_over_2mb() {
     let result = read_ini_document(&ini_path);
     assert!(result.is_err(), "Reading INI files > 2MB should be aborted");
     if let Err(e) = result {
-        assert!(e.contains("too large"));
+        assert!(e.to_string().contains("too large"));
     }
 }

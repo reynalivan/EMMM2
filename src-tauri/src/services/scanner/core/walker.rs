@@ -1,6 +1,7 @@
 //! File system walker for mod directory scanning.
 //! Uses `walkdir` crate for efficient recursive traversal per TRD §3.2.
 
+use crate::domain::errors::ScannerError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -68,16 +69,19 @@ const SCAN_EXTENSIONS: &[&str] = &["ini", "dds", "txt", "buf", "ib", "vb"];
 /// if a path is a true mod (e.g. `ModPackRoot`, `FlatModRoot`, `VariantContainer`) or a container.
 ///
 /// # Covers: TC-2.3-01 (Folder listing)
-pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
+pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, ScannerError> {
     if !mods_path.exists() {
-        return Err(format!("Mods path does not exist: {}", mods_path.display()));
+        return Err(ScannerError::Validation(format!(
+            "Mods path does not exist: {}",
+            mods_path.display()
+        )));
     }
 
     if !mods_path.is_dir() {
-        return Err(format!(
+        return Err(ScannerError::Validation(format!(
             "Mods path is not a directory: {}",
             mods_path.display()
-        ));
+        )));
     }
 
     use crate::common::classifier::{self, NodeType};
@@ -101,7 +105,9 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
         };
 
         let path = entry.path();
-        if !path.is_dir() {
+        // `file_type()` comes free from the directory iteration; `path.is_dir()`
+        // would issue a fresh stat for every entry in the library.
+        if !entry.file_type().is_dir() {
             continue;
         }
 
@@ -112,9 +118,7 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
 
         // Skip hidden/system folders (.temp_extract, .extracted, .archive_backup, etc.)
         if raw_name.starts_with('.') {
-            if entry.file_type().is_dir() {
-                it.skip_current_dir();
-            }
+            it.skip_current_dir();
             continue;
         }
 
@@ -127,7 +131,7 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
 
         match node_type {
             NodeType::ModPackRoot | NodeType::FlatModRoot | NodeType::VariantContainer => {
-                let display_name = normalizer::normalize_display_name(&raw_name);
+                let display_name = normalizer::normalize_display_name(&raw_name).into_owned();
                 candidates.push(ModCandidate {
                     path: path.to_path_buf(),
                     raw_name,
@@ -153,7 +157,7 @@ pub fn scan_mod_folders(mods_path: &Path) -> Result<Vec<ModCandidate>, String> {
 
 /// Scan specific subset of folders directly and deeply.
 /// Useful for drag-and-drop operations on explicit folders.
-pub fn scan_specific_folders(paths: &[PathBuf]) -> Result<Vec<ModCandidate>, String> {
+pub fn scan_specific_folders(paths: &[PathBuf]) -> Result<Vec<ModCandidate>, ScannerError> {
     use crate::common::classifier::{self, NodeType};
 
     let mut candidates = Vec::new();
@@ -205,7 +209,7 @@ pub fn scan_specific_folders(paths: &[PathBuf]) -> Result<Vec<ModCandidate>, Str
 
             match node_type {
                 NodeType::ModPackRoot | NodeType::FlatModRoot | NodeType::VariantContainer => {
-                    let display_name = normalizer::normalize_display_name(&raw_name);
+                    let display_name = normalizer::normalize_display_name(&raw_name).into_owned();
                     candidates.push(ModCandidate {
                         path: path.to_path_buf(),
                         raw_name,
@@ -294,13 +298,15 @@ pub fn scan_folder_content(folder: &Path, max_depth: usize) -> FolderContent {
 /// Detect archive files in the root mods directory.
 ///
 /// # Covers: TC-2.1-01, TC-2.1-03
-pub fn detect_archives(mods_path: &Path) -> Result<Vec<ArchiveInfo>, String> {
+pub fn detect_archives(mods_path: &Path) -> Result<Vec<ArchiveInfo>, ScannerError> {
     if !mods_path.exists() {
-        return Err(format!("Mods path does not exist: {}", mods_path.display()));
+        return Err(ScannerError::Validation(format!(
+            "Mods path does not exist: {}",
+            mods_path.display()
+        )));
     }
 
-    let entries =
-        std::fs::read_dir(mods_path).map_err(|e| format!("Failed to read mods directory: {e}"))?;
+    let entries = std::fs::read_dir(mods_path)?;
 
     let mut archives = Vec::new();
 

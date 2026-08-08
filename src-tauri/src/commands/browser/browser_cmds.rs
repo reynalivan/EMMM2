@@ -16,54 +16,42 @@ pub async fn browser_open_tab(
     app: AppHandle,
     db: State<'_, SqlitePool>,
 ) -> Result<String, AppError> {
-    browser_service::open_tab(app, db.inner().clone(), url, session_id)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::open_tab(app, db.inner().clone(), url, session_id).await?)
 }
 
 /// Navigate an existing browser tab to a new URL.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_navigate(label: String, url: String, app: AppHandle) -> Result<(), AppError> {
-    browser_service::navigate(app, &label, url)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::navigate(app, &label, url).await?)
 }
 
 /// Navigate an existing browser tab back in history.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_go_back(label: String, app: AppHandle) -> Result<(), AppError> {
-    browser_service::go_back(app, &label)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::go_back(app, &label).await?)
 }
 
 /// Navigate an existing browser tab forward in history.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_go_forward(label: String, app: AppHandle) -> Result<(), AppError> {
-    browser_service::go_forward(app, &label)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::go_forward(app, &label).await?)
 }
 
 /// Reload an existing browser tab.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_reload_tab(label: String, app: AppHandle) -> Result<(), AppError> {
-    browser_service::reload_tab(app, &label)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::reload_tab(app, &label).await?)
 }
 
 /// Clear cookies and cache for a specific browser tab.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_clear_data(label: String, app: AppHandle) -> Result<(), AppError> {
-    browser_service::clear_data(app, &label)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::clear_data(app, &label).await?)
 }
 
 /// Get the configured browser homepage URL.
@@ -77,9 +65,7 @@ pub async fn browser_get_homepage(db: State<'_, SqlitePool>) -> Result<String, A
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_set_homepage(url: String, db: State<'_, SqlitePool>) -> Result<(), AppError> {
-    browser_service::set_homepage(db.inner(), &url)
-        .await
-        .map_err(AppError::Internal)
+    Ok(browser_service::set_homepage(db.inner(), &url).await?)
 }
 
 // ── Download Manager ─────────────────────────────────────────────────────────
@@ -90,9 +76,7 @@ pub async fn browser_set_homepage(url: String, db: State<'_, SqlitePool>) -> Res
 pub async fn browser_list_downloads(
     db: State<'_, SqlitePool>,
 ) -> Result<Vec<download_service::BrowserDownloadDto>, AppError> {
-    download_service::list_downloads(db.inner())
-        .await
-        .map_err(AppError::Internal)
+    Ok(download_service::list_downloads(db.inner()).await?)
 }
 
 /// Cancel (and optionally delete the file for) a specific download.
@@ -107,9 +91,7 @@ pub async fn browser_cancel_download(
     delete_file: Option<bool>,
     db: State<'_, SqlitePool>,
 ) -> Result<(), AppError> {
-    download_service::cancel_download(db.inner(), &id, delete_file)
-        .await
-        .map_err(AppError::Internal)
+    Ok(download_service::cancel_download(db.inner(), &id, delete_file).await?)
 }
 
 /// Delete a download record (and optionally the file on disk).
@@ -120,27 +102,21 @@ pub async fn browser_delete_download(
     delete_file: bool,
     db: State<'_, SqlitePool>,
 ) -> Result<(), AppError> {
-    download_service::delete_download(db.inner(), &id, delete_file)
-        .await
-        .map_err(AppError::Internal)
+    Ok(download_service::delete_download(db.inner(), &id, delete_file).await?)
 }
 
 /// Remove all downloads with status `imported`.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_clear_imported(db: State<'_, SqlitePool>) -> Result<u64, AppError> {
-    download_service::clear_imported(db.inner())
-        .await
-        .map_err(AppError::Internal)
+    Ok(download_service::clear_imported(db.inner()).await?)
 }
 
 /// Remove old downloads that exceed the configured retention period.
 #[tauri::command]
 #[specta::specta]
 pub async fn browser_clear_old_downloads(db: State<'_, SqlitePool>) -> Result<u64, AppError> {
-    download_service::clear_old_downloads(db.inner())
-        .await
-        .map_err(AppError::Internal)
+    Ok(download_service::clear_old_downloads(db.inner()).await?)
 }
 
 // ── Import ───────────────────────────────────────────────────────────────────
@@ -155,9 +131,7 @@ pub async fn browser_import_selected(
     db: State<'_, SqlitePool>,
     app: AppHandle,
 ) -> Result<Vec<String>, AppError> {
-    import_service::bulk_queue_imports(db.inner(), &app, &ids, &game_id)
-        .await
-        .map_err(AppError::Internal)
+    Ok(import_service::bulk_queue_imports(db.inner(), &app, &ids, &game_id).await?)
 }
 
 /// Return all pending/active import jobs.
@@ -166,9 +140,7 @@ pub async fn browser_import_selected(
 pub async fn browser_list_import_queue(
     db: State<'_, SqlitePool>,
 ) -> Result<Vec<import_service::ImportJobDto>, AppError> {
-    import_service::list_jobs(db.inner())
-        .await
-        .map_err(AppError::Internal)
+    Ok(import_service::list_jobs(db.inner()).await?)
 }
 
 /// Confirm a `needs_review` import job — provide game, category, and optional object.
@@ -182,7 +154,7 @@ pub async fn browser_confirm_import(
     db: State<'_, SqlitePool>,
     app: AppHandle,
 ) -> Result<(), AppError> {
-    import_service::confirm_review(
+    Ok(import_service::confirm_review(
         db.inner(),
         &app,
         &job_id,
@@ -190,8 +162,7 @@ pub async fn browser_confirm_import(
         &category,
         object_id.as_deref(),
     )
-    .await
-    .map_err(AppError::Internal)
+    .await?)
 }
 
 /// Skip / cancel a specific import job and remove its staging folder.
@@ -201,7 +172,5 @@ pub async fn browser_cancel_import(
     job_id: String,
     db: State<'_, SqlitePool>,
 ) -> Result<(), AppError> {
-    import_service::cancel_job(db.inner(), &job_id)
-        .await
-        .map_err(AppError::Internal)
+    Ok(import_service::cancel_job(db.inner(), &job_id).await?)
 }

@@ -9,8 +9,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::resource_pack::KvObjectEntry;
-
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 /// Configuration for the matching + sentinel pipeline.
@@ -48,6 +46,25 @@ impl Default for MatchConfig {
 
 // ─── Result Types ────────────────────────────────────────────────────────────
 
+/// A flattened view of one MasterDb entry for KeyViewer matching.
+///
+/// Built by the caller from `objects` rows; the matcher only reads it.
+#[derive(Debug, Clone)]
+pub struct KvObjectEntry {
+    /// Display name (e.g. "Albedo").
+    pub name: String,
+    /// Object type: "Character", "Weapon", "UI", "Other".
+    pub object_type: String,
+    /// All hashes from `hash_db`, flattened across all skins. Deduplicated, lowercase.
+    pub code_hashes: Vec<String>,
+    /// Skin/variant name → associated hashes (original structure from `hash_db`).
+    pub skin_hashes: HashMap<String, Vec<String>>,
+    /// Search tags from the MasterDb entry.
+    pub tags: Vec<String>,
+    /// Optional thumbnail path (relative to resources dir).
+    pub thumbnail_path: Option<String>,
+}
+
 /// Result of matching active hashes against a single KvObjectEntry.
 #[derive(Debug, Clone)]
 pub struct MatchResult {
@@ -81,14 +98,17 @@ pub enum MatchConfidence {
 // ─── Core Matching ───────────────────────────────────────────────────────────
 
 /// Build a reverse index: hash → set of object names that contain it.
-fn build_hash_object_index(entries: &[KvObjectEntry]) -> HashMap<String, HashSet<String>> {
-    let mut index: HashMap<String, HashSet<String>> = HashMap::new();
+///
+/// Borrows from `entries` — the index is a local that dies before its source,
+/// and cloning every (hash, name) pair costs two allocations per pair.
+fn build_hash_object_index(entries: &[KvObjectEntry]) -> HashMap<&str, HashSet<&str>> {
+    let mut index: HashMap<&str, HashSet<&str>> = HashMap::new();
     for entry in entries {
         for hash in &entry.code_hashes {
             index
-                .entry(hash.clone())
+                .entry(hash.as_str())
                 .or_default()
-                .insert(entry.name.clone());
+                .insert(entry.name.as_str());
         }
     }
     index
@@ -101,7 +121,7 @@ fn score_entry(
     entry: &KvObjectEntry,
     active_hashes: &HashSet<String>,
     occurrence_counts: &HashMap<String, usize>,
-    hash_object_index: &HashMap<String, HashSet<String>>,
+    hash_object_index: &HashMap<&str, HashSet<&str>>,
     config: &MatchConfig,
 ) -> Option<(f32, Vec<String>)> {
     let intersection: Vec<String> = entry
@@ -126,7 +146,10 @@ fn score_entry(
         score += config.occurrence_bonus_factor * (1.0 + occ).ln();
 
         // Rarity bonus: hash appears in few objects → strong signal
-        let objects_with_hash = hash_object_index.get(hash).map(|s| s.len()).unwrap_or(0);
+        let objects_with_hash = hash_object_index
+            .get(hash.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
         if objects_with_hash <= config.rarity_max_objects {
             score += config.rarity_bonus;
         }
@@ -209,14 +232,17 @@ pub fn match_objects(
 /// Returns up to `sentinel_count` hashes.
 fn select_sentinels(
     matched_hashes: &[String],
-    hash_object_index: &HashMap<String, HashSet<String>>,
+    hash_object_index: &HashMap<&str, HashSet<&str>>,
     config: &MatchConfig,
 ) -> Vec<String> {
     // Score each hash by rarity (fewer objects = better sentinel)
     let mut scored: Vec<(&String, usize)> = matched_hashes
         .iter()
         .map(|h| {
-            let count = hash_object_index.get(h).map(|s| s.len()).unwrap_or(1);
+            let count = hash_object_index
+                .get(h.as_str())
+                .map(|s| s.len())
+                .unwrap_or(1);
             (h, count)
         })
         .collect();
@@ -231,21 +257,5 @@ fn select_sentinels(
         .into_iter()
         .take(config.sentinel_count)
         .map(|(h, _)| h.clone())
-        .collect()
-}
-
-/// Identify high-collision hashes across all entries.
-///
-/// Returns hashes that appear in ≥ `collision_threshold` different objects.
-/// These should be avoided as sentinels since they can't uniquely identify objects.
-pub fn find_collision_hashes(
-    entries: &[KvObjectEntry],
-    collision_threshold: usize,
-) -> HashSet<String> {
-    let index = build_hash_object_index(entries);
-    index
-        .into_iter()
-        .filter(|(_, objects)| objects.len() >= collision_threshold)
-        .map(|(hash, _)| hash)
         .collect()
 }

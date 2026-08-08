@@ -8,7 +8,12 @@ async fn test_dashboard_cmds_delegation() {
     let pool = &test_db.pool;
 
     // Simulate what the command does
-    let payload = dashboard::get_dashboard_payload(pool, false).await.unwrap();
+    let payload = dashboard::get_dashboard_payload(
+        pool,
+        crate::domain::corridor::Corridor::from_is_safe(false),
+    )
+    .await
+    .unwrap();
 
     // Asserts
     assert_eq!(payload.stats.total_games, 0);
@@ -32,7 +37,12 @@ async fn test_dashboard_cmds_delegation() {
     .await
     .unwrap();
 
-    let payload2 = dashboard::get_dashboard_payload(pool, false).await.unwrap();
+    let payload2 = dashboard::get_dashboard_payload(
+        pool,
+        crate::domain::corridor::Corridor::from_is_safe(false),
+    )
+    .await
+    .unwrap();
     assert_eq!(payload2.stats.total_games, 1);
 }
 

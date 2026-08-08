@@ -14,6 +14,7 @@
 
 use crate::common::path_key::path_file_name_lossy;
 use crate::common::sync::lock;
+use crate::domain::errors::ScannerError;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
@@ -95,10 +96,13 @@ pub fn watch_mod_directory(
         RecommendedWatcher,
         tokio::sync::mpsc::UnboundedReceiver<ModWatchEvent>,
     ),
-    String,
+    ScannerError,
 > {
     if !path.exists() || !path.is_dir() {
-        return Err(format!("Watch target does not exist: {}", path.display()));
+        return Err(ScannerError::Validation(format!(
+            "Watch target does not exist: {}",
+            path.display()
+        )));
     }
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -269,12 +273,9 @@ pub fn watch_mod_directory(
             }
         },
         Config::default().with_poll_interval(Duration::from_millis(500)),
-    )
-    .map_err(|e| format!("Failed to create watcher: {e}"))?;
+    )?;
 
-    watcher
-        .watch(path, RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch path: {e}"))?;
+    watcher.watch(path, RecursiveMode::Recursive)?;
 
     Ok((watcher, rx))
 }

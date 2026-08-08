@@ -107,13 +107,15 @@ async fn score_candidates_batch_cmd_returns_scores_for_candidates() {
     ])
     .to_string();
 
-    let scores = score_candidates_batch_cmd(
-        mod_dir.to_string_lossy().to_string(),
+    // `score_candidates_batch_cmd` resolves the MasterDB from bundled
+    // resources now, so the injectable seam is the service beneath it.
+    let master_db = crate::services::scanner::deep_matcher::MasterDb::from_json(&db_json)
+        .expect("synthetic MasterDB should parse");
+    let scores = crate::services::scanner::sync::score_candidates_batch(
+        &mod_dir.to_string_lossy(),
+        &master_db,
         vec!["Kazuha".to_string(), "Diluc".to_string()],
-        db_json,
-    )
-    .await
-    .expect("scores");
+    );
 
     assert!(scores.contains_key("Kazuha"));
     assert!(scores.contains_key("Diluc"));

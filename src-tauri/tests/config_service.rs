@@ -36,14 +36,20 @@ async fn test_config_pin_operations() {
     let pool = setup_pool().await;
     let service = ConfigService::new_for_test(pool);
 
-    assert!(service.verify_pin("anything"));
+    // Unlock prompt: nothing configured means nothing to unlock.
+    assert!(service.verify_pin_status("anything").valid);
+    // Elevation gate: with no PIN configured there is nothing to prove, so
+    // seeing past the Safe Mode corridor must still be refused.
+    assert!(!service.pin_grants_elevation("anything"));
 
     service
         .set_pin("123456")
         .expect("setting a valid pin should succeed");
 
-    assert!(service.verify_pin("123456"));
-    assert!(!service.verify_pin("wrong"));
+    assert!(service.verify_pin_status("123456").valid);
+    assert!(!service.verify_pin_status("wrong").valid);
+    assert!(service.pin_grants_elevation("123456"));
+    assert!(!service.pin_grants_elevation("wrong"));
 
     // Verify pin_hash is stored but not the raw PIN
     let settings = service.get_settings();

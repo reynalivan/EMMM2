@@ -10,6 +10,7 @@ mod sync;
 mod types;
 mod update;
 
+pub use counts::{load_game_mods_path, load_object_count_candidates};
 pub use listing::*;
 pub use lookup::*;
 pub use matching::*;

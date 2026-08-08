@@ -17,7 +17,6 @@ describe('objectService API tests', () => {
     // Arrange
     const filter = {
       game_id: 'gimi_1',
-      safe_mode: false,
       meta_filters: { Element: ['Electro'], Rarity: ['5'] },
       sort_by: 'date' as const,
       status_filter: ItemStatus.Enabled,

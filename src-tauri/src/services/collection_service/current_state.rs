@@ -4,7 +4,7 @@
 use super::live_state::{
     live_runtime_is_safe, load_game_mods_path, load_live_corridor_state, load_live_runtime_state,
 };
-use super::projection::persist_projected_state;
+use super::projection::{persist_projected_state, require_collection, require_game_match};
 use crate::domain::collection::{CollectionMod, CollectionObject, CollectionSummary};
 use crate::domain::errors::CollectionError;
 use crate::repo::{collection_repo, corridor_repo};
@@ -38,18 +38,9 @@ pub async fn replace_collection_with_current_state(
     game_id: &str,
     collection_id: &str,
 ) -> Result<CollectionSummary, CollectionError> {
-    let collection = collection_repo::get_by_id(pool, collection_id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: collection_id.to_string(),
-        })?;
+    let collection = require_collection(pool, collection_id).await?;
 
-    if collection.game_id != game_id {
-        return Err(CollectionError::Validation(format!(
-            "Collection '{}' does not belong to game '{}'",
-            collection_id, game_id
-        )));
-    }
+    require_game_match(&collection, game_id)?;
     if collection.is_unsaved {
         return Err(CollectionError::Validation(
             "Cannot replace an unsaved collection snapshot".to_string(),
@@ -93,11 +84,7 @@ pub async fn replace_collection_with_current_state(
     )
     .await?;
 
-    let updated = collection_repo::get_by_id(pool, &collection.id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: collection.id.clone(),
-        })?;
+    let updated = require_collection(pool, &collection.id).await?;
     let corridor = corridor_repo::get(pool, game_id, collection.is_safe)
         .await
         .map_err(CollectionError::Corridor)?;

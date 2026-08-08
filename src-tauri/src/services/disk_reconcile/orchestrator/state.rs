@@ -2,6 +2,7 @@
 //! the last published result.
 
 use crate::common::sync::lock;
+use crate::domain::errors::AppError;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -87,7 +88,7 @@ impl DiskReconcileState {
         &self,
         game_id: &str,
         requested_version: u64,
-    ) -> Result<Option<PendingSyncRequest>, String> {
+    ) -> Result<Option<PendingSyncRequest>, AppError> {
         let mut games = lock(&self.games);
         let state = games.entry(game_id.to_string()).or_default();
 
@@ -98,7 +99,9 @@ impl DiskReconcileState {
         state
             .pending
             .take()
-            .ok_or_else(|| format!("Disk Reconcile request lost for game '{game_id}'"))
+            .ok_or_else(|| {
+                AppError::Internal(format!("Disk Reconcile request lost for game '{game_id}'"))
+            })
             .map(Some)
     }
 
@@ -133,11 +136,15 @@ impl DiskReconcileState {
         state.pending.is_some()
     }
 
-    pub(super) fn last_result(&self, game_id: &str) -> Result<DiskReconcileResult, String> {
+    pub(super) fn last_result(&self, game_id: &str) -> Result<DiskReconcileResult, AppError> {
         let games = lock(&self.games);
         games
             .get(game_id)
             .and_then(|state| state.last_result.clone())
-            .ok_or_else(|| format!("Disk Reconcile result missing for game '{game_id}'"))
+            .ok_or_else(|| {
+                AppError::Internal(format!(
+                    "Disk Reconcile result missing for game '{game_id}'"
+                ))
+            })
     }
 }

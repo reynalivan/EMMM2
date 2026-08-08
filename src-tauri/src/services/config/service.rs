@@ -21,15 +21,9 @@ impl ConfigService {
         }
     }
 
-    /// Initialize from Tauri AppHandle. Runs migration and loads from DB.
+    /// Initialize from Tauri AppHandle. The pool is already migrated by
+    /// `bootstrap::init_pool`, so this only loads current settings.
     pub fn init(_app_handle: &AppHandle, pool: SqlitePool) -> Self {
-        // 1. Run our table creation (idempotent, so safe even if the
-        //    tauri_plugin_sql migration already ran).
-        Self::run_async(async {
-            Self::ensure_tables(&pool).await;
-        });
-
-        // 2. Load current settings from DB
         let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
         Self {
@@ -38,12 +32,8 @@ impl ConfigService {
         }
     }
 
-    /// Constructor for tests: takes a pool directly, no legacy migration.
+    /// Constructor for tests: takes an already-migrated pool directly.
     pub fn new_for_test(pool: SqlitePool) -> Self {
-        Self::run_async(async {
-            Self::ensure_tables(&pool).await;
-        });
-
         let settings = Self::run_async(async { Self::load_from_db(&pool).await });
 
         Self {
@@ -54,7 +44,6 @@ impl ConfigService {
 
     /// Async test constructor for current-thread tokio tests that cannot use block_in_place.
     pub async fn new_for_test_async(pool: SqlitePool) -> Self {
-        Self::ensure_tables(&pool).await;
         let settings = Self::load_from_db(&pool).await;
 
         Self {
@@ -70,6 +59,50 @@ impl ConfigService {
 
     pub fn get_settings(&self) -> AppSettings {
         lock(&self.settings).clone()
+    }
+
+    /// Read a projection of the settings without cloning the whole struct.
+    ///
+    /// `get_settings` deep-clones every `GameConfig`, keyword list, and hotkey
+    /// binding — fine once per operation, wasteful when a caller only needs one
+    /// field and runs per grid card or per bulk item.
+    pub fn with_settings<R>(&self, read: impl FnOnce(&AppSettings) -> R) -> R {
+        read(&lock(&self.settings))
+    }
+
+    /// Whether the Safe Mode corridor is active.
+    /// The corridor the app is operating in right now.
+    ///
+    /// The only place a `Corridor` value is born: commands derive it here and
+    /// pass it down, so Safe Mode can never be supplied over IPC.
+    pub fn current_corridor(&self) -> crate::domain::corridor::Corridor {
+        crate::domain::corridor::Corridor::from_is_safe(self.safe_mode_enabled())
+    }
+
+    /// Corridor after an optional per-request PIN proof: a valid PIN widens
+    /// Safe to Unsafe. With no PIN configured there is nothing to prove, so
+    /// the corridor stays Safe.
+    pub fn corridor_with_elevation(&self, pin: Option<&str>) -> crate::domain::corridor::Corridor {
+        let corridor = self.current_corridor();
+        if corridor.is_safe() && pin.is_some_and(|value| self.pin_grants_elevation(value)) {
+            return crate::domain::corridor::Corridor::Unsafe;
+        }
+        corridor
+    }
+
+    pub fn safe_mode_enabled(&self) -> bool {
+        self.with_settings(|settings| settings.safe_mode.enabled)
+    }
+
+    /// The configured mods root for a game, if it has one.
+    pub fn mods_root_for(&self, game_id: &str) -> Option<std::path::PathBuf> {
+        self.with_settings(|settings| {
+            settings
+                .games
+                .iter()
+                .find(|game| game.id == game_id)
+                .map(|game| game.mod_path.clone())
+        })
     }
 
     pub fn save_settings(&self, mut new_settings: AppSettings) -> Result<(), AppError> {

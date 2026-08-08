@@ -132,7 +132,7 @@ async fn reconcile_disk_state_errors_when_game_is_not_registered() {
     )
     .await;
 
-    let error = result.expect_err("unknown game must error");
+    let error = result.expect_err("unknown game must error").to_string();
     assert!(error.contains("not found for disk reconcile"), "{error}");
 }
 

@@ -1,4 +1,3 @@
-use super::*;
 use std::fs;
 use tempfile::TempDir;
 
@@ -32,9 +31,9 @@ async fn test_detect_conflicts_in_folder_integration() {
     )
     .unwrap();
 
-    let conflicts = detect_conflicts_in_folder_cmd(dir.path().to_string_lossy().to_string())
-        .await
-        .unwrap();
+    let conflicts =
+        crate::services::scanner::conflict::detect::detect_conflicts_in_folder_service(dir.path())
+            .unwrap();
 
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].hash, "abc123");

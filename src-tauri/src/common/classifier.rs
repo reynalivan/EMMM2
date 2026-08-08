@@ -41,6 +41,11 @@ const MOD_ASSET_EXTENSIONS: &[&str] = &["buf", "ib", "dds", "hlsl", "vb"];
 /// Section prefixes that indicate a valid 3DMigoto mod ini.
 const MOD_SECTION_PREFIXES: &[&str] = &["textureoverride", "shaderoverride", "resource"];
 
+/// A folder with a root mod ini becomes a `VariantContainer` at this many
+/// ini-bearing children — or at the lower bar when its ini names subfolders.
+const VARIANT_CONTAINER_MIN_CHILDREN: usize = 3;
+const VARIANT_CONTAINER_MIN_CHILDREN_REFERENCED: usize = 2;
+
 /// One directory pass: the folder's mod ini candidates, child dirs and asset presence.
 struct FolderScan {
     /// `.ini` files directly inside the folder, `desktop.ini` excluded.
@@ -59,13 +64,18 @@ fn scan_folder(path: &Path) -> Option<FolderScan> {
     };
 
     for entry in entries.filter_map(|e| e.ok()) {
+        // `file_type()` comes free from the directory read; `is_dir()`/`is_file()`
+        // would each cost a fresh stat, and this runs per entry of every folder.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let p = entry.path();
-        if p.is_dir() {
+        if file_type.is_dir() {
             let fname = path_file_name_lossy(&p).unwrap_or_default();
             if !fname.starts_with('.') {
                 scan.child_dirs.push(p);
             }
-        } else if p.is_file() {
+        } else if file_type.is_file() {
             let ext = p
                 .extension()
                 .and_then(|e| e.to_str())
@@ -163,12 +173,25 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
         ));
     }
 
-    let child_dirs_with_ini = child_dirs.iter().filter(|dir| has_any_mod_ini(dir)).count();
+    // Each `has_any_mod_ini` is a full child scan plus an ini read, so only run
+    // it when a root ini makes the answer reachable, and stop at the threshold
+    // the check below compares against.
+    let child_dirs_with_ini = if has_mod_ini {
+        child_dirs
+            .iter()
+            .filter(|dir| has_any_mod_ini(dir))
+            .take(VARIANT_CONTAINER_MIN_CHILDREN)
+            .count()
+    } else {
+        0
+    };
 
     // 2. VariantContainer explicit check
     // MUST have a root mod ini AND enough variant subfolders
     if has_mod_ini
-        && (child_dirs_with_ini >= 3 || (!referenced_subs.is_empty() && child_dirs_with_ini >= 2))
+        && (child_dirs_with_ini >= VARIANT_CONTAINER_MIN_CHILDREN
+            || (!referenced_subs.is_empty()
+                && child_dirs_with_ini >= VARIANT_CONTAINER_MIN_CHILDREN_REFERENCED))
     {
         reasons.push(format!(
             "{child_dirs_with_ini} child dirs with mod ini -> VariantContainer"
@@ -238,7 +261,7 @@ fn scan_ini_content(content: &str) -> (bool, Vec<String>) {
 
         // Check filename= references for subfolder detection
         if let Some((key, value)) = trimmed.split_once('=') {
-            if !names_equal_by_key(key.trim(), "filename") {
+            if !key.trim().eq_ignore_ascii_case("filename") {
                 continue;
             }
 

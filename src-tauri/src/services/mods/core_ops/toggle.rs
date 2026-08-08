@@ -5,8 +5,7 @@ use super::naming::{
 };
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
-use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::{Path, PathBuf};
 
@@ -116,15 +115,13 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
     state: &WatcherState,
-    op_lock: &OperationLock,
-    path: String,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
+    path: &ValidatedPath,
     enable: bool,
     game_id: &str,
     allow_duplicates: bool,
 ) -> Result<String, AppError> {
-    let _lock = op_lock.acquire().await?;
-
-    let canonical_path = validate_path(config, game_id, &path)?;
+    let canonical_path = path;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?
@@ -133,7 +130,7 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
     let base = Path::new(&mods_path);
     let rel_path = canonical_path
         .strip_prefix(base)
-        .unwrap_or(&canonical_path)
+        .unwrap_or(canonical_path)
         .to_string_lossy()
         .to_string();
     let mut changed_object_ids = Vec::new();
@@ -191,11 +188,8 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
         Some(crate::common::corridor_constants::DISABLED_REASON_USER)
     };
 
-    let old_rel = canonical_path
-        .strip_prefix(base)
-        .unwrap_or(&canonical_path)
-        .to_string_lossy()
-        .to_string();
+    // Same value as `rel_path` above — the folder has not moved yet.
+    let old_rel = rel_path.as_str();
     let new_abs = Path::new(&new_absolute_path);
     let new_rel = new_abs
         .strip_prefix(base)
@@ -206,7 +200,7 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
     crate::repo::mod_repo::update_mod_path_status_and_reason(
         pool,
         game_id,
-        &old_rel,
+        old_rel,
         &new_rel,
         new_status,
         disabled_reason,
@@ -214,33 +208,22 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
     .await?;
 
     // Update object folder_path and child paths if this is a top-level folder
-    sync_object_and_child_paths(pool, game_id, &mods_path, &old_rel, &new_rel).await;
+    sync_object_and_child_paths(pool, game_id, &mods_path, old_rel, &new_rel).await;
 
     let is_safe = crate::repo::mod_repo::get_is_safe_by_folder(pool, game_id, &new_rel)
         .await
         .ok()
         .flatten();
 
-    if let Some(is_safe_bool) = is_safe {
-        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+    if is_safe.is_some() {
+        crate::services::app::runtime_effects::finalize_mutation(
             pool,
             config,
-            state.suppressor.clone(),
             game_id,
-            &[is_safe_bool],
-            true,
-            true,
+            crate::services::app::runtime_effects::MutationOutcome::objects(changed_object_ids),
         )
         .await;
     }
-
-    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
-        pool,
-        game_id,
-        &changed_object_ids,
-        true,
-    )
-    .await?;
 
     Ok(new_absolute_path)
 }

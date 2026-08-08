@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
 use super::paths::{compute_download_path, get_downloads_root};
 use super::settings::{normalize_url, validate_http_url};
+use crate::domain::errors::BrowserError;
 
 /// Open a browser tab for a user-supplied URL (normalizes a missing scheme first).
 pub async fn open_tab(
@@ -12,7 +13,7 @@ pub async fn open_tab(
     db: SqlitePool,
     url: String,
     session_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, BrowserError> {
     open_child_webview(app, db, normalize_url(&url), session_id).await
 }
 
@@ -27,7 +28,7 @@ pub async fn open_child_webview(
     db: SqlitePool,
     url: String,
     session_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, BrowserError> {
     validate_http_url(&url)?;
 
     // Generate unique webview label for this tab
@@ -37,8 +38,7 @@ pub async fn open_child_webview(
     let downloads_root = get_downloads_root(&app, &db).await;
 
     // Ensure BrowserDownloadsRoot exists
-    std::fs::create_dir_all(&downloads_root)
-        .map_err(|e| format!("Cannot create BrowserDownloadsRoot: {e}"))?;
+    std::fs::create_dir_all(&downloads_root)?;
 
     // Clone values for use inside closures
     let session_id_dl = session_id.clone();
@@ -47,11 +47,16 @@ pub async fn open_child_webview(
     let app_for_finish = app.clone();
 
     // The main window must exist to attach a webview
-    let window = app.get_window("main").ok_or("Main window not found")?;
+    let window = app
+        .get_window("main")
+        .ok_or(BrowserError::WindowUnavailable)?;
 
     let webview_builder = tauri::webview::WebviewBuilder::new(
         label.clone(),
-        WebviewUrl::External(url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
+        WebviewUrl::External(
+            url.parse()
+                .map_err(|error| BrowserError::InvalidUrl(format!("{url}: {error}")))?,
+        ),
     )
     .devtools(true)
     .on_navigation({
@@ -208,13 +213,11 @@ pub async fn open_child_webview(
     // By default, it would span the entire window size if we use inner_size,
     // which causes a 'full screen browser' flash. We initialize it with a minimum
     // 1x1 size so the frontend can properly animate/resize it into its container.
-    let _webview = window
-        .add_child(
-            webview_builder,
-            tauri::LogicalPosition::new(0, 0),
-            tauri::LogicalSize::new(1, 1),
-        )
-        .map_err(|e| format!("Failed to attach webview tab to window: {e}"))?;
+    let _webview = window.add_child(
+        webview_builder,
+        tauri::LogicalPosition::new(0, 0),
+        tauri::LogicalSize::new(1, 1),
+    )?;
 
     Ok(label)
 }

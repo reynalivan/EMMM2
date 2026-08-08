@@ -87,20 +87,17 @@ where
 
 /// Fetch all objects that could be relevant for KeyViewer matching (primarily Characters).
 /// Returns a list of (Name, HashDb, CustomSkins).
+/// Characters and their hash sets, for KeyViewer matching.
+///
+/// Deliberately does not select `custom_skins`: the only caller discarded it,
+/// and it is a JSON blob decoded per row.
 pub async fn get_kv_matching_objects(
     pool: &SqlitePool,
     game_id: &str,
-) -> Result<
-    Vec<(
-        String,
-        crate::domain::models::HashDbPayload,
-        crate::domain::models::CustomSkinsPayload,
-    )>,
-    sqlx::Error,
-> {
+) -> Result<Vec<(String, crate::domain::models::HashDbPayload)>, sqlx::Error> {
     use sqlx::Row;
     let rows = sqlx::query(
-        "SELECT name, hash_db, custom_skins FROM objects WHERE game_id = ? AND object_type = 'Character'"
+        "SELECT name, hash_db FROM objects WHERE game_id = ? AND object_type = 'Character'",
     )
     .bind(game_id)
     .fetch_all(pool)
@@ -110,9 +107,7 @@ pub async fn get_kv_matching_objects(
     for row in rows {
         let name: String = row.try_get("name")?;
         let hash_db: crate::domain::models::HashDbPayload = row.try_get("hash_db")?;
-        let custom_skins: crate::domain::models::CustomSkinsPayload =
-            row.try_get("custom_skins")?;
-        result.push((name, hash_db, custom_skins));
+        result.push((name, hash_db));
     }
     Ok(result)
 }

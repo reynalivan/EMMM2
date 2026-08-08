@@ -50,7 +50,7 @@ async fn test_list_mod_folders_nonexistent_path() {
     let result = list_mod_folders_inner("C:\\nonexistent\\fake\\path".to_string(), None).await;
     // Base path validation still returns Err
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("does not exist"));
+    assert!(result.unwrap_err().to_string().contains("does not exist"));
 }
 
 #[tokio::test]
@@ -199,7 +199,8 @@ async fn test_list_mod_folders_malformed_info_json() {
 
 #[tokio::test]
 async fn test_get_filtered_objects_unsafe() {
-    use crate::repo::object_repo::{get_filtered_objects, ObjectFilter};
+    use crate::domain::objects::ObjectFilter;
+    use crate::repo::object_repo::get_filtered_objects;
 
     let test_db = crate::test_utils::init_test_db().await;
     let pool = &test_db.pool;
@@ -233,18 +234,13 @@ async fn test_get_filtered_objects_unsafe() {
 
     let filter = ObjectFilter {
         game_id: "test_game".to_string(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
 
     let result = get_filtered_objects(pool, &filter).await;
     match result {
-        Ok(objects) => {
-            assert!(!objects.is_empty());
+        Ok(page) => {
+            assert!(!page.objects.is_empty());
         }
         Err(e) => {
             panic!("SQL Error: {:?}", e);

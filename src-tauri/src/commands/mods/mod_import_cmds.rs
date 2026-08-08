@@ -2,7 +2,7 @@ use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::validate_dir_in_configured_roots;
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::mods::archive::{extract_archive, ArchiveFormat};
+use crate::services::mods::archive::{extract_archive, ArchiveFormat, ExtractOptions};
 use crate::services::mods::bulk::{BulkActionError, BulkProgressPayload, BulkResult};
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
@@ -116,7 +116,7 @@ fn handle_archive_import(
 ) {
     let _guard = SuppressionGuard::new(&state.suppressor);
 
-    match extract_archive(path, target, None, false, None, None, false, false, None) {
+    match extract_archive(path, target, ExtractOptions::default()) {
         Ok(result) => {
             if !result.success {
                 failures.push(BulkActionError {
@@ -132,35 +132,18 @@ fn handle_archive_import(
 
             for extracted_dest in &result.dest_paths {
                 let extracted_path = Path::new(extracted_dest);
-                let folder_name = extracted_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-
-                let final_path = if !crate::common::normalizer::is_disabled_folder(&folder_name) {
-                    let new_path =
-                        target.join(format!("{}{}", crate::DISABLED_PREFIX, folder_name));
-                    if crate::services::fs_utils::file_utils::rename_cross_drive_fallback(
-                        extracted_path,
-                        &new_path,
-                    )
-                    .is_ok()
-                    {
-                        new_path
-                    } else {
-                        // If rename fails, at least keep the original extracted path
-                        extracted_path.to_path_buf()
-                    }
-                } else {
-                    extracted_path.to_path_buf()
-                };
-
-                success.push(final_path.to_string_lossy().to_string());
+                match crate::services::mods::arrival::land_disabled(extracted_path, target) {
+                    Ok(final_path) => success.push(final_path.to_string_lossy().to_string()),
+                    Err(error) => failures.push(BulkActionError {
+                        path: extracted_dest.clone(),
+                        error,
+                    }),
+                }
             }
         }
         Err(e) => failures.push(BulkActionError {
             path: path_str.to_string(),
-            error: AppError::Io(e),
+            error: e,
         }),
     }
 }

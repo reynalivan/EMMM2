@@ -1,11 +1,12 @@
 use super::types::{ArchiveAnalysis, ArchiveEntryInfo, ArchiveFormat};
+use crate::domain::errors::AppError;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
 const MAX_ENTRIES: usize = 500;
 
-pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
+pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, AppError> {
     let file_name = archive_path
         .file_name()
         .map(|name| name.to_string_lossy().to_lowercase())
@@ -16,11 +17,17 @@ pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
         || file_name.contains(".r0")
         || file_name.ends_with(".001")
     {
-        return Err("Multi-volume archives not supported".into());
+        return Err(AppError::Validation(
+            "Multi-volume archives not supported".to_string(),
+        ));
     }
 
-    let format = ArchiveFormat::detect(archive_path)
-        .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
+    let format = ArchiveFormat::detect(archive_path).ok_or_else(|| {
+        AppError::Internal(format!(
+            "Unsupported archive format: {}",
+            archive_path.display()
+        ))
+    })?;
 
     match format {
         ArchiveFormat::Zip => analyze_zip(archive_path, format),
@@ -29,12 +36,10 @@ pub fn analyze_archive(archive_path: &Path) -> Result<ArchiveAnalysis, String> {
     }
 }
 
-fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
-    let file =
-        fs::File::open(archive_path).map_err(|error| format!("Failed to open archive: {error}"))?;
+fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, AppError> {
+    let file = fs::File::open(archive_path)?;
     let file_size_bytes = file.metadata().map(|meta| meta.len()).unwrap_or(0);
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|error| format!("Failed to read ZIP: {error}"))?;
+    let mut archive = zip::ZipArchive::new(file)?;
 
     let mut summary = ArchiveSummary::new(format, file_size_bytes);
     for i in 0..archive.len() {
@@ -48,7 +53,7 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
             Err(error) if is_password_error(&error.to_string()) => {
                 summary.is_encrypted = true;
             }
-            Err(error) => return Err(format!("Failed to read entry: {error}")),
+            Err(error) => return Err(AppError::Internal(format!("Failed to read entry: {error}"))),
         }
     }
 
@@ -56,18 +61,17 @@ fn analyze_zip(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
     Ok(summary.finish())
 }
 
-fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
+fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, AppError> {
     let file_size_bytes = fs::metadata(archive_path)
         .map(|meta| meta.len())
         .unwrap_or(0);
-    let mut file =
-        fs::File::open(archive_path).map_err(|error| format!("Failed to open 7z: {error}"))?;
+    let mut file = fs::File::open(archive_path)?;
     let archive = match sevenz_rust::Archive::read(&mut file, file_size_bytes, &[]) {
         Ok(archive) => archive,
         Err(error) if is_password_error(&error.to_string()) => {
             return Ok(encrypted_analysis(format, file_size_bytes));
         }
-        Err(error) => return Err(format!("Failed to analyze 7z: {error}")),
+        Err(error) => return Err(AppError::Internal(format!("Failed to analyze 7z: {error}"))),
     };
 
     let mut summary = ArchiveSummary::new(format, file_size_bytes);
@@ -78,16 +82,15 @@ fn analyze_7z(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnaly
     Ok(summary.finish())
 }
 
-fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, String> {
+fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnalysis, AppError> {
     let path_str = archive_path
         .to_str()
-        .ok_or("RAR path contains invalid UTF-8")?;
-    let temp_dir = tempfile::tempdir()
-        .map_err(|error| format!("Failed to create temp dir for RAR analysis: {error}"))?;
+        .ok_or_else(|| AppError::Internal("RAR path contains invalid UTF-8".to_string()))?;
+    let temp_dir = tempfile::tempdir()?;
     let temp_str = temp_dir
         .path()
         .to_str()
-        .ok_or("Temp path contains invalid UTF-8")?;
+        .ok_or_else(|| AppError::Internal("Temp path contains invalid UTF-8".to_string()))?;
     let file_size_bytes = fs::metadata(archive_path)
         .map(|meta| meta.len())
         .unwrap_or(0);
@@ -97,7 +100,11 @@ fn analyze_rar(archive_path: &Path, format: ArchiveFormat) -> Result<ArchiveAnal
         Err(error) if is_password_error(&format!("{error:?}")) => {
             return Ok(encrypted_analysis(format, file_size_bytes));
         }
-        Err(error) => return Err(format!("Failed to parse RAR: {error:?}")),
+        Err(error) => {
+            return Err(AppError::Internal(format!(
+                "Failed to parse RAR: {error:?}"
+            )))
+        }
     };
 
     let mut summary = ArchiveSummary::new(format, file_size_bytes);

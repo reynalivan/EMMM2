@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::common::path_key::canonical_name_key;
+use crate::domain::errors::AppError;
 
 use crate::services::explorer::types::ModFolder;
 
@@ -27,7 +28,7 @@ pub fn find_disabled_ancestor(mods_path: &str, sub_path: &str) -> Option<(String
         current = current.join(trimmed);
         if is_disabled_folder(trimmed) {
             return Some((
-                normalize_display_name(trimmed),
+                normalize_display_name(trimmed).into_owned(),
                 current.to_string_lossy().to_string(),
             ));
         }
@@ -35,13 +36,12 @@ pub fn find_disabled_ancestor(mods_path: &str, sub_path: &str) -> Option<(String
     None
 }
 
-/// Read the filesystem, build `ModFolder` entries, then optionally enrich with DB IDs.
-/// Missing mods are automatically inserted into the database.
-pub async fn scan_fs_folders(
-    target: &Path,
-    _mods_path: &Path,
-    sub_path: Option<&str>,
-) -> Result<Vec<ModFolder>, String> {
+/// Reads `target` and builds a `ModFolder` per visible child directory, sorted
+/// by display name. Filesystem only — no DB access, no writes.
+///
+/// A directory that cannot be read yields an empty listing rather than an
+/// error: the caller may be pointed at a folder the user just removed.
+pub fn scan_fs_folders(target: &Path, sub_path: Option<&str>) -> Result<Vec<ModFolder>, AppError> {
     let entries = match std::fs::read_dir(target) {
         Ok(e) => e,
         Err(e) => {
@@ -55,7 +55,8 @@ pub async fn scan_fs_folders(
         .filter_map(|entry| build_mod_folder_from_fs_entry(entry, sub_path))
         .collect();
 
-    folders.sort_by_key(|folder| canonical_name_key(&folder.name));
+    // Cached keys: `sort_by_key` would re-run the normalizer regex O(n log n) times.
+    folders.sort_by_cached_key(|folder| canonical_name_key(&folder.name));
 
     Ok(folders)
 }

@@ -1,19 +1,6 @@
-use serde::{Deserialize, Serialize};
+use crate::domain::conflicts::IgnoredConflict;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, sqlx::FromRow)]
-pub struct IgnoredConflict {
-    pub id: String,
-    pub game_id: String,
-    pub object_id: String,
-    pub object_name: Option<String>,
-    pub mod_ids: String, // JSON array
-    #[sqlx(skip)]
-    #[serde(default)]
-    pub mod_names: Vec<String>,
-    pub created_at: String,
-}
 
 /// Fetches all ignored conflicts for a game, enriched with object and mod names.
 pub async fn list_ignored_object_conflicts(

@@ -9,11 +9,19 @@ pub(crate) fn canonical_collection_path_key(
 }
 
 pub(crate) fn canonical_path_key_for_path(path: &Path) -> String {
-    normalize_path(path)
-        .components()
-        .map(|component| canonical_name_key(&component.as_os_str().to_string_lossy()))
-        .collect::<Vec<_>>()
-        .join("/")
+    // Built into one buffer: `Components` already normalizes, so the previous
+    // `normalize_path(path).components()` allocated a whole `PathBuf` only to
+    // re-iterate it, then a `Vec<String>` only to `join` it away.
+    let mut key = String::with_capacity(path.as_os_str().len());
+    for component in path.components() {
+        if !key.is_empty() {
+            key.push('/');
+        }
+        let raw = component.as_os_str().to_string_lossy();
+        let normalized = crate::common::normalizer::normalize_display_name(&raw);
+        key.extend(normalized.chars().map(|ch| ch.to_ascii_lowercase()));
+    }
+    key
 }
 
 pub(crate) fn canonical_name_key(value: &str) -> String {
@@ -21,7 +29,9 @@ pub(crate) fn canonical_name_key(value: &str) -> String {
 }
 
 pub(crate) fn names_equal_by_key(left: &str, right: &str) -> bool {
-    canonical_name_key(left) == canonical_name_key(right)
+    // Compare without allocating either key.
+    crate::common::normalizer::normalize_display_name(left)
+        .eq_ignore_ascii_case(&crate::common::normalizer::normalize_display_name(right))
 }
 
 pub fn folder_path_key(folder_path: &str, mods_path: Option<&str>) -> String {
@@ -86,6 +96,17 @@ fn normalized_components(path: &str, mods_path: Option<&str>) -> Vec<String> {
         .components()
         .map(|component| component.as_os_str().to_string_lossy().to_string())
         .collect()
+}
+
+/// A path expressed relative to the mods root, falling back to the input.
+///
+/// Written as an inline `strip_prefix(..).ok().map(..).unwrap_or_else(..)`
+/// chain at seven sites, almost always twice in a row for an old/new pair.
+pub fn relative_to_root(path: &str, mods_root: &Path) -> String {
+    Path::new(path)
+        .strip_prefix(mods_root)
+        .map(|relative| relative.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string())
 }
 
 #[cfg(test)]

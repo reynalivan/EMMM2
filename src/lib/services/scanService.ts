@@ -205,8 +205,7 @@ export const scanService = {
     targetObjectName: string,
     gameType: GameType,
   ): Promise<MatchCheckResult> {
-    const dbJson = await this.getMasterDb(gameType);
-    return commands.matchCheckFolderCmd(folderPath, targetObjectName, dbJson);
+    return commands.matchCheckFolderCmd(folderPath, targetObjectName, gameType);
   },
 
   /**
@@ -244,13 +243,12 @@ export const scanService = {
     if (onEvent) {
       channel.onmessage = onEvent;
     }
-    const dbJson = await this.getMasterDb(gameType);
     return commands.deepmatchScannerCmd(
       gameId,
       gameName,
       getGameTypeKey(gameType),
+      gameType,
       modsPath,
-      dbJson,
       false,
       channel,
     );
@@ -270,8 +268,13 @@ export const scanService = {
     if (onEvent) {
       channel.onmessage = onEvent;
     }
-    const dbJson = await this.getMasterDb(gameType);
-    return commands.deepmatchPreviewCmd(gameId, modsPath, dbJson, channel, specificPaths ?? null);
+    return commands.deepmatchPreviewCmd(
+      gameId,
+      modsPath,
+      gameType,
+      channel,
+      specificPaths ?? null,
+    );
   },
 
   /**
@@ -288,12 +291,11 @@ export const scanService = {
     if (onEvent) {
       channel.onmessage = onEvent;
     }
-    const dbJson = await this.getMasterDb(gameType);
     return commands.deepmatchPreviewForObjectsCmd(
       {
         gameId,
         modsPath,
-        dbJson,
+        gameType,
         objectIds,
       },
       channel,
@@ -321,7 +323,6 @@ export const scanService = {
     candidateNames: string[],
     gameType: GameType,
   ): Promise<Partial<Record<string, number>>> {
-    const dbJson = await this.getMasterDb(gameType);
-    return commands.scoreCandidatesBatchCmd(folderPath, candidateNames, dbJson);
+    return commands.scoreCandidatesBatchCmd(folderPath, candidateNames, gameType);
   },
 };

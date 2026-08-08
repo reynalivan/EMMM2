@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use crate::common::corridor_constants::{
-    CORRIDOR_SOURCE_AUTO_TAGGED, CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN,
-};
+use crate::common::corridor_constants::CORRIDOR_SOURCE_MANUAL;
+use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::domain::models::ItemStatus;
+use crate::services::scanner::sync::helpers::classify_corridor;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeModMetadata {
@@ -11,37 +11,6 @@ pub struct RuntimeModMetadata {
     pub is_safe: bool,
     pub corridor_source: &'static str,
     pub status: ItemStatus,
-}
-
-pub fn generate_stable_mod_id(game_id: &str, folder_path: &str) -> String {
-    let key = crate::common::path_key::folder_path_key(folder_path, None);
-    let input = format!("{game_id}:{key}");
-    let hash = blake3::hash(input.as_bytes());
-    hash.to_hex()[..32].to_string()
-}
-
-pub fn normalize_runtime_name(name: &str) -> String {
-    crate::common::normalizer::normalize_display_name(name)
-}
-
-pub fn is_disabled_runtime_name(name: &str) -> bool {
-    crate::common::normalizer::is_disabled_folder(name)
-}
-
-pub fn classify_runtime_corridor(
-    display_name: &str,
-    safe_mode_keywords: &[String],
-) -> (bool, &'static str) {
-    let folder_name_lower = display_name.to_lowercase();
-    let keyword_match = safe_mode_keywords
-        .iter()
-        .any(|kw| folder_name_lower.contains(&kw.to_lowercase()));
-
-    if keyword_match {
-        return (false, CORRIDOR_SOURCE_AUTO_TAGGED);
-    }
-
-    (true, CORRIDOR_SOURCE_UNKNOWN)
 }
 
 /// A mod's status comes from its own folder name only. A disabled parent object
@@ -53,10 +22,8 @@ pub fn load_runtime_mod_metadata(
     safe_mode_keywords: &[String],
     existing_manual_safe: Option<bool>,
 ) -> RuntimeModMetadata {
-    let fallback_name = normalize_runtime_name(raw_folder_name);
-    let mut actual_name = fallback_name.clone();
-    let mut is_safe = None;
-    let mut corridor_source = None;
+    let mut actual_name = normalize_display_name(raw_folder_name).into_owned();
+    let mut info_is_safe = None;
 
     match crate::services::mods::info_json::read_info_json(mod_path) {
         Ok(Some(info)) => {
@@ -64,8 +31,7 @@ pub fn load_runtime_mod_metadata(
             if !info_name.is_empty() {
                 actual_name = info_name.to_string();
             }
-            is_safe = Some(info.is_safe);
-            corridor_source = Some(CORRIDOR_SOURCE_MANUAL);
+            info_is_safe = Some(info.is_safe);
         }
         Ok(None) => {}
         Err(error) => {
@@ -77,19 +43,17 @@ pub fn load_runtime_mod_metadata(
         }
     }
 
-    let (resolved_is_safe, resolved_corridor_source) = if let Some(value) = is_safe {
-        (value, corridor_source.unwrap_or(CORRIDOR_SOURCE_MANUAL))
-    } else if let Some(value) = existing_manual_safe {
-        (value, CORRIDOR_SOURCE_MANUAL)
-    } else {
-        classify_runtime_corridor(&actual_name, safe_mode_keywords)
+    // info.json wins over a remembered manual choice; both are manual verdicts.
+    let (is_safe, corridor_source) = match info_is_safe.or(existing_manual_safe) {
+        Some(value) => (value, CORRIDOR_SOURCE_MANUAL),
+        None => classify_corridor(&actual_name, safe_mode_keywords),
     };
 
     RuntimeModMetadata {
         actual_name,
-        is_safe: resolved_is_safe,
-        corridor_source: resolved_corridor_source,
-        status: ItemStatus::from_is_disabled(is_disabled_runtime_name(raw_folder_name)),
+        is_safe,
+        corridor_source,
+        status: ItemStatus::from_is_disabled(is_disabled_folder(raw_folder_name)),
     }
 }
 

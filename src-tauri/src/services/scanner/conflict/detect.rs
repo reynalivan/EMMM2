@@ -1,9 +1,12 @@
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::conflict::{detect_conflicts, ConflictInfo};
 use crate::services::scanner::core::walker;
 use std::path::Path;
 
 /// Detect conflicts by scanning the entire mods folder for INI files.
-pub fn detect_conflicts_in_folder_service(mods_path: &Path) -> Result<Vec<ConflictInfo>, String> {
+pub fn detect_conflicts_in_folder_service(
+    mods_path: &Path,
+) -> Result<Vec<ConflictInfo>, ScannerError> {
     // Use walker to find all mod folders
     let candidates = walker::scan_mod_folders(mods_path)?;
 

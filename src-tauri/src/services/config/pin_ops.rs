@@ -3,48 +3,58 @@ use crate::domain::errors::AppError;
 
 use super::pin_guard::{validate_pin_format, PinVerifyStatus};
 use super::ConfigService;
+use crate::services::pin_service::PinVerdict;
+
+/// Mirrors `pin_service::MAX_PIN_ATTEMPTS` for the "nothing to refuse" answer.
+const MAX_PIN_ATTEMPTS: u8 = 5;
 
 impl ConfigService {
     pub fn verify_pin_status(&self, pin: &str) -> PinVerifyStatus {
-        let pool = self.pool.clone();
-        Self::run_async(async move {
-            let before = crate::services::pin_service::get_status(&pool)
-                .await
-                .map_err(|error| error.to_string())?;
-            if before.is_locked {
-                return Ok(PinVerifyStatus {
-                    valid: false,
-                    attempts_remaining: 0,
-                    locked_seconds_remaining: before.lockout_seconds_remaining.max(0) as u64,
-                });
-            }
-
-            let valid = crate::services::pin_service::verify_pin(&pool, pin)
-                .await
-                .map_err(|error| error.to_string())?;
-            let after = crate::services::pin_service::get_status(&pool)
-                .await
-                .map_err(|error| error.to_string())?;
-
-            Ok::<PinVerifyStatus, String>(PinVerifyStatus {
-                valid,
-                attempts_remaining: after.attempts_remaining.max(0) as u8,
-                locked_seconds_remaining: after.lockout_seconds_remaining.max(0) as u64,
-            })
-        })
-        .unwrap_or(PinVerifyStatus {
-            valid: false,
-            attempts_remaining: 0,
-            locked_seconds_remaining: 0,
-        })
+        match self.pin_verdict(pin) {
+            // An unlock prompt with no PIN set has nothing to refuse.
+            Some(PinVerdict::NoPinConfigured) | Some(PinVerdict::Accepted) => PinVerifyStatus {
+                valid: true,
+                attempts_remaining: MAX_PIN_ATTEMPTS,
+                locked_seconds_remaining: 0,
+            },
+            Some(PinVerdict::Rejected { attempts_remaining }) => PinVerifyStatus {
+                valid: false,
+                attempts_remaining: attempts_remaining.max(0) as u8,
+                locked_seconds_remaining: 0,
+            },
+            Some(PinVerdict::LockedOut { seconds_remaining }) => PinVerifyStatus {
+                valid: false,
+                attempts_remaining: 0,
+                locked_seconds_remaining: seconds_remaining.max(0) as u64,
+            },
+            None => PinVerifyStatus {
+                valid: false,
+                attempts_remaining: 0,
+                locked_seconds_remaining: 0,
+            },
+        }
     }
 
-    pub fn verify_pin(&self, pin: &str) -> bool {
-        self.verify_pin_status(pin).valid
+    /// Whether `pin` proves the user may see beyond the Safe Mode corridor.
+    ///
+    /// Deliberately stricter than [`Self::verify_pin_status`]: a configured PIN
+    /// must be presented and matched. With no PIN set there is nothing to
+    /// prove, so elevation is refused rather than granted.
+    pub fn pin_grants_elevation(&self, pin: &str) -> bool {
+        matches!(self.pin_verdict(pin), Some(PinVerdict::Accepted))
+    }
+
+    /// `None` when the verification itself failed (e.g. the DB is unavailable),
+    /// which every caller must treat as "not proven".
+    fn pin_verdict(&self, pin: &str) -> Option<PinVerdict> {
+        let pool = self.pool.clone();
+        Self::run_async(async move { crate::services::pin_service::verify_pin(&pool, pin).await })
+            .map_err(|error| log::warn!("PIN verification unavailable: {error}"))
+            .ok()
     }
 
     pub fn set_pin(&self, pin: &str) -> Result<(), AppError> {
-        validate_pin_format(pin).map_err(AppError::Validation)?;
+        validate_pin_format(pin)?;
 
         use argon2::{
             password_hash::{rand_core::OsRng, PasswordHasher, SaltString},

@@ -15,44 +15,36 @@ pub(crate) struct ChangeSummaryBuilder {
 impl ChangeSummaryBuilder {
     pub(crate) fn record_object_added(&mut self, name: &str) {
         self.object_changes.added += 1;
-        self.record_object_sample(name);
+        record_sample(&mut self.object_sample_names, name);
     }
 
     pub(crate) fn record_object_removed(&mut self, name: &str) {
         self.object_changes.removed += 1;
-        self.record_object_sample(name);
+        record_sample(&mut self.object_sample_names, name);
     }
 
     pub(crate) fn record_object_renamed(&mut self, name: &str) {
         self.object_changes.renamed += 1;
-        self.record_object_sample(name);
+        record_sample(&mut self.object_sample_names, name);
     }
 
     pub(crate) fn record_mod_added(&mut self, name: &str) {
         self.mod_changes.added += 1;
-        self.record_mod_sample(name);
+        record_sample(&mut self.mod_sample_names, name);
     }
 
     pub(crate) fn record_mod_removed(&mut self, name: &str) {
         self.mod_changes.removed += 1;
-        self.record_mod_sample(name);
+        record_sample(&mut self.mod_sample_names, name);
     }
 
     pub(crate) fn record_mod_renamed(&mut self, name: &str) {
         self.mod_changes.renamed += 1;
-        self.record_mod_sample(name);
+        record_sample(&mut self.mod_sample_names, name);
     }
 
     pub(crate) fn record_mod_modified(&mut self, name: &str) {
         self.mod_changes.modified += 1;
-        self.record_mod_sample(name);
-    }
-
-    fn record_object_sample(&mut self, name: &str) {
-        record_sample(&mut self.object_sample_names, name);
-    }
-
-    fn record_mod_sample(&mut self, name: &str) {
         record_sample(&mut self.mod_sample_names, name);
     }
 

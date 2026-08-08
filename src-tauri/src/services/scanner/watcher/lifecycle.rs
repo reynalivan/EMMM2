@@ -7,6 +7,7 @@
 //! - emit typed payloads back to the frontend
 
 use crate::common::sync::lock;
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::watcher::{
     ModWatchEvent, WatchEventPayload, WatcherState, WatcherSuppressor,
 };
@@ -23,7 +24,7 @@ pub fn start_watcher(
     pool: sqlx::SqlitePool,
     path: String,
     game_id: String,
-) -> Result<(), String> {
+) -> Result<(), ScannerError> {
     let path_obj = std::path::Path::new(&path);
 
     // A fresh watcher session must not inherit stale frontend suppression
@@ -134,7 +135,7 @@ async fn process_event_loop(
                 emit_event(
                     &app,
                     WatchEventPayload::Error {
-                        error,
+                        error: error.to_string(),
                         path: Some(mods_path_root.clone()),
                     },
                 );

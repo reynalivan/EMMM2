@@ -10,6 +10,7 @@
 //! Cargo.toml dependencies are introduced.
 
 pub mod actions;
+pub mod cycle_preset;
 pub mod focus;
 pub mod manager;
 pub mod reload;
@@ -36,6 +37,18 @@ pub enum HotkeyAction {
     NextVariantFolder,
     /// Switch to previous Variant Folder (default: Shift+F8).
     PrevVariantFolder,
+}
+
+impl HotkeyAction {
+    /// Every bindable action. Registration, listing, and conflict detection all
+    /// iterate this, so adding a variant cannot silently miss one of them.
+    pub const ALL: [HotkeyAction; 5] = [
+        HotkeyAction::NextPreset,
+        HotkeyAction::PrevPreset,
+        HotkeyAction::ToggleOverlay,
+        HotkeyAction::NextVariantFolder,
+        HotkeyAction::PrevVariantFolder,
+    ];
 }
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -154,12 +167,12 @@ impl HotkeyState {
     }
 }
 
-/// Map an action enum to its key string from the config.
+/// Map an action enum to its key string from the config. The only place the
+/// action → config-field mapping is written; everything else derives from it.
 pub fn get_key_string(config: &HotkeyConfig, action: HotkeyAction) -> &str {
     match action {
         HotkeyAction::NextPreset => &config.next_preset,
         HotkeyAction::PrevPreset => &config.prev_preset,
-
         HotkeyAction::ToggleOverlay => &config.toggle_overlay,
         HotkeyAction::NextVariantFolder => &config.next_variant,
         HotkeyAction::PrevVariantFolder => &config.prev_variant,
@@ -168,13 +181,10 @@ pub fn get_key_string(config: &HotkeyConfig, action: HotkeyAction) -> &str {
 
 /// List all configurable hotkey actions with their current bindings.
 pub fn list_bindings(config: &HotkeyConfig) -> Vec<(HotkeyAction, String)> {
-    vec![
-        (HotkeyAction::NextPreset, config.next_preset.clone()),
-        (HotkeyAction::PrevPreset, config.prev_preset.clone()),
-        (HotkeyAction::ToggleOverlay, config.toggle_overlay.clone()),
-        (HotkeyAction::NextVariantFolder, config.next_variant.clone()),
-        (HotkeyAction::PrevVariantFolder, config.prev_variant.clone()),
-    ]
+    HotkeyAction::ALL
+        .into_iter()
+        .map(|action| (action, get_key_string(config, action).to_string()))
+        .collect()
 }
 
 /// Detect conflicts between hotkey bindings (same key used for multiple actions).

@@ -6,8 +6,29 @@
 
 use sqlx::SqlitePool;
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
-const INSERT_PROJECTION_SQL: &str = r#"
+use crate::common::corridor_constants::{CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN};
+
+/// A mod belongs to a corridor when it is classified into that corridor, or
+/// when its classification is manual or unknown — those are visible in both.
+///
+/// `is_safe` is the corridor being counted: 1 for safe, 0 for unsafe.
+fn corridor_visible(is_safe: u8) -> String {
+    format!(
+        "COALESCE(m.is_safe, 1) = {is_safe}
+            OR COALESCE(m.corridor_source, '{CORRIDOR_SOURCE_UNKNOWN}') \
+IN ('{CORRIDOR_SOURCE_MANUAL}', '{CORRIDOR_SOURCE_UNKNOWN}')"
+    )
+}
+
+/// Built once: the corridor predicate appeared six times as inline SQL with the
+/// source names hardcoded, so a change to the rule had to land in six places.
+static INSERT_PROJECTION_SQL: LazyLock<String> = LazyLock::new(|| {
+    let safe_visible = corridor_visible(1);
+    let unsafe_visible = corridor_visible(0);
+    format!(
+        r#"
 INSERT INTO object_runtime_projection (
     game_id,
     object_id,
@@ -31,8 +52,7 @@ SELECT
         FROM mods m
         WHERE m.object_id = o.id
           AND (
-            COALESCE(m.is_safe, 1) = 1
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            {safe_visible}
           )
     ) AS mod_count_safe,
     (
@@ -40,8 +60,7 @@ SELECT
         FROM mods m
         WHERE m.object_id = o.id
           AND (
-            COALESCE(m.is_safe, 1) = 0
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            {unsafe_visible}
           )
     ) AS mod_count_unsafe,
     (
@@ -50,8 +69,7 @@ SELECT
         WHERE m.object_id = o.id
           AND m.status = 1
           AND (
-            COALESCE(m.is_safe, 1) = 1
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            {safe_visible}
           )
     ) AS enabled_count_safe,
     (
@@ -60,8 +78,7 @@ SELECT
         WHERE m.object_id = o.id
           AND m.status = 1
           AND (
-            COALESCE(m.is_safe, 1) = 0
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            {unsafe_visible}
           )
     ) AS enabled_count_unsafe,
     CASE
@@ -75,8 +92,7 @@ SELECT
         WHERE m.object_id = o.id
           AND m.status = 1
           AND (
-            COALESCE(m.is_safe, 1) = 1
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            {safe_visible}
           )
     ), '[]') AS active_mod_paths_safe_json,
     COALESCE((
@@ -85,14 +101,15 @@ SELECT
         WHERE m.object_id = o.id
           AND m.status = 1
           AND (
-            COALESCE(m.is_safe, 1) = 0
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            {unsafe_visible}
           )
     ), '[]') AS active_mod_paths_unsafe_json,
     CURRENT_TIMESTAMP
 FROM objects o
 WHERE o.game_id = ?
-"#;
+"#
+    )
+});
 
 pub async fn rebuild_game_projection(pool: &SqlitePool, game_id: &str) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -100,7 +117,7 @@ pub async fn rebuild_game_projection(pool: &SqlitePool, game_id: &str) -> Result
         .bind(game_id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query(INSERT_PROJECTION_SQL)
+    sqlx::query(&INSERT_PROJECTION_SQL)
         .bind(game_id)
         .execute(&mut *tx)
         .await?;
@@ -133,9 +150,14 @@ pub async fn refresh_projection_for_object_ids(
         return Ok(());
     }
 
+    // One transaction for the whole batch. Per-object commits made a cold
+    // projection pay a commit per object, and left the read model observable
+    // in a half-refreshed state between them.
+    let mut tx = pool.begin().await?;
     for object_id in &unique_ids {
-        refresh_object_projection(pool, game_id, object_id).await?;
+        refresh_object_projection_tx(&mut tx, game_id, object_id).await?;
     }
+    tx.commit().await?;
 
     Ok(())
 }
@@ -146,17 +168,26 @@ pub async fn refresh_object_projection(
     object_id: &str,
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
+    refresh_object_projection_tx(&mut tx, game_id, object_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn refresh_object_projection_tx(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    object_id: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM object_runtime_projection WHERE game_id = ? AND object_id = ?")
         .bind(game_id)
         .bind(object_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-    sqlx::query(&(String::from(INSERT_PROJECTION_SQL) + " AND o.id = ?"))
+    sqlx::query(&format!("{} AND o.id = ?", *INSERT_PROJECTION_SQL))
         .bind(game_id)
         .bind(object_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-    tx.commit().await?;
     Ok(())
 }
 

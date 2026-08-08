@@ -1,4 +1,5 @@
 use crate::common::corridor_constants::{CORRIDOR_SOURCE_AUTO_TAGGED, CORRIDOR_SOURCE_UNKNOWN};
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::deep_matcher;
 use std::path::Path;
 
@@ -54,7 +55,7 @@ async fn next_available_object_shell_name(
     game_id: &str,
     mods_path: &str,
     base_name: &str,
-) -> Result<String, String> {
+) -> Result<String, ScannerError> {
     let mut suffix = 1_u32;
 
     loop {
@@ -69,8 +70,7 @@ async fn next_available_object_shell_name(
             game_id,
             &crate::common::path_key::folder_path_key(&candidate, None),
         )
-        .await
-        .map_err(|error| error.to_string())?;
+        .await?;
 
         let exists_on_disk = Path::new(mods_path).join(&candidate).exists();
         if existing_object_id.is_none() && !exists_on_disk {
@@ -85,7 +85,7 @@ pub async fn resolve_or_create_object_target_for_match(
     conn: &mut sqlx::SqliteConnection,
     input: ResolveObjectTargetInput<'_>,
     new_objects_count: &mut usize,
-) -> Result<Option<ResolvedObjectTarget>, String> {
+) -> Result<Option<ResolvedObjectTarget>, ScannerError> {
     let Some(entry_key) = input.matched_entry_key else {
         return Ok(None);
     };
@@ -95,15 +95,13 @@ pub async fn resolve_or_create_object_target_for_match(
         input.game_id,
         entry_key,
     )
-    .await
-    .map_err(|error| error.to_string())?;
+    .await?;
     let existing_id = crate::repo::object_repo::get_object_id_by_matched_entry_key(
         &mut *conn,
         input.game_id,
         entry_key,
     )
-    .await
-    .map_err(|error| error.to_string())?;
+    .await?;
 
     if let (Some(folder_path), Some(object_id)) = (existing_folder, existing_id) {
         return Ok(Some(ResolvedObjectTarget {
@@ -128,6 +126,11 @@ pub async fn resolve_or_create_object_target_for_match(
             folder_path: &shell_name,
             obj_name: &shell_name,
             obj_type: input.object_type,
+            source: if input.matched_entry_key.is_some() {
+                crate::repo::object_repo::MatchSource::MasterDb
+            } else {
+                crate::repo::object_repo::MatchSource::Disk
+            },
             db_thumbnail: input.db_thumbnail,
             db_tags_json: input.db_tags_json,
             db_metadata_json: input.db_metadata_json,
@@ -151,7 +154,7 @@ pub async fn ensure_game_exists(
     game_name: &str,
     game_type: &str,
     mods_path: &str,
-) -> Result<(), String> {
+) -> Result<(), ScannerError> {
     let parsed_game_type =
         std::str::FromStr::from_str(game_type).unwrap_or(crate::domain::models::GameType::GIMI);
     crate::repo::game_repo::ensure_game_exists(
@@ -161,8 +164,7 @@ pub async fn ensure_game_exists(
         parsed_game_type,
         mods_path,
     )
-    .await
-    .map_err(|e| format!("Failed to ensure game exists: {e}"))?;
+    .await?;
     Ok(())
 }
 
@@ -170,10 +172,8 @@ pub async fn ensure_object_exists(
     conn: &mut sqlx::SqliteConnection,
     input: crate::repo::object_repo::EnsureObjectInput<'_>,
     new_objects_count: &mut usize,
-) -> Result<String, String> {
-    crate::repo::object_repo::ensure_object_exists(conn, input, new_objects_count)
-        .await
-        .map_err(|e| e.to_string())
+) -> Result<String, ScannerError> {
+    Ok(crate::repo::object_repo::ensure_object_exists(conn, input, new_objects_count).await?)
 }
 
 pub fn classify_corridor(

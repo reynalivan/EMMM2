@@ -5,6 +5,7 @@
 //! converges with disk reality even if a manual DB sync step missed a case
 //! or watcher events were dropped during suppression.
 
+use crate::domain::errors::AppError;
 use tauri::{Emitter, Manager};
 
 use crate::services::disk_reconcile::orchestrator::{
@@ -17,16 +18,18 @@ pub async fn emit_internal_disk_reconcile(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     changed_paths: Vec<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let config = app
         .try_state::<crate::services::config::ConfigService>()
-        .ok_or_else(|| "ConfigService state missing for disk reconcile".to_string())?;
+        .ok_or_else(|| {
+            AppError::Internal("ConfigService state missing for disk reconcile".to_string())
+        })?;
     let watcher = app
         .try_state::<crate::services::scanner::watcher::WatcherState>()
-        .ok_or_else(|| "WatcherState missing for disk reconcile".to_string())?;
-    let disk_reconcile_state = app
-        .try_state::<DiskReconcileState>()
-        .ok_or_else(|| "DiskReconcileState missing for disk reconcile".to_string())?;
+        .ok_or_else(|| AppError::Internal("WatcherState missing for disk reconcile".to_string()))?;
+    let disk_reconcile_state = app.try_state::<DiskReconcileState>().ok_or_else(|| {
+        AppError::Internal("DiskReconcileState missing for disk reconcile".to_string())
+    })?;
 
     let result = reconcile_disk_state(
         DiskReconcileContext {
@@ -44,6 +47,5 @@ pub async fn emit_internal_disk_reconcile(
     )
     .await?;
 
-    app.emit("disk_reconcile:result", result)
-        .map_err(|error| error.to_string())
+    Ok(app.emit("disk_reconcile:result", result)?)
 }

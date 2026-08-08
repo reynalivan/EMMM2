@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -21,21 +22,13 @@ pub struct SourceKeyBinding {
 /// - `"[KeyToggleBody] Key: 1"` (key only)
 /// - `"[KeyToggleBody] Key: 1 | Back: 2"` (key + back)
 fn format_keybind_line(kb: &KeyBinding) -> String {
-    let mut parts = Vec::new();
-
-    if let Some(ref key) = kb.key {
-        let trimmed = key.trim();
-        if !trimmed.is_empty() {
-            parts.push(format!("Key: {}", trimmed));
-        }
-    }
-
-    if let Some(ref back) = kb.back {
-        let trimmed = back.trim();
-        if !trimmed.is_empty() {
-            parts.push(format!("Back: {}", trimmed));
-        }
-    }
+    let parts: Vec<String> = [("Key", &kb.key), ("Back", &kb.back)]
+        .into_iter()
+        .filter_map(|(label, raw)| {
+            let value = raw.as_deref().map(str::trim).filter(|v| !v.is_empty())?;
+            Some(format!("{label}: {value}"))
+        })
+        .collect();
 
     if parts.is_empty() {
         return format!("[{}] No key assigned", kb.section_name);
@@ -57,25 +50,24 @@ pub fn generate_keybind_text(
 
     if sources.is_empty() {
         lines.push("No keybinds found".to_string());
-    } else {
-        for (i, source) in sources.iter().enumerate() {
-            if i > 0 {
-                lines.push(String::new());
-            }
+    }
 
-            // Only show mod header if there are multiple mods or for clarity
-            if sources.len() > 1 {
-                lines.push(format!("[Mod: {}]", source.mod_name));
-            }
-
-            if source.keybinds.is_empty() {
-                lines.push("  (No keybinds in this mod)".to_string());
-            } else {
-                for kb in &source.keybinds {
-                    lines.push(format_keybind_line(kb));
-                }
-            }
+    for (i, source) in sources.iter().enumerate() {
+        if i > 0 {
+            lines.push(String::new());
         }
+
+        // Only show mod header if there are multiple mods or for clarity
+        if sources.len() > 1 {
+            lines.push(format!("[Mod: {}]", source.mod_name));
+        }
+
+        if source.keybinds.is_empty() {
+            lines.push("  (No keybinds in this mod)".to_string());
+            continue;
+        }
+
+        lines.extend(source.keybinds.iter().map(format_keybind_line));
     }
 
     lines.push(String::new());
@@ -94,19 +86,17 @@ pub fn write_keybind_files(
     output_dir: &Path,
     matches: &[MatchResult],
     sources_per_object: &HashMap<String, Vec<SourceKeyBinding>>,
-    _safe_mode: bool,
-    overlay_toggle_key: String,
-) -> Result<Vec<PathBuf>, String> {
+    overlay_toggle_key: &str,
+) -> Result<Vec<PathBuf>, AppError> {
     let mut written_files = Vec::new();
 
     for match_result in matches {
         let sources = sources_per_object
             .get(&match_result.object_name)
-            .cloned()
+            .map(Vec::as_slice)
             .unwrap_or_default();
 
-        let content =
-            generate_keybind_text(&match_result.object_name, &sources, &overlay_toggle_key);
+        let content = generate_keybind_text(&match_result.object_name, sources, overlay_toggle_key);
 
         // Write one file per sentinel hash
         for sentinel in &match_result.sentinel_hashes {

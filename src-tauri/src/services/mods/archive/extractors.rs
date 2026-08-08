@@ -1,5 +1,7 @@
+use super::is_cancelled;
 use super::progress::emit_throttled_progress;
 use super::types::{ArchiveFormat, ExtractionEvent};
+use crate::domain::errors::AppError;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -15,7 +17,7 @@ pub(super) fn extract_to_dir(
     format: ArchiveFormat,
     cancel_token: Option<Arc<AtomicBool>>,
     on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     match format {
         ArchiveFormat::Zip => {
             extract_zip_inner(archive_path, dest_path, password, cancel_token, on_progress)
@@ -96,12 +98,8 @@ pub(super) fn unpack_nested_archives(
     total_extracted
 }
 
-fn is_cancelled(cancel_token: &Option<Arc<AtomicBool>>) -> bool {
-    cancel_token
-        .as_ref()
-        .map(|token| token.load(Ordering::SeqCst))
-        .unwrap_or(false)
-}
+/// Cancellation marker smuggled through `sevenz_rust`'s io-error channel.
+const CANCEL_MARKER: &str = "ABORTED";
 
 fn extract_zip_inner(
     archive_path: &Path,
@@ -109,18 +107,16 @@ fn extract_zip_inner(
     password: Option<&str>,
     cancel_token: Option<Arc<AtomicBool>>,
     on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, String> {
-    let file =
-        fs::File::open(archive_path).map_err(|error| format!("Failed to open archive: {error}"))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|error| format!("Invalid or corrupt ZIP: {error}"))?;
+) -> Result<usize, AppError> {
+    let file = fs::File::open(archive_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
     let total_entries = archive.len();
     let mut count = 0_usize;
     let mut last_progress = Instant::now();
 
     for i in 0..archive.len() {
         if is_cancelled(&cancel_token) {
-            return Err("ABORTED".into());
+            return Err(AppError::Cancelled);
         }
 
         let mut entry = match password {
@@ -138,20 +134,16 @@ fn extract_zip_inner(
         let output_path = dest_path.join(&entry_path);
 
         if entry.is_dir() {
-            fs::create_dir_all(&output_path)
-                .map_err(|error| format!("Failed to create dir: {error}"))?;
+            fs::create_dir_all(&output_path)?;
             continue;
         }
 
         if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("Failed to create parent: {error}"))?;
+            fs::create_dir_all(parent)?;
         }
 
-        let mut outfile = fs::File::create(&output_path)
-            .map_err(|error| format!("Failed to create file: {error}"))?;
-        io::copy(&mut entry, &mut outfile)
-            .map_err(|error| format!("Failed to write file: {error}"))?;
+        let mut outfile = fs::File::create(&output_path)?;
+        io::copy(&mut entry, &mut outfile)?;
         count += 1;
 
         if let Some(channel) = on_progress {
@@ -166,12 +158,12 @@ fn extract_zip_inner(
     Ok(count)
 }
 
-fn password_or_read_error(error: zip::result::ZipError, action: &str, index: usize) -> String {
+fn password_or_read_error(error: zip::result::ZipError, action: &str, index: usize) -> AppError {
     let message = error.to_string();
     if message.contains("Password") || message.contains("password") {
-        return "Password required to extract this archive".to_string();
+        return AppError::Validation("Password required to extract this archive".to_string());
     }
-    format!("Failed to {action} entry {index}: {error}")
+    AppError::Io(format!("Failed to {action} entry {index}: {error}"))
 }
 
 fn extract_7z_inner(
@@ -180,17 +172,16 @@ fn extract_7z_inner(
     password: Option<&str>,
     cancel_token: Option<Arc<AtomicBool>>,
     on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     if is_cancelled(&cancel_token) {
-        return Err("ABORTED".into());
+        return Err(AppError::Cancelled);
     }
 
     let file_counter = Arc::new(AtomicUsize::new(0));
     let mut last_progress = Instant::now();
     let extract_result = match password {
         Some(value) => {
-            let file = fs::File::open(archive_path)
-                .map_err(|error| format!("Failed to open archive: {error}"))?;
+            let file = fs::File::open(archive_path)?;
             let counter = file_counter.clone();
             sevenz_rust::decompress_with_extract_fn_and_password(
                 file,
@@ -253,7 +244,7 @@ fn extract_7z_entry(
     if is_cancelled(cancel_token) {
         return Err(sevenz_rust::Error::io(std::io::Error::new(
             std::io::ErrorKind::Interrupted,
-            "ABORTED",
+            CANCEL_MARKER,
         )));
     }
 
@@ -265,14 +256,16 @@ fn extract_7z_entry(
     sevenz_rust::default_entry_extract_fn(entry, reader, dest)
 }
 
-fn extraction_error_7z(message: String) -> String {
+fn extraction_error_7z(message: String) -> AppError {
     if message.contains("password") || message.contains("Password") || message.contains("decrypt") {
-        return "Password required to extract this archive".to_string();
+        return AppError::Validation("Password required to extract this archive".to_string());
     }
-    if message.contains("ABORTED") {
-        return "ABORTED".to_string();
+    // The 7z crate can only carry a cancel back as an io error, so the marker
+    // survives as text this far and is re-typed here.
+    if message.contains(CANCEL_MARKER) {
+        return AppError::Cancelled;
     }
-    format!("Failed to extract 7z: {message}")
+    AppError::Internal(format!("Failed to extract 7z: {message}"))
 }
 
 fn extract_rar_inner(
@@ -281,20 +274,19 @@ fn extract_rar_inner(
     password: Option<&str>,
     cancel_token: Option<Arc<AtomicBool>>,
     on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, String> {
+) -> Result<usize, AppError> {
     if is_cancelled(&cancel_token) {
-        return Err("ABORTED".into());
+        return Err(AppError::Cancelled);
     }
 
     let path_str = archive_path
         .to_str()
-        .ok_or("RAR path contains invalid UTF-8")?;
+        .ok_or_else(|| AppError::Internal("RAR path contains invalid UTF-8".to_string()))?;
     let dest_str = dest_path
         .to_str()
-        .ok_or("Dest path contains invalid UTF-8")?;
+        .ok_or_else(|| AppError::Internal("Dest path contains invalid UTF-8".to_string()))?;
     let pw = password.unwrap_or("");
-    rar::Archive::extract_all(path_str, dest_str, pw)
-        .map_err(|error| format!("Failed to extract RAR: {error:?}"))?;
+    rar::Archive::extract_all(path_str, dest_str, pw)?;
 
     let count = walkdir::WalkDir::new(dest_path)
         .follow_links(false)

@@ -5,6 +5,7 @@
 //! - INI structural tokenization (stubs for Task 7+)
 //! - Deep signal collector with budgets (stubs for Task 8+)
 
+use crate::domain::errors::ScannerError;
 use std::fs;
 use std::path::Path;
 mod signal_collector;
@@ -33,23 +34,18 @@ pub fn extract_hashes_from_ini_text(text: &str) -> Vec<String> {
     for line in text.lines() {
         let trimmed = line.trim();
 
-        // Match lines with "hash" key (case-insensitive key check)
-        if !trimmed.to_lowercase().contains("hash") {
+        // Split on '=' to separate key and value. No pre-filter on the whole
+        // line: it would allocate a lowercased copy of every line in the file
+        // to answer a question the key check below answers exactly.
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+
+        if !key.trim().eq_ignore_ascii_case("hash") {
             continue;
         }
 
-        // Split on '=' to separate key and value
-        let parts: Vec<&str> = trimmed.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            continue;
-        }
-
-        let key = parts[0].trim().to_lowercase();
-        if key != "hash" {
-            continue;
-        }
-
-        let value = parts[1].trim();
+        let value = value.trim();
         if value.is_empty() {
             continue;
         }
@@ -107,16 +103,15 @@ fn normalize_hash(raw: &str) -> Option<String> {
 /// Never panics; always returns a usable string.
 ///
 /// # Covers: Task 6 - INI Decode Fallback
-pub fn decode_ini_content(path: &Path) -> Result<String, String> {
+pub fn decode_ini_content(path: &Path) -> Result<String, ScannerError> {
     decode_ini_content_with_cap(path, None)
 }
 
 pub(crate) fn decode_ini_content_with_cap(
     path: &Path,
     max_bytes: Option<usize>,
-) -> Result<String, String> {
-    let mut bytes =
-        fs::read(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+) -> Result<String, ScannerError> {
+    let mut bytes = fs::read(path)?;
     if let Some(cap) = max_bytes {
         bytes.truncate(cap);
     }
@@ -152,9 +147,11 @@ fn decode_ini_bytes(bytes: &[u8]) -> String {
 }
 
 /// Decode UTF-16 LE bytes to String.
-fn decode_utf16_le(bytes: &[u8]) -> Result<String, String> {
+fn decode_utf16_le(bytes: &[u8]) -> Result<String, ScannerError> {
     if !bytes.len().is_multiple_of(2) {
-        return Err("Odd byte count for UTF-16".to_string());
+        return Err(ScannerError::Validation(
+            "Odd byte count for UTF-16".to_string(),
+        ));
     }
 
     let mut result = String::new();

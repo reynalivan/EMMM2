@@ -50,11 +50,11 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
         await Promise.all([
           queryClient.prefetchQuery({
             queryKey: corridorKeys.state(settings.active_game_id),
-            queryFn: () => commands.getCorridorState(settings.active_game_id as string, null),
+            queryFn: () => commands.getCorridorState(settings.active_game_id as string),
           }),
           queryClient.prefetchQuery({
             queryKey: collectionKeys.list(settings.active_game_id),
-            queryFn: () => commands.listCollections(settings.active_game_id as string, null),
+            queryFn: () => commands.listCollections(settings.active_game_id as string),
           }),
         ]);
       }
@@ -91,11 +91,11 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set) => ({
         await Promise.all([
           queryClient.prefetchQuery({
             queryKey: corridorKeys.state(id),
-            queryFn: () => commands.getCorridorState(id as string, null),
+            queryFn: () => commands.getCorridorState(id as string),
           }),
           queryClient.prefetchQuery({
             queryKey: collectionKeys.list(id),
-            queryFn: () => commands.listCollections(id as string, null),
+            queryFn: () => commands.listCollections(id as string),
           }),
         ]);
       }

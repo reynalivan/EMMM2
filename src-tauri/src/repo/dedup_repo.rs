@@ -1,3 +1,4 @@
+use crate::domain::conflicts::WhitelistEntry;
 use sqlx::SqlitePool;
 
 pub async fn get_duplicate_whitelist_pairs(
@@ -8,18 +9,6 @@ pub async fn get_duplicate_whitelist_pairs(
         .bind(game_id)
         .fetch_all(pool)
         .await
-}
-
-#[derive(Debug, serde::Serialize, specta::Type, sqlx::FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct WhitelistEntry {
-    pub id: String,
-    pub folder_a_id: String,
-    pub folder_b_id: String,
-    pub folder_a_name: String,
-    pub folder_b_name: String,
-    pub reason: String,
-    pub ignored_at: String,
 }
 
 pub async fn get_whitelist_detailed(

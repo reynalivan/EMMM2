@@ -34,8 +34,9 @@ pub async fn start_watcher(
     pool: State<'_, sqlx::SqlitePool>,
 ) -> Result<(), AppError> {
     let db_pool = (*pool).clone();
-    crate::services::scanner::watcher::lifecycle::start_watcher(app, &state, db_pool, path, game_id)
-        .map_err(AppError::Internal)
+    Ok(crate::services::scanner::watcher::lifecycle::start_watcher(
+        app, &state, db_pool, path, game_id,
+    )?)
 }
 
 /// Stop the file watcher. Cleanly drops the `RecommendedWatcher`,

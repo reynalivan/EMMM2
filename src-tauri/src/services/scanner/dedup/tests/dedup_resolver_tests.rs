@@ -120,6 +120,7 @@ async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
     seed_dedup_group(&context, game_id, "group-1").await;
 
     let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         vec![ResolutionRequest {
@@ -130,7 +131,7 @@ async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
         }],
         game_id.to_string(),
         &context.pool,
-        &lock,
+        &guard,
         &suppressor,
         &context.trash_root,
         |_| {},
@@ -160,6 +161,7 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
     seed_dedup_group(&context, game_id, "group-2").await;
 
     let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         vec![ResolutionRequest {
@@ -170,7 +172,7 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
         }],
         game_id.to_string(),
         &context.pool,
-        &lock,
+        &guard,
         &suppressor,
         &context.trash_root,
         |_| {},
@@ -192,6 +194,7 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     seed_dedup_group(&context, game_id, "group-3").await;
 
     let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         vec![ResolutionRequest {
@@ -202,7 +205,7 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
         }],
         game_id.to_string(),
         &context.pool,
-        &lock,
+        &guard,
         &suppressor,
         &context.trash_root,
         |_| {},
@@ -233,40 +236,10 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     assert_eq!(status, "ignored");
 }
 
-// Covers: NC-9.2-03 (Operation Lock Active)
-#[tokio::test]
-async fn test_nc_9_2_03_lock_contention_returns_clear_error() {
-    let context = setup_context().await;
-    let game_id = "game-1";
-    let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-
-    let lock = OperationLock::new();
-    let _held_guard = lock.acquire().await.unwrap();
-    let suppressor = Arc::new(WatcherSuppressor::new(false));
-
-    let result = resolve_batch(
-        vec![ResolutionRequest {
-            group_id: "group-lock".to_string(),
-            action: ResolutionAction::KeepA,
-            folder_a,
-            folder_b,
-        }],
-        game_id.to_string(),
-        &context.pool,
-        &lock,
-        &suppressor,
-        &context.trash_root,
-        |_| {},
-    )
-    .await;
-
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .to_ascii_lowercase()
-        .contains("operation in progress"));
-}
+// NC-9.2-03 (Operation Lock Active): `resolve_batch` now takes `&OpGuard`, so
+// running it without the lock — or while another operation holds it — is a
+// compile error rather than a runtime path. The contention error itself is
+// covered by `operation_lock_tests`, at the level where commands acquire.
 
 // Covers: TC-9.2-03 (Bulk Resolution) + TC-9.3-01 (Progress Events)
 #[tokio::test]
@@ -336,12 +309,13 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
     let mut progress_events = Vec::new();
 
     let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         requests,
         game_id.to_string(),
         &context.pool,
-        &lock,
+        &guard,
         &suppressor,
         &context.trash_root,
         |progress| {
@@ -449,12 +423,13 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
     // This test verifies graceful error handling exists
 
     let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let summary = resolve_batch(
         requests,
         game_id.to_string(),
         &context.pool,
-        &lock,
+        &guard,
         &suppressor,
         &context.trash_root,
         |_| {},

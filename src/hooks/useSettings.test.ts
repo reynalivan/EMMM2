@@ -7,6 +7,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('@tanstack/react-query', () => {
   const mUseQueryClient = {
+    getQueryData: vi.fn(),
     setQueryData: vi.fn(),
     invalidateQueries: vi.fn(),
   };

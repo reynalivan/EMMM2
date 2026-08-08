@@ -104,27 +104,13 @@ pub async fn bulk_toggle(
             log::error!("Failed batch updating mod paths after bulk toggle: {}", e);
         }
 
-        let _ = crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await;
-    }
-
-    // Trigger Dirty State: Register unsaved changes for the affected corridors
-    if !db_updates.is_empty() {
-        // Collect subset of relative paths to check which corridors are affected
-        let rel_paths: Vec<String> = db_updates
-            .iter()
-            .map(|(_, new_rel, _)| new_rel.clone())
-            .collect();
-        let safe_contexts = mod_repo::get_distinct_corridors_for_folders(pool, game_id, &rel_paths)
-            .await
-            .unwrap_or_default();
-        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        // A bulk toggle rewrites paths across objects, so the blast radius
+        // is not enumerable here.
+        crate::services::app::runtime_effects::finalize_mutation(
             pool,
             config,
-            state.suppressor.clone(),
             game_id,
-            &safe_contexts,
-            true,
-            true,
+            crate::services::app::runtime_effects::MutationOutcome::full_game(),
         )
         .await;
     }

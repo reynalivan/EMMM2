@@ -1,4 +1,4 @@
-use crate::repo::object_repo::ObjectSummary;
+use crate::domain::objects::ObjectSummary;
 use serde::Serialize;
 use std::collections::HashMap;
 

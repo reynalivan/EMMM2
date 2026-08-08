@@ -21,18 +21,7 @@ pub async fn apply_collection(
     // Drive the pipeline with the caller's current corridor (request.is_safe),
     // NOT the collection's own is_safe — validate_corridor then rejects a
     // cross-corridor apply before any filesystem mutation.
-    let mut ctx = crate::pipeline::apply_pipeline::ApplyContext::new(
-        crate::pipeline::apply_pipeline::ApplyContextInput {
-            pool: request.pool.clone(),
-            game_id: request.game_id.to_string(),
-            collection_id: request.collection_id.to_string(),
-            is_safe: request.is_safe,
-            mods_path: request.mods_path,
-            suppressor: request.suppressor,
-            ignore_missing: request.ignore_missing,
-            settings: request.settings,
-        },
-    );
+    let mut ctx = crate::pipeline::apply_pipeline::ApplyContext::new(request);
 
     crate::pipeline::apply_pipeline::execute(&mut ctx).await
 }

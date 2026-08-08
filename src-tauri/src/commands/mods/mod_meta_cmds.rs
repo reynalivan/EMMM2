@@ -16,15 +16,8 @@ pub async fn toggle_mod_safe(
     folder_path: String,
     safe: bool,
 ) -> Result<(), AppError> {
-    metadata::toggle_mod_safe(
-        &config,
-        pool.inner(),
-        &watcher,
-        &game_id,
-        &folder_path,
-        safe,
-    )
-    .await?;
+    let folder = validate_path(&config, &game_id, &folder_path)?;
+    metadata::toggle_mod_safe(&config, pool.inner(), &watcher, &game_id, &folder, safe).await?;
     Ok(())
 }
 
@@ -32,12 +25,10 @@ pub async fn toggle_mod_safe(
 #[tauri::command]
 pub async fn suggest_random_mods(
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    config: tauri::State<'_, ConfigService>,
     game_id: String,
-    is_safe: bool,
 ) -> Result<Vec<metadata::RandomModProposal>, AppError> {
-    metadata::suggest_random_mods(pool.inner(), &game_id, is_safe)
-        .await
-        .map_err(AppError::Internal)
+    metadata::suggest_random_mods(pool.inner(), &game_id, config.current_corridor()).await
 }
 
 #[specta::specta]
@@ -46,9 +37,7 @@ pub async fn get_active_mod_conflicts(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     game_id: String,
 ) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, AppError> {
-    metadata::get_active_mod_conflicts(pool.inner(), &game_id)
-        .await
-        .map_err(AppError::Internal)
+    metadata::get_active_mod_conflicts(pool.inner(), &game_id).await
 }
 
 #[specta::specta]
@@ -77,9 +66,7 @@ pub async fn update_mod_info(
     let changed_path = path.join("info.json").to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&state.suppressor);
     let info = info_json::update_info_json(&path, &update)?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path])
-        .await
-        .map_err(AppError::Internal)?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path]).await?;
 
     Ok(info)
 }
@@ -89,20 +76,20 @@ pub async fn update_mod_info(
 pub async fn set_mod_category(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    state: tauri::State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
     category: String,
 ) -> Result<(), AppError> {
-    metadata::set_mod_category(&config, &pool, &game_id, &folder_path, &category).await?;
+    let folder = validate_path(&config, &game_id, &folder_path)?;
+    metadata::set_mod_category(&pool, &game_id, &folder, &category).await?;
     let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
-        &pool,
-        &config,
-        state.suppressor.clone(),
-        &game_id,
-        &[],
-        false,
-        true,
+        crate::services::app::runtime_effects::RuntimeSideEffects {
+            pool: &pool,
+            config: &config,
+            game_id: &game_id,
+            collections_dirty: false,
+            overlay_refresh: true,
+        },
     )
     .await;
 
@@ -114,7 +101,6 @@ pub async fn set_mod_category(
 pub async fn set_object_mods_category(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    state: tauri::State<'_, WatcherState>,
     game_id: String,
     object_id: String,
     category: String,
@@ -125,13 +111,13 @@ pub async fn set_object_mods_category(
             .map_err(|error| AppError::Internal(error.to_string()))? as usize;
 
     let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
-        &pool,
-        &config,
-        state.suppressor.clone(),
-        &game_id,
-        &[],
-        false,
-        true,
+        crate::services::app::runtime_effects::RuntimeSideEffects {
+            pool: &pool,
+            config: &config,
+            game_id: &game_id,
+            collections_dirty: false,
+            overlay_refresh: true,
+        },
     )
     .await;
 
@@ -172,14 +158,20 @@ pub async fn move_mods_to_object(
     watcher: tauri::State<'_, WatcherState>,
     input: MoveModsToObjectInput,
 ) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
+    let op_guard = op_lock.acquire().await?;
+    let folders = crate::services::fs_utils::guard::validate_paths(
+        &config,
+        &input.game_id,
+        &input.folder_paths,
+    )?;
     let result = crate::services::mods::organizer_ext::move_mods_to_object_service(
         &config,
         pool.inner(),
-        &op_lock,
+        &op_guard,
         &watcher,
         crate::services::mods::organizer_ext::MoveModsToObjectParams {
             game_id: &input.game_id,
-            folder_paths: &input.folder_paths,
+            folder_paths: &folders,
             target_object_id: &input.target_object_id,
             target_subpath: input.target_subpath.as_deref(),
             status: input.status.as_deref(),

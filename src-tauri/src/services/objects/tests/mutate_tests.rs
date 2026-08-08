@@ -1,4 +1,4 @@
-use crate::repo::object_repo::{CreateObjectInput, UpdateObjectInput};
+use crate::domain::objects::{CreateObjectInput, UpdateObjectInput};
 use crate::services::objects::mutate::{
     create_object_cmd_inner, delete_object, toggle_pin_object, update_object,
 };
@@ -98,7 +98,8 @@ async fn test_create_object_cmd_inner_conflict() {
     // Second creation should fail due to unique constraint
     let err = create_object_cmd_inner(&pool, None, input1)
         .await
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(err.to_string().contains("already exists"));
 }
 
@@ -138,7 +139,8 @@ async fn test_create_object_cmd_inner_does_not_leave_db_row_when_folder_creation
 
     let err = create_object_cmd_inner(&pool, None, input)
         .await
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(err.to_string().contains("Failed to create object folder"));
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
@@ -257,6 +259,7 @@ async fn test_delete_object_empty() {
     std::fs::create_dir(&trash_dir).unwrap();
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
+    let op_guard = op_lock.acquire().await.unwrap();
 
     crate::test_utils::insert_test_game(
         &pool,
@@ -284,7 +287,7 @@ async fn test_delete_object_empty() {
     .await
     .unwrap();
 
-    delete_object(&pool, "o1", false, &trash_dir, &watcher_state, &op_lock)
+    delete_object(&pool, "o1", false, &trash_dir, &watcher_state, &op_guard)
         .await
         .unwrap();
 
@@ -303,6 +306,7 @@ async fn test_delete_object_cascade_mods() {
     std::fs::create_dir(&trash_dir).unwrap();
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
+    let op_guard = op_lock.acquire().await.unwrap();
 
     crate::test_utils::insert_test_game(
         &pool,
@@ -365,7 +369,7 @@ async fn test_delete_object_cascade_mods() {
     .unwrap();
 
     // Deletion should cascade — remove mods + object
-    delete_object(&pool, "o1", true, &trash_dir, &watcher_state, &op_lock)
+    delete_object(&pool, "o1", true, &trash_dir, &watcher_state, &op_guard)
         .await
         .unwrap();
 

@@ -1,17 +1,16 @@
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
-use super::counts::{
-    build_terminal_counts, load_game_mods_path, load_object_count_candidates, split_segments,
-};
 use super::types::*;
 use crate::common::normalizer::is_disabled_folder;
 use crate::common::path_key::canonical_name_key;
 use crate::domain::models::ItemStatus;
+use crate::domain::objects::{ObjectFilter, ObjectSummary};
+use crate::services::objects::terminal::split_segments;
 
 pub async fn get_filtered_objects(
     pool: &SqlitePool,
     filter: &ObjectFilter,
-) -> Result<Vec<ObjectSummary>, sqlx::Error> {
+) -> Result<ObjectPage, sqlx::Error> {
     let safe_mode = if filter.safe_mode { 1i64 } else { 0i64 };
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
@@ -99,133 +98,57 @@ pub async fn get_filtered_objects(
         _ => qb.push(" ORDER BY o.is_pinned DESC, o.object_type, o.name ASC"),
     };
 
-    let mut rows = qb
+    let rows = qb
         .build_query_as::<ObjectSummaryRow>()
         .fetch_all(pool)
         .await?;
-    if rows.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let missing_projection_ids: Vec<String> = rows
+    let cold_ids: Vec<String> = rows
         .iter()
         .filter(|row| row.projection_available == 0)
-        .map(|row| row.id.clone())
+        .map(|row| row.summary.id.clone())
         .collect();
 
-    if !missing_projection_ids.is_empty() {
-        let fallback_objects: Vec<ObjectSummary> = rows
-            .iter()
-            .filter(|row| row.projection_available == 0)
-            .map(|row| ObjectSummary {
-                id: row.id.clone(),
-                name: row.name.clone(),
-                folder_path: row.folder_path.clone(),
-                matched_entry_key: row.matched_entry_key.clone(),
-                matched_alias_name: row.matched_alias_name.clone(),
-                matched_confidence: row.matched_confidence,
-                matched_reason: row.matched_reason.clone(),
-                matched_source: row.matched_source.clone(),
-                object_type: row.object_type.clone(),
-                sub_category: row.sub_category.clone(),
-                status: row.status,
-                metadata: row.metadata.clone(),
-                tags: row.tags.clone(),
-                hash_db: row.hash_db.clone(),
-                custom_skins: row.custom_skins.clone(),
-                is_pinned: row.is_pinned,
-                is_auto_sync: row.is_auto_sync,
-                thumbnail_path: row.thumbnail_path.clone(),
-                created_at: row.created_at.clone(),
-                mod_count: 0,
-                enabled_count: 0,
-                is_object_disabled: fallback_object_disabled(row),
-                has_naming_conflict: row.has_naming_conflict,
-                active_mod_paths: None,
-            })
-            .collect();
-
-        let mods_path = load_game_mods_path(pool, &filter.game_id).await?;
-        let count_candidates = load_object_count_candidates(
-            pool,
-            &filter.game_id,
-            filter.safe_mode,
-            &fallback_objects,
-        )
-        .await?;
-        let counts_by_object =
-            build_terminal_counts(&fallback_objects, &count_candidates, mods_path.as_deref());
-
-        for row in &mut rows {
-            let Some((mod_count, enabled_count, active_paths)) = counts_by_object.get(&row.id)
-            else {
-                continue;
-            };
-            row.mod_count = *mod_count;
-            row.enabled_count = *enabled_count;
-            row.active_mod_paths = active_paths.clone();
-        }
-
-        let _ = crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
-            pool,
-            &filter.game_id,
-            &missing_projection_ids,
-            false,
-        )
-        .await;
-    }
-
-    let mut objects: Vec<ObjectSummary> = rows
+    let objects: Vec<ObjectSummary> = rows
         .into_iter()
         .map(|row| {
+            // A cold projection row carries zeroes; the caller fills the
+            // counts in from disk. Disabled-ness is derivable from the path.
             let is_object_disabled = if row.projection_available == 0 {
                 fallback_object_disabled(&row)
             } else {
-                row.is_object_disabled
+                row.summary.is_object_disabled
             };
 
             ObjectSummary {
-                id: row.id,
-                name: row.name,
-                folder_path: row.folder_path,
-                matched_entry_key: row.matched_entry_key,
-                matched_alias_name: row.matched_alias_name,
-                matched_confidence: row.matched_confidence,
-                matched_reason: row.matched_reason,
-                matched_source: row.matched_source,
-                object_type: row.object_type,
-                sub_category: row.sub_category,
-                status: row.status,
-                metadata: row.metadata,
-                tags: row.tags,
-                hash_db: row.hash_db,
-                custom_skins: row.custom_skins,
-                is_pinned: row.is_pinned,
-                is_auto_sync: row.is_auto_sync,
-                thumbnail_path: row.thumbnail_path,
-                created_at: row.created_at,
-                mod_count: row.mod_count,
-                enabled_count: row.enabled_count,
                 is_object_disabled,
-                has_naming_conflict: row.has_naming_conflict,
-                active_mod_paths: row.active_mod_paths,
+                ..row.summary
             }
         })
         .collect();
 
-    if let Some(status) = filter.status_filter {
-        objects.retain(|object| match status {
-            ItemStatus::Enabled => !object.is_object_disabled,
-            ItemStatus::Disabled => object.is_object_disabled,
-        });
-    }
+    Ok(ObjectPage {
+        cold_object_ids: cold_ids,
+        objects,
+    })
+}
 
-    Ok(objects)
+/// Applies the caller's status filter once the counts are settled.
+///
+/// Split from the query because a cold projection is patched from disk in
+/// between, and `is_object_disabled` decides the filter.
+pub fn apply_status_filter(objects: &mut Vec<ObjectSummary>, status: Option<ItemStatus>) {
+    let Some(status) = status else {
+        return;
+    };
+    objects.retain(|object| match status {
+        ItemStatus::Enabled => !object.is_object_disabled,
+        ItemStatus::Disabled => object.is_object_disabled,
+    });
 }
 
 pub(super) fn fallback_object_disabled(row: &ObjectSummaryRow) -> bool {
-    row.is_object_disabled
-        || split_segments(&row.folder_path)
+    row.summary.is_object_disabled
+        || split_segments(&row.summary.folder_path)
             .iter()
             .any(|segment| is_disabled_folder(segment))
 }

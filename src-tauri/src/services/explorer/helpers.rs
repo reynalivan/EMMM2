@@ -1,12 +1,10 @@
 use std::path::Path;
 
-use crate::services::explorer::types::{ConflictGroup, InfoAnalysis, ModFolder};
+use crate::services::explorer::types::{ConflictGroup, InfoAnalysis};
 
 pub fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis {
-    if !path.join("info.json").exists() {
-        return InfoAnalysis::default();
-    }
-
+    // `read_info_json` already reports a missing file as `Ok(None)`; a
+    // pre-flight `exists()` would just be a second stat per listed folder.
     match crate::services::mods::info_json::read_info_json(path) {
         Ok(Some(info)) => {
             let is_misplaced = sub_path.is_some_and(|sp| {
@@ -36,38 +34,6 @@ pub fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis
             ..InfoAnalysis::default()
         },
     }
-}
-
-pub fn normalize_keywords(keywords: &[String]) -> Vec<String> {
-    keywords
-        .iter()
-        .map(|k| k.trim().to_lowercase())
-        .filter(|k| !k.is_empty())
-        .collect()
-}
-
-pub fn contains_filtered_keyword(folder: &ModFolder, keywords: &[String]) -> bool {
-    if keywords.is_empty() {
-        return false;
-    }
-
-    let mut haystacks = vec![
-        folder.name.to_lowercase(),
-        folder.folder_name.to_lowercase(),
-    ];
-
-    if let Ok(Some(info)) =
-        crate::services::mods::info_json::read_info_json(Path::new(&folder.path))
-    {
-        haystacks.push(info.actual_name.to_lowercase());
-        haystacks.push(info.author.to_lowercase());
-        haystacks.push(info.description.to_lowercase());
-        haystacks.extend(info.tags.into_iter().map(|tag| tag.to_lowercase()));
-    }
-
-    keywords
-        .iter()
-        .any(|keyword| haystacks.iter().any(|value| value.contains(keyword)))
 }
 
 fn prune_conflicts(

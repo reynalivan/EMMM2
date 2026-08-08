@@ -1,3 +1,4 @@
+use crate::domain::errors::BrowserError;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter};
@@ -8,7 +9,7 @@ use crate::services::browser::{download_handler, import_service};
 
 /// DTO for the frontend download list. Defined in `repo::browser_repo`; re-exported
 /// so existing `download_service::BrowserDownloadDto` users keep compiling.
-pub use crate::repo::browser_repo::BrowserDownloadDto;
+pub use crate::domain::browser::BrowserDownloadDto;
 
 fn now_stamp() -> String {
     Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string()
@@ -21,13 +22,12 @@ pub async fn create_download(
     filename: &str,
     source_url: &str,
     file_path: &str,
-) -> Result<String, String> {
+) -> Result<String, BrowserError> {
     let id = Uuid::new_v4().to_string();
     let now = now_stamp();
 
     browser_repo::insert_download(db, &id, session_id, filename, source_url, file_path, &now)
-        .await
-        .map_err(|e| format!("DB insert failed: {e}"))?;
+        .await?;
 
     Ok(id)
 }
@@ -41,7 +41,7 @@ pub async fn update_status(
     bytes_total: Option<i64>,
     error_msg: Option<&str>,
     file_path: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), BrowserError> {
     let finished_at = matches!(status, "finished" | "failed" | "canceled").then(now_stamp);
 
     browser_repo::update_status(
@@ -54,15 +54,13 @@ pub async fn update_status(
         file_path,
         finished_at,
     )
-    .await
-    .map_err(|e| format!("DB update failed: {e}"))
+    .await?;
+    Ok(())
 }
 
 /// List all downloads ordered by most recent first.
-pub async fn list_downloads(db: &SqlitePool) -> Result<Vec<BrowserDownloadDto>, String> {
-    browser_repo::list_downloads(db)
-        .await
-        .map_err(|e| format!("DB list failed: {e}"))
+pub async fn list_downloads(db: &SqlitePool) -> Result<Vec<BrowserDownloadDto>, BrowserError> {
+    Ok(browser_repo::list_downloads(db).await?)
 }
 
 /// Delete a download record and optionally the file on disk.
@@ -70,7 +68,7 @@ pub async fn delete_download(
     db: &SqlitePool,
     download_id: &str,
     delete_file: bool,
-) -> Result<(), String> {
+) -> Result<(), BrowserError> {
     if delete_file {
         let path = browser_repo::get_file_path(db, download_id)
             .await
@@ -82,9 +80,7 @@ pub async fn delete_download(
         }
     }
 
-    browser_repo::delete_download(db, download_id)
-        .await
-        .map_err(|e| format!("DB delete failed: {e}"))
+    Ok(browser_repo::delete_download(db, download_id).await?)
 }
 
 /// Cancel a download: abort the in-flight transfer when one is running,
@@ -93,7 +89,7 @@ pub async fn cancel_download(
     db: &SqlitePool,
     download_id: &str,
     delete_file: Option<bool>,
-) -> Result<(), String> {
+) -> Result<(), BrowserError> {
     if download_handler::request_cancel(download_id) {
         return Ok(());
     }
@@ -106,23 +102,19 @@ pub async fn cancel_download(
 }
 
 /// Remove all downloads with status `imported`.
-pub async fn clear_imported(db: &SqlitePool) -> Result<u64, String> {
-    browser_repo::delete_imported(db)
-        .await
-        .map_err(|e| format!("DB clear_imported failed: {e}"))
+pub async fn clear_imported(db: &SqlitePool) -> Result<u64, BrowserError> {
+    Ok(browser_repo::delete_imported(db).await?)
 }
 
 /// Remove old downloads that exceed the retention period.
-pub async fn clear_old_downloads(db: &SqlitePool) -> Result<u64, String> {
+pub async fn clear_old_downloads(db: &SqlitePool) -> Result<u64, BrowserError> {
     let retention = browser_repo::get_retention_days(db)
         .await
         .ok()
         .flatten()
         .unwrap_or(30);
 
-    browser_repo::delete_older_than(db, retention)
-        .await
-        .map_err(|e| format!("DB clear_old failed: {e}"))
+    Ok(browser_repo::delete_older_than(db, retention).await?)
 }
 
 /// Called by `browser_service` when the download `Finished` event fires.
@@ -134,11 +126,9 @@ pub async fn on_download_finished(
     file_path: Option<&str>,
     success: bool,
     tab_label: &str,
-) -> Result<(), String> {
+) -> Result<(), BrowserError> {
     // Find the download by source_url + tab_label heuristic (most recent requested)
-    let row = browser_repo::find_active_by_url(db, source_url)
-        .await
-        .map_err(|e| format!("DB fetch failed: {e}"))?;
+    let row = browser_repo::find_active_by_url(db, source_url).await?;
 
     let (download_id, session_id) = match row {
         Some(r) => (r.id, r.session_id),

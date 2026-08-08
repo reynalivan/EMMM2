@@ -3,7 +3,7 @@
 use super::live_state::{live_runtime_is_safe, load_game_mods_path, load_live_runtime_state};
 use super::projection::{
     collection_members_from_projected_state, compute_signature, load_projected_collection_state,
-    persist_projected_state,
+    persist_projected_state, require_collection,
 };
 use crate::domain::collection::{
     CollectionMod, CollectionObject, CollectionSummary, CreateCollectionInput,
@@ -18,9 +18,10 @@ use sqlx::SqlitePool;
 pub async fn list_collections(
     pool: &SqlitePool,
     game_id: &str,
-    is_safe: bool,
+    corridor: crate::domain::corridor::Corridor,
     _mods_path: Option<&str>,
 ) -> Result<Vec<CollectionSummary>, CollectionError> {
+    let is_safe = corridor.is_safe();
     let (runtime_mods, runtime_objects) = load_live_runtime_state(pool, game_id).await?;
     let runtime_signature = compute_signature(&runtime_mods, &runtime_objects);
     // Corridor-scoped list (excludes unsaved): an opposite-corridor collection
@@ -60,11 +61,7 @@ pub async fn create_collection(
                     "Clone snapshot requires a source collection".to_string(),
                 ));
             };
-            let source = collection_repo::get_by_id(pool, source_collection_id)
-                .await?
-                .ok_or_else(|| CollectionError::NotFound {
-                    id: source_collection_id.to_string(),
-                })?;
+            let source = require_collection(pool, source_collection_id).await?;
             if source.game_id != input.game_id {
                 return Err(CollectionError::Validation(
                     "Snapshot source does not belong to the active game".to_string(),
@@ -141,9 +138,7 @@ pub async fn create_collection(
     .await?;
 
     // Return summary
-    let collection = collection_repo::get_by_id(pool, &id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound { id: id.clone() })?;
+    let collection = require_collection(pool, &id).await?;
 
     let active_collection_id = corridor_repo::get(pool, &input.game_id, collection.is_safe)
         .await
@@ -157,9 +152,7 @@ pub async fn create_collection(
 }
 
 pub async fn delete_collection(pool: &SqlitePool, id: &str) -> Result<(), CollectionError> {
-    let collection = collection_repo::get_by_id(pool, id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound { id: id.to_string() })?;
+    let collection = require_collection(pool, id).await?;
     let mut tx = pool.begin().await?;
     corridor_repo::clear_collection_references_tx(&mut tx, id)
         .await
@@ -180,17 +173,9 @@ pub async fn update_collection(
     if let Some(ref name) = input.name {
         collection_repo::rename(pool, &input.id, name).await?;
     }
-    let collection = collection_repo::get_by_id(pool, &input.id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: input.id.clone(),
-        })?;
+    let collection = require_collection(pool, &input.id).await?;
     let _ = load_projected_collection_state(pool, &collection, None).await?;
-    let collection = collection_repo::get_by_id(pool, &input.id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: input.id.clone(),
-        })?;
+    let collection = require_collection(pool, &input.id).await?;
 
     Ok(collection_repo::to_summary(&collection, None))
 }

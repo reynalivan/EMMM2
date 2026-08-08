@@ -53,11 +53,22 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
     }
 
     block_on(async {
-        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use sqlx::sqlite::{
+            SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
+        };
         let try_init = || async {
+            // sqlx leaves these unset, so SQLite falls back to `DELETE` + `FULL`
+            // — roughly three fsyncs per autocommit statement, paid per row by
+            // every bulk toggle, delete and projection refresh.
+            //
+            // `NORMAL` under WAL can lose the last transactions on power loss,
+            // which is the right trade here: the filesystem is the source of
+            // truth and a lost index write is repaired by the next reconcile.
             let opts = SqliteConnectOptions::new()
                 .filename(&db_path)
-                .create_if_missing(true);
+                .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Wal)
+                .synchronous(SqliteSynchronous::Normal);
 
             let pool = SqlitePoolOptions::new()
                 .max_connections(5)
@@ -79,6 +90,12 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
                     .as_secs();
                 let backup_path = app_data_dir.join(format!("app_corrupt_{}.db", timestamp));
                 let _ = std::fs::rename(&db_path, &backup_path);
+                // WAL keeps its state in sidecar files; leaving them behind
+                // would hand the freshly created database a stale journal.
+                for suffix in ["-wal", "-shm"] {
+                    let sidecar = app_data_dir.join(format!("app.db{suffix}"));
+                    let _ = std::fs::remove_file(sidecar);
+                }
                 try_init()
                     .await
                     .expect("Failed to initialize database after recovery")
@@ -92,26 +109,18 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
     })
 }
 
-/// Builds the hotkey manager and registers its bindings. Falls back to a disabled
-/// manager when the configured shortcuts cannot be registered; returns `None` only
-/// when even the disabled fallback fails to construct.
+/// Builds the hotkey manager and registers its bindings. Construction cannot
+/// fail; a shortcut the OS refuses just leaves the manager with no bindings
+/// registered, which reads as disabled.
 pub fn init_hotkey_manager(
     app_handle: &tauri::AppHandle,
     hotkey_config: &services::hotkeys::HotkeyConfig,
-) -> Option<services::hotkeys::manager::HotkeyManager> {
-    match services::hotkeys::manager::HotkeyManager::new(hotkey_config) {
-        Ok(hk_manager) => {
-            let _ = hk_manager.update_bindings(app_handle, hotkey_config);
-            Some(hk_manager)
-        }
-        Err(_) => {
-            let disabled_config = services::hotkeys::HotkeyConfig {
-                enabled: false,
-                ..Default::default()
-            };
-            services::hotkeys::manager::HotkeyManager::new(&disabled_config).ok()
-        }
+) -> services::hotkeys::manager::HotkeyManager {
+    let hk_manager = services::hotkeys::manager::HotkeyManager::new(hotkey_config);
+    if let Err(error) = hk_manager.update_bindings(app_handle, hotkey_config) {
+        log::warn!("startup: hotkey registration failed, continuing disabled: {error}");
     }
+    hk_manager
 }
 
 /// Marks browser downloads and import jobs that were mid-flight when the process
@@ -134,17 +143,21 @@ async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
 /// Purges stale task rows, fails downloads and import jobs a crash left in
 /// flight, then reconciles the active game's mod folder against the database.
 /// Every step is best-effort and only logs on failure.
-pub fn run_startup_reconcile(
-    pool: &sqlx::SqlitePool,
-    config: &services::config::ConfigService,
-    watcher_state: &services::scanner::watcher::WatcherState,
-    disk_reconcile_state: &services::disk_reconcile::orchestrator::DiskReconcileState,
-) {
-    use tauri::async_runtime::block_on;
+/// Boot-time database housekeeping, plus a background reconcile.
+///
+/// The two recovery writes stay on the setup thread: they are single UPDATEs,
+/// and the frontend must not open onto a stale crash-recovery queue. The
+/// reconcile does not — it walks the entire mods folder, and `.setup()` has to
+/// return before the window appears. It reports through the progress events it
+/// already emits, so the UI shows it running instead of showing nothing.
+pub fn run_startup_reconcile(app: tauri::AppHandle) {
+    use tauri::async_runtime::{block_on, spawn};
+    use tauri::Manager;
 
-    let settings = config.get_settings();
+    let pool = app.state::<sqlx::SqlitePool>().inner().clone();
+
     block_on(async {
-        match repo::task_repo::purge_old_tasks(pool).await {
+        match repo::task_repo::purge_old_tasks(&pool).await {
             Ok(purged) if purged > 0 => {
                 log::info!("startup: purged {purged} old task log(s) before boot reconcile");
             }
@@ -154,28 +167,27 @@ pub fn run_startup_reconcile(
             }
         }
 
-        recover_interrupted_transfers(pool).await;
+        recover_interrupted_transfers(&pool).await;
+    });
 
-        let Some(active_game_id) = settings.active_game_id.as_deref() else {
+    spawn(async move {
+        let config = app.state::<services::config::ConfigService>();
+        let Some(game) = config.with_settings(|settings| settings.active_game().cloned()) else {
             return;
         };
-        let Some(game) = settings
-            .games
-            .iter()
-            .find(|entry| entry.id == active_game_id)
-        else {
-            return;
-        };
-        let mod_path = game.mod_path.to_string_lossy().to_string();
-        if mod_path.is_empty() {
+        if game.mod_path.as_os_str().is_empty() {
             return;
         }
 
-        match services::disk_reconcile::orchestrator::reconcile_disk_state(
+        let watcher_state = app.state::<services::scanner::watcher::WatcherState>();
+        let disk_reconcile_state =
+            app.state::<services::disk_reconcile::orchestrator::DiskReconcileState>();
+
+        if let Err(error) = services::disk_reconcile::orchestrator::reconcile_disk_state(
             services::disk_reconcile::orchestrator::DiskReconcileContext {
-                pool,
-                config,
-                state: disk_reconcile_state,
+                pool: &pool,
+                config: config.inner(),
+                state: disk_reconcile_state.inner(),
                 watcher_suppressor: watcher_state.suppressor.clone(),
             },
             services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
@@ -187,14 +199,11 @@ pub fn run_startup_reconcile(
         )
         .await
         {
-            Ok(_) => {}
-            Err(error) => {
-                log::warn!(
-                    "Startup Disk Reconcile failed for '{}': {}",
-                    game.name,
-                    error
-                );
-            }
+            log::warn!(
+                "Startup Disk Reconcile failed for '{}': {}",
+                game.name,
+                error
+            );
         }
     });
 }

@@ -2,7 +2,7 @@
  * Tests for RandomizerModal component.
  * Covers: TC-35-001 (Roll Luck / Proposal Generation),
  *         TC-35-002 (Reroll), TC-35-003 (Selection Toggle),
- *         TC-35-004 (Apply), TC-35-005 (Safe Mode Filter),
+ *         TC-35-004 (Apply),
  *         TC-35-006 (Empty / Error States)
  */
 
@@ -86,7 +86,6 @@ describe('RandomizerModal - TC-35', () => {
       await waitFor(() => {
         expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
           gameId: 'g-1',
-          isSafe: true,
         });
       });
     });
@@ -260,50 +259,8 @@ describe('RandomizerModal - TC-35', () => {
     });
   });
 
-  describe('TC-35-005: Safe Mode Filter', () => {
-    it('defaults Safe Mode toggle to checked (true)', async () => {
-      vi.mocked(invoke).mockResolvedValue([]);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
-          gameId: 'g-1',
-          isSafe: true,
-        });
-      });
-
-      const toggle = screen.getByRole('checkbox', { hidden: true });
-      expect(toggle).toBeChecked();
-    });
-
-    it('calls suggest_random_mods with isSafe=false when Safe Mode is unchecked', async () => {
-      vi.mocked(invoke).mockResolvedValue([]);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      // Wait for auto-roll to finish so toggle isn't disabled
-      await waitFor(() => {
-        expect(screen.queryByText(/Consulting the RNG Gods/i)).not.toBeInTheDocument();
-      });
-
-      const toggle = screen.getByRole('checkbox', { hidden: true });
-      await act(async () => {
-        fireEvent.click(toggle);
-      });
-
-      const rerollBtn = screen.getByText(/Roll Luck/i, { selector: 'button' });
-      await act(async () => {
-        fireEvent.click(rerollBtn);
-      });
-
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
-          gameId: 'g-1',
-          isSafe: false,
-        });
-      });
-    });
-  });
+  // TC-35-005 (client-side Safe Mode toggle) was removed: the corridor is
+  // derived server-side from Settings and can no longer be chosen per roll.
 
   describe('TC-35-006: Empty / Error States', () => {
     it('shows error alert when no eligible mods found', async () => {

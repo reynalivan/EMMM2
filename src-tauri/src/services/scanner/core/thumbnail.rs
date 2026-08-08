@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Valid image extensions for thumbnail detection.
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+/// The one image-extension set for the whole crate. Other modules must
+/// reuse this rather than restating it.
+pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 
 /// Find the best thumbnail image for a mod folder.
 ///
@@ -166,7 +168,7 @@ fn find_image_recursive(mod_path: &Path, max_depth: usize) -> Option<PathBuf> {
 }
 
 /// Check if a file has an image extension.
-fn is_image_file(path: &Path) -> bool {
+pub fn is_image_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| IMAGE_EXTENSIONS.contains(&e.to_lowercase().as_str()))

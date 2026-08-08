@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::common::path_key::strip_path_prefix_preserve_display;
+use crate::common::path_key::{canonical_name_key, strip_path_prefix_preserve_display};
 use crate::domain::workspace::{
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
     WorkspaceViewModelInput,
@@ -48,34 +48,43 @@ pub fn push_affected_path(paths: &mut Vec<String>, path: &str) {
     paths.push(path.to_string());
 }
 
-fn resolve_existing_path(path: &Path) -> Option<std::path::PathBuf> {
-    if path.exists() {
+/// Resolve a folder that may exist under a different case or a `DISABLED `
+/// prefix, returning it only if it is a directory.
+///
+/// One `metadata` call answers exists-and-is-a-directory together, and the
+/// fallback scans the parent once against both candidate names — this runs per
+/// object on every view-model fetch, and the parent is the mods root.
+fn resolve_existing_dir(path: &Path) -> Option<std::path::PathBuf> {
+    if std::fs::metadata(path).is_ok_and(|meta| meta.is_dir()) {
         return Some(path.to_path_buf());
     }
 
     let parent = path.parent()?;
     let name = path.file_name()?.to_string_lossy().to_string();
-    let entries = std::fs::read_dir(parent).ok()?;
+    // Hoisted: `names_equal_by_key` would otherwise re-derive these per entry.
+    let name_key = canonical_name_key(&name);
+    let disabled_key = canonical_name_key(&format!("{}{}", crate::DISABLED_PREFIX, name));
 
-    entries
+    std::fs::read_dir(parent)
+        .ok()?
         .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
         .find(|entry| {
-            crate::common::path_key::names_equal_by_key(&entry.file_name().to_string_lossy(), &name)
+            let entry_key = canonical_name_key(&entry.file_name().to_string_lossy());
+            entry_key == name_key || entry_key == disabled_key
         })
         .map(|entry| entry.path())
-        .or_else(|| {
-            let disabled_name = format!("{}{}", crate::DISABLED_PREFIX, name);
-            std::fs::read_dir(parent)
-                .ok()?
-                .flatten()
-                .find(|entry| {
-                    crate::common::path_key::names_equal_by_key(
-                        &entry.file_name().to_string_lossy(),
-                        &disabled_name,
-                    )
-                })
-                .map(|entry| entry.path())
-        })
+}
+
+/// Whether `sub_path` still resolves to a directory under `mods_path`.
+/// Cheaper than [`existing_relative_sub_path`] — skips the prefix strip.
+pub fn relative_sub_path_exists(mods_path: &str, sub_path: &str) -> bool {
+    let trimmed = sub_path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    resolve_existing_dir(&Path::new(mods_path).join(trimmed)).is_some()
 }
 
 pub fn existing_relative_sub_path(mods_path: &str, sub_path: &str) -> Option<String> {
@@ -84,14 +93,8 @@ pub fn existing_relative_sub_path(mods_path: &str, sub_path: &str) -> Option<Str
         return None;
     }
 
-    let requested = Path::new(mods_path).join(trimmed);
-    let resolved = resolve_existing_path(&requested)?;
-    if !resolved.is_dir() {
-        return None;
-    }
-
-    let resolved_path = resolved.to_string_lossy().to_string();
-    strip_path_prefix_preserve_display(&resolved_path, mods_path, None)
+    let resolved = resolve_existing_dir(&Path::new(mods_path).join(trimmed))?;
+    strip_path_prefix_preserve_display(&resolved.to_string_lossy(), mods_path, None)
 }
 
 fn existing_absolute_path(path: &str) -> Option<String> {
@@ -100,11 +103,7 @@ fn existing_absolute_path(path: &str) -> Option<String> {
         return None;
     }
 
-    let resolved = resolve_existing_path(Path::new(trimmed))?;
-    if !resolved.is_dir() {
-        return None;
-    }
-
+    let resolved = resolve_existing_dir(Path::new(trimmed))?;
     Some(resolved.to_string_lossy().to_string())
 }
 

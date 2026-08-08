@@ -22,7 +22,7 @@ pub async fn open_in_explorer(
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
-            .arg(canonical_path)
+            .arg(&*canonical_path)
             .spawn()
             .map_err(|e| AppError::Io(format!("Failed to open explorer: {}", e)))?;
         Ok(())
@@ -73,7 +73,7 @@ fn find_fallback_path(mods_path: &str, object_name: &str) -> Result<String, AppE
         return Ok(candidate.to_string_lossy().to_string());
     }
 
-    let disabled_candidate = mods_dir.join(format!("{}{}", crate::DISABLED_PREFIX, object_name));
+    let disabled_candidate = mods_dir.join(standardize_prefix(object_name, false));
     if disabled_candidate.exists() {
         return Ok(disabled_candidate.to_string_lossy().to_string());
     }
@@ -109,12 +109,14 @@ pub async fn rename_mod_folder(
     new_name: String,
     game_id: String,
 ) -> Result<RenameResult, AppError> {
+    let op_guard = op_lock.acquire().await?;
+    let folder = validate_path(&config, &game_id, &folder_path)?;
     let result = crate::services::mods::core_ops::rename_mod_folder_inner_service(
         &config,
         pool.inner(),
         &state,
-        &op_lock,
-        folder_path.clone(),
+        &op_guard,
+        &folder,
         new_name.clone(),
         &game_id,
     )

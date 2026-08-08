@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::services::scanner::deep_matcher::analysis::scoring::cap_evidence;
 use crate::services::scanner::deep_matcher::state::master_db::MasterDb;
 use crate::services::scanner::deep_matcher::{
     sort_candidates_deterministic, Candidate, Evidence, ScoreState,
 };
+
+use super::stages::entry_tokens;
 
 pub(crate) fn collect_candidates(
     db: &MasterDb,
@@ -87,8 +89,4 @@ pub(crate) fn empty_evidence(
         scanned_ini_files: signals.scanned_ini_files,
         scanned_name_items: signals.scanned_name_items,
     }
-}
-
-fn entry_tokens(db: &MasterDb, entry_id: usize) -> &HashSet<String> {
-    &db.keywords[entry_id].1
 }

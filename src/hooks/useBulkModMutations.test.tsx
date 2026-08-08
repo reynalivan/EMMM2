@@ -167,13 +167,13 @@ describe('useBulkToggle', () => {
     const workspaceKey = workspaceKeys.viewModel(
       {
         game_id: 'game-1',
-        safe_mode: false,
         object_type: null,
         search_query: null,
         meta_filters: null,
         sort_by: null,
         status_filter: null,
       },
+      false,
       'ALBEDO',
       'ALBEDO',
       oldPath,

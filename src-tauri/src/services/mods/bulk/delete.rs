@@ -22,7 +22,7 @@ pub async fn bulk_delete(
     let app_data_dir = app.path().app_data_dir().map_err(|e| {
         crate::domain::errors::AppError::Io(format!("Failed to get app data dir: {}", e))
     })?;
-    let trash_dir = app_data_dir.join("trash");
+    let trash_dir = crate::services::mods::trash::trash_dir_under(&app_data_dir);
 
     // One guard across the whole batch: no watcher-event leaks between items.
     let _suppression = SuppressionGuard::new(&state.suppressor);
@@ -79,9 +79,8 @@ pub async fn bulk_delete(
 
     if !db_deletes.is_empty() {
         // Detect which corridors were affected BEFORE deleting from DB or after if we still have the paths
-        // Actually, we should check corridor safety BEFORE we commit the delete to DB.
-        // But we already moved them on disk. Let's query based on the paths we're about to delete.
-        let affected_corridors: Vec<bool> = if let Some(gid) = &game_id {
+        // Report the removed mods to any collection that referenced them.
+        if let Some(gid) = &game_id {
             // Get mod path to compute relative paths
             let mp = crate::repo::game_repo::get_mod_path(pool, gid)
                 .await
@@ -105,16 +104,8 @@ pub async fn bulk_delete(
                             .unwrap_or_default();
                     collection_impact.merge(impact);
                 }
-
-                mod_repo::get_distinct_corridors_for_folders(pool, gid, &relatives)
-                    .await
-                    .unwrap_or_default()
-            } else {
-                vec![]
             }
-        } else {
-            vec![]
-        };
+        }
 
         if let Err(e) = mod_repo::batch_delete_by_path(pool, &db_deletes).await {
             log::error!("Failed batch deleting mod paths from DB: {}", e);
@@ -122,16 +113,11 @@ pub async fn bulk_delete(
 
         // Trigger dirty state for cada affected corridor
         if let Some(gid) = &game_id {
-            let _ = crate::repo::runtime_projection_repo::rebuild_game_projection(pool, gid).await;
-            let safe_contexts = affected_corridors;
-            let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+            crate::services::app::runtime_effects::finalize_mutation(
                 pool,
                 config,
-                state.suppressor.clone(),
                 gid,
-                &safe_contexts,
-                true,
-                true,
+                crate::services::app::runtime_effects::MutationOutcome::full_game(),
             )
             .await;
         }

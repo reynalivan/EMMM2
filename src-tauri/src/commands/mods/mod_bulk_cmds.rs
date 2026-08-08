@@ -26,9 +26,7 @@ pub async fn bulk_toggle_mods(
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods path".to_string()))?;
 
     // Security validation for all paths
-    for p in &paths {
-        validate_path(&config, &game_id, p)?;
-    }
+    crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
 
     let _lock = op_lock.acquire().await?;
     let result = bulk::bulk_toggle(
@@ -75,14 +73,14 @@ pub async fn bulk_delete_mods(
 pub async fn bulk_update_info(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-    state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     paths: Vec<String>,
     update: info_json::ModInfoUpdate,
 ) -> Result<bulk::BulkResult, AppError> {
     let _lock = op_lock.acquire().await?;
-    let result = bulk::bulk_update_info(&config, &game_id, paths, update).await?;
+    let validated = crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
+    let result = bulk::bulk_update_info(&validated, update).await?;
 
     if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &game_id).await? {
         let post_ctx = crate::services::app::post_apply::PostApplyContext {
@@ -90,8 +88,7 @@ pub async fn bulk_update_info(
             pool: pool.inner().clone(),
             is_safe: config.get_settings().safe_mode.enabled,
             mods_path: mods_path.into(),
-            suppressor: state.suppressor.clone(),
-            settings: config.get_settings(),
+            hotkeys: config.with_settings(|settings| settings.hotkeys.clone()),
             status_fields: None,
         };
         let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;

@@ -1,7 +1,7 @@
 use crate::domain::errors::AppError;
 use crate::domain::models::ItemStatus;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
+use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
@@ -9,32 +9,14 @@ use sqlx::SqlitePool;
 use std::fs;
 use std::path::Path;
 
-async fn refresh_projection_for_optional_object(
-    pool: &SqlitePool,
-    game_id: &str,
-    object_id: Option<String>,
-) -> Result<(), sqlx::Error> {
-    let object_ids = object_id.into_iter().collect::<Vec<_>>();
-    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
-        pool,
-        game_id,
-        &object_ids,
-        false,
-    )
-    .await
-}
-
 /// Set the category (Object Type) for a mod.
 /// Updates the `mods` table.
 pub async fn set_mod_category(
-    config: &ConfigService,
     pool: &SqlitePool,
     game_id: &str,
-    folder_path: &str,
+    canonical_path: &ValidatedPath,
     category: &str,
 ) -> Result<(), AppError> {
-    let canonical_path = validate_path(config, game_id, folder_path)?;
-
     let folder_path_str = canonical_path.to_string_lossy();
 
     let exists =
@@ -65,13 +47,9 @@ pub async fn set_mod_category(
 /// Copies the source image to `preview.png` (or keeps extension) in the mod folder.
 /// Invalidates cache.
 pub fn update_mod_thumbnail(
-    config: &ConfigService,
-    game_id: &str,
-    folder_path: &str,
+    target_dir: &ValidatedPath,
     source_path: &str,
 ) -> Result<String, AppError> {
-    let target_dir = validate_path(config, game_id, folder_path)?;
-
     let source_path_obj = Path::new(source_path);
     if !source_path_obj.exists() || !source_path_obj.is_file() {
         return Err(AppError::NotFound(format!(
@@ -101,11 +79,10 @@ pub async fn toggle_mod_safe(
     pool: &SqlitePool,
     watcher: &WatcherState,
     game_id: &str,
-    folder_path: &str,
+    full_path: &ValidatedPath,
     safe: bool,
 ) -> Result<(), AppError> {
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    let full_path = validate_path(config, game_id, folder_path)?;
 
     let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?
@@ -114,7 +91,7 @@ pub async fn toggle_mod_safe(
     let base = std::path::Path::new(&game_mod_path);
     let rel_path = full_path
         .strip_prefix(base)
-        .unwrap_or(&full_path)
+        .unwrap_or(full_path)
         .to_string_lossy()
         .to_string();
 
@@ -127,19 +104,15 @@ pub async fn toggle_mod_safe(
         is_safe: Some(safe),
         ..Default::default()
     };
-    let _ = crate::services::mods::info_json::update_info_json(&full_path, &update);
+    let _ = crate::services::mods::info_json::update_info_json(full_path, &update);
 
-    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+    crate::services::app::runtime_effects::finalize_mutation(
         pool,
         config,
-        watcher.suppressor.clone(),
         game_id,
-        &[safe, !safe],
-        true,
-        true,
+        crate::services::app::runtime_effects::MutationOutcome::objects(object_id),
     )
     .await;
-    refresh_projection_for_optional_object(pool, game_id, object_id).await?;
 
     Ok(())
 }
@@ -177,13 +150,12 @@ fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::repo::mod_repo:
 pub async fn suggest_random_mods(
     pool: &SqlitePool,
     game_id: &str,
-    is_safe: bool,
-) -> Result<Vec<RandomModProposal>, String> {
+    corridor: crate::domain::corridor::Corridor,
+) -> Result<Vec<RandomModProposal>, AppError> {
+    let is_safe = corridor.is_safe();
     use rand::seq::SliceRandom;
 
-    let characters = crate::repo::object_repo::get_characters_for_game(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let characters = crate::repo::object_repo::get_characters_for_game(pool, game_id).await?;
 
     if characters.is_empty() {
         return Ok(Vec::new());
@@ -192,9 +164,7 @@ pub async fn suggest_random_mods(
     let mut proposals = Vec::new();
 
     for (object_id, object_name) in characters {
-        let mods = crate::repo::mod_repo::get_mods_by_object_id(pool, &object_id, is_safe)
-            .await
-            .map_err(|e| e.to_string())?;
+        let mods = crate::repo::mod_repo::get_mods_by_object_id(pool, &object_id, is_safe).await?;
 
         if mods.is_empty() {
             continue;
@@ -225,14 +195,22 @@ pub async fn suggest_random_mods(
 pub async fn get_active_mod_conflicts(
     pool: &SqlitePool,
     game_id: &str,
-) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, String> {
-    let rows = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
+) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, AppError> {
+    let rows = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id).await?;
 
+    Ok(conflicts_for_enabled_paths(&rows))
+}
+
+/// Conflict detection over an enabled-mod path list the caller already has.
+///
+/// Post-apply needs both the conflicts and the same path list for its harvest;
+/// without this it issued the identical query twice.
+pub fn conflicts_for_enabled_paths(
+    enabled_paths: &[String],
+) -> Vec<crate::services::scanner::conflict::ConflictInfo> {
     let mut ini_files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
-    for path_str in rows {
-        let path = Path::new(&path_str);
+    for path_str in enabled_paths {
+        let path = Path::new(path_str);
         if path.exists() {
             let content = crate::services::scanner::core::walker::scan_folder_content(path, 3);
             for ini in content.ini_files {
@@ -241,6 +219,5 @@ pub async fn get_active_mod_conflicts(
         }
     }
 
-    let conflicts = crate::services::scanner::conflict::detect_conflicts(&ini_files);
-    Ok(conflicts)
+    crate::services::scanner::conflict::detect_conflicts(&ini_files)
 }

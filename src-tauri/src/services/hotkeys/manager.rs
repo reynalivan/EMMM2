@@ -8,8 +8,8 @@
 //! - Event listening is callback-driven via plugin handler (configured in `lib.rs`).
 //! - `HotkeyState` (debounce/switch_lock) is protected by `Mutex`.
 
+use crate::domain::errors::AppError;
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -18,34 +18,33 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use crate::common::sync::lock;
 use crate::services::config::ConfigService;
 
-use crate::services::keyviewer::generator::StatusFields;
-
 use super::actions::{self, ActionResult, CycleDirection};
+use super::cycle_preset::execute_cycle_preset;
 use super::focus;
-use super::{HotkeyAction, HotkeyConfig, HotkeyState};
+use super::{get_key_string, HotkeyAction, HotkeyConfig, HotkeyState};
 
 // ─── Key Parsing ─────────────────────────────────────────────────────────────
 
 /// Parse and normalize a user-facing key string (e.g. "F5", "Shift+F6").
-pub fn parse_hotkey(key_str: &str) -> Result<String, String> {
+pub fn parse_hotkey(key_str: &str) -> Result<String, AppError> {
     let normalized = normalize_shortcut(key_str);
     if normalized.is_empty() {
-        return Err("Hotkey cannot be empty".to_string());
+        return Err(AppError::Internal("Hotkey cannot be empty".to_string()));
     }
 
-    let has_key_token = normalized
-        .split('+')
-        .map(str::trim)
-        .any(|token| !token.is_empty());
-
-    if !has_key_token {
-        return Err(format!("Invalid hotkey '{key_str}'"));
+    // `normalize_shortcut` already stripped every space, so a token is empty
+    // only when the string is all separators ("+", "++", …).
+    if normalized.split('+').all(str::is_empty) {
+        return Err(AppError::Internal(format!("Invalid hotkey '{key_str}'")));
     }
 
     Ok(normalized)
 }
 
-fn normalize_shortcut(key_str: &str) -> String {
+/// The one spelling of "how a shortcut string is canonicalized". Registration
+/// and keystroke replay (`reload.rs`) must agree, or we register a shortcut we
+/// cannot send.
+pub fn normalize_shortcut(key_str: &str) -> String {
     key_str.trim().replace(' ', "").to_ascii_lowercase()
 }
 
@@ -58,70 +57,60 @@ fn preset_cycle_direction(action: HotkeyAction) -> Option<CycleDirection> {
     }
 }
 
+/// Why an action produced no backend work, for the status line.
+fn noop_reason(action: HotkeyAction) -> &'static str {
+    match action {
+        HotkeyAction::ToggleOverlay => "Overlay toggle (handled by 3DMigoto)",
+        _ => "Variant cycle triggered",
+    }
+}
+
 // ─── Registration Map ────────────────────────────────────────────────────────
 
 type HotkeyMap = HashMap<String, HotkeyAction>;
 
 /// Build a map of (shortcut string, HotkeyAction) from the user config.
-fn build_registration(config: &HotkeyConfig) -> Result<Vec<(String, HotkeyAction)>, String> {
-    let bindings = [
-        (HotkeyAction::NextPreset, &config.next_preset),
-        (HotkeyAction::PrevPreset, &config.prev_preset),
-        (HotkeyAction::ToggleOverlay, &config.toggle_overlay),
-        (HotkeyAction::NextVariantFolder, &config.next_variant),
-        (HotkeyAction::PrevVariantFolder, &config.prev_variant),
-    ];
-
-    let mut entries = Vec::new();
-
-    for (action, key_str) in bindings {
-        entries.push((parse_hotkey(key_str)?, action));
-    }
-
-    Ok(entries)
+fn build_registration(config: &HotkeyConfig) -> Result<Vec<(String, HotkeyAction)>, AppError> {
+    HotkeyAction::ALL
+        .into_iter()
+        .map(|action| Ok((parse_hotkey(get_key_string(config, action))?, action)))
+        .collect()
 }
 
 // ─── HotkeyManager ──────────────────────────────────────────────────────────
 
 /// Managed Tauri state — owns OS hotkey lifecycle.
 pub struct HotkeyManager {
-    /// Map from normalized shortcut string → action enum.
+    /// Map from normalized shortcut string → action enum. Non-empty exactly
+    /// while shortcuts are registered, so it also answers `is_enabled`.
     key_map: Mutex<HotkeyMap>,
     /// Debounce / switch-lock state.
     state: Mutex<HotkeyState>,
-    /// Whether the manager is actively listening.
-    enabled: Mutex<bool>,
 }
 
 impl HotkeyManager {
     /// Create a new HotkeyManager.
-    pub fn new(config: &HotkeyConfig) -> Result<Self, String> {
-        Ok(Self {
+    pub fn new(config: &HotkeyConfig) -> Self {
+        Self {
             key_map: Mutex::new(HashMap::new()),
             state: Mutex::new(HotkeyState::new(config.cooldown_ms)),
-            enabled: Mutex::new(false),
-        })
+        }
     }
 
     /// Register all shortcuts from the config with Tauri global shortcut plugin.
-    fn register_all(&self, app: &tauri::AppHandle, config: &HotkeyConfig) -> Result<(), String> {
+    fn register_all(&self, app: &tauri::AppHandle, config: &HotkeyConfig) -> Result<(), AppError> {
         let global_shortcut = app.global_shortcut();
         let entries = build_registration(config)?;
         let mut key_map = HashMap::new();
 
-        global_shortcut
-            .unregister_all()
-            .map_err(|e| format!("Failed to clear existing shortcuts: {e}"))?;
+        global_shortcut.unregister_all()?;
 
         for (shortcut, action) in &entries {
-            global_shortcut
-                .register(shortcut.as_str())
-                .map_err(|e| format!("Failed to register {:?} ({shortcut}): {e}", action))?;
+            global_shortcut.register(shortcut.as_str())?;
             key_map.insert(shortcut.clone(), *action);
         }
 
         *lock(&self.key_map) = key_map;
-        *lock(&self.enabled) = true;
 
         log::info!("Registered {} global shortcuts", entries.len());
 
@@ -129,14 +118,11 @@ impl HotkeyManager {
     }
 
     /// Unregister all shortcuts from the plugin.
-    fn unregister_all(&self, app: &tauri::AppHandle) -> Result<(), String> {
+    fn unregister_all(&self, app: &tauri::AppHandle) -> Result<(), AppError> {
         let global_shortcut = app.global_shortcut();
-        global_shortcut
-            .unregister_all()
-            .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
+        global_shortcut.unregister_all()?;
 
-        *lock(&self.key_map) = HashMap::new();
-        *lock(&self.enabled) = false;
+        lock(&self.key_map).clear();
 
         log::info!("Unregistered all global shortcuts");
 
@@ -149,7 +135,7 @@ impl HotkeyManager {
         &self,
         app: &tauri::AppHandle,
         config: &HotkeyConfig,
-    ) -> Result<(), String> {
+    ) -> Result<(), AppError> {
         self.unregister_all(app)?;
 
         if config.enabled {
@@ -164,12 +150,16 @@ impl HotkeyManager {
 
     /// Check if the manager is currently enabled and listening.
     pub fn is_enabled(&self) -> bool {
-        *lock(&self.enabled)
+        !lock(&self.key_map).is_empty()
     }
 
     #[cfg(test)]
     pub fn set_enabled_for_test(&self, enabled: bool) {
-        *lock(&self.enabled) = enabled;
+        let mut key_map = lock(&self.key_map);
+        key_map.clear();
+        if enabled {
+            key_map.insert("f6".to_string(), HotkeyAction::NextPreset);
+        }
     }
 
     /// Look up which action corresponds to a shortcut string.
@@ -259,161 +249,20 @@ impl HotkeyManager {
             return None;
         }
 
-        let result = match action {
-            HotkeyAction::NextPreset | HotkeyAction::PrevPreset => {
-                let direction = if action == HotkeyAction::NextPreset {
-                    CycleDirection::Next
-                } else {
-                    CycleDirection::Previous
-                };
+        let result = match preset_cycle_direction(action) {
+            Some(direction) => {
                 match actions::resolve_next_preset(available_presets, current_preset, direction) {
                     Some(target) => actions::plan_cycle_preset(&target, safe_mode),
                     None => actions::plan_noop(action, "No presets available", safe_mode),
                 }
             }
-            HotkeyAction::ToggleOverlay => {
-                // Overlay toggle is handled directly by 3DMigoto INI — no backend work needed.
-                // Just emit the event status for logging purposes.
-                actions::plan_noop(action, "Overlay toggle (handled by 3DMigoto)", safe_mode)
-            }
-            HotkeyAction::NextVariantFolder | HotkeyAction::PrevVariantFolder => {
-                // Variant cycling is handled by specific async executors;
-                // for general dispatch, we return a noop or the computed plan if available.
-                actions::plan_noop(action, "Variant cycle triggered", safe_mode)
-            }
+            // Overlay toggle is handled directly by 3DMigoto INI, and variant
+            // cycling has no backend executor yet — both only report status.
+            None => actions::plan_noop(action, noop_reason(action), safe_mode),
         };
 
         self.release();
 
         Some(result)
     }
-}
-
-async fn execute_cycle_preset(
-    app: &tauri::AppHandle,
-    direction: CycleDirection,
-) -> Result<String, String> {
-    let Some(config_state) = app.try_state::<ConfigService>() else {
-        return Err("ConfigService not available".to_string());
-    };
-    let Some(pool_state) = app.try_state::<sqlx::SqlitePool>() else {
-        return Err("SqlitePool not available".to_string());
-    };
-    let Some(watcher_state) = app.try_state::<crate::services::scanner::watcher::WatcherState>()
-    else {
-        return Err("WatcherState not available".to_string());
-    };
-    let Some(op_lock) = app.try_state::<crate::services::fs_utils::operation_lock::OperationLock>()
-    else {
-        return Err("OperationLock not available".to_string());
-    };
-
-    let settings = config_state.get_settings();
-    let game_id = settings
-        .active_game_id
-        .as_deref()
-        .ok_or_else(|| "No active game selected".to_string())?;
-    let safe_mode_enabled = settings.safe_mode.enabled;
-
-    let collections = crate::services::collection_service::list_collections(
-        pool_state.inner(),
-        game_id,
-        safe_mode_enabled,
-        None,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    if collections.is_empty() {
-        let status = StatusFields {
-            safe_mode: safe_mode_enabled,
-            preset_name: Some("No presets configured".to_string()),
-            ..Default::default()
-        };
-        write_runtime_status(pool_state.inner(), game_id, &status, &settings.hotkeys).await?;
-        return Ok("No presets available".to_string());
-    }
-
-    let preset_names: Vec<String> = collections
-        .iter()
-        .map(|collection| collection.name.clone())
-        .collect();
-    let corridor = crate::repo::corridor_repo::get(pool_state.inner(), game_id, safe_mode_enabled)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let current_collection_id = corridor.and_then(|c| c.active_collection_id);
-
-    let current_name = current_collection_id.and_then(|id| {
-        collections
-            .iter()
-            .find(|c| c.id == id)
-            .map(|c| c.name.as_str())
-    });
-    let target_name = actions::resolve_next_preset(&preset_names, current_name, direction)
-        .ok_or_else(|| "No presets available".to_string())?;
-
-    let target = collections
-        .iter()
-        .find(|collection| collection.name == target_name)
-        .ok_or_else(|| format!("Target preset '{target_name}' not found"))?;
-
-    let _lock = op_lock.inner().acquire().await.map_err(|e| e.to_string())?;
-
-    let game = settings
-        .games
-        .iter()
-        .find(|g| g.id == game_id)
-        .ok_or_else(|| "No active game selected".to_string())?;
-
-    let apply_result = crate::services::collection_service::apply_collection(
-        crate::services::collection_service::ApplyCollectionRequest {
-            pool: pool_state.inner(),
-            game_id,
-            collection_id: &target.id,
-            is_safe: safe_mode_enabled,
-            mods_path: game.mod_path.clone(),
-            suppressor: watcher_state.suppressor.clone(),
-            ignore_missing: true,
-            settings: settings.clone(),
-        },
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let planner = actions::plan_cycle_preset(&target.name, safe_mode_enabled);
-
-    write_runtime_status(
-        pool_state.inner(),
-        game_id,
-        &planner.status,
-        &settings.hotkeys,
-    )
-    .await?;
-
-    let reload_key = super::reload::trigger_reload_fixes(&settings)?;
-
-    Ok(format!(
-        "{} (changed components: {}, reload: {})",
-        planner.summary, apply_result.mods_enabled, reload_key
-    ))
-}
-
-async fn write_runtime_status(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    status: &StatusFields,
-    hotkey_config: &crate::services::hotkeys::HotkeyConfig,
-) -> Result<(), String> {
-    let Some(mods_path) = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await
-        .map_err(|e| format!("Failed to get mods_path: {e}"))?
-    else {
-        return Ok(());
-    };
-
-    let status_dir = Path::new(&mods_path).join(".emmm_data").join("status");
-    crate::services::keyviewer::generator::write_status_file(&status_dir, status, hotkey_config)?;
-
-    Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::repo::object_repo::ObjectFilter;
+use crate::domain::objects::ObjectFilter;
 use serde::{Deserialize, Serialize};
 
 use super::*;

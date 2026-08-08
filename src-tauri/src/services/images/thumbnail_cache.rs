@@ -1,4 +1,5 @@
 use crate::common::sync::lock;
+use crate::domain::errors::AppError;
 use std::fs;
 use std::io::Cursor;
 use std::num::NonZeroUsize;
@@ -18,9 +19,14 @@ static GEN_SEMAPHORE: Semaphore = Semaphore::const_new(4);
 /// TTL for L1 entries — skip mtime stat() calls within this window.
 const ENTRY_TTL_SECS: u64 = 60;
 
-/// Thumbnail dimensions. CatmullRom 256×256 is ~50 % faster than Lanczos3 400×400
-/// while remaining visually identical at card sizes.
+/// Thumbnail dimensions. `DynamicImage::thumbnail` uses a fast box filter,
+/// which is visually indistinguishable from Lanczos3 at card sizes.
 const THUMB_SIZE: u32 = 256;
+
+/// How many resolved folders the in-memory L1 keeps before evicting.
+const L1_CAPACITY: NonZeroUsize = NonZeroUsize::new(500).unwrap();
+
+const SECS_PER_DAY: u64 = 86_400;
 
 static THUMBNAIL_CACHE: OnceLock<Mutex<ThumbnailCache>> = OnceLock::new();
 
@@ -39,7 +45,7 @@ pub struct ThumbnailCache {
 impl ThumbnailCache {
     fn new() -> Self {
         Self {
-            folder_cache: LruCache::new(NonZeroUsize::new(500).unwrap()),
+            folder_cache: LruCache::new(L1_CAPACITY),
             base_dir: None,
         }
     }
@@ -48,87 +54,85 @@ impl ThumbnailCache {
         THUMBNAIL_CACHE.get_or_init(|| Mutex::new(Self::new()))
     }
 
-    pub fn init(app_data_dir: &Path) {
-        let mut cache = lock(Self::get_instance());
+    /// Points the cache at `app_data_dir`, dropping L1 if the location moved
+    /// (its entries name files under the previous directory). Returns the
+    /// resolved cache directory.
+    fn set_base_dir(app_data_dir: &Path) -> PathBuf {
         let cache_dir = thumbnail_cache_dir(app_data_dir);
-        if !cache_dir.exists() {
-            let _ = fs::create_dir_all(&cache_dir);
-        }
+        let mut cache = lock(Self::get_instance());
         if cache.base_dir.as_ref() != Some(&cache_dir) {
             cache.folder_cache.clear();
         }
-        cache.base_dir = Some(cache_dir);
+        cache.base_dir = Some(cache_dir.clone());
+        cache_dir
+    }
+
+    pub fn init(app_data_dir: &Path) {
+        let cache_dir = Self::set_base_dir(app_data_dir);
+        if !cache_dir.exists() {
+            let _ = fs::create_dir_all(&cache_dir);
+        }
     }
 
     // ─── Primary API: Folder-keyed resolution (FolderGrid) ────────────
 
     /// Async entry-point for the folder grid thumbnail pipeline.
     ///
-    /// 1. Check folder-keyed L1 (fast, no I/O)
+    /// 1. Check folder-keyed L1
     /// 2. Acquire semaphore permit (caps concurrent generations to 4)
     /// 3. Double-check L1 (another task may have resolved while waiting)
     /// 4. Cold-resolve in `spawn_blocking` (FS traversal + image processing)
-    pub async fn resolve(_game_id: &str, folder_path: &str) -> Result<Option<String>, String> {
-        let path = PathBuf::from(folder_path);
-        if !path.is_dir() {
-            debug!("[Thumbnail] Not a directory, skipping: {}", folder_path);
-            return Ok(None);
-        }
-
+    ///
+    /// A folder that does not exist resolves to `None` via `find_thumbnail`.
+    pub async fn resolve(_game_id: &str, folder_path: &str) -> Result<Option<String>, AppError> {
         // Fast path: folder-keyed L1 hit
-        if let Some(hit) = Self::get_folder_l1_hash(folder_path) {
+        if let Some(hit) = Self::folder_l1_path(folder_path) {
             debug!("[Thumbnail] L1 hit for {}", folder_path);
-            return Ok(Some(hit)); // Return absolute disk path
+            return Ok(Some(hit));
         }
 
         // Acquire permit — async, does NOT block the Tokio runtime
-        let _permit = GEN_SEMAPHORE
-            .acquire()
-            .await
-            .map_err(|e| format!("Semaphore closed: {}", e))?;
+        let _permit = GEN_SEMAPHORE.acquire().await?;
 
         // Double-check after wait (dedup: another task may have resolved it)
-        if let Some(hit) = Self::get_folder_l1_hash(folder_path) {
-            return Ok(Some(hit)); // Return absolute disk path
+        if let Some(hit) = Self::folder_l1_path(folder_path) {
+            return Ok(Some(hit));
         }
 
+        let path = PathBuf::from(folder_path);
         let folder_key = folder_path.to_string();
-        let hash = tokio::task::spawn_blocking(move || Self::resolve_cold(&path, &folder_key))
-            .await
-            .map_err(|e| format!("Thumbnail task failed: {}", e))??;
-
-        match hash {
-            Some(h) => Ok(Some(h)), // Hash here is actually the absolute path from resolve_cold
-            None => Ok(None),
-        }
+        tokio::task::spawn_blocking(move || Self::resolve_cold(&path, &folder_key)).await?
     }
 
-    /// Check folder-keyed L1. Returns the hash string if valid.
-    fn get_folder_l1_hash(folder_path: &str) -> Option<String> {
-        let mut cache = lock(Self::get_instance());
-        if let Some(entry) = cache.folder_cache.get(folder_path) {
-            if entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS && entry.webp_path.exists() {
-                return Some(entry.webp_path.to_string_lossy().to_string());
+    /// Returns the cached `.webp` path when the L1 entry is still usable.
+    ///
+    /// The filesystem check runs outside the lock on purpose: a `stat` held
+    /// under the global mutex would serialize every concurrently mounting card.
+    fn folder_l1_path(folder_path: &str) -> Option<String> {
+        let fresh_path = {
+            let mut cache = lock(Self::get_instance());
+            let entry = cache.folder_cache.get(folder_path)?;
+            (entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS).then(|| entry.webp_path.clone())
+        };
+
+        match fresh_path {
+            Some(path) if path.exists() => Some(path.to_string_lossy().to_string()),
+            _ => {
+                lock(Self::get_instance()).folder_cache.pop(folder_path);
+                None
             }
-            cache.folder_cache.pop(folder_path);
         }
-        None
     }
 
     /// Cold path: find_thumbnail → generate/read disk cache → insert L1.
-    fn resolve_cold(folder_path: &Path, folder_key: &str) -> Result<Option<String>, String> {
+    fn resolve_cold(folder_path: &Path, folder_key: &str) -> Result<Option<String>, AppError> {
         use crate::services::scanner::core::thumbnail::find_thumbnail;
 
-        let original = match find_thumbnail(folder_path) {
-            Some(p) => {
-                debug!("[Thumbnail] Found source image: {:?}", p);
-                p
-            }
-            None => {
-                debug!("[Thumbnail] No image found in: {:?}", folder_path);
-                return Ok(None);
-            }
+        let Some(original) = find_thumbnail(folder_path) else {
+            debug!("[Thumbnail] No image found in: {:?}", folder_path);
+            return Ok(None);
         };
+        debug!("[Thumbnail] Found source image: {:?}", original);
 
         let webp_path = Self::generate(&original).map_err(|e| {
             warn!("[Thumbnail] Generate failed for {:?}: {}", original, e);
@@ -157,66 +161,68 @@ impl ThumbnailCache {
 
     /// Invalidate the parent folder cache for a changed image path.
     pub fn invalidate(original_path: &Path) {
-        let mut cache = lock(Self::get_instance());
         if let Some(parent) = original_path.parent() {
-            cache
-                .folder_cache
-                .pop(&parent.to_string_lossy().to_string());
+            Self::invalidate_folder(&parent.to_string_lossy());
         }
     }
 
     // ─── Shared internals ─────────────────────────────────────────────
 
-    /// Generate (or retrieve from L2 disk cache) a WebP thumbnail.
-    fn generate(original_path: &Path) -> Result<PathBuf, String> {
-        let original_str = original_path.to_string_lossy().to_string();
+    /// Disk-cache filename stem for a source image. The prune pass must derive
+    /// its keep-set the same way, so this is the only place the rule lives.
+    fn cache_key(original_path: &str) -> String {
+        blake3::hash(original_path.as_bytes()).to_string()
+    }
 
+    /// Generate (or retrieve from L2 disk cache) a WebP thumbnail.
+    fn generate(original_path: &Path) -> Result<PathBuf, AppError> {
         let base_dir = {
             let cache = lock(Self::get_instance());
-            cache.base_dir.clone().ok_or("Cache not initialized")?
+            cache
+                .base_dir
+                .clone()
+                .ok_or_else(|| AppError::Internal("Cache not initialized".to_string()))?
         };
 
-        let hash = blake3::hash(original_str.as_bytes()).to_string();
-        let cached_path = base_dir.join(format!("{}.webp", hash));
-        fs::create_dir_all(&base_dir)
-            .map_err(|e| format!("Failed to create thumbnail cache directory: {}", e))?;
+        let key = Self::cache_key(&original_path.to_string_lossy());
+        let cached_path = base_dir.join(format!("{}.webp", key));
 
-        // L2 disk hit — validate mtime
-        if cached_path.exists() {
-            if let Ok(true) = Self::validate_mtime(original_path, &cached_path) {
+        // L2 disk hit — the cached file must be at least as new as its source.
+        if let Ok(cache_meta) = fs::metadata(&cached_path) {
+            if Self::is_cache_fresh(original_path, &cache_meta) {
                 return Ok(cached_path);
             }
         }
 
         // Generate: Fast thumbnail resize
-        let img = image::open(original_path).map_err(|e| format!("Failed to open image: {}", e))?;
+        let img = image::open(original_path)?;
         let resized = img.thumbnail(THUMB_SIZE, THUMB_SIZE);
 
         let mut bytes: Vec<u8> = Vec::new();
-        resized
-            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::WebP)
-            .map_err(|e| format!("Failed to encode WebP: {}", e))?;
+        resized.write_to(&mut Cursor::new(&mut bytes), ImageFormat::WebP)?;
 
+        // The cache directory is created on demand rather than up front, so an
+        // L2 hit never pays a mkdir syscall.
         if let Err(first_error) = fs::write(&cached_path, &bytes) {
-            fs::create_dir_all(&base_dir)
-                .map_err(|e| format!("Failed to recreate thumbnail cache directory: {}", e))?;
+            fs::create_dir_all(&base_dir)?;
             fs::write(&cached_path, &bytes).map_err(|second_error| {
-                format!(
-                    "Failed to save thumbnail: {} (first attempt: {})",
-                    second_error, first_error
-                )
+                AppError::Io(format!(
+                    "Failed to save thumbnail: {second_error} (first attempt: {first_error})"
+                ))
             })?;
         }
 
         Ok(cached_path)
     }
 
-    fn validate_mtime(original: &Path, cached: &Path) -> Result<bool, String> {
-        let meta_orig = fs::metadata(original).map_err(|e| e.to_string())?;
-        let meta_cache = fs::metadata(cached).map_err(|e| e.to_string())?;
+    /// An unreadable source mtime is treated as stale, so the thumbnail is rebuilt.
+    fn is_cache_fresh(original: &Path, cache_meta: &fs::Metadata) -> bool {
+        let Ok(meta_orig) = fs::metadata(original) else {
+            return false;
+        };
         let mtime_orig = meta_orig.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let mtime_cache = meta_cache.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        Ok(mtime_cache >= mtime_orig)
+        let mtime_cache = cache_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        mtime_cache >= mtime_orig
     }
 
     /// Prune thumbnails for a specific app data directory.
@@ -224,54 +230,46 @@ impl ThumbnailCache {
     pub fn prune_orphans_for_app_data(
         app_data_dir: &Path,
         valid_paths: &[String],
-    ) -> Result<usize, String> {
-        let cache_dir = thumbnail_cache_dir(app_data_dir);
-        {
-            let mut cache = lock(Self::get_instance());
-            if cache.base_dir.as_ref() != Some(&cache_dir) {
-                cache.folder_cache.clear();
-            }
-            cache.base_dir = Some(cache_dir.clone());
-        }
+    ) -> Result<usize, AppError> {
+        let cache_dir = Self::set_base_dir(app_data_dir);
 
-        Self::prune_orphans_in_cache_dir(&cache_dir, valid_paths)
-    }
-
-    fn prune_orphans_in_cache_dir(
-        base_dir: &Path,
-        valid_paths: &[String],
-    ) -> Result<usize, String> {
-        let keep_hashes: std::collections::HashSet<String> = valid_paths
+        let keep_keys: std::collections::HashSet<String> = valid_paths
             .iter()
-            .map(|path| blake3::hash(path.as_bytes()).to_string())
+            .map(|path| Self::cache_key(path))
             .collect();
 
         // A file whose stem is not readable is left alone rather than guessed at.
-        Self::remove_webp_entries(base_dir, |path| {
-            path.file_stem()
+        Self::remove_webp_entries(&cache_dir, |entry| {
+            entry
+                .path()
+                .file_stem()
                 .and_then(|stem| stem.to_str())
-                .is_none_or(|stem| keep_hashes.contains(stem))
+                .is_none_or(|stem| keep_keys.contains(stem))
         })
     }
 
     /// Prune thumbnails older than `max_age_days`.
     /// Returns number of deleted files.
-    pub fn clear_old_cache(max_age_days: u64) -> Result<usize, String> {
+    pub fn clear_old_cache(max_age_days: u64) -> Result<usize, AppError> {
         // Copy the directory out before walking it: holding the cache lock across
         // a full directory scan would stall every concurrent L1 lookup.
         let base_dir = {
             let cache = lock(Self::get_instance());
-            cache.base_dir.clone().ok_or("Cache not initialized")?
+            cache
+                .base_dir
+                .clone()
+                .ok_or_else(|| AppError::Internal("Cache not initialized".to_string()))?
         };
 
         let cutoff = SystemTime::now()
-            .checked_sub(std::time::Duration::from_secs(max_age_days * 86400))
-            .ok_or_else(|| "Failed to compute cutoff time".to_string())?;
+            .checked_sub(std::time::Duration::from_secs(max_age_days * SECS_PER_DAY))
+            .ok_or_else(|| AppError::Internal("Failed to compute cutoff time".to_string()))?;
 
         // An unreadable timestamp is treated as "recent" so a stat failure never
         // deletes a live thumbnail.
-        Self::remove_webp_entries(&base_dir, |path| {
-            fs::metadata(path)
+        Self::remove_webp_entries(&base_dir, |entry| {
+            entry
+                .metadata()
                 .ok()
                 .and_then(|meta| meta.accessed().or_else(|_| meta.modified()).ok())
                 .is_none_or(|accessed| accessed >= cutoff)
@@ -280,16 +278,28 @@ impl ThumbnailCache {
 
     /// Removes every `.webp` in `base_dir` that `keep` rejects, returning the
     /// number deleted. Non-files and other extensions are never touched.
-    fn remove_webp_entries(base_dir: &Path, keep: impl Fn(&Path) -> bool) -> Result<usize, String> {
-        fs::create_dir_all(base_dir).map_err(|e| e.to_string())?;
+    ///
+    /// `keep` receives the `DirEntry` so callers can reuse the metadata the
+    /// directory walk already carries instead of re-stat'ing each path.
+    fn remove_webp_entries(
+        base_dir: &Path,
+        keep: impl Fn(&fs::DirEntry) -> bool,
+    ) -> Result<usize, AppError> {
+        let entries = match fs::read_dir(base_dir) {
+            Ok(entries) => entries,
+            // Nothing has been cached yet — nothing to prune.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error.into()),
+        };
 
         let mut deleted_count = 0;
-        for entry in fs::read_dir(base_dir).map_err(|e| e.to_string())?.flatten() {
+        for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() || path.extension().is_none_or(|ext| ext != "webp") {
+            let is_file = entry.file_type().is_ok_and(|file_type| file_type.is_file());
+            if !is_file || path.extension().is_none_or(|ext| ext != "webp") {
                 continue;
             }
-            if !keep(&path) && fs::remove_file(&path).is_ok() {
+            if !keep(&entry) && fs::remove_file(&path).is_ok() {
                 deleted_count += 1;
             }
         }
@@ -304,7 +314,7 @@ fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
 
 #[cfg(test)]
 fn thumbnail_cache_dir(app_data_dir: &Path) -> PathBuf {
-    let key = blake3::hash(app_data_dir.to_string_lossy().as_bytes()).to_string();
+    let key = ThumbnailCache::cache_key(&app_data_dir.to_string_lossy());
     std::env::temp_dir()
         .join("emmm-thumbnail-cache-tests")
         .join(key)

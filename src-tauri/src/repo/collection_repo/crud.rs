@@ -8,13 +8,17 @@ use crate::domain::collection::Collection;
 use crate::domain::errors::CollectionError;
 
 /// List all collections for a game. Ordered by name.
+///
+/// `snapshot_json` is left `None`: it holds the full serialized projected state
+/// (megabytes on a large library) and no list caller reads it. Fetch a single
+/// collection by id when the snapshot is actually needed.
 pub async fn list_for_game(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<Collection>, CollectionError> {
     let rows = sqlx::query(
         r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
-                  last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at
+                  last_active, signature, root_count, display_mod_count, created_at, updated_at
         FROM collections
         WHERE game_id = ?
         ORDER BY is_unsaved DESC, name ASC"#,
@@ -27,6 +31,8 @@ pub async fn list_for_game(
 }
 
 /// List collections filtered by corridor and unsaved status.
+///
+/// Leaves `snapshot_json` `None` for the same reason as [`list_for_game`].
 pub async fn list_for_corridor(
     pool: &SqlitePool,
     game_id: &str,
@@ -41,7 +47,7 @@ pub async fn list_for_corridor(
 
     let query = format!(
         r#"SELECT c.id, c.game_id, c.name, c.name_key, c.is_safe, c.is_unsaved, c.is_last_unsaved,
-                  c.last_active, c.snapshot_json, c.signature, c.root_count, c.display_mod_count,
+                  c.last_active, c.signature, c.root_count, c.display_mod_count,
                   c.created_at, c.updated_at,
                   (SELECT COUNT(*) FROM collection_mods WHERE collection_id = c.id) +
                   (SELECT COUNT(*) FROM collection_objects WHERE collection_id = c.id) AS member_count_computed

@@ -3,15 +3,7 @@ use std::path::Path;
 use crate::services::config::AppSettings;
 
 pub fn is_active_game_focused(settings: &AppSettings) -> bool {
-    let Some(active_game_id) = settings.active_game_id.as_ref() else {
-        return false;
-    };
-
-    let Some(active_game) = settings
-        .games
-        .iter()
-        .find(|game| &game.id == active_game_id)
-    else {
+    let Some(active_game) = settings.active_game() else {
         return false;
     };
 

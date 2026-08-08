@@ -185,7 +185,11 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
       return;
     }
 
-    await deleteMod.mutateAsync({ path: folder.path, gameId: activeGame?.id });
+    if (!activeGame?.id) {
+      return;
+    }
+
+    await deleteMod.mutateAsync({ path: folder.path, gameId: activeGame.id });
     closeWorkspaceDialog('modDelete');
     options.onDeleteSuccess?.();
   }, [activeGame, deleteMod, options, state.deleteConfirm.folder]);

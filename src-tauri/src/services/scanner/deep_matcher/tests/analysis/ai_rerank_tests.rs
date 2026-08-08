@@ -27,7 +27,7 @@ impl AiRerankProvider for CountingProvider {
         _request: &AiRerankRequest,
         _signals: &FolderSignals,
         _db: &crate::services::scanner::deep_matcher::MasterDb,
-    ) -> Result<HashMap<usize, f32>, String> {
+    ) -> Result<HashMap<usize, f32>, crate::domain::errors::ScannerError> {
         let mut calls = self.calls.lock().expect("lock call counter");
         *calls += 1;
         Ok(self.response.clone())

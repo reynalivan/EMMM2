@@ -11,9 +11,10 @@ async fn setup_test_db() -> sqlx::SqlitePool {
 async fn test_get_dashboard_payload_empty() {
     let pool = setup_test_db().await;
 
-    let payload = get_dashboard_payload(&pool, true)
-        .await
-        .expect("Failed to get dashboard payload");
+    let payload =
+        get_dashboard_payload(&pool, crate::domain::corridor::Corridor::from_is_safe(true))
+            .await
+            .expect("Failed to get dashboard payload");
 
     assert_eq!(payload.stats.total_games, 0);
     assert_eq!(payload.stats.total_mods, 0);
@@ -85,9 +86,10 @@ async fn test_get_dashboard_payload_populated() {
     .await
     .unwrap();
 
-    let payload = get_dashboard_payload(&pool, true)
-        .await
-        .expect("Failed to get payload");
+    let payload =
+        get_dashboard_payload(&pool, crate::domain::corridor::Corridor::from_is_safe(true))
+            .await
+            .expect("Failed to get payload");
 
     assert_eq!(payload.stats.total_games, 1);
     assert_eq!(payload.stats.total_mods, 1);

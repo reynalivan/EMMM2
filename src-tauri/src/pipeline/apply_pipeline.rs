@@ -7,6 +7,7 @@ use crate::domain::collection::{ApplyResult, Collection, CollectionMod, Collecti
 use crate::domain::errors::CollectionError;
 use crate::domain::workspace::WorkspacePathRewrite;
 use crate::services::app::post_apply::PostApplyContext;
+use crate::services::collection_service::ApplyCollectionRequest;
 use crate::services::config::AppSettings;
 use crate::services::scanner::watcher::WatcherSuppressor;
 
@@ -46,17 +47,6 @@ pub struct ApplyContext {
     pub objects_toggled: usize,
 }
 
-pub struct ApplyContextInput {
-    pub pool: SqlitePool,
-    pub game_id: String,
-    pub collection_id: String,
-    pub is_safe: bool,
-    pub mods_path: PathBuf,
-    pub suppressor: std::sync::Arc<WatcherSuppressor>,
-    pub ignore_missing: bool,
-    pub settings: AppSettings,
-}
-
 /// Human-readable corridor label used in messages and apply results.
 pub fn corridor_label(is_safe: bool) -> &'static str {
     if is_safe {
@@ -76,16 +66,19 @@ impl ApplyContext {
             })
     }
 
-    pub fn new(input: ApplyContextInput) -> Self {
+    /// Seed a context from the caller's request. Takes the borrowed request
+    /// type directly — an owned intermediate struct would just re-declare the
+    /// same eight fields a third time.
+    pub fn new(request: ApplyCollectionRequest<'_>) -> Self {
         Self {
-            pool: input.pool,
-            game_id: input.game_id,
-            collection_id: input.collection_id,
-            is_safe: input.is_safe,
-            mods_path: input.mods_path,
-            suppressor: input.suppressor,
-            ignore_missing: input.ignore_missing,
-            settings: input.settings,
+            pool: request.pool.clone(),
+            game_id: request.game_id.to_string(),
+            collection_id: request.collection_id.to_string(),
+            is_safe: request.is_safe,
+            mods_path: request.mods_path,
+            suppressor: request.suppressor,
+            ignore_missing: request.ignore_missing,
+            settings: request.settings,
             collection: None,
             target_mods: Vec::new(),
             target_objects: Vec::new(),
@@ -223,11 +216,22 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         game_id: ctx.game_id.clone(),
         is_safe: ctx.is_safe,
         mods_path: ctx.mods_path.clone(),
-        suppressor: ctx.suppressor.clone(),
-        settings: ctx.settings.clone(),
-        status_fields: None,
+        hotkeys: ctx.settings.hotkeys.clone(),
+        // The pipeline already settled the corridor in step 8; passing it here
+        // saves post-apply a second full live-state derivation.
+        status_fields: (!ctx.final_state_is_dirty).then(|| {
+            crate::services::keyviewer::generator::StatusFields {
+                safe_mode: ctx.is_safe,
+                preset_name: ctx.final_state_name.clone(),
+                ..Default::default()
+            }
+        }),
     };
-    let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
+    if let Err(error) = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await {
+        // Best-effort artifacts, but a silent failure here leaves the overlay
+        // and the SQLite projection stale with no signal at all.
+        log::warn!("apply_pipeline[post_apply]: {error}");
+    }
 
     let result = ApplyResult {
         success: true,

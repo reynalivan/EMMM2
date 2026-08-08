@@ -4,27 +4,8 @@
 //! checked-in `app.db`, so every statement touching them stays on the runtime
 //! `sqlx::query` API instead of the compile-time macros.
 
+use crate::domain::browser::ImportJobDto;
 use sqlx::SqlitePool;
-
-/// DTO returned to the frontend for import queue display.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-pub struct ImportJobDto {
-    pub id: String,
-    pub download_id: Option<String>,
-    pub game_id: Option<String>,
-    pub archive_path: String,
-    pub status: String,
-    pub match_category: Option<String>,
-    pub match_entry_key: Option<String>,
-    pub match_alias_name: Option<String>,
-    pub match_confidence: Option<f64>,
-    pub match_reason: Option<String>,
-    pub placed_path: Option<String>,
-    pub error_msg: Option<String>,
-    pub is_duplicate: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
 
 /// The deep-match outcome stored on an import job.
 pub struct ImportJobMatch {

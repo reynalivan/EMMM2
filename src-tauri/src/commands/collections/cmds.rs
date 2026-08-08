@@ -19,11 +19,11 @@ use crate::services::{collection_service, corridor_service, pin_service};
 #[specta::specta]
 pub async fn get_corridor_state(
     pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
-    is_safe: Option<bool>,
 ) -> Result<CorridorSnapshot, AppError> {
     let snapshot =
-        corridor_service::get_corridor_state(pool.inner(), &game_id, is_safe.unwrap_or(true))
+        corridor_service::get_corridor_state(pool.inner(), &game_id, config.current_corridor())
             .await?;
     Ok(snapshot)
 }
@@ -34,10 +34,9 @@ pub async fn get_apply_progress(
     config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
 ) -> Result<Option<ApplyProgressSnapshot>, AppError> {
-    let settings = config.get_settings();
     Ok(crate::services::apply_progress_service::get(
         &game_id,
-        settings.safe_mode.enabled,
+        config.current_corridor().is_safe(),
     ))
 }
 
@@ -49,12 +48,16 @@ pub async fn get_apply_progress(
 #[specta::specta]
 pub async fn list_collections(
     pool: State<'_, SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
-    is_safe: Option<bool>,
 ) -> Result<Vec<CollectionSummary>, AppError> {
-    let result =
-        collection_service::list_collections(pool.inner(), &game_id, is_safe.unwrap_or(true), None)
-            .await?;
+    let result = collection_service::list_collections(
+        pool.inner(),
+        &game_id,
+        config.current_corridor(),
+        None,
+    )
+    .await?;
     Ok(result)
 }
 
@@ -196,7 +199,6 @@ pub async fn preview_apply_collection(
     config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
     collection_id: String,
-    is_safe: Option<bool>,
 ) -> Result<ApplyPreview, AppError> {
     let settings = config.get_settings();
     let mods_path = settings
@@ -209,7 +211,7 @@ pub async fn preview_apply_collection(
         pool.inner(),
         &game_id,
         &collection_id,
-        is_safe.unwrap_or(true),
+        config.current_corridor(),
         mods_path.as_deref(),
     )
     .await?;
@@ -266,8 +268,12 @@ pub async fn set_pin(
 #[tauri::command]
 #[specta::specta]
 pub async fn verify_pin(pool: State<'_, SqlitePool>, pin: String) -> Result<bool, AppError> {
-    let result = pin_service::verify_pin(pool.inner(), &pin).await?;
-    Ok(result)
+    // Unlock prompt: with no PIN configured there is nothing to unlock.
+    let verdict = pin_service::verify_pin(pool.inner(), &pin).await?;
+    Ok(matches!(
+        verdict,
+        pin_service::PinVerdict::Accepted | pin_service::PinVerdict::NoPinConfigured
+    ))
 }
 
 #[tauri::command]

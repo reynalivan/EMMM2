@@ -1,3 +1,4 @@
+use crate::domain::errors::AppError;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
 use crate::services::scanner::core::thumbnail;
 use image::{imageops::FilterType, ImageFormat};
@@ -6,16 +7,10 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+use thumbnail::is_image_file;
+
 const MAX_WIDTH: u32 = 1920;
 const MAX_HEIGHT: u32 = 1080;
-
-fn is_image_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
-        .unwrap_or(false)
-}
 
 pub fn sanitize_object_name(value: &str) -> String {
     let mut out = String::new();
@@ -55,16 +50,18 @@ pub fn sanitize_object_name(value: &str) -> String {
     }
 }
 
-pub fn next_preview_filename(mod_root: &Path, object_name: &str) -> Result<String, String> {
+pub fn next_preview_filename(mod_root: &Path, object_name: &str) -> Result<String, AppError> {
     if !mod_root.exists() || !mod_root.is_dir() {
-        return Err(format!("Invalid mod folder: {}", mod_root.display()));
+        return Err(AppError::Internal(format!(
+            "Invalid mod folder: {}",
+            mod_root.display()
+        )));
     }
 
     let base = format!("preview_{}", sanitize_object_name(object_name));
     let mut used: HashSet<usize> = HashSet::new();
 
-    let entries = fs::read_dir(mod_root)
-        .map_err(|e| format!("Failed to read mod folder '{}': {e}", mod_root.display()))?;
+    let entries = fs::read_dir(mod_root)?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -111,20 +108,24 @@ pub fn next_preview_filename(mod_root: &Path, object_name: &str) -> Result<Strin
         }
     }
 
-    Err("Unable to allocate preview image filename".to_string())
+    Err(AppError::Internal(
+        "Unable to allocate preview image filename".to_string(),
+    ))
 }
 
 pub fn save_preview_image(
     mod_root: &Path,
     object_name: &str,
     image_data: &[u8],
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, AppError> {
     if !mod_root.exists() || !mod_root.is_dir() {
-        return Err(format!("Invalid mod folder: {}", mod_root.display()));
+        return Err(AppError::Internal(format!(
+            "Invalid mod folder: {}",
+            mod_root.display()
+        )));
     }
 
-    let image =
-        image::load_from_memory(image_data).map_err(|e| format!("Invalid image data: {e}"))?;
+    let image = image::load_from_memory(image_data)?;
 
     let resized = if image.width() > MAX_WIDTH || image.height() > MAX_HEIGHT {
         image.resize(MAX_WIDTH, MAX_HEIGHT, FilterType::Lanczos3)
@@ -136,40 +137,41 @@ pub fn save_preview_image(
     let target_path = mod_root.join(filename);
 
     let mut encoded = Vec::new();
-    resized
-        .write_to(&mut Cursor::new(&mut encoded), ImageFormat::WebP)
-        .map_err(|e| format!("Failed to encode preview image: {e}"))?;
+    resized.write_to(&mut Cursor::new(&mut encoded), ImageFormat::WebP)?;
 
-    fs::write(&target_path, encoded).map_err(|e| format!("Failed to save preview image: {e}"))?;
+    fs::write(&target_path, encoded)?;
 
     ThumbnailCache::invalidate(&target_path);
     Ok(target_path)
 }
 
-pub fn remove_preview_image(mod_root: &Path, image_path: &Path) -> Result<(), String> {
-    let canonical_root = mod_root
-        .canonicalize()
-        .map_err(|e| format!("Failed to canonicalize mod folder: {e}"))?;
-    let canonical_target = image_path
-        .canonicalize()
-        .map_err(|e| format!("Failed to canonicalize image path: {e}"))?;
+pub fn remove_preview_image(mod_root: &Path, image_path: &Path) -> Result<(), AppError> {
+    let canonical_root = mod_root.canonicalize()?;
+    let canonical_target = image_path.canonicalize()?;
 
     if !canonical_target.starts_with(&canonical_root) {
-        return Err("Image path escapes mod folder".to_string());
+        return Err(AppError::Internal(
+            "Image path escapes mod folder".to_string(),
+        ));
     }
 
     if !canonical_target.is_file() || !is_image_file(&canonical_target) {
-        return Err("Target is not a valid image file".to_string());
+        return Err(AppError::Internal(
+            "Target is not a valid image file".to_string(),
+        ));
     }
 
-    fs::remove_file(&canonical_target).map_err(|e| format!("Failed to remove image: {e}"))?;
+    fs::remove_file(&canonical_target)?;
     ThumbnailCache::invalidate(&canonical_target);
     Ok(())
 }
 
-pub fn clear_preview_images(mod_root: &Path) -> Result<Vec<String>, String> {
+pub fn clear_preview_images(mod_root: &Path) -> Result<Vec<String>, AppError> {
     if !mod_root.exists() || !mod_root.is_dir() {
-        return Err(format!("Invalid mod folder: {}", mod_root.display()));
+        return Err(AppError::Internal(format!(
+            "Invalid mod folder: {}",
+            mod_root.display()
+        )));
     }
 
     let mut unique = BTreeSet::new();
@@ -186,8 +188,7 @@ pub fn clear_preview_images(mod_root: &Path) -> Result<Vec<String>, String> {
             continue;
         }
 
-        fs::remove_file(&path)
-            .map_err(|e| format!("Failed to remove '{}': {e}", path.display()))?;
+        fs::remove_file(&path)?;
         ThumbnailCache::invalidate(&path);
         removed.push(path.to_string_lossy().to_string());
     }

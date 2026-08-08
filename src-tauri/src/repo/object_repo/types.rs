@@ -1,144 +1,31 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use crate::domain::objects::ObjectSummary;
 
 use crate::domain::models::ItemStatus;
 
-#[derive(Clone, Serialize, Deserialize, specta::Type)]
-pub struct ObjectFilter {
-    pub game_id: String,
-    pub search_query: Option<String>,
-    pub object_type: Option<String>,
-    pub safe_mode: bool,
-    pub meta_filters: Option<HashMap<String, Vec<String>>>,
-    pub sort_by: Option<String>,
-    pub status_filter: Option<ItemStatus>,
-}
-
-#[derive(Clone, Serialize, Deserialize, specta::Type)]
-pub struct GetObjectsResult {
-    pub objects: Vec<ObjectSummary>,
-    pub lost_objects: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
-pub struct ObjectSummary {
-    pub id: String,
-    pub name: String,
-    pub folder_path: String,
-    pub matched_entry_key: Option<String>,
-    pub matched_alias_name: Option<String>,
-    pub matched_confidence: Option<f64>,
-    pub matched_reason: Option<String>,
-    pub matched_source: Option<String>,
-    pub object_type: String,
-    pub sub_category: Option<String>,
-    pub status: ItemStatus, // 1: ENABLED, 0: DISABLED
-    pub metadata: String,
-    pub tags: String,
-    pub hash_db: Option<crate::domain::models::HashDbPayload>,
-    pub custom_skins: Option<crate::domain::models::CustomSkinsPayload>,
-    pub is_pinned: bool,
-    pub is_auto_sync: bool,
-    pub thumbnail_path: Option<String>,
-    pub created_at: Option<String>,
-    #[specta(type = f64)]
-    pub mod_count: i64,
-    #[specta(type = f64)]
-    pub enabled_count: i64,
-    pub is_object_disabled: bool,
-    pub has_naming_conflict: bool,
-    pub active_mod_paths: Option<String>,
-}
-
+/// An `ObjectSummary` plus the one column the listing needs but never returns.
+///
+/// Flattened rather than re-declared: the 24 columns were spelled out here and
+/// then mapped across field by field, twice, in `listing.rs`.
 #[derive(Clone, sqlx::FromRow)]
 pub(super) struct ObjectSummaryRow {
-    pub(super) id: String,
-    pub(super) name: String,
-    pub(super) folder_path: String,
-    pub(super) matched_entry_key: Option<String>,
-    pub(super) matched_alias_name: Option<String>,
-    pub(super) matched_confidence: Option<f64>,
-    pub(super) matched_reason: Option<String>,
-    pub(super) matched_source: Option<String>,
-    pub(super) object_type: String,
-    pub(super) sub_category: Option<String>,
-    pub(super) status: ItemStatus,
-    pub(super) metadata: String,
-    pub(super) tags: String,
-    pub(super) hash_db: Option<crate::domain::models::HashDbPayload>,
-    pub(super) custom_skins: Option<crate::domain::models::CustomSkinsPayload>,
-    pub(super) is_pinned: bool,
-    pub(super) is_auto_sync: bool,
-    pub(super) thumbnail_path: Option<String>,
-    pub(super) created_at: Option<String>,
-    pub(super) mod_count: i64,
-    pub(super) enabled_count: i64,
-    pub(super) is_object_disabled: bool,
-    pub(super) has_naming_conflict: bool,
-    pub(super) active_mod_paths: Option<String>,
-    pub(super) projection_available: i64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
-pub struct ObjectRuntimeDescriptor {
-    pub id: String,
-    pub name: String,
-    pub folder_path: String,
-    pub folder_path_key: String,
-    pub matched_entry_key: Option<String>,
-    pub matched_alias_name: Option<String>,
-    pub object_type: String,
-    pub thumbnail_path: Option<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
-pub struct CategoryCount {
-    pub object_type: String,
-    #[specta(type = f64)]
-    pub count: i64,
+    #[sqlx(flatten)]
+    pub summary: ObjectSummary,
+    /// 0 when `object_runtime_projection` has no row for this object yet.
+    pub projection_available: i64,
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
-pub(super) struct ObjectCountCandidate {
-    pub(super) object_id: String,
-    pub(super) folder_path: String,
-    pub(super) actual_name: String,
-    pub(super) status: ItemStatus,
+pub struct ObjectCountCandidate {
+    pub object_id: String,
+    pub folder_path: String,
+    pub actual_name: String,
+    pub status: ItemStatus,
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct TerminalDescriptor {
-    pub(super) display_path: String,
-    pub(super) display_segments: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, specta::Type)]
-pub struct CreateObjectInput {
-    pub game_id: String,
-    pub name: String,
-    pub folder_path: Option<String>,
-    pub object_type: String,
-    pub sub_category: Option<String>,
-    pub status: Option<ItemStatus>,
-    pub metadata: Option<serde_json::Value>,
-    pub thumbnail_url: Option<String>,
-    pub hash_db: Option<crate::domain::models::HashDbPayload>,
-    pub custom_skins: Option<crate::domain::models::CustomSkinsPayload>,
-}
-
-#[derive(Serialize, Deserialize, specta::Type)]
-pub struct UpdateObjectInput {
-    pub name: Option<String>,
-    pub object_type: Option<String>,
-    pub sub_category: Option<String>,
-    pub status: Option<ItemStatus>,
-    pub metadata: Option<serde_json::Value>,
-    pub hash_db: Option<crate::domain::models::HashDbPayload>,
-    pub custom_skins: Option<crate::domain::models::CustomSkinsPayload>,
-    pub thumbnail_path: Option<String>,
-    pub is_auto_sync: Option<bool>,
-    pub is_pinned: Option<bool>,
-    pub tags: Option<Vec<String>>,
+pub struct TerminalDescriptor {
+    pub display_path: String,
+    pub display_segments: Vec<String>,
 }
 
 /// Object row shape consumed by disk reconcile.
@@ -151,6 +38,26 @@ pub struct ReconcileObjectRow {
     pub object_type: String,
 }
 
+/// Where the object being synced was identified.
+///
+/// Replaces `db_thumbnail.is_some()`, which the sync used as a stand-in for
+/// "MasterDB matched this, so trust its name and type" — a rule that silently
+/// changed meaning for any MasterDB entry without a thumbnail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchSource {
+    /// Matched against the bundled MasterDB; its name and type are canonical.
+    MasterDb,
+    /// Discovered by walking the mods folder; the folder name is all we have.
+    Disk,
+}
+
+impl MatchSource {
+    /// Whether this source's `object_type` should overwrite what the row holds.
+    pub fn type_is_authoritative(self) -> bool {
+        matches!(self, Self::MasterDb)
+    }
+}
+
 pub struct EnsureObjectInput<'a> {
     pub game_id: &'a str,
     pub folder_path: &'a str,
@@ -161,4 +68,13 @@ pub struct EnsureObjectInput<'a> {
     pub db_metadata_json: &'a str,
     pub db_hash_db_json: Option<&'a str>,
     pub db_custom_skins_json: Option<&'a str>,
+    pub source: MatchSource,
+}
+
+/// A page of objects plus the ids whose runtime projection is cold.
+///
+/// The repo cannot resolve those itself — filling them in reads the disk.
+pub struct ObjectPage {
+    pub objects: Vec<ObjectSummary>,
+    pub cold_object_ids: Vec<String>,
 }

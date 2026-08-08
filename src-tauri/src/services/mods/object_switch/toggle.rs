@@ -3,7 +3,6 @@
 use super::resolve::resolve_object_root_path;
 use crate::domain::errors::AppError;
 use crate::domain::models::ItemStatus;
-use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::core_ops::rename_toggle_on_disk;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
@@ -20,12 +19,11 @@ pub async fn toggle_object_root_service(
     config: &crate::services::config::ConfigService,
     pool: &sqlx::SqlitePool,
     watcher_state: &WatcherState,
-    op_lock: &OperationLock,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     game_id: &str,
     object_id: &str,
     enable: bool,
 ) -> Result<ObjectSwitchOutcome, AppError> {
-    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher_state.suppressor);
 
     let (object, mods_path, current_absolute_path) =
@@ -43,13 +41,17 @@ pub async fn toggle_object_root_service(
 
     let Some(next_absolute_path) = rename_toggle_on_disk(current_path, enable, "object folder")?
     else {
-        crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
+        // Already in the requested state: re-sync the index in case the DB
+        // drifted, but do not treat a no-op as a mutation.
+        crate::services::app::runtime_effects::finalize_mutation(
             pool,
+            config,
             game_id,
-            &[object_id.to_string()],
-            false,
+            crate::services::app::runtime_effects::MutationOutcome::resync_only([
+                object_id.to_string()
+            ]),
         )
-        .await?;
+        .await;
         return Ok(ObjectSwitchOutcome {
             object_id: object_id.to_string(),
             original_path: original_absolute_path,
@@ -113,24 +115,13 @@ pub async fn toggle_object_root_service(
     .await?;
     tx.commit().await?;
 
-    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
-        pool,
-        game_id,
-        &[object_id.to_string()],
-        false,
-    )
-    .await?;
-    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+    crate::services::app::runtime_effects::finalize_mutation(
         pool,
         config,
-        watcher_state.suppressor.clone(),
         game_id,
-        &[true, false],
-        true,
-        true,
+        crate::services::app::runtime_effects::MutationOutcome::objects([object_id.to_string()]),
     )
-    .await
-    .map_err(AppError::Internal)?;
+    .await;
 
     Ok(ObjectSwitchOutcome {
         object_id: object_id.to_string(),

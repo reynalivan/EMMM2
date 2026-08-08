@@ -1,5 +1,6 @@
 //! Phase 2: persist each disk entry as object + mod rows.
 
+use crate::domain::errors::ScannerError;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -22,7 +23,7 @@ pub(super) async fn execute_entries(
     db_mods: &[DbModRow],
     disk_to_db: &HashMap<usize, usize>,
     new_objects_count: &mut usize,
-) -> Result<(usize, usize), String> {
+) -> Result<(usize, usize), ScannerError> {
     let game_id = ctx.game_id;
     let mods_path = ctx.mods_path;
     let safe_mode_keywords = ctx.safe_mode_keywords;
@@ -64,9 +65,9 @@ pub(super) async fn execute_entries(
             };
 
             let obj_name = if !depth_1_folder.is_empty() {
-                crate::common::normalizer::normalize_display_name(&depth_1_folder)
+                crate::common::normalizer::normalize_display_name(&depth_1_folder).into_owned()
             } else {
-                crate::common::normalizer::normalize_display_name(&fallback_name)
+                crate::common::normalizer::normalize_display_name(&fallback_name).into_owned()
             };
 
             let object_folder_path = if item.move_from_temp {
@@ -96,6 +97,13 @@ pub(super) async fn execute_entries(
                     folder_path: &object_folder_path,
                     obj_name: &final_obj_name,
                     obj_type,
+                    // The canonical relation, not the thumbnail: the old
+                    // proxy also fired on a preview image found on disk.
+                    source: if item.matched_entry_key.is_some() {
+                        crate::repo::object_repo::MatchSource::MasterDb
+                    } else {
+                        crate::repo::object_repo::MatchSource::Disk
+                    },
                     db_thumbnail: object_thumbnail,
                     db_tags_json: item.tags_json.as_deref().unwrap_or("[]"),
                     db_metadata_json: item.metadata_json.as_deref().unwrap_or("{}"),
@@ -114,8 +122,7 @@ pub(super) async fn execute_entries(
                 item.matched_reason.as_deref(),
                 item.matched_entry_key.as_ref().map(|_| "deepmatch_scanner"),
             )
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
             if let Some(&db_idx) = disk_to_db.get(&disk_idx) {
                 let db_mod = &db_mods[db_idx];
@@ -162,8 +169,7 @@ pub(super) async fn execute_entries(
                             game_id,
                         },
                     )
-                    .await
-                    .map_err(|e| e.to_string())?;
+                    .await?;
 
                     updated_mods_count += 1;
                 }
@@ -194,8 +200,7 @@ pub(super) async fn execute_entries(
                         None
                     },
                 )
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
                 new_mods_count += 1;
                 (id, object_id)
             }
@@ -224,9 +229,7 @@ pub(super) async fn execute_entries(
             if is_pure_object_container {
                 // It's a pure container. We ensured the object exists, but we MUST DELETE
                 // the mod_id that was just created for it!
-                crate::repo::mod_repo::delete_mod_tx(&mut *tx, &mod_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                crate::repo::mod_repo::delete_mod_tx(&mut *tx, &mod_id).await?;
             }
         }
         let (is_safe, _) = crate::services::scanner::sync::helpers::classify_corridor(

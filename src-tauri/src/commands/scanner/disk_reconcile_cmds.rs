@@ -33,5 +33,4 @@ pub async fn reconcile_disk_state_cmd(
         ),
     )
     .await
-    .map_err(AppError::Internal)
 }

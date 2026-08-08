@@ -100,6 +100,16 @@ impl FromStr for GameType {
 }
 
 impl GameType {
+    /// Every supported game, in discriminant order. The single roster — callers
+    /// that need "all games" must iterate this rather than restate the list.
+    pub const ALL: [GameType; 5] = [
+        GameType::GIMI,
+        GameType::SRMI,
+        GameType::WWMI,
+        GameType::ZZMI,
+        GameType::EFMI,
+    ];
+
     pub fn display_name(&self) -> &'static str {
         match self {
             GameType::GIMI => "Genshin Impact",
@@ -108,6 +118,25 @@ impl GameType {
             GameType::ZZMI => "Zenless Zone Zero",
             GameType::EFMI => "Arknight Endfield",
         }
+    }
+
+    /// The lowercase code used to name bundled resource files (schemas, MasterDB).
+    pub fn resource_code(&self) -> &'static str {
+        match self {
+            GameType::GIMI => "gimi",
+            GameType::SRMI => "srmi",
+            GameType::WWMI => "wwmi",
+            GameType::ZZMI => "zzmi",
+            GameType::EFMI => "efmi",
+        }
+    }
+
+    /// Recover a `GameType` from the `Serialize_repr` discriminant the frontend
+    /// round-trips. Returns `None` for a value outside the enum.
+    pub fn from_repr(raw: i32) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|game_type| *game_type as i32 == raw)
     }
 }
 

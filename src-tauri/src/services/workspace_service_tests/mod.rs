@@ -1,11 +1,11 @@
 use super::get_workspace_view_model;
 use crate::domain::models::{GameType, ItemStatus};
+use crate::domain::objects::ObjectFilter;
 use crate::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNode, WorkspaceNodeKind, WorkspaceReasonCode,
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
     WorkspaceSourceStatus, WorkspaceSwitchPolicyKey, WorkspaceViewModelInput, WorkspaceWarningCode,
 };
-use crate::repo::object_repo::ObjectFilter;
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,
@@ -16,12 +16,7 @@ use tempfile::TempDir;
 fn build_filter(game_id: &str) -> ObjectFilter {
     ObjectFilter {
         game_id: game_id.to_string(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     }
 }
 

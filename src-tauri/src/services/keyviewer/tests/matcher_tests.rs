@@ -2,10 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::services::keyviewer::matcher::{
-    find_collision_hashes, match_objects, MatchConfidence, MatchConfig,
-};
-use crate::services::keyviewer::resource_pack::KvObjectEntry;
+use crate::services::keyviewer::matcher::KvObjectEntry;
+use crate::services::keyviewer::matcher::{match_objects, MatchConfidence, MatchConfig};
 
 fn make_kv_entry(name: &str, hashes: &[&str]) -> KvObjectEntry {
     let code_hashes: Vec<String> = hashes.iter().map(|h| h.to_string()).collect();
@@ -265,32 +263,6 @@ fn sentinel_count_limited_by_config() {
 }
 
 // ─── Collision Detection ─────────────────────────────────────────────────────
-
-#[test]
-fn find_collision_hashes_detects_shared() {
-    let entries = vec![
-        make_kv_entry("A", &["shared01", "unique_a"]),
-        make_kv_entry("B", &["shared01", "unique_b"]),
-        make_kv_entry("C", &["shared01", "unique_c"]),
-    ];
-
-    let collisions = find_collision_hashes(&entries, 3);
-    assert!(collisions.contains("shared01"));
-    assert!(!collisions.contains("unique_a"));
-    assert!(!collisions.contains("unique_b"));
-    assert!(!collisions.contains("unique_c"));
-}
-
-#[test]
-fn find_collision_hashes_empty_when_no_collisions() {
-    let entries = vec![
-        make_kv_entry("A", &["unique_a"]),
-        make_kv_entry("B", &["unique_b"]),
-    ];
-
-    let collisions = find_collision_hashes(&entries, 3);
-    assert!(collisions.is_empty());
-}
 
 // ─── Edge Cases ──────────────────────────────────────────────────────────────
 

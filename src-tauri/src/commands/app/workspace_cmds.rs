@@ -11,12 +11,17 @@ use crate::services::scanner::watcher::WatcherState;
 #[tauri::command]
 #[specta::specta]
 pub async fn get_workspace_view_model(
-    input: WorkspaceViewModelInput,
+    mut input: WorkspaceViewModelInput,
     pool: State<'_, sqlx::SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
 ) -> Result<WorkspaceViewModel, AppError> {
-    crate::services::workspace_service::get_workspace_view_model(pool.inner(), input)
-        .await
-        .map_err(AppError::Internal)
+    // The Safe Mode corridor is a privacy gate, so it is read server-side and
+    // overrides whatever the client sent. The explorer/preview filters compare
+    // it with `==`, so an unchecked `safe_mode: false` would return exclusively
+    // unsafe folders — their names, paths, previews and INI summaries.
+    input.filter.safe_mode = config.current_corridor().is_safe();
+
+    crate::services::workspace_service::get_workspace_view_model(pool.inner(), input).await
 }
 
 #[tauri::command]
@@ -29,13 +34,14 @@ pub async fn execute_workspace_switch(
     watcher_state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
+    let op_guard = op_lock.acquire().await?;
     crate::services::workspace_switch_service::execute_switch(
         &app,
         input,
         config.inner(),
         pool.inner(),
         watcher_state.inner(),
-        op_lock.inner(),
+        &op_guard,
     )
     .await
 }

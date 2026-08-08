@@ -1,5 +1,5 @@
 use crate::domain::errors::AppError;
-use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::domain::errors::ScannerError;
 use crate::services::mods::trash;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherSuppressor};
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,7 @@ pub async fn resolve_batch<F>(
     requests: Vec<ResolutionRequest>,
     game_id: String,
     db: &SqlitePool,
-    op_lock: &OperationLock,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     watcher_suppressor: &Arc<WatcherSuppressor>,
     trash_dir: &Path,
     mut on_progress: F,
@@ -77,8 +77,6 @@ where
             errors: Vec::new(),
         });
     }
-
-    let _lock = op_lock.acquire().await?;
 
     if !trash_dir.exists() {
         fs::create_dir_all(trash_dir)
@@ -111,7 +109,7 @@ where
                 errors.push(ResolutionError {
                     group_id: request.group_id.clone(),
                     action: request.action.clone(),
-                    message,
+                    message: message.to_string(),
                 });
             }
         }
@@ -130,7 +128,7 @@ async fn resolve_one(
     game_id: &str,
     db: &SqlitePool,
     trash_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), ScannerError> {
     match request.action {
         ResolutionAction::KeepA => {
             move_folder_to_trash(&request.folder_b, game_id, trash_dir)?;
@@ -155,12 +153,14 @@ async fn resolve_one(
     }
 }
 
-fn apply_hardlinks(keep_folder: &str, target_folder: &str) -> Result<(), String> {
+fn apply_hardlinks(keep_folder: &str, target_folder: &str) -> Result<(), ScannerError> {
     let keep_path = Path::new(keep_folder);
     let target_path = Path::new(target_folder);
 
     if !keep_path.exists() || !target_path.exists() {
-        return Err("One or both folders do not exist for hardlinking".to_string());
+        return Err(ScannerError::Validation(
+            "One or both folders do not exist for hardlinking".to_string(),
+        ));
     }
 
     let mut success_count = 0;
@@ -219,11 +219,15 @@ fn apply_hardlinks(keep_folder: &str, target_folder: &str) -> Result<(), String>
     Ok(())
 }
 
-fn move_folder_to_trash(folder_path: &str, game_id: &str, trash_dir: &Path) -> Result<(), String> {
+fn move_folder_to_trash(
+    folder_path: &str,
+    game_id: &str,
+    trash_dir: &Path,
+) -> Result<(), ScannerError> {
     let source_path = Path::new(folder_path);
     trash::move_to_trash(source_path, trash_dir, Some(game_id.to_string()))
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|error| ScannerError::Io(error.to_string()))
 }
 
 async fn persist_whitelist_pair(
@@ -231,41 +235,46 @@ async fn persist_whitelist_pair(
     game_id: &str,
     folder_a_path: &str,
     folder_b_path: &str,
-) -> Result<(), String> {
+) -> Result<(), ScannerError> {
     let folder_a_id = fetch_mod_id(db, game_id, folder_a_path).await?;
     let folder_b_id = fetch_mod_id(db, game_id, folder_b_path).await?;
 
     if folder_a_id == folder_b_id {
-        return Err("Whitelist pair must reference two different folders".to_string());
+        return Err(ScannerError::Validation(
+            "Whitelist pair must reference two different folders".to_string(),
+        ));
     }
 
     let (canonical_a, canonical_b) = canonicalize_pair(&folder_a_id, &folder_b_id);
 
-    crate::repo::dedup_repo::insert_whitelist_pair(db, game_id, canonical_a, canonical_b)
-        .await
-        .map_err(|error| format!("Failed to persist duplicate whitelist pair: {error}"))?;
+    crate::repo::dedup_repo::insert_whitelist_pair(db, game_id, canonical_a, canonical_b).await?;
 
     Ok(())
 }
 
-async fn fetch_mod_id(db: &SqlitePool, game_id: &str, folder_path: &str) -> Result<String, String> {
+async fn fetch_mod_id(
+    db: &SqlitePool,
+    game_id: &str,
+    folder_path: &str,
+) -> Result<String, ScannerError> {
     crate::repo::mod_repo::get_mod_id_and_status_by_path(db, folder_path, game_id)
-        .await
-        .map_err(|error| format!("Failed to resolve mod id for '{folder_path}': {error}"))?
+        .await?
         .map(|(id, _, _)| id)
         .ok_or_else(|| {
-            format!("Mod entry not found for game '{game_id}' and folder '{folder_path}'")
+            ScannerError::Validation(format!(
+                "mod entry not found for game '{game_id}' and folder '{folder_path}'"
+            ))
         })
 }
 
-async fn set_group_status(db: &SqlitePool, group_id: &str, status: &str) -> Result<(), String> {
+async fn set_group_status(
+    db: &SqlitePool,
+    group_id: &str,
+    status: &str,
+) -> Result<(), ScannerError> {
     let set_resolved_at = status == "resolved" || status == "ignored";
     let rows_affected =
-        crate::repo::dedup_repo::update_group_status(db, group_id, status, set_resolved_at)
-            .await
-            .map_err(|error| {
-                format!("Failed to update resolution status for group '{group_id}': {error}")
-            })?;
+        crate::repo::dedup_repo::update_group_status(db, group_id, status, set_resolved_at).await?;
 
     if rows_affected == 0 {
         log::warn!(

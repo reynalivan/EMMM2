@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::domain::errors::AppError;
 use crate::domain::workspace::{
     WorkspaceRuntime, WorkspaceSelection, WorkspaceSourceState, WorkspaceSourceStatus,
     WorkspaceViewModel, WorkspaceViewModelInput,
@@ -19,11 +20,10 @@ use crate::services::workspace_read_model::selection::{
     ResolvedWorkspaceSelection,
 };
 
-async fn load_game_mods_path(pool: &sqlx::SqlitePool, game_id: &str) -> Result<String, String> {
+async fn load_game_mods_path(pool: &sqlx::SqlitePool, game_id: &str) -> Result<String, AppError> {
     crate::repo::game_repo::get_configured_mods_path(pool, game_id)
-        .await
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("Game '{}' has no mods_path", game_id))
+        .await?
+        .ok_or_else(|| AppError::Internal(format!("Game '{}' has no mods_path", game_id)))
 }
 
 fn available_source_state() -> WorkspaceSourceState {
@@ -61,7 +61,7 @@ fn build_workspace_selection(
 pub async fn get_workspace_view_model(
     pool: &sqlx::SqlitePool,
     input: WorkspaceViewModelInput,
-) -> Result<WorkspaceViewModel, String> {
+) -> Result<WorkspaceViewModel, AppError> {
     let game_id = input.filter.game_id.clone();
     let safe_mode = input.filter.safe_mode;
     let mods_path = load_game_mods_path(pool, &game_id).await?;

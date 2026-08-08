@@ -1,50 +1,19 @@
-use serde::Serialize;
+use crate::domain::dashboard::{CategorySlice, DashboardStats, GameSlice, RecentMod};
 use sqlx::SqlitePool;
 
 // ── Response Structs ────────────────────────────────────────────────────────
 
-/// Global overview statistics for the dashboard tiles.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
-pub struct DashboardStats {
-    #[specta(type = f64)]
-    pub total_mods: i64,
-    #[specta(type = f64)]
-    pub enabled_mods: i64,
-    #[specta(type = f64)]
-    pub disabled_mods: i64,
-    #[specta(type = f64)]
-    pub total_size_bytes: i64,
-    #[specta(type = f64)]
-    pub total_games: i64,
-    #[specta(type = f64)]
-    pub total_collections: i64,
-}
-
-/// A single slice of the category distribution pie chart.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
-pub struct CategorySlice {
-    pub category: String,
-    #[specta(type = f64)]
-    pub count: i64,
-}
-
-/// A single bar of the game distribution bar chart.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
-pub struct GameSlice {
-    pub game_id: String,
-    pub game_name: String,
-    #[specta(type = f64)]
-    pub count: i64,
-}
-
-/// A recently indexed mod for the activity widget.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
-pub struct RecentMod {
-    pub id: String,
-    pub name: String,
-    pub game_name: String,
-    pub object_name: Option<String>,
-    pub indexed_at: Option<String>,
+/// Restricts a dashboard count to the safe corridor.
+///
+/// Narrower than the corridor-*visibility* rule in `runtime_projection_repo`:
+/// the dashboard counts only mods classified safe, with no manual/unknown
+/// escape hatch.
+fn safe_mode_clause(safe_mode: bool) -> &'static str {
+    if safe_mode {
+        "AND COALESCE(m.is_safe, 1) = 1"
+    } else {
+        ""
+    }
 }
 
 // ── Queries ─────────────────────────────────────────────────────────────────
@@ -55,11 +24,7 @@ pub async fn fetch_global_stats(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<DashboardStats, sqlx::Error> {
-    let safe_clause = if safe_mode {
-        "AND COALESCE(m.is_safe, 1) = 1"
-    } else {
-        ""
-    };
+    let safe_clause = safe_mode_clause(safe_mode);
 
     let query = format!(
         r#"
@@ -71,7 +36,6 @@ pub async fn fetch_global_stats(
             (SELECT COUNT(*) FROM games)                                   AS total_games,
             (SELECT COUNT(*) FROM collections)                             AS total_collections
         FROM mods m
-        LEFT JOIN objects o ON m.object_id = o.id
         WHERE 1=1 {safe_clause}
         "#,
     );
@@ -107,11 +71,7 @@ pub async fn fetch_category_distribution(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<Vec<CategorySlice>, sqlx::Error> {
-    let safe_clause = if safe_mode {
-        "AND COALESCE(m.is_safe, 1) = 1"
-    } else {
-        ""
-    };
+    let safe_clause = safe_mode_clause(safe_mode);
 
     let query = format!(
         r#"
@@ -119,7 +79,6 @@ pub async fn fetch_category_distribution(
             COALESCE(m.object_type, 'Uncategorized') AS category,
             COUNT(*) AS count
         FROM mods m
-        LEFT JOIN objects o ON m.object_id = o.id
         WHERE 1=1 {safe_clause}
         GROUP BY COALESCE(m.object_type, 'Uncategorized')
         ORDER BY count DESC
@@ -136,11 +95,7 @@ pub async fn fetch_game_distribution(
     pool: &SqlitePool,
     safe_mode: bool,
 ) -> Result<Vec<GameSlice>, sqlx::Error> {
-    let safe_clause = if safe_mode {
-        "AND COALESCE(m.is_safe, 1) = 1"
-    } else {
-        ""
-    };
+    let safe_clause = safe_mode_clause(safe_mode);
 
     let query = format!(
         r#"
@@ -152,8 +107,7 @@ pub async fn fetch_game_distribution(
         LEFT JOIN (
             SELECT m.id, m.game_id
             FROM mods m
-            LEFT JOIN objects o ON m.object_id = o.id
-            WHERE 1=1 {safe_clause}
+                WHERE 1=1 {safe_clause}
         ) m ON m.game_id = g.id
         GROUP BY g.id, g.name
         ORDER BY count DESC
@@ -169,11 +123,7 @@ pub async fn fetch_recent_mods(
     safe_mode: bool,
     limit: i64,
 ) -> Result<Vec<RecentMod>, sqlx::Error> {
-    let safe_clause = if safe_mode {
-        "AND COALESCE(m.is_safe, 1) = 1"
-    } else {
-        ""
-    };
+    let safe_clause = safe_mode_clause(safe_mode);
 
     let query = format!(
         r#"

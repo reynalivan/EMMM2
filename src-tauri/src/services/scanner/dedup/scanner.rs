@@ -1,3 +1,4 @@
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::core::walker::ModCandidate;
 use crate::types::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
 use rayon::prelude::*;
@@ -33,13 +34,11 @@ pub async fn scan_duplicates(
     game_id: &str,
     db: &SqlitePool,
     cancel_flag: Arc<AtomicBool>,
-) -> Result<DedupScanOutcome, String> {
+) -> Result<DedupScanOutcome, ScannerError> {
     // One read of the mods table feeds both the scan candidates and the
     // path -> (mod id, is_safe) lookup used when grouping the results.
-    let mut conn = db.acquire().await.map_err(|error| error.to_string())?;
-    let mod_rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id)
-        .await
-        .map_err(|error| format!("Failed to fetch candidates from DB: {error}"))?;
+    let mut conn = db.acquire().await?;
+    let mod_rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id).await?;
     drop(conn);
 
     let candidates = build_candidates(&mod_rows, mods_root);
@@ -65,8 +64,7 @@ pub async fn scan_duplicates(
             whitelist_pairs,
         )
     })
-    .await
-    .map_err(|error| format!("Duplicate scan worker failed: {error}"))?;
+    .await?;
 
     Ok(outcome)
 }
@@ -78,8 +76,10 @@ fn run_pipeline_blocking(
     path_to_mod_id: HashMap<String, (String, bool)>,
     whitelist_pairs: HashSet<(String, String)>,
 ) -> DedupScanOutcome {
+    // Each snapshot is an independent folder walk + per-file stat + INI read.
+    // The hashing phase below is already parallel; this is the heavier half.
     let snapshots: Vec<ModSnapshot> = candidates
-        .iter()
+        .par_iter()
         .filter_map(|candidate| collect_snapshot(candidate).ok())
         .collect();
 
@@ -212,8 +212,8 @@ fn build_candidates(mod_rows: &[(String, String, bool)], mods_root: &Path) -> Ve
     for (_id, folder_path, _is_safe) in mod_rows {
         let path = Path::new(folder_path);
 
-        // Skip paths that no longer physically exist
-        if !path.exists() || !path.is_dir() {
+        // Skip paths that no longer physically exist (`is_dir` is false for those too).
+        if !path.is_dir() {
             continue;
         }
 
@@ -228,7 +228,8 @@ fn build_candidates(mod_rows: &[(String, String, bool)], mods_root: &Path) -> Ve
         };
 
         let is_disabled = crate::common::normalizer::is_disabled_folder(&raw_name);
-        let display_name = crate::common::normalizer::normalize_display_name(&raw_name);
+        let display_name =
+            crate::common::normalizer::normalize_display_name(&raw_name).into_owned();
 
         candidates.push(ModCandidate {
             path: path.to_path_buf(),
@@ -244,10 +245,8 @@ fn build_candidates(mod_rows: &[(String, String, bool)], mods_root: &Path) -> Ve
 async fn fetch_whitelist_pairs(
     db: &SqlitePool,
     game_id: &str,
-) -> Result<HashSet<(String, String)>, String> {
-    let rows = crate::repo::dedup_repo::get_duplicate_whitelist_pairs(db, game_id)
-        .await
-        .map_err(|error| format!("Failed to fetch duplicate whitelist pairs: {error}"))?;
+) -> Result<HashSet<(String, String)>, ScannerError> {
+    let rows = crate::repo::dedup_repo::get_duplicate_whitelist_pairs(db, game_id).await?;
 
     let mut pairs = HashSet::new();
     for (folder_a_id, folder_b_id) in rows {
@@ -277,7 +276,7 @@ fn phase1_candidate_filtering(snapshots: &[ModSnapshot]) -> Vec<(usize, usize)> 
             if first.files.len().abs_diff(second.files.len()) > 4 {
                 continue;
             }
-            if ratio(first.total_size_bytes, second.total_size_bytes) < 0.70 {
+            if super::size_ratio(first.total_size_bytes, second.total_size_bytes) < 0.70 {
                 continue;
             }
             pairs.push((left, right));
@@ -385,14 +384,6 @@ fn cancelled(total_folders: usize) -> DedupScanOutcome {
         groups: Vec::new(),
         total_folders,
     }
-}
-
-fn ratio(left: u64, right: u64) -> f64 {
-    let max = left.max(right);
-    if max == 0 {
-        return 0.0;
-    }
-    left.min(right) as f64 / max as f64
 }
 
 fn find(parent: &mut [usize], index: usize) -> usize {

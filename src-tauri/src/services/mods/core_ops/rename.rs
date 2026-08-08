@@ -4,8 +4,7 @@ use super::naming::{find_existing_sibling_case_insensitive, rename_conflict_erro
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
-use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -109,14 +108,12 @@ pub async fn rename_mod_folder_inner_service(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
     state: &WatcherState,
-    op_lock: &OperationLock,
-    old_path: String,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
+    old_path: &ValidatedPath,
     new_name: String,
     game_id: &str,
 ) -> Result<RenameResult, AppError> {
-    let _lock = op_lock.acquire().await?;
-
-    let canonical_path = validate_path(config, game_id, &old_path)?;
+    let canonical_path = old_path;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?
@@ -148,7 +145,7 @@ pub async fn rename_mod_folder_inner_service(
 
     let old_rel = canonical_path
         .strip_prefix(base)
-        .unwrap_or(&canonical_path)
+        .unwrap_or(canonical_path)
         .to_string_lossy()
         .to_string();
 
@@ -181,15 +178,15 @@ pub async fn rename_mod_folder_inner_service(
         .ok()
         .flatten();
 
-    if let Some(is_safe_bool) = is_safe {
+    if is_safe.is_some() {
         let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
-            pool,
-            config,
-            state.suppressor.clone(),
-            game_id,
-            &[is_safe_bool],
-            true,
-            true,
+            crate::services::app::runtime_effects::RuntimeSideEffects {
+                pool,
+                config,
+                game_id,
+                collections_dirty: true,
+                overlay_refresh: true,
+            },
         )
         .await;
     }

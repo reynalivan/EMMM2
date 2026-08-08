@@ -1,8 +1,16 @@
-use crate::domain::models::GameInfo;
+use crate::domain::errors::AppError;
+use crate::domain::models::{GameInfo, GameType};
 use std::path::{Path, PathBuf};
 
-/// Smart result type: (resolved path, warnings)
-pub type ValidationResult = (GameInfo, Vec<String>);
+/// Files 3DMigoto needs in the game root. Missing ones are soft warnings.
+const CORE_FILES: [&str; 2] = ["d3dx.ini", "d3d11.dll"];
+
+/// A game instance discovered under an XXMI root.
+pub struct DetectedGame {
+    pub info: GameInfo,
+    pub warnings: Vec<String>,
+    pub game_type: GameType,
+}
 
 /// Validates a folder as a valid 3DMigoto game instance.
 ///
@@ -11,55 +19,48 @@ pub type ValidationResult = (GameInfo, Vec<String>);
 /// 2. Treats `/Mods`, `d3dx.ini`, `d3d11.dll`, and `.exe` as soft warnings, not hard errors.
 ///
 /// Returns `(GameInfo, Vec<String>)` where warnings are displayed in the UI.
-pub fn validate_instance(raw_path: &Path) -> Result<ValidationResult, String> {
+pub fn validate_instance(raw_path: &Path) -> Result<(GameInfo, Vec<String>), AppError> {
     if !raw_path.exists() {
-        return Err(format!("Path does not exist: {}", raw_path.display()));
+        return Err(AppError::Internal(format!(
+            "Path does not exist: {}",
+            raw_path.display()
+        )));
     }
 
     let mut warnings: Vec<String> = Vec::new();
 
     // SMART: If user selected the /Mods folder itself, silently climb up to the parent
-    let path: PathBuf = {
-        let folder_name = raw_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_lowercase();
-        if folder_name == "mods" {
-            let parent = raw_path
-                .parent()
-                .ok_or_else(|| "Cannot resolve parent of selected 'Mods' folder.".to_string())?;
-            log::debug!("Smart path correction: user selected /Mods, resolved to parent.");
-            parent.to_path_buf()
-        } else {
-            raw_path.to_path_buf()
-        }
+    let selected_mods_folder = raw_path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("mods"));
+    let path: PathBuf = if selected_mods_folder {
+        log::debug!("Smart path correction: user selected /Mods, resolved to parent.");
+        raw_path
+            .parent()
+            .ok_or_else(|| {
+                AppError::Internal("Cannot resolve parent of selected 'Mods' folder.".to_string())
+            })?
+            .to_path_buf()
+    } else {
+        raw_path.to_path_buf()
     };
 
     // RULE 1: /Mods folder (soft — warn if missing)
     let mods_path = path.join("Mods");
-    let resolved_mods_path = if mods_path.exists() && mods_path.is_dir() {
-        mods_path.to_string_lossy().to_string()
-    } else {
+    if !mods_path.is_dir() {
         warnings.push(
             "Missing /Mods folder. You may need to create it manually before installing mods."
                 .to_string(),
         );
-        mods_path.to_string_lossy().to_string()
-    };
+    }
 
     // RULE 2: Core 3DMigoto files (soft — warn if missing)
-    if !path.join("d3dx.ini").exists() {
-        warnings.push(
-            "Missing core file: d3dx.ini (3DMigoto may not be installed correctly here)."
-                .to_string(),
-        );
-    }
-    if !path.join("d3d11.dll").exists() {
-        warnings.push(
-            "Missing core file: d3d11.dll (3DMigoto may not be installed correctly here)."
-                .to_string(),
-        );
+    for core_file in CORE_FILES {
+        if !path.join(core_file).exists() {
+            warnings.push(format!(
+                "Missing core file: {core_file} (3DMigoto may not be installed correctly here)."
+            ));
+        }
     }
 
     // RULE 3: Find launcher .exe (soft — warn if missing)
@@ -77,7 +78,7 @@ pub fn validate_instance(raw_path: &Path) -> Result<ValidationResult, String> {
     let info = GameInfo {
         path: path.to_string_lossy().to_string(),
         launcher_path,
-        mods_path: resolved_mods_path,
+        mods_path: mods_path.to_string_lossy().to_string(),
     };
 
     Ok((info, warnings))
@@ -89,47 +90,41 @@ fn find_launcher(path: &Path) -> Option<PathBuf> {
     let exe_files: Vec<PathBuf> = std::fs::read_dir(path)
         .ok()?
         .flatten()
-        .filter(|e| {
-            e.path()
-                .extension()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
                 .is_some_and(|ext| ext.to_string_lossy().eq_ignore_ascii_case("exe"))
         })
-        .map(|e| e.path())
         .collect();
 
-    if exe_files.is_empty() {
-        return None;
-    }
-
-    let preferred = exe_files.iter().find(|p| {
-        p.file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_lowercase()
-            .contains("loader")
-    });
-
-    Some(preferred.unwrap_or(&exe_files[0]).clone())
+    exe_files
+        .iter()
+        .find(|path| {
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase()
+                .contains("loader")
+        })
+        .or(exe_files.first())
+        .cloned()
 }
 
-/// Known XXMI subfolder names and their display names
-pub const XXMI_TARGETS: &[(&str, &str)] = &[
-    ("GIMI", "Genshin Impact"),
-    ("SRMI", "Honkai Star Rail"),
-    ("WWMI", "Wuthering Waves"),
-    ("ZZMI", "Zenless Zone Zero"),
-    ("EFMI", "Arknight Endfield"),
-];
-
-/// Scans an XXMI root folder for known game subfolders
-pub fn scan_xxmi_root(root: &Path) -> Vec<(GameInfo, Vec<String>, &'static str, &'static str)> {
-    XXMI_TARGETS
-        .iter()
-        .filter_map(|(folder, name)| {
-            let full = root.join(folder);
+/// Scans an XXMI root folder for known game subfolders. The subfolder name is
+/// the game's own code, so the roster comes from `GameType` rather than a
+/// second table kept in sync by hand.
+pub fn scan_xxmi_root(root: &Path) -> Vec<DetectedGame> {
+    GameType::ALL
+        .into_iter()
+        .filter_map(|game_type| {
+            let full = root.join(game_type.to_string());
             validate_instance(&full)
                 .ok()
-                .map(|(info, warnings)| (info, warnings, *folder, *name))
+                .map(|(info, warnings)| DetectedGame {
+                    info,
+                    warnings,
+                    game_type,
+                })
         })
         .collect()
 }

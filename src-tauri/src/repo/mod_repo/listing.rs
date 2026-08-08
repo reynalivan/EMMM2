@@ -2,7 +2,7 @@
 
 use super::types::{Mod, ReconcileModRow};
 use crate::domain::models::ItemStatus;
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 
 pub async fn get_rows_for_reconcile(
     conn: &mut sqlx::SqliteConnection,
@@ -37,16 +37,10 @@ pub async fn get_enabled_mods_paths(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<String>, sqlx::Error> {
-    let rows = sqlx::query("SELECT folder_path FROM mods WHERE game_id = ? AND status = 1")
+    sqlx::query_scalar("SELECT folder_path FROM mods WHERE game_id = ? AND status = 1")
         .bind(game_id)
         .fetch_all(pool)
-        .await?;
-
-    let mut paths = Vec::new();
-    for row in rows {
-        paths.push(row.try_get("folder_path")?);
-    }
-    Ok(paths)
+        .await
 }
 
 pub async fn get_enabled_siblings_paths(

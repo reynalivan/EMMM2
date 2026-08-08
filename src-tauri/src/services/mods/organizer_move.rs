@@ -1,14 +1,13 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
-use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::mods::core_ops::standardize_prefix;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::{Component, Path, PathBuf};
 
 pub struct MoveModsToObjectParams<'a> {
     pub game_id: &'a str,
-    pub folder_paths: &'a [String],
+    pub folder_paths: &'a [ValidatedPath],
     pub target_object_id: &'a str,
     pub target_subpath: Option<&'a str>,
     pub status: Option<&'a str>,
@@ -17,11 +16,10 @@ pub struct MoveModsToObjectParams<'a> {
 pub async fn move_mods_to_object_service(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
-    op_lock: &OperationLock,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     watcher: &WatcherState,
     params: MoveModsToObjectParams<'_>,
 ) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
-    let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
 
     if params.folder_paths.is_empty() {
@@ -56,7 +54,6 @@ pub async fn move_mods_to_object_service(
 
     for folder_path in params.folder_paths {
         match move_one_mod_to_object(
-            config,
             pool,
             params.game_id,
             folder_path,
@@ -75,7 +72,7 @@ pub async fn move_mods_to_object_service(
                 path_rewrites.extend(result.path_rewrites);
             }
             Err(error) => failures.push(crate::services::mods::bulk::BulkActionError {
-                path: folder_path.clone(),
+                path: folder_path.original().to_string(),
                 error,
             }),
         }
@@ -83,22 +80,11 @@ pub async fn move_mods_to_object_service(
 
     changed_object_ids.sort();
     changed_object_ids.dedup();
-    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
-        pool,
-        params.game_id,
-        &changed_object_ids,
-        false,
-    )
-    .await?;
-
-    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+    crate::services::app::runtime_effects::finalize_mutation(
         pool,
         config,
-        watcher.suppressor.clone(),
         params.game_id,
-        &[true, false],
-        true,
-        true,
+        crate::services::app::runtime_effects::MutationOutcome::objects(changed_object_ids),
     )
     .await;
 
@@ -168,10 +154,9 @@ struct MoveOneResult {
 
 #[allow(clippy::too_many_arguments)] // Internal move receives validated batch context and target paths.
 async fn move_one_mod_to_object(
-    config: &ConfigService,
     pool: &sqlx::SqlitePool,
     game_id: &str,
-    folder_path: &str,
+    folder: &ValidatedPath,
     target_object_id: &str,
     status: Option<&str>,
     base_path: &Path,
@@ -181,7 +166,9 @@ async fn move_one_mod_to_object(
     use crate::common::normalizer::is_disabled_folder;
     use crate::domain::models::ItemStatus;
 
-    let current_path = validate_path(config, game_id, folder_path)?;
+    let current_path = folder.to_path_buf();
+    // The DB keys on the caller's spelling, not the canonical form.
+    let folder_path = folder.original();
     let old_object_id =
         crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id).await?;
     let mod_folder_name = current_path
@@ -280,7 +267,7 @@ async fn move_one_mod_to_object(
 
 fn disabled_reason_for_status(status: crate::domain::models::ItemStatus) -> Option<&'static str> {
     if status == crate::domain::models::ItemStatus::Disabled {
-        return Some("User Disabled");
+        return Some(crate::common::corridor_constants::DISABLED_REASON_USER);
     }
     None
 }

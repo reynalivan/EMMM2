@@ -1,3 +1,4 @@
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankProvider;
 use crate::services::scanner::deep_matcher::analysis::content::FolderSignals;
 use crate::services::scanner::deep_matcher::state::master_db::MasterDb;
@@ -62,7 +63,7 @@ impl AiRerankProvider for HttpAiRerankProvider {
         request: &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankRequest,
         signals: &FolderSignals,
         db: &MasterDb,
-    ) -> Result<std::collections::HashMap<usize, f32>, String> {
+    ) -> Result<std::collections::HashMap<usize, f32>, ScannerError> {
         let candidate_ids = &request.candidate_entry_ids;
         if candidate_ids.is_empty() {
             return Ok(std::collections::HashMap::new());
@@ -123,30 +124,29 @@ impl AiRerankProvider for HttpAiRerankProvider {
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&payload)
-            .send()
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
+            .send()?;
 
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().unwrap_or_default();
-            return Err(format!("API error {}: {}", status, text));
+            return Err(ScannerError::Validation(format!(
+                "API error {}: {}",
+                status, text
+            )));
         }
 
-        let chat_res: ChatResponse = res
-            .json()
-            .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
+        let chat_res: ChatResponse = res.json()?;
 
         let content_str = chat_res
             .choices
             .first()
-            .ok_or("No choices in OpenAI response")?
+            .ok_or_else(|| ScannerError::Validation("No choices in OpenAI response".to_string()))?
             .message
             .content
             .as_str();
 
         let string_scores: std::collections::HashMap<String, f32> =
-            serde_json::from_str(content_str)
-                .map_err(|e| format!("Failed to parse score map from LLM: {}", e))?;
+            serde_json::from_str(content_str)?;
 
         let mut result = std::collections::HashMap::new();
         for (string_id, score) in string_scores {

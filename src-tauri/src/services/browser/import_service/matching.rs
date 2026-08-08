@@ -9,8 +9,6 @@ use crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::{match_folder_phased, MasterDb};
 
-use super::pipeline::count_ini_files;
-
 /// Attempt deep match. If the scanner service has a `quick_folder_match` function, call it.
 /// Falls back to confidence 0.0 (needs_review) if the scanner is unavailable.
 pub(super) async fn try_deep_match(
@@ -18,14 +16,8 @@ pub(super) async fn try_deep_match(
     extract_dir: &Path,
     game_id: Option<&str>,
 ) -> Option<MatchResult> {
-    // Load all .ini files for basic heuristic
-    let ini_count = count_ini_files(extract_dir);
-
-    // Heuristic: if no .ini we already blocked above; return low confidence for manual review
-    if ini_count == 0 {
-        return None;
-    }
-
+    // The pipeline already errored out when the extract had no .ini, so no
+    // recount is needed here.
     let game_id_str = game_id?;
 
     // Get the sqlite pool
@@ -38,30 +30,25 @@ pub(super) async fn try_deep_match(
             .ok()
             .flatten();
 
-    let game_type = game_type_res?;
+    // `games.game_type` is the numeric `GameType` discriminant; the shared
+    // loader maps it to the resource filename. Deriving the path here is how
+    // this drifted from the canonical layout.
+    let game_type: i32 = game_type_res?.parse().ok()?;
+    let resource_dir = app.path().resource_dir().ok()?;
 
-    let resource_path = app
-        .path()
-        .resource_dir()
-        .ok()?
-        .join("resources")
-        .join("databases")
-        .join(format!("{}.json", game_type.to_lowercase()));
-
-    if !resource_path.exists() {
-        return Some(MatchResult {
-            category: None,
-            entry_key: None,
-            alias_name: None,
-            confidence: 0.0,
-            reason: Some(format!(
-                "Master DB not found at: {}",
-                resource_path.display()
-            )),
-        });
-    }
-
-    let json_content = std::fs::read_to_string(&resource_path).ok()?;
+    let json_content =
+        match crate::services::scanner::master_db::load_master_db_json(&resource_dir, game_type) {
+            Ok(content) => content,
+            Err(error) => {
+                return Some(MatchResult {
+                    category: None,
+                    entry_key: None,
+                    alias_name: None,
+                    confidence: 0.0,
+                    reason: Some(error.to_string()),
+                })
+            }
+        };
     let master_db = MasterDb::from_json(&json_content).ok()?;
 
     // Build candidate from extract_dir
@@ -69,7 +56,7 @@ pub(super) async fn try_deep_match(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    let display_name = crate::common::normalizer::normalize_display_name(&raw_name);
+    let display_name = crate::common::normalizer::normalize_display_name(&raw_name).into_owned();
     let candidate = ModCandidate {
         path: extract_dir.to_path_buf(),
         raw_name: raw_name.clone(),

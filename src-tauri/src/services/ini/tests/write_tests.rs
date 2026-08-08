@@ -41,7 +41,7 @@ fn test_save_ini_rejects_raw_fallback_document() {
     let result = save_ini_with_updates(&document, &[(0, "key = v".to_string())]);
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("raw fallback"),
+        result.unwrap_err().to_string().contains("raw fallback"),
         "Should block writes when parser fell back to raw mode"
     );
 }

@@ -42,17 +42,17 @@ pub async fn auto_detect_games_inner(
     let mut new_games: Vec<GameConfig> = Vec::new();
     let settings = service.get_settings();
 
-    for (info, warnings, game_type_str, display_name) in &found {
+    for detected in &found {
         let id = Uuid::new_v4().to_string();
         let game = GameConfig {
             id,
-            name: display_name.to_string(),
-            game_type: game_type_str.parse().unwrap_or(GameType::GIMI),
-            mod_path: PathBuf::from(&info.mods_path),
-            game_exe: PathBuf::from(&info.path),
-            loader_exe: Some(PathBuf::from(&info.launcher_path)),
+            name: detected.game_type.display_name().to_string(),
+            game_type: detected.game_type,
+            mod_path: PathBuf::from(&detected.info.mods_path),
+            game_exe: PathBuf::from(&detected.info.path),
+            loader_exe: Some(PathBuf::from(&detected.info.launcher_path)),
             launch_args: None,
-            warnings: warnings.clone(),
+            warnings: detected.warnings.clone(),
         };
 
         // Check for duplicates
@@ -93,13 +93,11 @@ pub async fn add_game_manual_inner(
     path: &str,
 ) -> Result<GameConfig, AppError> {
     // Parse game type
-    let gt: GameType = game_type
-        .parse()
-        .map_err(|e: String| AppError::Validation(e))?;
+    let gt: GameType = game_type.parse().map_err(AppError::Validation)?;
     let folder = Path::new(path);
 
     // Validate folder structure (returns warnings, not hard errors, for missing files)
-    let (info, warnings) = validator::validate_instance(folder).map_err(AppError::Validation)?;
+    let (info, warnings) = validator::validate_instance(folder)?;
 
     let settings = service.get_settings();
 

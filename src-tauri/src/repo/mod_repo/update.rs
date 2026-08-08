@@ -1,9 +1,7 @@
 //! Single-row updates: folder path, status, and user flags.
 
 use super::paths::{get_game_mod_path, get_game_mod_path_for_mod_id};
-use crate::common::path_key::{
-    folder_path_key, path_starts_with_key, strip_path_prefix_preserve_display,
-};
+use crate::common::path_key::{folder_path_key, strip_path_prefix_preserve_display};
 use crate::domain::models::ItemStatus;
 use sqlx::{Row, SqlitePool};
 
@@ -58,8 +56,12 @@ pub async fn update_child_paths(
     new_prefix: &str,
     mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    let mut conn = pool.acquire().await?;
-    update_child_paths_tx(&mut conn, game_id, old_prefix, new_prefix, mods_path).await
+    // A transaction, not a bare connection: this rewrites one row per nested
+    // mod, and a half-applied rewrite leaves the index pointing at paths that
+    // no longer exist. It also collapses N autocommits into one.
+    let mut tx = pool.begin().await?;
+    update_child_paths_tx(&mut tx, game_id, old_prefix, new_prefix, mods_path).await?;
+    tx.commit().await
 }
 
 /// Rewrites every mod path nested under `old_prefix` to sit under `new_prefix`.
@@ -87,10 +89,8 @@ pub async fn update_child_paths_tx(
     for row in rows {
         let id: String = row.try_get("id")?;
         let folder_path: String = row.try_get("folder_path")?;
-        if !path_starts_with_key(&folder_path, old_root, mods_path) {
-            continue;
-        }
-
+        // `path_starts_with_key` is `strip_path_prefix_preserve_display(..).is_some()`,
+        // so the `else` arm below already rejects non-matching rows.
         let Some(suffix) = strip_path_prefix_preserve_display(&folder_path, old_root, mods_path)
         else {
             continue;

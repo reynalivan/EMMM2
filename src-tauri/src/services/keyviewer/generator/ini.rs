@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::domain::errors::AppError;
 use crate::services::keyviewer::matcher::MatchResult;
 
 use super::atomic::atomic_write;
@@ -199,7 +200,7 @@ pub fn write_keyviewer_ini(
     matches: &[MatchResult],
     toggle_key: &str,
     keybinds_dir: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let content = generate_keyviewer_ini(matches, toggle_key, keybinds_dir);
     atomic_write(output_path, &content)
 }

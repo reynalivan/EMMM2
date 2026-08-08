@@ -30,6 +30,18 @@ pub fn start(game_id: &str, is_safe: bool) {
     }
 }
 
+/// Mutate the snapshot for one (game, corridor), creating it if absent.
+/// A poisoned lock is treated as "no progress to report" rather than a panic.
+fn with_entry(game_id: &str, is_safe: bool, mutate: impl FnOnce(&mut ApplyProgressSnapshot)) {
+    let Ok(mut store) = progress_store().lock() else {
+        return;
+    };
+    let entry = store
+        .entry(progress_key(game_id, is_safe))
+        .or_insert_with(|| new_snapshot(game_id, is_safe));
+    mutate(entry);
+}
+
 pub fn update(
     game_id: &str,
     is_safe: bool,
@@ -38,24 +50,16 @@ pub fn update(
     total: usize,
     current_item: Option<String>,
 ) {
-    if let Ok(mut store) = progress_store().lock() {
-        let entry = store
-            .entry(progress_key(game_id, is_safe))
-            .or_insert_with(|| new_snapshot(game_id, is_safe));
+    with_entry(game_id, is_safe, |entry| {
         entry.phase = phase.to_string();
         entry.completed = completed;
         entry.total = total;
         entry.current_item = current_item;
-    }
+    });
 }
 
 pub fn set_warnings(game_id: &str, is_safe: bool, warnings: Vec<String>) {
-    if let Ok(mut store) = progress_store().lock() {
-        let entry = store
-            .entry(progress_key(game_id, is_safe))
-            .or_insert_with(|| new_snapshot(game_id, is_safe));
-        entry.warnings = warnings;
-    }
+    with_entry(game_id, is_safe, |entry| entry.warnings = warnings);
 }
 
 pub fn finish(

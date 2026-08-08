@@ -2,7 +2,7 @@ use tauri::Manager;
 use uuid::Uuid;
 
 use crate::domain::errors::AppError;
-use crate::repo::object_repo::{CreateObjectInput, UpdateObjectInput};
+use crate::domain::objects::{CreateObjectInput, UpdateObjectInput};
 
 pub async fn create_object_cmd_inner(
     pool: &sqlx::SqlitePool,
@@ -199,10 +199,8 @@ pub async fn delete_object(
     force: bool,
     trash_dir: &std::path::Path,
     watcher_state: &crate::services::scanner::watcher::WatcherState,
-    op_lock: &crate::services::fs_utils::operation_lock::OperationLock,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
 ) -> Result<(), AppError> {
-    // Acquire operation lock + suppress watcher for the entire operation
-    let _lock = op_lock.acquire().await?;
     let _guard =
         crate::services::scanner::watcher::SuppressionGuard::new(&watcher_state.suppressor);
     // 1. Fetch object from DB to get game_id and folder_path

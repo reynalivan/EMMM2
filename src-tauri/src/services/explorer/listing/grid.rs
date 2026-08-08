@@ -1,9 +1,8 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::common::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
+use crate::domain::errors::AppError;
 use crate::services::explorer::types::ConflictMember;
 
 use super::scan::{find_disabled_ancestor, scan_fs_folders};
@@ -20,11 +19,13 @@ fn find_child_by_name_key(parent: &Path, needle: &str) -> Option<PathBuf> {
 
 /// Stable id for a conflict group, derived from where it lives plus its
 /// normalized base name so the same clash keeps the same id across listings.
+///
+/// BLAKE3 like every other durable identity in the crate — `DefaultHasher` is
+/// explicitly not stable across Rust releases, which would silently renumber
+/// every group on a toolchain bump.
 fn conflict_group_id(directory: &Path, base_key: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    directory.to_string_lossy().hash(&mut hasher);
-    base_key.hash(&mut hasher);
-    format!("cg_{:016x}", hasher.finish())
+    let hash = blake3::hash(format!("{}\0{base_key}", directory.to_string_lossy()).as_bytes());
+    format!("cg_{}", &hash.to_hex()[..16])
 }
 
 fn conflict_member_from_disk(path: &Path, folder_name: String, is_enabled: bool) -> ConflictMember {
@@ -46,7 +47,7 @@ fn conflict_member_from_disk(path: &Path, folder_name: String, is_enabled: bool)
 pub async fn list_mod_folders_inner(
     mods_path: String,
     sub_path: Option<String>,
-) -> Result<crate::services::explorer::types::FolderGridResponse, String> {
+) -> Result<crate::services::explorer::types::FolderGridResponse, AppError> {
     let mut base = Path::new(&mods_path).to_path_buf();
     let mut is_root_disabled = false;
 
@@ -63,10 +64,14 @@ pub async fn list_mod_folders_inner(
     }
 
     if !base.exists() {
-        return Err(format!("Mods path does not exist: {mods_path}"));
+        return Err(AppError::Internal(format!(
+            "Mods path does not exist: {mods_path}"
+        )));
     }
     if !base.is_dir() {
-        return Err(format!("Mods path is not a directory: {mods_path}"));
+        return Err(AppError::Internal(format!(
+            "Mods path is not a directory: {mods_path}"
+        )));
     }
 
     log::debug!("Listing mods at base: {}", base.display());
@@ -82,7 +87,9 @@ pub async fn list_mod_folders_inner(
                     | std::path::Component::Prefix(_)
             )
         }) {
-            return Err("PathEscapeError: sub_path resolves outside of mods_path".to_string());
+            return Err(AppError::Internal(
+                "PathEscapeError: sub_path resolves outside of mods_path".to_string(),
+            ));
         }
     }
 
@@ -109,9 +116,7 @@ pub async fn list_mod_folders_inner(
     // Ensure the resolved target stays inside the declared mods root.
     // A crafted sub_path like "../../etc" could otherwise escape the boundary.
     {
-        let canonical_base = base
-            .canonicalize()
-            .map_err(|e| format!("Cannot canonicalize mods_path: {e}"))?;
+        let canonical_base = base.canonicalize()?;
         let canonical_target = if target.exists() {
             target.canonicalize().unwrap_or_else(|_| target.clone())
         } else if let Some(sp) = sub_path.as_deref().filter(|value| !value.is_empty()) {
@@ -120,13 +125,15 @@ pub async fn list_mod_folders_inner(
             canonical_base.clone()
         };
         if !canonical_target.starts_with(&canonical_base) {
-            return Err("PathEscapeError: sub_path resolves outside of mods_path".to_string());
+            return Err(AppError::Internal(
+                "PathEscapeError: sub_path resolves outside of mods_path".to_string(),
+            ));
         }
     }
 
     log::info!("Scanning filesystem for mods at {}", target.display());
 
-    let mut folders = scan_fs_folders(&target, &base, sub_path.as_deref()).await?;
+    let mut folders = scan_fs_folders(&target, sub_path.as_deref())?;
 
     log::info!(
         "Listed {} mod folders from {} (sub: {:?})",
@@ -138,13 +145,16 @@ pub async fn list_mod_folders_inner(
     // ── Conflict grouping pass (O(n)) ────────────────────────────────────────
     // Group folders by normalized base name (stripped of DISABLED prefix, lowercased).
     // If a group has >1 member → conflict (e.g. both "X" and "DISABLED X" exist).
-    use crate::services::explorer::types::{ConflictGroup, ConflictMember};
+    use crate::services::explorer::types::ConflictGroup;
     use std::collections::HashMap;
 
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, f) in folders.iter().enumerate() {
-        let base_key = canonical_name_key(&normalize_display_name(&f.folder_name));
-        groups.entry(base_key).or_default().push(i);
+        // `canonical_name_key` already strips the DISABLED prefix.
+        groups
+            .entry(canonical_name_key(&f.folder_name))
+            .or_default()
+            .push(i);
     }
 
     let mut conflicts: Vec<ConflictGroup> = Vec::new();
@@ -164,7 +174,7 @@ pub async fn list_mod_folders_inner(
             }
         }
         let group_id = conflict_group_id(&target, base_key);
-        let base_name = normalize_display_name(&folders[indices[0]].folder_name);
+        let base_name = normalize_display_name(&folders[indices[0]].folder_name).into_owned();
 
         let members: Vec<ConflictMember> = indices
             .iter()
@@ -204,7 +214,7 @@ pub async fn list_mod_folders_inner(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let self_base = normalize_display_name(&self_name);
+            let self_base = normalize_display_name(&self_name).into_owned();
             let self_disabled = is_disabled_folder(&self_name);
 
             // Build the expected sibling name (toggle the prefix)
@@ -260,24 +270,17 @@ pub async fn list_mod_folders_inner(
         true
     };
 
-    let ancestor_info = sub_path.as_deref().and_then(|sp| {
-        if sp.is_empty() {
-            None
-        } else {
-            find_disabled_ancestor(&mods_path, sp)
-        }
-    });
-
-    let (mut ancestor_disabled_by, mut ancestor_disabled_path) = match ancestor_info {
-        Some((name, path)) => (Some(name), Some(path)),
-        None => (None, None),
-    };
+    let (mut ancestor_disabled_by, mut ancestor_disabled_path) = sub_path
+        .as_deref()
+        .filter(|sp| !sp.is_empty())
+        .and_then(|sp| find_disabled_ancestor(&mods_path, sp))
+        .unzip();
 
     // If the root itself is disabled, treat it as the "ultimate" ancestor lock
     if is_root_disabled && ancestor_disabled_by.is_none() {
         ancestor_disabled_by = Some(
             path_file_name_lossy(&base)
-                .map(|n| normalize_display_name(&n))
+                .map(|n| normalize_display_name(&n).into_owned())
                 .unwrap_or_else(|| "Mods".to_string()),
         );
         ancestor_disabled_path = Some(base.to_string_lossy().to_string());

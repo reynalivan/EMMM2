@@ -31,7 +31,6 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [safe, setSafe] = useState(true);
 
   const dialogRef = useRef<HTMLDialogElement>(null);
   const hasAutoRolledRef = useRef(false);
@@ -41,7 +40,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     setError(null);
 
     try {
-      const res = await commands.suggestRandomMods(gameId, safe);
+      const res = await commands.suggestRandomMods(gameId);
 
       if (res && res.length > 0) {
         setProposals(res);
@@ -56,7 +55,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     } finally {
       setLoading(false);
     }
-  }, [gameId, safe, t]);
+  }, [gameId, t]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -168,16 +167,6 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
         <div className="flex justify-between items-center mb-4 pr-8">
           <h3 className="font-bold text-xl">{t('randomizer.title')}</h3>
-          <label className="label cursor-pointer gap-2 py-0">
-            <span className="label-text text-sm">{t('randomizer.safe_mode')}</span>
-            <input
-              type="checkbox"
-              className="toggle toggle-success toggle-sm"
-              checked={safe}
-              onChange={() => setSafe(!safe)}
-              disabled={loading || applying}
-            />
-          </label>
         </div>
 
         <p className="text-sm opacity-70 mb-4">{t('randomizer.desc')}</p>

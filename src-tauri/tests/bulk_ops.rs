@@ -116,7 +116,10 @@ mod tests {
             ..info_json::ModInfoUpdate::default()
         };
 
-        let result = bulk::bulk_update_info(&config, game_id, paths, update)
+        let validated =
+            emmm_lib::services::fs_utils::guard::validate_paths(&config, game_id, &paths)
+                .expect("Paths should validate inside the mods root");
+        let result = bulk::bulk_update_info(&validated, update)
             .await
             .expect("Bulk update should succeed");
 

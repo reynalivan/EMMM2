@@ -4,9 +4,7 @@ use std::fs;
 use std::io::Write;
 use tempfile::TempDir;
 
-use crate::services::keyviewer::harvester::{
-    compute_file_signature, harvest_hashes_from_ini, harvest_hashes_from_mod, should_rescan,
-};
+use crate::services::keyviewer::harvester::{harvest_hashes_from_ini, harvest_hashes_from_mod};
 
 /// Helper to create a temp INI file with given content.
 fn write_ini(dir: &TempDir, name: &str, content: &str) -> std::path::PathBuf {
@@ -220,30 +218,6 @@ fn harvest_from_empty_mod_returns_empty() {
     let dir = TempDir::new().unwrap();
     let result = harvest_hashes_from_mod(dir.path()).unwrap();
     assert!(result.is_empty());
-}
-
-#[test]
-fn file_signature_detects_changes() {
-    let dir = TempDir::new().unwrap();
-    let path = write_ini(&dir, "sig.ini", "content1");
-    let sig1 = compute_file_signature(&path).unwrap();
-
-    // Overwrite with different content
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    fs::write(&path, "content1 + more").unwrap();
-    let sig2 = compute_file_signature(&path).unwrap();
-
-    assert!(should_rescan(&sig1, &sig2));
-}
-
-#[test]
-fn file_signature_same_when_unchanged() {
-    let dir = TempDir::new().unwrap();
-    let path = write_ini(&dir, "sig.ini", "content1");
-    let sig1 = compute_file_signature(&path).unwrap();
-    let sig2 = compute_file_signature(&path).unwrap();
-
-    assert!(!should_rescan(&sig1, &sig2));
 }
 
 #[test]

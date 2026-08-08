@@ -1,5 +1,6 @@
 //! Orchestrates the two-phase commit of confirmed scan results.
 
+use crate::domain::errors::ScannerError;
 use crate::repo::mod_repo;
 use crate::services::scanner::sync::helpers::ensure_game_exists;
 use crate::services::scanner::sync::types::SyncResult;
@@ -10,7 +11,9 @@ use super::request::{CommitCtx, CommitScanRequest};
 use super::temp_move::prepare_disk_entries;
 
 /// Phase 2: Commit user-confirmed scan results to DB (Two-Phase Diffing).
-pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncResult, String> {
+pub async fn commit_scan_results(
+    request: CommitScanRequest<'_>,
+) -> Result<SyncResult, ScannerError> {
     let pool = request.pool;
     let game_id = request.game_id;
     let game_name = request.game_name;
@@ -27,7 +30,7 @@ pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncR
         preserve_existing_mappings: request.preserve_existing_mappings,
     };
 
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut tx = pool.begin().await?;
 
     ensure_game_exists(&mut tx, game_id, game_name, game_type, mods_path).await?;
 
@@ -38,9 +41,7 @@ pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncR
     let total = disk_entries.len();
 
     // Fetch snapshot of DB state
-    let db_mods = mod_repo::get_all_mods_sync_info_tx(&mut tx, game_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let db_mods = mod_repo::get_all_mods_sync_info_tx(&mut tx, game_id).await?;
 
     let disk_to_db = link_disk_to_db(&disk_entries, &db_mods);
 
@@ -58,11 +59,9 @@ pub async fn commit_scan_results(request: CommitScanRequest<'_>) -> Result<SyncR
     // Disk Reconcile owns cleanup of DB rows whose folders disappeared outside this flow.
     let deleted_mods_count = 0;
 
-    crate::repo::object_repo::delete_ghost_objects_gc(&mut tx, game_id)
-        .await
-        .map_err(|e| format!("Failed to clean ghost objects: {}", e))?;
+    crate::repo::object_repo::delete_ghost_objects_gc(&mut tx, game_id).await?;
 
-    tx.commit().await.map_err(|e| e.to_string())?;
+    tx.commit().await?;
 
     let temp_dir_path = std::path::Path::new(mods_path).join(".emmm_temp");
     if temp_dir_path.exists() {

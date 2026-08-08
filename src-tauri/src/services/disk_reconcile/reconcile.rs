@@ -1,14 +1,17 @@
 //! Disk Reconcile keeps the runtime projection aligned with filesystem reality.
 //! Do not add MasterDB matching logic here.
 
+use crate::domain::errors::AppError;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::common::normalizer::normalize_display_name;
 use crate::domain::collection::CollectionReferenceImpact;
-use crate::repo::object_repo::ObjectRuntimeDescriptor;
+use crate::domain::objects::ObjectRuntimeDescriptor;
 use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
-use crate::services::disk_reconcile::disk_snapshot::collect_disk_projection;
-use crate::services::disk_reconcile::helpers::normalize_runtime_name;
+use crate::services::disk_reconcile::disk_snapshot::{
+    collect_disk_projection, DiskProjectionError,
+};
 use crate::services::disk_reconcile::path_classifier::{
     collect_changed_roots, collect_thumbnail_roots, is_runtime_relevant_file,
 };
@@ -110,13 +113,6 @@ fn collect_runtime_file_changed(changed_paths: &[String]) -> bool {
         .any(|value| is_runtime_relevant_file(Path::new(value)))
 }
 
-fn is_source_unavailable_error(error: &str) -> bool {
-    error.starts_with("Disk Reconcile mods path is unavailable:")
-        || error.starts_with("Failed to read directory")
-        || error.starts_with("Failed to read directory entry")
-        || error.starts_with("Failed to read file type")
-}
-
 fn record_runtime_modifications(
     mods_path: &Path,
     changed_paths: &[String],
@@ -149,7 +145,7 @@ fn record_runtime_modifications(
 
         if let Some(folder_name) = parent.file_name() {
             change_summary
-                .record_mod_modified(&normalize_runtime_name(&folder_name.to_string_lossy()));
+                .record_mod_modified(&normalize_display_name(&folder_name.to_string_lossy()));
         }
     }
 }
@@ -158,7 +154,7 @@ fn record_runtime_modifications(
 /// Runtime-discovered folders remain `Other` until the explicit Deep Match Scanner runs.
 pub async fn reconcile_disk_projection(
     request: ReconcileDiskProjectionRequest<'_>,
-) -> Result<ReconcileOutcome, String> {
+) -> Result<ReconcileOutcome, AppError> {
     let ReconcileDiskProjectionRequest {
         pool,
         game_id,
@@ -190,9 +186,8 @@ pub async fn reconcile_disk_projection(
         || !matches!(reason, DiskReconcileReason::WatcherBatch)
         || !changed_roots.is_empty();
 
-    let before_descriptors = crate::repo::object_repo::get_runtime_descriptors(pool, game_id)
-        .await
-        .map_err(|error| error.to_string())?;
+    let before_descriptors =
+        crate::repo::object_repo::get_runtime_descriptors(pool, game_id).await?;
 
     let mut objects_changed = false;
     let mut folders_changed = false;
@@ -209,18 +204,18 @@ pub async fn reconcile_disk_projection(
         let scoped = !force_full && should_run_scoped_disk_reconcile(reason, &changed_roots);
         let projection = match collect_disk_projection(mods_path, &changed_roots, scoped) {
             Ok(value) => value,
-            Err(error) if is_source_unavailable_error(&error) => {
+            Err(DiskProjectionError::SourceUnavailable(message)) => {
                 return Ok(source_unavailable(
-                    error,
+                    message,
                     changed_roots,
                     thumbnail_roots,
                     runtime_file_changed,
                     change_summary.build(),
                 ));
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(AppError::Internal(error.into_message())),
         };
-        let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
+        let mut tx = pool.begin().await?;
 
         if let Some(events) = watcher_events {
             apply_watcher_rename_hints(WatcherRenameHintsApplyRequest {
@@ -252,17 +247,14 @@ pub async fn reconcile_disk_projection(
         )
         .await?;
 
-        tx.commit().await.map_err(|error| error.to_string())?;
-        crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id)
-            .await
-            .map_err(|error| error.to_string())?;
+        tx.commit().await?;
+        crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await?;
 
         objects_changed = objects_changed_tx;
         folders_changed = folders_changed_tx;
 
-        let after_descriptors = crate::repo::object_repo::get_runtime_descriptors(pool, game_id)
-            .await
-            .map_err(|error| error.to_string())?;
+        let after_descriptors =
+            crate::repo::object_repo::get_runtime_descriptors(pool, game_id).await?;
 
         // Both the cleared-selection diff and the changed-root merge compare the
         // same two descriptor sets; build each set once.

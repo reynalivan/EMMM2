@@ -8,7 +8,6 @@
 pub mod generator;
 pub mod harvester;
 pub mod matcher;
-pub mod resource_pack;
 
 #[cfg(test)]
 mod tests;

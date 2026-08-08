@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::objects::{CreateObjectInput, ObjectFilter, UpdateObjectInput};
 use crate::test_utils::{insert_test_mod, insert_test_object, TestModFixture, TestObjectFixture};
 type CommandResult<T> = Result<T, crate::domain::errors::AppError>;
 use sqlx::SqlitePool;
@@ -56,12 +57,7 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
 
     let filter = ObjectFilter {
         game_id: game_id.clone(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
 
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
@@ -112,12 +108,7 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
     // 1. Fetch with safe_mode=false (should return 1)
     let filter_unfiltered = ObjectFilter {
         game_id: game_id.clone(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
     let results_unfiltered = get_objects_cmd_inner(filter_unfiltered, &pool)
         .await?
@@ -131,12 +122,8 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
     // 2. Fetch with safe_mode=true — Phase 1: ALL objects returned, unsafe ones get zeroed counts
     let filter_safe = ObjectFilter {
         game_id: game_id.clone(),
-        search_query: None,
-        object_type: None,
         safe_mode: true,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
     let results_safe = get_objects_cmd_inner(filter_safe, &pool).await?.objects;
     assert_eq!(
@@ -180,12 +167,7 @@ async fn test_create_object_cmd() -> CommandResult<()> {
     // Verify it exists in DB
     let filter = ObjectFilter {
         game_id: game_id.clone(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
     assert_eq!(objects.len(), 1, "Created object must be retrievable");
@@ -246,12 +228,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
 
     let filter = ObjectFilter {
         game_id: game_id.clone(),
-        search_query: None,
-        object_type: None,
-        safe_mode: false,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
     let updated = objects.into_iter().find(|o| o.id == obj_id).unwrap();
@@ -272,6 +249,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     fs::create_dir(&trash_dir).unwrap();
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
+    let op_guard = op_lock.acquire().await.unwrap();
 
     // Create an empty object
     let empty_obj_id = "empty_obj";
@@ -327,7 +305,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
         false,
         &trash_dir,
         &watcher_state,
-        &op_lock,
+        &op_guard,
     )
     .await;
     assert!(
@@ -342,7 +320,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
         true,
         &trash_dir,
         &watcher_state,
-        &op_lock,
+        &op_guard,
     )
     .await;
     assert!(
@@ -566,12 +544,8 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
 
     let filter = ObjectFilter {
         game_id,
-        search_query: None,
-        object_type: None,
         safe_mode: true,
-        meta_filters: None,
-        sort_by: None,
-        status_filter: None,
+        ..Default::default()
     };
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;
     let object = objects

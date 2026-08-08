@@ -11,11 +11,13 @@ use std::path::{Path, PathBuf};
 const RAW_QUERY_MARKER: &str = "sqlx::query";
 
 /// (file path relative to src-tauri, allowed number of lines containing `sqlx::query`)
-const SERVICES_BASELINE: &[(&str, usize)] = &[
-    // Startup schema patch runner, not data access; migrate when a real
-    // migration layer exists.
-    ("src/services/config/schema.rs", 3),
-];
+/// Files under `src/services/` still allowed to contain raw SQL, with the
+/// exact statement count each may hold. The list only ever shrinks — a new
+/// entry means data access leaked out of `repo/`.
+///
+/// Now empty: `config/schema.rs` was a startup schema patcher that duplicated
+/// (and contradicted) `migrations/`, and has been deleted.
+const SERVICES_BASELINE: &[(&str, usize)] = &[];
 
 fn is_test_source(path: &Path) -> bool {
     let file_name = path

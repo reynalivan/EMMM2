@@ -22,7 +22,14 @@ export function useSettings() {
   const saveSettingsMutation = useMutation({
     mutationFn: (newSettings: AppSettings) => commands.saveSettings(newSettings),
     onSuccess: (_, newSettings) => {
+      const previous = queryClient.getQueryData<AppSettings>(settingsKeys.all);
       queryClient.setQueryData(settingsKeys.all, newSettings);
+      // The backend derives the Safe Mode corridor server-side, so a toggle
+      // changes the response of every corridor-dependent query without any
+      // of their inputs changing. Refetch them all.
+      if (previous && previous.safe_mode.enabled !== newSettings.safe_mode.enabled) {
+        void queryClient.invalidateQueries();
+      }
       addToast('success', t('settings:toast.save_success'));
     },
     onError: (err) => {

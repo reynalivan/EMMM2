@@ -40,19 +40,37 @@ pub async fn set_pin(
     Ok(())
 }
 
-/// Verify a PIN attempt. Returns Ok(true) if correct.
-/// Records failed attempts and enforces lockout.
-pub async fn verify_pin(pool: &SqlitePool, pin: &str) -> Result<bool, PinError> {
+/// Outcome of a PIN attempt.
+///
+/// `NoPinConfigured` is reported rather than folded into "accepted": whether a
+/// missing PIN means *allow* (an unlock prompt has nothing to unlock) or *deny*
+/// (a privilege gate has nothing to prove against) is the gate's decision, not
+/// the verifier's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinVerdict {
+    NoPinConfigured,
+    Accepted,
+    Rejected { attempts_remaining: i32 },
+    LockedOut { seconds_remaining: i32 },
+}
+
+/// Verify a PIN attempt, recording failed attempts and enforcing lockout.
+///
+/// The verdict carries the attempt/lockout counters, so callers do not need to
+/// re-read the status to find out why an attempt failed.
+pub async fn verify_pin(pool: &SqlitePool, pin: &str) -> Result<PinVerdict, PinError> {
     let config = pin_repo::get(pool).await?;
 
-    // No PIN set — verification always passes
     if !config.has_pin() {
         pin_repo::reset_failed_attempts(pool).await?;
-        return Ok(true);
+        return Ok(PinVerdict::NoPinConfigured);
     }
 
-    if config.is_locked() {
-        return Ok(false);
+    let lockout_seconds = config.lockout_seconds_remaining();
+    if lockout_seconds > 0 {
+        return Ok(PinVerdict::LockedOut {
+            seconds_remaining: lockout_seconds,
+        });
     }
 
     if config.lockout_until.is_some() {
@@ -61,17 +79,21 @@ pub async fn verify_pin(pool: &SqlitePool, pin: &str) -> Result<bool, PinError> 
 
     if verify_hash(pin, config.pin_hash.as_deref().unwrap_or_default()) {
         pin_repo::reset_failed_attempts(pool).await?;
-        return Ok(true);
+        return Ok(PinVerdict::Accepted);
     }
 
     let failed_attempts = config.failed_attempts.saturating_add(1);
     if failed_attempts >= i32::from(MAX_PIN_ATTEMPTS) {
         pin_repo::set_lockout_seconds(pool, PIN_LOCKOUT_SECONDS).await?;
-        return Ok(false);
+        return Ok(PinVerdict::LockedOut {
+            seconds_remaining: PIN_LOCKOUT_SECONDS,
+        });
     }
 
     pin_repo::set_failed_attempts(pool, failed_attempts).await?;
-    Ok(false)
+    Ok(PinVerdict::Rejected {
+        attempts_remaining: i32::from(MAX_PIN_ATTEMPTS).saturating_sub(failed_attempts),
+    })
 }
 
 /// Verify a PIN or recovery code against an Argon2 hash.
@@ -112,32 +134,5 @@ fn hash_pin(pin: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{get_status, set_pin, verify_pin};
-    use crate::repo::pin_repo;
-    use crate::test_utils::init_test_db;
-
-    #[tokio::test]
-    async fn verify_pin_persists_sixty_second_lockout_in_db() {
-        let ctx = init_test_db().await;
-
-        set_pin(&ctx.pool, "123456", None).await.expect("set pin");
-
-        for _ in 0..5 {
-            let valid = verify_pin(&ctx.pool, "000000").await.expect("verify pin");
-            assert!(!valid);
-        }
-
-        let status = get_status(&ctx.pool).await.expect("get status");
-        assert!(status.is_locked);
-        assert!(status.lockout_seconds_remaining > 0);
-        assert!(status.lockout_seconds_remaining <= 60);
-
-        let db_status = pin_repo::get(&ctx.pool).await.expect("pin config");
-        assert_eq!(db_status.failed_attempts, 0);
-        assert!(
-            db_status.lockout_until.is_some(),
-            "lockout must survive service restart through pin_config"
-        );
-    }
-}
+#[path = "tests/pin_service_tests.rs"]
+mod tests;

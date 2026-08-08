@@ -39,7 +39,6 @@ export function NeedsReviewModal({ job, onClose, onConfirm, onSkip }: Props) {
         game_id: selectedGameId,
         search_query: null,
         object_type: null,
-        safe_mode: true,
         meta_filters: null,
         sort_by: null,
         status_filter: null,

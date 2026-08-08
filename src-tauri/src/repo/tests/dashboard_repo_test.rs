@@ -47,6 +47,23 @@ struct SeedMod<'a> {
     object_type: Option<&'a str>,
 }
 
+/// The unremarkable mod. Each test then spells out only what it actually
+/// varies, so the assertion's inputs are visible instead of buried in seven
+/// fields of boilerplate repeated per seed.
+impl Default for SeedMod<'_> {
+    fn default() -> Self {
+        Self {
+            id: "m1",
+            game_id: "g1",
+            name: "Mod1",
+            status: "ENABLED",
+            is_safe: true,
+            size_bytes: 100,
+            object_type: Some("Character"),
+        }
+    }
+}
+
 async fn seed_mod(pool: &SqlitePool, seed: SeedMod<'_>) {
     let SeedMod {
         id,
@@ -97,10 +114,8 @@ async fn test_stats_accuracy() {
             id: "m1",
             game_id: "g1",
             name: "Mod1",
-            status: "ENABLED",
-            is_safe: true,
             size_bytes: 1000,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -111,9 +126,9 @@ async fn test_stats_accuracy() {
             game_id: "g1",
             name: "Mod2",
             status: "DISABLED",
-            is_safe: true,
             size_bytes: 2000,
             object_type: Some("Weapon"),
+            ..Default::default()
         },
     )
     .await;
@@ -123,10 +138,9 @@ async fn test_stats_accuracy() {
             id: "m3",
             game_id: "g1",
             name: "Mod3",
-            status: "ENABLED",
             is_safe: false,
             size_bytes: 500,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -136,10 +150,9 @@ async fn test_stats_accuracy() {
             id: "m4",
             game_id: "g2",
             name: "Mod4",
-            status: "ENABLED",
-            is_safe: true,
             size_bytes: 3000,
             object_type: Some("UI"),
+            ..Default::default()
         },
     )
     .await;
@@ -150,9 +163,9 @@ async fn test_stats_accuracy() {
             game_id: "g2",
             name: "Mod5",
             status: "DISABLED",
-            is_safe: true,
             size_bytes: 1500,
             object_type: None,
+            ..Default::default()
         },
     )
     .await;
@@ -180,10 +193,8 @@ async fn test_safe_mode_filter() {
             id: "m1",
             game_id: "g1",
             name: "SafeMod",
-            status: "ENABLED",
-            is_safe: true,
             size_bytes: 1000,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -193,10 +204,9 @@ async fn test_safe_mode_filter() {
             id: "m2",
             game_id: "g1",
             name: "UnsafeMod",
-            status: "ENABLED",
             is_safe: false,
             size_bytes: 2000,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -242,10 +252,7 @@ async fn test_category_distribution() {
             id: "m1",
             game_id: "g1",
             name: "Mod1",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -255,10 +262,7 @@ async fn test_category_distribution() {
             id: "m2",
             game_id: "g1",
             name: "Mod2",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -268,10 +272,8 @@ async fn test_category_distribution() {
             id: "m3",
             game_id: "g1",
             name: "Mod3",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
             object_type: Some("Weapon"),
+            ..Default::default()
         },
     )
     .await;
@@ -281,10 +283,8 @@ async fn test_category_distribution() {
             id: "m4",
             game_id: "g1",
             name: "Mod4",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
             object_type: None,
+            ..Default::default()
         },
     )
     .await;
@@ -316,10 +316,7 @@ async fn test_game_distribution() {
             id: "m1",
             game_id: "g1",
             name: "Mod1",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -329,10 +326,7 @@ async fn test_game_distribution() {
             id: "m2",
             game_id: "g1",
             name: "Mod2",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -342,10 +336,8 @@ async fn test_game_distribution() {
             id: "m3",
             game_id: "g2",
             name: "Mod3",
-            status: "ENABLED",
-            is_safe: true,
-            size_bytes: 100,
             object_type: Some("Weapon"),
+            ..Default::default()
         },
     )
     .await;
@@ -372,10 +364,8 @@ async fn test_negative_size_clamped() {
             id: "m1",
             game_id: "g1",
             name: "BadMod",
-            status: "ENABLED",
-            is_safe: true,
             size_bytes: -500,
-            object_type: Some("Character"),
+            ..Default::default()
         },
     )
     .await;
@@ -405,10 +395,7 @@ async fn test_recent_mods_limit() {
                 id: &id,
                 game_id: "g1",
                 name: &name,
-                status: "ENABLED",
-                is_safe: true,
-                size_bytes: 100,
-                object_type: Some("Character"),
+                ..Default::default()
             },
         )
         .await;

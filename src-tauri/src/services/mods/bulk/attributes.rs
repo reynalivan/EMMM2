@@ -7,20 +7,16 @@ use sqlx::SqlitePool;
 use std::path::Path;
 
 pub async fn bulk_update_info(
-    config: &crate::services::config::ConfigService,
-    game_id: &str,
-    paths: Vec<String>,
+    paths: &[crate::services::fs_utils::guard::ValidatedPath],
     update: info_json::ModInfoUpdate,
 ) -> Result<BulkResult, AppError> {
     let mut success = Vec::new();
     let mut failures = Vec::new();
     for path in paths {
-        let canonical = crate::services::fs_utils::guard::validate_path(config, game_id, &path)?;
-
-        match info_json::update_info_json(&canonical, &update) {
-            Ok(_) => success.push(path),
+        match info_json::update_info_json(path, &update) {
+            Ok(_) => success.push(path.original().to_string()),
             Err(e) => failures.push(BulkActionError {
-                path,
+                path: path.original().to_string(),
                 error: AppError::Metadata(e),
             }),
         }

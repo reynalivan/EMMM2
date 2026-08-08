@@ -5,8 +5,7 @@ use super::types::DeleteModResult;
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
-use crate::services::fs_utils::operation_lock::OperationLock;
+use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::fs;
 use std::path::Path;
@@ -22,56 +21,49 @@ pub async fn delete_mod_service(
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
     state: &WatcherState,
-    op_lock: &OperationLock,
+    _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     trash_dir: std::path::PathBuf,
-    path: String,
-    game_id: Option<String>,
+    path: &ValidatedPath,
+    game_id: &str,
 ) -> Result<DeleteModResult, AppError> {
-    let _lock = op_lock.acquire().await?;
-
     if !trash_dir.exists() {
         fs::create_dir_all(&trash_dir)
             .map_err(|e| AppError::Io(format!("Failed to create trash dir: {}", e)))?;
     }
 
-    if let Some(ref gid) = game_id {
-        validate_path(config, gid, &path)?;
-    }
-
-    let (is_safe, object_id, relative_path) = if let Some(ref gid) = game_id {
-        let mods_path = crate::repo::game_repo::get_mod_path(pool, gid)
+    let original = path.original();
+    let (is_safe, object_id, relative_path) = {
+        let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
             .await
             .ok()
             .flatten();
 
         if let Some(mp) = mods_path {
             let base = Path::new(&mp);
-            let rel = Path::new(&path)
+            let rel = Path::new(original)
                 .strip_prefix(base)
                 .map(|value| value.to_string_lossy().to_string())
-                .unwrap_or_else(|_| path.clone());
+                .unwrap_or_else(|_| original.to_string());
 
-            let safe = crate::repo::mod_repo::get_is_safe_by_folder(pool, gid, &rel)
+            let safe = crate::repo::mod_repo::get_is_safe_by_folder(pool, game_id, &rel)
                 .await
                 .ok()
                 .flatten();
-            let object = crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &rel, gid)
-                .await
-                .ok()
-                .flatten();
+            let object =
+                crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &rel, game_id)
+                    .await
+                    .ok()
+                    .flatten();
             (safe, object, Some(rel))
         } else {
             (None, None, None)
         }
-    } else {
-        (None, None, None)
     };
 
-    let path_obj = Path::new(&path);
     let _guard = SuppressionGuard::new(&state.suppressor);
 
-    move_to_trash(path_obj, &trash_dir, game_id.clone())?;
-    let _ = crate::repo::mod_repo::delete_mod_by_path(pool, &path).await;
+    move_to_trash(Path::new(original), &trash_dir, Some(game_id.to_string()))?;
+    let _ = crate::repo::mod_repo::delete_mod_by_path(pool, original).await;
     let collection_impact = if let Some(rel) = relative_path.as_deref() {
         crate::services::collection_service::handle_mod_missing(pool, rel)
             .await
@@ -80,23 +72,13 @@ pub async fn delete_mod_service(
         CollectionReferenceImpact::default()
     };
 
-    if let (Some(gid), Some(safe)) = (game_id, is_safe) {
+    if is_safe.is_some() {
         let changed_object_ids = object_id.into_iter().collect::<Vec<_>>();
-        let _ = crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
-            pool,
-            &gid,
-            &changed_object_ids,
-            false,
-        )
-        .await;
-        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
+        crate::services::app::runtime_effects::finalize_mutation(
             pool,
             config,
-            state.suppressor.clone(),
-            &gid,
-            &[safe],
-            true,
-            true,
+            game_id,
+            crate::services::app::runtime_effects::MutationOutcome::objects(changed_object_ids),
         )
         .await;
     }

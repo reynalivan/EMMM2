@@ -1,6 +1,5 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::scanner::dedup::resolver::{
     ResolutionProgress, ResolutionRequest, ResolutionSummary,
@@ -20,22 +19,25 @@ pub async fn dup_resolve_batch(
     db: State<'_, sqlx::SqlitePool>,
 ) -> Result<ResolutionSummary, AppError> {
     // Every request path must stay inside this game's mods root before any
-    // trash move or hardlink touches the filesystem.
-    for request in &requests {
-        validate_path(&config, &game_id, &request.folder_a)?;
-        validate_path(&config, &game_id, &request.folder_b)?;
-    }
+    // trash move or hardlink touches the filesystem. Batched so the root is
+    // canonicalized once, not twice per request.
+    let all_folders: Vec<String> = requests
+        .iter()
+        .flat_map(|request| [request.folder_a.clone(), request.folder_b.clone()])
+        .collect();
+    crate::services::fs_utils::guard::validate_paths(&config, &game_id, &all_folders)?;
 
     let app_data_dir = app.path().app_data_dir().map_err(|error| {
         AppError::Internal(format!("Failed to get app data directory: {error}"))
     })?;
-    let trash_dir = app_data_dir.join("trash");
+    let trash_dir = crate::services::mods::trash::trash_dir_under(&app_data_dir);
 
+    let op_guard = op_lock.acquire().await?;
     crate::services::scanner::dedup::resolver::resolve_batch(
         requests,
         game_id,
         db.inner(),
-        op_lock.inner(),
+        &op_guard,
         &watcher_state.suppressor,
         &trash_dir,
         |progress: ResolutionProgress| {

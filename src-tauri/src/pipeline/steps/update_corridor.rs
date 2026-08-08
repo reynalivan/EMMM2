@@ -1,7 +1,7 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 
-/// Step 8: Record apply result metadata without mutating legacy corridor pointers.
+/// Record apply result metadata without mutating legacy corridor pointers.
 pub async fn update(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let signature = crate::services::collection_service::compute_signature(
         &ctx.target_mods,

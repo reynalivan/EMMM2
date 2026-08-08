@@ -1,8 +1,14 @@
-use serde::Serialize;
-use std::time::{Duration, SystemTime};
+//! Safe Mode PIN input validation.
+//!
+//! Lockout state and hash verification are NOT here — they live in
+//! `services::pin_service` over the `pin_config` table, which is the
+//! authoritative store. This module owns format validation only.
 
-const MAX_PIN_ATTEMPTS: u8 = 5;
-const PIN_LOCKOUT_SECONDS: u64 = 60;
+use crate::domain::errors::AppError;
+use serde::Serialize;
+
+/// Safe Mode PINs are a fixed-length numeric code.
+const PIN_LENGTH: usize = 6;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PinVerifyStatus {
@@ -11,112 +17,14 @@ pub struct PinVerifyStatus {
     pub locked_seconds_remaining: u64,
 }
 
-#[derive(Debug, Default)]
-pub struct PinGuardState {
-    failed_attempts: u8,
-    locked_until: Option<SystemTime>,
-}
-
-impl PinGuardState {
-    pub fn new(failed_attempts: u8, locked_until_ts: Option<u64>) -> Self {
-        let locked_until =
-            locked_until_ts.map(|ts| SystemTime::UNIX_EPOCH + Duration::from_secs(ts));
-        Self {
-            failed_attempts,
-            locked_until,
-        }
-    }
-
-    pub fn snapshot(&self) -> (u8, Option<u64>) {
-        let ts = self.locked_until.map(|t| {
-            t.duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs()
-        });
-        (self.failed_attempts, ts)
-    }
-
-    pub fn reset(&mut self) {
-        self.failed_attempts = 0;
-        self.locked_until = None;
-    }
-
-    pub fn verify(&mut self, pin: &str, pin_hash: Option<&str>) -> PinVerifyStatus {
-        let Some(hash) = pin_hash else {
-            return PinVerifyStatus {
-                valid: true,
-                attempts_remaining: MAX_PIN_ATTEMPTS,
-                locked_seconds_remaining: 0,
-            };
-        };
-
-        if let Some(until) = self.locked_until {
-            let now = SystemTime::now();
-            if now < until {
-                let remaining = until
-                    .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs()
-                    .max(1);
-                return PinVerifyStatus {
-                    valid: false,
-                    attempts_remaining: 0,
-                    locked_seconds_remaining: remaining,
-                };
-            }
-            self.reset();
-        }
-
-        if verify_hash(hash, pin) {
-            self.reset();
-            return PinVerifyStatus {
-                valid: true,
-                attempts_remaining: MAX_PIN_ATTEMPTS,
-                locked_seconds_remaining: 0,
-            };
-        }
-
-        self.failed_attempts = self.failed_attempts.saturating_add(1);
-        if self.failed_attempts >= MAX_PIN_ATTEMPTS {
-            self.failed_attempts = 0;
-            self.locked_until = Some(SystemTime::now() + Duration::from_secs(PIN_LOCKOUT_SECONDS));
-            return PinVerifyStatus {
-                valid: false,
-                attempts_remaining: 0,
-                locked_seconds_remaining: PIN_LOCKOUT_SECONDS,
-            };
-        }
-
-        PinVerifyStatus {
-            valid: false,
-            attempts_remaining: MAX_PIN_ATTEMPTS - self.failed_attempts,
-            locked_seconds_remaining: 0,
-        }
-    }
-}
-
-pub fn validate_pin_format(pin: &str) -> Result<(), String> {
-    if pin.len() != 6 || !pin.chars().all(|ch| ch.is_ascii_digit()) {
-        return Err("PIN must be exactly 6 digits".to_string());
+pub fn validate_pin_format(pin: &str) -> Result<(), AppError> {
+    if pin.len() != PIN_LENGTH || !pin.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(AppError::Internal(format!(
+            "PIN must be exactly {PIN_LENGTH} digits"
+        )));
     }
 
     Ok(())
-}
-
-fn verify_hash(hash: &str, pin: &str) -> bool {
-    use argon2::{
-        password_hash::{PasswordHash, PasswordVerifier},
-        Argon2,
-    };
-
-    let parsed_hash = match PasswordHash::new(hash) {
-        Ok(h) => h,
-        Err(_) => return false,
-    };
-
-    Argon2::default()
-        .verify_password(pin.as_bytes(), &parsed_hash)
-        .is_ok()
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 //! result types so callers can wire them to real services.
 
 use super::HotkeyAction;
-use crate::common::path_key::{canonical_name_key, names_equal_by_key};
+use crate::common::path_key::canonical_name_key;
 use crate::services::keyviewer::generator::StatusFields;
 
 // ─── Action Result ───────────────────────────────────────────────────────────
@@ -56,12 +56,16 @@ pub fn resolve_next_preset(
     }
 
     let mut sorted = preset_names.to_vec();
-    sorted.sort_by_key(|name| canonical_name_key(name));
+    // Cached: the key is a regex plus two allocations, and `sort_by_key`
+    // recomputes it on every comparison.
+    sorted.sort_by_cached_key(|name| canonical_name_key(name));
 
     let current_idx = current_preset_name.and_then(|name| {
+        // Derive the needle's key once instead of once per candidate.
+        let target = canonical_name_key(name);
         sorted
             .iter()
-            .position(|preset| names_equal_by_key(preset, name))
+            .position(|preset| canonical_name_key(preset) == target)
     });
 
     let next_idx = match (current_idx, direction) {
@@ -90,53 +94,6 @@ pub fn plan_cycle_preset(new_preset_name: &str, safe_mode: bool) -> ActionResult
         },
         needs_reload: true,
         summary: format!("Preset: {new_preset_name}"),
-    }
-}
-
-// ─── Variant Folder Cycling ──────────────────────────────────────────────────
-
-/// Compute the next folder index for variant cycling.
-pub fn resolve_next_folder_index(
-    total_folders: usize,
-    current_idx: usize,
-    direction: CycleDirection,
-) -> Option<usize> {
-    if total_folders == 0 {
-        return None;
-    }
-
-    let next_idx = match direction {
-        CycleDirection::Next => (current_idx + 1) % total_folders,
-        CycleDirection::Previous => {
-            if current_idx == 0 {
-                total_folders - 1
-            } else {
-                current_idx - 1
-            }
-        }
-    };
-
-    Some(next_idx)
-}
-
-/// Compute the result of switching variant folders.
-pub fn plan_cycle_variant(
-    folder_name: &str,
-    scope_name: &str,
-    safe_mode: bool,
-    preset_name: Option<&str>,
-) -> ActionResult {
-    ActionResult {
-        action: HotkeyAction::NextVariantFolder,
-        status: StatusFields {
-            safe_mode,
-            preset_name: preset_name.map(|s| s.to_string()),
-            folder_name: Some(folder_name.to_string()),
-            scope_name: Some(scope_name.to_string()),
-            ..Default::default()
-        },
-        needs_reload: true,
-        summary: format!("Folder: {folder_name}"),
     }
 }
 

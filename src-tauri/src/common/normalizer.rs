@@ -1,6 +1,8 @@
 //! Text normalization for mod folder/file names.
 //! Handles transliteration, tokenization, and sanitization per TRD §3.2.
 
+use std::borrow::Cow;
+
 use deunicode::deunicode;
 use regex::Regex;
 use std::collections::HashSet;
@@ -37,7 +39,7 @@ pub fn preprocess_text(text: &str) -> HashSet<String> {
 pub fn strip_noise_prefixes(name: &str) -> String {
     let disabled_stripped = normalize_display_name(name);
     if disabled_stripped != name.trim() {
-        return disabled_stripped;
+        return disabled_stripped.into_owned();
     }
 
     let mut result = name.trim().to_string();
@@ -53,6 +55,9 @@ pub fn strip_noise_prefixes(name: &str) -> String {
     result.trim().to_string()
 }
 
+/// Leading word every DISABLED spelling shares, used as a cheap regex prefilter.
+const DISABLED_WORD: &str = "disabled";
+
 /// Regex matching canonical and legacy DISABLED folder prefixes.
 static DISABLED_DETECT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^disabled[\s_-]+").unwrap());
@@ -60,11 +65,25 @@ static DISABLED_DETECT_RE: LazyLock<Regex> =
 /// Normalize a folder name for UI display.
 ///
 /// Strips canonical or legacy DISABLED prefix variants and trims whitespace.
-pub fn normalize_display_name(name: &str) -> String {
-    DISABLED_DETECT_RE
-        .replace(name.trim(), "")
-        .trim()
-        .to_string()
+///
+/// Borrows when nothing was stripped. Most folder names are not prefixed, and
+/// this runs per path component in the matcher, the explorer listing and every
+/// key comparison — so the common case must not allocate or touch the regex.
+pub fn normalize_display_name(name: &str) -> Cow<'_, str> {
+    let trimmed = name.trim();
+    // `DISABLED_DETECT_RE` is `(?i)^disabled[\s_-]+`; the cheap prefix test
+    // rejects almost everything before the engine is entered.
+    if !trimmed
+        .get(..DISABLED_WORD.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(DISABLED_WORD))
+    {
+        return Cow::Borrowed(trimmed);
+    }
+
+    match DISABLED_DETECT_RE.replace(trimmed, "") {
+        Cow::Borrowed(value) => Cow::Borrowed(value.trim()),
+        Cow::Owned(value) => Cow::Owned(value.trim().to_string()),
+    }
 }
 
 /// Check if a folder is disabled based on the canonical DISABLED prefix.

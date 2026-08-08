@@ -47,7 +47,7 @@ describe('useDashboardStats', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(invoke).toHaveBeenCalledWith('get_dashboard_stats', { safeMode: false });
+    expect(invoke).toHaveBeenCalledWith('get_dashboard_stats');
     expect(result.current.data).toEqual(mockPayload);
   });
 
@@ -75,7 +75,7 @@ describe('useDashboardStats', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(invoke).toHaveBeenCalledWith('get_dashboard_stats', { safeMode: true });
+    expect(invoke).toHaveBeenCalledWith('get_dashboard_stats');
     expect(result.current.data).toEqual(mockPayload);
   });
 });

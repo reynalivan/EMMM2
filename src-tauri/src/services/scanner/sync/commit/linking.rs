@@ -8,7 +8,7 @@ use crate::services::scanner::sync::types::ConfirmedScanItem;
 use super::request::DbModRow;
 
 fn clean_folder(name: &str) -> String {
-    crate::common::normalizer::normalize_display_name(name)
+    crate::common::normalizer::normalize_display_name(name).into_owned()
 }
 
 fn get_parent_and_name(path_str: &str) -> (String, String) {

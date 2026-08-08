@@ -1,5 +1,6 @@
 //! Enqueueing import jobs and kicking off their pipeline runs.
 
+use crate::domain::errors::BrowserError;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter};
@@ -23,7 +24,7 @@ pub async fn queue_import_job(
     download_id: &str,
     session_id: Option<&str>,
     archive_path: &str,
-) -> Result<String, String> {
+) -> Result<String, BrowserError> {
     let job_id = Uuid::new_v4().to_string();
     let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
@@ -44,8 +45,7 @@ pub async fn queue_import_job(
         archive_path,
         &now,
     )
-    .await
-    .map_err(|e| format!("DB insert import_job failed: {e}"))?;
+    .await?;
 
     spawn_pipeline(db, app, &job_id, archive_path, "Import pipeline error");
 
@@ -58,13 +58,11 @@ pub async fn bulk_queue_imports(
     app: &AppHandle,
     download_ids: &[String],
     game_id: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, BrowserError> {
     let mut job_ids = Vec::with_capacity(download_ids.len());
 
     for dl_id in download_ids {
-        let row = browser_repo::get_finished_for_import(db, dl_id)
-            .await
-            .map_err(|e| format!("DB error: {e}"))?;
+        let row = browser_repo::get_finished_for_import(db, dl_id).await?;
 
         let Some(r) = row else { continue };
         let Some(file_path) = r.file_path else {
@@ -74,9 +72,7 @@ pub async fn bulk_queue_imports(
         // Override game_id
         let job_id = Uuid::new_v4().to_string();
         let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-        browser_repo::insert_job(db, &job_id, dl_id, Some(game_id), &file_path, &now)
-            .await
-            .map_err(|e| format!("DB insert failed: {e}"))?;
+        browser_repo::insert_job(db, &job_id, dl_id, Some(game_id), &file_path, &now).await?;
 
         spawn_pipeline(db, app, &job_id, &file_path, "Bulk import pipeline error");
 
@@ -102,12 +98,12 @@ fn spawn_pipeline(
     tauri::async_runtime::spawn(async move {
         let outcome = match PIPELINE_SEMAPHORE.acquire().await {
             Ok(_permit) => run_pipeline(&db_c, &app_c, &job_id_c, &archive).await,
-            Err(e) => Err(format!("Import queue closed: {e}")),
+            Err(_) => Err(BrowserError::QueueClosed),
         };
 
         if let Err(e) = outcome {
             log::error!("{error_context} for job {job_id_c}: {e}");
-            let _ = set_job_status(&db_c, &job_id_c, "failed", Some(&e)).await;
+            let _ = set_job_status(&db_c, &job_id_c, "failed", Some(&e.to_string())).await;
             let _ = app_c.emit(
                 "import:job-update",
                 serde_json::json!({

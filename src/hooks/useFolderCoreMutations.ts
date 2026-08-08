@@ -98,8 +98,10 @@ export function useDeleteMod() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (params: { path: string; gameId?: string }) =>
-      commands.deleteMod(params.path, params.gameId ?? null),
+    // `gameId` names the mods root the path must sit inside; the backend
+    // refuses to trash anything outside it, so it is no longer optional.
+    mutationFn: (params: { path: string; gameId: string }) =>
+      commands.deleteMod(params.path, params.gameId),
     onSuccess: async (result, variables) => {
       applyRuntimeEffects(
         queryClient,

@@ -1,3 +1,4 @@
+use crate::domain::errors::ScannerError;
 use crate::services::scanner::core::walker::ModCandidate;
 use crate::types::dup_scan::DupScanSignal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -36,7 +37,7 @@ pub(crate) struct HashProfile {
     pub mesh_hashes: BTreeMap<String, String>,
 }
 
-pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, String> {
+pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, ScannerError> {
     let mut files = Vec::new();
     let mut total_size = 0_u64;
     let mut ini_headers = BTreeSet::new();
@@ -130,19 +131,56 @@ fn strip_version(name: &str) -> String {
         .to_lowercase()
 }
 
+/// Every tunable in the duplicate-similarity model, in one place.
+///
+/// The four `TIER_*` weights sum to 100; the bonuses can push a pair above that
+/// before the clamp, which is why a non-exact match tops out at
+/// [`MAX_INEXACT_SCORE`] rather than 100 — only a full hash match scores 100.
+mod weights {
+    /// Tier weights (sum to 100).
+    pub const TIER_STRUCTURAL_NAME: f64 = 35.0;
+    pub const TIER_FILE_IDENTITY: f64 = 30.0;
+    pub const TIER_PHYSICAL: f64 = 20.0;
+    pub const TIER_SUPPORTING: f64 = 15.0;
+
+    /// Intra-tier mixes (each group sums to 1.0).
+    pub const FILE_IDENTITY_HASH: f64 = 0.8;
+    pub const FILE_IDENTITY_HEADERS: f64 = 0.2;
+    pub const PHYSICAL_EXTENSIONS: f64 = 0.3;
+    pub const PHYSICAL_TEXTURES: f64 = 0.4;
+    pub const PHYSICAL_MESHES: f64 = 0.3;
+    pub const SUPPORTING_KEYBINDINGS: f64 = 0.5;
+    pub const SUPPORTING_LOGICAL: f64 = 0.5;
+
+    /// Bonuses applied before clamping.
+    pub const RECOLOR_BONUS: f64 = 25.0;
+    pub const LOGICAL_OVERLAP_BONUS: f64 = 15.0;
+
+    /// Thresholds.
+    pub const RECOLOR_MIN_SIZE_RATIO: f64 = 0.95;
+    pub const LOGICAL_OVERLAP_BONUS_MIN: f64 = 0.8;
+    pub const MAX_INEXACT_SCORE: f64 = 99.0;
+    /// A same-name/different-version pair is a duplicate regardless of content drift.
+    pub const VERSION_UPGRADE_FLOOR: u8 = 85;
+}
+
 pub(crate) fn aggregate_signals(
     left: &ModSnapshot,
     right: &ModSnapshot,
     left_hash: &HashProfile,
     right_hash: &HashProfile,
 ) -> (u8, Vec<DupScanSignal>, String) {
+    use weights as w;
+
     let (name_score, structure_score) = phase2_name_and_structure(left, right);
     let structural_name = ((name_score + structure_score) / 2.0).clamp(0.0, 1.0);
 
     let (hash_score, exact_hash_match) =
         hash_similarity(&left_hash.key_file_hashes, &right_hash.key_file_hashes);
     let header_score = set_overlap_score(&left.ini_headers, &right.ini_headers);
-    let file_identity = ((hash_score * 0.8) + (header_score * 0.2)).clamp(0.0, 1.0);
+    let file_identity = ((hash_score * w::FILE_IDENTITY_HASH)
+        + (header_score * w::FILE_IDENTITY_HEADERS))
+        .clamp(0.0, 1.0);
 
     let extension_score = extension_distribution_score(&left.extensions, &right.extensions);
     let (texture_score, _) =
@@ -150,13 +188,17 @@ pub(crate) fn aggregate_signals(
     let (mesh_score, exact_mesh_match) =
         hash_similarity(&left_hash.mesh_hashes, &right_hash.mesh_hashes);
 
-    let physical =
-        ((extension_score * 0.3) + (texture_score * 0.4) + (mesh_score * 0.3)).clamp(0.0, 1.0);
+    let physical = ((extension_score * w::PHYSICAL_EXTENSIONS)
+        + (texture_score * w::PHYSICAL_TEXTURES)
+        + (mesh_score * w::PHYSICAL_MESHES))
+        .clamp(0.0, 1.0);
 
     let keybinding_score = set_overlap_score(&left.keybindings, &right.keybindings);
     let logical_overlap = set_overlap_score(&left.target_hashes, &right.target_hashes);
 
-    let supporting = ((keybinding_score * 0.5) + (logical_overlap * 0.5)).clamp(0.0, 1.0);
+    let supporting = ((keybinding_score * w::SUPPORTING_KEYBINDINGS)
+        + (logical_overlap * w::SUPPORTING_LOGICAL))
+        .clamp(0.0, 1.0);
 
     let left_clean_name = strip_version(&left.candidate.display_name);
     let right_clean_name = strip_version(&right.candidate.display_name);
@@ -164,10 +206,10 @@ pub(crate) fn aggregate_signals(
         && !left_clean_name.is_empty()
         && left.candidate.display_name != right.candidate.display_name;
 
-    let size_diff = ratio(left.total_size_bytes, right.total_size_bytes);
+    let size_diff = super::size_ratio(left.total_size_bytes, right.total_size_bytes);
     let is_potential_recolor = exact_mesh_match
         && !left_hash.mesh_hashes.is_empty()
-        && size_diff > 0.95
+        && size_diff > w::RECOLOR_MIN_SIZE_RATIO
         && texture_score < 1.0;
 
     if exact_hash_match {
@@ -179,21 +221,23 @@ pub(crate) fn aggregate_signals(
         return (100, signals, "Exact hash match".to_string());
     }
 
-    let mut weighted =
-        (structural_name * 35.0) + (file_identity * 30.0) + (physical * 20.0) + (supporting * 15.0);
+    let mut weighted = (structural_name * w::TIER_STRUCTURAL_NAME)
+        + (file_identity * w::TIER_FILE_IDENTITY)
+        + (physical * w::TIER_PHYSICAL)
+        + (supporting * w::TIER_SUPPORTING);
 
     if is_potential_recolor {
-        weighted += 25.0;
+        weighted += w::RECOLOR_BONUS;
     }
 
-    if logical_overlap > 0.8 {
-        weighted += 15.0;
+    if logical_overlap > w::LOGICAL_OVERLAP_BONUS_MIN {
+        weighted += w::LOGICAL_OVERLAP_BONUS;
     }
 
-    let mut score = weighted.round().clamp(0.0, 99.0) as u8;
+    let mut score = weighted.round().clamp(0.0, w::MAX_INEXACT_SCORE) as u8;
 
     if is_version_upgrade {
-        score = score.max(85);
+        score = score.max(w::VERSION_UPGRADE_FLOOR);
     }
 
     let mut signals = vec![
@@ -270,39 +314,27 @@ fn phase2_name_and_structure(left: &ModSnapshot, right: &ModSnapshot) -> (f64, f
     (name_score, structure_score)
 }
 
-fn full_blake3_hash(path: &Path) -> Result<String, String> {
-    let file =
-        File::open(path).map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+fn full_blake3_hash(path: &Path) -> Result<String, ScannerError> {
+    let file = File::open(path)?;
     // blake3's own reader does the buffering; an 8 KiB hand-rolled loop is
     // below the 16 KiB the multi-threaded fast path needs.
     let mut hasher = blake3::Hasher::new();
-    hasher
-        .update_reader(file)
-        .map_err(|error| format!("Failed to hash {}: {error}", path.display()))?;
+    hasher.update_reader(file)?;
     Ok(hasher.finalize().to_string())
 }
 
-fn partial_blake3_hash(path: &Path) -> Result<String, String> {
-    let mut file =
-        File::open(path).map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
-    let size = file
-        .metadata()
-        .map_err(|error| format!("Failed to stat {}: {error}", path.display()))?
-        .len();
+fn partial_blake3_hash(path: &Path) -> Result<String, ScannerError> {
+    let mut file = File::open(path)?;
+    let size = file.metadata()?.len();
     let mut hasher = blake3::Hasher::new();
     let mut head = [0_u8; 1024];
-    let head_len = file
-        .read(&mut head)
-        .map_err(|error| format!("Failed to sample {}: {error}", path.display()))?;
+    let head_len = file.read(&mut head)?;
     hasher.update(&head[..head_len]);
 
     if size > 1024 {
-        file.seek(SeekFrom::End(-1024))
-            .map_err(|error| format!("Failed to sample tail {}: {error}", path.display()))?;
+        file.seek(SeekFrom::End(-1024))?;
         let mut tail = [0_u8; 1024];
-        let tail_len = file
-            .read(&mut tail)
-            .map_err(|error| format!("Failed to sample tail {}: {error}", path.display()))?;
+        let tail_len = file.read(&mut tail)?;
         hasher.update(&tail[..tail_len]);
     }
 
@@ -411,13 +443,4 @@ fn build_signal(key: &str, detail: &str, score: f64) -> DupScanSignal {
         detail: detail.to_string(),
         score: (score * 100.0).round().clamp(0.0, 100.0) as u8,
     }
-}
-
-fn ratio(a: u64, b: u64) -> f64 {
-    let a = a as f64;
-    let b = b as f64;
-    if a.max(b) == 0.0 {
-        return 1.0;
-    }
-    a.min(b) / a.max(b)
 }

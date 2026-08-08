@@ -1,5 +1,6 @@
 //! Phase 0: resolve `move_from_temp` items to their final on-disk location.
 
+use crate::domain::errors::ScannerError;
 use std::path::Path;
 
 use crate::repo::mod_repo;
@@ -16,7 +17,7 @@ async fn resolve_temp_target_object_folder(
     conn: &mut sqlx::SqliteConnection,
     input: ResolveObjectTargetInput<'_>,
     new_objects_count: &mut usize,
-) -> Result<String, String> {
+) -> Result<String, ScannerError> {
     if input.matched_entry_key.is_none() {
         return Ok("Other".to_string());
     }
@@ -35,7 +36,7 @@ pub(super) async fn prepare_disk_entries(
     ctx: &CommitCtx<'_>,
     items: Vec<ConfirmedScanItem>,
     new_objects_count: &mut usize,
-) -> Result<(Vec<(ConfirmedScanItem, String)>, Vec<CollisionInfo>), String> {
+) -> Result<(Vec<(ConfirmedScanItem, String)>, Vec<CollisionInfo>), ScannerError> {
     let game_id = ctx.game_id;
     let mods_path = ctx.mods_path;
     let mut collisions = Vec::new();
@@ -85,8 +86,7 @@ pub(super) async fn prepare_disk_entries(
                             game_id,
                             Some(mods_path),
                         )
-                        .await
-                        .map_err(|e| e.to_string())?;
+                        .await?;
                         collisions.push(crate::services::scanner::core::types::CollisionInfo {
                             id: generate_stable_id(game_id, &target_path_string),
                             source_path: item.folder_path.clone(),
@@ -97,18 +97,23 @@ pub(super) async fn prepare_disk_entries(
                         continue;
                     }
                     if let Err(e) = std::fs::rename(source_path, &target_path) {
-                        return Err(format!("Failed to move temp folder: {}", e));
+                        return Err(ScannerError::Validation(format!(
+                            "Failed to move temp folder: {}",
+                            e
+                        )));
                     } else {
                         actual_folder_path = target_path.to_string_lossy().into_owned();
                     }
                 } else {
-                    return Err(format!(
+                    return Err(ScannerError::Validation(format!(
                         "Source path does not exist: {}",
                         source_path.display()
-                    ));
+                    )));
                 }
             } else {
-                return Err("Invalid folder path for move_from_temp".to_string());
+                return Err(ScannerError::Validation(
+                    "Invalid folder path for move_from_temp".to_string(),
+                ));
             }
         }
         disk_entries.push((item, actual_folder_path));

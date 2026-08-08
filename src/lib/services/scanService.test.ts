@@ -95,7 +95,7 @@ describe('scanService', () => {
   });
 
   describe('runDeepmatchScanner', () => {
-    it('should fetch master db and invoke deepmatch_scanner_cmd', async () => {
+    it('should invoke deepmatch_scanner_cmd', async () => {
       vi.mocked(invoke).mockImplementation(async (cmd) => {
         if (cmd === 'get_master_db') return '[]';
         return { total_scanned: 10 };
@@ -114,7 +114,7 @@ describe('scanService', () => {
         .mocked(invoke)
         .mock.calls.find((c) => c[0] === 'deepmatch_scanner_cmd')?.[1] as Record<string, unknown>;
       expect(syncCallArgs.gameId).toBe('g1');
-      expect(syncCallArgs.dbJson).toBe('[]');
+      expect(syncCallArgs.masterDbType).toBe(GameType.GIMI);
       expect(syncCallArgs.onProgress).toBeInstanceOf(Channel);
       expect(result).toEqual({ total_scanned: 10 });
 
@@ -141,7 +141,7 @@ describe('scanService', () => {
   });
 
   describe('runDeepmatchPreview', () => {
-    it('should fetch master db and invoke deepmatch_preview_cmd', async () => {
+    it('should invoke deepmatch_preview_cmd', async () => {
       vi.mocked(invoke).mockImplementation(async (cmd) => {
         if (cmd === 'get_master_db') return '[]';
         return [];
@@ -166,7 +166,7 @@ describe('scanService', () => {
   });
 
   describe('runDeepmatchPreviewForObjects', () => {
-    it('should fetch master db and invoke deepmatch_preview_for_objects_cmd', async () => {
+    it('should invoke deepmatch_preview_for_objects_cmd', async () => {
       vi.mocked(invoke).mockImplementation(async (cmd) => {
         if (cmd === 'get_master_db') return '[]';
         return [];
@@ -190,7 +190,7 @@ describe('scanService', () => {
       expect(previewCallArgs.input).toEqual({
         gameId: 'g1',
         modsPath: '/mods',
-        dbJson: '[]',
+        gameType: GameType.GIMI,
         objectIds: ['obj1', 'obj2'],
       });
       expect(previewCallArgs.onProgress).toBeInstanceOf(Channel);
@@ -222,7 +222,7 @@ describe('scanService', () => {
   });
 
   describe('scoreCandidatesBatch', () => {
-    it('should fetch master db and invoke score_candidates_batch_cmd', async () => {
+    it('should invoke score_candidates_batch_cmd', async () => {
       vi.mocked(invoke).mockImplementation(async (cmd) => {
         if (cmd === 'get_master_db') return '[]';
         return { Candidate1: 85 };
@@ -237,7 +237,7 @@ describe('scanService', () => {
       expect(invoke).toHaveBeenCalledWith('score_candidates_batch_cmd', {
         folderPath: '/mods/MyMod',
         candidateNames: ['Candidate1'],
-        dbJson: '[]',
+        gameType: GameType.GIMI,
       });
       expect(result).toEqual({ Candidate1: 85 });
     });

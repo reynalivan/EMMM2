@@ -1,4 +1,5 @@
 use super::*;
+use crate::services::fs_utils::operation_lock::OperationLock;
 use std::fs;
 use tempfile::TempDir;
 
@@ -52,7 +53,9 @@ fn details_command_rejects_path_escape() {
     let outside = tmp.path().join("outside.ini");
     fs::write(&outside, "[Constants]\n$x = 1\n").unwrap();
 
-    let err = read_mod_ini_inner(&mod_dir, "..\\outside.ini").unwrap_err();
+    let err = read_mod_ini_inner(&mod_dir, "..\\outside.ini")
+        .unwrap_err()
+        .to_string();
     assert!(err.to_string().contains("Invalid INI filename path"));
 
     let err2 = read_mod_ini_inner(&mod_dir, "desktop.ini").unwrap_err();
@@ -62,19 +65,22 @@ fn details_command_rejects_path_escape() {
     assert!(err3.to_string().contains("Only .ini files"));
 }
 
-// Covers: EC-6.06 (Operation lock for INI writes)
+// Covers: EC-6.06 (Operation lock for INI writes). Writing without the lock
+// is a compile error now — `write_mod_ini_locked_inner` takes `&OpGuard` —
+// so the contention path lives in `operation_lock_tests` and this covers the
+// happy path under the guard.
 #[tokio::test]
-async fn details_command_write_respects_operation_lock() {
+async fn details_command_write_requires_held_guard() {
     let tmp = TempDir::new().unwrap();
     let mod_dir = tmp.path().join("ModA");
     fs::create_dir(&mod_dir).unwrap();
     fs::write(mod_dir.join("config.ini"), "[Constants]\n$swapvar = 0\n").unwrap();
 
     let op_lock = OperationLock::new();
-    let _guard = op_lock.acquire().await.unwrap();
+    let op_guard = op_lock.acquire().await.unwrap();
 
-    let result = write_mod_ini_locked_inner(
-        &op_lock,
+    write_mod_ini_locked_inner(
+        &op_guard,
         &mod_dir,
         "config.ini",
         vec![IniLineUpdate {
@@ -82,12 +88,11 @@ async fn details_command_write_respects_operation_lock() {
             content: "$swapvar = 1".to_string(),
         }],
     )
-    .await;
+    .await
+    .unwrap();
 
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("Operation in progress"));
+    let written = fs::read_to_string(mod_dir.join("config.ini")).unwrap();
+    assert!(written.contains("$swapvar = 1"));
 }
 
 #[test]

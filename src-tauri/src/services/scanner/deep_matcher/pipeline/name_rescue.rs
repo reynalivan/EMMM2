@@ -27,6 +27,21 @@ const SCORE_FOLDER_RESCUE: f32 = 8.0;
 
 const RESCUE_TOP_K: usize = 5;
 
+/// Normalize and space-condense a set of terms, dropping ones too short to be
+/// a meaningful substring. Hoisted out of the matching loops — these forms
+/// depend only on the DB entry, never on the folder being scored.
+fn condensed_terms<'a>(terms: impl Iterator<Item = &'a String>) -> Vec<String> {
+    terms
+        .map(|term| normalizer::normalize_for_matching_default(term).replace(' ', ""))
+        .filter(|term| term.len() >= MIN_TERM_LEN)
+        .collect()
+}
+
+/// Substring match in either direction, which is what every condensed check here wants.
+fn overlaps(term: &str, other: &str) -> bool {
+    !term.is_empty() && (other.contains(term) || term.contains(other))
+}
+
 // ==================== F3: EARLY STAGE ====================
 
 /// Apply substring matching Pass A — file stems + subfolder names.
@@ -58,11 +73,22 @@ fn apply_substring_name_inner(
         return;
     }
 
+    // Condensed forms are invariant across the entry loop, so build them once
+    // instead of once per (entry × source string) pair.
+    let source_condensed: Vec<String> = source_strings
+        .iter()
+        .map(|deep_str| deep_str.replace(' ', ""))
+        .collect();
+
     for (entry_id, state) in states.iter_mut() {
         let entry = &db.entries[*entry_id];
         let entry_name_norm = normalizer::normalize_for_matching_default(&entry.name);
+        // Invariant across the source-string loop below.
+        let entry_condensed = entry_name_norm.replace(' ', "");
+        let alias_condensed = condensed_terms(entry.custom_skins.iter().flat_map(|s| &s.aliases));
+        let tag_condensed = condensed_terms(entry.tags.iter());
 
-        for deep_str in source_strings {
+        for (deep_str, deep_condensed) in source_strings.iter().zip(&source_condensed) {
             // Exact name match (highest score)
             if !entry_name_norm.is_empty()
                 && entry_name_norm.len() >= MIN_TERM_LEN
@@ -82,13 +108,7 @@ fn apply_substring_name_inner(
 
             // Name substring: entry_name ⊂ deep_str OR deep_str ⊂ entry_name
             // Condense spaces for cross-word-boundary matching
-            let deep_condensed = deep_str.replace(" ", "");
-            let entry_condensed = entry_name_norm.replace(" ", "");
-            if !entry_condensed.is_empty()
-                && entry_condensed.len() >= MIN_TERM_LEN
-                && (deep_condensed.contains(&entry_condensed)
-                    || entry_condensed.contains(&deep_condensed))
-            {
+            if entry_condensed.len() >= MIN_TERM_LEN && overlaps(&entry_condensed, deep_condensed) {
                 state.score = (state.score + SCORE_NAME_SUBSTRING).min(100.0);
                 state.max_confidence = std::cmp::max(state.max_confidence, Confidence::High);
                 push_reason_capped(
@@ -102,16 +122,9 @@ fn apply_substring_name_inner(
             }
 
             // Alias substring check (condensed)
-            let alias_matched = entry.custom_skins.iter().any(|skin| {
-                skin.aliases.iter().any(|alias| {
-                    let alias_condensed =
-                        normalizer::normalize_for_matching_default(alias).replace(" ", "");
-                    !alias_condensed.is_empty()
-                        && alias_condensed.len() >= MIN_TERM_LEN
-                        && (deep_condensed.contains(&alias_condensed)
-                            || alias_condensed.contains(&deep_condensed))
-                })
-            });
+            let alias_matched = alias_condensed
+                .iter()
+                .any(|alias| overlaps(alias, deep_condensed));
             if alias_matched {
                 state.score = (state.score + SCORE_ALIAS_SUBSTRING).min(100.0);
                 state.max_confidence = std::cmp::max(state.max_confidence, Confidence::High);
@@ -126,14 +139,9 @@ fn apply_substring_name_inner(
             }
 
             // Tag substring check (condensed)
-            let tag_matched = entry.tags.iter().any(|tag| {
-                let tag_condensed =
-                    normalizer::normalize_for_matching_default(tag).replace(" ", "");
-                !tag_condensed.is_empty()
-                    && tag_condensed.len() >= MIN_TERM_LEN
-                    && (deep_condensed.contains(&tag_condensed)
-                        || tag_condensed.contains(&deep_condensed))
-            });
+            let tag_matched = tag_condensed
+                .iter()
+                .any(|tag| overlaps(tag, deep_condensed));
             if tag_matched {
                 state.score = (state.score + SCORE_TAG_SUBSTRING).min(100.0);
                 state.max_confidence = std::cmp::max(state.max_confidence, Confidence::High);

@@ -121,9 +121,13 @@ async fn test_get_category_counts_service() {
 
     // Phase 1 fix: safe_mode no longer filters categories — always returns ALL counts.
     // The _safe_mode param is kept for API compatibility but ignored.
-    let safe_counts = get_category_counts_service(&pool, "g_cat_counts", true)
-        .await
-        .unwrap();
+    let safe_counts = get_category_counts_service(
+        &pool,
+        "g_cat_counts",
+        crate::domain::corridor::Corridor::from_is_safe(true),
+    )
+    .await
+    .unwrap();
     assert_eq!(safe_counts.len(), 2);
     let char_count = safe_counts
         .iter()
@@ -132,9 +136,13 @@ async fn test_get_category_counts_service() {
     // Now returns ALL characters (3), not just safe ones
     assert_eq!(char_count.count, 3);
 
-    let all_counts = get_category_counts_service(&pool, "g_cat_counts", false)
-        .await
-        .unwrap();
+    let all_counts = get_category_counts_service(
+        &pool,
+        "g_cat_counts",
+        crate::domain::corridor::Corridor::from_is_safe(false),
+    )
+    .await
+    .unwrap();
     let char_count_all = all_counts
         .iter()
         .find(|c| c.object_type == "Character")

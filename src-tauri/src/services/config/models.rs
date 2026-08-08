@@ -65,6 +65,15 @@ pub struct AppSettings {
     pub keyviewer: KeyViewerConfig,
 }
 
+impl AppSettings {
+    /// The game `active_game_id` points at, if it is still configured.
+    /// The id and the games list can drift, so every caller must handle `None`.
+    pub fn active_game(&self) -> Option<&GameConfig> {
+        let active_game_id = self.active_game_id.as_ref()?;
+        self.games.iter().find(|game| &game.id == active_game_id)
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {

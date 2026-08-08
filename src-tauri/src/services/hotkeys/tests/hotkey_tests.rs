@@ -4,8 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::services::hotkeys::actions::{
-    plan_cycle_preset, plan_cycle_variant, plan_noop, resolve_next_folder_index,
-    resolve_next_preset, CycleDirection,
+    plan_cycle_preset, plan_noop, resolve_next_preset, CycleDirection,
 };
 use crate::services::hotkeys::{
     detect_conflicts, get_key_string, list_bindings, HotkeyAction, HotkeyConfig, HotkeyState,
@@ -197,34 +196,6 @@ fn plan_cycle_preset_sets_status() {
 }
 
 // ─── Variant Folder Cycling ──────────────────────────────────────────────────
-
-#[test]
-fn next_folder_wraps() {
-    let idx = resolve_next_folder_index(3, 2, CycleDirection::Next);
-    assert_eq!(idx, Some(0));
-}
-
-#[test]
-fn prev_folder_wraps() {
-    let idx = resolve_next_folder_index(3, 0, CycleDirection::Previous);
-    assert_eq!(idx, Some(2));
-}
-
-#[test]
-fn folder_no_folders_returns_none() {
-    let idx = resolve_next_folder_index(0, 0, CycleDirection::Next);
-    assert!(idx.is_none());
-}
-
-#[test]
-fn plan_cycle_variant_sets_all_fields() {
-    let result = plan_cycle_variant("Cape", "Albedo", false, Some("Default"));
-    assert_eq!(result.status.folder_name, Some("Cape".to_string()));
-    assert_eq!(result.status.scope_name, Some("Albedo".to_string()));
-    assert_eq!(result.status.preset_name, Some("Default".to_string()));
-    assert!(!result.status.safe_mode);
-    assert!(result.needs_reload);
-}
 
 // ─── No-op ───────────────────────────────────────────────────────────────────
 

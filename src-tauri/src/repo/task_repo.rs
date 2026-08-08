@@ -2,6 +2,21 @@ use crate::domain::errors::AppError;
 use crate::domain::task::{PipelineTask, TaskStatus};
 use sqlx::{Row, SqlitePool};
 
+/// Columns every `PipelineTask` read selects, in the order `row_to_task` expects.
+const TASK_COLUMNS: &str = "id, game_id, task_type, status, target_id, created_at, updated_at";
+
+fn row_to_task(r: &sqlx::sqlite::SqliteRow) -> PipelineTask {
+    PipelineTask {
+        id: r.get("id"),
+        game_id: r.get("game_id"),
+        task_type: r.get("task_type"),
+        status: TaskStatus::from_db_value(r.get::<&str, _>("status")),
+        target_id: r.try_get("target_id").ok().flatten(),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+    }
+}
+
 /// Create a new pending task in the database and return its ID.
 pub async fn create_task(
     pool: &SqlitePool,
@@ -13,12 +28,13 @@ pub async fn create_task(
     sqlx::query(
         r#"
         INSERT INTO tasks (id, game_id, task_type, status, target_id)
-        VALUES (?, ?, ?, 'PENDING', ?)
+        VALUES (?, ?, ?, ?, ?)
         "#,
     )
     .bind(id)
     .bind(game_id)
     .bind(task_type)
+    .bind(TaskStatus::Pending.as_str())
     .bind(target_id)
     .execute(pool)
     .await
@@ -53,66 +69,36 @@ pub async fn update_status(
 pub async fn get_all_pending_tasks_global(
     pool: &SqlitePool,
 ) -> Result<Vec<PipelineTask>, AppError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT id, game_id, task_type, status, target_id, created_at, updated_at
-        FROM tasks
-        WHERE status = 'PENDING'
-        ORDER BY created_at ASC
-        "#,
-    )
+    let rows = sqlx::query(&format!(
+        "SELECT {TASK_COLUMNS} FROM tasks WHERE status = ? ORDER BY created_at ASC"
+    ))
+    .bind(TaskStatus::Pending.as_str())
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::Db(e.to_string()))?;
 
-    let tasks = rows
-        .into_iter()
-        .map(|r: sqlx::sqlite::SqliteRow| PipelineTask {
-            id: r.get("id"),
-            game_id: r.get("game_id"),
-            task_type: r.get("task_type"),
-            status: TaskStatus::from_db_value(r.get::<&str, _>("status")),
-            target_id: r.try_get("target_id").ok().flatten(),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-        })
-        .collect();
-
-    Ok(tasks)
+    Ok(rows.iter().map(row_to_task).collect())
 }
 
 /// Get a specific task by its ID.
 pub async fn get_task_by_id(pool: &SqlitePool, id: &str) -> Result<Option<PipelineTask>, AppError> {
-    let row = sqlx::query(
-        r#"
-        SELECT id, game_id, task_type, status, target_id, created_at, updated_at
-        FROM tasks
-        WHERE id = ?
-        "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::Db(e.to_string()))?;
+    let row = sqlx::query(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Db(e.to_string()))?;
 
-    if let Some(r) = row {
-        Ok(Some(PipelineTask {
-            id: r.get("id"),
-            game_id: r.get("game_id"),
-            task_type: r.get("task_type"),
-            status: TaskStatus::from_db_value(r.get::<&str, _>("status")),
-            target_id: r.try_get("target_id").ok().flatten(),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-        }))
-    } else {
-        Ok(None)
-    }
+    Ok(row.as_ref().map(row_to_task))
 }
 
-/// Delete task rows older than 7 days. Returns the number of purged rows.
+/// Drop old *settled* task rows. Returns the number of purged rows.
+///
+/// `PENDING` rows are the crash-recovery queue that `app_startup_check` reads,
+/// so age alone must not delete them — a pending apply older than the retention
+/// window would vanish before the user was ever offered recovery.
 pub async fn purge_old_tasks(pool: &SqlitePool) -> Result<u64, AppError> {
-    sqlx::query("DELETE FROM tasks WHERE created_at < datetime('now', '-7 days')")
+    sqlx::query("DELETE FROM tasks WHERE status != ? AND created_at < datetime('now', '-7 days')")
+        .bind(TaskStatus::Pending.as_str())
         .execute(pool)
         .await
         .map(|result| result.rows_affected())

@@ -1,4 +1,5 @@
 use crate::common::sync::lock;
+use crate::domain::errors::BrowserError;
 use futures_util::StreamExt;
 use reqwest::Client;
 use sqlx::SqlitePool;
@@ -19,7 +20,35 @@ static ACTIVE_DOWNLOADS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = Onc
 /// Max concurrent transfers. Queueing beyond this keeps one slow host from
 /// starving the rest and stops a multi-select from opening dozens of sockets.
 /// ponytail: one global cap; make it per-host if a site starts rate-limiting.
-static DOWNLOAD_SEMAPHORE: Semaphore = Semaphore::const_new(3);
+static DOWNLOAD_SEMAPHORE: Semaphore = Semaphore::const_new(MAX_CONCURRENT_DOWNLOADS);
+
+/// Max concurrent transfers.
+const MAX_CONCURRENT_DOWNLOADS: usize = 3;
+
+/// How often the progress event and DB row are refreshed mid-transfer.
+const PROGRESS_EMIT_INTERVAL_MS: u128 = 100;
+
+/// Write buffer for the streamed body. Without it every ~8-16 KB reqwest chunk
+/// is its own `write` syscall.
+const DOWNLOAD_BUFFER_BYTES: usize = 1 << 20;
+
+/// Reused across downloads so the connection pool and TLS config survive a
+/// multi-select from one host.
+static HTTP_CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+
+fn http_client() -> Result<&'static Client, BrowserError> {
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client);
+    }
+    let client = Client::builder()
+        .user_agent(concat!(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) EMMM/",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .build()
+        .map_err(|e| BrowserError::Download(format!("failed to create HTTP client: {e}")))?;
+    Ok(HTTP_CLIENT.get_or_init(|| client))
+}
 
 fn active_downloads() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
     ACTIVE_DOWNLOADS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -62,7 +91,7 @@ pub async fn start_concurrent_download(
     filename: String,
     destination: PathBuf,
     session_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), BrowserError> {
     // 1. Create DB record first
     let dest_str = destination.to_string_lossy().to_string();
     let download_id = match download_service::create_download(
@@ -75,13 +104,10 @@ pub async fn start_concurrent_download(
     .await
     {
         Ok(id) => id,
-        Err(e) => return Err(format!("Failed to record download: {e}")),
+        Err(error) => return Err(error),
     };
 
-    let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) EMMM/0.1.0")
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = http_client()?.clone();
 
     let cancel_flag = register_download(&download_id);
 
@@ -103,7 +129,7 @@ pub async fn start_concurrent_download(
                 )
                 .await
             }
-            Err(e) => Err(format!("Download queue closed: {e}")),
+            Err(_) => Err(BrowserError::QueueClosed),
         };
         unregister_download(&download_id);
 
@@ -150,7 +176,7 @@ pub async fn start_concurrent_download(
                     "failed",
                     None,
                     None,
-                    Some(&e),
+                    Some(&e.to_string()),
                     None,
                 )
                 .await;
@@ -177,15 +203,18 @@ async fn perform_download(
     app: &AppHandle,
     db: &SqlitePool,
     cancel_flag: &AtomicBool,
-) -> Result<DownloadOutcome, String> {
+) -> Result<DownloadOutcome, BrowserError> {
     let res = client
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {e}"))?;
+        .map_err(|e| BrowserError::Download(format!("request failed: {e}")))?;
 
     if !res.status().is_success() {
-        return Err(format!("Server returned error: {}", res.status()));
+        return Err(BrowserError::Download(format!(
+            "server returned {}",
+            res.status()
+        )));
     }
 
     let total_size = res.content_length().unwrap_or(0);
@@ -202,7 +231,8 @@ async fn perform_download(
     )
     .await;
 
-    let mut file = File::create(destination).map_err(|e| format!("Failed to create file: {e}"))?;
+    let file = File::create(destination)?;
+    let mut file = std::io::BufWriter::with_capacity(DOWNLOAD_BUFFER_BYTES, file);
     let mut downloaded: u64 = 0;
     let mut stream = res.bytes_stream();
     let mut last_emit_time = std::time::Instant::now();
@@ -213,14 +243,13 @@ async fn perform_download(
             return Ok(DownloadOutcome::Canceled);
         }
 
-        let chunk = item.map_err(|e| format!("Error while reading chunk: {e}"))?;
-        file.write_all(&chunk)
-            .map_err(|e| format!("Error writing to file: {e}"))?;
+        let chunk = item.map_err(|e| BrowserError::Download(format!("chunk read failed: {e}")))?;
+        file.write_all(&chunk)?;
 
         downloaded += chunk.len() as u64;
 
         // Throttle emissions to ~10 times per second to avoid completely destroying the IPC channel
-        if last_emit_time.elapsed().as_millis() >= 100 {
+        if last_emit_time.elapsed().as_millis() >= PROGRESS_EMIT_INTERVAL_MS {
             let _ = app.emit(
                 "browser:download-progress",
                 serde_json::json!({
@@ -245,6 +274,10 @@ async fn perform_download(
             last_emit_time = std::time::Instant::now();
         }
     }
+
+    // Explicit: `BufWriter`'s drop flush ignores errors, which would truncate
+    // the file silently and report the download as complete.
+    file.flush()?;
 
     Ok(DownloadOutcome::Completed)
 }

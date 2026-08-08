@@ -3,23 +3,18 @@ use std::path::Path;
 
 use tauri::State;
 
-use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::validate_path;
+use crate::services::mods::core_ops::ConflictStrategy;
 
 /// Resolve a naming conflict where both "X" and "DISABLED X" exist on disk.
-///
-/// Strategies:
-/// - `keep_enabled`: Keep the enabled folder, rename the disabled duplicate
-/// - `keep_disabled`: Keep the disabled folder, rename the enabled duplicate
-/// - `separate`: Rename one folder's base name to make them unique
+#[allow(clippy::too_many_arguments)] // Tauri command boundary: states plus the IPC payload.
 #[specta::specta]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn resolve_conflict(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
@@ -28,155 +23,25 @@ pub async fn resolve_conflict(
     op_lock: State<'_, OperationLock>,
     keep_path: String,
     duplicate_path: String,
-    strategy: String,
+    strategy: ConflictStrategy,
 ) -> Result<String, AppError> {
-    validate_path(&config, &game_id, &keep_path)?;
-    validate_path(&config, &game_id, &duplicate_path)?;
+    let keep = validate_path(&config, &game_id, &keep_path)?;
+    let duplicate = validate_path(&config, &game_id, &duplicate_path)?;
+    let op_guard = op_lock.acquire().await?;
 
-    let _lock = op_lock.acquire().await?;
-    let mods_path = crate::repo::game_repo::get_mod_path(pool.inner(), &game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
-    let mods_root = Path::new(&mods_path);
-    let old_rel = Path::new(&duplicate_path)
-        .strip_prefix(mods_root)
-        .ok()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_else(|| duplicate_path.clone());
-    let result = resolve_conflict_inner(&state, &keep_path, &duplicate_path, &strategy)?;
-    let new_rel = Path::new(&result)
-        .strip_prefix(mods_root)
-        .ok()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_else(|| result.clone());
-
-    if old_rel != new_rel {
-        let _ = crate::repo::mod_repo::update_mod_path_by_old_path_in_game(
-            pool.inner(),
-            &game_id,
-            &old_rel,
-            &new_rel,
-        )
-        .await;
-        let _ = crate::services::collection_service::handle_mod_moved_or_renamed(
-            pool.inner(),
-            &old_rel,
-            &new_rel,
-            None,
-        )
-        .await;
-    }
-    let _ =
-        crate::repo::runtime_projection_repo::rebuild_game_projection(pool.inner(), &game_id).await;
-    let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
-        pool.inner(),
-        &config,
-        state.suppressor.clone(),
-        &game_id,
-        &[true, false],
-        true,
-        true,
+    crate::services::mods::core_ops::resolve_naming_conflict(
+        crate::services::mods::core_ops::ResolveConflictRequest {
+            config: &config,
+            pool: pool.inner(),
+            state: &state,
+            op_guard: &op_guard,
+            game_id: &game_id,
+            keep: &keep,
+            duplicate: &duplicate,
+            strategy,
+        },
     )
-    .await;
-
-    Ok(result)
-}
-
-pub fn resolve_conflict_inner(
-    state: &WatcherState,
-    keep_path: &str,
-    duplicate_path: &str,
-    strategy: &str,
-) -> Result<String, AppError> {
-    let keep = Path::new(keep_path);
-    let dup = Path::new(duplicate_path);
-
-    if !keep.exists() {
-        return Err(AppError::Io(format!(
-            "Keep path does not exist: {keep_path}"
-        )));
-    }
-    if !dup.exists() {
-        return Err(AppError::Io(format!(
-            "Duplicate path does not exist: {duplicate_path}"
-        )));
-    }
-
-    let parent = dup.parent().unwrap_or_else(|| Path::new(""));
-    let dup_name = dup.file_name().unwrap_or_default().to_string_lossy();
-
-    let new_name = match strategy {
-        "keep_enabled" | "keep_disabled" => {
-            // Rename the duplicate with a "(dup)" suffix to break the collision.
-            let base = normalize_display_name(&dup_name);
-            let is_disabled = is_disabled_folder(&dup_name);
-
-            find_unique_name(parent, &base, is_disabled)
-        }
-        "separate" => {
-            // Rename the duplicate's base name to "<base> (copy)", keeping its prefix status.
-            let base = normalize_display_name(&dup_name);
-            let is_disabled = is_disabled_folder(&dup_name);
-            let copy_base = format!("{} (copy)", base);
-            find_unique_name(parent, &copy_base, is_disabled)
-        }
-        _ => return Err(AppError::Io(format!("Unknown strategy: {strategy}"))),
-    };
-
-    let new_path = parent.join(&new_name);
-
-    // Final guard: new target must not exist
-    if new_path.exists() {
-        return Err(AppError::Io(format!(
-            "Target already exists: {}",
-            new_path.display()
-        )));
-    }
-
-    {
-        let _guard = SuppressionGuard::new(&state.suppressor);
-        fs::rename(dup, &new_path)
-            .map_err(|e| AppError::Io(format!("Failed to rename duplicate: {e}")))?;
-    }
-
-    log::info!(
-        "Resolved conflict: '{}' → '{}'",
-        dup_name,
-        new_path.display()
-    );
-
-    Ok(new_path.to_string_lossy().to_string())
-}
-
-/// Find a unique folder name by appending "(dup N)" if needed.
-/// Returns the full folder name (with DISABLED prefix if `is_disabled` is true).
-fn find_unique_name(parent: &Path, base: &str, is_disabled: bool) -> String {
-    let prefix = if is_disabled {
-        crate::DISABLED_PREFIX
-    } else {
-        ""
-    };
-
-    // Try without suffix first
-    let candidate = format!("{}{} (dup)", prefix, base);
-    if !parent.join(&candidate).exists() {
-        return candidate;
-    }
-
-    // Try with incrementing number
-    for n in 2..100 {
-        let candidate = format!("{}{} (dup {})", prefix, base, n);
-        if !parent.join(&candidate).exists() {
-            return candidate;
-        }
-    }
-
-    // Fallback: use timestamp
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{}{} (dup {})", prefix, base, ts)
+    .await
 }
 
 // ── Conflict Details (for comparison dialog) ─────────────────────────────────
@@ -337,11 +202,7 @@ pub async fn revoke_object_conflict(
 pub async fn list_ignored_object_conflicts(
     pool: State<'_, sqlx::SqlitePool>,
     game_id: String,
-) -> Result<Vec<crate::repo::conflict_repo::IgnoredConflict>, AppError> {
+) -> Result<Vec<crate::domain::conflicts::IgnoredConflict>, AppError> {
     let list = crate::repo::conflict_repo::list_ignored_object_conflicts(&pool, &game_id).await?;
     Ok(list)
 }
-
-#[cfg(test)]
-#[path = "tests/conflict_cmds_tests.rs"]
-mod tests;

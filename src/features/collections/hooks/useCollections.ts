@@ -67,7 +67,7 @@ function toastMutationError(err: unknown): void {
 export function useCollections(gameId: string | null) {
   return useQuery<CollectionSummary[]>({
     queryKey: collectionKeys.list(gameId ?? ''),
-    queryFn: () => commands.listCollections(gameId ?? '', null),
+    queryFn: () => commands.listCollections(gameId ?? ''),
     enabled: !!gameId,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
@@ -88,7 +88,7 @@ export function useCollectionPreview(collectionId: string | null, gameId: string
 export function useApplyCollectionPreview(gameId: string | null, collectionId: string | null) {
   return useQuery<ApplyPreview>({
     queryKey: [...collectionKeys.previewApply(collectionId ?? ''), gameId ?? ''],
-    queryFn: () => commands.previewApplyCollection(gameId ?? '', collectionId ?? '', null),
+    queryFn: () => commands.previewApplyCollection(gameId ?? '', collectionId ?? ''),
     enabled: !!gameId && !!collectionId,
     // Don't cache this long, we want fresh disk state when viewing the modal
     staleTime: 0,

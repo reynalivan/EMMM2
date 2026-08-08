@@ -3,6 +3,7 @@
 //! Extracts the vacuum-db + prune-thumbnails + trash-purge orchestration that
 //! was previously inlined in `settings_cmds.rs`.
 
+use crate::domain::errors::AppError;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -12,21 +13,16 @@ use sqlx::SqlitePool;
 pub async fn run_maintenance_counts(
     pool: &SqlitePool,
     app_data_dir: &Path,
-) -> Result<(u64, u64), String> {
+) -> Result<(u64, u64), AppError> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
 
     // 1. Vacuum DB
-    crate::repo::settings_repo::vacuum_database(pool)
-        .await
-        .map_err(|e| format!("VACUUM failed: {}", e))?;
+    crate::repo::settings_repo::vacuum_database(pool).await?;
 
     // 2. Prune orphaned thumbnails
-    let valid_paths = crate::repo::settings_repo::get_all_thumbnail_paths(pool)
-        .await
-        .map_err(|e| format!("Failed to fetch thumbnails: {}", e))?;
+    let valid_paths = crate::repo::settings_repo::get_all_thumbnail_paths(pool).await?;
 
-    let pruned_count = ThumbnailCache::prune_orphans_for_app_data(app_data_dir, &valid_paths)
-        .map_err(|e| format!("Prune failed: {}", e))?;
+    let pruned_count = ThumbnailCache::prune_orphans_for_app_data(app_data_dir, &valid_paths)?;
 
     // 3. Purge empty trash entries older than 30 days
     let trash_dir = app_data_dir.join("trash");
@@ -38,18 +34,18 @@ pub async fn run_maintenance_counts(
     Ok((pruned_count as u64, purged_trash_count))
 }
 
-pub fn cleanup_old_empty_trash_entries(trash_dir: &Path) -> Result<u64, String> {
+pub fn cleanup_old_empty_trash_entries(trash_dir: &Path) -> Result<u64, AppError> {
     if !trash_dir.exists() {
         return Ok(0);
     }
 
     let cutoff = SystemTime::now()
         .checked_sub(Duration::from_secs(30 * 24 * 60 * 60))
-        .ok_or_else(|| "Failed to compute cleanup cutoff".to_string())?;
+        .ok_or_else(|| AppError::Internal("Failed to compute cleanup cutoff".to_string()))?;
 
     let mut removed = 0_u64;
-    for entry in std::fs::read_dir(trash_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(trash_dir)? {
+        let entry = entry?;
         let path = entry.path();
 
         if !path.is_dir() {
@@ -70,7 +66,7 @@ pub fn cleanup_old_empty_trash_entries(trash_dir: &Path) -> Result<u64, String> 
             continue;
         }
 
-        std::fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
+        std::fs::remove_dir_all(&path)?;
         removed = removed.saturating_add(1);
     }
 

@@ -23,16 +23,11 @@ pub async fn set_active_game(
     game_id: Option<String>,
     state: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-    watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
 ) -> Result<(), AppError> {
     state.set_active_game(game_id.clone())?;
     if game_id.is_some() {
-        let _ = crate::services::app::post_apply::trigger_overlay_refresh(
-            pool.inner(),
-            &state,
-            watcher_state.suppressor.clone(),
-        )
-        .await;
+        let _ =
+            crate::services::app::post_apply::trigger_overlay_refresh(pool.inner(), &state).await;
     }
     Ok(())
 }
@@ -56,14 +51,13 @@ pub async fn run_maintenance(
     let app_data_dir = app.path().app_data_dir()?;
     crate::services::app::maintenance_service::run_maintenance_counts(pool.inner(), &app_data_dir)
         .await
-        .map_err(AppError::Internal)
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn clear_old_thumbnails() -> Result<u64, AppError> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
-    let pruned = ThumbnailCache::clear_old_cache(30).map_err(AppError::Internal)?;
+    let pruned = ThumbnailCache::clear_old_cache(30)?;
     Ok(pruned as u64)
 }
 

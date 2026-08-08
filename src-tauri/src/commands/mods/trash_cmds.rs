@@ -1,6 +1,7 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
+use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::trash;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
@@ -15,33 +16,26 @@ pub async fn delete_mod(
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     path: String,
-    game_id: Option<String>,
+    game_id: String,
 ) -> Result<trash::DeleteModResult, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {}", e)))?;
-    let trash_dir = app_data_dir.join("trash");
+    let trash_dir = trash::trash_dir(&app)?;
 
+    // `game_id` is required: it names the mods root the path must sit inside.
+    // Without it the delete used to skip containment entirely and trash any
+    // absolute path the caller sent.
+    let validated = validate_path(&config, &game_id, &path)?;
+
+    let op_guard = op_lock.acquire().await?;
     let result = trash::delete_mod_service(
-        &config,
-        &pool,
-        &state,
-        &op_lock,
-        trash_dir,
-        path.clone(),
-        game_id.clone(),
+        &config, &pool, &state, &op_guard, trash_dir, &validated, &game_id,
     )
     .await?;
 
     // Convergence: reconcile the deleted root so DB matches disk even if a
     // manual sync step missed a case.
-    if let Some(game_id) = &game_id {
-        if let Err(error) =
-            emit_internal_disk_reconcile(&app, pool.inner(), game_id, vec![path]).await
-        {
-            log::warn!("Post-delete disk reconcile failed: {error}");
-        }
+    if let Err(error) = emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![path]).await
+    {
+        log::warn!("Post-delete disk reconcile failed: {error}");
     }
 
     Ok(result)
@@ -81,21 +75,13 @@ pub async fn restore_mod(
 #[specta::specta]
 #[tauri::command]
 pub async fn list_trash(app: AppHandle) -> Result<Vec<trash::TrashMetadata>, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {e}")))?;
-    trash::list_trash(&app_data_dir.join("trash"))
+    trash::list_trash(&trash::trash_dir(&app)?)
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn empty_trash(app: AppHandle) -> Result<u64, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {e}")))?;
-    trash::empty_trash(&app_data_dir.join("trash"))
+    trash::empty_trash(&trash::trash_dir(&app)?)
 }
 
 #[cfg(test)]

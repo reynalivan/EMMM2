@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::common::classifier::NodeType;
-use crate::common::path_key::path_starts_with_key;
+use crate::common::path_key::folder_path_key;
+use crate::domain::objects::ObjectSummary;
 use crate::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNodeKind, WorkspaceReason, WorkspaceReasonCode,
     WorkspaceTypeChip, WorkspaceWarning, WorkspaceWarningCode, WorkspaceWarningState,
 };
-use crate::repo::object_repo::ObjectSummary;
 
 pub(crate) fn build_disabled_by_container_reason(
     ancestor_disabled_by: Option<&str>,
@@ -108,5 +108,10 @@ pub(crate) fn map_warning_state(
 }
 
 pub(crate) fn paths_equal_by_key(left: &str, right: &str) -> bool {
-    path_starts_with_key(left, right, None) && path_starts_with_key(right, left, None)
+    // Mutual prefix means equal component counts and componentwise equality —
+    // exactly what comparing the canonical keys tests, in one pass instead of
+    // two full prefix walks. An empty path is a prefix of nothing, matching
+    // `strip_path_prefix_preserve_display`'s empty-prefix rejection.
+    let left_key = folder_path_key(left, None);
+    !left_key.is_empty() && left_key == folder_path_key(right, None)
 }

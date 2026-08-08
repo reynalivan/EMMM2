@@ -40,6 +40,10 @@ export const workspaceKeys = {
   all: ['workspace', 'mods'] as const,
   viewModel: (
     filter: ObjectFilter,
+    // Kept in the key even though the wire filter no longer carries it: the
+    // server derives the corridor, so toggling Safe Mode changes the response
+    // and must change the cache entry.
+    safeMode: boolean,
     selectedObjectFolderPath: string | null,
     explorerSubPath: string | undefined,
     selectedModPath: string | null,
@@ -47,6 +51,7 @@ export const workspaceKeys = {
     [
       ...workspaceKeys.all,
       filter,
+      safeMode,
       selectedObjectFolderPath,
       explorerSubPath ?? null,
       selectedModPath,
@@ -56,7 +61,6 @@ export const workspaceKeys = {
 export function buildWorkspaceViewModelFilter(input: WorkspaceViewModelFilterInput): ObjectFilter {
   return {
     game_id: input.gameId ?? '',
-    safe_mode: input.safeMode,
     object_type: input.selectedObjectType ?? null,
     search_query: null,
     meta_filters: input.objectMetaFilters,
@@ -129,6 +133,7 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     // Focus/navigation changes only reshape the query key; they must not trigger Disk Reconcile.
     queryKey: workspaceKeys.viewModel(
       filter,
+      filterInput.safeMode,
       selection.selectedObjectFolderPath,
       selection.explorerSubPath,
       selection.selectedModPath,

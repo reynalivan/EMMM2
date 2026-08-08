@@ -23,7 +23,7 @@ fn build_mod_folder_with_path(
     }
 
     let (is_enabled, display_name) = if is_disabled_folder(&folder_name) {
-        (false, normalize_display_name(&folder_name))
+        (false, normalize_display_name(&folder_name).into_owned())
     } else {
         (true, folder_name.clone())
     };

@@ -1,4 +1,5 @@
 use crate::common::sync::lock;
+use crate::domain::errors::ScannerError;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -32,7 +33,7 @@ pub trait AiRerankProvider: Send + Sync {
         request: &AiRerankRequest,
         signals: &FolderSignals,
         db: &crate::services::scanner::deep_matcher::MasterDb,
-    ) -> Result<HashMap<usize, f32>, String>;
+    ) -> Result<HashMap<usize, f32>, ScannerError>;
 }
 
 #[derive(Debug, Default)]

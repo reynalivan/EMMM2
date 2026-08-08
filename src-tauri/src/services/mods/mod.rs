@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod arrival;
 pub mod bulk;
 pub mod core_ops;
 pub mod info_json;

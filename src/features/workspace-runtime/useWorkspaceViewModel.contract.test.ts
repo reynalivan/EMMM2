@@ -30,7 +30,6 @@ describe('useWorkspaceViewModel contract', () => {
 
     expect(filter).toEqual({
       game_id: 'game-1',
-      safe_mode: true,
       object_type: 'Character',
       search_query: null,
       meta_filters: { element: ['Pyro'] },
@@ -58,7 +57,6 @@ describe('useWorkspaceViewModel contract', () => {
     expect(input).toEqual({
       filter: {
         game_id: 'game-1',
-        safe_mode: true,
         object_type: 'Character',
         search_query: null,
         meta_filters: { element: ['Pyro'] },
@@ -75,13 +73,13 @@ describe('useWorkspaceViewModel contract', () => {
     const queryKey = workspaceKeys.viewModel(
       {
         game_id: 'game-1',
-        safe_mode: true,
         object_type: 'Character',
         search_query: null,
         meta_filters: { element: ['Pyro'] },
         sort_by: 'name',
         status_filter: 1,
       },
+      true,
       'Objects/Diluc',
       'Objects/Diluc/Variants',
       'Objects/Diluc/Variants/mod.ini',
@@ -92,13 +90,13 @@ describe('useWorkspaceViewModel contract', () => {
       'mods',
       {
         game_id: 'game-1',
-        safe_mode: true,
         object_type: 'Character',
         search_query: null,
         meta_filters: { element: ['Pyro'] },
         sort_by: 'name',
         status_filter: 1,
       },
+      true,
       'Objects/Diluc',
       'Objects/Diluc/Variants',
       'Objects/Diluc/Variants/mod.ini',

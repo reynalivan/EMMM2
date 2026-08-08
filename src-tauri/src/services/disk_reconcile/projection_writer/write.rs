@@ -1,7 +1,8 @@
 //! Entry point: loads the DB index, then runs the object / mod / prune passes
 //! inside the caller's transaction.
 
-use std::collections::{HashMap, HashSet};
+use crate::domain::errors::AppError;
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::domain::collection::CollectionReferenceImpact;
@@ -11,7 +12,7 @@ use crate::services::disk_reconcile::types::DiskReconcilePathUpdate;
 
 use super::index::DbIndex;
 use super::keys::root_key;
-use super::mods::apply_disk_mods;
+use super::mods::{apply_disk_mods, ModPassInput};
 use super::objects::apply_disk_objects;
 use super::prune::{prune_missing_mods, prune_missing_objects};
 use super::state::ProjectionWriteState;
@@ -31,7 +32,7 @@ pub(crate) struct ProjectionWriteRequest<'a> {
 pub(crate) async fn reconcile_projection_in_tx(
     conn: &mut sqlx::SqliteConnection,
     request: ProjectionWriteRequest<'_>,
-) -> Result<(bool, bool), String> {
+) -> Result<(bool, bool), AppError> {
     let game_id = request.game_id;
     let mods_path = request.mods_path;
     let safe_mode_keywords = request.safe_mode_keywords;
@@ -50,8 +51,6 @@ pub(crate) async fn reconcile_projection_in_tx(
         path_updates: request.path_updates,
         collection_reference_impact: request.collection_reference_impact,
         change_summary: request.change_summary,
-        object_ids_by_key: HashMap::new(),
-        object_types_by_key: HashMap::new(),
         seen_object_keys: HashSet::new(),
         seen_mod_keys: HashSet::new(),
         deleted_object_keys: HashSet::new(),
@@ -59,14 +58,18 @@ pub(crate) async fn reconcile_projection_in_tx(
         folders_changed: false,
     };
 
-    apply_disk_objects(&mut *conn, game_id, projection, &index, &mut state).await?;
+    let resolved_objects =
+        apply_disk_objects(&mut *conn, game_id, projection, &index, &mut state).await?;
     apply_disk_mods(
         &mut *conn,
-        game_id,
-        &mods_root,
-        safe_mode_keywords,
-        projection,
-        &index,
+        ModPassInput {
+            game_id,
+            mods_root: &mods_root,
+            safe_mode_keywords,
+            projection,
+            index: &index,
+            resolved_objects: &resolved_objects,
+        },
         &mut state,
     )
     .await?;

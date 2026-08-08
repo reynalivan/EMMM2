@@ -1,6 +1,7 @@
 //! One reconcile pass: resolves the game, runs the disk projection, then
 //! applies runtime side-effects and builds the result.
 
+use crate::domain::errors::AppError;
 use crate::services::disk_reconcile::reconcile::{
     reconcile_disk_projection, ReconcileDiskProjectionRequest, ReconcileOutcome,
 };
@@ -26,13 +27,14 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
 
     let overlay_refresh_triggered = if request.outcome.status == DiskReconcileStatus::Applied {
         match crate::services::app::runtime_effects::finalize_runtime_side_effects(
-            request.context.pool,
-            request.context.config,
-            request.context.watcher_suppressor,
-            request.game_id,
-            &[true, false],
-            collections_changed,
-            request.outcome.folders_changed || request.outcome.runtime_file_changed,
+            crate::services::app::runtime_effects::RuntimeSideEffects {
+                pool: request.context.pool,
+                config: request.context.config,
+                game_id: request.game_id,
+                collections_dirty: collections_changed,
+                overlay_refresh: request.outcome.folders_changed
+                    || request.outcome.runtime_file_changed,
+            },
         )
         .await
         {
@@ -80,13 +82,18 @@ pub(super) struct RefreshRequest<'a> {
 
 pub(super) async fn run_refresh_once(
     request: RefreshRequest<'_>,
-) -> Result<DiskReconcileResult, String> {
+) -> Result<DiskReconcileResult, AppError> {
     let settings = request.context.config.get_settings();
     let game = settings
         .games
         .iter()
         .find(|entry| entry.id == request.game_id)
-        .ok_or_else(|| format!("Game '{}' not found for disk reconcile", request.game_id))?;
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "Game '{}' not found for disk reconcile",
+                request.game_id
+            ))
+        })?;
     let watcher_events = if request.watcher_events.is_empty() {
         None
     } else {

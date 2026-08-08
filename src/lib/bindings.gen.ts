@@ -28,11 +28,12 @@ async closeSplashscreen() : Promise<Result<null, AppError>> {
 /**
  * Fetch all dashboard data in a single command for minimal IPC overhead.
  * 
- * `safe_mode`: when true, dashboard stats/charts exclude mods with `is_safe = 0`.
+ * The corridor is derived server-side; in Safe Mode the stats and charts
+ * exclude mods with `is_safe = 0`.
  */
-async getDashboardStats(safeMode: boolean) : Promise<Result<DashboardPayload, AppError>> {
+async getDashboardStats() : Promise<Result<DashboardPayload, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_dashboard_stats", { safeMode }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_dashboard_stats") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -112,7 +113,9 @@ async checkPathExistsCmd(path: string) : Promise<boolean> {
 },
 /**
  * Ensure a directory exists on disk.
- * Used by frontend import flows to avoid direct plugin-fs dependency in tests/runtime.
+ * Used by frontend import flows to avoid direct plugin-fs dependency in
+ * tests/runtime. Creation is confined to configured mods roots — this used
+ * to `create_dir_all` any absolute path the client sent.
  */
 async ensureDirCmd(path: string) : Promise<Result<null, AppError>> {
     try {
@@ -269,7 +272,7 @@ async cancelScanCmd() : Promise<Result<null, AppError>> {
  * 
  * # Covers: US-2.1
  */
-async detectArchivesCmd(modsPath: string) : Promise<Result<ArchiveInfo[], string>> {
+async detectArchivesCmd(modsPath: string) : Promise<Result<ArchiveInfo[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("detect_archives_cmd", { modsPath }) };
 } catch (e) {
@@ -283,7 +286,7 @@ async detectArchivesCmd(modsPath: string) : Promise<Result<ArchiveInfo[], string
  * 
  * # Covers: TC-2.1-01, TC-2.1-04, TC-2.1-05, EC-2.06
  */
-async extractArchiveCmd(archivePath: string, modsDir: string, password: string | null, overwrite: boolean | null, customName: string | null, disableAfter: boolean | null, unpackNested: boolean | null, onProgress: TAURI_CHANNEL<ExtractionEvent>) : Promise<Result<ExtractionResult, string>> {
+async extractArchiveCmd(archivePath: string, modsDir: string, password: string | null, overwrite: boolean | null, customName: string | null, disableAfter: boolean | null, unpackNested: boolean | null, onProgress: TAURI_CHANNEL<ExtractionEvent>) : Promise<Result<ExtractionResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("extract_archive_cmd", { archivePath, modsDir, password, overwrite, customName, disableAfter, unpackNested, onProgress }) };
 } catch (e) {
@@ -296,7 +299,7 @@ async extractArchiveCmd(archivePath: string, modsDir: string, password: string |
  * 
  * # Covers: US-2.1 Pre-Extraction Analysis
  */
-async analyzeArchiveCmd(archivePath: string) : Promise<Result<ArchiveAnalysis, string>> {
+async analyzeArchiveCmd(archivePath: string) : Promise<Result<ArchiveAnalysis, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("analyze_archive_cmd", { archivePath }) };
 } catch (e) {
@@ -310,9 +313,9 @@ async analyzeArchiveCmd(archivePath: string) : Promise<Result<ArchiveAnalysis, s
  * 
  * # Covers: Req-38 (Auto-organizer Match Detection)
  */
-async matchCheckFolderCmd(folderPath: string, targetObjectName: string, dbJson: string) : Promise<Result<MatchCheckResult, string>> {
+async matchCheckFolderCmd(folderPath: string, targetObjectName: string, gameType: number) : Promise<Result<MatchCheckResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("match_check_folder_cmd", { folderPath, targetObjectName, dbJson }) };
+    return { status: "ok", data: await TAURI_INVOKE("match_check_folder_cmd", { folderPath, targetObjectName, gameType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -321,7 +324,7 @@ async matchCheckFolderCmd(folderPath: string, targetObjectName: string, dbJson: 
 /**
  * Abort an ongoing extraction operation.
  */
-async abortExtractionCmd() : Promise<Result<null, string>> {
+async abortExtractionCmd() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("abort_extraction_cmd") };
 } catch (e) {
@@ -401,13 +404,8 @@ async revealObjectInExplorer(gameId: string, objectId: string, objectName: strin
 },
 /**
  * Resolve a naming conflict where both "X" and "DISABLED X" exist on disk.
- * 
- * Strategies:
- * - `keep_enabled`: Keep the enabled folder, rename the disabled duplicate
- * - `keep_disabled`: Keep the disabled folder, rename the enabled duplicate
- * - `separate`: Rename one folder's base name to make them unique
  */
-async resolveConflict(gameId: string, keepPath: string, duplicatePath: string, strategy: string) : Promise<Result<string, AppError>> {
+async resolveConflict(gameId: string, keepPath: string, duplicatePath: string, strategy: ConflictStrategy) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("resolve_conflict", { gameId, keepPath, duplicatePath, strategy }) };
 } catch (e) {
@@ -523,9 +521,9 @@ async toggleModSafe(gameId: string, folderPath: string, safe: boolean) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async suggestRandomMods(gameId: string, isSafe: boolean) : Promise<Result<RandomModProposal[], AppError>> {
+async suggestRandomMods(gameId: string) : Promise<Result<RandomModProposal[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("suggest_random_mods", { gameId, isSafe }) };
+    return { status: "ok", data: await TAURI_INVOKE("suggest_random_mods", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -614,7 +612,7 @@ async deleteModThumbnail(folderPath: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async deleteMod(path: string, gameId: string | null) : Promise<Result<DeleteModResult, AppError>> {
+async deleteMod(path: string, gameId: string) : Promise<Result<DeleteModResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_mod", { path, gameId }) };
 } catch (e) {
@@ -798,9 +796,9 @@ async getObjectsCmd(filter: ObjectFilter) : Promise<Result<GetObjectsResult, App
     else return { status: "error", error: e  as any };
 }
 },
-async getCategoryCountsCmd(gameId: string, safeMode: boolean) : Promise<Result<CategoryCount[], AppError>> {
+async getCategoryCountsCmd(gameId: string) : Promise<Result<CategoryCount[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_category_counts_cmd", { gameId, safeMode }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_category_counts_cmd", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -838,9 +836,9 @@ async deleteObjectCmd(id: string, force: boolean) : Promise<Result<null, AppErro
     else return { status: "error", error: e  as any };
 }
 },
-async getCorridorState(gameId: string, isSafe: boolean | null) : Promise<Result<CorridorSnapshot, AppError>> {
+async getCorridorState(gameId: string) : Promise<Result<CorridorSnapshot, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_corridor_state", { gameId, isSafe }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_corridor_state", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -854,9 +852,9 @@ async getApplyProgress(gameId: string) : Promise<Result<ApplyProgressSnapshot | 
     else return { status: "error", error: e  as any };
 }
 },
-async listCollections(gameId: string, isSafe: boolean | null) : Promise<Result<CollectionSummary[], AppError>> {
+async listCollections(gameId: string) : Promise<Result<CollectionSummary[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_collections", { gameId, isSafe }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_collections", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -926,9 +924,9 @@ async getCollectionPreview(collectionId: string, gameId: string) : Promise<Resul
     else return { status: "error", error: e  as any };
 }
 },
-async previewApplyCollection(gameId: string, collectionId: string, isSafe: boolean | null) : Promise<Result<ApplyPreview, AppError>> {
+async previewApplyCollection(gameId: string, collectionId: string) : Promise<Result<ApplyPreview, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("preview_apply_collection", { gameId, collectionId, isSafe }) };
+    return { status: "ok", data: await TAURI_INVOKE("preview_apply_collection", { gameId, collectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -958,16 +956,9 @@ async getPinStatus() : Promise<Result<PinStatus, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Deep Match Scanner command.
- * This path performs canonical matching/import against MasterDB.
- * Do not call from watcher, window focus, or Disk Reconcile triggers.
- * 
- * # Covers: US-3.5 (Sync)
- */
-async deepmatchScannerCmd(gameId: string, gameName: string, gameType: string, modsPath: string, dbJson: string, preserveExistingMappings: boolean, onProgress: TAURI_CHANNEL<ScanEvent>) : Promise<Result<SyncResult, string>> {
+async deepmatchScannerCmd(gameId: string, gameName: string, gameType: string, masterDbType: number, modsPath: string, preserveExistingMappings: boolean, onProgress: TAURI_CHANNEL<ScanEvent>) : Promise<Result<SyncResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("deepmatch_scanner_cmd", { gameId, gameName, gameType, modsPath, dbJson, preserveExistingMappings, onProgress }) };
+    return { status: "ok", data: await TAURI_INVOKE("deepmatch_scanner_cmd", { gameId, gameName, gameType, masterDbType, modsPath, preserveExistingMappings, onProgress }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -980,9 +971,9 @@ async deepmatchScannerCmd(gameId: string, gameName: string, gameType: string, mo
  * 
  * # Covers: US-2.3 (Review & Organize UI)
  */
-async deepmatchPreviewCmd(gameId: string, modsPath: string, dbJson: string, onProgress: TAURI_CHANNEL<ScanEvent>, specificPaths: string[] | null) : Promise<Result<ScanPreviewItem[], string>> {
+async deepmatchPreviewCmd(gameId: string, modsPath: string, gameType: number, onProgress: TAURI_CHANNEL<ScanEvent>, specificPaths: string[] | null) : Promise<Result<ScanPreviewItem[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("deepmatch_preview_cmd", { gameId, modsPath, dbJson, onProgress, specificPaths }) };
+    return { status: "ok", data: await TAURI_INVOKE("deepmatch_preview_cmd", { gameId, modsPath, gameType, onProgress, specificPaths }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -992,7 +983,7 @@ async deepmatchPreviewCmd(gameId: string, modsPath: string, dbJson: string, onPr
  * Deep Match Scanner preview for object IDs already selected in the workspace UI.
  * Backend resolves DB paths and filters stale or escaped paths before scanning.
  */
-async deepmatchPreviewForObjectsCmd(input: DeepmatchPreviewForObjectsInput, onProgress: TAURI_CHANNEL<ScanEvent>) : Promise<Result<ScanPreviewItem[], string>> {
+async deepmatchPreviewForObjectsCmd(input: DeepmatchPreviewForObjectsInput, onProgress: TAURI_CHANNEL<ScanEvent>) : Promise<Result<ScanPreviewItem[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("deepmatch_preview_for_objects_cmd", { input, onProgress }) };
 } catch (e) {
@@ -1006,7 +997,7 @@ async deepmatchPreviewForObjectsCmd(input: DeepmatchPreviewForObjectsInput, onPr
  * 
  * # Covers: US-2.3 (Review & Organize UI — Confirm)
  */
-async commitScanCmd(gameId: string, gameName: string, gameType: string, modsPath: string, items: ConfirmedScanItem[]) : Promise<Result<SyncResult, string>> {
+async commitScanCmd(gameId: string, gameName: string, gameType: string, modsPath: string, items: ConfirmedScanItem[]) : Promise<Result<SyncResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("commit_scan_cmd", { gameId, gameName, gameType, modsPath, items }) };
 } catch (e) {
@@ -1020,15 +1011,15 @@ async commitScanCmd(gameId: string, gameName: string, gameType: string, modsPath
  * 
  * # Covers: US-2.3 (Review & Organize UI — Lazy Scoring)
  */
-async scoreCandidatesBatchCmd(folderPath: string, candidateNames: string[], dbJson: string) : Promise<Result<Partial<{ [key in string]: number }>, string>> {
+async scoreCandidatesBatchCmd(folderPath: string, candidateNames: string[], gameType: number) : Promise<Result<Partial<{ [key in string]: number }>, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("score_candidates_batch_cmd", { folderPath, candidateNames, dbJson }) };
+    return { status: "ok", data: await TAURI_INVOKE("score_candidates_batch_cmd", { folderPath, candidateNames, gameType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async listFolderEntriesCmd(folderPath: string, gameId: string) : Promise<Result<FolderEntry[], string>> {
+async listFolderEntriesCmd(folderPath: string, gameId: string) : Promise<Result<FolderEntry[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_folder_entries_cmd", { folderPath, gameId }) };
 } catch (e) {
@@ -1376,7 +1367,15 @@ export type AiConfig = { enabled: boolean; api_key: string | null; base_url: str
  * Unified error type for Tauri command boundaries.
  * Each domain error converts into this for consistent frontend handling.
  */
-export type AppError = { type: "Corridor"; payload: CorridorError } | { type: "Collection"; payload: CollectionError } | { type: "Pin"; payload: PinError } | { type: "Metadata"; payload: MetadataError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } | { type: "Io"; payload: string } | { type: "RuntimePathNotFound"; payload: { target: string } } | { type: "DuplicateConflict"; payload: DuplicateModInfo[] } | { type: "FileInUse"; payload: { path: string; processes: string[] } } | { type: "PathBusy"; payload: { path: string } } | { type: "ObjectHasMods"; payload: number }
+export type AppError = { type: "Corridor"; payload: CorridorError } | { type: "Collection"; payload: CollectionError } | { type: "Pin"; payload: PinError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } | { type: "Io"; payload: string } | { type: "RuntimePathNotFound"; payload: { target: string } } | { type: "DuplicateConflict"; payload: DuplicateModInfo[] } | { type: "FileInUse"; payload: { path: string; processes: string[] } } | { type: "PathBusy"; payload: { path: string } } | { type: "ObjectHasMods"; payload: number } | 
+/**
+ * The user cancelled a long-running operation.
+ * 
+ * A variant rather than the `"ABORTED"` string the extractors used to
+ * return: callers matched on that message text, so any rewording of an
+ * error message could silently turn a cancel into a failure.
+ */
+{ type: "Cancelled" }
 export type AppSettings = { theme: string; language: string; games: GameConfig[]; active_game_id: string | null; safe_mode: SafeModeConfig; ai: AiConfig; auto_close_launcher: boolean; hotkeys?: HotkeyConfig; keyviewer?: KeyViewerConfig }
 export type ApplyObjectMatchInput = { game_id: string; object_id: string | null; folder_path: string | null; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null }
 /**
@@ -1432,6 +1431,11 @@ contains_nested_archives: boolean }
  * DTO for the frontend download list.
  */
 export type BrowserDownloadDto = { id: string; session_id: string | null; filename: string; file_path: string | null; source_url: string | null; status: string; bytes_total: number | null; bytes_received: number; error_msg: string | null; started_at: string; finished_at: string | null }
+/**
+ * Errors from the in-app browser: webview lifecycle, downloads, and the
+ * import pipeline that turns a download into a placed mod.
+ */
+export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | { Io: string } | { Db: string }
 export type BulkActionError = { path: string; error: AppError }
 export type BulkResult = { success: string[]; failures: BulkActionError[]; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[] }
 export type CategoryCount = { object_type: string; count: number }
@@ -1451,7 +1455,7 @@ export type CategorySlice = { category: string; count: number }
 /**
  * Errors specific to collection operations.
  */
-export type CollectionError = { NotFound: { id: string } } | { DuplicateName: { name: string } } | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { Corridor: CorridorError } | { Io: string }
+export type CollectionError = { NotFound: { id: string } } | { DuplicateName: { name: string } } | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { Corridor: CorridorError } | { Io: string } | { FileInUse: { path: string; processes: string[] } } | { PathBusy: { path: string } }
 /**
  * A unified member type for collections.
  */
@@ -1573,6 +1577,25 @@ modified_at: number;
  */
 size_bytes: number }
 /**
+ * How to break a duplicate pair apart.
+ * 
+ * An enum rather than the `&str` the command used to match on: an unknown
+ * spelling used to surface as a runtime "Unknown strategy" error.
+ */
+export type ConflictStrategy = 
+/**
+ * Keep the enabled folder; uniquify the disabled duplicate.
+ */
+"keep_enabled" | 
+/**
+ * Keep the disabled folder; uniquify the enabled duplicate.
+ */
+"keep_disabled" | 
+/**
+ * Keep both, renaming the duplicate's base name to "<base> (copy)".
+ */
+"separate"
+/**
  * Errors specific to corridor operations.
  */
 export type CorridorError = { NoModsPath: { game_id: string } } | { GameNotFound: { game_id: string } } | { Db: string } | { Collection: CollectionError }
@@ -1611,7 +1634,7 @@ export type DbEntry = { name: string; tags?: string[]; object_type?: string; cus
  * Maps a skin/variant name to its list of hashes. Invalid hashes are ignored.
  */
 hash_db?: Partial<{ [key in string]: string[] }> }
-export type DeepmatchPreviewForObjectsInput = { gameId: string; modsPath: string; dbJson: string; objectIds: string[] }
+export type DeepmatchPreviewForObjectsInput = { gameId: string; modsPath: string; gameType: number; objectIds: string[] }
 export type DeleteModResult = { collection_impact: CollectionReferenceImpact }
 export type DiskReconcileChangeCounts = { added: number; removed: number; renamed: number; modified: number }
 export type DiskReconcileChangeSummary = { object_changes: DiskReconcileChangeCounts; mod_changes: DiskReconcileChangeCounts; object_sample_names: string[]; mod_sample_names: string[]; has_user_visible_changes: boolean }
@@ -1799,7 +1822,12 @@ export type ModInfo = { actual_name?: string; author?: string; description?: str
 export type ModInfoUpdate = { actual_name: string | null; author: string | null; description: string | null; version: string | null; tags: string[] | null; tags_add: string[] | null; tags_remove: string[] | null; is_safe: boolean | null; is_favorite: boolean | null; is_pinned: boolean | null; is_auto_sync: boolean | null; preset_name_add: string[] | null; preset_name_remove: string[] | null; metadata: Partial<{ [key in string]: string }> | null }
 export type MoveModsToObjectInput = { game_id: string; folder_paths: string[]; target_object_id: string; target_subpath: string | null; status: string | null }
 export type NewlineStyle = "Lf" | "CrLf"
-export type ObjectFilter = { game_id: string; search_query: string | null; object_type: string | null; safe_mode: boolean; meta_filters: Partial<{ [key in string]: string[] }> | null; sort_by: string | null; status_filter: number | null }
+/**
+ * `Default` is the unfiltered, safe-mode-off query. Callers spell out only
+ * the axes they actually constrain — the full seven-field literal was written
+ * out at twenty sites.
+ */
+export type ObjectFilter = { game_id: string; search_query: string | null; object_type: string | null; meta_filters: Partial<{ [key in string]: string[] }> | null; sort_by: string | null; status_filter: number | null }
 export type ObjectSummary = { id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }
 /**
  * Errors specific to Pin operations.
@@ -1880,6 +1908,11 @@ hashDbJson: string | null;
  * Optional custom_skins from MasterDB entry (JSON array string)
  */
 customSkinsJson: string | null; dbThumbnail: string | null }
+/**
+ * Errors from scanning the mods tree: walking folders, matching against the
+ * MasterDB, duplicate detection, and committing a scan into the index.
+ */
+export type ScannerError = { PathNotFound: { path: string } } | { NotADirectory: { path: string } } | { PathEscape: { path: string } } | { Parse: { what: string; detail: string } } | { Network: string } | { Io: string } | { Db: string } | { Validation: string }
 /**
  * A lightweight scored candidate for the frontend dropdown.
  */

@@ -1,13 +1,13 @@
+use crate::domain::objects::ObjectSummary;
 use crate::domain::workspace::{
     WorkspaceCapabilities, WorkspaceDisplayMode, WorkspaceNodeKind, WorkspaceObjectNode,
     WorkspaceSwitchPolicyKey, WorkspaceSwitchState, WorkspaceWarningState,
 };
-use crate::repo::object_repo::ObjectSummary;
 use crate::services::workspace_read_model::common::{
     build_folder_warning, build_inactive_warning, build_naming_conflict_warning,
     build_object_inactive_reason,
 };
-use crate::services::workspace_read_model::selection::existing_relative_sub_path;
+use crate::services::workspace_read_model::selection::relative_sub_path_exists;
 
 fn map_object_switch_state(object: &ObjectSummary) -> WorkspaceSwitchState {
     if object.is_object_disabled {
@@ -88,8 +88,10 @@ pub(crate) fn map_workspace_objects(
     objects
         .into_iter()
         .map(|object| {
-            let object_folder_exists = source_available
-                && existing_relative_sub_path(mods_path, &object.folder_path).is_some();
+            // Existence only — the relative-path variant would strip the
+            // mods-root prefix (re-normalizing it per object) just to be dropped.
+            let object_folder_exists =
+                source_available && relative_sub_path_exists(mods_path, &object.folder_path);
             map_workspace_object(object, object_folder_exists)
         })
         .collect()

@@ -7,9 +7,7 @@ use crate::domain::models::ConfigStatus;
 pub async fn check_config_status(
     pool: tauri::State<'_, sqlx::SqlitePool>,
 ) -> Result<ConfigStatus, AppError> {
-    crate::services::app::app_service::check_config_status(pool.inner())
-        .await
-        .map_err(AppError::Internal)
+    crate::services::app::app_service::check_config_status(pool.inner()).await
 }
 
 /// Read the last N lines of the application log.
@@ -26,7 +24,6 @@ pub async fn get_logs(
 
     let lines = limit.or(count).unwrap_or(200);
     crate::services::app::log_service::read_last_n_lines(&log_path, lines)
-        .map_err(AppError::Internal)
 }
 
 /// Open the logs directory in the OS file explorer.
@@ -36,7 +33,7 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), AppError> {
     use tauri::Manager;
     let log_dir = app.path().app_log_dir()?;
 
-    crate::services::app::log_service::open_log_folder_service(&log_dir).map_err(AppError::Internal)
+    crate::services::app::log_service::open_log_folder_service(&log_dir)
 }
 
 /// Reset the application setup by clearing all data from the database.
@@ -52,9 +49,7 @@ pub async fn reset_database(
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
 
-    crate::services::app::app_service::reset_database_service(pool.inner(), &app_data_dir)
-        .await
-        .map_err(AppError::Internal)?;
+    crate::services::app::app_service::reset_database_service(pool.inner(), &app_data_dir).await?;
 
     // Clear out the in-memory singleton state
     config.reset_to_default();
@@ -85,11 +80,18 @@ pub fn check_path_exists_cmd(path: String) -> bool {
 }
 
 /// Ensure a directory exists on disk.
-/// Used by frontend import flows to avoid direct plugin-fs dependency in tests/runtime.
+/// Used by frontend import flows to avoid direct plugin-fs dependency in
+/// tests/runtime. Creation is confined to configured mods roots — this used
+/// to `create_dir_all` any absolute path the client sent.
 #[specta::specta]
 #[tauri::command]
-pub fn ensure_dir_cmd(path: String) -> Result<(), AppError> {
-    std::fs::create_dir_all(&path)
+pub fn ensure_dir_cmd(
+    path: String,
+    config: tauri::State<'_, crate::services::config::ConfigService>,
+) -> Result<(), AppError> {
+    let target =
+        crate::services::fs_utils::guard::validate_future_dir_in_configured_roots(&config, &path)?;
+    std::fs::create_dir_all(&target)
         .map_err(|e| AppError::Io(format!("Failed to create directory {path}: {e}")))
 }
 

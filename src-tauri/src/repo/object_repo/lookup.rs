@@ -1,6 +1,7 @@
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use super::types::*;
+use crate::domain::objects::{CategoryCount, ObjectRuntimeDescriptor};
 
 pub async fn get_runtime_descriptors(
     pool: &SqlitePool,

@@ -40,12 +40,13 @@ async fn object_switch_reports_rewrite_when_db_disabled_but_disk_enabled() {
     let config = crate::services::config::ConfigService::new_for_test_async(pool.clone()).await;
     let watcher_state = WatcherState::new();
     let op_lock = OperationLock::new();
+    let op_guard = op_lock.acquire().await.unwrap();
 
     let outcome = toggle_object_root_service(
         &config,
         &pool,
         &watcher_state,
-        &op_lock,
+        &op_guard,
         "g_object_switch_rewrite",
         "o_object_switch_rewrite",
         true,

@@ -1,3 +1,4 @@
+use crate::domain::errors::ScannerError;
 use sqlx::SqlitePool;
 use std::path::Path;
 use tauri::ipc::Channel;
@@ -22,7 +23,7 @@ pub async fn scan_preview(
     resource_dir: Option<&Path>,
     on_progress: Option<Channel<ScanEvent>>,
     specific_paths: Option<Vec<std::path::PathBuf>>,
-) -> Result<Vec<ScanPreviewItem>, String> {
+) -> Result<Vec<ScanPreviewItem>, ScannerError> {
     let candidates = if let Some(paths) = specific_paths {
         walker::scan_specific_folders(&paths)?
     } else {
@@ -57,8 +58,7 @@ pub async fn scan_preview(
             &folder_path_str,
             game_id,
         )
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
 
         // Run phased matcher (Quick first, then FullScoring fallback).
         let content = walker::scan_folder_content(&candidate.path, 3);
@@ -162,7 +162,7 @@ async fn check_already_matched(
     pool: &SqlitePool,
     existing: &Option<(String, Option<String>)>,
     expected_entry_key: Option<&str>,
-) -> Result<bool, String> {
+) -> Result<bool, ScannerError> {
     let Some(expected_entry_key) = expected_entry_key else {
         return Ok(false);
     };
@@ -175,9 +175,7 @@ async fn check_already_matched(
         return Ok(false);
     };
 
-    let matched_entry_key = crate::repo::object_repo::get_matched_entry_key_by_id(pool, id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let matched_entry_key = crate::repo::object_repo::get_matched_entry_key_by_id(pool, id).await?;
 
     Ok(matched_entry_key.as_deref() == Some(expected_entry_key))
 }
@@ -249,7 +247,7 @@ pub fn score_candidates_batch(
 
     let candidate = walker::ModCandidate {
         path: path.to_path_buf(),
-        display_name: crate::common::normalizer::normalize_display_name(&raw_name),
+        display_name: crate::common::normalizer::normalize_display_name(&raw_name).into_owned(),
         raw_name,
         is_disabled,
     };

@@ -298,7 +298,13 @@ async fn test_suggest_random_mods() {
     }
 
     // Test 1: Safe Mode OFF (is_safe = false)
-    let proposals_unsafe = suggest_random_mods(&pool, "g1", false).await.unwrap();
+    let proposals_unsafe = suggest_random_mods(
+        &pool,
+        "g1",
+        crate::domain::corridor::Corridor::from_is_safe(false),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         proposals_unsafe.len(),
@@ -324,7 +330,13 @@ async fn test_suggest_random_mods() {
     );
 
     // Test 2: Safe Mode ON (is_safe = true)
-    let proposals_safe = suggest_random_mods(&pool, "g1", true).await.unwrap();
+    let proposals_safe = suggest_random_mods(
+        &pool,
+        "g1",
+        crate::domain::corridor::Corridor::from_is_safe(true),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         proposals_safe.len(),
         2,
@@ -387,9 +399,13 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
     .await
     .unwrap();
 
-    let proposals = suggest_random_mods(&pool, "g_effective_disabled", true)
-        .await
-        .unwrap();
+    let proposals = suggest_random_mods(
+        &pool,
+        "g_effective_disabled",
+        crate::domain::corridor::Corridor::from_is_safe(true),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(proposals.len(), 1);
     assert_eq!(proposals[0].mod_id, "m_effective");

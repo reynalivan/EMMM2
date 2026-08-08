@@ -1,7 +1,7 @@
 //! Read-only previews: collection contents and the apply diff.
 
 use super::live_state::load_live_runtime_state;
-use super::projection::load_projected_collection_state;
+use super::projection::{load_projected_collection_state, require_collection, require_game_match};
 use crate::domain::collection::{ApplyPreview, CollectionPreview};
 use crate::domain::errors::CollectionError;
 use crate::repo::collection_repo;
@@ -14,17 +14,8 @@ pub async fn get_collection_preview(
     collection_id: &str,
     mods_path: Option<&str>,
 ) -> Result<CollectionPreview, CollectionError> {
-    let collection = collection_repo::get_by_id(pool, collection_id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: collection_id.to_string(),
-        })?;
-    if collection.game_id != game_id {
-        return Err(CollectionError::Validation(format!(
-            "Collection '{}' does not belong to game '{}'",
-            collection_id, game_id
-        )));
-    }
+    let collection = require_collection(pool, collection_id).await?;
+    require_game_match(&collection, game_id)?;
 
     let projected_state = load_projected_collection_state(pool, &collection, mods_path).await?;
     let mods = projected_state_service::mods_from_projected_state(collection_id, &projected_state);
@@ -39,7 +30,7 @@ pub async fn get_collection_preview(
     let corridor_snapshot = crate::services::corridor_service::get_corridor_state(
         pool,
         &collection.game_id,
-        collection.is_safe,
+        crate::domain::corridor::Corridor::from_is_safe(collection.is_safe),
     )
     .await
     .map_err(CollectionError::Corridor)?;
@@ -72,20 +63,12 @@ pub async fn preview_apply(
     pool: &SqlitePool,
     game_id: &str,
     collection_id: &str,
-    is_safe: bool,
+    corridor: crate::domain::corridor::Corridor,
     mods_path: Option<&str>,
 ) -> Result<ApplyPreview, CollectionError> {
-    let collection = collection_repo::get_by_id(pool, collection_id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: collection_id.to_string(),
-        })?;
-    if collection.game_id != game_id {
-        return Err(CollectionError::Validation(format!(
-            "Collection '{}' does not belong to game '{}'",
-            collection_id, game_id
-        )));
-    }
+    let is_safe = corridor.is_safe();
+    let collection = require_collection(pool, collection_id).await?;
+    require_game_match(&collection, game_id)?;
     if collection.is_safe != is_safe {
         return Err(CollectionError::Validation(format!(
             "Collection '{}' belongs to the opposite corridor",

@@ -20,7 +20,7 @@ export function useCategoryCounts() {
 
   return useQuery<CategoryCount[]>({
     queryKey: [...objectKeys.counts(gameId), safeMode],
-    queryFn: () => getCategoryCounts(gameId, safeMode),
+    queryFn: () => getCategoryCounts(gameId),
     enabled: !!gameId,
     staleTime: 30_000,
     refetchOnWindowFocus: false,

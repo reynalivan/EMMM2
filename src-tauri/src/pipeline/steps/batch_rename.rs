@@ -1,14 +1,19 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 use crate::services::runtime_mutation_engine::{
     toggle_mods_mixed, RuntimeToggleBatchRequest, RuntimeToggleOperation, RuntimeToggleTarget,
 };
 
-/// Step 6: Batch rename mod folders and persist DB projection.
+/// Batch rename mod folders and persist DB projection.
 pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let _guard = crate::services::scanner::watcher::SuppressionGuard::new(&ctx.suppressor);
-    let to_enable = load_targets_for_keys(ctx, &ctx.to_enable).await?;
-    let to_disable = load_targets_for_keys(ctx, &ctx.to_disable).await?;
+    // One pass over the game's mods, indexed by key — the enable and disable
+    // lists then resolve from memory instead of re-reading the table.
+    let by_key = load_targets_by_key(ctx).await?;
+    let to_enable = pick_targets(&by_key, &ctx.to_enable);
+    let to_disable = pick_targets(&by_key, &ctx.to_disable);
     let enable_count = to_enable.len();
     let disable_count = to_disable.len();
     let mut operations = Vec::with_capacity(enable_count + disable_count);
@@ -35,8 +40,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
             operations,
         },
     )
-    .await
-    .map_err(CollectionError::Io)?;
+    .await?;
 
     ctx.mods_enabled = result.enabled_count;
     ctx.mods_disabled = result.disabled_count;
@@ -52,47 +56,43 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     Ok(())
 }
 
-async fn load_targets_for_keys(
+/// Every mod row for the game, reachable by both key spellings it may be
+/// addressed under: its stored `folder_path_key`, and the key its path yields
+/// once the `DISABLED ` prefix is normalized away.
+async fn load_targets_by_key(
     ctx: &ApplyContext,
-    keys: &[String],
-) -> Result<Vec<RuntimeToggleTarget>, CollectionError> {
-    if keys.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let rows = sqlx::query(
-        r#"
-        SELECT id, folder_path, folder_path_key
-        FROM mods
-        WHERE game_id = ?
-        "#,
-    )
-    .bind(&ctx.game_id)
-    .fetch_all(&ctx.pool)
-    .await?;
-    let desired: std::collections::HashSet<String> =
-        keys.iter().map(|key| key.to_lowercase()).collect();
+) -> Result<HashMap<String, RuntimeToggleTarget>, CollectionError> {
+    let mut conn = ctx.pool.acquire().await?;
+    let rows = crate::repo::mod_repo::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    drop(conn);
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
-    let mut targets = Vec::new();
+    let mut by_key = HashMap::with_capacity(rows.len() * 2);
 
     for row in rows {
-        use sqlx::Row;
-        let id: String = row.get("id");
-        let folder_path: String = row.get("folder_path");
-        let folder_path_key: Option<String> = row.try_get("folder_path_key").ok();
-        let normalized_key = normalized_enabled_key(&folder_path, Some(&mods_path));
-
-        let matches = folder_path_key
-            .as_deref()
-            .is_some_and(|key| desired.contains(&key.to_lowercase()))
-            || desired.contains(&normalized_key);
-
-        if matches {
-            targets.push(RuntimeToggleTarget { id, folder_path });
-        }
+        let target = RuntimeToggleTarget {
+            id: row.id,
+            folder_path: row.folder_path.clone(),
+        };
+        by_key.insert(
+            normalized_enabled_key(&row.folder_path, Some(&mods_path)),
+            target.clone(),
+        );
+        by_key.insert(row.folder_path_key.to_lowercase(), target);
     }
 
-    Ok(targets)
+    Ok(by_key)
+}
+
+fn pick_targets(
+    by_key: &HashMap<String, RuntimeToggleTarget>,
+    keys: &[String],
+) -> Vec<RuntimeToggleTarget> {
+    let mut seen = HashSet::with_capacity(keys.len());
+    keys.iter()
+        .filter_map(|key| by_key.get(&key.to_lowercase()))
+        .filter(|target| seen.insert(target.id.clone()))
+        .cloned()
+        .collect()
 }
 
 fn normalized_enabled_key(path: &str, mods_path: Option<&str>) -> String {

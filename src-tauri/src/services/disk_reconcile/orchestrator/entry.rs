@@ -1,20 +1,11 @@
 //! Public entry points: enqueue, serialize per game, and drain coalesced work.
 
+use crate::domain::errors::AppError;
 use crate::services::disk_reconcile::types::DiskReconcileResult;
 use crate::services::scanner::watcher::ModWatchEvent;
 
 use super::request::{DiskReconcileContext, DiskReconcileRequest};
 use super::run::{run_refresh_once, RefreshRequest};
-
-/// Disk Reconcile keeps runtime projection aligned with filesystem reality.
-/// Watcher, focus, and Mods view entry must call this path only.
-/// Do not add Deep Match Scanner logic here.
-pub async fn reconcile_disk_state(
-    context: DiskReconcileContext<'_>,
-    request: DiskReconcileRequest,
-) -> Result<DiskReconcileResult, String> {
-    reconcile_disk_state_internal(context, request).await
-}
 
 /// Disk Reconcile watcher batches must stay disk-only.
 /// Watcher must never invoke the Deep Match Scanner pipeline.
@@ -23,18 +14,21 @@ pub async fn reconcile_disk_state_from_watcher_batch(
     game_id: String,
     changed_paths: Vec<String>,
     watcher_events: &[ModWatchEvent],
-) -> Result<DiskReconcileResult, String> {
-    reconcile_disk_state_internal(
+) -> Result<DiskReconcileResult, AppError> {
+    reconcile_disk_state(
         context,
         DiskReconcileRequest::watcher_batch(game_id, changed_paths, watcher_events),
     )
     .await
 }
 
-async fn reconcile_disk_state_internal(
+/// Disk Reconcile keeps runtime projection aligned with filesystem reality.
+/// Watcher, focus, and Mods view entry must call this path only.
+/// Do not add Deep Match Scanner logic here.
+pub async fn reconcile_disk_state(
     context: DiskReconcileContext<'_>,
     request: DiskReconcileRequest,
-) -> Result<DiskReconcileResult, String> {
+) -> Result<DiskReconcileResult, AppError> {
     let game_id = request.game_id;
     let requested_version = context.state.enqueue_request(
         &game_id,

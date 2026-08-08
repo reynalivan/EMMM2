@@ -1,10 +1,7 @@
 use log::{info, warn};
-use reqwest::Client;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-/// Base URL for asset files on GitHub CDN.
-const ASSET_BASE_URL: &str = "https://raw.githubusercontent.com/reynalivan/EMMM/main/assets/";
+use super::{http_client, ASSET_TIMEOUT, CDN_BASE_URL};
 
 /// Fetch an asset file if it's not already cached locally.
 ///
@@ -25,13 +22,10 @@ pub async fn fetch_asset_if_missing(asset_name: &str, cache_dir: &Path) -> Optio
         return None;
     }
 
-    let url = format!("{}{}", ASSET_BASE_URL, urlencoding::encode(asset_name));
+    let url = format!("{CDN_BASE_URL}assets/{}", urlencoding::encode(asset_name));
     info!("Fetching missing asset: {}", url);
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .ok()?;
+    let client = http_client(ASSET_TIMEOUT).ok()?;
 
     let response = client.get(&url).send().await.ok()?;
 

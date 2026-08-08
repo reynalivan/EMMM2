@@ -7,9 +7,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_scan_fs_folders_empty() {
     let temp_dir = TempDir::new().unwrap();
-    let result = scan_fs_folders(temp_dir.path(), temp_dir.path(), None)
-        .await
-        .unwrap();
+    let result = scan_fs_folders(temp_dir.path(), None).unwrap();
     assert!(result.is_empty());
 }
 
@@ -34,7 +32,7 @@ async fn test_scan_fs_folders_with_mods() {
     // Create a file (should be ignored)
     fs::write(mods_path.join("some_file.txt"), "data").unwrap();
 
-    let result = scan_fs_folders(mods_path, mods_path, None).await.unwrap();
+    let result = scan_fs_folders(mods_path, None).unwrap();
 
     // Should only find the two directories, hidden and files are ignored.
     // They are sorted alphabetically by display name: "mod1", "mod2"
@@ -77,7 +75,7 @@ async fn test_scan_fs_folders_keeps_unicode_disabled_folder_state() {
     let unicode_mod = mods_path.join("DISABLED 日本語Mod");
     fs::create_dir(&unicode_mod).unwrap();
 
-    let result = scan_fs_folders(mods_path, mods_path, None).await.unwrap();
+    let result = scan_fs_folders(mods_path, None).unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].name, "日本語Mod");
@@ -121,7 +119,7 @@ async fn test_path_traversal_rejected() {
     .await;
 
     assert!(result.is_err(), "Expected Err for path escape, got Ok");
-    let err = result.unwrap_err();
+    let err = result.unwrap_err().to_string();
     assert!(
         err.contains("PathEscapeError"),
         "Error should contain 'PathEscapeError', got: {err}"

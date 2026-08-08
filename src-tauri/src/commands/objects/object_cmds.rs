@@ -2,7 +2,7 @@ use tauri::{Manager, State};
 
 use crate::domain::errors::AppError;
 
-use crate::repo::object_repo::{
+use crate::domain::objects::{
     CategoryCount, CreateObjectInput, GetObjectsResult, ObjectFilter, UpdateObjectInput,
 };
 
@@ -23,7 +23,11 @@ pub struct ApplyObjectMatchInput {
 pub async fn get_objects_cmd(
     filter: ObjectFilter,
     pool: State<'_, sqlx::SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
 ) -> Result<GetObjectsResult, AppError> {
+    // `safe_mode` is serde-skipped on the wire; the corridor is derived here.
+    let mut filter = filter;
+    filter.safe_mode = config.current_corridor().is_safe();
     get_objects_cmd_inner(filter, &pool).await
 }
 
@@ -33,8 +37,7 @@ pub async fn get_objects_cmd_inner(
 ) -> Result<GetObjectsResult, AppError> {
     let objects =
         crate::services::objects::query::get_filtered_objects_with_conflict_check(pool, &filter)
-            .await
-            .map_err(AppError::Db)?;
+            .await?;
 
     Ok(objects)
 }
@@ -43,13 +46,16 @@ pub async fn get_objects_cmd_inner(
 #[specta::specta]
 pub async fn get_category_counts_cmd(
     game_id: String,
-    safe_mode: bool,
     pool: State<'_, sqlx::SqlitePool>,
+    config: State<'_, crate::services::config::ConfigService>,
 ) -> Result<Vec<CategoryCount>, AppError> {
-    let counts =
-        crate::services::objects::query::get_category_counts_service(&pool, &game_id, safe_mode)
-            .await
-            .map_err(|e| AppError::Validation(e.to_string()))?;
+    let counts = crate::services::objects::query::get_category_counts_service(
+        &pool,
+        &game_id,
+        config.current_corridor(),
+    )
+    .await
+    .map_err(|e| AppError::Validation(e.to_string()))?;
 
     Ok(counts)
 }
@@ -120,10 +126,13 @@ pub async fn delete_object_cmd(
     let trash_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {}", e)))?
-        .join("trash");
-    crate::services::objects::mutate::delete_object(&pool, &id, force, &trash_dir, &state, &op_lock)
-        .await
+        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {}", e)))?;
+    let trash_dir = crate::services::mods::trash::trash_dir_under(&trash_dir);
+    let op_guard = op_lock.acquire().await?;
+    crate::services::objects::mutate::delete_object(
+        &pool, &id, force, &trash_dir, &state, &op_guard,
+    )
+    .await
 }
 
 #[cfg(test)]

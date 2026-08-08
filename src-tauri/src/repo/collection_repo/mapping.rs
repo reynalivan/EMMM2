@@ -13,7 +13,8 @@ pub(super) fn row_to_collection(r: &sqlx::sqlite::SqliteRow) -> Collection {
         is_unsaved: r.get::<i32, _>("is_unsaved") != 0,
         is_last_unsaved: r.get::<i32, _>("is_last_unsaved") != 0,
         last_active: r.get::<i32, _>("last_active") != 0,
-        snapshot_json: r.get("snapshot_json"),
+        // The list queries omit this column on purpose — see `list_for_game`.
+        snapshot_json: r.try_get("snapshot_json").ok().flatten(),
         signature: r.get("signature"),
         root_count: r.get("root_count"),
         display_mod_count: r.try_get("display_mod_count").unwrap_or(0),

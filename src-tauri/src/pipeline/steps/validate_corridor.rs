@@ -1,21 +1,11 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::{corridor_label, ApplyContext};
-use crate::repo::collection_repo;
+use crate::services::collection_service::{require_collection, require_game_match};
 
-/// Step 1: Load the collection once and validate it belongs to the requested game.
+/// Load the collection once and validate it belongs to the requested game.
 pub async fn validate(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let collection = collection_repo::get_by_id(&ctx.pool, &ctx.collection_id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound {
-            id: ctx.collection_id.clone(),
-        })?;
-
-    if collection.game_id != ctx.game_id {
-        return Err(CollectionError::Validation(format!(
-            "Collection '{}' does not belong to game '{}'",
-            ctx.collection_id, ctx.game_id
-        )));
-    }
+    let collection = require_collection(&ctx.pool, &ctx.collection_id).await?;
+    require_game_match(&collection, &ctx.game_id)?;
 
     // Corridor enforcement: an unsafe collection is mathematically impossible to
     // apply while in Safe Mode, and vice versa. UI already scopes lists per

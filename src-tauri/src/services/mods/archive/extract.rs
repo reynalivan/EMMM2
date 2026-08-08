@@ -6,12 +6,38 @@ use super::extractors::{extract_to_dir, unpack_nested_archives};
 use super::progress::aborted_result;
 use super::staging::{cleanup_temp_extract_parent, TempDirGuard};
 use super::types::{ArchiveFormat, ExtractionEvent, ExtractionResult};
+use crate::domain::errors::AppError;
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::ipc::Channel;
+
+use super::is_cancelled;
+
+/// Caller-supplied knobs for [`extract_archive`].
+///
+/// A struct rather than seven more positional parameters: almost every call
+/// site wants the defaults, and passing them positionally made each one an
+/// unreadable run of `None`/`false` that had to be re-counted whenever an
+/// option was added.
+#[derive(Default)]
+pub struct ExtractOptions<'a> {
+    /// Password for an encrypted archive.
+    pub password: Option<&'a str>,
+    /// Replace an existing destination folder instead of uniquifying the name.
+    pub overwrite: bool,
+    /// Cooperative cancellation, polled between entries.
+    pub cancel_token: Option<Arc<AtomicBool>>,
+    /// Overrides the name derived from the archive file.
+    pub custom_name: Option<&'a str>,
+    /// Land the extracted mod folders disabled.
+    pub disable_after: bool,
+    /// Recursively unpack archives found inside the archive.
+    pub unpack_nested: bool,
+    pub on_progress: Option<&'a Channel<ExtractionEvent>>,
+}
 
 /// Extract any supported archive with smart mod root detection.
 ///
@@ -24,20 +50,26 @@ use tauri::ipc::Channel;
 ///    - Multi-mod pack -> move each subfolder independently
 ///    - Invalid -> delete temp, return error
 /// 5. Move source archive to `{source_dir}/.extracted/`
-#[allow(clippy::too_many_arguments)] // Archive extraction keeps user options explicit at the service boundary.
 pub fn extract_archive(
     archive_path: &Path,
     mods_dir: &Path,
-    password: Option<&str>,
-    overwrite: bool,
-    cancel_token: Option<Arc<AtomicBool>>,
-    custom_name: Option<&str>,
-    disable_after: bool,
-    unpack_nested: bool,
-    on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<ExtractionResult, String> {
-    let format = ArchiveFormat::detect(archive_path)
-        .ok_or_else(|| format!("Unsupported archive format: {}", archive_path.display()))?;
+    options: ExtractOptions<'_>,
+) -> Result<ExtractionResult, AppError> {
+    let ExtractOptions {
+        password,
+        overwrite,
+        cancel_token,
+        custom_name,
+        disable_after,
+        unpack_nested,
+        on_progress,
+    } = options;
+    let format = ArchiveFormat::detect(archive_path).ok_or_else(|| {
+        AppError::Internal(format!(
+            "Unsupported archive format: {}",
+            archive_path.display()
+        ))
+    })?;
     let archive_name = archive_display_name(archive_path, custom_name);
 
     let analysis = crate::services::mods::archive::analyze_archive(archive_path)?;
@@ -46,8 +78,7 @@ pub fn extract_archive(
     let temp_path = mods_dir
         .join(".temp_extract")
         .join(uuid::Uuid::new_v4().to_string());
-    fs::create_dir_all(&temp_path)
-        .map_err(|error| format!("Failed to create temp dir: {error}"))?;
+    fs::create_dir_all(&temp_path)?;
     let mut guard = TempDirGuard::new(temp_path.clone());
 
     let mut files_extracted = match extract_to_dir(
@@ -59,7 +90,7 @@ pub fn extract_archive(
         on_progress,
     ) {
         Ok(count) => count,
-        Err(error) if error == "ABORTED" => return Ok(aborted_result(archive_name, 0)),
+        Err(AppError::Cancelled) => return Ok(aborted_result(archive_name, 0)),
         Err(error) => return Err(error),
     };
 
@@ -73,7 +104,9 @@ pub fn extract_archive(
 
     let mod_roots = find_mod_roots(guard.path(), 5);
     if mod_roots.is_empty() {
-        return Err("Not a valid 3DMigoto mod archive (no valid .ini found)".into());
+        return Err(AppError::Validation(
+            "Not a valid 3DMigoto mod archive (no valid .ini found)".to_string(),
+        ));
     }
 
     let loose_files = collect_loose_files_recursive(guard.path(), &mod_roots);
@@ -120,13 +153,6 @@ fn archive_display_name(archive_path: &Path, custom_name: Option<&str>) -> Strin
     })
 }
 
-fn is_cancelled(cancel_token: &Option<Arc<AtomicBool>>) -> bool {
-    cancel_token
-        .as_ref()
-        .map(|token| token.load(Ordering::SeqCst))
-        .unwrap_or(false)
-}
-
 #[allow(clippy::too_many_arguments)] // Archive staging carries source, target, collision, and progress context.
 fn move_mod_roots(
     archive_path: &Path,
@@ -137,10 +163,10 @@ fn move_mod_roots(
     loose_files: &[PathBuf],
     overwrite: bool,
     guard: &mut TempDirGuard,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     if mod_roots.len() == 1 && mod_roots[0] == temp_path {
         let dest = destination_for(mods_dir, archive_name, overwrite);
-        move_root_to_dest(guard.path(), &dest, overwrite, archive_name)?;
+        move_root_to_dest(guard.path(), &dest, overwrite)?;
         guard.commit();
         cleanup_temp_extract_parent(temp_path);
         return Ok(vec![dest.to_string_lossy().to_string()]);
@@ -154,7 +180,7 @@ fn move_mod_roots(
             .map(|value| value.to_string_lossy().to_string())
             .unwrap_or_else(|| archive_name.to_string());
         let dest = destination_for(mods_dir, &name, overwrite);
-        move_root_to_dest(root, &dest, overwrite, &name)?;
+        move_root_to_dest(root, &dest, overwrite)?;
 
         if !loose_files_moved {
             move_loose_files(loose_files, &dest);
@@ -182,13 +208,12 @@ fn destination_for(mods_dir: &Path, name: &str, overwrite: bool) -> PathBuf {
     resolve_unique_dest(mods_dir, name)
 }
 
-fn move_root_to_dest(root: &Path, dest: &Path, overwrite: bool, name: &str) -> Result<(), String> {
+fn move_root_to_dest(root: &Path, dest: &Path, overwrite: bool) -> Result<(), AppError> {
     if overwrite {
         remove_existing_dest(dest)?;
     }
 
-    rename_cross_drive_fallback(root, dest)
-        .map_err(|error| format!("Failed to move mod '{}' to destination: {error}", name))
+    Ok(rename_cross_drive_fallback(root, dest)?)
 }
 
 fn move_loose_files(loose_files: &[PathBuf], dest: &Path) {

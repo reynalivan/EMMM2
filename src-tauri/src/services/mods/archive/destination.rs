@@ -1,4 +1,5 @@
 use crate::common::sync::lock;
+use crate::domain::errors::AppError;
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,28 +11,24 @@ pub(super) fn parent_dir_join(parent: &Path, name: &str) -> PathBuf {
     parent.join(name)
 }
 
-pub(super) fn remove_existing_dest(dest: &Path) -> Result<(), String> {
+pub(super) fn remove_existing_dest(dest: &Path) -> Result<(), AppError> {
     if !dest.exists() {
         return Ok(());
     }
 
-    fs::remove_dir_all(dest).map_err(|error| {
-        format!(
-            "Failed to remove existing destination '{}': {error}",
-            dest.display()
-        )
-    })
+    Ok(fs::remove_dir_all(dest)?)
 }
 
-pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), String> {
+pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), AppError> {
     let parent = archive_path
         .parent()
-        .ok_or("Archive has no parent directory")?;
+        .ok_or_else(|| AppError::Internal("Archive has no parent directory".to_string()))?;
     let extracted_dir = parent.join(".extracted");
-    fs::create_dir_all(&extracted_dir)
-        .map_err(|error| format!("Failed to create .extracted dir: {error}"))?;
+    fs::create_dir_all(&extracted_dir)?;
 
-    let file_name = archive_path.file_name().ok_or("No filename")?;
+    let file_name = archive_path
+        .file_name()
+        .ok_or_else(|| AppError::Internal("No filename".to_string()))?;
     let mut dest = extracted_dir.join(file_name);
 
     if dest.exists() {
@@ -60,11 +57,10 @@ pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), String> {
         }
     }
 
-    rename_cross_drive_fallback(archive_path, &dest)
-        .map_err(|error| format!("Failed to move archive to .extracted: {error}"))
+    Ok(rename_cross_drive_fallback(archive_path, &dest)?)
 }
 
-pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(), String> {
+pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(), AppError> {
     let mutex = DISKS_CACHE
         .get_or_init(|| std::sync::Mutex::new(sysinfo::Disks::new_with_refreshed_list()));
     let mut disks = lock(mutex);
@@ -90,10 +86,10 @@ pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(
     }
 
     if matched_len > 0 && available_space < required_space {
-        return Err(format!(
+        return Err(AppError::Internal(format!(
             "Insufficient disk space. Requires {} bytes, but only {} bytes available.",
             required_space, available_space
-        ));
+        )));
     }
 
     Ok(())

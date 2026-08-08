@@ -1,7 +1,7 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 
-/// Step 3: Resolve currently-enabled mod path keys for the whole runtime.
+/// Resolve currently-enabled mod path keys for the whole runtime.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let (mods, objects) =
         crate::services::collection_service::load_live_runtime_state(&ctx.pool, &ctx.game_id)

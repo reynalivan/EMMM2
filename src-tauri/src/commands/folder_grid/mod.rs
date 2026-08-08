@@ -20,7 +20,7 @@ pub async fn get_mod_thumbnail(
 ) -> Result<Option<String>, AppError> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
     // Fortify Safe Mode: Do not serve thumbnails for unsafe mods if Safe Mode is locked (enabled)
-    if config.get_settings().safe_mode.enabled {
+    if config.current_corridor().is_safe() {
         let analysis = crate::services::explorer::helpers::analyze_mod_metadata(
             std::path::Path::new(&folder_path),
             None,
@@ -30,9 +30,7 @@ pub async fn get_mod_thumbnail(
         }
     }
 
-    ThumbnailCache::resolve(&game_id, &folder_path)
-        .await
-        .map_err(AppError::Internal)
+    ThumbnailCache::resolve(&game_id, &folder_path).await
 }
 
 /// Delete the thumbnail file for a mod folder (if found) and invalidate cache.
@@ -78,7 +76,5 @@ pub async fn delete_mod_thumbnail(
         changed_paths.push(folder_path.clone());
     }
 
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, changed_paths)
-        .await
-        .map_err(AppError::Internal)
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, changed_paths).await
 }

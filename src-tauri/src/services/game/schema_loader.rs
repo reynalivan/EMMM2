@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::domain::errors::AppError;
+use crate::domain::models::GameType;
+
 /// Game schema defines available categories and filter fields per game type.
 /// Loaded from bundled JSON resources, with fallback to defaults.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -40,60 +43,44 @@ pub struct FilterDef {
     pub options: Vec<String>,
 }
 
+/// Categories the fallback schema offers, as `(name, icon, color)`.
+/// Per TRD: fall back to [Character, Weapon, UI, Other].
+const DEFAULT_CATEGORIES: [(&str, &str, &str); 4] = [
+    ("Character", "User", "primary"),
+    ("Weapon", "Sword", "secondary"),
+    ("UI", "Layout", "accent"),
+    ("Other", "Package", "neutral"),
+];
+
 /// Default schema fallback when game-specific schema.json is missing/corrupt.
-/// Per TRD: fall back to [Character, Weapon, UI, Other]. Log WARN.
 pub fn default_schema() -> GameSchema {
     GameSchema {
-        categories: vec![
-            CategoryDef {
-                name: "Character".to_string(),
+        categories: DEFAULT_CATEGORIES
+            .iter()
+            .map(|(name, icon, color)| CategoryDef {
+                name: (*name).to_string(),
                 label: None,
-                icon: "User".to_string(),
-                color: "primary".to_string(),
+                icon: (*icon).to_string(),
+                color: (*color).to_string(),
                 filters: None,
-            },
-            CategoryDef {
-                name: "Weapon".to_string(),
-                label: None,
-                icon: "Sword".to_string(),
-                color: "secondary".to_string(),
-                filters: None,
-            },
-            CategoryDef {
-                name: "UI".to_string(),
-                label: None,
-                icon: "Layout".to_string(),
-                color: "accent".to_string(),
-                filters: None,
-            },
-            CategoryDef {
-                name: "Other".to_string(),
-                label: None,
-                icon: "Package".to_string(),
-                color: "neutral".to_string(),
-                filters: None,
-            },
-        ],
-        filters: vec![],
-        stopwords: vec![],
-        short_token_whitelist: vec![],
-        ini_key_blacklist: vec![],
-        ini_key_whitelist: vec![],
+            })
+            .collect(),
+        filters: Vec::new(),
+        stopwords: Vec::new(),
+        short_token_whitelist: Vec::new(),
+        ini_key_blacklist: Vec::new(),
+        ini_key_whitelist: Vec::new(),
     }
 }
 
 /// Map a `GameType` discriminant to its canonical XXMI resource code.
-/// Must match `domain::models::GameType` (GIMI=0 … EFMI=4); the value is the
-/// `Serialize_repr` discriminant the frontend round-trips. Unknown → gimi.
+/// The value is the `Serialize_repr` discriminant the frontend round-trips;
+/// an unrecognised one falls back to gimi.
 pub fn normalize_game_type(raw: i32) -> String {
-    match raw {
-        0 => "gimi".to_string(),
-        1 => "srmi".to_string(),
-        2 => "wwmi".to_string(),
-        3 => "zzmi".to_string(),
-        4 => "efmi".to_string(),
-        _ => "gimi".to_string(),
-    }
+    GameType::from_repr(raw)
+        .unwrap_or(GameType::GIMI)
+        .resource_code()
+        .to_string()
 }
 
 /// Load a game schema from the bundled resources directory.
@@ -101,51 +88,38 @@ pub fn normalize_game_type(raw: i32) -> String {
 ///
 /// # Arguments
 /// * `resource_dir` - Base path to the app's resources directory
-/// * `game_type` - Game type string (e.g., "GIMI", "SRMI", or legacy "StarRail")
+/// * `game_type` - `GameType` discriminant (GIMI=0 … EFMI=4)
 pub fn load_schema(resource_dir: &std::path::Path, game_type: i32) -> GameSchema {
+    read_schema(resource_dir, game_type).unwrap_or_else(|reason| {
+        log::warn!("Schema unavailable for game type {game_type}: {reason}. Using fallback.");
+        default_schema()
+    })
+}
+
+/// Every failure mode reports why and lets the caller apply the one fallback.
+fn read_schema(resource_dir: &std::path::Path, game_type: i32) -> Result<GameSchema, AppError> {
     let canonical = normalize_game_type(game_type);
     let schema_path = resource_dir
         .join("schemas")
         .join(format!("{}.json", canonical));
 
     log::info!(
-        "Loading schema for '{}' (canonical: '{}') from: {}",
+        "Loading schema for game type {} (canonical: '{}') from: {}",
         game_type,
         canonical,
         schema_path.display()
     );
 
-    match std::fs::read_to_string(&schema_path) {
-        Ok(contents) => match serde_json::from_str::<GameSchema>(&contents) {
-            Ok(schema) => {
-                if schema.categories.is_empty() {
-                    log::warn!(
-                        "Schema for {} has empty categories, using fallback",
-                        game_type
-                    );
-                    default_schema()
-                } else {
-                    schema
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse schema for {}: {}. Using fallback.",
-                    game_type,
-                    e
-                );
-                default_schema()
-            }
-        },
-        Err(e) => {
-            log::warn!(
-                "Schema file not found for {}: {}. Using fallback.",
-                game_type,
-                e
-            );
-            default_schema()
-        }
+    let contents = std::fs::read_to_string(&schema_path)?;
+    let schema: GameSchema = serde_json::from_str(&contents)?;
+
+    if schema.categories.is_empty() {
+        return Err(AppError::Internal(
+            "schema has empty categories".to_string(),
+        ));
     }
+
+    Ok(schema)
 }
 
 #[cfg(test)]

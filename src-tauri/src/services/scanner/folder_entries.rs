@@ -3,6 +3,7 @@
 //! Resolves the game's mods_path from the DB and reads the filesystem to
 //! return a bounded list of child entries from a given directory.
 
+use crate::domain::errors::ScannerError;
 use serde::{Deserialize, Serialize};
 
 /// A single item in a folder listing (used by the Scan Review hover tooltip).
@@ -18,26 +19,30 @@ pub async fn list_folder_entries(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     folder_path: &str,
-) -> Result<Vec<FolderEntry>, String> {
+) -> Result<Vec<FolderEntry>, ScannerError> {
     use std::path::Path;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| "Failed to fetch game mods path".to_string())?;
+        .await?
+        .ok_or_else(|| ScannerError::Validation("Failed to fetch game mods path".to_string()))?;
 
     let base = Path::new(&mods_path);
     let path = Path::new(folder_path);
 
     if !crate::services::fs_utils::path_utils::is_path_safe(base, path) {
-        return Err("Path attempts to escape mods directory bounds".to_string());
+        return Err(ScannerError::Validation(
+            "Path attempts to escape mods directory bounds".to_string(),
+        ));
     }
 
     if !path.is_dir() {
-        return Err(format!("Not a directory: {}", folder_path));
+        return Err(ScannerError::Validation(format!(
+            "Not a directory: {}",
+            folder_path
+        )));
     }
 
-    let read_dir = std::fs::read_dir(path).map_err(|e| format!("Cannot read directory: {}", e))?;
+    let read_dir = std::fs::read_dir(path)?;
 
     let mut entries: Vec<FolderEntry> = read_dir
         .filter_map(|e| e.ok())

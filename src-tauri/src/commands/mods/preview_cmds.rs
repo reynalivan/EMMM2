@@ -54,10 +54,9 @@ pub async fn write_mod_ini(
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let changed_path = mod_root.join(&file_name).to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&watcher.suppressor);
-    write_mod_ini_locked_inner(&op_lock, &mod_root, &file_name, line_updates).await?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path])
-        .await
-        .map_err(AppError::Internal)
+    let op_guard = op_lock.acquire().await?;
+    write_mod_ini_locked_inner(&op_guard, &mod_root, &file_name, line_updates).await?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path]).await
 }
 
 #[specta::specta]
@@ -91,9 +90,7 @@ pub async fn save_mod_preview_image(
     let _lock = op_lock.acquire().await?;
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![saved.clone()])
-        .await
-        .map_err(AppError::Internal)?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![saved.clone()]).await?;
     Ok(saved)
 }
 
@@ -122,7 +119,6 @@ pub async fn remove_mod_preview_image(
         vec![target.to_string_lossy().to_string()],
     )
     .await
-    .map_err(AppError::Internal)
 }
 
 #[specta::specta]
@@ -146,8 +142,6 @@ pub async fn clear_mod_preview_images(
     } else {
         removed.clone()
     };
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, changed_paths)
-        .await
-        .map_err(AppError::Internal)?;
+    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, changed_paths).await?;
     Ok(removed)
 }
