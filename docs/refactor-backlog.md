@@ -27,7 +27,7 @@ the fastest way to learn what the layers are allowed to do.
 cd src-tauri
 cargo clippy --all-targets    # must be 0 warnings
 cargo fmt
-cargo test --all-targets      # 609 passing as of this writing
+cargo test --all-targets      # 612 passing as of this writing
 cargo test --lib specta       # regenerates src/lib/bindings.gen.ts
 ```
 
@@ -67,6 +67,8 @@ All of Tier 1 except 1.5, all of 3.2, and 2.1.
 | 1.4 `PreparedTokenFilters` + three tokenizer allocations | `f2a76dd` |
 | 2.1 pins for identity and merge policy | `63381f9` |
 | 2.1 policy moved to `services/objects/reconcile.rs`, tenth arch gate | `4c97580` |
+| 3.1 dedup-test fixture shared, safe-mode propagation covered | `3bc891a` |
+| 3.1 sync-test base shared, committed enabled state covered | `5344083` |
 
 Two things worth knowing before reading the sections below, which are kept
 for the reasoning rather than as work items:
@@ -213,18 +215,31 @@ Two things the pinning exercise turned up that were not in the plan:
   the sentinel. Neither guard was individually pinnable because either alone
   sufficed; the redundant one is gone.
 
-### 2.2 The import pipeline is still in the command layer
+### 2.2 The import pipeline is still in the command layer — DECLINED
 
-`src-tauri/src/commands/mods/mod_import_cmds.rs` (208 lines) emits progress
-events, loops sources, detects archive format and routes extraction.
+The plan asked for a shared `services/mods/import_service` "so the browser
+download path and the drag-drop path run the same code instead of two similar
+ones". Reading both, they are not two similar ones.
 
-Already done: the "new arrivals land disabled" rule is shared —
-`services/mods/arrival.rs::land_disabled`, used by both this path and
-`services/browser/import_service/placement.rs`.
+- `commands/mods/mod_import_cmds.rs::import_mods_from_paths` moves arbitrary
+  files into a directory the user picked. No database, no matching, no job.
+  It continues past a failed item and returns a per-item `BulkResult`.
+- `services/browser/import_service/placement.rs::place_mod` resolves or
+  creates the target *object*, writes the canonical match, closes the import
+  job, marks the download imported and emits a disk reconcile — one
+  transaction over four tables, aborting whole on any failure.
+- `ingest_dropped_folders` is a third thing again: it stages loose `.ini` and
+  image drops into `.emmm_temp` so Deep Match can see them as folders. They
+  never reach the game from there.
 
-Remaining: a `services/mods/import_service` owning per-item outcome and
-progress, so the browser download path and the drag-drop path run the same
-code instead of two similar ones.
+What the first two genuinely share is already shared: `arrival::land_disabled`,
+the operation lock and the watcher suppression guard. What is left to extract
+is "loop, land each, record the outcome" — and the two outcomes are
+*continue-on-failure* versus *abort-the-transaction*. An abstraction over that
+difference is the premature generalization the KISS rule warns about.
+
+Revisit only if a third caller appears, or if the same bug has to be fixed in
+both places.
 
 ### 2.3 Row shape is still the wire contract
 
@@ -242,55 +257,50 @@ rule warns about. Revisit when a column rename is actually needed.
 
 ## Tier 3 — hygiene
 
-### 3.1 Twenty files over the 350-line rule
+### 3.1 Files over the 350-line rule — PARTLY DONE, target not reachable
+
+The two files the plan named as "roughly 40% repeated fixture boilerplate"
+were deduplicated (`3bc891a`, `5344083`). The estimate was wrong, and the
+measurement is worth keeping so nobody re-derives it:
+
+| File | Before | After | Tests | Lines per test |
+|---|---|---|---|---|
+| `dedup/tests/dedup_scanner_tests.rs` | 779 | 654 (+2 tests) | 13 | ~50 |
+| `scanner/tests/sync_tests.rs` | 870 | 880 (+1 test) | 11 | ~80 |
+
+`dedup_scanner_tests.rs` had real copy-paste — one 16-line fixture written 18
+times — and shed 125 lines. `sync_tests.rs` did not: it is long because it
+holds eleven tests that each build a temp tree, a game row and a MasterDB.
+Collapsing its literals saved 60 lines, which the new coverage then spent.
+
+**Neither reaches 350, and neither should be split to get there.** Each file
+covers one concern. The rule is aimed at production modules where length
+signals tangled responsibility; a test file's length signals how much
+behaviour is pinned.
+
+The deduplication was worth doing anyway, and not for the line count —
+mutating the now-shared fixtures is what exposed two untested behaviours
+(safe-mode propagation into duplicate groups, and a scanned mod's enabled
+state surviving the commit). Both are covered now. That is the argument for
+sharing test fixtures: an inert field is invisible when it is written out
+eighteen times and obvious when it is written once.
+
+Remaining production files over the rule, none urgent:
 
 ```
-870  services/scanner/tests/sync_tests.rs
-779  services/scanner/dedup/tests/dedup_scanner_tests.rs
-566  commands/objects/tests/object_cmds_tests.rs
-521  services/scanner/deep_matcher/tests/required_tests.rs
-493  services/mods/archive/tests/mod_tests.rs
 470  services/scanner/dedup/signals.rs
-457  services/objects/tests/query_tests.rs
 451  services/scanner/dedup/scanner.rs
-449  services/scanner/dedup/tests/dedup_resolver_tests.rs
-412  commands/mods/tests/mod_meta_cmds_tests.rs
-408  repo/tests/dashboard_repo_test.rs
 401  domain/errors.rs
 387  .../deep_matcher/analysis/content/tokenizer.rs
-387  services/objects/tests/mutate_tests.rs
 372  services/scanner/deep_matcher/models/acceptance.rs
 371  services/scanner/master_db.rs
-370  repo/tests/mod_repo_test.rs
 358  commands/scanner/deepmatch_scanner_cmds.rs
-356  services/scanner/deep_matcher/tests/models/acceptance_tests.rs
 352  services/scanner/core/walker.rs
 ```
 
-Eleven are test files. **Deduplicate, do not split** — the two largest each
-cover one concern and are roughly 40% repeated fixture boilerplate:
-
-- `sync_tests.rs`: `ConfirmedScanItem` is written out inline 16 fields at a
-  time in six places despite a `confirmed_scan_item(..)` helper existing at
-  the top; `CommitScanRequest` is spelled nine times with only `items`
-  varying. Add `#[derive(Default)]` to `ConfirmedScanItem`
-  (`services/scanner/sync/types.rs:65` — every field is
-  `String`/`bool`/`Option`) and route the literals through
-  `..Default::default()`. Roughly 350 lines.
-- `dedup_scanner_tests.rs`: the same 15-line `insert_test_mod` /
-  `TestModFixture` block appears 18 times, differing only in `id`,
-  `actual_name` and `folder_path`. One `register_mod(..)` helper takes it to
-  ~380 lines.
-
-Four of these were grown during the architecture overhaul and are fair game:
-`domain/errors.rs` (two error enums + nine `From` impls),
-`master_db.rs` (the cache), `deepmatch_scanner_cmds.rs`, and
-`repo/tests/mod_repo_test.rs`.
-
-`signals.rs` (+24), `scanner.rs` (+43) and `tokenizer.rs` (+33) grew during
-the Tier 1 work. Most of that is the doc comments explaining why the windowed
-prefilter and the prepared filters are shaped the way they are — the kind of
-lines the 350-line rule is not aimed at. Do not trade them for a file split.
+Much of the growth in the first four is doc comments added during Tier 1
+explaining why the windowed prefilter and the prepared filters are shaped the
+way they are. Do not trade those for a file split.
 
 ### 3.2 Dedup tunables outside the module that claims to hold them — DONE (`c79a094`)
 
