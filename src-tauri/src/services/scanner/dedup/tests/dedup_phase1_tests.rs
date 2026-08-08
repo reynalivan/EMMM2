@@ -7,8 +7,9 @@
 
 use super::phase1_candidate_filtering;
 use crate::services::scanner::core::walker::ModCandidate;
-use crate::services::scanner::dedup::signals::{weights as w, FileEntry, ModSnapshot};
+use crate::services::scanner::dedup::signals::weights as w;
 use crate::services::scanner::dedup::size_ratio;
+use crate::services::scanner::dedup::snapshot::{FileEntry, ModSnapshot};
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 

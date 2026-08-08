@@ -1,6 +1,9 @@
+pub mod grouping;
+pub mod hashing;
 pub mod resolver;
 pub mod scanner;
 pub mod signals;
+pub mod snapshot;
 
 /// Similarity of two byte sizes, in `0.0..=1.0`.
 ///
