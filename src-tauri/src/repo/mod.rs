@@ -13,3 +13,7 @@ pub mod settings_repo;
 pub mod stable_ids;
 pub mod task_repo;
 pub mod unicode_keys;
+
+#[cfg(test)]
+#[path = "tests/folder_path_normalization_test.rs"]
+mod folder_path_normalization_test;

@@ -43,7 +43,7 @@ pub async fn commit_scan_results(
     // Fetch snapshot of DB state
     let db_mods = mod_repo::get_all_mods_sync_info_tx(&mut tx, game_id).await?;
 
-    let disk_to_db = link_disk_to_db(&disk_entries, &db_mods);
+    let disk_to_db = link_disk_to_db(&disk_entries, &db_mods, std::path::Path::new(ctx.mods_path));
 
     let (new_mods_count, updated_mods_count) = execute_entries(
         &mut tx,

@@ -38,6 +38,15 @@ pub(super) async fn execute_entries(
             ItemStatus::Enabled
         };
 
+        // What goes in the column, as opposed to what is used to touch the
+        // disk. Disk reconcile stores `folder_path` relative to the mods root
+        // and matches rows on that form, so an absolute value here left the
+        // row invisible to every one of its three lookups. `actual_folder_path`
+        // stays absolute below: it addresses real files, and the stable id is
+        // derived from it.
+        let stored_folder_path =
+            crate::common::path_key::relative_to_root(&actual_folder_path, Path::new(mods_path));
+
         let (mod_id, _current_object_id) = {
             // 1. Identify the Object grouping (depth-1 parent)
             let actual_path = Path::new(&actual_folder_path);
@@ -141,7 +150,7 @@ pub(super) async fn execute_entries(
                         (auto_safe, auto_source)
                     };
 
-                let path_changed = db_mod.1 != actual_folder_path;
+                let path_changed = db_mod.1 != stored_folder_path;
                 let status_changed = db_mod.2 != current_status;
                 let safety_changed =
                     db_mod.4 != next_is_safe || existing_corridor_source != next_corridor_source;
@@ -152,7 +161,7 @@ pub(super) async fn execute_entries(
                         &mut *tx,
                         mod_repo::SyncModRowUpdate {
                             new_id: &id,
-                            folder_path: &actual_folder_path,
+                            folder_path: &stored_folder_path,
                             mods_path,
                             actual_name: &item.display_name,
                             status: current_status,
@@ -187,7 +196,7 @@ pub(super) async fn execute_entries(
                     game_id,
                     &object_id,
                     &item.display_name,
-                    &actual_folder_path,
+                    &stored_folder_path,
                     Some(mods_path),
                     current_status,
                     obj_type,

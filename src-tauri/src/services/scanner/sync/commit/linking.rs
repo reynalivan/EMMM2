@@ -25,16 +25,27 @@ fn get_parent_and_name(path_str: &str) -> (String, String) {
     (parent, name)
 }
 /// Maps disk entry index -> DB row index using exact, toggle and 1:1 rename passes.
+///
+/// `disk_entries` carry absolute paths — they address real folders — while
+/// `mods.folder_path` is stored relative to the mods root. Every pass below
+/// compares the two, so the disk side is converted once up front rather than
+/// each side being compared in whichever form it happens to arrive in.
 pub(super) fn link_disk_to_db(
     disk_entries: &[(ConfirmedScanItem, String)],
     db_mods: &[DbModRow],
+    mods_root: &Path,
 ) -> HashMap<usize, usize> {
     let mut disk_to_db: HashMap<usize, usize> = HashMap::new();
     let mut db_matched: HashSet<usize> = HashSet::new();
 
+    let disk_relative: Vec<String> = disk_entries
+        .iter()
+        .map(|(_, path)| crate::common::path_key::relative_to_root(path, mods_root))
+        .collect();
+
     // Phase 1: Heuristic Linking
     // Pass A: Exact Match (folder_path == folder_path)
-    for (disk_idx, (_, disk_path)) in disk_entries.iter().enumerate() {
+    for (disk_idx, disk_path) in disk_relative.iter().enumerate() {
         if disk_to_db.contains_key(&disk_idx) {
             continue;
         }
@@ -51,7 +62,7 @@ pub(super) fn link_disk_to_db(
     }
 
     // Pass B: Toggle Match (ignore "DISABLED " prefix)
-    for (disk_idx, (_, disk_path)) in disk_entries.iter().enumerate() {
+    for (disk_idx, disk_path) in disk_relative.iter().enumerate() {
         if disk_to_db.contains_key(&disk_idx) {
             continue;
         }
@@ -76,7 +87,7 @@ pub(super) fn link_disk_to_db(
     // Pass C: 1:1 Rename Match (isolated unmatched item in same parent directory)
     let mut unmatched_disk_by_parent: std::collections::HashMap<String, Vec<usize>> =
         std::collections::HashMap::new();
-    for (disk_idx, (_, disk_path)) in disk_entries.iter().enumerate() {
+    for (disk_idx, disk_path) in disk_relative.iter().enumerate() {
         if disk_to_db.contains_key(&disk_idx) {
             continue;
         }
@@ -94,8 +105,11 @@ pub(super) fn link_disk_to_db(
             continue;
         }
         let (parent, _) = get_parent_and_name(&db_mod.1);
-        // Ensure this DB mod isn't physically on disk anymore before considering it renamed
-        if !Path::new(&db_mod.1).exists() {
+        // Ensure this DB mod isn't physically on disk anymore before considering
+        // it renamed. Joining is what makes the check mean anything: a stored
+        // path is relative, so testing it directly resolves against the process
+        // working directory and reports every row as missing.
+        if !mods_root.join(&db_mod.1).exists() {
             unmatched_db_by_parent
                 .entry(parent)
                 .or_default()
