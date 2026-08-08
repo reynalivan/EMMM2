@@ -29,7 +29,7 @@ pub use pipeline::quick_pipeline::match_folder_quick;
 pub use state::master_db::MasterDb;
 
 use super::core::walker::{FolderContent, ModCandidate};
-use analysis::content::IniTokenizationConfig;
+use analysis::content::PreparedTokenFilters;
 
 /// Phased matcher: Try Quick first, then fall back to FullScoring if NeedsReview or NoMatch.
 /// Preserves NeedsReview and NoMatch statuses without auto-apply.
@@ -37,7 +37,7 @@ pub fn match_folder_phased<'a>(
     candidate: &ModCandidate,
     db: &MasterDb,
     content: &FolderContent,
-    ini_config: &IniTokenizationConfig,
+    ini_filters: &PreparedTokenFilters,
     ai_config: &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig<'a>,
 ) -> StagedMatchResult {
     let mut local_cache = state::signal_cache::SignalCache::new();
@@ -45,7 +45,7 @@ pub fn match_folder_phased<'a>(
         candidate,
         db,
         content,
-        ini_config,
+        ini_filters,
         ai_config,
         &mut local_cache,
     )
@@ -57,12 +57,17 @@ pub fn match_folder_phased_cached<'a>(
     candidate: &ModCandidate,
     db: &MasterDb,
     content: &FolderContent,
-    ini_config: &IniTokenizationConfig,
+    ini_filters: &PreparedTokenFilters,
     ai_config: &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig<'a>,
     cache: &mut state::signal_cache::SignalCache,
 ) -> StagedMatchResult {
     let quick_result = pipeline::quick_pipeline::match_folder_quick_cached(
-        candidate, db, content, ini_config, ai_config, cache,
+        candidate,
+        db,
+        content,
+        ini_filters,
+        ai_config,
+        cache,
     );
 
     // Only fall back to full scoring if quick didn't auto-match
@@ -75,7 +80,7 @@ pub fn match_folder_phased_cached<'a>(
         candidate,
         db,
         content,
-        ini_config,
+        ini_filters,
         ai_config,
         &crate::services::scanner::deep_matcher::analysis::gamebanana::GameBananaConfig::default(),
         cache,

@@ -67,12 +67,40 @@ pub struct IniTokenBuckets {
     pub path_strings: Vec<String>,
 }
 
+/// The tokenization rules as configured — a spec, not a working set.
+///
+/// Merging this with the defaults costs roughly forty `String`s and four
+/// B-trees, so call [`IniTokenizationConfig::prepare`] once per scan and pass
+/// the result down. It used to be merged on entry to
+/// [`extract_structural_ini_tokens`], i.e. once per INI file, which is over a
+/// million throwaway allocations at the 10k-mod design target.
 #[derive(Debug, Clone, Default)]
 pub struct IniTokenizationConfig {
     pub stopwords: Vec<String>,
     pub short_token_whitelist: Vec<String>,
     pub ini_key_blacklist: Vec<String>,
     pub ini_key_whitelist: Vec<String>,
+}
+
+/// [`IniTokenizationConfig`] merged with the defaults, ready to filter with.
+#[derive(Debug, Clone, Default)]
+pub struct PreparedTokenFilters {
+    stopwords: BTreeSet<String>,
+    short_whitelist: BTreeSet<String>,
+    key_blacklist: BTreeSet<String>,
+    key_whitelist: BTreeSet<String>,
+}
+
+impl IniTokenizationConfig {
+    /// Merge with the built-in defaults. Do this once per scan.
+    pub fn prepare(&self) -> PreparedTokenFilters {
+        PreparedTokenFilters {
+            stopwords: merged_stopwords(self),
+            short_whitelist: normalized_set(&self.short_token_whitelist),
+            key_blacklist: merged_key_blacklist(self),
+            key_whitelist: merged_key_whitelist(self),
+        }
+    }
 }
 
 /// Extract structural token buckets from INI text.
@@ -86,13 +114,8 @@ pub struct IniTokenizationConfig {
 /// short-token whitelist filtering. Numeric-only tokens are always excluded.
 pub fn extract_structural_ini_tokens(
     text: &str,
-    config: &IniTokenizationConfig,
+    filters: &PreparedTokenFilters,
 ) -> IniTokenBuckets {
-    let stopwords = merged_stopwords(config);
-    let short_whitelist = normalized_set(&config.short_token_whitelist);
-    let key_blacklist = merged_key_blacklist(config);
-    let key_whitelist = merged_key_whitelist(config);
-
     let mut section_tokens = BTreeSet::new();
     let mut key_tokens = BTreeSet::new();
     let mut path_tokens = BTreeSet::new();
@@ -108,12 +131,8 @@ pub fn extract_structural_ini_tokens(
         if line.starts_with('[') && line.ends_with(']') && line.len() >= 2 {
             let section = &line[1..line.len() - 1];
             let cleaned_section = strip_section_prefixes(section);
-            insert_tokens(
-                &mut section_tokens,
-                tokenize_structural(&cleaned_section),
-                &stopwords,
-                &short_whitelist,
-            );
+            let prepared = prepare_for_tokenizing(&cleaned_section);
+            insert_tokens(&mut section_tokens, prepared.split_whitespace(), filters);
             // Collect continuous string for substring matching Pass B
             let trimmed = cleaned_section.trim();
             if !trimmed.is_empty() {
@@ -127,28 +146,20 @@ pub fn extract_structural_ini_tokens(
         };
 
         let key_normalized = normalize_key(lhs);
-        if key_normalized.is_empty() || key_blacklist.contains(&key_normalized) {
+        if key_normalized.is_empty() || filters.key_blacklist.contains(&key_normalized) {
             continue;
         }
 
-        if !key_whitelist.is_empty() && !key_whitelist.contains(&key_normalized) {
+        if !filters.key_whitelist.is_empty() && !filters.key_whitelist.contains(&key_normalized) {
             continue;
         }
 
-        insert_tokens(
-            &mut key_tokens,
-            tokenize_structural(lhs),
-            &stopwords,
-            &short_whitelist,
-        );
+        let prepared_key = prepare_for_tokenizing(lhs);
+        insert_tokens(&mut key_tokens, prepared_key.split_whitespace(), filters);
 
         if looks_like_path(rhs) {
-            insert_tokens(
-                &mut path_tokens,
-                tokenize_path_like_rhs(rhs),
-                &stopwords,
-                &short_whitelist,
-            );
+            let prepared_rhs = prepare_path_like_rhs(rhs);
+            insert_tokens(&mut path_tokens, prepared_rhs.split_whitespace(), filters);
             // Collect continuous file stems for substring matching Pass B
             let value = rhs.trim().trim_matches('"').trim_matches('\'');
             for segment in value
@@ -231,20 +242,25 @@ fn normalized_set(values: &[String]) -> BTreeSet<String> {
     set
 }
 
-fn insert_tokens(
+fn insert_tokens<'a>(
     destination: &mut BTreeSet<String>,
-    tokens: Vec<String>,
-    stopwords: &BTreeSet<String>,
-    short_whitelist: &BTreeSet<String>,
+    tokens: impl Iterator<Item = &'a str>,
+    filters: &PreparedTokenFilters,
 ) {
     for token in tokens {
-        if should_keep_token(&token, stopwords, short_whitelist) {
-            destination.insert(token);
+        if should_keep_token(token, filters) {
+            destination.insert(token.to_string());
         }
     }
 }
 
-fn tokenize_structural(input: &str) -> Vec<String> {
+/// Lowercase `input` and put a space wherever a token boundary is: at every
+/// non-alphanumeric run, and at every camelCase hump.
+///
+/// Returns the prepared string rather than a `Vec<String>` of tokens. Most
+/// tokens are dropped by [`should_keep_token`] moments later, so splitting at
+/// the call site and allocating only the survivors saves the rest.
+fn prepare_for_tokenizing(input: &str) -> String {
     let mut prepared = String::with_capacity(input.len());
     let mut previous_was_lower_or_digit = false;
 
@@ -262,14 +278,18 @@ fn tokenize_structural(input: &str) -> Vec<String> {
     }
 
     prepared
-        .split_whitespace()
-        .map(std::string::ToString::to_string)
-        .collect()
 }
 
-fn tokenize_path_like_rhs(input: &str) -> Vec<String> {
+/// The prepared form of every path segment in `input`.
+///
+/// The old form also tokenized each segment's file stem separately. That could
+/// never add a token: a stem is a byte prefix of its segment, the `.` after it
+/// is a separator either way, and the destination is a set — so the stem's
+/// tokens were always already there. The stem still matters as a *whole
+/// string* for substring matching, which is collected in the caller.
+fn prepare_path_like_rhs(input: &str) -> String {
     let value = input.trim().trim_matches('"').trim_matches('\'');
-    let mut tokens = Vec::new();
+    let mut prepared = String::with_capacity(value.len());
 
     for segment in value
         .split(['/', '\\', ',', ';', ' ', '\t'])
@@ -280,14 +300,11 @@ fn tokenize_path_like_rhs(input: &str) -> Vec<String> {
             continue;
         }
 
-        tokens.extend(tokenize_structural(cleaned));
-
-        if let Some((stem, _ext)) = cleaned.rsplit_once('.') {
-            tokens.extend(tokenize_structural(stem));
-        }
+        prepared.push(' ');
+        prepared.push_str(&prepare_for_tokenizing(cleaned));
     }
 
-    tokens
+    prepared
 }
 
 fn normalize_simple(input: &str) -> String {
@@ -310,39 +327,55 @@ fn normalize_key(input: &str) -> String {
         .to_string()
 }
 
+/// Peel 3DMigoto's stacked section-type prefixes off a section name, so
+/// `[TextureOverrideAyakaBody]` contributes "AyakaBody".
+///
+/// Walks a byte offset into one lowercase copy instead of re-lowercasing and
+/// reallocating the remainder after every strip. The prefixes are ASCII and
+/// `to_ascii_lowercase` is length-preserving, so the offset is valid in both.
 fn strip_section_prefixes(section: &str) -> String {
-    let mut current = section.trim().to_string();
-    let mut changed = true;
+    let trimmed = section.trim();
+    let lowered = trimmed.to_ascii_lowercase();
+    let mut offset = 0;
 
-    while changed {
-        changed = false;
-        let current_lower = current.to_ascii_lowercase();
-        for prefix in SECTION_PREFIX_BLACKLIST {
-            if current_lower.starts_with(prefix) {
-                current = current[prefix.len()..].to_string();
-                changed = true;
-            }
-        }
+    while let Some(prefix) = SECTION_PREFIX_BLACKLIST
+        .iter()
+        .find(|prefix| lowered[offset..].starts_with(**prefix))
+    {
+        offset += prefix.len();
     }
 
-    current
+    trimmed[offset..].to_string()
 }
 
 fn looks_like_path(rhs: &str) -> bool {
-    let value = rhs.trim().to_ascii_lowercase();
-    PATH_EXT_HINTS.iter().any(|ext| value.contains(ext))
+    let value = rhs.trim();
+    PATH_EXT_HINTS
+        .iter()
+        .any(|ext| contains_ignore_ascii_case(value, ext))
 }
 
-fn should_keep_token(
-    token: &str,
-    stopwords: &BTreeSet<String>,
-    short_whitelist: &BTreeSet<String>,
-) -> bool {
+/// `str::contains`, case-insensitively, without lowercasing the haystack.
+///
+/// The haystack is the right-hand side of an INI assignment — often a long
+/// path — and this runs on every key line of every INI file in the library.
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
+}
+
+fn should_keep_token(token: &str, filters: &PreparedTokenFilters) -> bool {
     if token.is_empty() || token.chars().all(|ch| ch.is_ascii_digit()) {
         return false;
     }
 
-    if stopwords.contains(token) {
+    if filters.stopwords.contains(token) {
         return false;
     }
 
@@ -350,5 +383,5 @@ fn should_keep_token(
         return true;
     }
 
-    short_whitelist.contains(token)
+    filters.short_whitelist.contains(token)
 }

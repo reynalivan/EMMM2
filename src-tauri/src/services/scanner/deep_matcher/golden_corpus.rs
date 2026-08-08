@@ -59,7 +59,7 @@ pub fn run_golden_case(case: &GoldenCase, db: &MasterDb) {
         &candidate,
         db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
     );
     assert_eq!(
@@ -92,7 +92,7 @@ pub fn run_golden_case(case: &GoldenCase, db: &MasterDb) {
         &candidate,
         db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );

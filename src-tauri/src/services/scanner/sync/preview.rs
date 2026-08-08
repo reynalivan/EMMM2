@@ -38,7 +38,7 @@ pub async fn scan_preview(
     }
 
     let mut items = Vec::with_capacity(total);
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
 
     for (idx, candidate) in candidates.iter().enumerate() {
         if let Some(channel) = &on_progress {
@@ -66,7 +66,7 @@ pub async fn scan_preview(
             candidate,
             master_db,
             &content,
-            &ini_config,
+            &ini_filters,
             &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default(),
         );
         let auto_candidate = auto_matched_candidate(&match_result);
@@ -253,7 +253,7 @@ pub fn score_candidates_batch(
     };
 
     let content = walker::scan_folder_content(&candidate.path, 3);
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config =
         crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default();
     let mut signal_cache =
@@ -278,7 +278,7 @@ pub fn score_candidates_batch(
         &candidate,
         master_db,
         &content,
-        &ini_config,
+        &ini_filters,
         &ai_config,
         &mut signal_cache,
         &entry_ids,

@@ -179,12 +179,12 @@ pub async fn match_check_folder_cmd(
     };
 
     let content = walker::scan_folder_content(&candidate.path, 3);
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config =
         crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default();
 
     let match_result =
-        deep_matcher::match_folder_quick(&candidate, master_db, &content, &ini_config, &ai_config);
+        deep_matcher::match_folder_quick(&candidate, master_db, &content, &ini_filters, &ai_config);
 
     let matched_name = match_result.best.as_ref().map(|c| c.name.clone());
     let match_score_pct = match_result

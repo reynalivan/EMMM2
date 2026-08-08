@@ -89,7 +89,7 @@ fn test_deep_scan_primary_fallback_no_hashes_can_automatch() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );
@@ -137,14 +137,14 @@ fn test_direct_name_support_only_never_auto_matches() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
     );
     let result_full = match_folder_full(
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );
@@ -494,7 +494,7 @@ fn test_alias_recheck_after_deep_scan_rescues_match() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );

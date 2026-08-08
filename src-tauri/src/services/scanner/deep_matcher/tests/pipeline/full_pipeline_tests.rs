@@ -65,7 +65,7 @@ fn test_full_alias_recheck_rescues_match_after_deep_ini_collection() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );
@@ -111,7 +111,7 @@ fn test_full_budget_overflow_keeps_partial_signals_and_continues_matching() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );
@@ -148,7 +148,7 @@ fn test_full_pipeline_has_no_fuzzy_fallback_for_near_name_only() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
         &Default::default(),
     );

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::services::scanner::core::walker::{FolderContent, ModCandidate};
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::maybe_apply_ai_rerank;
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::services::scanner::deep_matcher::models::acceptance::{finalize_review, FinalizeConfig};
 use crate::services::scanner::deep_matcher::pipeline::name_rescue;
 use crate::services::scanner::deep_matcher::pipeline::stages::{
@@ -23,13 +23,18 @@ pub fn score_forced_candidates(
     candidate: &ModCandidate,
     db: &MasterDb,
     content: &FolderContent,
-    ini_config: &IniTokenizationConfig,
+    ini_filters: &PreparedTokenFilters,
     ai_config: &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig<'_>,
     cache: &mut crate::services::scanner::deep_matcher::state::signal_cache::SignalCache,
     forced_entry_ids: &[usize],
 ) -> StagedMatchResult {
     let signals = cache
-        .get_or_compute(&candidate.path, content, MatchMode::FullScoring, ini_config)
+        .get_or_compute(
+            &candidate.path,
+            content,
+            MatchMode::FullScoring,
+            ini_filters,
+        )
         .clone();
 
     let observed_buckets = ObservedTokenBuckets::from_signals(&signals);

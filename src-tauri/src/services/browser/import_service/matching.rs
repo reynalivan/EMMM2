@@ -65,10 +65,10 @@ pub(super) async fn try_deep_match(
     };
 
     let content = crate::services::scanner::core::walker::scan_folder_content(extract_dir, 3);
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config = AiRerankConfig::default();
 
-    let result = match_folder_phased(&candidate, &master_db, &content, &ini_config, &ai_config);
+    let result = match_folder_phased(&candidate, &master_db, &content, &ini_filters, &ai_config);
 
     let top = match result.best {
         Some(c) => c,

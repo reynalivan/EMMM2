@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::services::scanner::core::walker::FolderContent;
 use crate::services::scanner::deep_matcher::analysis::content::{
-    collect_deep_signals, FolderSignals, IniTokenizationConfig,
+    collect_deep_signals, FolderSignals, PreparedTokenFilters,
 };
 use crate::services::scanner::deep_matcher::MatchMode;
 
@@ -29,13 +29,13 @@ impl SignalCache {
         folder: &Path,
         content: &FolderContent,
         mode: MatchMode,
-        ini_config: &IniTokenizationConfig,
+        ini_filters: &PreparedTokenFilters,
     ) -> &FolderSignals {
         let key = (folder.to_string_lossy().to_string(), mode as u8);
 
         self.store
             .entry(key)
-            .or_insert_with_key(|_| collect_deep_signals(folder, content, mode, ini_config))
+            .or_insert_with_key(|_| collect_deep_signals(folder, content, mode, ini_filters))
     }
 
     /// Number of cached entries (for diagnostics).

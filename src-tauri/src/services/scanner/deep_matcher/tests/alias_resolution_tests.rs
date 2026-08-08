@@ -87,7 +87,7 @@ fn build_test_db() -> MasterDb {
 #[test]
 fn test_alias_resolution_dirty_input_name() {
     let db = build_test_db();
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config = AiRerankConfig::default();
 
     let candidate = ModCandidate {
@@ -103,7 +103,7 @@ fn test_alias_resolution_dirty_input_name() {
         ini_files: vec![], // No INI or hashes to force alias substring rescue mapping
     };
 
-    let result = match_folder_phased(&candidate, &db, &content, &ini_config, &ai_config);
+    let result = match_folder_phased(&candidate, &db, &content, &ini_filters, &ai_config);
 
     // Should rescue via substring/alias matching
     assert!(
@@ -129,7 +129,7 @@ fn test_alias_resolution_dirty_input_name() {
 #[test]
 fn test_alias_resolution_stopword_parsing_strip() {
     let db = build_test_db();
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config = AiRerankConfig::default();
 
     let candidate = ModCandidate {
@@ -145,7 +145,7 @@ fn test_alias_resolution_stopword_parsing_strip() {
         ini_files: vec![],
     };
 
-    let result = match_folder_phased(&candidate, &db, &content, &ini_config, &ai_config);
+    let result = match_folder_phased(&candidate, &db, &content, &ini_filters, &ai_config);
 
     // Root folder rescue ("Hu Tao" stripped of stopwords) -> Should map to Hu Tao
     assert_ne!(result.status, MatchStatus::NoMatch, "Should not be NoMatch");
@@ -159,7 +159,7 @@ fn test_alias_resolution_stopword_parsing_strip() {
 #[test]
 fn test_alias_resolution_conflict_traps() {
     let db = build_test_db();
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config = AiRerankConfig::default();
 
     let candidate = ModCandidate {
@@ -175,7 +175,7 @@ fn test_alias_resolution_conflict_traps() {
         ini_files: vec![],
     };
 
-    let result = match_folder_phased(&candidate, &db, &content, &ini_config, &ai_config);
+    let result = match_folder_phased(&candidate, &db, &content, &ini_filters, &ai_config);
 
     // It should map to Traveler (Anemo) with NeedsReview
     assert_eq!(result.status, MatchStatus::NeedsReview);

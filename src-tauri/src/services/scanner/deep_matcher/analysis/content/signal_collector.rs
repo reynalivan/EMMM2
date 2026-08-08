@@ -8,7 +8,7 @@ use crate::services::scanner::deep_matcher::MatchMode;
 
 use super::{
     decode_ini_content_with_cap, extract_hashes_from_ini_text, extract_structural_ini_tokens,
-    IniTokenizationConfig,
+    PreparedTokenFilters,
 };
 
 pub const QUICK_MAX_INI_FILES: usize = 2;
@@ -77,7 +77,7 @@ pub fn collect_deep_signals(
     folder: &Path,
     content: &FolderContent,
     mode: MatchMode,
-    ini_config: &IniTokenizationConfig,
+    ini_filters: &PreparedTokenFilters,
 ) -> FolderSignals {
     let budget = SignalBudget::for_mode(mode);
 
@@ -148,7 +148,7 @@ pub fn collect_deep_signals(
             ini_hashes.insert(hash);
         }
 
-        let buckets = extract_structural_ini_tokens(&ini_text, ini_config);
+        let buckets = extract_structural_ini_tokens(&ini_text, ini_filters);
         for token in buckets.section_tokens {
             ini_section_tokens.insert(token);
         }

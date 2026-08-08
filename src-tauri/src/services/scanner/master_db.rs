@@ -113,13 +113,13 @@ pub fn match_object_with_staged_pipeline(db: &MasterDb, object_name: &str) -> St
         files: Vec::new(),
         ini_files: Vec::new(),
     };
-    let ini_config = IniTokenizationConfig::default();
+    let ini_filters = IniTokenizationConfig::default().prepare();
 
     deep_matcher::match_folder_phased(
         &candidate,
         db,
         &content,
-        &ini_config,
+        &ini_filters,
         &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default(),
     )
 }

@@ -185,7 +185,7 @@ fn test_structural_tokenization_extracts_section_key_and_path_buckets() {
         short_token_whitelist: vec!["vb".to_string()],
         ..Default::default()
     };
-    let buckets = extract_structural_ini_tokens(text, &config);
+    let buckets = extract_structural_ini_tokens(text, &config.prepare());
 
     assert_eq!(
         buckets.section_tokens,
@@ -217,13 +217,43 @@ fn test_structural_tokenization_applies_blacklist_and_schema_whitelist() {
         short_token_whitelist: vec!["buf".to_string()],
         ..Default::default()
     };
-    let buckets = extract_structural_ini_tokens(text, &config);
+    let buckets = extract_structural_ini_tokens(text, &config.prepare());
 
     assert_eq!(buckets.section_tokens, vec!["aether".to_string()]);
     assert_eq!(buckets.key_tokens, vec!["metadata".to_string()]);
     assert!(buckets.path_tokens.is_empty());
     assert!(!buckets.key_tokens.contains(&"character".to_string()));
     assert!(!buckets.key_tokens.contains(&"texture".to_string()));
+}
+
+#[test]
+fn test_path_detection_ignores_extension_case() {
+    // 3DMigoto INIs are hand-written, so ".DDS" and ".dds" both turn up. The
+    // RHS is matched case-insensitively without lowercasing it first, and that
+    // is only visible on an uppercase extension.
+    let text = "filename = Characters/Diluc/Body_Diffuse.DDS\n";
+
+    let buckets = extract_structural_ini_tokens(text, &IniTokenizationConfig::default().prepare());
+
+    assert!(buckets.path_tokens.contains(&"diffuse".to_string()));
+    assert!(buckets.path_tokens.contains(&"characters".to_string()));
+    assert_eq!(buckets.path_strings, vec!["Body_Diffuse".to_string()]);
+}
+
+#[test]
+fn test_stacked_section_prefixes_are_all_stripped() {
+    // Section names stack their type prefixes, so stripping has to repeat
+    // until none match. `section_strings` is what shows it: "resource" is a
+    // stopword, so a half-stripped name still yields the right *tokens*.
+    let text = "[TextureOverrideResourceKleeBody]\n";
+
+    let buckets = extract_structural_ini_tokens(text, &IniTokenizationConfig::default().prepare());
+
+    assert_eq!(buckets.section_strings, vec!["KleeBody".to_string()]);
+    assert_eq!(
+        buckets.section_tokens,
+        vec!["body".to_string(), "klee".to_string()]
+    );
 }
 
 use crate::services::scanner::core::walker;
@@ -259,7 +289,7 @@ fn test_collect_deep_signals_quick_budget_enforces_two_root_ini_sorted() {
         &folder,
         &content,
         MatchMode::Quick,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
     );
 
     assert_eq!(signals.scanned_ini_files, QUICK_MAX_INI_FILES);
@@ -292,7 +322,7 @@ fn test_collect_deep_signals_full_budget_caps_total_bytes() {
         &folder,
         &content,
         MatchMode::FullScoring,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
     );
 
     assert_eq!(signals.scanned_ini_bytes, FULL_MAX_TOTAL_INI_BYTES);

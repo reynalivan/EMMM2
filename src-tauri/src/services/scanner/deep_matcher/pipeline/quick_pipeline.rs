@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::services::scanner::core::walker::{FolderContent, ModCandidate};
 
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::maybe_apply_ai_rerank;
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::services::scanner::deep_matcher::analysis::scoring::{
     apply_hash_contribution, apply_token_overlap_contribution,
 };
@@ -34,7 +34,7 @@ pub fn match_folder_quick(
     candidate: &ModCandidate,
     db: &MasterDb,
     content: &FolderContent,
-    ini_config: &IniTokenizationConfig,
+    ini_filters: &PreparedTokenFilters,
     ai_config: &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig<'_>,
 ) -> StagedMatchResult {
     let mut local_cache =
@@ -43,7 +43,7 @@ pub fn match_folder_quick(
         candidate,
         db,
         content,
-        ini_config,
+        ini_filters,
         ai_config,
         &mut local_cache,
     )
@@ -53,12 +53,12 @@ pub fn match_folder_quick_cached(
     candidate: &ModCandidate,
     db: &MasterDb,
     content: &FolderContent,
-    ini_config: &IniTokenizationConfig,
+    ini_filters: &PreparedTokenFilters,
     ai_config: &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig<'_>,
     cache: &mut crate::services::scanner::deep_matcher::state::signal_cache::SignalCache,
 ) -> StagedMatchResult {
     let signals = cache
-        .get_or_compute(&candidate.path, content, MatchMode::Quick, ini_config)
+        .get_or_compute(&candidate.path, content, MatchMode::Quick, ini_filters)
         .clone();
     let observed_buckets = ObservedTokenBuckets::from_signals(&signals);
     let observed_tokens: HashSet<String> = observed_buckets.observed_tokens().into_iter().collect();

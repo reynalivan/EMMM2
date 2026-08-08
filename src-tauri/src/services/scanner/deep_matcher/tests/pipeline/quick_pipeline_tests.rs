@@ -71,7 +71,7 @@ fn test_quick_hash_stage_accepts_early_with_unique_hash() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
     );
 
@@ -107,7 +107,7 @@ fn test_quick_direct_name_support_only_does_not_auto_match() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
     );
 
@@ -142,7 +142,7 @@ fn test_quick_pipeline_has_no_fuzzy_fallback_for_near_name_only() {
         &candidate,
         &db,
         &content,
-        &IniTokenizationConfig::default(),
+        &IniTokenizationConfig::default().prepare(),
         &AiRerankConfig::default(),
     );
 

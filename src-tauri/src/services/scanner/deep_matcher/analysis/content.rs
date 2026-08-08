@@ -16,7 +16,9 @@ pub use signal_collector::{
     FULL_MAX_TOTAL_INI_BYTES, QUICK_MAX_INI_BYTES_PER_FILE, QUICK_MAX_INI_FILES,
     QUICK_MAX_NAME_ITEMS,
 };
-pub use tokenizer::{extract_structural_ini_tokens, IniTokenBuckets, IniTokenizationConfig};
+pub use tokenizer::{
+    extract_structural_ini_tokens, IniTokenBuckets, IniTokenizationConfig, PreparedTokenFilters,
+};
 
 /// Extract hashes from raw INI text.
 ///
