@@ -22,6 +22,66 @@ async fn setup_scan_db() -> sqlx::SqlitePool {
     pool
 }
 
+/// A mod row as the dedup tests care about it.
+///
+/// Every fixture in this file shares the same game, mods root, enabled status
+/// and empty object link, so only the identity and the safe flag are worth
+/// spelling per mod.
+struct Registered<'a> {
+    id: &'a str,
+    name: &'a str,
+    folder: &'a std::path::Path,
+    is_safe: bool,
+}
+
+impl<'a> Registered<'a> {
+    fn safe(id: &'a str, name: &'a str, folder: &'a std::path::Path) -> Self {
+        Self {
+            id,
+            name,
+            folder,
+            is_safe: true,
+        }
+    }
+
+    /// A mod the library flags as unsafe. A duplicate group inherits the flag
+    /// from any member, which is what keeps Safe Mode from surfacing it.
+    fn marked_unsafe(id: &'a str, name: &'a str, folder: &'a std::path::Path) -> Self {
+        Self {
+            id,
+            name,
+            folder,
+            is_safe: false,
+        }
+    }
+}
+
+async fn register_mods(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    mods: &[Registered<'_>],
+) {
+    for entry in mods {
+        crate::test_utils::insert_test_mod(
+            pool,
+            &crate::test_utils::TestModFixture {
+                id: entry.id,
+                game_id,
+                object_id: None,
+                actual_name: entry.name,
+                folder_path: entry.folder.to_string_lossy().as_ref(),
+                status: crate::domain::models::ItemStatus::Enabled,
+                is_safe: entry.is_safe,
+                object_type: None,
+                mods_path: Some(mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
+
 // Covers: TC-9.1-01 (Exact Hash Match)
 #[tokio::test]
 async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
@@ -39,39 +99,16 @@ async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
     fs::write(first.join("texture.dds"), b"same-content").unwrap();
     fs::write(second.join("texture.dds"), b"same-content").unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-a",
-            game_id,
-            object_id: None,
-            actual_name: "Albedo_A",
-            folder_path: first.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Albedo_A", &first),
+            Registered::safe("mod-b", "Albedo_B", &second),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-b",
-            game_id,
-            object_id: None,
-            actual_name: "Albedo_B",
-            folder_path: second.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -107,39 +144,16 @@ async fn test_ec_9_02_same_name_different_content_stays_below_80() {
     fs::write(first.join("texture.dds"), b"alpha-0000").unwrap();
     fs::write(second.join("texture.dds"), b"beta-9999").unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-a",
-            game_id,
-            object_id: None,
-            actual_name: "Raiden_Mod",
-            folder_path: first.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Raiden_Mod", &first),
+            Registered::safe("mod-b", "Raiden_Skin", &second),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-b",
-            game_id,
-            object_id: None,
-            actual_name: "Raiden_Skin",
-            folder_path: second.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -171,39 +185,16 @@ async fn test_di_9_01_whitelist_pair_is_filtered_out() {
     fs::write(first.join("texture.dds"), b"same-content").unwrap();
     fs::write(second.join("texture.dds"), b"same-content").unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-a",
-            game_id,
-            object_id: None,
-            actual_name: "Kazuha_A",
-            folder_path: first.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Kazuha_A", &first),
+            Registered::safe("mod-b", "Kazuha_B", &second),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-b",
-            game_id,
-            object_id: None,
-            actual_name: "Kazuha_B",
-            folder_path: second.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     sqlx::query(
         "INSERT INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id) VALUES (?, ?, ?, ?)",
@@ -249,39 +240,16 @@ async fn test_tc_9_1_02_structure_match_confidence_70_to_90() {
     fs::write(folder_a.join("Config/settings.ini"), ";config\n$var=1\n").unwrap();
     fs::write(folder_b.join("Config/options.ini"), ";config\n$var=2\n").unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-a",
-            game_id,
-            object_id: None,
-            actual_name: "CharA",
-            folder_path: folder_a.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "CharA", &folder_a),
+            Registered::safe("mod-b", "CharB", &folder_b),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-b",
-            game_id,
-            object_id: None,
-            actual_name: "CharB",
-            folder_path: folder_b.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -323,39 +291,16 @@ async fn test_tc_9_1_03_name_size_match_disabled_prefix_normalization() {
     fs::write(folder_a.join("texture.dds"), b"content-alpha-001").unwrap();
     fs::write(folder_b.join("texture.dds"), b"content-beta__002").unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-a",
-            game_id,
-            object_id: None,
-            actual_name: "Nahida_Mod",
-            folder_path: folder_a.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Nahida_Mod", &folder_a),
+            Registered::safe("mod-b", "Nahida_Skin", &folder_b),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-b",
-            game_id,
-            object_id: None,
-            actual_name: "Nahida_Skin",
-            folder_path: folder_b.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -394,22 +339,17 @@ async fn test_tc_9_3_02_cancel_scan_leaves_db_unchanged() {
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("mod.ini"), format!(";mod {}\n$var={}\n", i, i)).unwrap();
 
-        crate::test_utils::insert_test_mod(
+        register_mods(
             &pool,
-            &crate::test_utils::TestModFixture {
-                id: &format!("mod-{}", i),
-                game_id,
-                object_id: None,
-                actual_name: &format!("Mod{}", i),
-                folder_path: folder.to_string_lossy().as_ref(),
-                status: crate::domain::models::ItemStatus::Enabled,
-                is_safe: true,
-                object_type: None,
-                mods_path: Some(mods_root.to_str().unwrap()),
-            },
+            game_id,
+            mods_root,
+            &[Registered::safe(
+                &format!("mod-{}", i),
+                &format!("Mod{}", i),
+                &folder,
+            )],
         )
-        .await
-        .unwrap();
+        .await;
     }
 
     // Set cancel flag immediately
@@ -444,22 +384,17 @@ async fn test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group() {
         fs::write(folder.join("mod.ini"), ";identical\n$swapvar=999\n").unwrap();
         fs::write(folder.join("texture.dds"), b"identical-content").unwrap();
 
-        crate::test_utils::insert_test_mod(
+        register_mods(
             &pool,
-            &crate::test_utils::TestModFixture {
-                id: &format!("mod-{}", i),
-                game_id,
-                object_id: None,
-                actual_name: &format!("YaeMiko{}", i),
-                folder_path: folder.to_string_lossy().as_ref(),
-                status: crate::domain::models::ItemStatus::Enabled,
-                is_safe: true,
-                object_type: None,
-                mods_path: Some(mods_root.to_str().unwrap()),
-            },
+            game_id,
+            mods_root,
+            &[Registered::safe(
+                &format!("mod-{}", i),
+                &format!("YaeMiko{}", i),
+                &folder,
+            )],
         )
-        .await
-        .unwrap();
+        .await;
     }
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
@@ -510,22 +445,17 @@ async fn test_ec_9_05_cancel_mid_hash_stops_cleanly() {
         fs::write(folder.join("mod.ini"), format!(";mod {}\n", i).repeat(100)).unwrap();
         fs::write(folder.join("large.dds"), vec![i as u8; 1024 * 100]).unwrap(); // 100KB file
 
-        crate::test_utils::insert_test_mod(
+        register_mods(
             &pool,
-            &crate::test_utils::TestModFixture {
-                id: &format!("mod-{}", i),
-                game_id,
-                object_id: None,
-                actual_name: &format!("BigMod{}", i),
-                folder_path: folder.to_string_lossy().as_ref(),
-                status: crate::domain::models::ItemStatus::Enabled,
-                is_safe: true,
-                object_type: None,
-                mods_path: Some(mods_root.to_str().unwrap()),
-            },
+            game_id,
+            mods_root,
+            &[Registered::safe(
+                &format!("mod-{}", i),
+                &format!("BigMod{}", i),
+                &folder,
+            )],
         )
-        .await
-        .unwrap();
+        .await;
     }
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -583,39 +513,16 @@ filename = VariantB/tex.dds
     fs::write(variant_a.join("texture.dds"), b"identical-content").unwrap();
     fs::write(variant_b.join("texture.dds"), b"identical-content").unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-variant-a",
-            game_id,
-            object_id: None,
-            actual_name: "VariantA",
-            folder_path: variant_a.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-variant-a", "VariantA", &variant_a),
+            Registered::safe("mod-variant-b", "VariantB", &variant_b),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-variant-b",
-            game_id,
-            object_id: None,
-            actual_name: "VariantB",
-            folder_path: variant_b.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -653,39 +560,16 @@ async fn test_di_9_02_blake3_hash_algorithm_is_used() {
     fs::write(folder_a.join("data.bin"), content).unwrap();
     fs::write(folder_b.join("data.bin"), content).unwrap();
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-a",
-            game_id,
-            object_id: None,
-            actual_name: "TestA",
-            folder_path: folder_a.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "TestA", &folder_a),
+            Registered::safe("mod-b", "TestB", &folder_b),
+        ],
     )
-    .await
-    .unwrap();
-
-    crate::test_utils::insert_test_mod(
-        &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-b",
-            game_id,
-            object_id: None,
-            actual_name: "TestB",
-            folder_path: folder_b.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
-    )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -749,22 +633,13 @@ async fn test_deduper_ignores_symlinks() {
         return;
     }
 
-    crate::test_utils::insert_test_mod(
+    register_mods(
         &pool,
-        &crate::test_utils::TestModFixture {
-            id: "mod-base",
-            game_id,
-            object_id: None,
-            actual_name: "BaseMod",
-            folder_path: first_mod.to_string_lossy().as_ref(),
-            status: crate::domain::models::ItemStatus::Enabled,
-            is_safe: true,
-            object_type: None,
-            mods_path: Some(mods_root.to_str().unwrap()),
-        },
+        game_id,
+        &mods_root,
+        &[Registered::safe("mod-base", "BaseMod", &first_mod)],
     )
-    .await
-    .unwrap();
+    .await;
 
     let outcome = scan_duplicates(&mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
         .await
@@ -776,4 +651,90 @@ async fn test_deduper_ignores_symlinks() {
         outcome.groups.is_empty(),
         "Symlinked content must not be indexed as duplicates"
     );
+}
+
+// Safe Mode is a privacy gate, and a duplicate group is a place a mod can be
+// surfaced without going through the object list. The group inherits the flag
+// from any member, so one unsafe half is enough to mark the pair.
+#[tokio::test]
+async fn a_duplicate_group_is_unsafe_when_any_member_is() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Shenhe_A");
+    let second = mods_root.join("Shenhe_B");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+        fs::write(folder.join("texture.dds"), b"identical-bytes").unwrap();
+    }
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Shenhe_A", &first),
+            Registered::marked_unsafe("mod-b", "Shenhe_B", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    let group = outcome
+        .groups
+        .first()
+        .expect("identical folders must form a group");
+    assert!(
+        group.is_unsafe,
+        "a group holding an unsafe mod must be flagged unsafe"
+    );
+    assert!(
+        group.members.iter().any(|member| !member.is_safe),
+        "the unsafe member's own flag must survive into the group"
+    );
+}
+
+// The complement: nothing gets flagged unsafe just by being a duplicate.
+#[tokio::test]
+async fn a_duplicate_group_of_safe_mods_stays_safe() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Yelan_A");
+    let second = mods_root.join("Yelan_B");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+        fs::write(folder.join("texture.dds"), b"identical-bytes").unwrap();
+    }
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Yelan_A", &first),
+            Registered::safe("mod-b", "Yelan_B", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    let group = outcome
+        .groups
+        .first()
+        .expect("identical folders must form a group");
+    assert!(!group.is_unsafe);
+    assert!(group.members.iter().all(|member| member.is_safe));
 }

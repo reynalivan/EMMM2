@@ -27,7 +27,7 @@ the fastest way to learn what the layers are allowed to do.
 cd src-tauri
 cargo clippy --all-targets    # must be 0 warnings
 cargo fmt
-cargo test --all-targets      # 598 passing as of this writing
+cargo test --all-targets      # 609 passing as of this writing
 cargo test --lib specta       # regenerates src/lib/bindings.gen.ts
 ```
 
