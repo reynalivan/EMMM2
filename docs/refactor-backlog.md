@@ -66,8 +66,9 @@ the second walk is still there, on purpose. See its section.
 **Tier 2:** nothing outstanding. 2.1 implemented, 2.2 declined, 2.3 parked by
 decision.
 
-**Tier 3:** 3.2 implemented. 3.1 partly, and its target is not reachable by
-deduplication — see its section for the measurement.
+**Tier 3:** both implemented as far as they are worth taking. 3.2 done. 3.1
+done for every file where length signalled a real problem — see its section
+for the measurement that decides which those are.
 
 | Item | Commit |
 |---|---|
@@ -80,6 +81,7 @@ deduplication — see its section for the measurement.
 | Conflict detection read stored paths as absolute | `481510b` |
 | Scan commit wrote absolute paths; migration + linker | `a6259dd` |
 | `ModFolderPath`, four more readers, eleventh gate | `61e6d9a` |
+| 3.1 dedup split: snapshot / hashing / scoring / grouping | `0b8b2ff` |
 
 Two things worth knowing before reading the sections below, which are kept
 for the reasoning rather than as work items:
@@ -347,22 +349,42 @@ state surviving the commit). Both are covered now. That is the argument for
 sharing test fixtures: an inert field is invisible when it is written out
 eighteen times and obvious when it is written once.
 
-Remaining production files over the rule, none urgent:
+### The production files, measured
+
+I first wrote that the eight production files over 350 lines were mostly doc
+comments and left them. That was asserted, not measured, and it was half
+wrong. Counting lines that are neither comment nor blank:
 
 ```
-470  services/scanner/dedup/signals.rs
-451  services/scanner/dedup/scanner.rs
-401  domain/errors.rs
-387  .../deep_matcher/analysis/content/tokenizer.rs
-372  services/scanner/deep_matcher/models/acceptance.rs
-371  services/scanner/master_db.rs
-358  commands/scanner/deepmatch_scanner_cmds.rs
-352  services/scanner/core/walker.rs
+file                        total   code
+signals.rs                    471    389   <- over on code
+scanner.rs                    464    365   <- over on code
+errors.rs                     402    294
+tokenizer.rs                  388    298
+acceptance.rs                 373    335
+master_db.rs                  372    304
+deepmatch_scanner_cmds.rs     359    289
+walker.rs                     353    252
 ```
 
-Much of the growth in the first four is doc comments added during Tier 1
-explaining why the windowed prefilter and the prepared filters are shaped the
-way they are. Do not trade those for a file split.
+Six are under 350 lines of code and cross the line on documentation and
+spacing. Splitting those would trade explanation for a number, which is the
+opposite of what the rule is for.
+
+The two that genuinely exceeded were both ones Tier 1 grew, and both were
+holding more than one job. Split in `0b8b2ff`:
+
+| Was | Now |
+|---|---|
+| `signals.rs` 471 | `snapshot.rs` 144 + `hashing.rs` 77 + `signals.rs` 274 |
+| `scanner.rs` 464 | `grouping.rs` 130 + `scanner.rs` 348 |
+
+`signals.rs` is now pure scoring — the folder walk and the BLAKE3 hashing that
+used to sit on either side of the model are their own modules. `grouping.rs`
+owns the union-find and the `ScoredPair` alias that is really its input.
+
+Verified by comparing the set of functions, structs and consts before and
+after: 60 items either side, none lost, none invented.
 
 ### 3.2 Dedup tunables outside the module that claims to hold them — DONE (`c79a094`)
 
