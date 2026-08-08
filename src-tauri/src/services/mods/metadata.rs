@@ -196,28 +196,45 @@ pub async fn get_active_mod_conflicts(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, AppError> {
+    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
     let rows = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id).await?;
 
-    Ok(conflicts_for_enabled_paths(&rows))
+    Ok(conflicts_for_enabled_paths(Path::new(&mods_path), &rows))
 }
 
 /// Conflict detection over an enabled-mod path list the caller already has.
 ///
 /// Post-apply needs both the conflicts and the same path list for its harvest;
 /// without this it issued the identical query twice.
+///
+/// `enabled_paths` are `mods.folder_path` values, which disk reconcile writes
+/// relative to the mods root. This used to test them with `Path::exists`
+/// directly: a relative path resolves against the process working directory,
+/// so every such row failed the check and was skipped, and the whole feature
+/// reported "no conflicts" without ever reading a file. `join` handles both
+/// conventions -- an absolute argument replaces the base -- which matters
+/// while the scanner commit still writes absolute paths.
 pub fn conflicts_for_enabled_paths(
+    mods_root: &Path,
     enabled_paths: &[String],
 ) -> Vec<crate::services::scanner::conflict::ConflictInfo> {
     let mut ini_files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
     for path_str in enabled_paths {
-        let path = Path::new(path_str);
-        if path.exists() {
-            let content = crate::services::scanner::core::walker::scan_folder_content(path, 3);
-            for ini in content.ini_files {
-                ini_files.push((path.to_path_buf(), ini));
-            }
+        let path = mods_root.join(path_str);
+        if !path.exists() {
+            continue;
+        }
+        let content = crate::services::scanner::core::walker::scan_folder_content(&path, 3);
+        for ini in content.ini_files {
+            ini_files.push((path.clone(), ini));
         }
     }
 
     crate::services::scanner::conflict::detect_conflicts(&ini_files)
 }
+
+#[cfg(test)]
+#[path = "tests/metadata_conflict_tests.rs"]
+mod metadata_conflict_tests;

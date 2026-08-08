@@ -50,7 +50,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
     let enabled_mods = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id).await?;
 
     // 2. Refresh conflict cache
-    let conflicts = metadata::conflicts_for_enabled_paths(&enabled_mods);
+    let conflicts = metadata::conflicts_for_enabled_paths(mods_path, &enabled_mods);
 
     // 3. KeyViewer Pipeline (Req-43)
     let emmm_data_dir = mods_path.join(".emmm_data");
