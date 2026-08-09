@@ -51,7 +51,7 @@ As a system, I want to detect if a toggle would rename into an already-existing 
 
 - Toggle does not create a new folder — it only renames the existing one.
 - Toggle is not reversible via an undo stack; Trash handles the Overwrite path.
-- `DISABLED ` prefix is the physical mechanism. The DB tracks the explicit intent via `disabled_reason = 'USER'`.
+- `DISABLED ` prefix is the physical mechanism AND the only fact. The DB `status` column is a projection written solely by Disk Reconcile.
 - No batch toggle via this command; bulk toggling is Epic 14.
 
 ---
@@ -79,7 +79,7 @@ execute_workspace_switch(input):
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Command           | `workspace_cmds.rs::execute_workspace_switch` as the public frontend switch entrypoint                                                                             |
 | Path Logic        | `path_utils::is_path_safe` ensures operations stay within the mod directory.                                                                                       |
-| DB Sync           | `update_mod_path_and_status` handles cross-platform path separators (win vs nix).                                                                                  |
+| DB Sync           | None in the toggle itself: the scoped `InternalMutation` Disk Reconcile after the rename is the single writer of `status`/`folder_path`.                                                                                  |
 | Recursive Update  | `update_child_paths` ensures nested mods remain linked after a parent rename.                                                                                      |
 | Optimistic Update | Shared workspace switch actions apply descriptor-driven cache effects before backend confirmation.                                                                 |
 | Runtime Refresh   | Toggle does not use ad-hoc DB/cache side effects; all confirmed disk mutation freshness flows through Disk Reconcile or the shared runtime projection coordinator. |
@@ -88,7 +88,7 @@ execute_workspace_switch(input):
 
 - **Path validation**: `folder_path` is `canonicalize()`d and checked `starts_with(mods_path)` before lock acquisition — no path traversal.
 - **Collision check is inside `OperationLock` scope** — checked and acted upon atomically; no TOCTOU window between check and rename.
-- **`WatcherSuppression` covers both `folder_path` and `new_path`** — prevents the watcher from triggering a grid re-fetch for either the old or new name during the rename.
+- **Path-scoped watcher suppression covers both spellings via one identity-keyed entry** (`suppress_paths`), with a 2 s tail after the guard drops so the async event pair is swallowed while unrelated external events keep flowing.
 
 ---
 

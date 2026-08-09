@@ -83,7 +83,7 @@ execute_workspace_switch(input):
   1. Acquire OperationLock(game_id) + Suppress Watcher for affected paths.
   2. Compute target path / duplicate strategy / parent-enable resolution.
   3. Validate current corridor parity, path traversal, missing source path, and target collision before disk mutation.
-  4. Delegate enabled/disabled filesystem rename and DB projection (`status`, `folder_path`, `folder_path_key`, `disabled_reason`) to `runtime_mutation_engine`.
+  4. Delegate enabled/disabled filesystem renames to `runtime_mutation_engine` (rename-only); the DB projection (`status`, `folder_path`, `folder_path_key`) converges via the caller's scoped Disk Reconcile.
   5. Finish through targeted Disk Reconcile or the shared runtime projection effect path.
   6. Return structured switch result + WorkspaceImpact.
 
@@ -108,7 +108,7 @@ delete_mod(path):
 | `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                                             |
 | `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                                                       |
 | `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects.                           |
-| `Runtime Mutation Engine` | Single backend boundary for `DISABLED ` prefix changes used by manual toggle, collection apply, and Safe/Unsafe corridor switch.             |
+| `Runtime Mutation Engine` | Plans, validates, and executes batched `DISABLED ` prefix renames on disk (with FS rollback); it writes no DB rows — Disk Reconcile does.             |
 | `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code uses runtime-sync descriptors instead of raw query refresh calls. |
 | Disk Reconcile            | Internal filesystem mutations suppress watcher noise, then complete through one intentional runtime refresh path.                            |
 
@@ -116,7 +116,7 @@ delete_mod(path):
 
 - **Path Isolation**: `is_path_safe` prevents traversal outside the game's designated mod directory.
 - **Context Parity**: Trash restore is blocked if the target game context has changed since deletion.
-- **Atomic Renames**: DB updates for children are part of the same service transaction as the folder rename.
+- **Derived Children**: a child mod's `status` derives from its OWN folder name via Disk Reconcile — there is no parent→children status cascade; the UI derives `EffectivelyDisabled` from the ancestor chain.
 - **Cross-Drive Handling**: `rename_cross_drive_fallback` ensures reliability across different physical disks/partitions.
 
 ---

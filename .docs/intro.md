@@ -15,7 +15,7 @@ Managing 3DMigoto mods manually involves extracting archives, dealing with deepl
 EMMM was built with the following core principles to solve these pain points:
 
 1. **Zero Data Loss & Safety First:** Atomic operations, soft-deletion (Trash system), collision detection, and Safe Mode for privacy.
-2. **The Filesystem is the Source of Truth:** `DISABLED ` folder prefixes are the sole determinant of mod status. EMMM reads what's on disk, ensuring it never desyncs from reality.
+2. **The Filesystem is the Source of Truth:** disabled folder prefixes (canonical `DISABLED `, legacy spellings accepted) are the sole determinant of mod status; Disk Reconcile is the single writer that projects them into the DB, so EMMM never desyncs from reality.
 3. **Instant Responsiveness:** Render 10,000+ items without lag. Optimistic UI updates provide immediate feedback before disk I/O completes.
 4. **Explicit Matching, Not Silent Guessing:** Runtime truth comes from Disk Reconcile. Deep Match Scanner is a separate user-driven flow that can categorize unstructured mod folders when the user explicitly asks for it.
 
@@ -29,7 +29,7 @@ EMMM is built on a robust hybrid architecture that separates physical reality fr
 
 ### 1. The Hybrid State Model
 
-- **Physical Truth (Disk):** Mod status is entirely driven by the `DISABLED ` prefix on folders. Fast, recursive filesystem scanning guarantees true representation.
+- **Physical Truth (Disk):** Mod status is entirely driven by the disabled prefix on folders (stripped repeatedly, case-insensitive). Fast, recursive filesystem scanning plus watcher-driven Disk Reconcile guarantees true representation.
 - **Logical Truth (DB):** SQLite acts as a _High-Speed Index_. It stores metadata, object hierarchies, and custom tags for instant filtering and searching.
 - **Disk Reconcile:** Watcher, window refocus, Mods-entry, and onboarding finalization use a dedicated Disk Reconcile pipeline to realign the DB projection with the current filesystem.
 - **Runtime Default:** Newly discovered folders stay in the runtime `Other` bucket until the user explicitly starts Deep Match Scanner.
@@ -47,7 +47,7 @@ To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`)
 
 ### 3. Bulletproof Operations
 
-- **Transactional Toggles:** Changing the status of a 50-mod Collection (Preset) is atomic. If the filesystem blocks one rename, the entire operation is rolled back.
+- **Safe Batch Toggles:** Changing the status of a 50-mod Collection (Preset) validates up front; if the filesystem blocks one rename, completed renames are rolled back and the DB converges from disk via a scoped reconcile.
 - **Background Watchdog:** The app monitors the filesystem for external changes (renames, deletions outside the app) and gracefully updates the UI by triggering Disk Reconcile with built-in loop prevention.
 - **Smart Extraction:** Extracts messy `.rar`/`.zip` files natively via Rust, applying smart-flattening to prevent `Nested/Nested/Mod` folder structures.
 

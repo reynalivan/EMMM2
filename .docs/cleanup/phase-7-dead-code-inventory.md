@@ -1,5 +1,7 @@
 # Phase 7 Dead-Code Inventory
 
+> **[2026-08-09] Dokumen historis.** Inventori dead-code fase 7 (pra disk-truth). Sebagian simbol yang disebut sudah dihapus atau berubah peran pada refactor 2026-08-09.
+
 Date: 2026-05-14
 
 Scope: evidence-first cleanup candidates after scanner/import and registry/modularity work. Deletion requires caller search, command registry audit, permission registry audit, and targeted tests to agree.

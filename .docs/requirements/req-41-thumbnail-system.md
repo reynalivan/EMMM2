@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Rendering a grid of hundreds of mod cards backed by raw 4K `.png` previews causes CPU spikes, RAM exhaustion, and jank — each image must be decoded, scaled, and served on every render without any caching.
-- **Proposed Solution**: A dual-layer thumbnail cache: L1 (in-memory `RwLock<HashMap<path_hash, String>>`) for instant repeated access, L2 (disk: `{app_data_dir}/thumbnails/{blake3_hash}.webp`) for cross-session persistence. Source images are detected via a priority strategy (`preview.png` > `preview.jpg` > first image in folder), downscaled to 256×256 WebP via the `image` crate, and served via Tauri's built-in `asset://` protocol (absolute path converted via `convertFileSrc`). Concurrent generation is throttled by a `Semaphore`.
+- **Proposed Solution**: A dual-layer thumbnail cache: L1 (in-memory LRU keyed by the folder's IDENTITY key — disabled prefix stripped, case-folded — so a toggle keeps its entry) for instant repeated access, L2 (disk: `{app_data_dir}/thumbnails/{blake3_hash}.webp`) for cross-session persistence. Source images are detected via a priority strategy (`preview.png` > `preview.jpg` > first image in folder), downscaled to 256×256 WebP via the `image` crate, and served via Tauri's built-in `asset://` protocol (absolute path converted via `convertFileSrc`). Concurrent generation is throttled by a `Semaphore`.
 - **Success Criteria**:
   - First thumbnail generation (L2 miss): ≤ 200ms per image (256×256 WebP encode on modern CPU).
   - L1 cache hit (repeated scroll): ≤ 1ms response (pure HashMap lookup).
@@ -51,7 +51,7 @@ As a user, I want old thumbnails cleaned up automatically, so that my `app_data`
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-41.3.1 | ✅ Positive | Given the Settings > Maintenance "Clear Thumbnail Cache" button, when clicked, then `clear_old_cache(max_age_days=30)` deletes thumbnails not accessed in the last 30 days; count of freed files is returned              |
 | AC-41.3.2 | ✅ Positive | Given `prune_orphans` runs (triggered by post-scan commit), then any `thumbnails/{hash}.webp` whose `folder_path` no longer exists in the `folders` DB table is deleted from disk                                         |
-| AC-41.3.3 | ⚠️ Edge     | Given the same `blake3(folder_path)` hash maps to two different physical paths (hash collision — statistically impossible with BLAKE3 but must handle), then the cache key is disambiguated by appending the path segment |
+| AC-41.3.3 | ⚠️ Edge     | Given the same `blake3(identity_key(folder_path))` hash maps to two different physical paths (hash collision — statistically impossible with BLAKE3 but must handle), then the cache key is disambiguated by appending the path segment |
 
 ---
 
@@ -75,7 +75,7 @@ ThumbnailCache state (Tauri managed):
   semaphore: Arc<Semaphore>  // permits = 4
 
 get_or_generate_thumbnail(folder_path: PathBuf) → Option<String>:
-  hash_key = blake3::hash(folder_path.as_bytes()).to_hex()
+  hash_key = blake3::hash(identity_key(source_image_path).as_bytes()).to_hex()  // identity: DISABLED prefix stripped + case-folded, stable across toggles
   1. Read L1: if let Some(entry) = l1.read()[hash_key]:
        if source_mtime == fs::metadata(source_image).modified(): return Some(entry.webp_path)
        else: invalidate entry
@@ -99,7 +99,7 @@ Frontend Hybrid Logic:
 | Component                 | Detail                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------- |
 | image` crate              | Resize + WebP encode: `image::open(path).resize(256,256,Lanczos3).to_webp()`                 |
-| BLAKE3                    | `blake3::hash(folder_path.as_bytes())` — filename-safe hex key                               |
+| BLAKE3                    | `blake3::hash(identity_key(path))` — filename-safe hex key, toggle-stable                               |
 | Hybrid Asset Protocol     | Backend returns absolute paths; Frontend calls `convertFileSrc(path)` → `asset://` URLs      |
 | FolderCard + PreviewPanel | `<img src={useThumbnail(path)} />` — uses native browser cache for `asset://` URLs           |
 | GC Trigger                | `prune_orphans` called after `commit_scan` (Epic 27); `clear_old_cache` exposed via Settings |
@@ -114,5 +114,5 @@ Frontend Hybrid Logic:
 
 ## 4. Dependencies
 
-- **Blocked by**: Epic 01 (App Bootstrap — `app_data_dir`), Epic 11 (Folder Listing — `folder_path` as cache key).
+- **Blocked by**: Epic 01 (App Bootstrap — `app_data_dir`), Epic 11 (Folder Listing — identity key of `folder_path` as cache key).
 - **Blocks**: Epic 12 (Folder Grid — FolderCard thumbnail display), Epic 19 (Image Gallery — preview panel image serving).

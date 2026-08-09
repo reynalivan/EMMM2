@@ -10,7 +10,7 @@
 - **Success Criteria**:
   - **Backend-Authoritative Corridor**: The backend `safe_mode.enabled` setting is the active corridor source of truth. React syncs from command results instead of assuming the requested target is active.
   - **Boot Guard**: The app remembers the last active Safe Mode state. If booting into Unsafe Mode and a PIN is set, the app locks the UI immediately before showing any grid data.
-  - **Atomic Corridor Handoff**: Switching corridors physically disables all active mods from the leaving corridor (`disabled_reason = 'SYSTEM'`) and restores the destination corridor from its own `active_collection_id`, corridor-scoped Unsaved collection, or SYSTEM fallback through the shared runtime mutation engine.
+  - **Atomic Corridor Handoff**: Switching corridors physically disables all active mods from the leaving corridor (rename with `DISABLED ` prefix; DB converges via Disk Reconcile) and restores the destination corridor from its own `active_collection_id`, corridor-scoped Unsaved collection, or SYSTEM fallback through the shared runtime mutation engine.
   - **Crash Resiliency**: Corridor switches are logged in the `tasks` DB table. App crashes during a switch will trigger a `RECOVERY_REQUIRED` dialog on the next boot.
   - **Object Independence**: Top-level Objects are NEVER physically disabled by the Safe Mode switch; only the Mod folders (Depth 1-5) inside them are manipulated.
   - **Auto-Tagging**: New imports containing restricted keywords are automatically tagged `is_safe = false` during the scan engine phase.
@@ -28,9 +28,9 @@ As a user, I want a quick toggle to switch between my Safe and Unsafe mods, rest
 | ID        | Type        | Criteria                                                                                                                                                                                                                    |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-30.1.1 | ✅ Positive | Given the Safe Mode shield icon is clicked, the system acquires an `OperationLock` and writes a `PENDING` status to the `tasks` table before touching the filesystem.                                                       |
-| AC-30.1.2 | ✅ Positive | Given the switch initiates, the backend disables the leaving corridor by prepending `DISABLED ` to all currently ENABLED mods where `is_safe != target_safe_mode`, setting their DB `disabled_reason = 'SYSTEM'`.           |
+| AC-30.1.2 | ✅ Positive | Given the switch initiates, the backend disables the leaving corridor by prepending `DISABLED ` to all currently ENABLED mods where `is_safe != target_safe_mode`, with the DB projection converging via the pipeline's scoped Disk Reconcile.           |
 | AC-30.1.3 | ✅ Positive | Given the leaving corridor is disabled, the system restores the target corridor by resolving its own target state in priority order: valid `active_collection_id` -> corridor-scoped Unsaved collection -> SYSTEM fallback. |
-| AC-30.1.4 | ⚠️ Edge     | Given the target corridor has no valid active or unsaved collection, the system falls back to manually enabling mods where `disabled_reason == 'SYSTEM'` and `is_safe == target_safe_mode`.                                 |
+| AC-30.1.4 | ⚠️ Edge     | Given the target corridor has no valid active or unsaved collection, the system falls back to manually enabling the corridor's mods (state derived from folder prefixes) where `is_safe == target_safe_mode`.                                 |
 | AC-30.1.5 | ✅ Positive | Given the handoff completes, the backend persists `safe_mode.enabled`, updates the `tasks` table to `COMPLETED`, and returns `active_safe`, `restored_collection_id`, and `warnings` so React syncs from backend state.     |
 | AC-30.1.6 | ✅ Positive | Given both corridors are currently unsaved, the switch preview dialog and Topbar surfaces use the same canonical labels: `Unsaved SAFE Preset` for Safe and `Unsaved UNSAFE Preset` for Unsafe.                             |
 
@@ -97,7 +97,8 @@ pub async fn switch_corridor(game_id: String, target_safe_mode: bool) -> Result<
     // 2. Execute the shared corridor switch pipeline.
     // The pipeline records task state, disables the leaving corridor, restores the
     // target corridor from active/unsaved collection or SYSTEM fallback, and calls
-    // runtime_mutation_engine::toggle_mods_mixed under WatcherSuppression.
+    // runtime_mutation_engine::toggle_mods_mixed (rename-only) under WatcherSuppression,
+    // followed by the pipeline's inline scoped Disk Reconcile.
     let result = switch_pipeline::execute(&mut ctx, watcher_state).await?;
 
     // 3. Return backend-authoritative corridor state for React to sync from.

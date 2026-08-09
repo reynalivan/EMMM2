@@ -1,5 +1,7 @@
 # Architecture Refactor Roadmap — EMMM
 
+> **[2026-08-09] Dokumen historis.** Log fase refactor 2026-07-26, sudah selesai dan kemudian DILAMPAUI oleh refactor disk-truth 2026-08-09 (`docs/enable-disable-flow.md`): `runtime_mutation_engine` kini rename-only (commit_db dihapus), status/`folder_path` ditulis hanya oleh Disk Reconcile, `disabled_reason` di-drop. Angka baris dan klaim arsitektur di bawah adalah snapshot lama.
+
 > Hasil audit arsitektur 3 arah (FE, BE Rust, safety-net) — 2026-07-23.
 > Satu fase = satu sesi kerja = rangkaian commit hijau penuh.
 > Status: **SELURUH FASE 0–9 SELESAI (2026-07-26).**

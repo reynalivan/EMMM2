@@ -1,5 +1,7 @@
 # Repo Cleanup Inventory
 
+> **[2026-08-09] Dokumen historis.** Inventori 2026-05-13. Beberapa temuan sudah tidak berlaku setelah refactor disk-truth 2026-08-09: prefix disabled kini di-strip berulang; status child mod derive dari nama foldernya sendiri (bukan cascade); test cache thumbnail lintas-toggle kini perilaku yang DIINGINKAN (identity key).
+
 Date: 2026-05-13
 
 ## Baseline Status

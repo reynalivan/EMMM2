@@ -38,7 +38,7 @@ This application uses a _hybrid_ architecture that combines _native_ execution s
 
 - **Database:** **`sqlx`** (Async SQLite with compile-time query verification).
 - **Async Runtime:** **`tokio`** (For non-blocking I/O operations).
-- **File Watcher:** **`notify`** v7 (Real-time file monitoring with `RecommendedWatcher`).
+- **File Watcher:** **`notify`** v7 via **`notify-debouncer-full`** (500 ms debounce, rename From/To stitching via Windows file IDs; error/overflow degrades to a force-full reconcile).
 - **Archive:** Pure Rust implementation using **`zip`** v2, **`sevenz-rust`** v0.6, and **`rar`** v0.4. Supports magic byte detection and password-protected archives. No C-dependencies.
 - **Image Proc:** **`image`** (Resize & Convert to WebP thumbnails).
 - **Hashing:** **`blake3`** (Super-fast content hashing for deduplication).
@@ -55,19 +55,19 @@ EMMM is governed by **42 detailed Requirement Specifications** (`req-*.md`). All
 ### 2.1 The Filesystem is the Source of Truth
 
 - The database is merely a high-speed **Index Cache**.
-- A mod is `DISABLED` if and only if its physical folder name starts with the `DISABLED ` prefix (with a trailing space).
+- A mod is `DISABLED` if and only if its physical folder name starts with a disabled prefix (case-insensitive `^disabled[\s_-]+`, stripped repeatedly; the app always writes the canonical `DISABLED ` form). The DB `status` column is a projection of this fact, written only by Disk Reconcile.
 - If the database desyncs from the filesystem, the filesystem wins.
 
 ### 2.2 Atomic Operations & Concurrency Safety
 
 - Destructive file operations (Toggle, Rename, Import, Delete, Safe Mode Switch) must be guarded.
-- Operations on multiple items (Bulk Toggle, Collections Apply) must be transactional: all succeed or all rollback.
+- Operations on multiple items (Bulk Toggle, Collections Apply) validate up front and roll back filesystem renames on a mid-batch failure; the DB then converges via a scoped Disk Reconcile (single writer), not a paired DB transaction.
 - Global `OperationLock` using `tokio::sync::Mutex<()>` prevents race conditions during heavy I/O.
 
 ### 2.3 The Hybrid State Model & Watchdog
 
 - `notify` crate monitors `/Mods` for external user changes (Explorer).
-- In-app operations suppress the File Watcher to avoid infinite feedback loops.
+- In-app operations suppress the File Watcher to avoid feedback loops: broad operations (scan, archive extraction, import) hold a blanket guard, while toggle/rename/move/trash register path-scoped, identity-keyed suppressions with a 2 s tail so unrelated external events keep flowing.
 - Watcher, refocus, and Mods-entry refreshes must go through **Disk Reconcile** (`reconcile_disk_state_cmd`) to keep the DB projection aligned with the filesystem.
 - Explicit scanning/import flows must go through **Deep Match Scanner** (`deepmatch_preview_cmd`, `deepmatch_scanner_cmd`).
 - All operations update the UI optimistically before the Rust backend completes the I/O.
@@ -101,7 +101,7 @@ Virtual containers representing a Character, Weapon, UI, or Other entity derived
 
 ### 3.3 `mods` (The Mod Entries)
 
-Stable identifiers using the **SHA1 hash** of the relative path. Stores the `actual_name`, `folder_path`, `thumbnail_path`, `is_safe` flag, and aggregated JSON `metadata`.
+Stable identifiers hashed from the relative path's **identity key** (disabled prefix stripped repeatedly, ASCII case-folded per segment — stable across enable/disable toggles). Stores the `actual_name`, `folder_path`, `thumbnail_path`, `is_safe` flag, and aggregated JSON `metadata`.
 
 ### 3.4 `collections` (Virtual Presets)
 

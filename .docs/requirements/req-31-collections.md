@@ -42,7 +42,7 @@ As a user, I want to activate a preset and have the app automatically disable al
 | AC-31.2.1 | ✅ Positive | Given a collection is clicked, the system runs a Pre-Apply Validation. If all physical mod paths exist, the system proceeds to the Exclusive Swap automatically.                                                                                                                                |
 | AC-31.2.2 | ❌ Negative | Given some mods in the collection are physically missing from the disk and `ignore_missing = false`, the backend returns a `MissingModsError` array before any rename. The React UI intercepts this and displays a "Missing Mods" dialog listing the lost paths.                                |
 | AC-31.2.3 | ✅ Positive | Given the Missing Mods dialog, if the user clicks "Skip & Apply", the frontend re-triggers the apply command with `ignore_missing = true`, skipping the lost mods, returning skip warnings, and proceeding with the swap.                                                                       |
-| AC-31.2.4 | ✅ Positive | Given the swap executes, it acquires an `OperationLock`, suppresses the Watcher, and delegates all enabled/disabled filesystem rename plus DB projection updates to the shared runtime mutation engine, setting `disabled_reason = 'COLLECTION'` for disabled mods and `NULL` for enabled mods. |
+| AC-31.2.4 | ✅ Positive | Given the swap executes, it acquires an `OperationLock`, suppresses the Watcher, and delegates the enabled/disabled filesystem renames to the shared runtime mutation engine (rename-only), then converges the DB via an inline scoped Disk Reconcile held under the per-game orchestrator lock. |
 | AC-31.2.5 | ⚠️ Edge     | Given the collection contains multiple active mods for the same Object (e.g., two skins for Albedo), the automated apply ignores/bypasses standard duplicate hash warnings and applies them simultaneously.                                                                                     |
 
 ---
@@ -148,8 +148,8 @@ apply_collection(game_id, collection_id, ignore_missing):
      - Resolve targets by `mod_id` or canonical `folder_path_key`.
      - Preflight missing paths, path traversal, target collisions, and no-op plans before renaming.
      - Apply/strip "DISABLED " for target mod folders.
-     - Cascade DB projection updates (`status`, `folder_path`, `folder_path_key`, `disabled_reason`) in the same mutation boundary.
-     - Roll back successful filesystem renames best-effort if DB projection update fails.
+     - Converge the DB projection (`status`, `folder_path`, `folder_path_key`) via the inline scoped Disk Reconcile before later pipeline steps read it.
+     - Roll back successful filesystem renames best-effort if a mid-batch rename fails; a failed reconcile surfaces as an error and the next reconcile heals from disk.
   6. DB State Update: Set target collection `last_active = true`, others false.
   7. Update `tasks` table -> status = 'COMPLETED'.
   8. Return `ApplyCollectionResult { collection_id, changed_count, warnings }`.
@@ -199,7 +199,8 @@ build_collection_preview_tree(objects, mods, mods_path):
 | Watcher / external rename-move-add-delete-enable-disable                | Disk Reconcile                      | Yes                            | Yes                           |
 | Window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile                      | Yes when runtime state changed | Yes                           |
 | `write_mod_ini` / `update_mod_info`                                     | Disk Reconcile (`InternalMutation`) | Yes                            | Yes                           |
-| Explicit toggle / rename / move / delete mod from UI                    | Explicit runtime mutation service   | Yes                            | No                            |
+| Explicit toggle / bulk toggle / move from UI                            | Rename + QUIET scoped reconcile     | Yes                            | No (result drives refresh)    |
+| Explicit rename / delete mod from UI                                    | Rename + scoped reconcile           | Yes                            | Yes                           |
 | Explicit restore from trash                                             | Watcher + Disk Reconcile            | Yes if runtime state changed   | Yes                           |
 | Thumbnail-only mutation                                                 | Disk Reconcile (`InternalMutation`) | No                             | Yes                           |
 

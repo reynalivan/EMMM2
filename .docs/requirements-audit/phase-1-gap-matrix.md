@@ -1,5 +1,7 @@
 # Phase 1 Requirement Gap Matrix
 
+> **[2026-08-09] Dokumen historis.** Matriks gap snapshot pra-refactor disk-truth 2026-08-09. Baris tentang Mod Toggle (20), File Watcher (28), dan Thumbnail (41) tidak lagi menggambarkan arsitektur kini — lihat req yang bersangkutan (sudah di-update) dan `docs/enable-disable-flow.md`.
+
 > Status: audit-only checkpoint for cleanup planning. This file maps active requirement docs to current implementation surfaces and records cleanup gaps for later phases.
 
 ## Audit Summary

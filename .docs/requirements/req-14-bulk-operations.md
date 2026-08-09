@@ -83,7 +83,8 @@ Frontend:
 Backend:
   bulk_switch_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
     └── acquire OperationLock → activate WatcherSuppression(paths)
-        → for path in paths: switch_item_internal(path, enable) → emit_event('bulk-progress', {i, total})
+        → for path in paths: toggle_mod_inner(path, enable) → emit_event('bulk-progress', {i, total})
+        → scoped Disk Reconcile over the changed paths (QUIET: no disk_reconcile:result event — the caller publishes its refresh from the command result)
         → return BulkResult { success, failed: Vec<{path, error}> }
 
   move_mods_to_object(game_id, paths, target_object_id, target_subpath, status) → BulkResult
@@ -101,13 +102,13 @@ Backend:
 | `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock.                                                             |
 | Progress Events      | Tauri `Window::emit("bulk-progress", {current, total, label, active})`.                                                                   |
 | Runtime Refresh      | Bulk mutation results map to centralized runtime descriptors / `WorkspaceImpact`; feature code does not call raw query invalidation APIs. |
-| `WatcherSuppression` | All paths in the batch added to suppression set before any op, removed after last completes                                               |
+| `WatcherSuppression` | One path-scoped, identity-keyed registration for the whole batch before any op; a 2 s tail after the guard drops absorbs late OS events                                               |
 
 ### Security & Privacy
 
 - **All paths in `paths[]` are validated individually** via `canonicalize()` + `starts_with(mods_path)` before batch starts — one invalid path does not start the batch.
 - **`OperationLock` prevents concurrent bulk + single ops** on the same game path — no TOCTOU race between a bulk toggle and a single rename.
-- **`WatcherSuppression` covers all batch paths atomically** — added as a set before the first op, not incrementally.
+- **Path-scoped suppression covers all batch paths atomically** — registered as one identity-keyed set before the first op; unrelated external events keep flowing during the batch.
 
 ---
 

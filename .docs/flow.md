@@ -31,7 +31,7 @@
 │                                                            │
 │  objects: { id, game_id, name, folder_path, status, object_type, is_pinned, ... }
 │  mods: id, game_id, object_id, folder_path,                │
-│        status, is_safe, disabled_reason (NULL/USER/SYSTEM/COLLECTION) │
+│        status (projection of DISABLED prefix), is_safe                │
 │                                                            │
 │  collections: id, game_id, name, is_safe_context,          │
 │               is_unsaved, last_active                      │
@@ -86,7 +86,8 @@ Runtime ownership matrix:
 | ----------------------------------------------------------------------- | ----------------------------------- | ------------------------ | ------------------------ | ----------------------------- |
 | watcher batch / external filesystem                                     | Disk Reconcile                      | Yes                      | Yes                      | Yes                           |
 | window refocus / first Mods entry / game switch hydrate / manual repair | Disk Reconcile                      | Yes when runtime changed | Yes when runtime changed | Yes                           |
-| explicit toggle / rename / move / delete mod                            | explicit runtime service            | Yes                      | Yes                      | No                            |
+| explicit toggle / bulk toggle / move mod                                | rename + QUIET scoped reconcile     | Yes                      | Yes                      | No (result drives refresh)    |
+| explicit rename / delete / restore / import / archive extract           | rename + scoped reconcile           | Yes                      | Yes                      | Yes                           |
 | internal `info.json` / `.ini` mutation                                  | Disk Reconcile (`InternalMutation`) | Yes                      | Yes                      | Yes                           |
 | thumbnail-only mutation                                                 | Disk Reconcile (`InternalMutation`) | No                       | No                       | Yes                           |
 | object focus / folder navigation                                        | Workspace state only                | No                       | No                       | No                            |
@@ -182,12 +183,12 @@ User toggles Safe Mode (Shield icon)
          - Find ENABLED `mods` where `is_safe != target_safe_mode`.
          - Batch fs::rename (prepend "DISABLED " to mod folders up to Depth 5).
            (NOTE: NEVER rename top-level Object folders).
-         - Update DB: `status = 'DISABLED'`, `disabled_reason = 'SYSTEM'`.
+         - Rename on disk (add `DISABLED ` prefix); DB `status` converges via scoped Disk Reconcile.
 
       4. Restore Target Corridor (Memory):
          - Find collection where `is_safe_context == target_safe_mode` AND `last_active == true`.
          - IF FOUND: Execute `apply_collection(collection_id)`.
-         - IF NONE: Fallback to manual enable WHERE `disabled_reason == 'SYSTEM'`.
+         - IF NONE: Fallback to manually enabling the corridor's mods (state derived from folder prefixes).
 
       5. Complete Task: Update `tasks` to 'COMPLETED'.
       6. Return `restored_collection_id` to Frontend.
@@ -244,8 +245,8 @@ Plaintext
 
   → 2. Exclusive Swap (OperationLock + Task PENDING):
        - Diff calc: target mods vs currently active mods in the same corridor.
-       - Enable targets (fs::rename), set `disabled_reason = NULL`.
-       - Disable non-targets (fs::rename), set `disabled_reason = 'COLLECTION'`.
+       - Enable targets (fs::rename to strip the `DISABLED ` prefix).
+       - Disable non-targets (fs::rename to add the prefix); an inline scoped Disk Reconcile under the per-game orchestrator lock then writes the projection before later pipeline steps read it.
        - (Multiple mods per object are 100% allowed; warnings bypassed).
 
   → 3. Finalize:

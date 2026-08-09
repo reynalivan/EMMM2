@@ -67,7 +67,7 @@ rename_mod_folder_inner(old_path, new_name):
   5. Update `info.json` with new `actual_name`.
   6. DB MAINTENANCE:
      - Update parent mod record with `new_rel`.
-     - Recursively update child mod paths (`update_child_paths`).
+     - Recursively update child mod paths (`update_child_paths`) — identity migration only; child `status` stays reconcile-owned.
      - If top-level, update parent Object's `folder_path`.
   7. Release lock and guard.
 ```
@@ -77,7 +77,7 @@ rename_mod_folder_inner(old_path, new_name):
 | Component            | Detail                                                                                           |
 | -------------------- | ------------------------------------------------------------------------------------------------ |
 | Metadata Sync        | `info_json.rs::update_info_json` patches `actual_name` field while preserving other metadata.    |
-| Recursive DB Update  | `mod_repo::update_child_paths` handles bulk string replacement for nested mod paths.             |
+| Recursive DB Update  | `mod_repo::update_child_paths` migrates nested mod path identities; `status` is never written here (Disk Reconcile is its single writer).             |
 | Object Linking       | `object_repo::update_object_folder_path` ensures the game object stays pinned to the new folder. |
 | Path Traversal Guard | `path_utils::is_path_safe` prevents renaming outside the designated mods directory.              |
 | Optimistic Rename    | Frontend updates the card label and path instantly before backend confirmation.                  |
