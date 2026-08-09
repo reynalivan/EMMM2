@@ -37,17 +37,30 @@ pub async fn scan_preview(
         });
     }
 
+    log::info!(
+        "scan_preview: start | game_id={game_id} folders={total} mods_path={}",
+        mods_path.display()
+    );
+
     let mut items = Vec::with_capacity(total);
     let ini_filters = IniTokenizationConfig::default().prepare();
+    let started = std::time::Instant::now();
 
     for (idx, candidate) in candidates.iter().enumerate() {
         if let Some(channel) = &on_progress {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
             let _ = channel.send(ScanEvent::Progress {
                 current: idx + 1,
                 total,
                 folder_name: candidate.display_name.clone(),
-                elapsed_ms: 0,
-                eta_ms: 0,
+                elapsed_ms,
+                // Extrapolate from folders already finished (`idx`), not from the one
+                // just starting, so the first tick reports 0 instead of a wild guess.
+                eta_ms: if idx == 0 {
+                    0
+                } else {
+                    elapsed_ms * (total - idx) as u64 / idx as u64
+                },
             });
         }
 
@@ -82,6 +95,13 @@ pub async fn scan_preview(
         let already_in_db = existing.is_some();
         let already_matched =
             check_already_matched(pool, &existing, matched_entry_key.as_deref()).await?;
+
+        log::debug!(
+            "scan_preview: item | folder={} status={match_level} confidence={confidence} score={} best={} already_in_db={already_in_db}",
+            candidate.display_name,
+            match_result.confidence_score(),
+            matched_alias_name.as_deref().unwrap_or("-")
+        );
 
         let db_entry = matched_alias_name
             .as_ref()
@@ -144,11 +164,18 @@ pub async fn scan_preview(
         });
     }
 
+    let matched = items
+        .iter()
+        .filter(|i| i.matched_entry_key.is_some())
+        .count();
+
+    log::info!(
+        "scan_preview: done | game_id={game_id} folders={total} matched={matched} unmatched={} elapsed_ms={}",
+        total - matched,
+        started.elapsed().as_millis()
+    );
+
     if let Some(channel) = &on_progress {
-        let matched = items
-            .iter()
-            .filter(|i| i.matched_entry_key.is_some())
-            .count();
         let _ = channel.send(ScanEvent::Finished {
             matched,
             unmatched: total - matched,
