@@ -13,6 +13,12 @@ pub struct ApplyCollectionRequest<'a> {
     pub suppressor: std::sync::Arc<crate::services::scanner::watcher::WatcherSuppressor>,
     pub ignore_missing: bool,
     pub settings: crate::services::config::AppSettings,
+    /// Per-game reconcile mutex from `DiskReconcileState::game_lock`, held
+    /// around the pipeline's inline reconcile so it cannot interleave with a
+    /// queued reconcile for the same game. `None` in tests and the recovery
+    /// path (no app handle there; recovery holds the op lock and blanket
+    /// suppression, and the inline reconcile stays idempotent regardless).
+    pub reconcile_lock: Option<std::sync::Arc<tokio::sync::Mutex<()>>>,
 }
 
 pub async fn apply_collection(

@@ -10,6 +10,11 @@ export function normalizeWorkspacePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
+/** ASCII-only case fold, mirroring the backend's path-key comparison rule. */
+function foldCase(value: string): string {
+  return value.replace(/[A-Z]/g, (char) => char.toLowerCase());
+}
+
 export function rewriteWorkspacePathValue(
   value: string | null | undefined,
   rewrites: WorkspacePathRewriteInput[],
@@ -23,17 +28,21 @@ export function rewriteWorkspacePathValue(
   // silently switched to forward slashes would break every Set lookup.
   const usedBackslash = value.includes('\\');
 
+  // Matching is ASCII-case-insensitive (Windows paths; mirrors the backend
+  // identity rule) while every emitted piece keeps its original casing.
   let nextValue = normalizeWorkspacePath(value);
   for (const rewrite of rewrites) {
     const oldPath = normalizeWorkspacePath(rewrite.oldPath);
     const newPath = normalizeWorkspacePath(rewrite.newPath);
+    const foldedValue = foldCase(nextValue);
+    const foldedOld = foldCase(oldPath);
 
-    if (nextValue === oldPath) {
+    if (foldedValue === foldedOld) {
       nextValue = newPath;
       continue;
     }
 
-    if (nextValue.startsWith(`${oldPath}/`)) {
+    if (foldedValue.startsWith(`${foldedOld}/`)) {
       nextValue = `${newPath}${nextValue.slice(oldPath.length)}`;
       continue;
     }
@@ -44,8 +53,8 @@ export function rewriteWorkspacePathValue(
     // mods under other objects ("Nahida/SkinA" when "Raiden/SkinA" moved).
     const segments = nextValue.split('/');
     for (let depth = segments.length; depth >= 1; depth--) {
-      const relPrefix = segments.slice(0, depth).join('/');
-      if (!oldPath.endsWith(`/${relPrefix}`)) {
+      const relPrefix = foldCase(segments.slice(0, depth).join('/'));
+      if (!foldedOld.endsWith(`/${relPrefix}`)) {
         continue;
       }
       const newRel = newPath.split('/').slice(-depth).join('/');

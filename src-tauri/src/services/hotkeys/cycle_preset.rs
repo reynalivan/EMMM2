@@ -95,6 +95,11 @@ pub(super) async fn execute_cycle_preset(
             suppressor: watcher_state.suppressor.clone(),
             ignore_missing: true,
             settings: settings.clone(),
+            reconcile_lock: require::<
+                crate::services::disk_reconcile::orchestrator::DiskReconcileState,
+            >(app, "DiskReconcileState")
+            .ok()
+            .map(|reconcile| reconcile.game_lock(game_id)),
         },
     )
     .await?;

@@ -40,9 +40,14 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     // Single-writer: the renames above changed disk only. Converge the mods
     // rows now — the later pipeline steps (corridor, post-apply harvest) read
     // `status` and must see the new state. Watcher events for these paths are
-    // blanket-suppressed for the whole apply, so this cannot race a
-    // WatcherBatch reconcile for the same roots.
+    // blanket-suppressed for the whole apply, and the orchestrator's per-game
+    // lock below keeps this inline pass from interleaving with a queued
+    // reconcile (WindowRefocused etc.) for the same game.
     if !result.changed_paths.is_empty() {
+        let _reconcile_lock = match ctx.reconcile_lock.as_ref() {
+            Some(lock) => Some(lock.clone().lock_owned().await),
+            None => None,
+        };
         crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
             crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
                 pool: &ctx.pool,

@@ -88,10 +88,12 @@ pub async fn create_collection(
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)] // Tauri command boundary: states plus the IPC payload.
 pub async fn apply_collection(
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::services::config::ConfigService>,
     watcher_state: State<'_, crate::services::scanner::watcher::WatcherState>,
+    disk_reconcile: State<'_, crate::services::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     collection_id: String,
@@ -120,6 +122,7 @@ pub async fn apply_collection(
         suppressor: watcher_state.suppressor.clone(),
         ignore_missing: ignore_missing.unwrap_or(false),
         settings,
+        reconcile_lock: Some(disk_reconcile.game_lock(&game_id)),
     })
     .await?;
 

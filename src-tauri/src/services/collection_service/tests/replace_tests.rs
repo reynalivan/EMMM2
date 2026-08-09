@@ -41,6 +41,7 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: true,
         settings: AppSettings::default(),
+        reconcile_lock: None,
     })
     .await;
 
@@ -113,6 +114,7 @@ async fn replace_collection_with_current_state_drops_missing_partial_apply_membe
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: true,
         settings: AppSettings::default(),
+        reconcile_lock: None,
     })
     .await
     .expect("partial apply succeeds");

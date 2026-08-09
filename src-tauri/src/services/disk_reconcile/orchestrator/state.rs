@@ -47,6 +47,13 @@ impl DiskReconcileState {
             .clone()
     }
 
+    /// The per-game reconcile mutex, for a flow that must run
+    /// `reconcile_disk_projection` inline (no orchestrator queue available)
+    /// without interleaving with a queued reconcile for the same game.
+    pub fn game_lock(&self, game_id: &str) -> Arc<Mutex<()>> {
+        self.lock_for_game(game_id)
+    }
+
     pub(super) fn enqueue_request(
         &self,
         game_id: &str,

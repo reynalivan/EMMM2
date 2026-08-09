@@ -26,6 +26,8 @@ pub struct ApplyContext {
     pub suppressor: std::sync::Arc<WatcherSuppressor>,
     pub ignore_missing: bool,
     pub settings: AppSettings,
+    /// See `ApplyCollectionRequest::reconcile_lock`.
+    pub reconcile_lock: Option<std::sync::Arc<tokio::sync::Mutex<()>>>,
 
     // Resolved during pipeline execution
     pub collection: Option<Collection>,
@@ -79,6 +81,7 @@ impl ApplyContext {
             suppressor: request.suppressor,
             ignore_missing: request.ignore_missing,
             settings: request.settings,
+            reconcile_lock: request.reconcile_lock,
             collection: None,
             target_mods: Vec::new(),
             target_objects: Vec::new(),

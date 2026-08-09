@@ -61,6 +61,7 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: false,
         settings: AppSettings::default(),
+        reconcile_lock: None,
     })
     .await;
 
@@ -151,6 +152,7 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: true,
         settings: AppSettings::default(),
+        reconcile_lock: None,
     })
     .await
     .expect("partial apply succeeds");
@@ -258,6 +260,7 @@ async fn apply_collection_rejects_cross_corridor_request() {
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: false,
         settings: AppSettings::default(),
+        reconcile_lock: None,
     })
     .await;
 

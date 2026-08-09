@@ -92,6 +92,7 @@ async fn retry_task(
                     suppressor: watcher_state.suppressor.clone(),
                     ignore_missing: true,
                     settings,
+                    reconcile_lock: None,
                 },
             )
             .await?;
@@ -143,6 +144,7 @@ async fn rollback_task(
                     suppressor: watcher_state.suppressor.clone(),
                     ignore_missing: true,
                     settings,
+                    reconcile_lock: None,
                 },
             )
             .await?;
