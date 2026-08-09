@@ -9,9 +9,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
 import { extractFileInUsePayload, formatAppError } from '../../../lib/appError';
 import { toast } from '../../../stores/useToastStore';
-import { pathsEqual } from '../../../lib/pathKey';
 import type {
-  WorkspaceExplorerNode,
   WorkspaceImpact,
   WorkspaceNode,
   WorkspaceObjectNode,
@@ -97,17 +95,6 @@ export function buildSwitchRefreshDescriptor(
   return buildRefreshDescriptor(impact.refresh_scopes);
 }
 
-/**
- * Explorer switches replay path rewrites; the refreshed counts come from the
- * follow-up refetch. Thumbnails are identity-keyed and survive the toggle.
- */
-export function buildExplorerSwitchEffectDescriptor(
-  _node: WorkspaceExplorerNode,
-  impact: WorkspaceImpact,
-) {
-  return buildWorkspacePathRewritesDescriptor(impact.rewrites, []);
-}
-
 /** Runs the switch command, routing known failures to their dialogs. */
 export async function executeWorkspaceSwitch(
   input: WorkspaceSwitchInput,
@@ -133,41 +120,26 @@ export async function executeWorkspaceSwitch(
 }
 
 /**
- * Shared post-switch cache work: replay path rewrites, then publish the
- * refresh scopes. Thumbnails are identity-keyed and survive the toggle.
+ * The post-switch cache work every switch shape shares: replay the backend's
+ * path rewrites, then publish the refresh scopes.
+ *
+ * The rewrite list is the backend's own account of what moved — empty for a
+ * no-op — so it replays unconditionally. Thumbnails are identity-keyed and
+ * survive a toggle, so nothing is dropped here.
  */
 export async function applyWorkspaceSwitchEffects(
   queryClient: QueryClient,
   result: WorkspaceSwitchResult,
-  previousPath: string,
   fallbackClass: WorkspaceSwitchFallbackClass,
-): Promise<void> {
-  if (!pathsEqual(result.primary_path, previousPath)) {
-    applyRuntimeEffects(
-      queryClient,
-      buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-    );
-  }
-
-  await publishRuntimeDescriptor(
-    queryClient,
-    buildSwitchRefreshDescriptor(result.impact, fallbackClass),
-    'active',
-  );
-}
-
-/** "Enable only this" touches a set of siblings, so rewrites always replay. */
-export async function applyEnableOnlyThisEffects(
-  queryClient: QueryClient,
-  result: WorkspaceSwitchResult,
 ): Promise<void> {
   applyRuntimeEffects(
     queryClient,
     buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
   );
+
   await publishRuntimeDescriptor(
     queryClient,
-    buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
+    buildSwitchRefreshDescriptor(result.impact, fallbackClass),
     'active',
   );
 }

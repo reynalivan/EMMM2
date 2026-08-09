@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceExplorerNode, WorkspaceImpact } from '../../../types/workspace';
+import type { WorkspaceImpact } from '../../../types/workspace';
 import {
-  buildExplorerSwitchEffectDescriptor,
   buildNodePendingKey,
   buildSwitchRefreshDescriptor,
   executeWorkspaceSwitch,
@@ -36,16 +35,6 @@ vi.mock('../../../stores/useToastStore', () => ({
 vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishRuntimeDescriptor: vi.fn(),
 }));
-
-function createExplorerNode(overrides: Partial<WorkspaceExplorerNode> = {}): WorkspaceExplorerNode {
-  return {
-    node_kind: 'terminal_mod',
-    path: 'E:/Mods/ALBEDO/Variant',
-    is_enabled: false,
-    owner_object_id: 'object-1',
-    ...overrides,
-  } as unknown as WorkspaceExplorerNode;
-}
 
 describe('workspace switch ops', () => {
   beforeEach(() => {
@@ -126,19 +115,6 @@ describe('workspace switch ops', () => {
     });
   });
 
-  describe('buildExplorerSwitchEffectDescriptor', () => {
-    const impact = { rewrites: [], refresh_scopes: [] } as unknown as WorkspaceImpact;
-
-    it('keeps the thumbnail cache across a toggle (identity-keyed)', () => {
-      const descriptor = buildExplorerSwitchEffectDescriptor(createExplorerNode(), impact);
-
-      // A toggle rename keeps the folder's identity, so the cached thumbnail
-      // must survive — no query removal, no thumbnail drop.
-      expect(descriptor.removedQueryKeys).toHaveLength(0);
-      expect(descriptor.thumbnailPaths).toHaveLength(0);
-      expect(descriptor.refreshEvents).toEqual([]);
-    });
-  });
 
   describe('executeWorkspaceSwitch', () => {
     const input = {

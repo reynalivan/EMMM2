@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../../hooks/useActiveGame';
@@ -9,15 +8,10 @@ import type {
   WorkspaceNode,
   WorkspaceObjectNode,
 } from '../../../types/workspace';
-import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
 import {
-  applyEnableOnlyThisEffects,
   applyWorkspaceSwitchEffects,
-  buildExplorerSwitchEffectDescriptor,
   buildNodePendingKey,
-  buildSwitchRefreshDescriptor,
   executeWorkspaceSwitch,
   isWorkspaceObjectNode,
   togglePendingKey,
@@ -81,12 +75,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      applyRuntimeEffects(queryClient, buildExplorerSwitchEffectDescriptor(node, result.impact));
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildSwitchRefreshDescriptor(result.impact, 'folderSwitch'),
-        'active',
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
 
       return nextPath;
     },
@@ -101,7 +90,6 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      const targetPath = await join(activeGame.mod_path, node.folder_path);
       const result = await executeWorkspaceSwitch({
         game_id: activeGame.id,
         target: {
@@ -118,7 +106,7 @@ export function useWorkspaceSwitchActions() {
       }
 
       const nextPath = result.primary_path;
-      await applyWorkspaceSwitchEffects(queryClient, result, targetPath, 'objectSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch');
       // A no-op switch changed nothing on disk — don't announce a change.
       if (result.status !== 'noop') {
         toast.success(
@@ -134,11 +122,7 @@ export function useWorkspaceSwitchActions() {
   );
 
   const setNodeEnabled = useCallback(
-    async (
-      node: WorkspaceNode,
-      desiredEnabled: boolean,
-      surface: WorkspaceSwitchSurface,
-    ) => {
+    async (node: WorkspaceNode, desiredEnabled: boolean, surface: WorkspaceSwitchSurface) => {
       const pendingKey = buildNodePendingKey(node);
       markPending(pendingKey, true);
 
@@ -188,7 +172,7 @@ export function useWorkspaceSwitchActions() {
           return null;
         }
 
-        await applyWorkspaceSwitchEffects(queryClient, result, path, 'folderSwitch');
+        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
 
         return nextPath;
       } finally {
@@ -218,7 +202,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, folder.path, 'folderSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
@@ -245,7 +229,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyEnableOnlyThisEffects(queryClient, result);
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },

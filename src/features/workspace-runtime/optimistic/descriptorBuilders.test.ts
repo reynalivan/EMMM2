@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildRuntimeMutationDescriptor } from './descriptorBuilders';
+import {
+  buildRuntimeMutationDescriptor,
+  buildWorkspacePathRewritesDescriptor,
+} from './descriptorBuilders';
 
 describe('buildRuntimeMutationDescriptor', () => {
   it('includes dashboard and active keybindings scopes for folder switch mutations', () => {
@@ -25,5 +28,20 @@ describe('buildRuntimeMutationDescriptor', () => {
       'dashboardChanged',
       'activeKeybindingsChanged',
     ]);
+  });
+});
+
+describe('buildWorkspacePathRewritesDescriptor', () => {
+  it('never drops thumbnails: a toggle keeps the identity the cache is keyed by', () => {
+    const descriptor = buildWorkspacePathRewritesDescriptor(
+      [{ old_path: 'E:/Mods/Alice', new_path: 'E:/Mods/DISABLED Alice' }],
+      [],
+    );
+
+    expect(descriptor.rewrites).toEqual([
+      { oldPath: 'E:/Mods/Alice', newPath: 'E:/Mods/DISABLED Alice' },
+    ]);
+    expect(descriptor.thumbnailPaths).toEqual([]);
+    expect(descriptor.removedQueryKeys).toEqual([]);
   });
 });

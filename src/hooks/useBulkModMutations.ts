@@ -15,7 +15,6 @@ import {
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '../features/workspace-runtime/optimistic/descriptor';
 import type { ModInfoUpdate } from '../types/object';
 import { formatAppError } from '../lib/appError';
 import { openFileInUseRetryDialog } from './fileInUseRetry';
@@ -39,16 +38,10 @@ export function useBulkToggle() {
         result.path_rewrites,
         variables.enable,
       );
-      applyRuntimeEffects(
-        queryClient,
-        mergeRuntimeEffectDescriptors(
-          buildQueryRemovalDescriptor(
-            result.success.map((newPath) => thumbnailKeys.folder(newPath)),
-            [],
-          ),
-          buildWorkspacePathRewritesDescriptor(pathRewrites, []),
-        ),
-      );
+      // No thumbnail drop: a toggle keeps the folder's identity, and the
+      // cache is identity-keyed — dropping here would evict the entry the
+      // new path is about to reuse and force a regeneration per mod.
+      applyRuntimeEffects(queryClient, buildWorkspacePathRewritesDescriptor(pathRewrites, []));
       await publishRuntimeDescriptor(
         queryClient,
         buildRuntimeMutationDescriptor('folderSwitch'),

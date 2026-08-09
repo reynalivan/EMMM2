@@ -4,16 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { commands, type RandomModProposal } from '../../lib/bindings';
 import { RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { thumbnailKeys } from '../../hooks/useThumbnail';
 import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../workspace-runtime/optimistic/applyOptimisticEffects';
 import {
-  buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
   buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../workspace-runtime/optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '../workspace-runtime/optimistic/descriptor';
 import type { WorkspaceImpact } from '../../types/workspace';
 
 interface RandomizerModalProps {
@@ -21,7 +18,6 @@ interface RandomizerModalProps {
   onClose: () => void;
   gameId: string;
 }
-
 
 export default function RandomizerModal({ open, onClose, gameId }: RandomizerModalProps) {
   const { t } = useTranslation('collections');
@@ -125,15 +121,11 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
           origin_surface: 'collections',
         });
         if (result.status === 'applied') {
+          // No thumbnail drop: the randomizer only toggles, and toggles keep
+          // the folder identity the thumbnail cache is keyed by.
           applyRuntimeEffects(
             queryClient,
-            mergeRuntimeEffectDescriptors(
-              buildQueryRemovalDescriptor(
-                result.changed_folder_paths.map((path) => thumbnailKeys.folder(path)),
-                [],
-              ),
-              buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-            ),
+            buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
           );
           await publishRuntimeDescriptor(
             queryClient,

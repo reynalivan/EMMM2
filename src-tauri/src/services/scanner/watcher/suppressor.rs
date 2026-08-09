@@ -82,6 +82,12 @@ impl WatcherSuppressor {
         let mut ids = Vec::new();
         {
             let mut scoped = lock(&self.scoped);
+            // Expired entries are normally dropped by `is_path_suppressed`,
+            // but that only runs while the watcher delivers events — prune
+            // here too so a stopped or blanket-suppressed watcher cannot let
+            // a bulk operation's entries accumulate.
+            let now = Instant::now();
+            scoped.retain(|entry| entry.expires_at.is_none_or(|deadline| deadline > now));
             for path in paths {
                 let key = crate::common::path_key::canonical_path_key_for_path(path.as_ref());
                 if scoped
