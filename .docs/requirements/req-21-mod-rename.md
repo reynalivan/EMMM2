@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Renaming a mod folder is tricky because the physical folder name encodes state (`DISABLED ` prefix) — a naive rename could strip or double the prefix, and a collision on the target path could silently overwrite another mod folder.
-- **Proposed Solution**: A `rename_mod_folder` backend command that: strips and re-applies the `DISABLED ` prefix correctly based on `is_enabled`, validates the new name, checks for path collisions inside the `OperationLock`, updates `info.json` atomically, and returns structured errors with optimistic UI rollback.
+- **Proposed Solution**: A `rename_mod_folder` backend command that: strips and re-applies the `DISABLED ` prefix correctly based on `is_enabled`, validates the new name, checks for path collisions inside the `OperationLock`, updates `info.json` atomically, and returns structured errors; the UI is invalidation-only (path-rewrite replay + refetch, nothing to roll back).
 - **Success Criteria**:
   - Rename (disk + `info.json` sync) completes in ≤ 500ms for a flat mod folder on SSD.
   - `DISABLED ` prefix is preserved/stripped correctly in 100% of test cases (enabled, disabled, double-prefix).

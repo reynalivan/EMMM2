@@ -16,7 +16,7 @@ EMMM was built with the following core principles to solve these pain points:
 
 1. **Zero Data Loss & Safety First:** Atomic operations, soft-deletion (Trash system), collision detection, and Safe Mode for privacy.
 2. **The Filesystem is the Source of Truth:** disabled folder prefixes (canonical `DISABLED `, legacy spellings accepted) are the sole determinant of mod status; Disk Reconcile is the single writer that projects them into the DB, so EMMM never desyncs from reality.
-3. **Instant Responsiveness:** Render 10,000+ items without lag. Optimistic UI updates provide immediate feedback before disk I/O completes.
+3. **Instant Responsiveness:** Render 10,000+ items without lag. Instant pending feedback plus fast, scoped refetches keep the UI responsive while disk I/O completes (invalidation-only: the UI never guesses state).
 4. **Explicit Matching, Not Silent Guessing:** Runtime truth comes from Disk Reconcile. Deep Match Scanner is a separate user-driven flow that can categorize unstructured mod folders when the user explicitly asks for it.
 
 ---

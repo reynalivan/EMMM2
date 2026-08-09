@@ -6,7 +6,7 @@
 - **Proposed Solution**: A full CRUD interface for Object records in the local SQLite DB, with: filesystem-first creation (validate path, acquire operation lock, suppress watcher, create disk folder, then write DB projection), category edit (with schema validation), deletion (blocked via server-side FK constraints), and persistent properties (pin, favorite, auto-sync) — all surfaced via `ObjectList` context menus and modals.
 - **Success Criteria**:
   - Object creation (DB insert + list refresh) completes in ≤ 300ms from submit.
-  - Object rename/category edit reflects in the list in ≤ 200ms via optimistic UI updates.
+  - Object rename/category edit reflects in the list in ≤ 200ms via the post-mutation refetch.
   - Delete is blocked by the backend when mods exist — ensuring 100% data integrity.
   - Pin visibility updates the sort order immediately (items pinned to top of their sections).
   - Reveal in Explorer accurately highlights the object's root folder on disk.
@@ -63,7 +63,7 @@ As a user, I want to pin frequently used objects and quickly open their folders 
 
 | ID        | Type        | Criteria                                                                                                                                                                                               |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin", then `is_pinned = true` is written to DB and the object sorts to the top of its section immediately via optimistic UI, with backend reconciliation after |
+| AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin", then `is_pinned = true` is written to DB and the object sorts to the top of its section on the immediate refetch |
 | AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical order within its category                                                                                            |
 | AC-10.4.3 | ✅ Positive | Given the "Reveal in Explorer" action, the OS file explorer opens with the object's root folder selected (folder_path resolution)                                                                      |
 | AC-10.4.4 | ❌ Negative | Given a folder that was manually deleted from disk, "Reveal" caught by the backend returns `NotFound` and triggers a cache invalidation to clean the UI                                                |

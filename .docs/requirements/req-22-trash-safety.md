@@ -80,7 +80,7 @@ restore_mod(game_id, trash_uuid) → Result<(), CommandError>:
 | Component     | Detail                                                                                           |
 | ------------- | ------------------------------------------------------------------------------------------------ |
 | App Trash     | `{app_data_dir}/trash/{uuid}/` — full folder capture with metadata sidecar                       |
-| Optimistic UI | `queryClient.setQueryData(['folders', gameId, subPath], prev => prev.filter(...))` on `onMutate` |
+| UI refresh    | Invalidation-only: the delete result publishes a runtime descriptor; the folder list refetches (no `setQueryData` patching) |
 | DB Purge      | `DELETE FROM folders WHERE folder_path = ?` — in same `sqlx` transaction as trash move           |
 | Trash Manager | `TrashManagerModal.tsx` → `list_trash`, `restore_mod`, `empty_trash` commands                    |
 

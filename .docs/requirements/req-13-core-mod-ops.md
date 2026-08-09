@@ -5,7 +5,7 @@
 
 ## 1. Executive Summary
 
-- **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (optimistic UI), be safe (suppress file watcher, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.
+- **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (pending state in one frame, fast refetch), be safe (path-scoped watcher suppression, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.
 - **Proposed Solution**: A shared runtime action engine that routes toggle through the public workspace switch command (`execute_workspace_switch`) and delegates physical enabled/disabled folder mutation to the same runtime mutation engine used by Collections and Safe Mode switch. Rename/delete remain dedicated backend commands, with `OperationLock` + ref-counted `WatcherSuppression`, structured errors, targeted Disk Reconcile/projection refresh completion, and optimistic runtime descriptors that roll back on failure.
 - **Success Criteria**:
   - [x] Toggle UI optimistic update applies in ≤ 16ms (one frame); backend confirms within ≤ 300ms on SSD.
@@ -26,9 +26,9 @@ As a user, I want to enable or disable a mod with a single click, so that I can 
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                  |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-13.1.1 | ✅ Positive | Given a disabled mod, when I click its toggle, then the optimistic UI update flips the card's enabled state in ≤ 16ms; the backend completes the `DISABLED ` prefix rename on disk within ≤ 300ms                                         |
+| AC-13.1.1 | ✅ Positive | Given a disabled mod, when I click its toggle, then the card shows its pending state in ≤ 16ms; the backend completes the `DISABLED ` prefix rename + scoped reconcile within ≤ 300ms and the refetch flips the card                                         |
 | AC-13.1.2 | ✅ Positive | Given a slow HDD, when I toggle a mod, the UI toggle animates immediately (optimistic) while filesystem IO runs in the background — the user sees no lag on the toggle switch                                                             |
-| AC-13.1.3 | ❌ Negative | Given the folder is locked by an external process (e.g., the game engine is reading it), when toggled, then the `rename` syscall fails; the UI rolls back the optimistic toggle and shows a "Folder locked — cannot toggle" toast         |
+| AC-13.1.3 | ❌ Negative | Given the folder is locked by an external process (e.g., the game engine is reading it), when toggled, then the `rename` syscall fails with `FileInUse`; the pending state clears (nothing to roll back — invalidation-only) and the file-in-use dialog/toast names the locking process         |
 | AC-13.1.4 | ⚠️ Edge     | Given rapid toggle spam (> 3 clicks before the previous `rename` completes), then the backend serializes via `OperationLock` — only the last intended state takes effect; no intermediate partial renames produce a corrupted folder name |
 | AC-13.1.5 | ✅ Positive | Given a disabled mod, when I select "Enable Only This" from context menu, then this mod is enabled AND all other currently enabled mods in the same Object are disabled within the same `OperationLock` atomic transaction                |
 | AC-13.1.6 | ⚠️ Edge     | Given I enable a mod, and another mod with the same `master_object_id` (e.g., Character) is already enabled, then a Duplicate Warning dialog appears: "A mod for [Character Name] is already active! Force Enable or Cancel?"             |

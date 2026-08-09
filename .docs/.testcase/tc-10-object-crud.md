@@ -9,7 +9,7 @@
 - US-10.3: Delete Object
 - US-10.4: Pin Object
 - **Success Criteria**:
-- Object manipulation interactions map to database queries completing (≤300ms creation, ≤200ms optimistic UI edit).
+- Object manipulation interactions map to database queries completing (≤300ms creation, ≤200ms edit reflected via refetch).
 - Absolutely impossible to delete objects inherently retaining`folder` FK mappings securing relationships.
 - Pin boolean mutates category sorting hierarchy exclusively (≤100ms ui output).
 - Rate-limit execution triggers (button debouncing / UNIQUE clauses) block parallel spam writes.
