@@ -1,4 +1,5 @@
 import { expect } from '@wdio/globals';
+import path from 'path';
 import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
@@ -63,8 +64,11 @@ describe('Fase 2 — Navigation & Read Surface', () => {
 
   it('TC-11-01: Folder listing classifies mod folders under an object', async () => {
     const raiden = await findObject(gameId, 'Raiden');
+    expect(raiden).toBeDefined();
+    // `folder_path` is a stored key, deliberately not usable as a filesystem
+    // path — the command wants a real absolute path under the mods dir.
     const entries = await invokeInApp<FolderEntry[]>('list_folder_entries_cmd', {
-      folderPath: raiden!.folder_path,
+      folderPath: path.join(game.modsPath, 'Raiden'),
       gameId,
     });
     const dirNames = entries.filter((e) => e.is_dir).map((e) => e.name);

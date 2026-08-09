@@ -72,9 +72,11 @@ describe('Fase 1 — Gates (Settings & Game Management)', () => {
     const second = await createMockGame('Phase1b');
     try {
       const created = await invokeInApp<GameConfig>('add_game_manual', {
-        gameType: 'Genshin',
+        gameType: 'GIMI',
         path: second.root,
       });
+      // add_game_manual only validates and returns a candidate; this is what stores it.
+      await invokeInApp('save_onboarding_games', { games: [created] });
       const grown = await invokeInApp<GameConfig[]>('get_games');
       expect(grown.length).toBeGreaterThan(initial.length);
 

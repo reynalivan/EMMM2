@@ -150,7 +150,7 @@ describe('Fase 3 — Core Mod Operations (data-safety)', () => {
     await addMockMod(game, 'MoveSrc', 'Traveler');
     await reconcile(gameId);
 
-    await invokeInApp('pin_object', { id: dstId, isPinned: true });
+    await invokeInApp('pin_object', { id: dstId, pin: true });
 
     await invokeInApp('move_mods_to_object', {
       input: {

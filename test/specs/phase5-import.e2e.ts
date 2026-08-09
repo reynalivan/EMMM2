@@ -9,11 +9,6 @@ interface BulkResult {
   success: string[];
   failures: { path: string; error: unknown }[];
 }
-interface IngestResult {
-  moved: string[];
-  failed: string[];
-  skipped: string[];
-}
 interface ArchiveInfo {
   path: string;
   name: string;
@@ -22,11 +17,17 @@ interface ArchiveInfo {
 
 const FIXTURE_ZIP = path.resolve('test/fixtures/sample-mod.zip');
 
-/** Creates a loose folder (outside the mods tree) with a stub mod.ini. */
+/**
+ * Creates a loose folder (outside the mods tree) with a mod.ini the classifier
+ * recognizes — a `[Constants]`-only stub reads as a plain container, not a mod.
+ */
 async function makeLooseFolder(root: string, name: string): Promise<string> {
   const dir = path.join(root, 'incoming', name);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, 'mod.ini'), '[Constants]\n');
+  await fs.writeFile(
+    path.join(dir, 'mod.ini'),
+    '[TextureOverrideMockMod]\nhash = 0123456789abcdef\n',
+  );
   return dir;
 }
 
@@ -37,11 +38,10 @@ async function makeLooseFolder(root: string, name: string): Promise<string> {
  */
 describe('Fase 5 — Import & Organization (data-safety)', () => {
   let game: MockGame;
-  let gameId: string;
 
   before(async () => {
     game = await createMockGame('Phase5');
-    gameId = await seedGameAndOpenDashboard(game);
+    await seedGameAndOpenDashboard(game);
   });
 
   after(async () => {
@@ -77,19 +77,21 @@ describe('Fase 5 — Import & Organization (data-safety)', () => {
 
   it('TC-38-01: Auto-organizer ingest relocates dropped folders', async () => {
     const loose = await makeLooseFolder(game.root, 'DroppedMod');
-    const res = await invokeInApp<IngestResult>('ingest_dropped_folders', {
+    // Returns the moved folder names — there is no {moved,failed,skipped} shape.
+    const moved = await invokeInApp<string[]>('ingest_dropped_folders', {
       paths: [loose],
       modsPath: game.modsPath,
-      gameId,
-      gameName: 'E2E',
-      gameType: 'GIMI',
     });
-    expect(res.moved.length + res.skipped.length).toBeGreaterThan(0);
-    expect(res.failed.length).toBe(0);
+    expect(moved).toContain('DroppedMod');
+    // Two-sided: it really left the drop dir and landed under Mods.
+    expect(await listDir(path.dirname(loose))).not.toContain('DroppedMod');
+    expect(await listDir(game.modsPath)).toContain('DroppedMod');
   });
 
   it('TC-37-01: Archive extraction unpacks a zip into the library', async () => {
-    const scanDir = path.join(game.root, 'archives');
+    // Must sit inside the configured mods dir — the command refuses to scan
+    // anywhere else ("Target is outside every configured mods directory").
+    const scanDir = path.join(game.modsPath, 'archives');
     await fs.mkdir(scanDir, { recursive: true });
     const zipCopy = path.join(scanDir, 'sample-mod.zip');
     await fs.copyFile(FIXTURE_ZIP, zipCopy);

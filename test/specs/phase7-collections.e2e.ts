@@ -4,7 +4,7 @@ import path from 'path';
 import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
-import { createObject, reconcile } from '../support/data.js';
+import { createObject, getObjects, reconcile } from '../support/data.js';
 
 interface CollectionSummary {
   id: string;
@@ -56,7 +56,7 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     });
     expect(applied.success).toBe(true);
 
-    await invokeInApp('delete_collection', { collectionId: created.id, gameId });
+    await invokeInApp('delete_collection', { id: created.id });
     const after = await invokeInApp<CollectionSummary[]>('list_collections', { gameId });
     expect(after.some((c) => c.id === created.id)).toBe(false);
   });
@@ -86,7 +86,7 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     });
     expect(typeof applied.success).toBe('boolean');
 
-    await invokeInApp('delete_collection', { collectionId: created.id, gameId });
+    await invokeInApp('delete_collection', { id: created.id });
   });
 
   it('TC-29-01: Conflict ignore then revoke round-trips', async () => {
@@ -116,12 +116,10 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     const modDir = await addMockMod(game, 'SafeObj', 'SafeMod');
     await reconcile(gameId);
 
-    await invokeInApp('toggle_mod_safe', { gameId, path: modDir, safe: true });
+    await invokeInApp('toggle_mod_safe', { gameId, folderPath: modDir, safe: true });
 
-    const safeObjects = await invokeInApp<{ objects: unknown[] }>('get_objects_cmd', {
-      gameId,
-      safeMode: true,
-    });
-    expect(Array.isArray(safeObjects.objects)).toBe(true);
+    // safe_mode is derived backend-side from the active corridor, not passed in.
+    const safeObjects = await getObjects(gameId);
+    expect(Array.isArray(safeObjects)).toBe(true);
   });
 });

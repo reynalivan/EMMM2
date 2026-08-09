@@ -3,4 +3,3 @@ allowBuilds:
   edgedriver: true
   esbuild: true
   geckodriver: true
-  msedgedriver: true

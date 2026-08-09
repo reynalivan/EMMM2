@@ -17,10 +17,24 @@ export interface ObjectSummary {
   enabled_count: number;
 }
 
-export async function getObjects(gameId: string, safeMode = false): Promise<ObjectSummary[]> {
+/**
+ * The command takes a single `ObjectFilter`, not flat args. `safe_mode` is
+ * serde-skipped on the wire — the backend derives it from the active corridor,
+ * so there is nothing for a caller to pass.
+ */
+export async function getObjects(gameId: string): Promise<ObjectSummary[]> {
   const res = await invokeInApp<{ objects: ObjectSummary[]; lost_objects: string[] }>(
     'get_objects_cmd',
-    { gameId, safeMode },
+    {
+      filter: {
+        game_id: gameId,
+        search_query: null,
+        object_type: null,
+        meta_filters: null,
+        sort_by: null,
+        status_filter: null,
+      },
+    },
   );
   return res.objects;
 }

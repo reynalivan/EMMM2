@@ -28,33 +28,20 @@ describe('Onboarding & Welcome Screen (req-03)', () => {
     await browser.url('http://tauri.localhost/');
     await browser.pause(2000);
 
-    // Force navigation to /welcome to naturally test the FTUE UI components without wiping user databases
-    await browser.executeAsync(async (done) => {
-      window.location.hash = '';
-      window.location.pathname = '/welcome';
-      done();
-    });
-
-    await browser.pause(1000);
-
-    // Verify Welcome Screen is visible by checking for its unique elements
+    // The global `before` in wdio.conf.ts resets the (E2E-only) database, so
+    // AppRouter lands on /welcome here rather than skipping to the dashboard.
     const auroraBg = await $('[data-testid="aurora-bg"]');
     await expect(auroraBg).toBeExisting();
 
     const logo = await $('[data-testid="logo"]');
     await expect(logo).toBeExisting();
 
-    // Click "Add Game Manually"
     const manualAddBtn = await $('#btn-manual-setup');
-    await manualAddBtn.waitForClickable({ timeout: 2000 });
+    await manualAddBtn.waitForClickable({ timeout: 5000 });
     await manualAddBtn.click();
 
-    await browser.pause(500);
-
-    // Now we are on the ManualSetupForm screen
     console.log('[E2E] On FTUE Manual Setup, bypassing native file picker...');
 
-    // We do what `onSubmit` normally does
     const result = (await browser.executeAsync(async (gamePath, done) => {
       interface TauriWindow extends Window {
         __TAURI__: {
@@ -65,10 +52,14 @@ describe('Onboarding & Welcome Screen (req-03)', () => {
       }
       const { invoke } = (window as unknown as TauriWindow).__TAURI__.core;
       try {
+        // This is the pair the real FTUE submit runs: `add_game_manual` only
+        // validates the folder and hands back a candidate — nothing is stored
+        // until `save_onboarding_games` writes it to settings.
         const res = await invoke('add_game_manual', {
           gameType: 'GIMI',
           path: gamePath,
         });
+        await invoke('save_onboarding_games', { games: [res] });
         done({ success: true, res });
       } catch (e) {
         done({ success: false, error: String(e) });
@@ -76,7 +67,7 @@ describe('Onboarding & Welcome Screen (req-03)', () => {
     }, mockGamePath)) as { success: boolean; error?: string; res?: unknown };
 
     if (!result.success) {
-      throw new Error(`[E2E] add_game_manual failed: ${result.error}`);
+      throw new Error(`[E2E] onboarding game setup failed: ${result.error}`);
     }
 
     console.log('[E2E] Manual game added successfully. Refreshing page...');

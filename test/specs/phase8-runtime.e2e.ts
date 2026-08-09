@@ -39,9 +39,15 @@ describe('Fase 8 — Runtime Peripheral', () => {
   });
 
   it('TC-36-01: Errors bubble up instead of failing silently', async () => {
+    // A lookup miss is not an error — `get_object` returns Option, so absence
+    // comes back as an explicit null rather than a fabricated empty object.
+    expect(await invokeInApp('get_object', { id: 'nonexistent-object-id' })).toBeNull();
+
+    // A guard violation, though, must reject loudly rather than no-op: this
+    // path sits outside the game's mods root.
     let threw = false;
     try {
-      await invokeInApp('get_object', { id: 'nonexistent-object-id' });
+      await invokeInApp('delete_mod', { path: 'C:\\Windows\\System32', gameId });
     } catch {
       threw = true;
     }

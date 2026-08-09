@@ -15,6 +15,19 @@ interface TauriWindow extends Window {
   };
 }
 
+/**
+ * Backend rejections are `AppError` objects, so `String(error)` would flatten
+ * every distinct failure into "[object Object]" and hide what actually broke.
+ */
+function formatIpcError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export async function invokeInApp<T = unknown>(
   cmd: string,
   args?: Record<string, unknown>,
@@ -24,15 +37,15 @@ export async function invokeInApp<T = unknown>(
       const { invoke } = (window as unknown as TauriWindow).__TAURI__.core;
       invoke(c, a).then(
         (value) => done({ ok: true, value }),
-        (error) => done({ ok: false, error: String(error) }),
+        (error) => done({ ok: false, error: error instanceof Error ? error.message : error }),
       );
     },
     cmd,
     args ?? {},
-  )) as { ok: boolean; value?: T; error?: string };
+  )) as { ok: boolean; value?: T; error?: unknown };
 
   if (!result.ok) {
-    throw new Error(`[IPC] ${cmd} failed: ${result.error}`);
+    throw new Error(`[IPC] ${cmd} failed: ${formatIpcError(result.error)}`);
   }
   return result.value as T;
 }
@@ -64,16 +77,17 @@ export async function invokeWithChannel<T = unknown>(
       ).invoke;
       invoke(c, { ...a, [key]: channel }).then(
         (value) => done({ ok: true, value, events }),
-        (error) => done({ ok: false, error: String(error), events }),
+        (error) =>
+          done({ ok: false, error: error instanceof Error ? error.message : error, events }),
       );
     },
     cmd,
     args,
     channelKey,
-  )) as { ok: boolean; value?: T; error?: string; events: unknown[] };
+  )) as { ok: boolean; value?: T; error?: unknown; events: unknown[] };
 
   if (!result.ok) {
-    throw new Error(`[IPC] ${cmd} (channel) failed: ${result.error}`);
+    throw new Error(`[IPC] ${cmd} (channel) failed: ${formatIpcError(result.error)}`);
   }
   return { value: result.value as T, events: result.events };
 }

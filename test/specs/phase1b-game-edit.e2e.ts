@@ -1,7 +1,21 @@
 import { expect } from '@wdio/globals';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import { createMockGame, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
+
+/** Asserts a command rejects rather than quietly returning an empty result. */
+async function rejects(cmd: string, args: Record<string, unknown>): Promise<void> {
+  let threw = false;
+  try {
+    await invokeInApp(cmd, args);
+  } catch {
+    threw = true;
+  }
+  expect(threw).toBe(true);
+}
 
 interface GameConfig {
   id: string;
@@ -45,9 +59,10 @@ describe('Fase 1b — Game Edit / Remove / Auto-detect', () => {
     const disposable = await createMockGame('Phase1bDrop');
     try {
       const created = await invokeInApp<GameConfig>('add_game_manual', {
-        gameType: 'Genshin',
+        gameType: 'GIMI',
         path: disposable.root,
       });
+      await invokeInApp('save_onboarding_games', { games: [created] });
       const settings = await invokeInApp<AppSettings>('get_settings');
       const games = settings.games.filter((g) => g.id !== created.id);
       await invokeInApp('save_settings', { settings: { ...settings, games } });
@@ -59,9 +74,22 @@ describe('Fase 1b — Game Edit / Remove / Auto-detect', () => {
     }
   });
 
-  it('TC-02-08: Auto-detect returns a list without throwing', async () => {
-    const detected = await invokeInApp<GameConfig[]>('auto_detect_games', {});
-    expect(Array.isArray(detected)).toBe(true);
+  it('TC-02-08: Auto-detect finds an instance in an XXMI-shaped root', async () => {
+    // Auto-detect scans `<root>/<GAMETYPE>/`, so the instance has to live in a
+    // folder literally named after its game type. It errors — rather than
+    // returning [] — when the root holds nothing valid.
+    const xxmiRoot = path.join(os.tmpdir(), `EMMM_XXMI_${Date.now()}`);
+    const instance = await createMockGame('AutoDetect', path.join(xxmiRoot, 'GIMI'));
+    try {
+      const detected = await invokeInApp<GameConfig[]>('auto_detect_games', {
+        rootPath: xxmiRoot,
+      });
+      expect(detected.length).toBeGreaterThan(0);
+
+      await rejects('auto_detect_games', { rootPath: instance.modsPath });
+    } finally {
+      await fs.rm(xxmiRoot, { recursive: true, force: true });
+    }
   });
 
   it('TC-02-09: Auto-close launcher setting persists', async () => {

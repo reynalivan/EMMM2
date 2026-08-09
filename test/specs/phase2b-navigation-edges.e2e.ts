@@ -67,7 +67,7 @@ describe('Fase 2b — Navigation Edges', () => {
     });
 
     const entries = await invokeInApp<FolderEntry[]>('list_folder_entries_cmd', {
-      folderPath: 'ClassObj',
+      folderPath: objDir,
       gameId,
     });
     const names = entries.filter((e) => e.is_dir).map((e) => e.name);

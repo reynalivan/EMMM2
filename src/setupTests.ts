@@ -279,6 +279,7 @@ vi.mock('motion/react', () => ({
     start: vi.fn(),
     stop: vi.fn(),
   }),
+  useReducedMotion: () => false,
   Reorder: {
     Group: createMockMotionElement('div'),
     Item: createMockMotionElement('div'),

@@ -20,9 +20,12 @@ export interface MockGame {
  * Creates an isolated mock game folder in the OS temp dir with the core files
  * the backend validator requires (loader exe, d3dx.ini, d3d11.dll). Caller
  * MUST call {@link removeMockGame} in `after()`.
+ *
+ * Pass `atRoot` to place the instance at an exact path — auto-detect scans for
+ * `<root>/<GAMETYPE>/` (GIMI, SRMI, …), so that layout has to be built by hand.
  */
-export async function createMockGame(label = 'E2E'): Promise<MockGame> {
-  const root = path.join(os.tmpdir(), `EMMM_${label}_${Date.now()}`);
+export async function createMockGame(label = 'E2E', atRoot?: string): Promise<MockGame> {
+  const root = atRoot ?? path.join(os.tmpdir(), `EMMM_${label}_${Date.now()}`);
   const modsPath = path.join(root, 'Mods');
   const exePath = path.join(root, 'Fake_Game_Loader.exe');
 
@@ -35,18 +38,29 @@ export async function createMockGame(label = 'E2E'): Promise<MockGame> {
 }
 
 /**
- * Adds a mod folder at `Mods/<object>/<mod>/` with a stub `mod.ini` so it is a
- * recognizable mod on disk. Returns the absolute mod folder path.
+ * The classifier only counts a folder as a mod when one of its `.ini` files has
+ * a `textureoverride` / `shaderoverride` / `resource` section. A `[Constants]`
+ * stub reads as a plain container, so disk reconcile indexes nothing and every
+ * `mod_count` / `enabled_count` / collection assertion sees zero.
+ */
+const MOD_INI = '[TextureOverrideMockMod]\nhash = 0123456789abcdef\n';
+
+/**
+ * Adds a mod folder at `Mods/<object>/<mod>/` with a `mod.ini` the classifier
+ * recognizes as a mod. Returns the absolute mod folder path.
  */
 export async function addMockMod(game: MockGame, object: string, mod: string): Promise<string> {
   const modPath = path.join(game.modsPath, object, mod);
   await fs.mkdir(modPath, { recursive: true });
-  await fs.writeFile(path.join(modPath, 'mod.ini'), '[Constants]\n');
+  await fs.writeFile(path.join(modPath, 'mod.ini'), MOD_INI);
   return modPath;
 }
 
 export async function removeMockGame(game: MockGame): Promise<void> {
-  await fs.rm(game.root, { recursive: true, force: true });
+  // The app keeps writing into `Mods/.emmm_data` (watcher, keybinds) as the
+  // spec tears down, and on Windows that races `rm -r` into ENOTEMPTY/EBUSY.
+  // Node retries the whole walk on those two errors specifically.
+  await fs.rm(game.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 /** Directory listing that returns `[]` instead of throwing when the dir is gone. */

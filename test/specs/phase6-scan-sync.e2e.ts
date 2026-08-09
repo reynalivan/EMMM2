@@ -48,15 +48,16 @@ describe('Fase 6 — Scan / Sync / Match', () => {
   });
 
   it('TC-25-01: Deep-match scanner completes and returns a sync result', async () => {
-    const dbJson = await invokeInApp<string>('get_master_db', { gameType });
+    // The backend owns the master DB now — it takes the game-type discriminant
+    // and loads/caches the file itself, rather than the JSON crossing IPC.
     const { value } = await invokeWithChannel<unknown>(
       'deepmatch_scanner_cmd',
       {
         gameId,
         gameName: 'E2E',
         gameType: 'GIMI',
+        masterDbType: gameType,
         modsPath: game.modsPath,
-        dbJson,
         preserveExistingMappings: true,
       },
       'onProgress',

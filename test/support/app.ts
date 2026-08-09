@@ -15,16 +15,17 @@ export async function bootApp(): Promise<void> {
  * Seeds a game via IPC (bypassing the native picker), then reboots so the
  * startup config check routes to the dashboard. Returns the created game id.
  */
-export async function seedGameAndOpenDashboard(
-  game: MockGame,
-  gameType: number | string = 'Genshin',
-): Promise<string> {
+export async function seedGameAndOpenDashboard(game: MockGame): Promise<string> {
   await bootApp();
 
+  // `add_game_manual` only validates the folder and returns a candidate — it
+  // does not persist. `save_onboarding_games` is what writes it to settings,
+  // which is the same order the onboarding UI uses.
   const created = await invokeInApp<{ id: string }>('add_game_manual', {
-    gameType,
+    gameType: 'GIMI',
     path: game.root,
   });
+  await invokeInApp('save_onboarding_games', { games: [created] });
   await invokeInApp('set_active_game', { gameId: created.id });
 
   // Reboot: AppRouter re-runs checkConfigStatus → HasConfig → /dashboard.

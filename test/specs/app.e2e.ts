@@ -2,21 +2,15 @@ import { browser, $ } from '@wdio/globals';
 
 describe('EMMM Initial Load', () => {
   it('should launch the application and verify safe initialization', async () => {
-    // EMMM is a React SPA running inside Tauri Webview
+    // The session attaches to a blank webview — nothing is loaded until we
+    // navigate, so every spec must open the app URL before asserting on it.
+    await browser.url('http://tauri.localhost/');
 
-    // 1. Give the React app some time to construct the DOM
-    await browser.pause(2000);
+    const root = await $('#root');
+    await root.waitForExist({ timeout: 20000 });
 
-    // 2. Identify a known root/layout element (e.g. the main game switcher or settings button)
-    // We can assume there's a body or a main tag
-    const rootLayout = await $('body');
-    await expect(rootLayout).toBeExisting();
-
-    // Example assertion: Check if the application title is correct
-    const title = await browser.getTitle();
-    // It depends on index.html: it usually defaults to "EMMM" or similar
-    console.log(`[E2E] Window Title Loaded: ${title}`);
-    expect(title).toBe('emmm'); // adjust to the actual window title defined in tauri.conf.json / index.html
+    // Matches the <title> in index.html.
+    expect(await browser.getTitle()).toBe('EMMM');
 
     // 3. (Optional) In real tests, we would check for elements like:
     // const settingsBtn = await $('[data-testid="settings-btn"]')

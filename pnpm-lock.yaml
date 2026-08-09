@@ -138,6 +138,9 @@ importers:
       daisyui:
         specifier: ^5.6.10
         version: 5.6.10
+      edgedriver:
+        specifier: ^6.3.0
+        version: 6.3.0
       eslint:
         specifier: ^10.6.0
         version: 10.6.0(jiti@2.7.0)

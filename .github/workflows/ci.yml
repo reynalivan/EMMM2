@@ -82,10 +82,8 @@ jobs:
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked
 
-      - name: Build debug app for WebDriver
-        # Debug build keeps devtools enabled, which tauri-driver requires.
-        # wdio.conf.ts skips its own build step when this binary already exists.
-        run: pnpm tauri build --debug
-
+      # wdio.conf.ts `onPrepare` builds the app itself, with the E2E identifier
+      # override that gives the run its own app_data. Pre-building here would
+      # only produce a binary it discards.
       - name: Run E2E suite
         run: pnpm test:e2e

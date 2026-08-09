@@ -33,42 +33,43 @@ describe('Game Management (req-02)', () => {
     await browser.url('http://tauri.localhost/');
     await browser.pause(2000);
 
-    // Bypass welcome screen if EMMM is freshly started without DB configs
-    const welcomeLogo = await $('[data-testid="logo"]');
-    if (await welcomeLogo.isExisting()) {
-      console.log('[E2E] On Welcome Screen, bypassing via IPC for Game Management test...');
-      await browser.executeAsync(async (gamePath, done) => {
-        try {
-          interface TauriWindow extends Window {
-            __TAURI__: {
-              core: {
-                invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-              };
-            };
-          }
-          const { invoke } = (window as unknown as TauriWindow).__TAURI__.core;
-          await invoke('add_game_manual', { gameType: 'Genshin', path: gamePath });
-          window.location.href = '/dashboard';
-        } catch (e) {
-          console.error(e);
-        }
-        done();
-      }, mockGamePath);
-      await browser.pause(2000);
-    }
+    // Always seed a persisted game rather than branching on what the previous
+    // spec left behind: without one, AppRouter parks on /welcome and the App
+    // Menu never mounts. `add_game_manual` alone does not persist — only
+    // `save_onboarding_games` writes to settings.
+    await browser.executeAsync(async (gamePath, done) => {
+      interface TauriWindow extends Window {
+        __TAURI__: {
+          core: {
+            invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+          };
+        };
+      }
+      const { invoke } = (window as unknown as TauriWindow).__TAURI__.core;
+      try {
+        const game = await invoke('add_game_manual', { gameType: 'GIMI', path: gamePath });
+        await invoke('save_onboarding_games', { games: [game] });
+      } catch {
+        // Already registered from an earlier run — the dashboard is reachable either way.
+      }
+      done();
+    }, mockGamePath);
+
+    await browser.url('http://tauri.localhost/');
 
     // Navigate to Settings
     const appMenuBtn = await $('button[title="App Menu"]');
-    await appMenuBtn.waitForClickable({ timeout: 5000 });
+    await appMenuBtn.waitForClickable({ timeout: 20000 });
     await appMenuBtn.click();
 
     const settingsMenu = await $('span=Settings');
     await settingsMenu.waitForClickable({ timeout: 2000 });
     await settingsMenu.click();
 
-    // Click "Add Game" in Settings
-    const addGameBtn = await $('button=Add Game');
-    await addGameBtn.waitForClickable({ timeout: 3000 });
+    // Both the tab action and the modal submit read "Add Game", and each carries
+    // an icon so their text nodes are not exact matches — target the testids.
+    const addGameBtn = await $('[data-testid="games-add"]');
+    await addGameBtn.waitForClickable({ timeout: 10000 });
     await addGameBtn.click();
 
     // Fill out the modal
@@ -83,27 +84,16 @@ describe('Game Management (req-02)', () => {
     await exeInput.setValue(mockExePath);
 
     // Submit Game
-    const submitBtn = await $('button=Add Game');
+    const submitBtn = await $('[data-testid="game-form-submit"]');
+    await submitBtn.waitForClickable({ timeout: 5000 });
     await submitBtn.click();
-
-    // Give it time to save in DB and refresh React state
-    await browser.pause(500);
 
     // Assert that the game was added to the games list
     const gameCard = await $('h3*=Test Mock E2E Game');
+    await gameCard.waitForExist({ timeout: 10000 });
     await expect(gameCard).toBeExisting();
 
-    // E2E-02-01: Launch
-    // Use the Quick Play dropdown from Topbar
-    await appMenuBtn.click();
-
-    // Using *= to match substring "Quick Play"
-    const quickPlayBtn = await $('p*=Quick Play');
-    await quickPlayBtn.waitForClickable({ timeout: 2000 });
-    await quickPlayBtn.click();
-
-    // Wait a brief moment to allow Rust process launch
-    await browser.pause(500);
-    console.log('[E2E] Process Spawn triggered successfully.');
+    // Launching is deliberately NOT driven here: Quick Play spawns the real
+    // 3DMigoto loader process, which is on the [manual-smoke] list.
   });
 });

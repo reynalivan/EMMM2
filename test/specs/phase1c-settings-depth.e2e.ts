@@ -16,11 +16,10 @@ interface AppSettings {
  */
 describe('Fase 1c — Settings Depth', () => {
   let game: MockGame;
-  let gameId: string;
 
   before(async () => {
     game = await createMockGame('Phase1c');
-    gameId = await seedGameAndOpenDashboard(game);
+    await seedGameAndOpenDashboard(game);
   });
 
   after(async () => {
@@ -28,13 +27,15 @@ describe('Fase 1c — Settings Depth', () => {
   });
 
   it('TC-04-10: Run maintenance completes and returns a summary', async () => {
-    const result = await invokeInApp<string>('run_maintenance', { gameId });
-    expect(typeof result).toBe('string');
+    // Returns a (scanned, reclaimed) pair, not a prose summary.
+    const result = await invokeInApp<[number, number]>('run_maintenance');
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
   });
 
   it('TC-04-11: Clear old thumbnails completes', async () => {
-    const result = await invokeInApp<string>('clear_old_thumbnails');
-    expect(typeof result).toBe('string');
+    const removed = await invokeInApp<number>('clear_old_thumbnails');
+    expect(typeof removed).toBe('number');
   });
 
   it('TC-04-12: Hotkey config update is accepted', async () => {

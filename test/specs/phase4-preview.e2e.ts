@@ -6,9 +6,13 @@ import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
 import { createObject, reconcile } from '../support/data.js';
 
-/** 1x1 transparent PNG. */
+/**
+ * 1x1 RGBA PNG. Must stay a structurally complete PNG (IHDR/IDAT/IEND) — the
+ * backend really decodes it, and a truncated blob fails with
+ * "image decode/encode failed: Format error decoding PNG".
+ */
 const PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
 
 interface ModInfo {
   author?: string | null;
@@ -44,22 +48,29 @@ describe('Fase 4 — Preview & Editors', () => {
 
   it('TC-17-01: Metadata editor round-trips author/description', async () => {
     await invokeInApp('update_mod_info', {
+      gameId,
       folderPath: modDir,
       update: { author: 'E2E Author', description: 'phase 4 desc' },
     });
-    const info = await invokeInApp<ModInfo>('read_mod_info', { folderPath: modDir });
+    const info = await invokeInApp<ModInfo>('read_mod_info', { gameId, folderPath: modDir });
     expect(info.author).toBe('E2E Author');
     expect(info.description).toBe('phase 4 desc');
   });
 
   it('TC-18-01: INI editor writes content that persists on disk', async () => {
-    const files = await invokeInApp<string[]>('list_mod_ini_files', { folderPath: modDir });
-    expect(files).toContain('mod.ini');
+    const files = await invokeInApp<{ filename: string }[]>('list_mod_ini_files', {
+      gameId,
+      folderPath: modDir,
+    });
+    expect(files.map((f) => f.filename)).toContain('mod.ini');
 
+    // The editor patches individual lines, it does not overwrite the file with
+    // a blob. Line 1 of the seeded `mod.ini` is the `hash = ...` line.
     await invokeInApp('write_mod_ini', {
+      gameId,
       folderPath: modDir,
       fileName: 'mod.ini',
-      content: '[Constants]\nglobal $active = 1\n',
+      lineUpdates: [{ line_idx: 1, content: 'global $active = 1' }],
     });
 
     const onDisk = await fs.readFile(path.join(modDir, 'mod.ini'), 'utf8');
@@ -67,23 +78,44 @@ describe('Fase 4 — Preview & Editors', () => {
   });
 
   it('TC-19-01: Image gallery lists a saved preview image', async () => {
-    const before = await invokeInApp<string[]>('list_mod_preview_images', { folderPath: modDir });
-    await invokeInApp('save_mod_preview_image', { folderPath: modDir, imagePath: pngPath });
-    const after = await invokeInApp<string[]>('list_mod_preview_images', { folderPath: modDir });
+    const before = await invokeInApp<string[]>('list_mod_preview_images', {
+      gameId,
+      folderPath: modDir,
+    });
+    await invokeInApp('save_mod_preview_image', {
+      gameId,
+      folderPath: modDir,
+      objectName: 'PrevObj',
+      imageData: Array.from(Buffer.from(PNG_BASE64, 'base64')),
+    });
+    const after = await invokeInApp<string[]>('list_mod_preview_images', {
+      gameId,
+      folderPath: modDir,
+    });
     expect(after.length).toBeGreaterThan(before.length);
   });
 
   it('TC-41-01: Thumbnail cache goes from empty to populated', async () => {
+    // Its own mod folder: TC-19-01 saves a preview image into `modDir`, and a
+    // preview image is enough for `get_mod_thumbnail` to return a path — so
+    // reusing it would start this test already populated.
+    const freshDir = await addMockMod(game, 'PrevObj', 'ThumbMod');
+    await reconcile(gameId);
+
     const initial = await invokeInApp<string | null>('get_mod_thumbnail', {
       gameId,
-      folderPath: modDir,
+      folderPath: freshDir,
     });
     expect(initial).toBeNull();
 
-    await invokeInApp('update_mod_thumbnail', { folderPath: modDir, sourcePath: pngPath });
+    await invokeInApp('update_mod_thumbnail', {
+      gameId,
+      folderPath: freshDir,
+      sourcePath: pngPath,
+    });
     const populated = await invokeInApp<string | null>('get_mod_thumbnail', {
       gameId,
-      folderPath: modDir,
+      folderPath: freshDir,
     });
     expect(populated).not.toBeNull();
   });
