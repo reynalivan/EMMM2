@@ -6,8 +6,18 @@ import { useToastStore } from '../stores/useToastStore';
 import { normalizeThemeSetting, type ThemeSetting } from '../lib/themeOptions';
 import i18n from '../lib/i18n';
 import { useTranslation } from 'react-i18next';
-import { publishQueryScopes } from '../features/runtime-sync/queryRefresh';
+import {
+  publishQueryInvalidations,
+  publishQueryScopes,
+} from '../features/runtime-sync/queryRefresh';
 import { settingsKeys, settingsQueryOptions } from './settingsQuery';
+
+/**
+ * An empty key prefix matches every cached query. Flipping the corridor is the
+ * one mutation whose blast radius really is everything, so it invalidates
+ * through the pipeline rather than reaching for a raw `invalidateQueries()`.
+ */
+const EVERY_QUERY: readonly unknown[] = [];
 
 // Re-export for consumers
 export type { GameConfig, AppSettings, AiConfig, PinVerifyStatus };
@@ -28,7 +38,7 @@ export function useSettings() {
       // changes the response of every corridor-dependent query without any
       // of their inputs changing. Refetch them all.
       if (previous && previous.safe_mode.enabled !== newSettings.safe_mode.enabled) {
-        void queryClient.invalidateQueries();
+        void publishQueryInvalidations(queryClient, [EVERY_QUERY], 'active');
       }
       addToast('success', t('settings:toast.save_success'));
     },

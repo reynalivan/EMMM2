@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { publishQueryInvalidations } from '../../runtime-sync/queryRefresh';
 import { commands, type CustomTheme, type ThemeMetadata } from '../../../lib/bindings';
 
 export const themeKeys = {
@@ -20,7 +21,8 @@ export function useCustomThemes() {
     staleTime: Infinity,
   });
 
-  const refreshCustomThemes = () => queryClient.invalidateQueries({ queryKey: themeKeys.all });
+  const refreshCustomThemes = () =>
+    publishQueryInvalidations(queryClient, [themeKeys.all], 'active');
 
   return { customThemes: data ?? [], loading: isLoading, refreshCustomThemes };
 }
