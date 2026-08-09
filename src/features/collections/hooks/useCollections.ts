@@ -242,6 +242,17 @@ export function useApplyCollection() {
           ? t('toast.applied_with_state', { count: total, name: result.final_state_name })
           : t('toast.applied', { count: total }),
       );
+
+      // Moving folders cannot tell a running game to re-read them, and the
+      // reload keystroke only lands if the game has focus — which it does not
+      // while the user is clicking here. So name the key instead of replaying
+      // it. Best-effort: a missing d3dx.ini is not worth failing the apply.
+      if (total > 0) {
+        const reloadKey = await commands.getReloadKey().catch(() => null);
+        if (reloadKey) {
+          toast.info(t('toast.reload_hint', { key: reloadKey }));
+        }
+      }
     },
 
     onError: (err: unknown, variables) => {

@@ -1146,6 +1146,24 @@ async updateHotkeyConfig() : Promise<Result<null, AppError>> {
 }
 },
 /**
+ * The key 3DMigoto reloads its fixes on, read from the active game's
+ * `d3dx.ini` (falling back to the loader default).
+ * 
+ * Toggling from the app moves folders on disk but cannot tell a running game
+ * to re-read them: the reload keystroke has to be pressed while the game has
+ * focus, so the UI names the key instead of replaying it into whatever window
+ * happens to be in front. The in-game hotkey path replays it directly because
+ * there the game IS focused (`services::hotkeys::reload`).
+ */
+async getReloadKey() : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_reload_key") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Open a new in-app browser tab (creates a new Webview).
  * Returns the webview label so the frontend can track the tab.
  */

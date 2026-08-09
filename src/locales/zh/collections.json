@@ -137,7 +137,8 @@
     "updated": "已更新收藏集：{{name}}",
     "deleted": "收藏集已删除",
     "applied": "已应用收藏集（{{count}} 项更改）",
-    "applied_with_state": "已应用收藏集（{{count}} 项更改）-> {{name}}"
+    "applied_with_state": "已应用收藏集（{{count}} 项更改）-> {{name}}",
+    "reload_hint": "已应用 — 在游戏中按 {{key}} 重新加载"
   },
   "mod_row": {
     "unknown": "未知 Mod",

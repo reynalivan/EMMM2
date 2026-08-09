@@ -137,7 +137,8 @@
     "updated": "Koleksi diperbarui: {{name}}",
     "deleted": "Koleksi dihapus",
     "applied": "Koleksi diterapkan ({{count}} perubahan)",
-    "applied_with_state": "Koleksi diterapkan ({{count}} perubahan) -> {{name}}"
+    "applied_with_state": "Koleksi diterapkan ({{count}} perubahan) -> {{name}}",
+    "reload_hint": "Diterapkan — tekan {{key}} di dalam game untuk memuat ulang"
   },
   "mod_row": {
     "unknown": "Mod Tidak Diketahui",

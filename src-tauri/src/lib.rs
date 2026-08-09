@@ -138,6 +138,7 @@ macro_rules! emmm_collect_commands {
             commands::app::update_cmds::check_metadata_update,
             commands::app::update_cmds::fetch_missing_asset,
             commands::app::hotkey_cmds::update_hotkey_config,
+            commands::app::hotkey_cmds::get_reload_key,
             commands::browser::browser_cmds::browser_open_tab,
             commands::browser::browser_cmds::browser_navigate,
             commands::browser::browser_cmds::browser_go_back,

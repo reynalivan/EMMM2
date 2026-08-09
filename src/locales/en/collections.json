@@ -137,7 +137,8 @@
     "updated": "Updated collection: {{name}}",
     "deleted": "Collection deleted",
     "applied": "Applied collection ({{count}} changes)",
-    "applied_with_state": "Applied collection ({{count}} changes) -> {{name}}"
+    "applied_with_state": "Applied collection ({{count}} changes) -> {{name}}",
+    "reload_hint": "Applied — press {{key}} in-game to reload"
   },
   "mod_row": {
     "unknown": "Unknown Mod",
