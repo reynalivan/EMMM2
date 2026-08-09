@@ -81,8 +81,8 @@ Frontend:
     └── "Delete Selected" → ConfirmDialog → commands.bulkDelete({ paths: [...selectedItems] })
 
 Backend:
-  bulk_switch_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
-    └── acquire OperationLock → activate WatcherSuppression(paths)
+  bulk_toggle_mods(game_id, paths: Vec<String>, enable: bool) → BulkResult
+    └── acquire OperationLock → suppress_paths(paths)  // identity-keyed, one registration
         → for path in paths: toggle_mod_inner(path, enable) → emit_event('bulk-progress', {i, total})
         → scoped Disk Reconcile over the changed paths (QUIET: no disk_reconcile:result event — the caller publishes its refresh from the command result)
         → return BulkResult { success, failed: Vec<{path, error}> }

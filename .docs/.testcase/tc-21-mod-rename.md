@@ -12,7 +12,7 @@
 - Prefix logic handles enabled/disabled state 100% of the time.
 - Collisions rejected flawlessly via`OperationLock`.
 - Windows-invalid characters blocked prior to backend execute.
-- Rename-driven UI refresh uses purely optimistic + invalidate flows, not watcher events (via`WatcherSuppression`).
+- Rename-driven UI refresh uses path-rewrite replay + invalidation flows from the command result, not watcher events (path-scoped suppression covers both spellings).
 - **Main Risks**: Path Traversal vulnerabilities on rename input. Silent data deletion if moving over an existing folder. Desynchronization if the folder renames but`info.json` update crashes halfway. OS MAX_PATH exceptions crashing the backend thread.
 
 ## B. Coverage Matrix

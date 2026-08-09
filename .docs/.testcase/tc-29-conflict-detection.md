@@ -65,4 +65,4 @@
 
 ## H. Cross-Epic E2E Scenarios
 
-- **E2E-29-01 (Atomic Multi-Disable Pipeline)**: User navigates via ObjectList (Epic 15) to an Object possessing 5 enabled legacy mods. The user triggers the 'Enable Only This' action on a newly imported Mod (Epic 29). The backend executes a transactional operation disabling all 5 legacy items while enabling the new mod. If any I/O conflict occurs during the transaction, the entire sequence halts, and the state rollback is processed immediately without desync.
+- **E2E-29-01 (Atomic Multi-Disable Pipeline)**: User navigates via ObjectList (Epic 15) to an Object possessing 5 enabled legacy mods. The user triggers the 'Enable Only This' action on a newly imported Mod (Epic 29). The backend renames all 5 legacy items to disabled and the new mod to enabled, then runs one scoped Disk Reconcile over the changed roots. A per-item I/O failure lands in `failures` while reconcile keeps DB and disk convergent — desync is impossible by construction.

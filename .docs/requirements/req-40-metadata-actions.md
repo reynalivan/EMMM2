@@ -7,9 +7,9 @@
 - **Success Criteria**:
   - `pin_object` and `bulk_toggle_favorite` reflect in the UI in ≤ 150ms for single-row updates.
   - `move_mod_to_object` completes in ≤ 1s for a typical mod folder (SSD) and ≤ 5s for large folders (10GB network drive).
-  - Move is atomic: DB `folder_path` is updated in the same SQLite transaction as `info.json` write; filesystem rename is the last step — no orphan rows possible.
+  - Move is convergent: the filesystem rename happens first, the row's identity (`folder_path`/key/object) migrates, and the scoped Disk Reconcile — whose scope always includes the target root — settles `status` and any residue.
   - Collision detection fires before any filesystem operation — zero moved files that overlap with existing targets.
-  - 0 orphan DB rows after a failed move — rollback restores the original DB state.
+  - 0 orphan DB rows after a failed move — the post-move reconcile covers both source and target roots, so a row is never pruned while its folder lives under the target.
 
 ---
 
@@ -50,7 +50,7 @@ As a user, I want to move a mis-categorized mod to its correct Object without us
 | AC-40.3.1 | ✅ Positive | Given a FolderCard context menu "Move to...", when I select a different Object, then the folder is physically moved to `mods_path/{category}/{new_object_name}/{folder_basename}`; `info.json` is updated with the new Object reference; DB `folder_path` is updated atomically |
 | AC-40.3.2 | ✅ Positive | Given the move succeeds, then the mod disappears from the old Object's grid and appears under the new Object within ≤ 200ms through runtime-sync descriptors                                                                                                                    |
 | AC-40.3.3 | ❌ Negative | Given the target path already exists a folder with the same name, then the move is aborted before any filesystem operation; toast shows "Move failed: a folder named '{name}' already exists in '{target_object}'"                                                              |
-| AC-40.3.4 | ❌ Negative | Given the `fs::rename` succeeds but the DB update fails (SQLite error), then the DB transaction rolls back — the filesystem is manually reverted (rename back) in the error handler; no orphan DB row is left                                                                   |
+| AC-40.3.4 | ❌ Negative | Given the `fs::rename` succeeds but the identity migration fails (SQLite error), the item lands in `failures` and the post-move Disk Reconcile (scoped to source AND target roots) re-derives the row from disk — no orphan DB row, no manual rename-back                                                                   |
 | AC-40.3.5 | ⚠️ Edge     | Given the mod is currently enabled when moved, then its enabled state is preserved — the folder name retains its `DISABLED ` prefix state; the new `folder_path` in DB reflects the full new path including any prefix                                                          |
 
 ---

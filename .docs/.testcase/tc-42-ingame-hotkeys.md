@@ -11,7 +11,7 @@
 - In-game Banner (Phase 5): Hotkey execution writes`runtime_status.txt` atomically, displaying the status string (e.g.,`Safe: ON` or`Preset: Beta`), and auto-clears after 3.0 seconds TTL.
 - Dynamic Reload Key (Phase 5): Automatically discovers the`reload_fixes` key from`d3dx.ini` (e.g., F10), falling back.
 - Switch Variant Folder (Phase 5): Cycles accurately through available active variant folders matching the active context.
-- WS-1/WS-2 Atomicity (Phase 5): Ensures workspace modification (`junction` recreation or`DISABLED` rename) is transactional and race-condition free.
+- WS-1/WS-2 Safety (Phase 5): workspace modification (`junction` recreation or `DISABLED ` rename) runs under the operation lock with FS rollback on mid-batch failure; the DB converges from disk via scoped Disk Reconcile.
 
 ## B. Coverage Matrix
 

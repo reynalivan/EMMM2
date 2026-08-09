@@ -15,7 +15,7 @@
 - Phase 5: Double ID Tracing (folder_hash BLAKE3 auto-heal if folder was renamed).
 - Phase 5:`is_safe_context` Awareness (warns if applying a collection with NSFW mods while Safe Mode is ON).
 - Phase 5: Portable Persistence (collections exportable/importable).
-- **Success Criteria**: Atomic operations never cause DB desyncs. Rollbacks strip back modified states.
+- **Success Criteria**: DB desync is impossible by construction — the DB is a projection of disk written by Disk Reconcile. A mid-batch rename failure rolls back completed renames on disk.
 - **Main Risks**: Edge cases involving externally deleted/locked folders crashing mid-renaming, forcing snapshot rollback reliability tests.
 
 ## B. Coverage Matrix
@@ -60,7 +60,7 @@
 
 ## D. Missing / Implied Test Areas
 
-- **[Implied] Watcher Conflict**: Does applying generate`fs-changed` events? No.`WatcherSuppression` guards it until the batch triggers complete cache revalidation.
+- **[Implied] Watcher Conflict**: Does applying emit watcher-sourced `disk_reconcile:result`? No. Blanket `WatcherSuppression` guards the batch; the pipeline's inline scoped reconcile settles the DB before later steps read it.
 - **[Implied] Safe Mode Exclusions**: Ensure that Collection apply does NOT leak Safe Mode`is_safe=false` thumbnails during rapid re-rendering grids (handled by Phase 5`is_safe_context` Warning).
 
 ## E. Open Questions / Gaps
