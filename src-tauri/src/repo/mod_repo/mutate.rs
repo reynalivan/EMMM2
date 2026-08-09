@@ -5,7 +5,7 @@ use crate::domain::models::ItemStatus;
 use sqlx::SqlitePool;
 
 #[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
-pub async fn insert_mod_with_reason_tx(
+pub async fn insert_mod_tx(
     conn: &mut sqlx::SqliteConnection,
     id: &str,
     game_id: &str,
@@ -18,10 +18,9 @@ pub async fn insert_mod_with_reason_tx(
     is_favorite: bool,
     is_safe: bool,
     corridor_source: &str,
-    disabled_reason: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, corridor_source, disabled_reason, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)"
+        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, corridor_source, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)"
     )
     .bind(id)
     .bind(game_id)
@@ -34,7 +33,6 @@ pub async fn insert_mod_with_reason_tx(
     .bind(is_favorite)
     .bind(is_safe)
     .bind(corridor_source)
-    .bind(disabled_reason)
     .execute(conn)
     .await?;
     Ok(())

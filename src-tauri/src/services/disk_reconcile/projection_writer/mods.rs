@@ -134,7 +134,7 @@ pub(super) async fn apply_disk_mods(
                 .seen_mod_keys
                 .insert(existing_mod.folder_path_key.clone());
         } else {
-            crate::repo::mod_repo::insert_mod_with_reason_tx(
+            crate::repo::mod_repo::insert_mod_tx(
                 &mut *conn,
                 &new_id,
                 game_id,
@@ -147,11 +147,6 @@ pub(super) async fn apply_disk_mods(
                 false,
                 metadata.is_safe,
                 metadata.corridor_source,
-                if metadata.status.is_enabled() {
-                    None
-                } else {
-                    Some(crate::common::corridor_constants::DISABLED_REASON_USER)
-                },
             )
             .await?;
             state.folders_changed = true;

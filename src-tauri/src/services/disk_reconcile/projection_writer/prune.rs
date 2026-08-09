@@ -34,6 +34,7 @@ pub(super) async fn prune_missing_objects(
         state
             .deleted_object_keys
             .insert(db_object.folder_path_key.clone());
+        state.touched_object_ids.insert(db_object.id.clone());
         state.objects_changed = true;
         state.folders_changed = true;
         state

@@ -38,6 +38,36 @@ export function canonicalPathKey(value: string | null | undefined): string | nul
   return segments.map((segment) => asciiCaseFold(segment)).join('/');
 }
 
+/** Mirrors the backend normalizer: canonical + legacy DISABLED spellings. */
+const DISABLED_PREFIX_RE = /^disabled[\s_-]+/i;
+
+function stripDisabledPrefixes(segment: string): string {
+  let value = segment.trim();
+  while (DISABLED_PREFIX_RE.test(value)) {
+    value = value.replace(DISABLED_PREFIX_RE, '').trim();
+  }
+  return value;
+}
+
+/**
+ * Identity key of a path: separator-normalized, DISABLED-prefix-stripped
+ * (repeatedly, per segment — mirroring the backend's `folder_path_key`) and
+ * ASCII-case-folded. An enable/disable rename keeps the identity, so caches
+ * keyed by it survive toggles.
+ */
+export function identityPathKey(value: string | null | undefined): string | null {
+  const canonical = canonicalPathKey(value);
+  if (!canonical) {
+    return null;
+  }
+
+  return canonical
+    .split('/')
+    .map((segment) => stripDisabledPrefixes(segment))
+    .filter(Boolean)
+    .join('/');
+}
+
 export function pathsEqual(
   left: string | null | undefined,
   right: string | null | undefined,

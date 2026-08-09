@@ -5,7 +5,7 @@ use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -22,10 +22,6 @@ pub async fn rename_mod_folder_inner(
     folder_path: String,
     new_name: String,
 ) -> Result<RenameResult, AppError> {
-    // Hold suppression for the entire function so watcher events don't
-    // leak through between the fs::rename and function return.
-    let _guard = SuppressionGuard::new(&state.suppressor);
-
     let path = Path::new(&folder_path);
     if !path.exists() || !path.is_dir() {
         return Err(AppError::Io(format!(
@@ -61,6 +57,10 @@ pub async fn rename_mod_folder_inner(
         let base_name = crate::common::normalizer::normalize_display_name(&old_folder_name);
         return Err(rename_conflict_error(&new_path, &existing_path, &base_name));
     }
+
+    // A real rename changes identity, so both sides need their own entry;
+    // the guard's tail keeps suppressing the async event pair after return.
+    let _guard = state.suppressor.suppress_paths([path, new_path.as_path()]);
 
     crate::services::fs_utils::file_utils::rename_cross_drive_fallback(path, &new_path).map_err(
         |e| {

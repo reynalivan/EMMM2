@@ -134,6 +134,8 @@ pub(super) async fn apply_disk_objects(
             state.change_summary.record_object_added(&disk_object.name);
         }
 
+        state.touched_object_ids.insert(object_id.clone());
+
         let existing_by_id = index.object_by_id(&object_id);
 
         // The row may be indexed under a key the disk entry no longer produces;

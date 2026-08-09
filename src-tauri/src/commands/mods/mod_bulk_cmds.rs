@@ -20,25 +20,11 @@ pub async fn bulk_toggle_mods(
     paths: Vec<String>,
     enable: bool,
 ) -> Result<bulk::BulkResult, AppError> {
-    let mods_path = game_repo::get_mod_path(pool.inner(), &game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Game not found or has no mods path".to_string()))?;
-
     // Security validation for all paths
     crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
 
     let _lock = op_lock.acquire().await?;
-    let result = bulk::bulk_toggle(
-        &app,
-        &config,
-        pool.inner(),
-        &state,
-        &mods_path,
-        &game_id,
-        paths,
-        enable,
-    )
-    .await?;
+    let result = bulk::bulk_toggle(&app, pool.inner(), &state, &game_id, paths, enable).await?;
 
     Ok(result)
 }

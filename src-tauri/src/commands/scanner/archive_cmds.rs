@@ -93,7 +93,7 @@ pub async fn extract_archive_cmd(
     // Reset cancellation token before starting
     ext_state.is_cancelled.store(false, Ordering::SeqCst);
 
-    archive::extract_archive(
+    let result = archive::extract_archive(
         archive,
         mods,
         archive::ExtractOptions {
@@ -105,7 +105,32 @@ pub async fn extract_archive_cmd(
             unpack_nested: should_unpack_nested,
             on_progress: Some(&on_progress),
         },
-    )
+    )?;
+
+    // Single-writer: watcher events were suppressed during extraction, so the
+    // scoped reconcile is what writes the new rows.
+    if result.success {
+        if let Some(game_id) = config.game_id_for_path(mods) {
+            let changed_paths = if result.dest_paths.is_empty() {
+                vec![mods.to_string_lossy().to_string()]
+            } else {
+                result.dest_paths.clone()
+            };
+            let pool = app.state::<sqlx::SqlitePool>();
+            if let Err(error) = crate::services::disk_reconcile::emit::emit_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                changed_paths,
+            )
+            .await
+            {
+                log::warn!("Post-extraction disk reconcile failed: {error}");
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Abort an ongoing extraction operation.

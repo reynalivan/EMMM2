@@ -103,7 +103,6 @@ pub struct UpdateObjectInput {
     pub name: Option<String>,
     pub object_type: Option<String>,
     pub sub_category: Option<String>,
-    pub status: Option<ItemStatus>,
     pub metadata: Option<serde_json::Value>,
     pub hash_db: Option<crate::domain::models::HashDbPayload>,
     pub custom_skins: Option<crate::domain::models::CustomSkinsPayload>,

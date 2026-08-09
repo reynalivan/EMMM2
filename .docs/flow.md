@@ -1,5 +1,8 @@
 # EMMM — Data Flow Architecture
 
+> **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
+
+
 > Single source of truth: **Disk**. DB is a fast index/projection. UI reads from both, but runtime freshness and canonical matching are different domains.
 
 ---

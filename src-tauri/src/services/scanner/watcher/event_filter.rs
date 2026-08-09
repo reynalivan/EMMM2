@@ -1,7 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
-
-pub const RENAME_PAIR_TIMEOUT: Duration = Duration::from_millis(100);
 
 const RELEVANT_EXTENSIONS: &[&str] = &["ini", "json", "png", "jpg", "jpeg", "webp"];
 

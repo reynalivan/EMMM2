@@ -231,7 +231,7 @@ pub async fn reconcile_disk_projection(
             .await?;
         }
 
-        let (objects_changed_tx, folders_changed_tx) = reconcile_projection_in_tx(
+        let write_outcome = reconcile_projection_in_tx(
             &mut tx,
             ProjectionWriteRequest {
                 game_id,
@@ -248,10 +248,22 @@ pub async fn reconcile_disk_projection(
         .await?;
 
         tx.commit().await?;
-        crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await?;
+        if scoped {
+            let touched_ids: Vec<String> =
+                write_outcome.touched_object_ids.iter().cloned().collect();
+            crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
+                pool,
+                game_id,
+                &touched_ids,
+                false,
+            )
+            .await?;
+        } else {
+            crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await?;
+        }
 
-        objects_changed = objects_changed_tx;
-        folders_changed = folders_changed_tx;
+        objects_changed = write_outcome.objects_changed;
+        folders_changed = write_outcome.folders_changed;
 
         let after_descriptors =
             crate::repo::object_repo::get_runtime_descriptors(pool, game_id).await?;

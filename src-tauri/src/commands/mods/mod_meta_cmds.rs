@@ -165,7 +165,6 @@ pub async fn move_mods_to_object(
         &input.folder_paths,
     )?;
     let result = crate::services::mods::organizer_ext::move_mods_to_object_service(
-        &config,
         pool.inner(),
         &op_guard,
         &watcher,
@@ -180,10 +179,34 @@ pub async fn move_mods_to_object(
     .await?;
 
     // Convergence: reconcile source and destination roots after the move.
+    // The target root is included explicitly: a partial failure can leave a
+    // folder already renamed under the target while its path is absent from
+    // `success`, and reconciling only the sources would prune its row.
     let mut changed_paths = input.folder_paths.clone();
     changed_paths.extend(result.success.iter().cloned());
-    if let Err(error) =
-        emit_internal_disk_reconcile(&app, pool.inner(), &input.game_id, changed_paths).await
+    if let Some(target_obj) =
+        crate::repo::object_repo::get_game_object_by_id(pool.inner(), &input.target_object_id)
+            .await?
+    {
+        if let Some(mods_path) =
+            crate::repo::game_repo::get_mod_path(pool.inner(), &input.game_id).await?
+        {
+            changed_paths.push(
+                std::path::Path::new(&mods_path)
+                    .join(&target_obj.folder_path)
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+    }
+    // Quiet: the move's caller publishes its own refresh from the result.
+    if let Err(error) = crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &input.game_id,
+        changed_paths,
+    )
+    .await
     {
         log::warn!("Post-move disk reconcile failed: {error}");
     }

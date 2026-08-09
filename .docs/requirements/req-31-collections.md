@@ -1,5 +1,8 @@
 # Epic 31: Virtual Collections (Loadouts)
 
+> **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
+
+
 ## 1. Executive Summary
 
 - **Problem Statement**: Users frequently switch gameplay contexts (e.g., streaming, full-overhaul, vanilla), making manual toggling of dozens of mods error-prone. Restoring exact loadouts requires a system capable of atomic mass activation, conflict resolution, graceful failure handling, and self-healing when folders are moved.

@@ -60,13 +60,26 @@ pub async fn restore_mod(
         trash::restore_from_trash(&trash_id, &app_data_dir.join("trash"), game_id.as_ref())?
     };
 
-    // Convergence: reconcile the restored root so it re-enters the projection.
-    if let Some(game_id) = &game_id {
+    // Single-writer: events were suppressed during the restore, so the scoped
+    // reconcile is what re-creates the row. With no explicit game id, resolve
+    // it from the restored path's mods root.
+    let config = {
+        use tauri::Manager;
+        app.state::<crate::services::config::ConfigService>()
+    };
+    let reconcile_game_id = game_id
+        .clone()
+        .or_else(|| config.game_id_for_path(std::path::Path::new(&result)));
+    if let Some(game_id) = &reconcile_game_id {
         if let Err(error) =
             emit_internal_disk_reconcile(&app, pool.inner(), game_id, vec![result.clone()]).await
         {
             log::warn!("Post-restore disk reconcile failed: {error}");
         }
+    } else {
+        log::warn!(
+            "Restored path not under any configured mods root; skipping reconcile: {result}"
+        );
     }
 
     Ok(result)

@@ -13,6 +13,7 @@ pub(super) struct ProjectionWriteState<'a> {
     pub(super) seen_object_keys: HashSet<String>,
     pub(super) seen_mod_keys: HashSet<String>,
     pub(super) deleted_object_keys: HashSet<String>,
+    pub(super) touched_object_ids: HashSet<String>,
     pub(super) objects_changed: bool,
     pub(super) folders_changed: bool,
 }

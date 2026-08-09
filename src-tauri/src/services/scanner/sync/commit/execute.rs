@@ -4,9 +4,7 @@ use crate::domain::errors::ScannerError;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::common::corridor_constants::{
-    CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN, DISABLED_REASON_USER,
-};
+use crate::common::corridor_constants::{CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN};
 use crate::domain::models::ItemStatus;
 use crate::repo::stable_ids::generate_stable_id;
 use crate::repo::{mod_repo, object_repo};
@@ -167,11 +165,6 @@ pub(super) async fn execute_entries(
                             status: current_status,
                             is_safe: next_is_safe,
                             corridor_source: next_corridor_source,
-                            disabled_reason: if item.is_disabled {
-                                Some(DISABLED_REASON_USER)
-                            } else {
-                                None
-                            },
                             object_id: &object_id,
                             object_type: obj_type,
                             old_folder_path: &db_mod.1,
@@ -190,7 +183,7 @@ pub(super) async fn execute_entries(
                         &item.display_name,
                         safe_mode_keywords,
                     );
-                mod_repo::insert_mod_with_reason_tx(
+                mod_repo::insert_mod_tx(
                     &mut *tx,
                     &id,
                     game_id,
@@ -203,11 +196,6 @@ pub(super) async fn execute_entries(
                     false,
                     is_safe,
                     corridor_source,
-                    if item.is_disabled {
-                        Some(DISABLED_REASON_USER)
-                    } else {
-                        None
-                    },
                 )
                 .await?;
                 new_mods_count += 1;

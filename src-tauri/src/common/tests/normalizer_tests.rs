@@ -41,6 +41,15 @@ fn test_normalize_display_name() {
     assert_eq!(normalize_display_name("disabled_raiden_mod"), "raiden_mod");
     assert_eq!(normalize_display_name("DISABLED-raiden_mod"), "raiden_mod");
     assert_eq!(normalize_display_name("raiden_mod"), "raiden_mod");
+    // Externally produced double prefixes still resolve to the same identity.
+    assert_eq!(
+        normalize_display_name("DISABLED DISABLED raiden_mod"),
+        "raiden_mod"
+    );
+    assert_eq!(
+        normalize_display_name("disabled_DISABLED raiden_mod"),
+        "raiden_mod"
+    );
 }
 
 #[test]

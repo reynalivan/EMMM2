@@ -1,5 +1,8 @@
 # Epic 13: Core Mod Operations (Toggle / Rename / Delete)
 
+> **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
+
+
 ## 1. Executive Summary
 
 - **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (optimistic UI), be safe (suppress file watcher, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.

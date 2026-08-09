@@ -74,6 +74,7 @@ encoding_rs = "0.8.35"
 tauri-plugin-global-shortcut = "2"
 futures-util = "0.3.32"
 enigo = "0.6"
+notify-debouncer-full = "0.4"
 
 [dev-dependencies]
 env_logger = "0.11.9"

@@ -30,12 +30,12 @@ async fn test_create_object_cmd_inner_success() {
     .unwrap();
 
     let input = CreateObjectInput {
+        status: None,
         game_id: "g1".to_string(),
         name: "My Object".to_string(),
         folder_path: Some("my_folder".to_string()),
         object_type: "Character".to_string(),
         sub_category: None,
-        status: None,
         metadata: None,
         thumbnail_url: None,
         hash_db: None,
@@ -78,12 +78,12 @@ async fn test_create_object_cmd_inner_conflict() {
     .unwrap();
 
     let input1 = CreateObjectInput {
+        status: None,
         game_id: "g1".to_string(),
         name: "Duplicate".to_string(),
         folder_path: None,
         object_type: "Weapon".to_string(),
         sub_category: None,
-        status: None,
         metadata: None,
         thumbnail_url: None,
         hash_db: None,
@@ -125,12 +125,12 @@ async fn test_create_object_cmd_inner_does_not_leave_db_row_when_folder_creation
     .unwrap();
 
     let input = CreateObjectInput {
+        status: None,
         game_id: "g_fs_fail".to_string(),
         name: "Broken Object".to_string(),
         folder_path: Some("broken_folder".to_string()),
         object_type: "Character".to_string(),
         sub_category: None,
-        status: None,
         metadata: None,
         thumbnail_url: None,
         hash_db: None,
@@ -232,7 +232,6 @@ async fn test_update_object() {
         name: Some("RenamedObj".to_string()),
         object_type: None,
         sub_category: None,
-        status: None,
         metadata: None,
         thumbnail_path: None,
         is_auto_sync: None,

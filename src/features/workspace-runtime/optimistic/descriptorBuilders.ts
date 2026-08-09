@@ -125,6 +125,10 @@ export function buildRuntimeMutationDescriptor(
   return buildRefreshDescriptor(uniqueEvents);
 }
 
+// Rewrite descriptors no longer drop thumbnails: the thumbnail cache is
+// identity-keyed (DISABLED prefix stripped), so a toggle's old path resolves
+// to the SAME live entry — dropping it would force a pointless regeneration.
+// A real rename orphans the old key instead, and gcTime collects it.
 export function buildPathRewriteDescriptor(
   oldPath: string,
   newPath: string,
@@ -132,7 +136,6 @@ export function buildPathRewriteDescriptor(
 ): RuntimeEffectDescriptor {
   return withEffects(events, {
     rewrites: [{ oldPath, newPath }],
-    thumbnailPaths: [oldPath],
   });
 }
 
@@ -145,7 +148,6 @@ export function buildWorkspacePathRewritesDescriptor(
       oldPath: rewrite.old_path,
       newPath: rewrite.new_path,
     })),
-    thumbnailPaths: rewrites.map((rewrite) => rewrite.old_path),
   });
 }
 

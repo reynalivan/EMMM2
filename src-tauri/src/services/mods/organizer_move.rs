@@ -1,8 +1,7 @@
 use crate::domain::errors::AppError;
-use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::mods::core_ops::standardize_prefix;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use std::path::{Component, Path, PathBuf};
 
 pub struct MoveModsToObjectParams<'a> {
@@ -14,14 +13,11 @@ pub struct MoveModsToObjectParams<'a> {
 }
 
 pub async fn move_mods_to_object_service(
-    config: &ConfigService,
     pool: &sqlx::SqlitePool,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     watcher: &WatcherState,
     params: MoveModsToObjectParams<'_>,
 ) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
-
     if params.folder_paths.is_empty() {
         return Ok(crate::services::mods::bulk::BulkResult::new(
             Vec::new(),
@@ -46,9 +42,18 @@ pub async fn move_mods_to_object_service(
     let base_path = Path::new(&game_mod_path);
     let target_obj_path = base_path.join(&target_obj.folder_path);
     let target_base_path = resolve_target_base_path(&target_obj_path, params.target_subpath)?;
+
+    // Sources move under the target root: register each source plus the
+    // target base so the paired From/To events are both covered.
+    let _guard = watcher.suppressor.suppress_paths(
+        params
+            .folder_paths
+            .iter()
+            .map(|path| path.as_ref().to_path_buf())
+            .chain(std::iter::once(target_base_path.clone())),
+    );
     let mut success = Vec::new();
     let mut failures = Vec::new();
-    let mut changed_object_ids = Vec::new();
     let mut collection_impact = crate::domain::collection::CollectionReferenceImpact::default();
     let mut path_rewrites = Vec::new();
 
@@ -67,7 +72,6 @@ pub async fn move_mods_to_object_service(
         {
             Ok(result) => {
                 success.push(result.new_rel.clone());
-                changed_object_ids.extend(result.changed_object_ids);
                 collection_impact.merge(result.collection_impact);
                 path_rewrites.extend(result.path_rewrites);
             }
@@ -77,16 +81,6 @@ pub async fn move_mods_to_object_service(
             }),
         }
     }
-
-    changed_object_ids.sort();
-    changed_object_ids.dedup();
-    crate::services::app::runtime_effects::finalize_mutation(
-        pool,
-        config,
-        params.game_id,
-        crate::services::app::runtime_effects::MutationOutcome::objects(changed_object_ids),
-    )
-    .await;
 
     Ok(
         crate::services::mods::bulk::BulkResult::with_collection_impact(
@@ -147,7 +141,6 @@ fn parse_target_subpath(target_subpath: Option<&str>) -> Result<Option<PathBuf>,
 
 struct MoveOneResult {
     new_rel: String,
-    changed_object_ids: Vec<String>,
     collection_impact: crate::domain::collection::CollectionReferenceImpact,
     path_rewrites: Vec<crate::domain::workspace::WorkspacePathRewrite>,
 }
@@ -163,31 +156,19 @@ async fn move_one_mod_to_object(
     target_obj_path: &Path,
     target_base_path: &Path,
 ) -> Result<MoveOneResult, AppError> {
-    use crate::common::normalizer::is_disabled_folder;
-    use crate::domain::models::ItemStatus;
-
     let current_path = folder.to_path_buf();
-    // The DB keys on the caller's spelling, not the canonical form.
-    let folder_path = folder.original();
-    let old_object_id =
-        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id).await?;
     let mod_folder_name = current_path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
 
-    let is_currently_disabled = is_disabled_folder(&mod_folder_name);
     let mut new_mod_folder_name = mod_folder_name.clone();
-    let mut new_status = ItemStatus::from_is_disabled(is_currently_disabled);
-
     if status == Some("disabled") {
         new_mod_folder_name = standardize_prefix(&mod_folder_name, false);
-        new_status = ItemStatus::Disabled;
     }
     if status == Some("only-enable") {
         new_mod_folder_name = standardize_prefix(&mod_folder_name, true);
-        new_status = ItemStatus::Enabled;
     }
 
     let new_path = target_base_path.join(&new_mod_folder_name);
@@ -213,21 +194,17 @@ async fn move_one_mod_to_object(
             .map_err(|error| AppError::Io(error.to_string()))?;
     }
 
+    // Identity migration only (doc 1b, path 1): the row follows its folder so
+    // tags/collections survive the move. `status` is not written here — it
+    // derives from the folder name via the caller's scoped reconcile.
     let mod_id_status =
         crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, &old_rel, game_id).await?;
     if let Some((mod_id, _, _)) = mod_id_status {
         crate::repo::mod_repo::set_mod_object(pool, &mod_id, target_object_id).await?;
     }
 
-    crate::repo::mod_repo::update_mod_path_status_and_reason(
-        pool,
-        game_id,
-        &old_rel,
-        &new_rel,
-        new_status,
-        disabled_reason_for_status(new_status),
-    )
-    .await?;
+    crate::repo::mod_repo::update_mod_path_by_old_path_in_game(pool, game_id, &old_rel, &new_rel)
+        .await?;
 
     let collection_impact = crate::services::collection_service::handle_mod_moved_or_renamed(
         pool,
@@ -256,18 +233,7 @@ async fn move_one_mod_to_object(
 
     Ok(MoveOneResult {
         new_rel,
-        changed_object_ids: vec![
-            old_object_id.unwrap_or_default(),
-            target_object_id.to_string(),
-        ],
         collection_impact,
         path_rewrites,
     })
-}
-
-fn disabled_reason_for_status(status: crate::domain::models::ItemStatus) -> Option<&'static str> {
-    if status == crate::domain::models::ItemStatus::Disabled {
-        return Some(crate::common::corridor_constants::DISABLED_REASON_USER);
-    }
-    None
 }

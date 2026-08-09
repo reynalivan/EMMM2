@@ -68,17 +68,10 @@ async fn test_mod_repo_crud() {
     assert!(mod_info.is_some());
     assert_eq!(mod_info.unwrap().1.as_stored(), "Mods/Obj1/Mod1");
 
-    // Update path and status
-    update_mod_path_status_and_reason(
-        &pool,
-        "g1",
-        "Mods/Obj1/Mod1",
-        "Mods/Obj1/Mod2",
-        crate::domain::models::ItemStatus::Disabled,
-        None,
-    )
-    .await
-    .unwrap();
+    // Update path (identity migration; status is reconcile-owned)
+    update_mod_path_by_old_path_in_game(&pool, "g1", "Mods/Obj1/Mod1", "Mods/Obj1/Mod2")
+        .await
+        .unwrap();
 
     // Test delete by id
     delete_mod_by_id(&pool, "mod1").await.unwrap();
@@ -339,32 +332,5 @@ async fn batch_delete_only_touches_the_named_game() {
         surviving_mod_ids(&pool).await,
         vec!["mod_g_b".to_string()],
         "deleting in one game must not remove the other game's identically-pathed mod"
-    );
-}
-
-#[tokio::test]
-async fn batch_update_only_touches_the_named_game() {
-    let pool = setup_pool().await;
-    seed_same_relative_mod_in_two_games(&pool).await;
-
-    batch_update_path_and_status(
-        &pool,
-        "g_a",
-        &[(
-            "Alice/Blue Dress".to_string(),
-            "Alice/DISABLED Blue Dress".to_string(),
-            crate::domain::models::ItemStatus::Disabled,
-        )],
-    )
-    .await
-    .unwrap();
-
-    let untouched: String = sqlx::query_scalar("SELECT folder_path FROM mods WHERE id = 'mod_g_b'")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        untouched, "Alice/Blue Dress",
-        "toggling in one game must not rewrite the other game's row"
     );
 }

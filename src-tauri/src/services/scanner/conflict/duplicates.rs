@@ -101,7 +101,6 @@ pub async fn get_duplicates_for_mod_service(
 /// Enable a specific mod and disable all other enabled siblings for the same object.
 /// Wrapped here to decouple the command layer from direct database queries and orchestration logic.
 pub async fn enable_only_this_service(
-    config: &crate::services::config::ConfigService,
     pool: &sqlx::SqlitePool,
     state: &crate::services::scanner::watcher::WatcherState,
     target_path: String,
@@ -122,7 +121,6 @@ pub async fn enable_only_this_service(
 
     let mut success = Vec::new();
     let mut failures = Vec::new();
-    let mut db_updates = Vec::new();
     let mut path_rewrites = Vec::new();
 
     let target_object_id =
@@ -152,11 +150,6 @@ pub async fn enable_only_this_service(
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| new_abs_path.clone());
 
-                    db_updates.push((
-                        sibling_rel.clone(),
-                        new_rel.clone(),
-                        crate::domain::models::ItemStatus::Disabled,
-                    ));
                     success.push(new_abs_path);
 
                     if sibling_rel != new_rel {
@@ -184,11 +177,6 @@ pub async fn enable_only_this_service(
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| new_abs_path.clone());
 
-            db_updates.push((
-                target_rel.clone(),
-                new_rel.clone(),
-                crate::domain::models::ItemStatus::Enabled,
-            ));
             success.push(new_abs_path);
 
             if target_rel != new_rel {
@@ -207,25 +195,9 @@ pub async fn enable_only_this_service(
         }),
     }
 
-    if !db_updates.is_empty() {
-        if let Err(e) =
-            crate::repo::mod_repo::batch_update_path_and_status(pool, game_id, &db_updates).await
-        {
-            log::error!(
-                "Failed batch updating mod paths after enable-only-this: {}",
-                e
-            );
-        }
-    }
-
-    crate::services::app::runtime_effects::finalize_mutation(
-        pool,
-        config,
-        game_id,
-        crate::services::app::runtime_effects::MutationOutcome::full_game(),
-    )
-    .await;
-
+    // Single-writer: the renames above changed disk only. The caller
+    // (`run_enable_only_this` in the workspace switch) reconciles the changed
+    // roots afterwards, which writes status/paths and runs side effects.
     let mut result = BulkResult::new(success, failures);
     result.path_rewrites = path_rewrites;
     Ok(result)

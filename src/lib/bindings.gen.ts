@@ -17,14 +17,6 @@ async checkConfigStatus() : Promise<Result<ConfigStatus, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async closeSplashscreen() : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Fetch all dashboard data in a single command for minimal IPC overhead.
  * 
@@ -1951,7 +1943,7 @@ size_bytes: number;
  * Associated game_id (for DB cleanup)
  */
 game_id: string | null }
-export type UpdateObjectInput = { name: string | null; object_type: string | null; sub_category: string | null; status: number | null; metadata: JsonValue | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_auto_sync: boolean | null; is_pinned: boolean | null; tags: string[] | null }
+export type UpdateObjectInput = { name: string | null; object_type: string | null; sub_category: string | null; metadata: JsonValue | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_auto_sync: boolean | null; is_pinned: boolean | null; tags: string[] | null }
 export type WhitelistEntry = { id: string; folderAId: string; folderBId: string; folderAName: string; folderBName: string; reason: string; ignoredAt: string }
 export type WorkspaceCapabilities = { can_toggle: boolean; can_rename: boolean; can_delete: boolean; can_move: boolean; can_toggle_safe: boolean; can_sync: boolean; can_enable_only_this: boolean; can_pin: boolean; can_edit_metadata: boolean; can_reveal_in_explorer: boolean; can_move_category: boolean; can_open_in_explorer: boolean }
 export type WorkspaceDisplayMode = "container_folder" | "mod_pack" | "variant" | "flat_mod" | "internal_assets" | "unknown"

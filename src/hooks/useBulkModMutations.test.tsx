@@ -204,10 +204,13 @@ describe('useBulkToggle', () => {
     });
 
     expect(bulkToggleMods).toHaveBeenCalledWith('game-1', ['E:\\Mods\\ALBEDO\\Variant'], false);
+    // Rewrites preserve the selection's original (backslash) separator style
+    // so exact-string matching against backend paths keeps working.
+    const rewrittenPath = 'E:\\Mods\\ALBEDO\\DISABLED Variant';
     await waitFor(() => {
-      expect(useAppStore.getState().selectedModPath).toBe(newPath);
+      expect(useAppStore.getState().selectedModPath).toBe(rewrittenPath);
     });
-    expect(useAppStore.getState().gridSelection.has(newPath)).toBe(true);
+    expect(useAppStore.getState().gridSelection.has(rewrittenPath)).toBe(true);
     expect(useAppStore.getState().gridSelection.has('E:\\Mods\\ALBEDO\\Variant')).toBe(false);
   });
 });

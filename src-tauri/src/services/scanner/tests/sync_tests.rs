@@ -853,8 +853,8 @@ async fn commit_preserves_the_scanned_enabled_state() {
     .await
     .unwrap();
 
-    let rows: Vec<(String, i64, Option<String>)> =
-        sqlx::query_as("SELECT actual_name, status, disabled_reason FROM mods WHERE game_id = ?")
+    let rows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT actual_name, status FROM mods WHERE game_id = ?")
             .bind("g1")
             .fetch_all(&pool)
             .await
@@ -862,19 +862,13 @@ async fn commit_preserves_the_scanned_enabled_state() {
 
     let live = rows
         .iter()
-        .find(|(name, _, _)| name == "Amber Live")
+        .find(|(name, _)| name == "Amber Live")
         .expect("enabled mod committed");
     let parked = rows
         .iter()
-        .find(|(name, _, _)| name == "Amber Parked")
+        .find(|(name, _)| name == "Amber Parked")
         .expect("disabled mod committed");
 
     assert_eq!(live.1, 1, "an enabled scan item must commit as enabled");
-    assert_eq!(live.2, None, "an enabled mod carries no disabled reason");
     assert_eq!(parked.1, 0, "a disabled scan item must commit as disabled");
-    assert_eq!(
-        parked.2.as_deref(),
-        Some(crate::common::corridor_constants::DISABLED_REASON_USER),
-        "the user's own choice is what parked it"
-    );
 }

@@ -9,7 +9,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
 import { extractFileInUsePayload, formatAppError } from '../../../lib/appError';
 import { toast } from '../../../stores/useToastStore';
-import { thumbnailKeys } from '../../../hooks/useThumbnail';
+import { pathsEqual } from '../../../lib/pathKey';
 import type {
   WorkspaceExplorerNode,
   WorkspaceImpact,
@@ -20,12 +20,10 @@ import type {
 } from '../../../types/workspace';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import {
-  buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
   buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '../optimistic/descriptor';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import {
   openWorkspaceConflictDialog,
@@ -100,17 +98,14 @@ export function buildSwitchRefreshDescriptor(
 }
 
 /**
- * Explorer switches fold the thumbnail drop and path rewrites into a single
- * effect descriptor; the refreshed counts come from the follow-up refetch.
+ * Explorer switches replay path rewrites; the refreshed counts come from the
+ * follow-up refetch. Thumbnails are identity-keyed and survive the toggle.
  */
 export function buildExplorerSwitchEffectDescriptor(
-  node: WorkspaceExplorerNode,
+  _node: WorkspaceExplorerNode,
   impact: WorkspaceImpact,
 ) {
-  return mergeRuntimeEffectDescriptors(
-    buildQueryRemovalDescriptor([thumbnailKeys.folder(node.path)], []),
-    buildWorkspacePathRewritesDescriptor(impact.rewrites, []),
-  );
+  return buildWorkspacePathRewritesDescriptor(impact.rewrites, []);
 }
 
 /** Runs the switch command, routing known failures to their dialogs. */
@@ -138,8 +133,8 @@ export async function executeWorkspaceSwitch(
 }
 
 /**
- * Shared post-switch cache work: drop the stale thumbnail, replay path
- * rewrites when the target actually moved, then publish the refresh scopes.
+ * Shared post-switch cache work: replay path rewrites, then publish the
+ * refresh scopes. Thumbnails are identity-keyed and survive the toggle.
  */
 export async function applyWorkspaceSwitchEffects(
   queryClient: QueryClient,
@@ -147,12 +142,7 @@ export async function applyWorkspaceSwitchEffects(
   previousPath: string,
   fallbackClass: WorkspaceSwitchFallbackClass,
 ): Promise<void> {
-  applyRuntimeEffects(
-    queryClient,
-    buildQueryRemovalDescriptor([thumbnailKeys.folder(previousPath)], []),
-  );
-
-  if (result.primary_path !== previousPath) {
+  if (!pathsEqual(result.primary_path, previousPath)) {
     applyRuntimeEffects(
       queryClient,
       buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
@@ -171,16 +161,6 @@ export async function applyEnableOnlyThisEffects(
   queryClient: QueryClient,
   result: WorkspaceSwitchResult,
 ): Promise<void> {
-  if (result.changed_folder_paths.length > 0) {
-    applyRuntimeEffects(
-      queryClient,
-      buildQueryRemovalDescriptor(
-        result.changed_folder_paths.map((path) => thumbnailKeys.folder(path)),
-        [],
-      ),
-    );
-  }
-
   applyRuntimeEffects(
     queryClient,
     buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),

@@ -70,6 +70,19 @@ impl ConfigService {
         read(&lock(&self.settings))
     }
 
+    /// The configured game whose mods root contains `path`, if any. Used by
+    /// import/restore flows that receive a directory rather than a game id
+    /// but must reconcile that game afterwards.
+    pub fn game_id_for_path(&self, path: &std::path::Path) -> Option<String> {
+        self.with_settings(|settings| {
+            settings
+                .games
+                .iter()
+                .find(|game| path.starts_with(&game.mod_path))
+                .map(|game| game.id.clone())
+        })
+    }
+
     /// Whether the Safe Mode corridor is active.
     /// The corridor the app is operating in right now.
     ///

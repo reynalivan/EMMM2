@@ -110,22 +110,6 @@ where
     Ok(())
 }
 
-pub async fn update_object_status<'c, E>(
-    executor: E,
-    object_id: &str,
-    status: ItemStatus,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query("UPDATE objects SET status = ? WHERE id = ?")
-        .bind(status as i64)
-        .bind(object_id)
-        .execute(executor)
-        .await?;
-    Ok(())
-}
-
 /// JSON sentinels persisted when a value fails to serialize.
 const EMPTY_JSON_OBJECT: &str = "{}";
 const EMPTY_JSON_ARRAY: &str = "[]";
@@ -151,10 +135,6 @@ pub async fn update_object(
     }
     if let Some(obj_type) = &updates.object_type {
         sets.push("object_type = ").push_bind_unseparated(obj_type);
-        wrote_any = true;
-    }
-    if let Some(st) = &updates.status {
-        sets.push("status = ").push_bind_unseparated(*st as i64);
         wrote_any = true;
     }
     if let Some(sub) = &updates.sub_category {

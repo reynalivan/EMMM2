@@ -129,10 +129,13 @@ describe('workspace switch ops', () => {
   describe('buildExplorerSwitchEffectDescriptor', () => {
     const impact = { rewrites: [], refresh_scopes: [] } as unknown as WorkspaceImpact;
 
-    it('drops the stale thumbnail for the switched node', () => {
+    it('keeps the thumbnail cache across a toggle (identity-keyed)', () => {
       const descriptor = buildExplorerSwitchEffectDescriptor(createExplorerNode(), impact);
 
-      expect(descriptor.removedQueryKeys).toHaveLength(1);
+      // A toggle rename keeps the folder's identity, so the cached thumbnail
+      // must survive — no query removal, no thumbnail drop.
+      expect(descriptor.removedQueryKeys).toHaveLength(0);
+      expect(descriptor.thumbnailPaths).toHaveLength(0);
       expect(descriptor.refreshEvents).toEqual([]);
     });
   });

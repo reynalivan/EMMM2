@@ -10,3 +10,6 @@ pub mod reconcile;
 pub mod rename_healer;
 pub mod types;
 pub mod watcher_batch;
+
+#[cfg(test)]
+mod reconcile_tests;

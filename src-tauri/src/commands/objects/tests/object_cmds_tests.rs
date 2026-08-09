@@ -149,12 +149,12 @@ async fn test_create_object_cmd() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
 
     let payload = CreateObjectInput {
+        status: None,
         game_id: game_id.clone(),
         name: "New Hero".to_string(),
         folder_path: Some("New Hero Folder".to_string()),
         object_type: "Weapon".to_string(),
         sub_category: None,
-        status: None,
         metadata: Some(serde_json::json!({})),
         thumbnail_url: None,
         hash_db: None,
@@ -214,7 +214,6 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         name: Some("NewName".to_string()),
         object_type: Some("Character".to_string()),
         sub_category: None,
-        status: None,
         metadata: Some(serde_json::json!({"test":true})),
         thumbnail_path: None,
         is_auto_sync: None,

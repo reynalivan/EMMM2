@@ -67,9 +67,12 @@ describe('useThumbnail (TC-41)', () => {
     expect(commands.getModThumbnail).not.toHaveBeenCalled();
   });
 
-  it('TC-41-004: uses correct query key factory', () => {
+  it('TC-41-004: query key is identity-based, stable across toggle spellings', () => {
     const key = thumbnailKeys.folder('C:\\Mods\\TestMod');
-    expect(key).toEqual(['thumbnails', 'C:\\Mods\\TestMod']);
+    expect(key).toEqual(['thumbnails', 'c:/mods/testmod']);
+    // The DISABLED spelling resolves to the same cache entry: a toggle rename
+    // must not orphan the thumbnail.
+    expect(thumbnailKeys.folder('C:\\Mods\\DISABLED TestMod')).toEqual(key);
   });
 
   it('TC-41-005: returns null when backend returns empty string (falsy)', async () => {

@@ -18,34 +18,49 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let disable_count = to_disable.len();
     let mut operations = Vec::with_capacity(enable_count + disable_count);
     operations.extend(to_enable.into_iter().map(|target| RuntimeToggleOperation {
-        id: target.id,
         folder_path: target.folder_path,
         target_enabled: true,
-        disabled_reason: None,
     }));
     operations.extend(to_disable.into_iter().map(|target| RuntimeToggleOperation {
-        id: target.id,
         folder_path: target.folder_path,
         target_enabled: false,
-        disabled_reason: Some(
-            crate::common::corridor_constants::DISABLED_REASON_COLLECTION.to_string(),
-        ),
     }));
 
-    let result = toggle_mods_mixed(
-        &ctx.pool,
-        RuntimeToggleBatchRequest {
-            game_id: ctx.game_id.clone(),
-            mods_path: ctx.mods_path.clone(),
-            operations,
-        },
-    )
+    let result = toggle_mods_mixed(RuntimeToggleBatchRequest {
+        mods_path: ctx.mods_path.clone(),
+        operations,
+    })
     .await?;
 
     ctx.mods_enabled = result.enabled_count;
     ctx.mods_disabled = result.disabled_count;
     ctx.runtime_path_rewrites.extend(result.path_rewrites);
     ctx.warnings.extend(result.warnings);
+
+    // Single-writer: the renames above changed disk only. Converge the mods
+    // rows now — the later pipeline steps (corridor, post-apply harvest) read
+    // `status` and must see the new state. Watcher events for these paths are
+    // blanket-suppressed for the whole apply, so this cannot race a
+    // WatcherBatch reconcile for the same roots.
+    if !result.changed_paths.is_empty() {
+        crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
+            crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+                pool: &ctx.pool,
+                game_id: &ctx.game_id,
+                mods_path: &ctx.mods_path,
+                safe_mode_keywords: &ctx.settings.safe_mode.keywords,
+                reason:
+                    &crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+                changed_paths: &result.changed_paths,
+                force_full: false,
+                watcher_events: None,
+            },
+        )
+        .await
+        .map_err(|error| {
+            CollectionError::Db(format!("Post-rename disk reconcile failed: {error}"))
+        })?;
+    }
 
     log::info!(
         "apply_pipeline[batch_rename]: {} enabled, {} disabled",

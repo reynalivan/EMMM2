@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, State};
 #[tauri::command]
 pub async fn import_mods_from_paths(
     app: AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     config: State<'_, ConfigService>,
@@ -103,7 +104,39 @@ pub async fn import_mods_from_paths(
         }
     }
 
+    // Single-writer: watcher events were suppressed during the moves, so the
+    // scoped reconcile is what writes the new rows.
+    reconcile_import_target(&app, pool.inner(), &config, target).await;
+
     Ok(BulkResult::new(success, failures))
+}
+
+/// Reconcile the game whose mods root contains `target` after an import.
+/// Failure is logged, not fatal — the files already landed on disk.
+async fn reconcile_import_target(
+    app: &AppHandle,
+    pool: &sqlx::SqlitePool,
+    config: &ConfigService,
+    target: &Path,
+) {
+    let Some(game_id) = config.game_id_for_path(target) else {
+        log::warn!(
+            "Import target not under any configured mods root; skipping reconcile: {}",
+            target.display()
+        );
+        return;
+    };
+
+    if let Err(error) = crate::services::disk_reconcile::emit::emit_internal_disk_reconcile(
+        app,
+        pool,
+        &game_id,
+        vec![target.to_string_lossy().to_string()],
+    )
+    .await
+    {
+        log::warn!("Post-import disk reconcile failed: {error}");
+    }
 }
 
 fn handle_archive_import(
@@ -151,6 +184,8 @@ fn handle_archive_import(
 #[specta::specta]
 #[tauri::command]
 pub async fn ingest_dropped_folders(
+    app: AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     config: State<'_, ConfigService>,
@@ -159,7 +194,13 @@ pub async fn ingest_dropped_folders(
 ) -> Result<Vec<String>, AppError> {
     let _lock = op_lock.acquire().await?;
     validate_dir_in_configured_roots(&config, &mods_path)?;
-    ingest_dropped_folders_inner(&state, paths, mods_path).await
+    let moved = ingest_dropped_folders_inner(&state, paths, mods_path.clone()).await?;
+
+    if !moved.is_empty() {
+        reconcile_import_target(&app, pool.inner(), &config, Path::new(&mods_path)).await;
+    }
+
+    Ok(moved)
 }
 
 /// Moves dropped folders into the mods root; returns the moved folder names.

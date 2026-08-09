@@ -64,25 +64,29 @@ static DISABLED_DETECT_RE: LazyLock<Regex> =
 
 /// Normalize a folder name for UI display.
 ///
-/// Strips canonical or legacy DISABLED prefix variants and trims whitespace.
+/// Strips canonical or legacy DISABLED prefix variants — repeatedly, so an
+/// externally produced `DISABLED DISABLED Foo` still resolves to `Foo` — and
+/// trims whitespace. This is the identity rule every path key derives from.
 ///
-/// Borrows when nothing was stripped. Most folder names are not prefixed, and
-/// this runs per path component in the matcher, the explorer listing and every
-/// key comparison — so the common case must not allocate or touch the regex.
+/// Always borrows. Most folder names are not prefixed, and this runs per path
+/// component in the matcher, the explorer listing and every key comparison —
+/// so the common case must not allocate or touch the regex.
 pub fn normalize_display_name(name: &str) -> Cow<'_, str> {
-    let trimmed = name.trim();
-    // `DISABLED_DETECT_RE` is `(?i)^disabled[\s_-]+`; the cheap prefix test
-    // rejects almost everything before the engine is entered.
-    if !trimmed
-        .get(..DISABLED_WORD.len())
-        .is_some_and(|head| head.eq_ignore_ascii_case(DISABLED_WORD))
-    {
-        return Cow::Borrowed(trimmed);
-    }
+    let mut value = name.trim();
+    loop {
+        // `DISABLED_DETECT_RE` is `(?i)^disabled[\s_-]+`; the cheap prefix
+        // test rejects almost everything before the engine is entered.
+        if !value
+            .get(..DISABLED_WORD.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(DISABLED_WORD))
+        {
+            return Cow::Borrowed(value);
+        }
 
-    match DISABLED_DETECT_RE.replace(trimmed, "") {
-        Cow::Borrowed(value) => Cow::Borrowed(value.trim()),
-        Cow::Owned(value) => Cow::Owned(value.trim().to_string()),
+        let Some(matched) = DISABLED_DETECT_RE.find(value) else {
+            return Cow::Borrowed(value);
+        };
+        value = value[matched.end()..].trim();
     }
 }
 

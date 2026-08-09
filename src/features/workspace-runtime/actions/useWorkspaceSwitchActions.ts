@@ -119,11 +119,14 @@ export function useWorkspaceSwitchActions() {
 
       const nextPath = result.primary_path;
       await applyWorkspaceSwitchEffects(queryClient, result, targetPath, 'objectSwitch');
-      toast.success(
-        t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
-          count: 1,
-        }),
-      );
+      // A no-op switch changed nothing on disk — don't announce a change.
+      if (result.status !== 'noop') {
+        toast.success(
+          t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
+            count: 1,
+          }),
+        );
+      }
 
       return nextPath;
     },

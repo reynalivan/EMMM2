@@ -120,6 +120,34 @@ fn test_manual_unsuppress_does_not_clear_active_suppression_guard() {
 }
 
 #[test]
+fn test_path_scoped_suppression_covers_both_spellings_and_children_only() {
+    let state = WatcherState::default();
+    let alice = Path::new(r"E:\Mods\Alice");
+    let alice_disabled = Path::new(r"E:\Mods\DISABLED Alice");
+    let alice_child = Path::new(r"E:\Mods\DISABLED Alice\Blue\mod.ini");
+    let bob = Path::new(r"E:\Mods\Bob");
+    // Same identity prefix as a sibling name — must NOT match "Alice".
+    let alice_v2 = Path::new(r"E:\Mods\Alice V2");
+
+    let guard = state.suppressor.suppress_paths([alice]);
+
+    // Blanket flag untouched: unrelated events keep flowing.
+    assert!(!state.suppressor.load(Ordering::Acquire));
+
+    assert!(state.suppressor.is_path_suppressed(alice));
+    assert!(state.suppressor.is_path_suppressed(alice_disabled));
+    assert!(state.suppressor.is_path_suppressed(alice_child));
+    assert!(!state.suppressor.is_path_suppressed(bob));
+    assert!(!state.suppressor.is_path_suppressed(alice_v2));
+
+    // The tail keeps suppressing right after the guard drops, so async OS
+    // events queued during the mutation are still swallowed.
+    drop(guard);
+    assert!(state.suppressor.is_path_suppressed(alice_disabled));
+    assert!(!state.suppressor.is_path_suppressed(bob));
+}
+
+#[test]
 fn test_watcher_keeps_deep_directory_events_but_filters_deep_asset_noise() {
     let root = Path::new(r"E:\Mods");
     let deep_dir = root.join("Alice").join("Nested").join("Blue Dress");
@@ -171,8 +199,9 @@ async fn test_watcher_detects_rename_of_dot_named_folder() {
     let mut received = false;
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     while std::time::Instant::now() < deadline {
-        if let Ok(Some(ModWatchEvent::StatusChanged { .. } | ModWatchEvent::Renamed { .. })) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
+        if let Ok(Some(
+            ModWatchEvent::Renamed { .. } | ModWatchEvent::Created(_) | ModWatchEvent::Removed(_),
+        )) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
         {
             received = true;
             break;
@@ -191,14 +220,4 @@ fn test_watcher_nonexistent_path() {
     let suppressed = Arc::new(WatcherSuppressor::new(false));
     let result = watch_mod_directory(Path::new("/nonexistent/path"), suppressed);
     assert!(result.is_err());
-}
-
-#[test]
-fn test_detect_status_change_with_unicode_folder_name() {
-    let from = Path::new(r"C:\Mods\日本語Mod");
-    let to = Path::new(r"C:\Mods\DISABLED 日本語Mod");
-
-    let status = detect_status_change(from, to);
-
-    assert_eq!(status, Some(("ENABLED", "DISABLED")));
 }

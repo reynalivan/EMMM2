@@ -67,44 +67,29 @@ async fn process_event_loop(
     suppressor: Arc<WatcherSuppressor>,
 ) {
     loop {
+        // The debouncer already batches (one callback per debounce window and
+        // it sends its whole batch synchronously), so a recv + drain
+        // reassembles it without extra timers here.
         let mut batch = Vec::new();
-
         let Some(first_event) = rx.recv().await else {
             break;
         };
         batch.push(first_event);
-
-        let max_wait = tokio::time::sleep(std::time::Duration::from_millis(1000));
-        tokio::pin!(max_wait);
-
-        loop {
-            let silence_timeout = tokio::time::sleep(std::time::Duration::from_millis(50));
-            tokio::select! {
-                _ = &mut max_wait => {
-                    break;
-                }
-                _ = silence_timeout => {
-                    break;
-                }
-                event = rx.recv() => {
-                    let Some(event) = event else {
-                        break;
-                    };
-                    batch.push(event);
-                }
-            }
+        while let Ok(event) = rx.try_recv() {
+            batch.push(event);
         }
 
         log::debug!("Watcher flushing batched events: {}", batch.len());
 
-        // notify emits transient errors during event bursts (Windows
-        // ReadDirectoryChangesW buffer overflow on a refresh/mass-rename is the
-        // classic one). The watcher keeps running and the reconcile below +
-        // TTL repair self-heal, so log them instead of alarming the user with a
-        // toast. Genuine failures still surface via the reconcile Err branch.
+        // notify emits errors on Windows ReadDirectoryChangesW buffer overflow
+        // during mass renames — events were LOST, so a scoped reconcile of the
+        // known paths is not enough. Fall back to a full pass.
+        let events_lost = batch
+            .iter()
+            .any(|event| matches!(event, ModWatchEvent::Error(_)));
         for event in &batch {
             if let ModWatchEvent::Error(error) = event {
-                log::warn!("Transient watcher error for {}: {}", mods_path_root, error);
+                log::warn!("Watcher error for {}: {}", mods_path_root, error);
             }
         }
 
@@ -113,21 +98,36 @@ async fn process_event_loop(
         let disk_reconcile_state =
             app.state::<crate::services::disk_reconcile::orchestrator::DiskReconcileState>();
         let config = app.state::<crate::services::config::ConfigService>();
+        let context = crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool: &pool,
+            config: config.inner(),
+            state: disk_reconcile_state.inner(),
+            watcher_suppressor: suppressor.clone(),
+        };
 
         // Disk Reconcile only. Watcher must never invoke the Deep Match Scanner pipeline.
-        match crate::services::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
-            crate::services::disk_reconcile::orchestrator::DiskReconcileContext {
-                pool: &pool,
-                config: config.inner(),
-                state: disk_reconcile_state.inner(),
-                watcher_suppressor: suppressor.clone(),
-            },
-            game_id.clone(),
-            changed_paths,
-            &batch,
-        )
-        .await
-        {
+        let result = if events_lost {
+            crate::services::disk_reconcile::orchestrator::reconcile_disk_state(
+                context,
+                crate::services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+                    game_id.clone(),
+                    crate::services::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+                    Vec::new(),
+                    true,
+                ),
+            )
+            .await
+        } else {
+            crate::services::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
+                context,
+                game_id.clone(),
+                changed_paths,
+                &batch,
+            )
+            .await
+        };
+
+        match result {
             Ok(result) => {
                 let _ = app.emit("disk_reconcile:result", result);
             }

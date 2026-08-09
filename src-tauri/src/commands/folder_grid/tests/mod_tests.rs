@@ -168,9 +168,12 @@ async fn test_list_mod_folders_double_disabled() {
     let folders = result.unwrap().children;
     assert_eq!(folders.len(), 1);
 
-    // Should be disabled, and name should be stripped exactly once from prefix
+    // Should be disabled. Display strips ALL prefixes: display and path keys
+    // share one identity rule (normalize_display_name), and identity must be
+    // stable across toggles — "DISABLED DISABLED Skin" and "DISABLED Skin"
+    // are the same folder, one toggle apart.
     assert!(!folders[0].is_enabled);
-    assert_eq!(folders[0].name, "DISABLED Skin");
+    assert_eq!(folders[0].name, "Skin");
     assert_eq!(folders[0].folder_name, "DISABLED DISABLED Skin");
 }
 

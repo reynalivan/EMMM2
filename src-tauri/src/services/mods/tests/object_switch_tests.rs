@@ -37,13 +37,19 @@ async fn object_switch_reports_rewrite_when_db_disabled_but_disk_enabled() {
     .await
     .unwrap();
 
-    let config = crate::services::config::ConfigService::new_for_test_async(pool.clone()).await;
+    // Pin the single-writer contract: seed status=Disabled so a service that
+    // still wrote status (it must not) would flip it to Enabled below.
+    sqlx::query("UPDATE objects SET status = 0 WHERE id = ?")
+        .bind("o_object_switch_rewrite")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     let watcher_state = WatcherState::new();
     let op_lock = OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
 
     let outcome = toggle_object_root_service(
-        &config,
         &pool,
         &watcher_state,
         &op_guard,
@@ -57,11 +63,14 @@ async fn object_switch_reports_rewrite_when_db_disabled_but_disk_enabled() {
     assert!(outcome.original_path.ends_with("DISABLED Alice"));
     assert_eq!(outcome.next_path, enabled_path.to_string_lossy());
 
+    // Single-writer contract: the service never writes `status` — that column
+    // converges via the caller's scoped disk reconcile. Only the resolve-time
+    // path heal touched `folder_path` here.
     let row: (String, i64) = sqlx::query_as("SELECT folder_path, status FROM objects WHERE id = ?")
         .bind("o_object_switch_rewrite")
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(row.0, "Alice");
-    assert_eq!(row.1, ItemStatus::Enabled as i64);
+    assert_eq!(row.1, ItemStatus::Disabled as i64);
 }

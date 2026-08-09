@@ -71,7 +71,6 @@ async fn resolve_mod_target_path(
 }
 
 async fn run_enable_only_this(
-    config: &ConfigService,
     pool: &sqlx::SqlitePool,
     watcher_state: &WatcherState,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
@@ -80,7 +79,6 @@ async fn run_enable_only_this(
     changed_object_ids: Vec<String>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
     let result = crate::services::scanner::conflict::enable_only_this_service(
-        config,
         pool,
         watcher_state,
         target_path,
@@ -150,9 +148,11 @@ fn build_switch_impact(
     }
 }
 
-/// Convergence hook: scoped disk reconcile after a switch so DB matches disk
-/// even if a manual sync step missed a case. Failure is logged, not fatal —
-/// the FS + DB work already succeeded.
+/// The single writer for this mutation: scoped disk reconcile after a switch.
+/// Quiet (no `disk_reconcile:result` event) — the switch result the command
+/// returns already drives the frontend refresh, and emitting too would cause
+/// a second full invalidation+refetch round per toggle. Failure is logged,
+/// not fatal — the FS work already succeeded and the next reconcile heals.
 async fn reconcile_after_switch(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
@@ -163,7 +163,7 @@ async fn reconcile_after_switch(
         return;
     }
 
-    if let Err(error) = crate::services::disk_reconcile::emit::emit_internal_disk_reconcile(
+    if let Err(error) = crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
         app,
         pool,
         game_id,
@@ -187,7 +187,6 @@ pub async fn execute_switch(
     // Object targets must use object-switch semantics, never the mod-toggle service.
     if matches!(input.target.kind, WorkspaceSwitchTargetKind::ObjectId) {
         let outcome = crate::services::mods::object_switch::toggle_object_root_service(
-            config,
             pool,
             watcher_state,
             op_guard,
@@ -206,15 +205,15 @@ pub async fn execute_switch(
         let original_path = outcome.original_path.clone();
         let object_id = outcome.object_id.clone();
 
-        if status == WorkspaceSwitchStatus::Applied {
-            reconcile_after_switch(
-                app,
-                pool,
-                &input.game_id,
-                vec![original_path.clone(), next_path.clone()],
-            )
-            .await;
-        }
+        // Unconditional: the reconcile IS the DB write for this mutation
+        // (single writer), and on a no-op it heals any drift the toggle found.
+        reconcile_after_switch(
+            app,
+            pool,
+            &input.game_id,
+            vec![original_path.clone(), next_path.clone()],
+        )
+        .await;
 
         return Ok(WorkspaceSwitchResult {
             status,
@@ -241,7 +240,6 @@ pub async fn execute_switch(
 
     if matches!(input.resolution, WorkspaceSwitchResolution::EnableOnlyThis) {
         let result = run_enable_only_this(
-            config,
             pool,
             watcher_state,
             op_guard,
@@ -265,7 +263,6 @@ pub async fn execute_switch(
     let validated_target =
         crate::services::fs_utils::guard::validate_path(config, &input.game_id, &target_path)?;
     let result = crate::services::mods::core_ops::toggle_mod_inner_service_with_duplicate_policy(
-        config,
         pool,
         watcher_state,
         op_guard,
@@ -276,8 +273,8 @@ pub async fn execute_switch(
     )
     .await;
 
-    let next_path = match result {
-        Ok(path) => path,
+    let outcome = match result {
+        Ok(outcome) => outcome,
         Err(AppError::DuplicateConflict(duplicates)) => {
             return Ok(WorkspaceSwitchResult {
                 status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
@@ -290,6 +287,7 @@ pub async fn execute_switch(
         }
         Err(error) => return Err(error),
     };
+    let next_path = outcome.new_absolute_path;
 
     let status = if next_path == target_path {
         WorkspaceSwitchStatus::Noop
@@ -297,15 +295,13 @@ pub async fn execute_switch(
         WorkspaceSwitchStatus::Applied
     };
 
-    if status == WorkspaceSwitchStatus::Applied {
-        reconcile_after_switch(
-            app,
-            pool,
-            &input.game_id,
-            vec![target_path.clone(), next_path.clone()],
-        )
-        .await;
-    }
+    // Unconditional: the reconcile IS the DB write for this mutation (single
+    // writer), and on a no-op it heals any drift the toggle found. Implicit
+    // swap can disable variants under OTHER object roots, so their paths are
+    // part of the scope too.
+    let mut reconcile_paths = vec![target_path.clone(), next_path.clone()];
+    reconcile_paths.extend(outcome.swapped_paths);
+    reconcile_after_switch(app, pool, &input.game_id, reconcile_paths).await;
 
     Ok(WorkspaceSwitchResult {
         status,

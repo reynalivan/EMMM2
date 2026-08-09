@@ -35,7 +35,7 @@ async fn run_writer(
     let mut change_summary = ChangeSummaryBuilder::default();
 
     let mut tx = pool.begin().await.expect("tx should begin");
-    let (objects_changed, folders_changed) = reconcile_projection_in_tx(
+    let write_outcome = reconcile_projection_in_tx(
         &mut tx,
         ProjectionWriteRequest {
             game_id,
@@ -54,8 +54,8 @@ async fn run_writer(
     tx.commit().await.expect("tx should commit");
 
     WriterRun {
-        objects_changed,
-        folders_changed,
+        objects_changed: write_outcome.objects_changed,
+        folders_changed: write_outcome.folders_changed,
         path_updates,
         change_summary: change_summary.build(),
     }

@@ -313,3 +313,43 @@ fn commands_never_take_corridor_flags() {
         found.join("\n")
     );
 }
+
+/// `mods.status` / `objects.status` and the stored folder paths are a
+/// projection of the filesystem — disk reconcile is their single writer
+/// (with the explicit deep-match scan commit as the one other disk-derived
+/// pass). A service that calls a status-writing repo function directly
+/// reintroduces the dual-writer drift this architecture removed: enable /
+/// disable is a rename on disk plus a scoped reconcile, never a direct
+/// UPDATE.
+#[test]
+fn status_is_written_by_disk_reconcile_only() {
+    let writer_fns = [
+        "update_mod_sync_row(",
+        "update_mod_identity_tx(",
+        "insert_mod_tx(",
+        "update_object_runtime_state_by_path(",
+        "update_object_runtime_state_by_id(",
+    ];
+    let allowed_paths = [
+        // The definitions themselves.
+        r"repo\mod_repo",
+        "repo/mod_repo",
+        r"repo\object_repo",
+        "repo/object_repo",
+        // The single writer.
+        "disk_reconcile",
+        // Disk-derived like reconcile: the explicit deep-match scan commit.
+        r"scanner\sync\commit",
+        "scanner/sync/commit",
+    ];
+    let found: Vec<String> = violations("src", &writer_fns)
+        .into_iter()
+        .filter(|line| !allowed_paths.iter().any(|path| line.contains(path)))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "status/path projection columns are written by disk reconcile only; \
+         mutate the filesystem and enqueue a scoped reconcile instead:\n{}",
+        found.join("\n")
+    );
+}

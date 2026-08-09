@@ -44,6 +44,9 @@ async fn test_resolve_large_8k_image_without_blocking() {
 }
 
 // Covers: TC-41-001 (Cache key handling for DISABLED vs enabled states)
+//
+// A toggle renames the folder but not its identity: resolving the DISABLED
+// spelling must return the same cached .webp, with no regeneration.
 #[tokio::test]
 async fn test_cache_hits_for_toggled_disabled_state() {
     let tmp_dir = TempDir::new().unwrap();
@@ -53,19 +56,52 @@ async fn test_cache_hits_for_toggled_disabled_state() {
     ThumbnailCache::init(&app_data);
 
     let enabled_dir = tmp.join("MyMod");
-    let _disabled_dir = tmp.join("DISABLED MyMod"); // Represents toggled state
     fs::create_dir(&enabled_dir).unwrap();
-
     let src_img = enabled_dir.join("preview.png");
     create_dummy_image(&src_img);
 
-    let folder_str = enabled_dir.to_string_lossy().to_string();
-    let res1 = ThumbnailCache::resolve("game1", &folder_str)
+    ThumbnailCache::init(&app_data);
+    let res1 = ThumbnailCache::resolve("game1", &enabled_dir.to_string_lossy())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(res1.ends_with(".webp"));
+
+    // The global singleton races with parallel tests re-pointing base_dir, so
+    // assertions compare the identity-derived .webp file name, not the dir.
+    let webp_name = |path: &str| {
+        std::path::Path::new(path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    };
+
+    // Toggle on disk, then resolve via the DISABLED spelling.
+    let disabled_dir = tmp.join("DISABLED MyMod");
+    fs::rename(&enabled_dir, &disabled_dir).unwrap();
+    ThumbnailCache::init(&app_data);
+    let res2 = ThumbnailCache::resolve("game1", &disabled_dir.to_string_lossy())
         .await
         .unwrap()
         .unwrap();
 
-    // Here we just ensure we can resolve both and it generates a valid absolute path.
-    assert!(std::path::Path::new(&res1).is_absolute());
-    assert!(res1.ends_with(".webp"));
+    assert_eq!(
+        webp_name(&res1),
+        webp_name(&res2),
+        "toggle must not change the cached thumbnail"
+    );
+
+    // Invalidation through either spelling clears the shared entry.
+    ThumbnailCache::invalidate_folder(&enabled_dir.to_string_lossy());
+    ThumbnailCache::init(&app_data);
+    let res3 = ThumbnailCache::resolve("game1", &disabled_dir.to_string_lossy())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        webp_name(&res2),
+        webp_name(&res3),
+        "L2 disk cache is identity-keyed too"
+    );
 }

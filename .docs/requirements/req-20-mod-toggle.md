@@ -1,5 +1,8 @@
 # Epic 20: Mod Toggle Operations
 
+> **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
+
+
 ## 1. Executive Summary
 
 - **Problem Statement**: Enabling/disabling a mod by adding/removing a `DISABLED ` prefix from the folder name is the single most frequent user action — it must be instant from the UI's perspective and safe against concurrent toggles, folder locks, and rename collisions.

@@ -7,16 +7,7 @@ pub enum ModWatchEvent {
     Created(String),
     Modified(String),
     Removed(String),
-    Renamed {
-        from: String,
-        to: String,
-    },
-    StatusChanged {
-        from: String,
-        to: String,
-        from_status: &'static str,
-        to_status: &'static str,
-    },
+    Renamed { from: String, to: String },
     Error(String),
 }
 

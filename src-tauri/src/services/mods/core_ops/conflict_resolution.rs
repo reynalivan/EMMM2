@@ -15,7 +15,7 @@ use crate::services::app::runtime_effects::{finalize_mutation, MutationOutcome};
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::fs_utils::operation_lock::OpGuard;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 
 /// How to break a duplicate pair apart.
 ///
@@ -139,7 +139,10 @@ pub fn rename_duplicate(
     }
 
     {
-        let _guard = SuppressionGuard::new(&state.suppressor);
+        // The suffixed target has a new identity: register both sides.
+        let _guard = state
+            .suppressor
+            .suppress_paths([duplicate, new_path.as_path()]);
         fs::rename(duplicate, &new_path)
             .map_err(|e| AppError::Io(format!("Failed to rename duplicate: {e}")))?;
     }

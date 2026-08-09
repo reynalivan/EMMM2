@@ -1,5 +1,8 @@
 # Plan: Simplify Collections & Privacy Systems for Stability
 
+> **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
+
+
 TL;DR
 The collections and privacy systems are now centered on one small runtime mutation engine for `DISABLED ` prefix changes. Filesystem remains the physical truth, DB `mods` is the synchronized projection, collections are saved snapshots, and corridor state owns the active/unsaved pointers. Keep future work focused on deterministic identity, clear error boundaries, and avoiding a generic orchestration layer.
 

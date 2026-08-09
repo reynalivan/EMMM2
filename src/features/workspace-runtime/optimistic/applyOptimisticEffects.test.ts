@@ -38,7 +38,7 @@ describe('applyRuntimeEffects', () => {
     expect(state.selectedModPath).toBe('E:/Mods/ALBEDO/Presets/mod.ini');
   });
 
-  it('replaces grid selection using normalized path separators', () => {
+  it('replaces grid selection preserving the original separator style', () => {
     useAppStore.setState({
       gridSelection: new Set(['E:\\Mods\\ALBEDO\\Variant']),
       selectedModPath: 'E:\\Mods\\ALBEDO\\Variant',
@@ -48,10 +48,12 @@ describe('applyRuntimeEffects', () => {
       { oldPath: 'E:/Mods/ALBEDO/Variant', newPath: 'E:/Mods/ALBEDO/DISABLED Variant' },
     ]);
 
+    // Selections are matched by exact string against backend paths
+    // (backslashed on Windows), so the rewrite keeps the caller's separators.
     const state = useAppStore.getState();
-    expect(state.gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
+    expect(state.gridSelection.has('E:\\Mods\\ALBEDO\\DISABLED Variant')).toBe(true);
     expect(state.gridSelection.has('E:\\Mods\\ALBEDO\\Variant')).toBe(false);
-    expect(state.selectedModPath).toBe('E:/Mods/ALBEDO/DISABLED Variant');
+    expect(state.selectedModPath).toBe('E:\\Mods\\ALBEDO\\DISABLED Variant');
   });
 
   it('removes thumbnail queries and invalidates detail queries from descriptor effects', () => {

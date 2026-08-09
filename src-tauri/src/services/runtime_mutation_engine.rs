@@ -1,13 +1,9 @@
-//! Executes runtime toggle batches: renames mod folders on disk first
-//! (filesystem is truth), then syncs the matching `mods` rows.
-//!
-//! Does NOT maintain `object_runtime_projection` — after a successful batch,
-//! callers refresh it via `repo::runtime_projection_repo`.
+//! Executes runtime toggle batches: renames mod folders on disk. Filesystem
+//! is the source of truth — the `mods` rows and `object_runtime_projection`
+//! converge via the scoped disk reconcile the caller runs after the batch.
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
-
-use sqlx::SqlitePool;
 
 use crate::domain::errors::{AppError, CollectionError};
 use crate::domain::workspace::WorkspacePathRewrite;
@@ -22,15 +18,12 @@ pub struct RuntimeToggleTarget {
 
 #[derive(Debug, Clone)]
 pub struct RuntimeToggleOperation {
-    pub id: String,
     pub folder_path: String,
     pub target_enabled: bool,
-    pub disabled_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RuntimeToggleBatchRequest {
-    pub game_id: String,
     pub mods_path: PathBuf,
     pub operations: Vec<RuntimeToggleOperation>,
 }
@@ -41,17 +34,17 @@ pub struct RuntimeToggleResult {
     pub disabled_count: usize,
     pub warnings: Vec<String>,
     pub path_rewrites: Vec<WorkspacePathRewrite>,
+    /// Every absolute path the batch touched (old and new sides), for the
+    /// caller's scoped reconcile.
+    pub changed_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 struct RenamePlan {
-    id: String,
-    new_rel: String,
-    requested_abs: PathBuf,
     old_abs: PathBuf,
+    requested_abs: PathBuf,
     new_abs: PathBuf,
     target_enabled: bool,
-    disabled_reason: Option<String>,
 }
 
 /// Map a failed folder rename to a structured error, so a locked folder keeps
@@ -65,7 +58,6 @@ fn classify_rename_failure(src: &std::path::Path, error: std::io::Error) -> Coll
 }
 
 pub async fn toggle_mods_mixed(
-    pool: &SqlitePool,
     request: RuntimeToggleBatchRequest,
 ) -> Result<RuntimeToggleResult, CollectionError> {
     if request.operations.is_empty() {
@@ -109,12 +101,6 @@ pub async fn toggle_mods_mixed(
         }
     }
 
-    if let Err(error) = commit_db(pool, &request, &renamed).await {
-        rollback_successes(&renamed, &mut warnings);
-        return Err(CollectionError::Db(format!(
-            "Runtime DB update failed after filesystem rename: {error}; rollback attempted"
-        )));
-    }
     let enabled_count = renamed.iter().filter(|plan| plan.target_enabled).count();
     let disabled_count = renamed.len().saturating_sub(enabled_count);
 
@@ -130,6 +116,15 @@ pub async fn toggle_mods_mixed(
                 new_path: plan.new_abs.to_string_lossy().to_string(),
             })
             .collect(),
+        changed_paths: renamed
+            .iter()
+            .flat_map(|plan| {
+                [
+                    plan.old_abs.to_string_lossy().to_string(),
+                    plan.new_abs.to_string_lossy().to_string(),
+                ]
+            })
+            .collect(),
     })
 }
 
@@ -139,6 +134,7 @@ fn empty_result() -> RuntimeToggleResult {
         disabled_count: 0,
         warnings: Vec::new(),
         path_rewrites: Vec::new(),
+        changed_paths: Vec::new(),
     }
 }
 
@@ -182,25 +178,18 @@ fn build_plan(
         )));
     }
 
-    let new_rel = new_abs
-        .strip_prefix(mods_path)
-        .map_err(|_| {
-            AppError::Security(format!(
-                "Resolved path escaped mods root: {}",
-                new_abs.display()
-            ))
-        })?
-        .to_string_lossy()
-        .to_string();
+    if new_abs.strip_prefix(mods_path).is_err() {
+        return Err(AppError::Security(format!(
+            "Resolved path escaped mods root: {}",
+            new_abs.display()
+        )));
+    }
 
     Ok(Some(RenamePlan {
-        id: operation.id.clone(),
-        new_rel,
-        requested_abs,
         old_abs,
+        requested_abs,
         new_abs,
         target_enabled: operation.target_enabled,
-        disabled_reason: operation.disabled_reason.clone(),
     }))
 }
 
@@ -229,34 +218,6 @@ fn validate_plans(plans: &[RenamePlan]) -> Result<(), AppError> {
 
 fn normalize_for_collision(path: &Path) -> String {
     path.to_string_lossy().to_lowercase()
-}
-
-async fn commit_db(
-    pool: &SqlitePool,
-    request: &RuntimeToggleBatchRequest,
-    plans: &[RenamePlan],
-) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
-    let mods_path = request.mods_path.to_string_lossy().to_string();
-
-    for plan in plans {
-        let affected = crate::repo::mod_repo::update_mod_runtime_toggle(
-            &mut tx,
-            &request.game_id,
-            &plan.id,
-            &plan.new_rel,
-            &mods_path,
-            plan.target_enabled,
-            plan.disabled_reason.as_deref(),
-        )
-        .await?;
-
-        if affected != 1 {
-            return Err(sqlx::Error::RowNotFound);
-        }
-    }
-
-    tx.commit().await
 }
 
 fn rollback_successes(plans: &[RenamePlan], warnings: &mut Vec<String>) {

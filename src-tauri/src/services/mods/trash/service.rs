@@ -6,7 +6,7 @@ use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use std::fs;
 use std::path::Path;
 
@@ -60,7 +60,7 @@ pub async fn delete_mod_service(
         }
     };
 
-    let _guard = SuppressionGuard::new(&state.suppressor);
+    let _guard = state.suppressor.suppress_paths([original]);
 
     move_to_trash(Path::new(original), &trash_dir, Some(game_id.to_string()))?;
     let _ = crate::repo::mod_repo::delete_mod_by_path(pool, original).await;
@@ -94,6 +94,6 @@ pub async fn move_to_trash_guarded(
     game_id: Option<String>,
 ) -> Result<(), AppError> {
     let path_obj = Path::new(&path);
-    let _guard = SuppressionGuard::new(&state.suppressor);
+    let _guard = state.suppressor.suppress_paths([path_obj]);
     move_to_trash(path_obj, trash_dir, game_id).map(|_| ())
 }

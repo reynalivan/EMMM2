@@ -16,6 +16,7 @@ use crate::services::mods::core_ops::ConflictStrategy;
 #[specta::specta]
 #[tauri::command]
 pub async fn resolve_conflict(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     game_id: String,
@@ -29,7 +30,7 @@ pub async fn resolve_conflict(
     let duplicate = validate_path(&config, &game_id, &duplicate_path)?;
     let op_guard = op_lock.acquire().await?;
 
-    crate::services::mods::core_ops::resolve_naming_conflict(
+    let renamed = crate::services::mods::core_ops::resolve_naming_conflict(
         crate::services::mods::core_ops::ResolveConflictRequest {
             config: &config,
             pool: pool.inner(),
@@ -41,7 +42,22 @@ pub async fn resolve_conflict(
             strategy,
         },
     )
+    .await?;
+
+    // Single-writer convergence: the resolution renamed a folder on disk; a
+    // previously untracked duplicate only gets its row through this reconcile.
+    if let Err(error) = crate::services::disk_reconcile::emit::emit_internal_disk_reconcile(
+        &app,
+        pool.inner(),
+        &game_id,
+        vec![duplicate_path, renamed.clone()],
+    )
     .await
+    {
+        log::warn!("Post-conflict-resolution disk reconcile failed: {error}");
+    }
+
+    Ok(renamed)
 }
 
 // ── Conflict Details (for comparison dialog) ─────────────────────────────────

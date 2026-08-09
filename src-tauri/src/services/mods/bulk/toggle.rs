@@ -3,39 +3,30 @@
 use super::types::{BulkActionError, BulkProgressPayload, BulkResult};
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::workspace::WorkspacePathRewrite;
-use crate::repo::mod_repo;
-use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
+use crate::services::disk_reconcile::emit::run_internal_disk_reconcile;
 use crate::services::mods::core_ops::toggle_mod_inner;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use sqlx::SqlitePool;
-use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
-/// Bulk toggle mods on disk and sync DB.
+/// Bulk toggle mods on disk. The DB converges via the trailing scoped
+/// reconcile — the single writer of status/path columns.
 ///
-/// `mods_path` must be provided and already validated by the caller (command layer).
-/// Paths in `paths` are absolute; DB updates use relative paths computed from `mods_path`.
-#[allow(clippy::too_many_arguments)] // Bulk service needs app/config/pool/watcher context plus explicit user selection.
+/// Paths in `paths` are absolute and already validated by the command layer.
 pub async fn bulk_toggle(
     app: &AppHandle,
-    config: &crate::services::config::ConfigService,
     pool: &SqlitePool,
     state: &WatcherState,
-    mods_path: &str,
     game_id: &str,
     paths: Vec<String>,
     enable: bool,
 ) -> Result<BulkResult, crate::domain::errors::AppError> {
-    // One guard across the whole batch: no watcher-event leaks between items.
-    let _suppression = SuppressionGuard::new(&state.suppressor);
+    // One path-scoped guard across the whole batch: toggle renames keep
+    // identity, so each selected path covers both its spellings.
+    let _suppression = state.suppressor.suppress_paths(paths.iter());
 
     let total = paths.len();
     let action_label = if enable { "Enabling" } else { "Disabling" };
-    let new_status_enum = if enable {
-        crate::domain::models::ItemStatus::Enabled
-    } else {
-        crate::domain::models::ItemStatus::Disabled
-    };
 
     let _ = app.emit(
         "bulk-progress",
@@ -51,8 +42,6 @@ pub async fn bulk_toggle(
     let mut failures = Vec::new();
     let collection_impact = CollectionReferenceImpact::default();
     let mut path_rewrites = Vec::new();
-    // (old_abs, new_abs, ItemStatus) — for DB batch update
-    let mut db_updates = Vec::new();
 
     // Opt-O: Batch progress — emit every N items to reduce IPC overhead
     let progress_interval = std::cmp::max(1, total / 10);
@@ -72,20 +61,9 @@ pub async fn bulk_toggle(
 
         match toggle_mod_inner(state, path.clone(), enable).await {
             Ok(new_abs_path) => {
-                // Convert absolute paths to relative for DB storage
-                let old_rel = Path::new(path)
-                    .strip_prefix(mods_path)
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| path.clone());
-                let new_rel = Path::new(&new_abs_path)
-                    .strip_prefix(mods_path)
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| new_abs_path.clone());
-
-                db_updates.push((old_rel.clone(), new_rel.clone(), new_status_enum));
                 success.push(new_abs_path.clone());
 
-                if old_rel != new_rel {
+                if new_abs_path != *path {
                     path_rewrites.push(WorkspacePathRewrite {
                         old_path: path.clone(),
                         new_path: new_abs_path,
@@ -99,22 +77,6 @@ pub async fn bulk_toggle(
         }
     }
 
-    if !db_updates.is_empty() {
-        if let Err(e) = mod_repo::batch_update_path_and_status(pool, game_id, &db_updates).await {
-            log::error!("Failed batch updating mod paths after bulk toggle: {}", e);
-        }
-
-        // A bulk toggle rewrites paths across objects, so the blast radius
-        // is not enumerable here.
-        crate::services::app::runtime_effects::finalize_mutation(
-            pool,
-            config,
-            game_id,
-            crate::services::app::runtime_effects::MutationOutcome::full_game(),
-        )
-        .await;
-    }
-
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
@@ -125,11 +87,11 @@ pub async fn bulk_toggle(
         },
     );
 
-    // Convergence: scoped disk reconcile guarantees DB matches disk even if a
-    // manual sync step above missed a case.
+    // Single writer: the scoped reconcile is what writes the rows. Quiet (no
+    // frontend event) — the bulk mutation's caller publishes its own refresh,
+    // and the event would trigger a second invalidation round.
     if !success.is_empty() {
-        if let Err(error) = emit_internal_disk_reconcile(app, pool, game_id, success.clone()).await
-        {
+        if let Err(error) = run_internal_disk_reconcile(app, pool, game_id, success.clone()).await {
             log::warn!("Post-bulk-toggle disk reconcile failed: {error}");
         }
     }

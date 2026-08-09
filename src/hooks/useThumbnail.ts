@@ -12,11 +12,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands } from '../lib/bindings';
+import { identityPathKey } from '../lib/pathKey';
 
-/** Query key factory for thumbnail cache */
+/**
+ * Query key factory for thumbnail cache.
+ *
+ * Keys are identity-based (DISABLED prefix stripped, case-folded), matching
+ * the backend thumbnail cache: an enable/disable rename resolves to the same
+ * cached entry instead of a skeleton flash + regeneration.
+ */
 export const thumbnailKeys = {
   all: ['thumbnails'] as const,
-  folder: (folderPath: string) => [...thumbnailKeys.all, folderPath] as const,
+  folder: (folderPath: string) =>
+    [...thumbnailKeys.all, identityPathKey(folderPath) ?? folderPath] as const,
 };
 
 /**

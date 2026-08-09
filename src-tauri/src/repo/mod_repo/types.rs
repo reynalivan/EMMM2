@@ -32,7 +32,6 @@ pub struct SyncModRowUpdate<'a> {
     pub status: ItemStatus,
     pub is_safe: bool,
     pub corridor_source: &'a str,
-    pub disabled_reason: Option<&'a str>,
     pub object_id: &'a str,
     pub object_type: &'a str,
     pub old_folder_path: &'a str,

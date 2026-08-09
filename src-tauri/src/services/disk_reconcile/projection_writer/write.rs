@@ -29,10 +29,18 @@ pub(crate) struct ProjectionWriteRequest<'a> {
     pub change_summary: &'a mut ChangeSummaryBuilder,
 }
 
+/// What the write passes touched, so the caller can refresh the runtime
+/// projection for exactly those objects instead of rebuilding the whole game.
+pub(crate) struct ProjectionWriteOutcome {
+    pub(crate) objects_changed: bool,
+    pub(crate) folders_changed: bool,
+    pub(crate) touched_object_ids: HashSet<String>,
+}
+
 pub(crate) async fn reconcile_projection_in_tx(
     conn: &mut sqlx::SqliteConnection,
     request: ProjectionWriteRequest<'_>,
-) -> Result<(bool, bool), AppError> {
+) -> Result<ProjectionWriteOutcome, AppError> {
     let game_id = request.game_id;
     let mods_path = request.mods_path;
     let safe_mode_keywords = request.safe_mode_keywords;
@@ -54,6 +62,7 @@ pub(crate) async fn reconcile_projection_in_tx(
         seen_object_keys: HashSet::new(),
         seen_mod_keys: HashSet::new(),
         deleted_object_keys: HashSet::new(),
+        touched_object_ids: HashSet::new(),
         objects_changed: false,
         folders_changed: false,
     };
@@ -92,5 +101,9 @@ pub(crate) async fn reconcile_projection_in_tx(
     )
     .await?;
 
-    Ok((state.objects_changed, state.folders_changed))
+    Ok(ProjectionWriteOutcome {
+        objects_changed: state.objects_changed,
+        folders_changed: state.folders_changed,
+        touched_object_ids: state.touched_object_ids,
+    })
 }

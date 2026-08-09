@@ -12,7 +12,6 @@ pub async fn disable_target_duplicates(
     path_rewrites: &mut Vec<crate::domain::workspace::WorkspacePathRewrite>,
 ) -> Result<(), AppError> {
     use crate::common::normalizer::is_disabled_folder;
-    use crate::domain::models::ItemStatus;
 
     let siblings =
         crate::repo::mod_repo::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)
@@ -41,13 +40,13 @@ pub async fn disable_target_duplicates(
             .unwrap_or(&sibling_disabled_path)
             .to_string_lossy()
             .to_string();
-        crate::repo::mod_repo::update_mod_path_status_and_reason(
+        // Path-only: status derives from the DISABLED prefix via the caller's
+        // scoped reconcile (single writer).
+        crate::repo::mod_repo::update_mod_path_by_old_path_in_game(
             pool,
             game_id,
             sibling_rel.as_stored(),
             &sibling_new_rel,
-            ItemStatus::Disabled,
-            Some("Collision (Only-One-Active)"),
         )
         .await?;
         path_rewrites.push(crate::domain::workspace::WorkspacePathRewrite {

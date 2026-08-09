@@ -1,4 +1,3 @@
-import { pathBasename } from '../../lib/pathKey';
 export interface WorkspacePathRewriteInput {
   oldPath: string;
   newPath: string;
@@ -19,12 +18,15 @@ export function rewriteWorkspacePathValue(
     return value;
   }
 
+  // Preserve the caller's separator style: selections are matched by exact
+  // string against backend paths (backslashed on Windows), so a rewrite that
+  // silently switched to forward slashes would break every Set lookup.
+  const usedBackslash = value.includes('\\');
+
   let nextValue = normalizeWorkspacePath(value);
   for (const rewrite of rewrites) {
     const oldPath = normalizeWorkspacePath(rewrite.oldPath);
     const newPath = normalizeWorkspacePath(rewrite.newPath);
-    const oldName = pathBasename(oldPath);
-    const newName = pathBasename(newPath);
 
     if (nextValue === oldPath) {
       nextValue = newPath;
@@ -36,21 +38,21 @@ export function rewriteWorkspacePathValue(
       continue;
     }
 
-    if (nextValue === oldName) {
-      nextValue = newName;
-      continue;
-    }
-
-    if (nextValue.startsWith(`${oldName}/`)) {
-      nextValue = `${newName}${nextValue.slice(oldName.length)}`;
-      continue;
-    }
-
+    // Relative spelling: the stored value can be relative to the mods root
+    // while rewrites carry absolute paths. Anchor on a whole-segment SUFFIX
+    // of the old path — a bare basename match would also rewrite same-named
+    // mods under other objects ("Nahida/SkinA" when "Raiden/SkinA" moved).
     const segments = nextValue.split('/');
-    if (segments.includes(oldName)) {
-      nextValue = segments.map((segment) => (segment === oldName ? newName : segment)).join('/');
+    for (let depth = segments.length; depth >= 1; depth--) {
+      const relPrefix = segments.slice(0, depth).join('/');
+      if (!oldPath.endsWith(`/${relPrefix}`)) {
+        continue;
+      }
+      const newRel = newPath.split('/').slice(-depth).join('/');
+      nextValue = [newRel, ...segments.slice(depth)].join('/');
+      break;
     }
   }
 
-  return nextValue;
+  return usedBackslash ? nextValue.replace(/\//g, '\\') : nextValue;
 }

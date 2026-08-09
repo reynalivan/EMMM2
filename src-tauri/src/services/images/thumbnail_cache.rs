@@ -88,8 +88,10 @@ impl ThumbnailCache {
     ///
     /// A folder that does not exist resolves to `None` via `find_thumbnail`.
     pub async fn resolve(_game_id: &str, folder_path: &str) -> Result<Option<String>, AppError> {
+        let folder_key = Self::identity_key(Path::new(folder_path));
+
         // Fast path: folder-keyed L1 hit
-        if let Some(hit) = Self::folder_l1_path(folder_path) {
+        if let Some(hit) = Self::folder_l1_path(&folder_key) {
             debug!("[Thumbnail] L1 hit for {}", folder_path);
             return Ok(Some(hit));
         }
@@ -98,30 +100,40 @@ impl ThumbnailCache {
         let _permit = GEN_SEMAPHORE.acquire().await?;
 
         // Double-check after wait (dedup: another task may have resolved it)
-        if let Some(hit) = Self::folder_l1_path(folder_path) {
+        if let Some(hit) = Self::folder_l1_path(&folder_key) {
             return Ok(Some(hit));
         }
 
         let path = PathBuf::from(folder_path);
-        let folder_key = folder_path.to_string();
         tokio::task::spawn_blocking(move || Self::resolve_cold(&path, &folder_key)).await?
     }
 
+    /// Cache identity of a folder or image path: DISABLED-prefix-stripped and
+    /// case-folded per component. An enable/disable rename changes the folder
+    /// name but not its identity, so cached thumbnails survive the toggle.
+    /// A coexisting `Alice` + `DISABLED Alice` pair shares one entry — that
+    /// state is abnormal (enable would refuse the rename) and only costs a
+    /// shared thumbnail, never a wrong invalidation.
+    fn identity_key(path: &Path) -> String {
+        crate::common::path_key::canonical_path_key_for_path(path)
+    }
+
     /// Returns the cached `.webp` path when the L1 entry is still usable.
+    /// `folder_key` is an identity key from [`Self::identity_key`].
     ///
     /// The filesystem check runs outside the lock on purpose: a `stat` held
     /// under the global mutex would serialize every concurrently mounting card.
-    fn folder_l1_path(folder_path: &str) -> Option<String> {
+    fn folder_l1_path(folder_key: &str) -> Option<String> {
         let fresh_path = {
             let mut cache = lock(Self::get_instance());
-            let entry = cache.folder_cache.get(folder_path)?;
+            let entry = cache.folder_cache.get(folder_key)?;
             (entry.cached_at.elapsed().as_secs() < ENTRY_TTL_SECS).then(|| entry.webp_path.clone())
         };
 
         match fresh_path {
             Some(path) if path.exists() => Some(path.to_string_lossy().to_string()),
             _ => {
-                lock(Self::get_instance()).folder_cache.pop(folder_path);
+                lock(Self::get_instance()).folder_cache.pop(folder_key);
                 None
             }
         }
@@ -156,10 +168,12 @@ impl ThumbnailCache {
         Ok(Some(webp_path.to_string_lossy().to_string()))
     }
 
-    /// Invalidate folder-keyed L1 entry.
+    /// Invalidate folder-keyed L1 entry. Accepts a raw path in any prefix or
+    /// case state — the identity key makes them all hit the same entry.
     pub fn invalidate_folder(folder_path: &str) {
+        let key = Self::identity_key(Path::new(folder_path));
         let mut cache = lock(Self::get_instance());
-        cache.folder_cache.pop(folder_path);
+        cache.folder_cache.pop(&key);
     }
 
     /// Invalidate the parent folder cache for a changed image path.
@@ -187,7 +201,9 @@ impl ThumbnailCache {
                 .ok_or_else(|| AppError::Internal("Cache not initialized".to_string()))?
         };
 
-        let key = Self::cache_key(&original_path.to_string_lossy());
+        // L2 keyed by identity too: the same source image keeps one .webp
+        // across enable/disable renames instead of regenerating per toggle.
+        let key = Self::cache_key(&Self::identity_key(original_path));
         let cached_path = base_dir.join(format!("{}.webp", key));
 
         // L2 disk hit — the cached file must be at least as new as its source.

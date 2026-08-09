@@ -12,7 +12,7 @@ import {
   useUpdateModThumbnail,
 } from '../../../hooks/useFolderMutations';
 import { useRenameMod } from '../../../hooks/useFolderCoreMutations';
-import { ItemStatus, type JsonValue, type ModInfo } from '../../../types/object';
+import { type JsonValue, type ModInfo } from '../../../types/object';
 import type { GameObject } from '../../../lib/bindings';
 import type { ObjectSummary } from '../../../types/object';
 import type { ModFolder } from '../../../types/object';
@@ -27,7 +27,6 @@ export const schema = z
     is_auto_sync: z.boolean(),
     metadata: z.record(z.string(), z.unknown()).optional(),
     tags: z.array(z.string()).optional(),
-    status: z.nativeEnum(ItemStatus).optional(),
     hash_db: z.string().optional().nullable(),
     custom_skins: z.string().optional().nullable(),
     has_custom_skin: z.boolean().optional(),
@@ -122,7 +121,6 @@ export function useEditObjectForm(
       is_auto_sync: false,
       metadata: {},
       tags: [],
-      status: ItemStatus.Enabled,
       hash_db: null,
       custom_skins: null,
       has_custom_skin: false,
@@ -142,7 +140,6 @@ export function useEditObjectForm(
     let defaultAutoSync: boolean;
     let defaultMeta: Record<string, unknown> = {};
     let defaultTags: string[] = [];
-    let defaultStatus: ItemStatus = ItemStatus.Enabled;
     let defaultHashDb: string | null = null;
     let defaultCustomSkins: string | null = null;
     let defaultCustomSkin:
@@ -197,7 +194,6 @@ export function useEditObjectForm(
       } catch {
         // Ignore JSON parse error
       }
-      defaultStatus = obj.status ?? ItemStatus.Enabled;
       defaultHashDb = obj.hash_db ? JSON.stringify(obj.hash_db, null, 2) : null;
       defaultCustomSkins = obj.custom_skins ? JSON.stringify(obj.custom_skins, null, 2) : null;
     } else {
@@ -205,7 +201,6 @@ export function useEditObjectForm(
       defaultAutoSync = isObject ? (object as ObjectSummary).is_auto_sync : false;
       if (isObject) {
         const objSum = object as ObjectSummary;
-        defaultStatus = objSum.status ?? ItemStatus.Enabled;
         defaultHashDb = objSum.hash_db ? JSON.stringify(objSum.hash_db, null, 2) : null;
         defaultCustomSkins = objSum.custom_skins
           ? JSON.stringify(objSum.custom_skins, null, 2)
@@ -227,7 +222,6 @@ export function useEditObjectForm(
       sub_category: isObject ? (object as ObjectSummary).sub_category : '',
       is_safe: defaultSafe,
       is_auto_sync: defaultAutoSync,
-      status: defaultStatus,
       hash_db: defaultHashDb,
       custom_skins: defaultCustomSkins,
       metadata: defaultMeta,
@@ -268,7 +262,6 @@ export function useEditObjectForm(
             object_type: data.object_type,
             sub_category: data.sub_category || undefined,
             is_auto_sync: data.is_auto_sync,
-            status: data.status,
             hash_db: data.hash_db ? JSON.parse(data.hash_db) : null,
             custom_skins: data.custom_skins ? JSON.parse(data.custom_skins) : null,
             metadata: finalMeta as JsonValue,

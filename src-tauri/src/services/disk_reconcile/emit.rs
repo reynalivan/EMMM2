@@ -13,12 +13,16 @@ use crate::services::disk_reconcile::orchestrator::{
 };
 use crate::services::disk_reconcile::types::DiskReconcileReason;
 
-pub async fn emit_internal_disk_reconcile(
+/// Scoped `InternalMutation` reconcile without the frontend event. For flows
+/// whose command RESULT already drives the frontend refresh (workspace
+/// switch): emitting the event too would trigger a second full
+/// invalidation+refetch round per toggle.
+pub async fn run_internal_disk_reconcile(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
     changed_paths: Vec<String>,
-) -> Result<(), AppError> {
+) -> Result<crate::services::disk_reconcile::types::DiskReconcileResult, AppError> {
     let config = app
         .try_state::<crate::services::config::ConfigService>()
         .ok_or_else(|| {
@@ -31,7 +35,7 @@ pub async fn emit_internal_disk_reconcile(
         AppError::Internal("DiskReconcileState missing for disk reconcile".to_string())
     })?;
 
-    let result = reconcile_disk_state(
+    reconcile_disk_state(
         DiskReconcileContext {
             pool,
             config: config.inner(),
@@ -45,7 +49,15 @@ pub async fn emit_internal_disk_reconcile(
             false,
         ),
     )
-    .await?;
+    .await
+}
 
+pub async fn emit_internal_disk_reconcile(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    changed_paths: Vec<String>,
+) -> Result<(), AppError> {
+    let result = run_internal_disk_reconcile(app, pool, game_id, changed_paths).await?;
     Ok(app.emit("disk_reconcile:result", result)?)
 }

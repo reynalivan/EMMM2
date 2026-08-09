@@ -4,9 +4,8 @@ use super::naming::{
     find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
 };
 use crate::domain::errors::AppError;
-use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use std::path::{Path, PathBuf};
 
 /// Map a rename failure to a structured error, surfacing the locking
@@ -88,9 +87,9 @@ pub async fn toggle_mod_inner(
     path: String,
     enable: bool,
 ) -> Result<String, AppError> {
-    // Hold suppression for the entire function so watcher events don't
-    // leak through between the fs::rename and function return.
-    let _guard = SuppressionGuard::new(&state.suppressor);
+    // Path-scoped: covers both spellings of the rename (same identity key)
+    // and keeps suppressing through the async event tail after return.
+    let _guard = state.suppressor.suppress_paths([&path]);
 
     let src = Path::new(&path);
     if !src.exists() || !src.is_dir() {
@@ -110,9 +109,17 @@ pub async fn toggle_mod_inner(
     Ok(new_path.to_string_lossy().to_string())
 }
 
+/// What a policy-checked toggle changed on disk.
+pub struct ModTogglePolicyOutcome {
+    pub new_absolute_path: String,
+    /// Sibling variants the implicit swap auto-disabled (absolute paths, both
+    /// spellings). They can live under other object roots, so the caller's
+    /// reconcile scope must include them explicitly.
+    pub swapped_paths: Vec<String>,
+}
+
 #[allow(clippy::too_many_arguments)] // Service boundary kept stable to preserve toggle and duplicate-resolution callers.
 pub async fn toggle_mod_inner_service_with_duplicate_policy(
-    config: &ConfigService,
     pool: &sqlx::SqlitePool,
     state: &WatcherState,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
@@ -120,7 +127,7 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
     enable: bool,
     game_id: &str,
     allow_duplicates: bool,
-) -> Result<String, AppError> {
+) -> Result<ModTogglePolicyOutcome, AppError> {
     let canonical_path = path;
 
     let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
@@ -133,14 +140,8 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
         .unwrap_or(canonical_path)
         .to_string_lossy()
         .to_string();
-    let mut changed_object_ids = Vec::new();
-    if let Some((_, Some(object_id), _)) =
-        crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, &rel_path, game_id).await?
-    {
-        changed_object_ids.push(object_id);
-    }
-
     // AC-29.1: Conflict Detection
+    let mut swapped_paths = Vec::new();
     if enable && !allow_duplicates {
         let duplicates: Vec<crate::domain::mods::DuplicateModInfo> =
             crate::services::scanner::conflict::get_duplicates_for_mod_service(
@@ -152,20 +153,14 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
             // Implicit Swap: If ALL duplicates are variants, auto-disable them
             let all_variants = duplicates.iter().all(|d| d.is_variant);
             if all_variants {
-                for duplicate in &duplicates {
-                    changed_object_ids.push(duplicate.object_id.clone());
-                }
                 for dup in duplicates {
-                    let _ = toggle_and_sync_db(
-                        pool,
-                        state,
-                        &mods_path,
-                        game_id,
-                        &dup.mod_id,
-                        &dup.folder_path,
-                        false,
-                    )
-                    .await?;
+                    let dup_abs = Path::new(&mods_path)
+                        .join(&dup.folder_path)
+                        .to_string_lossy()
+                        .to_string();
+                    let dup_new = toggle_mod_inner(state, dup_abs.clone(), false).await?;
+                    swapped_paths.push(dup_abs);
+                    swapped_paths.push(dup_new);
                 }
             } else {
                 // Real conflict -> Signal frontend to show radio resolution modal
@@ -174,85 +169,15 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
         }
     }
 
+    // Disk is the source of truth: the rename is the whole mutation. The DB
+    // (status, folder_path, projection) converges via the scoped
+    // InternalMutation reconcile the caller runs afterwards — the single
+    // writer of those columns.
     let new_absolute_path =
         toggle_mod_inner(state, canonical_path.to_string_lossy().to_string(), enable).await?;
-    let new_status = if enable {
-        crate::domain::models::ItemStatus::Enabled
-    } else {
-        crate::domain::models::ItemStatus::Disabled
-    };
 
-    let disabled_reason = if enable {
-        None
-    } else {
-        Some(crate::common::corridor_constants::DISABLED_REASON_USER)
-    };
-
-    // Same value as `rel_path` above — the folder has not moved yet.
-    let old_rel = rel_path.as_str();
-    let new_abs = Path::new(&new_absolute_path);
-    let new_rel = new_abs
-        .strip_prefix(base)
-        .unwrap_or(new_abs)
-        .to_string_lossy()
-        .to_string();
-
-    crate::repo::mod_repo::update_mod_path_status_and_reason(
-        pool,
-        game_id,
-        old_rel,
-        &new_rel,
-        new_status,
-        disabled_reason,
-    )
-    .await?;
-
-    // Update object folder_path and child paths if this is a top-level folder
-    sync_object_and_child_paths(pool, game_id, &mods_path, old_rel, &new_rel).await;
-
-    let is_safe = crate::repo::mod_repo::get_is_safe_by_folder(pool, game_id, &new_rel)
-        .await
-        .ok()
-        .flatten();
-
-    if is_safe.is_some() {
-        crate::services::app::runtime_effects::finalize_mutation(
-            pool,
-            config,
-            game_id,
-            crate::services::app::runtime_effects::MutationOutcome::objects(changed_object_ids),
-        )
-        .await;
-    }
-
-    Ok(new_absolute_path)
-}
-
-/// Toggle a mod on disk and sync all DB state (path, object, children).
-/// Used by privacy corridor handoff and single-mod toggle.
-pub async fn toggle_and_sync_db(
-    pool: &sqlx::SqlitePool,
-    watcher_state: &WatcherState,
-    mods_path: &str,
-    game_id: &str,
-    id: &str,
-    rel_path: &str,
-    enable: bool,
-) -> Result<String, AppError> {
-    let abs_path = Path::new(mods_path)
-        .join(rel_path)
-        .to_string_lossy()
-        .to_string();
-    let new_abs = toggle_mod_inner(watcher_state, abs_path, enable).await?;
-
-    let new_rel = Path::new(&new_abs)
-        .strip_prefix(mods_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| new_abs.clone());
-
-    if new_rel != rel_path {
-        let _ = crate::repo::mod_repo::update_mod_path_by_id(pool, id, &new_rel).await;
-        sync_object_and_child_paths(pool, game_id, mods_path, rel_path, &new_rel).await;
-    }
-    Ok(new_abs)
+    Ok(ModTogglePolicyOutcome {
+        new_absolute_path,
+        swapped_paths,
+    })
 }

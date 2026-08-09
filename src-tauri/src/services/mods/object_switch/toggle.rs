@@ -2,9 +2,8 @@
 
 use super::resolve::resolve_object_root_path;
 use crate::domain::errors::AppError;
-use crate::domain::models::ItemStatus;
 use crate::services::mods::core_ops::rename_toggle_on_disk;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use std::path::Path;
 
 pub struct ObjectSwitchOutcome {
@@ -14,9 +13,9 @@ pub struct ObjectSwitchOutcome {
 }
 
 /// Workspace Switch owns explicit object-root enable/disable.
-/// Do not route object targets through mod-toggle services or Disk Reconcile.
+/// Do not route object targets through mod-toggle services. Disk-only: the
+/// caller's scoped reconcile settles the DB afterwards.
 pub async fn toggle_object_root_service(
-    config: &crate::services::config::ConfigService,
     pool: &sqlx::SqlitePool,
     watcher_state: &WatcherState,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
@@ -24,10 +23,13 @@ pub async fn toggle_object_root_service(
     object_id: &str,
     enable: bool,
 ) -> Result<ObjectSwitchOutcome, AppError> {
-    let _guard = SuppressionGuard::new(&watcher_state.suppressor);
-
     let (object, mods_path, current_absolute_path) =
         resolve_object_root_path(pool, game_id, object_id).await?;
+    // Toggle rename keeps identity, so one path-scoped entry covers both
+    // spellings, through the async event tail after return.
+    let _guard = watcher_state
+        .suppressor
+        .suppress_paths([current_absolute_path.as_str()]);
     let original_absolute_path = Path::new(&mods_path)
         .join(&object.folder_path)
         .to_string_lossy()
@@ -39,89 +41,23 @@ pub async fn toggle_object_root_service(
         });
     }
 
+    // Disk is the source of truth: the rename is the whole mutation. Object
+    // status, folder_path, child paths and the runtime projection converge
+    // via the scoped InternalMutation reconcile the caller runs afterwards —
+    // the single writer of those columns. Child mod status is NOT cascaded:
+    // it derives from each mod's own folder name (see
+    // `disk_reconcile::helpers::load_runtime_mod_metadata`), and the UI
+    // derives EffectivelyDisabled from the ancestor chain.
     let Some(next_absolute_path) = rename_toggle_on_disk(current_path, enable, "object folder")?
     else {
-        // Already in the requested state: re-sync the index in case the DB
-        // drifted, but do not treat a no-op as a mutation.
-        crate::services::app::runtime_effects::finalize_mutation(
-            pool,
-            config,
-            game_id,
-            crate::services::app::runtime_effects::MutationOutcome::resync_only([
-                object_id.to_string()
-            ]),
-        )
-        .await;
+        // Already in the requested state: the caller's reconcile re-syncs any
+        // DB drift; a no-op needs nothing else.
         return Ok(ObjectSwitchOutcome {
             object_id: object_id.to_string(),
             original_path: original_absolute_path,
             next_path: current_absolute_path,
         });
     };
-
-    let mods_root = Path::new(&mods_path);
-    let old_relative_path = current_path
-        .strip_prefix(mods_root)
-        .unwrap_or(current_path)
-        .to_string_lossy()
-        .to_string();
-    let new_relative_path = next_absolute_path
-        .strip_prefix(mods_root)
-        .unwrap_or(&next_absolute_path)
-        .to_string_lossy()
-        .to_string();
-
-    let mut tx = pool.begin().await?;
-    crate::repo::object_repo::update_object_runtime_folder_path(
-        &mut *tx,
-        game_id,
-        &old_relative_path,
-        &new_relative_path,
-    )
-    .await?;
-    crate::repo::mod_repo::update_child_paths_tx(
-        &mut tx,
-        game_id,
-        &old_relative_path,
-        &new_relative_path,
-        Some(&mods_path),
-    )
-    .await?;
-    crate::repo::mod_repo::update_status_and_reason_for_object(
-        &mut tx,
-        game_id,
-        &new_relative_path,
-        if enable {
-            ItemStatus::Enabled
-        } else {
-            ItemStatus::Disabled
-        },
-        if enable {
-            None
-        } else {
-            Some(crate::common::corridor_constants::DISABLED_REASON_USER)
-        },
-    )
-    .await?;
-    crate::repo::object_repo::update_object_status(
-        &mut *tx,
-        object_id,
-        if enable {
-            ItemStatus::Enabled
-        } else {
-            ItemStatus::Disabled
-        },
-    )
-    .await?;
-    tx.commit().await?;
-
-    crate::services::app::runtime_effects::finalize_mutation(
-        pool,
-        config,
-        game_id,
-        crate::services::app::runtime_effects::MutationOutcome::objects([object_id.to_string()]),
-    )
-    .await;
 
     Ok(ObjectSwitchOutcome {
         object_id: object_id.to_string(),
