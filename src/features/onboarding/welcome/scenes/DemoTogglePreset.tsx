@@ -11,19 +11,11 @@ export default function DemoTogglePreset() {
   const [isOn, setIsOn] = useState(() => prefersReduced);
 
   useEffect(() => {
-    let toggleTimer: ReturnType<typeof setTimeout>;
-    let endTimer: ReturnType<typeof setTimeout> | undefined;
+    // Reduced motion starts in the "on" state and skips the toggle.
+    if (prefersReduced) return;
 
-    if (prefersReduced) {
-    } else {
-      // Toggle midway
-      toggleTimer = setTimeout(() => setIsOn(true), 1800);
-    }
-
-    return () => {
-      clearTimeout(toggleTimer);
-      if (endTimer) clearTimeout(endTimer);
-    };
+    const toggleTimer = setTimeout(() => setIsOn(true), 1800);
+    return () => clearTimeout(toggleTimer);
   }, [prefersReduced]);
 
   return (

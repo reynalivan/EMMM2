@@ -84,9 +84,7 @@ export default function FilterPanel({
             <button
               key={opt.value}
               className={`btn btn-xs rounded-md transition-all duration-150 ${
-                sortBy === opt.value
-                  ? 'btn-accent text-accent-content'
-                  : 'btn-ghost border border-base-content/10 opacity-50 hover:opacity-100'
+                sortBy === opt.value ? 'btn-accent text-accent-content' : 'btn-soft'
               }`}
               onClick={() => onSortChange(opt.value)}
             >
@@ -115,7 +113,7 @@ export default function FilterPanel({
                       : status === 'disabled'
                         ? 'btn-warning text-warning-content'
                         : 'btn-neutral text-neutral-content'
-                    : 'btn-ghost opacity-50 hover:opacity-100'
+                    : 'btn-soft'
                 }`}
                 onClick={() => onStatusFilterChange(status)}
               >
@@ -134,9 +132,7 @@ export default function FilterPanel({
           <div className="flex flex-wrap gap-1">
             <button
               className={`btn btn-xs rounded-full transition-all duration-150 ${
-                !selectedCategory
-                  ? 'btn-primary'
-                  : 'btn-ghost border border-base-content/10 opacity-60 hover:opacity-100'
+                !selectedCategory ? 'btn-primary' : 'btn-soft'
               }`}
               onClick={() => onSelectCategory(null)}
             >
@@ -146,9 +142,7 @@ export default function FilterPanel({
               <button
                 key={cat.name}
                 className={`btn btn-xs rounded-full transition-all duration-150 ${
-                  selectedCategory === cat.name
-                    ? 'btn-primary'
-                    : 'btn-ghost border border-base-content/10 opacity-60 hover:opacity-100'
+                  selectedCategory === cat.name ? 'btn-primary' : 'btn-soft'
                 }`}
                 onClick={() => onSelectCategory(selectedCategory === cat.name ? null : cat.name)}
               >
@@ -169,9 +163,7 @@ export default function FilterPanel({
                 <div key={filter.key} className="relative">
                   <button
                     className={`btn btn-xs rounded-full gap-1 transition-all duration-150 ${
-                      selected.length > 0
-                        ? 'btn-primary'
-                        : 'btn-ghost border border-base-300/30 opacity-70 hover:opacity-100'
+                      selected.length > 0 ? 'btn-primary' : 'btn-soft'
                     }`}
                     onClick={() => setExpandedFilter(isExpanded ? null : filter.key)}
                   >

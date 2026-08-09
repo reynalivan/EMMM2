@@ -288,7 +288,12 @@ export default function GameFormModal({
             <button type="button" className="btn" onClick={onClose} disabled={isSubmitting}>
               {t('page.back')}
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting || !isValid}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              data-testid="game-form-submit"
+              disabled={isSubmitting || !isValid}
+            >
               {initialData ? t('games.form.save') : t('games.form.add_btn')}
             </button>
           </div>

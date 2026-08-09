@@ -7,6 +7,7 @@ import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-r
 import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
 import { pathsEqual } from '../../lib/pathKey';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 import { ManualSetupForm } from './ManualSetupForm';
 import { AutoDetectResult } from './AutoDetectResult';
 import AuroraBackground from './welcome/AuroraBackground';
@@ -14,6 +15,8 @@ import SmartDemoStrip from './welcome/SmartDemoStrip';
 import AnimatedLogo from './welcome/AnimatedLogo';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
+
+const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
 export default function WelcomeScreen({
   onComplete,
@@ -27,6 +30,21 @@ export default function WelcomeScreen({
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
+  const prefersReduced = usePrefersReducedMotion();
+
+  // One shared entrance rhythm for every block on the welcome view.
+  const fade = {
+    hidden: { opacity: 0 },
+    show: { opacity: 1, transition: { duration: prefersReduced ? 0.15 : 0.55, ease: EASE_OUT } },
+  };
+  // `rise` adds a transform, so it must never wrap a backdrop-filter element — a
+  // transformed ancestor becomes the backdrop root and the blur samples nothing.
+  const rise = prefersReduced
+    ? fade
+    : {
+        hidden: { opacity: 0, y: 16 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: EASE_OUT } },
+      };
 
   const handleAutoDetect = async () => {
     setError(null);
@@ -113,112 +131,118 @@ export default function WelcomeScreen({
           <AuroraBackground />
         </div>
 
-        <div className="max-w-4xl w-full text-center space-y-6 z-10 py-6 my-auto origin-center [@media(max-height:800px)]:scale-95 [@media(max-height:750px)]:scale-90 [@media(max-height:700px)]:scale-[0.85] [@media(max-height:650px)]:scale-[0.8] transition-transform duration-500 ease-out">
+        <motion.div
+          initial="hidden"
+          animate="show"
+          variants={{
+            show: {
+              transition: { staggerChildren: prefersReduced ? 0 : 0.09, delayChildren: 0.1 },
+            },
+          }}
+          className="max-w-4xl w-full text-center space-y-7 z-10 py-6 my-auto origin-center [@media(max-height:800px)]:scale-95 [@media(max-height:750px)]:scale-90 [@media(max-height:700px)]:scale-[0.85] [@media(max-height:650px)]:scale-[0.8] transition-transform duration-500 ease-out"
+        >
           {/* Logo & Title */}
-          <div className="flex flex-col [@media(max-height:750px)]:flex-row items-center justify-center gap-3 [@media(max-height:750px)]:gap-5">
+          <motion.div
+            variants={rise}
+            className="flex flex-col [@media(max-height:750px)]:flex-row items-center justify-center gap-3 [@media(max-height:750px)]:gap-5"
+          >
             <div className="mx-auto [@media(max-height:750px)]:mx-0 w-16 h-16 sm:w-20 sm:h-20 [@media(max-height:750px)]:w-14 [@media(max-height:750px)]:h-14 flex items-center justify-center shrink-0 text-base-content hover:text-primary transition-colors duration-300">
               <AnimatedLogo />
             </div>
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: 'easeOut' }}
-              className="[@media(max-height:750px)]:text-left flex flex-col justify-center"
-            >
+            <div className="[@media(max-height:750px)]:text-left flex flex-col justify-center">
               <h1 className="text-3xl sm:text-4xl md:text-5xl [@media(max-height:750px)]:text-2xl font-extrabold bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent drop-shadow-sm pb-1">
                 {t('onboarding:welcome.title')}
               </h1>
               <p className="text-base-content/60 text-base md:text-lg [@media(max-height:750px)]:text-xs font-medium tracking-wide mt-1">
                 {t('onboarding:welcome.subtitle')}
               </p>
-            </motion.div>
-          </div>
+            </div>
+          </motion.div>
 
-          <SmartDemoStrip isPausedFromParent={isDemoPaused} />
+          {/* fade, not rise — the strip is backdrop-blurred (see the `rise` note above) */}
+          <motion.div variants={fade}>
+            <SmartDemoStrip isPausedFromParent={isDemoPaused} />
+          </motion.div>
 
           {/* Error Alert */}
           {error && (
-            <div role="alert" className="alert alert-error alert-soft">
-              <AlertCircle className="w-5 h-5" />
+            <div
+              role="alert"
+              className="alert alert-error alert-soft max-w-2xl mx-auto text-left text-sm"
+            >
+              <AlertCircle className="w-5 h-5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {/* CTA Buttons */}
-          <div className="max-w-2xl mx-auto flex flex-col [@media(max-height:750px)]:flex-row max-sm:flex-col! [@media(max-height:750px)]:w-full gap-4">
-            <div
-              className="w-full [@media(max-height:750px)]:flex-1 max-sm:flex-none tooltip tooltip-bottom flex min-w-0"
-              data-tip={t('onboarding:welcome.auto_detect_tip')}
-            >
+          <motion.div variants={rise} className="max-w-2xl mx-auto space-y-3">
+            <div className="flex flex-col [@media(max-height:750px)]:flex-row max-sm:flex-col! [@media(max-height:750px)]:w-full gap-3">
+              <div
+                className="w-full [@media(max-height:750px)]:flex-1 max-sm:flex-none tooltip tooltip-bottom flex min-w-0"
+                data-tip={t('onboarding:welcome.auto_detect_tip')}
+              >
+                <motion.button
+                  whileHover="hover"
+                  whileTap="tap"
+                  variants={{ hover: { y: -2 }, tap: { scale: 0.985 } }}
+                  onHoverStart={() => setIsDemoPaused(true)}
+                  onHoverEnd={() => setIsDemoPaused(false)}
+                  onFocus={() => setIsDemoPaused(true)}
+                  onBlur={() => setIsDemoPaused(false)}
+                  id="btn-auto-detect"
+                  className="cta-shine btn btn-primary btn-lg w-full gap-2 sm:gap-3 overflow-hidden border-0 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-shadow duration-300 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4"
+                  onClick={handleAutoDetect}
+                >
+                  <span aria-hidden="true" className="cta-shine-bar" />
+                  <Search className="w-5 h-5 shrink-0" />
+                  <span className="flex-1 text-left truncate [@media(max-height:750px)]:text-sm">
+                    {t('onboarding:welcome.auto_detect')}
+                  </span>
+                  <motion.div
+                    variants={{ hover: { x: 5 } }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                    className="flex items-center shrink-0 opacity-70"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </motion.div>
+                </motion.button>
+              </div>
+
               <motion.button
                 whileHover="hover"
                 whileTap="tap"
-                variants={{
-                  hover: { y: -2, boxShadow: '0 8px 30px -5px var(--color-primary)' },
-                  tap: { scale: 0.98 },
-                }}
+                variants={{ hover: { y: -2 }, tap: { scale: 0.985 } }}
                 onHoverStart={() => setIsDemoPaused(true)}
                 onHoverEnd={() => setIsDemoPaused(false)}
                 onFocus={() => setIsDemoPaused(true)}
                 onBlur={() => setIsDemoPaused(false)}
-                id="btn-auto-detect"
-                className="btn btn-primary btn-lg w-full gap-2 sm:gap-3 overflow-hidden outline-offset-2 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4"
-                onClick={handleAutoDetect}
+                id="btn-manual-setup"
+                className="btn btn-ghost btn-lg w-full [@media(max-height:750px)]:flex-1 max-sm:flex-none! gap-2 sm:gap-3 border border-base-content/10 bg-base-100/50 hover:bg-base-content/8 hover:border-base-content/25 transition-colors duration-300 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4 min-w-0"
+                onClick={() => {
+                  setError(null);
+                  setView('manual');
+                }}
               >
-                <Search className="w-5 h-5 shrink-0" />
+                <FolderOpen className="w-5 h-5 shrink-0" />
                 <span className="flex-1 text-left truncate [@media(max-height:750px)]:text-sm">
-                  {t('onboarding:welcome.auto_detect')}
+                  {t('onboarding:welcome.manual_setup')}
                 </span>
                 <motion.div
-                  variants={{ hover: { x: 6 } }}
-                  transition={{ type: 'spring' }}
-                  className="flex items-center shrink-0"
+                  variants={{ hover: { x: 5 } }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                  className="flex items-center shrink-0 opacity-70"
                 >
                   <ChevronRight className="w-5 h-5" />
                 </motion.div>
               </motion.button>
             </div>
 
-            <motion.button
-              whileHover="hover"
-              whileTap="tap"
-              variants={{
-                hover: {
-                  y: -2,
-                  boxShadow:
-                    '0 8px 30px -5px color-mix(in srgb, var(--color-base-content), transparent 50%)',
-                },
-                tap: { scale: 0.98 },
-              }}
-              onHoverStart={() => setIsDemoPaused(true)}
-              onHoverEnd={() => setIsDemoPaused(false)}
-              onFocus={() => setIsDemoPaused(true)}
-              onBlur={() => setIsDemoPaused(false)}
-              id="btn-manual-setup"
-              className="btn btn-outline btn-lg w-full [@media(max-height:750px)]:flex-1 max-sm:flex-none! gap-2 sm:gap-3 outline-offset-2 border-base-content/20 hover:bg-base-content hover:text-base-100 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4 min-w-0"
-              onClick={() => {
-                setError(null);
-                setView('manual');
-              }}
-            >
-              <FolderOpen className="w-5 h-5 shrink-0" />
-              <span className="flex-1 text-left truncate [@media(max-height:750px)]:text-sm">
-                {t('onboarding:welcome.manual_setup')}
-              </span>
-              <motion.div
-                variants={{ hover: { x: 6 } }}
-                transition={{ type: 'spring' }}
-                className="flex items-center shrink-0"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </motion.div>
-            </motion.button>
-          </div>
-
-          <p className="text-base-content/50 text-sm font-medium">
-            {t('onboarding:welcome.description')}
-          </p>
-        </div>
+            <p className="text-base-content/45 text-sm font-medium">
+              {t('onboarding:welcome.description')}
+            </p>
+          </motion.div>
+        </motion.div>
       </div>
     );
   }

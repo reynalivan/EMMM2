@@ -53,13 +53,6 @@ describe('GameSelector', () => {
     expect(elements.length).toBeGreaterThan(0);
   });
 
-  it('shows game type badge', () => {
-    render(<GameSelector />);
-    // The active game badge shows the game_type
-    const badges = screen.getAllByText('GIMI');
-    expect(badges.length).toBeGreaterThan(0);
-  });
-
   it('renders all games in dropdown', () => {
     render(<GameSelector />);
     const giElements = screen.getAllByText('Genshin Impact');

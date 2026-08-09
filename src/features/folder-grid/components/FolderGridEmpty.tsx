@@ -57,7 +57,7 @@ export default function FolderGridEmpty({
           <p className="text-xs text-base-content/30">{t('empty.import_hint')}</p>
           <div className="flex gap-2">
             <button
-              className="btn btn-outline btn-sm gap-2"
+              className="btn btn-soft btn-sm gap-2"
               onClick={async () => {
                 const selected = await open({
                   multiple: true,
@@ -73,7 +73,7 @@ export default function FolderGridEmpty({
               {t('empty.import_archive')}
             </button>
             <button
-              className="btn btn-outline btn-sm gap-2"
+              className="btn btn-soft btn-sm gap-2"
               onClick={async () => {
                 const selected = await open({ directory: true, multiple: false });
                 if (selected) {

@@ -74,7 +74,7 @@ export default function ObjectListStates({
         )}
         {!sidebarSearchQuery && !hasActiveFilters && (
           <div className="flex flex-col gap-2 mt-4 w-full max-w-50 items-center">
-            <button className="btn btn-outline w-full gap-2" onClick={onCreateNew}>
+            <button className="btn btn-soft w-full gap-2" onClick={onCreateNew}>
               <FolderPlus size={16} />
               {t('states.add_folder')}
             </button>

@@ -1,10 +1,6 @@
 use crate::domain::errors::AppError;
 use crate::services::game::schema_loader;
-use crate::services::scanner::deep_matcher;
-use std::collections::HashMap;
-use std::sync::Arc;
 use tauri::Manager;
-use tokio::sync::RwLock;
 
 /// The bundled-resources directory, or a typed error.
 ///
@@ -14,21 +10,6 @@ fn resource_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppError> 
     app.path()
         .resource_dir()
         .map_err(|error| AppError::Internal(format!("Failed to get resource dir: {error}")))
-}
-
-/// Cache for MasterDB to avoid parsing 5MB JSON on every keystroke
-pub struct MasterDbCache(pub RwLock<HashMap<String, Arc<deep_matcher::MasterDb>>>);
-
-impl Default for MasterDbCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MasterDbCache {
-    pub fn new() -> Self {
-        Self(RwLock::new(HashMap::new()))
-    }
 }
 
 /// Get the game schema (categories + filters) for a specific game type.
@@ -113,44 +94,12 @@ pub async fn match_object_with_db(
 #[specta::specta]
 pub async fn search_master_db(
     app: tauri::AppHandle,
-    cache: tauri::State<'_, MasterDbCache>,
     game_type: i32,
     query: String,
     object_type: Option<String>,
 ) -> Result<Vec<crate::services::scanner::master_db::SearchResultEntry>, AppError> {
-    let canonical = schema_loader::normalize_game_type(game_type);
-
-    // 1. Try to get from cache
-    let db = {
-        let lock = cache.0.read().await;
-        lock.get(&canonical).cloned()
-    };
-
-    // 2. Load from disk if not in cache
-    let db = match db {
-        Some(cached) => cached,
-        None => {
-            let resource_dir = resource_dir(&app)?;
-
-            let db_path = resource_dir
-                .join("databases")
-                .join(format!("{}.json", canonical));
-
-            if !db_path.exists() {
-                return Ok(Vec::new());
-            }
-
-            let json = std::fs::read_to_string(&db_path)
-                .map_err(|e| AppError::Io(format!("Failed to read MasterDB for search: {e}")))?;
-
-            let parsed_db = deep_matcher::MasterDb::from_json(&json)?;
-            let arc_db = Arc::new(parsed_db);
-
-            // Re-acquire lock for writing
-            let mut write_lock = cache.0.write().await;
-            write_lock.insert(canonical.clone(), arc_db.clone());
-            arc_db
-        }
+    let Some(db) = crate::services::scanner::master_db::get_cached(&app, game_type).await? else {
+        return Ok(Vec::new());
     };
 
     let resource_dir = resource_dir(&app)?;

@@ -2,7 +2,7 @@ import { Gamepad2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useGameSwitch } from '../../../hooks/useObjectQueries';
-import { GAME_OPTIONS, GAME_TYPE_COLORS, type GameConfig } from '../../../types/game';
+import { GAME_OPTIONS, type GameConfig } from '../../../types/game';
 
 export default function GameSelector() {
   const { t } = useTranslation('layout');
@@ -17,10 +17,6 @@ export default function GameSelector() {
       .split(' ')
       .map((w: string) => w[0])
       .join('') ?? '—';
-  const activeBadge = activeGame?.game_type
-    ? (GAME_TYPE_COLORS[activeGame.game_type] ?? 'badge-ghost')
-    : 'badge-ghost';
-
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-base-200/30 border border-base-content/10">
@@ -53,9 +49,6 @@ export default function GameSelector() {
           {activeLabel}
         </span>
         <span className="sm:hidden font-bold text-sm text-base-content/90">{activeShort}</span>
-        {activeGame && (
-          <span className={`badge badge-xs ${activeBadge} opacity-90`}>{activeGame.game_type}</span>
-        )}
         <span className="opacity-50 text-[10px] group-hover:opacity-100 transition-opacity">▼</span>
       </div>
       <ul
@@ -64,18 +57,16 @@ export default function GameSelector() {
       >
         {games.map((game: GameConfig) => {
           const isActive = activeGame?.id === game.id;
-          const badgeColor = GAME_TYPE_COLORS[game.game_type] ?? 'badge-ghost';
 
           return (
             <li key={game.id}>
               <button
                 onClick={() => switchGame(game.id)}
-                className={`hover:bg-base-content/10 flex items-center justify-between ${
+                className={`hover:bg-base-content/10 ${
                   isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
                 }`}
               >
                 <span>{game.name}</span>
-                <span className={`badge badge-xs ${badgeColor}`}>{game.game_type}</span>
               </button>
             </li>
           );

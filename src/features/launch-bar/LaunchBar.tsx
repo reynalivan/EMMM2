@@ -55,7 +55,8 @@ export default function LaunchBar() {
   if (!activeGame) return null;
 
   return (
-    <div className="p-3 border-t border-base-300/20 bg-base-200/30 flex flex-col gap-2">
+    // Renders inside the top bar — no bottom-bar chrome (border-t / panel bg).
+    <div className="flex flex-col gap-2">
       {error && (
         <div className="alert alert-error text-xs py-1 px-2 rounded-md flex items-center gap-2">
           <AlertTriangle size={12} />
@@ -64,7 +65,7 @@ export default function LaunchBar() {
       )}
       <div className="flex items-center gap-2">
         <button
-          className="btn btn-neutral btn-sm px-3"
+          className="btn btn-soft btn-sm px-3"
           onClick={() => setRandomizerOpen(true)}
           title={t('layout:launch_bar.randomizer')}
         >

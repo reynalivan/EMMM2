@@ -13,26 +13,17 @@ export default function DemoAutoOrganize() {
 
   // Reduced motion just skips to the end state.
   useEffect(() => {
-    let sweepTimer: ReturnType<typeof setTimeout>;
-    let organizeTimer: ReturnType<typeof setTimeout>;
-    let endTimer: ReturnType<typeof setTimeout> | undefined;
+    if (prefersReduced) return;
 
-    if (prefersReduced) {
-    } else {
-      // 1. Enter and sweep at 800ms
-      sweepTimer = setTimeout(() => setShowSweep(true), 1200);
-      // 2. Snap to folders at 3000ms
-      organizeTimer = setTimeout(() => {
-        setIsOrganized(true);
-        setShowSweep(false);
-      }, 3000);
-      // 3. Complete at 3600ms
-    }
+    const sweepTimer = setTimeout(() => setShowSweep(true), 1200);
+    const organizeTimer = setTimeout(() => {
+      setIsOrganized(true);
+      setShowSweep(false);
+    }, 3000);
 
     return () => {
       clearTimeout(sweepTimer);
       clearTimeout(organizeTimer);
-      if (endTimer) clearTimeout(endTimer);
     };
   }, [prefersReduced]);
 
@@ -56,17 +47,18 @@ export default function DemoAutoOrganize() {
       layoutId={`mod-card-${mod.id}`}
       variants={inFolder ? undefined : cardVariants}
       initial={inFolder ? false : undefined}
-      className={`bg-base-200 border border-base-content/10 rounded-lg p-2 
-                  shadow-sm flex items-center gap-2 ${inFolder ? 'text-xs my-1 py-1' : 'text-sm max-w-xs mx-auto'}`}
+      className={`bg-base-200/80 border border-base-content/10 rounded-lg shadow-sm flex items-center gap-2 ${
+        inFolder ? 'text-[11px] px-2 py-1' : 'text-sm w-full px-3 py-1.5'
+      }`}
     >
-      <div className="w-6 h-6 rounded bg-base-300 shrink-0" />
-      <span className="truncate flex-1 font-medium">{t(mod.name)}</span>
+      <div className={`rounded bg-base-300 shrink-0 ${inFolder ? 'w-4 h-4' : 'w-5 h-5'}`} />
+      <span className="truncate flex-1 font-medium text-left">{t(mod.name)}</span>
       {!inFolder && (
         <motion.span
-          initial={{ opacity: 0, scale: 0 }}
+          initial={{ opacity: 0, scale: 0.6 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.5, type: 'spring' }}
-          className="badge badge-accent badge-sm text-[10px]"
+          transition={{ delay: 0.4, type: 'spring', stiffness: 400, damping: 30 }}
+          className="shrink-0 rounded-full bg-base-content/10 px-2 py-0.5 text-[10px] font-medium text-base-content/55"
         >
           {t(`demo.tag_${mod.typeTag.toLowerCase()}`)}
         </motion.span>
@@ -104,21 +96,21 @@ export default function DemoAutoOrganize() {
           )}
 
           {!isOrganized ? (
-            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 px-8 mt-12">
+            <div className="flex w-full max-w-sm flex-col gap-1.5 mt-6">
               {DEMO_MODS.map((mod) => renderCard(mod, false))}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-6 w-full px-4 mt-6">
+            <div className="grid grid-cols-3 gap-3 w-full px-4 mt-6">
               {(['Character', 'Weapon', 'UI'] as const).map((cat) => (
                 <div
                   key={cat}
-                  className="flex flex-col bg-base-200/50 rounded-xl p-3 border border-base-content/5"
+                  className="flex flex-col bg-base-200/40 rounded-xl p-3 border border-base-content/5"
                 >
-                  <div className="flex items-center gap-2 mb-2 text-base-content/60 font-semibold text-xs uppercase tracking-wider">
-                    <Folder className="w-4 h-4 text-primary" />
-                    {t(`demo.tag_${cat.toLowerCase()}`)}
+                  <div className="flex items-center gap-1.5 mb-2 text-base-content/55 font-semibold text-[10px] uppercase tracking-wider">
+                    <Folder className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="truncate">{t(`demo.tag_${cat.toLowerCase()}`)}</span>
                   </div>
-                  <div className="flex-1 space-y-1">
+                  <div className="flex-1 space-y-1.5">
                     {DEMO_MODS.filter((m) => m.typeTag === cat).map((mod) => renderCard(mod, true))}
                   </div>
                 </div>

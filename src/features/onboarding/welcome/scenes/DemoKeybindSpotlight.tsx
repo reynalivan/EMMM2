@@ -19,36 +19,25 @@ export default function DemoKeybindSpotlight() {
   const [showKeys, setShowKeys] = useState(false);
 
   useEffect(() => {
-    let endTimer: ReturnType<typeof setTimeout> | undefined;
-    let keyTimer: ReturnType<typeof setTimeout>;
-    let controls: unknown; // Using unknown because explicit AnimationControls differs slightly across motion versions
+    // Reduced motion skips the spotlight sweep entirely.
+    if (prefersReduced) return;
 
-    if (prefersReduced) {
-    } else {
-      // Animate spotlight moving to 4 points slower
-      controls = animate([
-        [spotX, 85, { duration: 1.2, ease: 'easeOut' }],
-        [spotY, 80, { duration: 1.2, ease: 'easeOut', at: '<' }], // move to Help
-        [spotX, 50, { duration: 1.2, ease: 'easeInOut', at: '+0.4' }],
-        [spotY, 50, { duration: 1.2, ease: 'easeInOut', at: '<' }], // move to middle
-        [spotX, 15, { duration: 1.2, ease: 'easeOut', at: '+0.5' }],
-        [spotY, 80, { duration: 1.2, ease: 'easeOut', at: '<' }], // move to Toggle
-      ]);
+    // Using unknown because explicit AnimationControls differs slightly across motion versions
+    const controls: unknown = animate([
+      [spotX, 85, { duration: 1.2, ease: 'easeOut' }],
+      [spotY, 80, { duration: 1.2, ease: 'easeOut', at: '<' }], // move to Help
+      [spotX, 50, { duration: 1.2, ease: 'easeInOut', at: '+0.4' }],
+      [spotY, 50, { duration: 1.2, ease: 'easeInOut', at: '<' }], // move to middle
+      [spotX, 15, { duration: 1.2, ease: 'easeOut', at: '+0.5' }],
+      [spotY, 80, { duration: 1.2, ease: 'easeOut', at: '<' }], // move to Toggle
+    ]);
 
-      keyTimer = setTimeout(() => setShowKeys(true), 1800);
-
-      return () => {
-        const ctrl = controls as Record<string, unknown>;
-        if (ctrl && typeof ctrl.stop === 'function') {
-          ctrl.stop();
-        }
-        clearTimeout(keyTimer);
-        if (endTimer) clearTimeout(endTimer);
-      };
-    }
+    const keyTimer = setTimeout(() => setShowKeys(true), 1800);
 
     return () => {
-      if (endTimer) clearTimeout(endTimer);
+      const ctrl = controls as Record<string, unknown>;
+      if (ctrl && typeof ctrl.stop === 'function') ctrl.stop();
+      clearTimeout(keyTimer);
     };
   }, [spotX, spotY, prefersReduced]);
 

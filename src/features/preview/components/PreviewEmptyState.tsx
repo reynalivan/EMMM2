@@ -31,7 +31,7 @@ export default function PreviewEmptyState({
       </div>
       <div className="flex w-full max-w-xs flex-col gap-3">
         <button
-          className="btn btn-outline btn-primary gap-2"
+          className="btn btn-soft btn-primary gap-2"
           disabled={mutationsDisabled}
           onClick={onImportArchives}
         >
@@ -39,7 +39,7 @@ export default function PreviewEmptyState({
           {t('preview:actions.import_archives')}
         </button>
         <button
-          className="btn btn-outline btn-primary gap-2"
+          className="btn btn-soft btn-primary gap-2"
           disabled={mutationsDisabled}
           onClick={onImportFolders}
         >

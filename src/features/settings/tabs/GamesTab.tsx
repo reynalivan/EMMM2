@@ -105,7 +105,7 @@ export default function GamesTab() {
           <h2 className="text-xl font-bold">{t('settings:games.title')}</h2>
           <p className="mt-1 text-sm opacity-70">{t('settings:games.desc')}</p>
         </div>
-        <button className="btn btn-primary gap-2" onClick={handleAdd}>
+        <button className="btn btn-primary gap-2" data-testid="games-add" onClick={handleAdd}>
           <Plus size={18} /> {t('settings:games.add')}
         </button>
       </div>
