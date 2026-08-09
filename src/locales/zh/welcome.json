@@ -3,12 +3,12 @@
   "subtitle": "3DMigoto 的终极模组管理器",
   "get_started": "立即开始",
   "features": {
-    "auto_organize": "智能自动整理",
-    "auto_organize_desc": "自动分组和管理您的 3DMigoto 模组，无需费力。",
-    "toggle_presets": "快速切换",
-    "toggle_presets_desc": "一键在不同的模组变体 or 预设之间切换。",
-    "keybind_spotlight": "智能热键",
-    "keybind_spotlight_desc": "使用您最喜欢的快捷键控制一切，完全可定制。",
+    "auto_organize": "拖入即整理",
+    "auto_organize_desc": "拖入一批模组，自动匹配到对应对象，确认后即完成移动。",
+    "toggle_presets": "一键预设",
+    "toggle_presets_desc": "一次点击切换整组模组，或在游戏中用快捷键循环预设。",
+    "keybind_spotlight": "游戏内快捷键",
+    "keybind_spotlight_desc": "无需离开游戏即可切换预设、变体和悬浮层。",
     "auto_organized": "已自动整理"
   },
   "demo": {
@@ -17,19 +17,19 @@
     "mod_ui_transparent": "UI 模组 - 透明",
     "mod_character_snow": "角色模组 - 雪景",
     "mod_weapon_dark": "武器模组 - 黑暗",
-    "action_show_keybinds": "显示快捷键",
-    "action_toggle_preview": "切换预览",
-    "action_quick_search": "快速搜索",
     "tag_character": "角色",
     "tag_weapon": "武器",
     "tag_ui": "UI",
     "aria_label": "智能功能演示",
     "aria_go_to_scene": "前往第 {{count}} 个场景",
     "one_click_presets": "一键预设",
-    "applied_instantly": "立即应用",
+    "applied_instantly": "一次点击，整组切换",
     "preset_on": "预设 开启",
     "preset_off": "预设 关闭",
-    "keybinds_instantly": "快如捷径",
-    "press_help": "按 ? 查看快捷键"
+    "keybinds_instantly": "游戏中随手切换",
+    "press_help": "游戏窗口聚焦时可用 — 无需切出",
+    "action_next_preset": "下一个预设",
+    "action_toggle_overlay": "切换悬浮层",
+    "action_next_variant": "下一个变体"
   }
 }

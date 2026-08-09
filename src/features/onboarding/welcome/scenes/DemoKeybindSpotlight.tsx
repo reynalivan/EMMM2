@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, useMotionValue, useMotionTemplate, animate, AnimatePresence } from 'motion/react';
-import { Search, Power, HelpCircle } from 'lucide-react';
+import { Gamepad2 } from 'lucide-react';
 import { usePrefersReducedMotion } from '../../../../hooks/usePrefersReducedMotion';
 import { DEMO_KEYBINDS } from '../demoTypes';
 
@@ -24,12 +24,12 @@ export default function DemoKeybindSpotlight() {
 
     // Using unknown because explicit AnimationControls differs slightly across motion versions
     const controls: unknown = animate([
-      [spotX, 85, { duration: 1.2, ease: 'easeOut' }],
-      [spotY, 80, { duration: 1.2, ease: 'easeOut', at: '<' }], // move to Help
-      [spotX, 50, { duration: 1.2, ease: 'easeInOut', at: '+0.4' }],
-      [spotY, 50, { duration: 1.2, ease: 'easeInOut', at: '<' }], // move to middle
-      [spotX, 15, { duration: 1.2, ease: 'easeOut', at: '+0.5' }],
-      [spotY, 80, { duration: 1.2, ease: 'easeOut', at: '<' }], // move to Toggle
+      // Linger on the KeyViewer overlay corner, then sweep down to where the
+      // key pills land — the two things this scene is actually about.
+      [spotX, 78, { duration: 1.0, ease: 'easeOut' }],
+      [spotY, 25, { duration: 1.0, ease: 'easeOut', at: '<' }],
+      [spotX, 50, { duration: 1.4, ease: 'easeInOut', at: '+0.5' }],
+      [spotY, 58, { duration: 1.4, ease: 'easeInOut', at: '<' }],
     ]);
 
     const keyTimer = setTimeout(() => setShowKeys(true), 1800);
@@ -81,23 +81,19 @@ export default function DemoKeybindSpotlight() {
         />
       )}
 
-      {/* Background UI pattern to show spotlight effect */}
-      <div className="flex justify-between items-end w-full max-w-lg mt-12 opacity-60">
-        <div className="flex flex-col items-center gap-2 px-4">
-          <Power className="w-8 h-8 opacity-50" />
-          <div className="h-2 w-16 bg-base-300 rounded" />
-        </div>
+      {/* The backdrop is the GAME, not app chrome: these hotkeys fire while
+          the game has focus, so showing a toolbar here would imply shortcuts
+          the app does not have. */}
+      <div className="flex flex-col items-center w-full max-w-lg mt-12 opacity-60">
+        <div className="w-full aspect-video bg-base-200 rounded-xl border border-base-content/10 relative overflow-hidden">
+          <Gamepad2 className="w-10 h-10 opacity-30 absolute inset-0 m-auto" />
 
-        <div className="flex flex-col items-center justify-center gap-4 flex-1">
-          <div className="w-48 h-12 bg-base-200 rounded-xl border border-base-content/10 flex items-center px-4">
-            <Search className="w-5 h-5 opacity-40 mr-2" />
-            <div className="h-3 w-24 bg-base-300 rounded" />
+          {/* KeyViewer overlay corner, the thing F7 toggles */}
+          <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
+            <div className="h-1.5 w-14 bg-base-content/20 rounded" />
+            <div className="h-1.5 w-10 bg-base-content/20 rounded" />
+            <div className="h-1.5 w-12 bg-base-content/20 rounded" />
           </div>
-        </div>
-
-        <div className="flex flex-col items-center gap-2 px-4">
-          <HelpCircle className="w-8 h-8 opacity-50" />
-          <div className="h-2 w-16 bg-base-300 rounded" />
         </div>
       </div>
 

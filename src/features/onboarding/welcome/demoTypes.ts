@@ -25,10 +25,15 @@ export interface DemoKeybind {
   action: string;
 }
 
+/**
+ * The real global hotkeys, with their shipped defaults (see the Rust
+ * `HotkeyAction` variants). These fire while the GAME has focus, not the app —
+ * which is the whole point of the scene, so the copy says so.
+ */
 export const DEMO_KEYBINDS: DemoKeybind[] = [
-  { keys: '?', action: 'demo.action_show_keybinds' },
-  { keys: 'Space', action: 'demo.action_toggle_preview' },
-  { keys: 'Ctrl+K', action: 'demo.action_quick_search' },
+  { keys: 'F6', action: 'demo.action_next_preset' },
+  { keys: 'F7', action: 'demo.action_toggle_overlay' },
+  { keys: 'F8', action: 'demo.action_next_variant' },
 ];
 
 export const SCENE_DURATION_MS = {

@@ -3,12 +3,12 @@
   "subtitle": "Mod manager terbaik untuk 3DMigoto",
   "get_started": "Mulai Sekarang",
   "features": {
-    "auto_organize": "Auto-Organisir Pintar",
-    "auto_organize_desc": "Kelola mod 3DMigoto Anda secara otomatis tanpa repot.",
-    "toggle_presets": "Toggle Instan",
-    "toggle_presets_desc": "Ganti varian mod atau preset dalam satu klik.",
-    "keybind_spotlight": "Shortcut Pintar",
-    "keybind_spotlight_desc": "Kendalikan semuanya dengan shortcut favorit Anda.",
+    "auto_organize": "Tarik-Lepas, Langsung Tertata",
+    "auto_organize_desc": "Lepas setumpuk mod; semuanya dicocokkan ke object Anda dan dipindah setelah Anda konfirmasi.",
+    "toggle_presets": "Preset Sekali Klik",
+    "toggle_presets_desc": "Tukar satu set mod sekaligus dengan satu klik, atau ganti preset lewat hotkey sambil bermain.",
+    "keybind_spotlight": "Hotkey di Dalam Game",
+    "keybind_spotlight_desc": "Ganti preset, varian, dan overlay tanpa keluar dari game.",
     "auto_organized": "Terorganisir otomatis"
   },
   "demo": {
@@ -17,19 +17,19 @@
     "mod_ui_transparent": "Mod UI - Transparan",
     "mod_character_snow": "Mod Karakter - Salju",
     "mod_weapon_dark": "Mod Senjata - Gelap",
-    "action_show_keybinds": "Lihat Shortcut",
-    "action_toggle_preview": "Toggle Preview",
-    "action_quick_search": "Pencarian Cepat",
     "tag_character": "Karakter",
     "tag_weapon": "Senjata",
     "tag_ui": "UI",
     "aria_label": "Demonstrasi Fitur Pintar",
     "aria_go_to_scene": "Ke adegan {{count}}",
     "one_click_presets": "Preset Sekali-Klik",
-    "applied_instantly": "Diterapkan instan",
+    "applied_instantly": "Satu klik, satu set penuh",
     "preset_on": "Preset AKTIF",
     "preset_off": "Preset MATI",
-    "keybinds_instantly": "Shortcut, instan",
-    "press_help": "Tekan ? untuk melihat shortcut"
+    "keybinds_instantly": "Hotkey, sambil bermain",
+    "press_help": "Bekerja saat game aktif — tanpa alt-tab",
+    "action_next_preset": "Preset berikutnya",
+    "action_toggle_overlay": "Alihkan overlay",
+    "action_next_variant": "Varian berikutnya"
   }
 }

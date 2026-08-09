@@ -3,12 +3,12 @@
   "subtitle": "The ultimate mod manager for 3DMigoto",
   "get_started": "Get Started",
   "features": {
-    "auto_organize": "Smart Auto-Organize",
-    "auto_organize_desc": "Automatically group and manage your 3DMigoto mods with zero effort.",
-    "toggle_presets": "Instant Toggling",
-    "toggle_presets_desc": "Swap between different mod variants or presets in a single click.",
-    "keybind_spotlight": "Smart Keybindings",
-    "keybind_spotlight_desc": "Control everything with your favorite shortcuts, fully customizable.",
+    "auto_organize": "Drop-to-Organize",
+    "auto_organize_desc": "Drop a pile of mods in; they are matched to your objects and moved once you confirm.",
+    "toggle_presets": "One-Click Presets",
+    "toggle_presets_desc": "Swap a whole set of mods in one click, or cycle presets with a hotkey while you play.",
+    "keybind_spotlight": "In-Game Hotkeys",
+    "keybind_spotlight_desc": "Cycle presets, variants and the overlay without leaving the game.",
     "auto_organized": "Auto-organized"
   },
   "demo": {
@@ -17,19 +17,19 @@
     "mod_ui_transparent": "UI Mod - Transparent",
     "mod_character_snow": "Character Mod - Snow",
     "mod_weapon_dark": "Weapon Mod - Dark",
-    "action_show_keybinds": "Show Keybinds",
-    "action_toggle_preview": "Toggle Preview",
-    "action_quick_search": "Quick Search",
     "tag_character": "Character",
     "tag_weapon": "Weapon",
     "tag_ui": "UI",
     "aria_label": "Smart Features Demonstration",
     "aria_go_to_scene": "Go to scene {{count}}",
     "one_click_presets": "One-click Presets",
-    "applied_instantly": "Applied instantly",
+    "applied_instantly": "One click, whole set",
     "preset_on": "Preset ON",
     "preset_off": "Preset OFF",
-    "keybinds_instantly": "Keybinds, instantly",
-    "press_help": "Press ? to view keybinds"
+    "keybinds_instantly": "Hotkeys, while you play",
+    "press_help": "Works with the game focused — no alt-tab",
+    "action_next_preset": "Next preset",
+    "action_toggle_overlay": "Toggle overlay",
+    "action_next_variant": "Next variant"
   }
 }
