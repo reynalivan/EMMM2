@@ -322,3 +322,55 @@ body {
     animation: none;
   }
 }
+
+/* Welcome CTA shine sweep (features/onboarding/WelcomeScreen.tsx).
+   The resting state declares no transition, so hover-out snaps the highlight
+   back off-screen instead of sweeping it backwards across the button. */
+.cta-shine {
+  position: relative;
+}
+
+.cta-shine > .cta-shine-bar {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(-160%);
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    color-mix(in srgb, var(--color-primary-content), transparent 78%) 50%,
+    transparent 60%
+  );
+}
+
+.cta-shine:hover > .cta-shine-bar {
+  transform: translateX(160%);
+  transition: transform 750ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Welcome demo-strip scene timer (features/onboarding/welcome/SmartDemoStrip.tsx).
+   CSS-driven so `animation-play-state` can freeze it while the strip is paused. */
+@keyframes demo-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.demo-progress-fill {
+  transform-origin: left;
+  animation: demo-progress linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta-shine:hover > .cta-shine-bar {
+    transition: none;
+  }
+
+  .demo-progress-fill {
+    animation: none;
+    transform: scaleX(1);
+  }
+}

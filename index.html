@@ -5,9 +5,319 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EMMM</title>
+    <style>
+      /*
+        Boot splash. Lives here rather than in a second Tauri window so the app
+        exposes a single webview: WebDriver attaches to exactly one target, and
+        that target is never destroyed mid-session. Removed from the DOM by
+        `dismissSplash()` once AppRouter has resolved its route.
+      */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background-color: #0b0b0f;
+        color: white;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        transition: opacity 220ms ease-out;
+      }
+
+      /* Set by `dismissSplash()` in App.tsx; the node is removed after the fade. */
+      #splash.is-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #splash .aurora {
+        position: absolute;
+        inset: 0;
+        filter: blur(100px);
+        opacity: 0.5;
+      }
+
+      #splash .aurora__item {
+        position: absolute;
+        border-radius: 50%;
+        mix-blend-mode: screen;
+        animation: splash-drift 20s infinite alternate ease-in-out;
+      }
+
+      #splash .aurora__item:nth-child(1) {
+        width: 150vw;
+        height: 150vh;
+        top: -50%;
+        left: -50%;
+        background: radial-gradient(circle at center, #64b3e4 0%, transparent 50%);
+      }
+
+      #splash .aurora__item:nth-child(2) {
+        width: 150vw;
+        height: 150vh;
+        bottom: -50%;
+        right: -50%;
+        background: radial-gradient(circle at center, #a390e4 0%, transparent 50%);
+        animation-delay: -5s;
+      }
+
+      #splash .aurora__item:nth-child(3) {
+        width: 100vw;
+        height: 100vh;
+        top: 10%;
+        left: 10%;
+        opacity: 0.3;
+        background: radial-gradient(circle at center, #5b8aff 0%, transparent 40%);
+        animation-delay: -10s;
+      }
+
+      @keyframes splash-drift {
+        from {
+          transform: rotate(0deg) translate(5%, 5%);
+        }
+        to {
+          transform: rotate(360deg) translate(-5%, -5%);
+        }
+      }
+
+      #splash .content {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+        text-align: center;
+      }
+
+      #splash .welcome-text {
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.4em;
+        color: #5b8aff;
+        opacity: 0.6;
+      }
+
+      /*
+        Logo mirrors `features/onboarding/welcome/AnimatedLogo.tsx` — same geometry,
+        same radial-gradient stops, same entry timing — so the boot splash hands off
+        to the onboarding welcome without the mark changing shape or colour. Written
+        as CSS keyframes because the splash paints before the motion runtime loads.
+      */
+      #splash .logo {
+        width: 120px;
+        height: 120px;
+        opacity: 0;
+        filter: blur(10px) drop-shadow(0 0 20px rgba(91, 138, 255, 0.4));
+        animation: splash-logo-in 1.5s ease-out forwards;
+      }
+
+      @keyframes splash-logo-in {
+        to {
+          opacity: 1;
+          filter: blur(0) drop-shadow(0 0 20px rgba(91, 138, 255, 0.4));
+        }
+      }
+
+      /* `pathLength="1"` normalises both strokes, so one dash length draws either. */
+      #splash .logo-stroke {
+        stroke-dasharray: 1;
+        stroke-dashoffset: 1;
+        animation: splash-logo-draw 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+
+      #splash .logo-stroke--b {
+        animation-delay: 0.2s;
+      }
+
+      @keyframes splash-logo-draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      #splash .logo-dot {
+        opacity: 0;
+        transform: scale(0);
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: splash-logo-dot 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+
+      #splash .logo-dot--a {
+        animation-delay: 1s;
+      }
+
+      #splash .logo-dot--b {
+        animation-delay: 1.2s;
+      }
+
+      @keyframes splash-logo-dot {
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* The 6s hue cycle the welcome logo runs on its gradient stops. */
+      #splash .logo-stop--a {
+        animation: splash-logo-stop-a 6s ease-in-out infinite;
+      }
+
+      #splash .logo-stop--b {
+        animation: splash-logo-stop-b 6s ease-in-out 0.5s infinite;
+      }
+
+      @keyframes splash-logo-stop-a {
+        0%,
+        100% {
+          stop-color: #64b3e4;
+        }
+        50% {
+          stop-color: #a390e4;
+        }
+      }
+
+      @keyframes splash-logo-stop-b {
+        0%,
+        100% {
+          stop-color: #5b8aff;
+        }
+        50% {
+          stop-color: #8f75f0;
+        }
+      }
+
+      #splash .title {
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+      }
+
+      #splash .subtitle {
+        font-size: 0.8rem;
+        letter-spacing: 0.1em;
+        opacity: 0.5;
+        margin-top: -0.75rem;
+      }
+
+      #splash .loading-bar {
+        width: 200px;
+        height: 2px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      #splash .loading-progress {
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #3b82f6, #b15eff);
+        animation: splash-progress 1.4s infinite ease-in-out;
+      }
+
+      @keyframes splash-progress {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(350%);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #splash {
+          transition: none;
+        }
+        #splash .aurora__item,
+        #splash .logo,
+        #splash .logo-stroke,
+        #splash .logo-dot,
+        #splash .logo-stop--a,
+        #splash .logo-stop--b,
+        #splash .loading-progress {
+          animation: none;
+        }
+        /* Skip straight to the drawn state rather than leaving the mark invisible. */
+        #splash .logo {
+          opacity: 1;
+          filter: drop-shadow(0 0 20px rgba(91, 138, 255, 0.4));
+        }
+        #splash .logo-stroke {
+          stroke-dashoffset: 0;
+        }
+        #splash .logo-dot {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
   </head>
 
   <body>
+    <div id="splash">
+      <div class="aurora">
+        <div class="aurora__item"></div>
+        <div class="aurora__item"></div>
+        <div class="aurora__item"></div>
+      </div>
+
+      <div class="content">
+        <div class="welcome-text">WELCOME</div>
+        <svg class="logo" viewBox="0 0 450 450" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient
+              id="splashLogoGrad"
+              cx="0"
+              cy="0"
+              r="1"
+              gradientUnits="userSpaceOnUse"
+              gradientTransform="translate(225 225) rotate(90) scale(225)"
+            >
+              <stop class="logo-stop--a" offset="0" stop-color="#64b3e4" />
+              <stop class="logo-stop--b" offset="1" stop-color="#5b8aff" />
+            </radialGradient>
+          </defs>
+
+          <rect width="450" height="450" rx="122" fill="url(#splashLogoGrad)" />
+
+          <path
+            class="logo-stroke"
+            pathLength="1"
+            d="M302.783 63.75H136.5C98.1162 63.75 67 94.8662 67 133.25C67 171.634 98.1162 202.75 136.5 202.75H189.996C208.55 202.75 226.428 195.779 240.086 183.22L370 63.75V171.5"
+            stroke="currentColor"
+            stroke-width="34"
+            stroke-miterlimit="16"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            class="logo-stroke logo-stroke--b"
+            pathLength="1"
+            d="M299 247H136.5C98.1162 247 67 278.116 67 316.5C67 354.884 98.1162 386 136.5 386H296C336.869 386 370 352.869 370 312V304"
+            stroke="currentColor"
+            stroke-width="34"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+
+          <circle class="logo-dot logo-dot--a" cx="136.5" cy="132.5" r="40.5" fill="currentColor" />
+          <circle class="logo-dot logo-dot--b" cx="300.5" cy="316.5" r="40.5" fill="currentColor" />
+        </svg>
+        <div class="title">EMMM</div>
+        <div class="subtitle">Enabled Model Mods Manager</div>
+        <div class="loading-bar">
+          <div class="loading-progress"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

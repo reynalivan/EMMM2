@@ -42,7 +42,6 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('FreshInstall');
       if (cmd === 'check_metadata_update') return Promise.resolve();
-      if (cmd === 'close_splashscreen') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -63,7 +62,6 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('HasConfig');
       if (cmd === 'check_metadata_update') return Promise.resolve();
-      if (cmd === 'close_splashscreen') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -85,7 +83,6 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.reject(new Error('Backend missing'));
       if (cmd === 'check_metadata_update') return Promise.resolve();
-      if (cmd === 'close_splashscreen') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 

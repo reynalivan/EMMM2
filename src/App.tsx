@@ -13,6 +13,22 @@ import WelcomeScreen from './features/onboarding/WelcomeScreen';
 import { commands } from './lib/bindings';
 import { publishQueryScopes } from './features/runtime-sync/queryRefresh';
 
+/** Duration of the splash fade-out; must match the `#splash` transition in `index.html`. */
+const SPLASH_FADE_MS = 220;
+
+/**
+ * Fades out and removes the boot splash that `index.html` paints before React
+ * mounts. Removal is on a timer rather than `transitionend` so a skipped
+ * transition (reduced motion, backgrounded window) can never strand the
+ * overlay on top of the app.
+ */
+function dismissSplash() {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  splash.classList.add('is-done');
+  setTimeout(() => splash.remove(), SPLASH_FADE_MS);
+}
+
 function AppRouter() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -50,7 +66,7 @@ function AppRouter() {
         .then((configStatus) => {
           if (configStatus !== 'HasConfig') {
             navigate('/welcome', { replace: true });
-            commands.closeSplashscreen().catch(console.error);
+            dismissSplash();
           } else {
             useAppStore
               .getState()
@@ -63,7 +79,7 @@ function AppRouter() {
                 navigate('/dashboard', { replace: true });
               })
               .finally(() => {
-                commands.closeSplashscreen().catch(console.error);
+                dismissSplash();
               });
           }
         })
@@ -71,7 +87,7 @@ function AppRouter() {
           // Fallback for frontend-only dev mode
           console.warn('Backend not detected, defaulting to Welcome');
           navigate('/welcome', { replace: true });
-          commands.closeSplashscreen().catch(console.error);
+          dismissSplash();
         });
 
       // Epic 12: Silent background metadata sync on startup

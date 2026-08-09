@@ -20,7 +20,6 @@ macro_rules! emmm_collect_commands {
     () => {
         tauri_specta::collect_commands![
             commands::app::app_cmds::check_config_status,
-            commands::app::app_cmds::close_splashscreen,
             commands::app::dashboard_cmds::get_dashboard_stats,
             commands::app::dashboard_cmds::get_active_keybindings,
             commands::app::workspace_cmds::get_workspace_view_model,

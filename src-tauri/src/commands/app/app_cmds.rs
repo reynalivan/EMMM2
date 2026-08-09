@@ -57,20 +57,6 @@ pub async fn reset_database(
     Ok(())
 }
 
-#[specta::specta]
-#[tauri::command]
-pub async fn close_splashscreen(app: tauri::AppHandle) -> Result<(), AppError> {
-    use tauri::Manager;
-    if let Some(splash) = app.get_webview_window("splashscreen") {
-        let _ = splash.close();
-    }
-    if let Some(main) = app.get_webview_window("main") {
-        main.show()?;
-        main.set_focus()?;
-    }
-    Ok(())
-}
-
 /// Check if a given absolute path exists on the disk.
 /// Bypasses restrictive Tauri v2 plugin-fs scopes.
 #[specta::specta]
