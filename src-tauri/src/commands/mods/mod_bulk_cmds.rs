@@ -59,7 +59,7 @@ pub async fn bulk_toggle_mods(
     crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
 
     let _lock = op_lock.acquire().await?;
-    let result = bulk::bulk_toggle(
+    bulk::bulk_toggle(
         &app,
         pool.inner(),
         &state,
@@ -68,9 +68,7 @@ pub async fn bulk_toggle_mods(
         enable,
         cancel_state.begin(),
     )
-    .await?;
-
-    Ok(result)
+    .await
 }
 
 #[specta::specta]
@@ -92,7 +90,7 @@ pub async fn bulk_delete_mods(
     crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
 
     let _lock = op_lock.acquire().await?;
-    let result = bulk::bulk_delete(
+    bulk::bulk_delete(
         &app,
         &config,
         pool.inner(),
@@ -101,9 +99,7 @@ pub async fn bulk_delete_mods(
         &game_id,
         cancel_state.begin(),
     )
-    .await?;
-
-    Ok(result)
+    .await
 }
 
 #[specta::specta]
@@ -166,4 +162,19 @@ pub async fn bulk_pin_mods(
     // Paths are resolved against the mods root a concurrent toggle/delete may be moving.
     let _lock = op_lock.acquire().await?;
     bulk::bulk_pin(&pool, game_id, folder_paths, pin).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bulk_cancel_state_is_observed_and_reset_for_the_next_batch() {
+        let state = BulkCancelState::new();
+
+        assert!(!state.begin().load(Ordering::SeqCst));
+        state.cancel();
+        assert!(state.0.load(Ordering::SeqCst));
+        assert!(!state.begin().load(Ordering::SeqCst));
+    }
 }

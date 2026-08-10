@@ -188,6 +188,23 @@ pub async fn find_unsaved_for_corridor(
     Ok(row.as_ref().map(row_to_collection))
 }
 
+pub async fn find_unsaved_id_for_corridor_tx(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    is_safe: bool,
+    exclude_id: &str,
+) -> Result<Option<String>, CollectionError> {
+    sqlx::query_scalar(
+        "SELECT id FROM collections WHERE game_id = ? AND is_safe = ? AND is_unsaved = 1 AND id != ? LIMIT 1",
+    )
+    .bind(game_id)
+    .bind(is_safe)
+    .bind(exclude_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(CollectionError::from)
+}
+
 pub async fn rename(
     pool: &SqlitePool,
     collection: &Collection,

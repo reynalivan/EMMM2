@@ -267,13 +267,12 @@ async fn ensure_unsaved_row_tx(
     conn: &mut sqlx::SqliteConnection,
     deleted_collection: &Collection,
 ) -> Result<String, CollectionError> {
-    let existing_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM collections WHERE game_id = ? AND is_safe = ? AND is_unsaved = 1 AND id != ? LIMIT 1",
+    let existing_id = collection_repo::find_unsaved_id_for_corridor_tx(
+        &mut *conn,
+        &deleted_collection.game_id,
+        deleted_collection.is_safe,
+        &deleted_collection.id,
     )
-    .bind(&deleted_collection.game_id)
-    .bind(deleted_collection.is_safe)
-    .bind(&deleted_collection.id)
-    .fetch_optional(&mut *conn)
     .await?;
     let should_create = existing_id.is_none();
     let unsaved_id = existing_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());

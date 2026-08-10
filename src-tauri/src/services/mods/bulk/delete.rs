@@ -94,63 +94,19 @@ pub async fn bulk_delete(
     }
 
     if !db_deletes.is_empty() {
-        // Detect which corridors were affected BEFORE deleting from DB or after if we still have the paths
-        // Report the removed mods to any collection that referenced them.
-        {
-            // Get mod path to compute relative paths
-            let mp = crate::repo::game_repo::get_mod_path(pool, game_id)
-                .await
-                .ok()
-                .flatten();
-            if let Some(base_path) = mp {
-                let base = Path::new(&base_path);
-                let relatives: Vec<String> = db_deletes
-                    .iter()
-                    .map(|p| {
-                        Path::new(p)
-                            .strip_prefix(base)
-                            .map(|sp| sp.to_string_lossy().to_string())
-                            .unwrap_or_else(|_| p.clone())
-                    })
-                    .collect();
-                // One transaction for the whole batch: the non-`_tx` helper
-                // opens and commits its own, which is a begin/commit per mod.
-                match pool.begin().await {
-                    Ok(mut tx) => {
-                        for relative in &relatives {
-                            let impact =
-                                crate::services::collection_service::handle_mod_missing_tx(
-                                    &mut tx, relative,
-                                )
-                                .await
-                                .unwrap_or_default();
-                            collection_impact.merge(impact);
-                        }
-                        if let Err(error) = tx.commit().await {
-                            log::error!("Failed committing collection impact scan: {error}");
-                        }
-                    }
-                    Err(error) => {
-                        log::error!("Failed opening collection impact transaction: {error}");
-                    }
-                }
-            }
-        }
+        collection_impact = collect_collection_impact(pool, game_id, &db_deletes).await;
 
         if let Err(e) = mod_repo::batch_delete_by_path(pool, game_id, &db_deletes).await {
             log::error!("Failed batch deleting mod paths from DB: {}", e);
         }
 
-        // Trigger dirty state for the affected corridor
-        {
-            crate::services::app::runtime_effects::finalize_mutation(
-                pool,
-                config,
-                game_id,
-                crate::services::app::runtime_effects::MutationOutcome::full_game(),
-            )
-            .await;
-        }
+        crate::services::app::runtime_effects::finalize_mutation(
+            pool,
+            config,
+            game_id,
+            crate::services::app::runtime_effects::MutationOutcome::full_game(),
+        )
+        .await;
     }
 
     let _ = app.emit(
@@ -178,4 +134,80 @@ pub async fn bulk_delete(
         collection_impact,
         Vec::new(),
     ))
+}
+
+async fn collect_collection_impact(
+    pool: &SqlitePool,
+    game_id: &str,
+    deleted_paths: &[String],
+) -> CollectionReferenceImpact {
+    let Some(mods_path) = resolve_mods_path(pool, game_id).await else {
+        return CollectionReferenceImpact::default();
+    };
+    let relative_paths = relative_deleted_paths(&mods_path, deleted_paths);
+    scan_collection_impact(pool, &relative_paths).await
+}
+
+async fn resolve_mods_path(pool: &SqlitePool, game_id: &str) -> Option<String> {
+    match crate::repo::game_repo::get_mod_path(pool, game_id).await {
+        Ok(mods_path) => mods_path,
+        Err(error) => {
+            log::error!("Failed resolving mods path for collection impact scan: {error}");
+            None
+        }
+    }
+}
+
+fn relative_deleted_paths(mods_path: &str, deleted_paths: &[String]) -> Vec<String> {
+    let base = Path::new(&mods_path);
+    deleted_paths
+        .iter()
+        .map(|path| {
+            Path::new(path)
+                .strip_prefix(base)
+                .map(|relative| relative.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.clone())
+        })
+        .collect()
+}
+
+async fn scan_collection_impact(
+    pool: &SqlitePool,
+    relative_paths: &[String],
+) -> CollectionReferenceImpact {
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            log::error!("Failed opening collection impact transaction: {error}");
+            return CollectionReferenceImpact::default();
+        }
+    };
+    let collection_impact = scan_collection_impact_tx(&mut transaction, relative_paths).await;
+    if let Err(error) = transaction.commit().await {
+        log::error!("Failed committing collection impact scan: {error}");
+    }
+    collection_impact
+}
+
+async fn scan_collection_impact_tx(
+    transaction: &mut sqlx::SqliteConnection,
+    relative_paths: &[String],
+) -> CollectionReferenceImpact {
+    let mut combined_impact = CollectionReferenceImpact::default();
+    for relative_path in relative_paths {
+        match crate::services::collection_service::handle_mod_missing_tx(
+            &mut *transaction,
+            relative_path,
+        )
+        .await
+        {
+            Ok(impact) => combined_impact.merge(impact),
+            Err(error) => {
+                log::error!(
+                    "Failed scanning collection impact for deleted mod {relative_path}: {error}"
+                );
+            }
+        }
+    }
+    combined_impact
 }
