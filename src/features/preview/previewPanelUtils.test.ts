@@ -26,6 +26,7 @@ describe('previewPanelUtils', () => {
       {
         fileName: 'config.ini',
         document: {
+          source_hash: 'source-1',
           mode: 'Structured',
           raw_lines: ['[KeySwap]', 'key = v', 'back = b', '$active = 1', '$swapvar = 2'],
           variables: [],
@@ -64,6 +65,7 @@ describe('previewPanelUtils', () => {
         label: 'key',
         prefix: 'key =',
         value: 'v',
+        sourceHash: 'source-1',
       },
       {
         id: 'config.ini:KeySwap:assign:3',
@@ -73,6 +75,7 @@ describe('previewPanelUtils', () => {
         label: '$active',
         prefix: '$active =',
         value: '1',
+        sourceHash: 'source-1',
       },
     ];
 

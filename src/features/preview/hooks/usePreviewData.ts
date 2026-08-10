@@ -14,6 +14,7 @@ export type IniReadMode = 'Structured' | 'RawFallback';
 export type NewlineStyle = 'Lf' | 'CrLf';
 
 export interface IniVariable {
+  qualifier: 'global' | 'persist' | 'local' | null;
   name: string;
   value: string;
   line_idx: number;
@@ -35,6 +36,7 @@ export interface IniLineUpdate {
 export interface WriteModIniInput {
   folderPath: string;
   fileName: string;
+  expectedSourceHash: string;
   lineUpdates: IniLineUpdate[];
 }
 
@@ -150,7 +152,13 @@ export function useWriteModIni() {
   const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: WriteModIniInput) =>
-      commands.writeModIni(gameId, input.folderPath, input.fileName, input.lineUpdates),
+      commands.writeModIni(
+        gameId,
+        input.folderPath,
+        input.fileName,
+        input.expectedSourceHash,
+        input.lineUpdates,
+      ),
     onSuccess: (_result, input) =>
       invalidate([
         detailsKeys.iniDocument(input.folderPath, input.fileName),

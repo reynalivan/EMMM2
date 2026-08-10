@@ -62,21 +62,18 @@ fn write_keybind_files_creates_per_sentinel() {
 
     let written = write_keybind_files(dir.path(), &matches, &keybinds, "F7").unwrap();
 
-    // 2 sentinel files + 1 fallback = 3
-    assert_eq!(written.len(), 3);
+    assert_eq!(written.len(), 2);
     assert!(dir.path().join("aabb1111.txt").exists());
     assert!(dir.path().join("aabb2222.txt").exists());
-    assert!(dir.path().join("_fallback.txt").exists());
+    assert!(!dir.path().join("_fallback.txt").exists());
 
     let content = std::fs::read_to_string(dir.path().join("aabb1111.txt")).unwrap();
     assert!(content.contains("Albedo"));
 }
 
 #[test]
-fn write_keybind_files_fallback_omits_safe_mode() {
+fn write_keybind_files_with_no_matches_writes_nothing() {
     let dir = TempDir::new().unwrap();
-    write_keybind_files(dir.path(), &[], &HashMap::new(), "F7").unwrap();
-    let content = std::fs::read_to_string(dir.path().join("_fallback.txt")).unwrap();
-    assert!(content.contains("No character detected"));
-    assert!(!content.contains("Safe Mode"));
+    let written = write_keybind_files(dir.path(), &[], &HashMap::new(), "F7").unwrap();
+    assert!(written.is_empty());
 }

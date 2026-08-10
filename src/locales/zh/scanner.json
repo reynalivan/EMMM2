@@ -217,6 +217,8 @@
     "title": "检测到 Shader 冲突",
     "empty": "未发现冲突。",
     "description": "这些模组修改了相同的 shader 或 buffer 哈希。若同时启用，可能会导致画面异常或崩溃。",
-    "acknowledge": "知道了"
+    "acknowledge": "知道了",
+    "definite": "确定重叠",
+    "potential": "潜在重叠"
   }
 }

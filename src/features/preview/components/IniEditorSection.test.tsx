@@ -21,6 +21,7 @@ describe('IniEditorSection', () => {
               label: 'key',
               prefix: 'key',
               value: 'K',
+              sourceHash: 'source-1',
             },
             {
               id: 'field2',
@@ -30,6 +31,7 @@ describe('IniEditorSection', () => {
               label: 'back',
               prefix: 'back',
               value: '0.5',
+              sourceHash: 'source-1',
             },
           ],
         },
@@ -44,6 +46,7 @@ describe('IniEditorSection', () => {
               label: 'value',
               prefix: 'value',
               value: '100',
+              sourceHash: 'source-1',
             },
           ],
         },

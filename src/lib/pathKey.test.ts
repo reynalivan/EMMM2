@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalPathKey, pathStartsWith, pathsEqual } from './pathKey';
+import { canonicalPathKey, identityPathKey, pathStartsWith, pathsEqual } from './pathKey';
 
 describe('pathKey', () => {
   it('canonicalizes path with ASCII-only case folding and preserves unicode', () => {
@@ -18,5 +18,12 @@ describe('pathKey', () => {
     expect(
       pathStartsWith('E:/Mods/한국Character', 'e:\\mods\\한국character\\日本語MOD\\Assets'),
     ).toBe(true);
+  });
+
+  it('keeps identity stable for every runtime-disabled spelling', () => {
+    const enabled = identityPathKey('E:/Mods/Amber/BlueDress');
+    expect(identityPathKey('E:/Mods/Amber/DISABLED BlueDress')).toBe(enabled);
+    expect(identityPathKey('E:/Mods/Amber/DISABLED_BlueDress')).toBe(enabled);
+    expect(identityPathKey('E:/Mods/Amber/DISABLEDBlueDress')).toBe(enabled);
   });
 });

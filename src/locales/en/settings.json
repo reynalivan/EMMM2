@@ -198,7 +198,9 @@
       "safe_mode": "Safe Mode (Panic Key)",
       "next_preset": "Switch to Next Preset",
       "prev_preset": "Switch to Previous Preset",
-      "toggle_overlay": "Toggle Overlay (Banner + KeyViewer)"
+      "toggle_overlay": "Toggle Overlay (Banner + KeyViewer)",
+      "next_variant": "Switch to Next Variant",
+      "prev_variant": "Switch to Previous Variant"
     },
     "viewer_title": "KeyViewer Overlay",
     "auto_reload": "Auto-Reload",
@@ -210,10 +212,16 @@
     "save_failed": "Failed to save hotkey settings: {{error}}",
     "viewer_save_failed": "Failed to save KeyViewer settings: {{error}}",
     "reset_tip": "Reset to default",
+    "reserved": {
+      "package_toggle": "package toggle",
+      "frame_analysis": "3DMigoto frame analysis",
+      "reload_fixes": "3DMigoto reload fixes"
+    },
     "conflicts": {
       "share_key": "share key",
       "and": "and",
-      "message": "{{label1}} and {{label2}} share key \"{{key}}\""
+      "message": "{{label1}} and {{label2}} share key \"{{key}}\"",
+      "reserved_message": "{{label}} conflicts with {{runtime}} on \"{{key}}\""
     }
   },
   "maintenance": {

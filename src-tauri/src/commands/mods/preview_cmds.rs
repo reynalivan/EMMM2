@@ -49,13 +49,21 @@ pub async fn write_mod_ini(
     game_id: String,
     folder_path: String,
     file_name: String,
+    expected_source_hash: String,
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let changed_path = mod_root.join(&file_name).to_string_lossy().to_string();
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let op_guard = op_lock.acquire().await?;
-    write_mod_ini_locked_inner(&op_guard, &mod_root, &file_name, line_updates).await?;
+    write_mod_ini_locked_inner(
+        &op_guard,
+        &mod_root,
+        &file_name,
+        &expected_source_hash,
+        line_updates,
+    )
+    .await?;
     emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path]).await
 }
 

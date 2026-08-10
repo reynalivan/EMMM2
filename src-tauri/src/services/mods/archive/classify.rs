@@ -6,8 +6,15 @@ const LOOSE_EXTENSIONS: &[&str] = &[
     "txt", "md", "png", "jpg", "jpeg", "gif", "webp", "bmp", "url", "html", "pdf",
 ];
 
-/// Sections that make a .ini file a valid 3DMigoto mod ini.
-const VALID_INI_SECTIONS: &[&str] = &["[TextureOverride", "[ShaderOverride", "[Resource"];
+/// Section families that give an INI file executable 3DMigoto behavior.
+const VALID_INI_SECTION_PREFIXES: &[&str] = &[
+    "textureoverride",
+    "shaderoverride",
+    "resource",
+    "key",
+    "commandlist",
+    "shaderregex",
+];
 
 /// Recursively find the shallowest folders containing a valid 3DMigoto .ini.
 ///
@@ -20,12 +27,10 @@ pub fn find_mod_roots(folder: &Path, max_depth: usize) -> Vec<PathBuf> {
         return Vec::new();
     }
 
-    // If this folder itself contains a valid mod ini at root level, it's a mod root.
     if has_valid_mod_ini(folder) {
         return vec![folder.to_path_buf()];
     }
 
-    // Otherwise, recurse into subfolders
     let mut results = Vec::new();
     let entries = match fs::read_dir(folder) {
         Ok(e) => e,
@@ -39,7 +44,6 @@ pub fn find_mod_roots(folder: &Path, max_depth: usize) -> Vec<PathBuf> {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            // Skip hidden/system folders
             if name.starts_with('.') {
                 continue;
             }
@@ -52,8 +56,8 @@ pub fn find_mod_roots(folder: &Path, max_depth: usize) -> Vec<PathBuf> {
 
 /// Check if a folder's root (non-recursive) contains at least one valid 3DMigoto .ini.
 ///
-/// A valid .ini must contain at least one `[TextureOverride*]`, `[ShaderOverride*]`,
-/// or `[Resource*]` section header (AC-11.3.6).
+/// A valid .ini must contain an override/resource, input, command-list,
+/// shader-regex, or include section.
 pub fn has_valid_mod_ini(folder: &Path) -> bool {
     let entries = match fs::read_dir(folder) {
         Ok(e) => e,
@@ -77,21 +81,33 @@ pub fn has_valid_mod_ini(folder: &Path) -> bool {
         }
 
         use std::io::{BufRead, BufReader};
-        // Read the file line-by-line and check for valid section headers
         if let Ok(file) = fs::File::open(&path) {
             let reader = BufReader::new(file);
             for line in reader.lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                for section in VALID_INI_SECTIONS {
-                    if trimmed.starts_with(section) {
-                        return true;
-                    }
+                if is_runtime_section(&line) {
+                    return true;
                 }
             }
         }
     }
 
     false
+}
+
+fn is_runtime_section(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Some(section) = trimmed
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once(']').map(|(name, _)| name.trim()))
+    else {
+        return false;
+    };
+
+    let section = section.to_ascii_lowercase();
+    section == "include"
+        || VALID_INI_SECTION_PREFIXES
+            .iter()
+            .any(|prefix| section.starts_with(prefix))
 }
 
 /// Collect loose non-mod files from a folder (non-recursive).
@@ -136,7 +152,6 @@ pub fn collect_loose_files_recursive(root: &Path, mod_roots: &[PathBuf]) -> Vec<
         if !path.is_dir() {
             continue;
         }
-        // Don't recurse into mod roots — those are the actual mods
         if mod_roots.contains(&path) {
             continue;
         }
@@ -164,7 +179,6 @@ pub fn resolve_unique_dest(parent_dir: &Path, name: &str) -> PathBuf {
         }
         counter += 1;
         if counter > 999 {
-            // Safety valve — shouldn't happen in practice
             return parent_dir.join(format!("{} ({})", name, uuid::Uuid::new_v4()));
         }
     }
@@ -218,7 +232,6 @@ mod tests {
         let deep = tmp.path().join("Author").join("Game").join("Character");
         fs::create_dir_all(&deep).unwrap();
         create_file(&deep, "merged.ini", VALID_INI);
-        // Loose files at root
         create_file(tmp.path(), "README.txt", "readme");
 
         let roots = find_mod_roots(tmp.path(), 5);
@@ -247,7 +260,6 @@ mod tests {
         let mod_dir = tmp.path().join("ModName");
         fs::create_dir_all(&mod_dir).unwrap();
         create_file(&mod_dir, "merged.ini", VALID_INI);
-        // Variant subfolders — should NOT be returned as separate roots
         let var_a = mod_dir.join("VariantA");
         let var_b = mod_dir.join("VariantB");
         fs::create_dir_all(&var_a).unwrap();
@@ -277,6 +289,35 @@ mod tests {
 
         let roots = find_mod_roots(tmp.path(), 5);
         assert!(roots.is_empty());
+    }
+
+    #[test]
+    fn find_mod_roots_accepts_non_override_runtime_sections() {
+        for (index, section) in [
+            "[Include]",
+            "[KeyToggle]",
+            "[CommandListApply]",
+            "[ShaderRegexCharacter]",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let tmp = TempDir::new().unwrap();
+            create_file(tmp.path(), &format!("runtime-{index}.ini"), section);
+
+            assert_eq!(
+                find_mod_roots(tmp.path(), 1),
+                vec![tmp.path().to_path_buf()]
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_section_detection_is_case_insensitive_and_requires_a_header() {
+        assert!(is_runtime_section("  [cOmMaNdLiStApply] ; comment"));
+        assert!(!is_runtime_section("; [TextureOverrideBody]"));
+        assert!(!is_runtime_section("[Constants]"));
+        assert!(!is_runtime_section("[KeyWithoutClosingBracket"));
     }
 
     #[test]

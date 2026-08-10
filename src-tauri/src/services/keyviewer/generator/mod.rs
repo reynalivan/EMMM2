@@ -2,7 +2,6 @@
 //!
 //! Generates the files consumed by 3DMigoto at runtime:
 //! - `EMM2/keybinds/active/<sentinel_hash>.txt` — per-object keybind text
-//! - `EMM2/keybinds/active/_fallback.txt` — default text when no object matched
 //! - `Mods/EMM2_System/KeyViewer.ini` — 3DMigoto runtime overlay
 //! - `EMM2/status/runtime_status.txt` — in-game status banner
 //!

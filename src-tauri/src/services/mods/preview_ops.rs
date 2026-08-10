@@ -54,19 +54,20 @@ fn validate_ini_filename(file_name: &str) -> Result<(), AppError> {
         )));
     }
 
-    if name_path.components().count() != 1 {
-        return Err(AppError::Metadata(MetadataError::Validation(
-            "INI filename must not include directories".to_string(),
-        )));
-    }
-
-    let lower = file_name.to_ascii_lowercase();
-    if lower == "desktop.ini" {
+    let base_name = name_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if base_name.eq_ignore_ascii_case("desktop.ini") {
         return Err(AppError::Metadata(MetadataError::Validation(
             "desktop.ini is not a valid editable INI".to_string(),
         )));
     }
-    if !lower.ends_with(".ini") {
+    if !name_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"))
+    {
         return Err(AppError::Metadata(MetadataError::Validation(
             "Only .ini files are supported".to_string(),
         )));
@@ -79,14 +80,6 @@ fn resolve_ini_path(mod_root: &Path, file_name: &str) -> Result<PathBuf, AppErro
     validate_ini_filename(file_name)?;
 
     let target = mod_root.join(file_name);
-    // PathGuard already canonicalizes the root, so we just need to ensure the target is within it.
-    // However, for extra safety we check if it starts with mod_root.
-    if !target.starts_with(mod_root) {
-        return Err(AppError::Metadata(MetadataError::Security(
-            "INI file path escapes mod folder".to_string(),
-        )));
-    }
-
     if !target.is_file() {
         return Err(AppError::Metadata(MetadataError::NotFound(format!(
             "INI file not found: {}",
@@ -94,7 +87,15 @@ fn resolve_ini_path(mod_root: &Path, file_name: &str) -> Result<PathBuf, AppErro
         ))));
     }
 
-    Ok(target)
+    let canonical_root = mod_root.canonicalize()?;
+    let canonical_target = target.canonicalize()?;
+    if !canonical_target.starts_with(canonical_root) {
+        return Err(AppError::Metadata(MetadataError::Security(
+            "INI file path escapes mod folder".to_string(),
+        )));
+    }
+
+    Ok(canonical_target)
 }
 
 pub fn resolve_image_path(mod_root: &Path, image_path: &str) -> Result<PathBuf, AppError> {
@@ -139,9 +140,10 @@ pub fn list_mod_ini_files_inner(mod_root: &Path) -> Result<Vec<IniFileEntry>, Ap
         .into_iter()
         .map(|path| IniFileEntry {
             filename: path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default(),
+                .strip_prefix(mod_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/"),
             path: path.to_string_lossy().to_string(),
         })
         .collect())
@@ -155,6 +157,7 @@ pub fn read_mod_ini_inner(mod_root: &Path, file_name: &str) -> Result<IniDocumen
 pub fn write_mod_ini_inner(
     mod_root: &Path,
     file_name: &str,
+    expected_source_hash: &str,
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
     let ini_path = resolve_ini_path(mod_root, file_name)?;
@@ -164,16 +167,17 @@ pub fn write_mod_ini_inner(
         .map(|u| (u.line_idx, u.content))
         .collect();
 
-    ini_write::save_ini_with_updates(&document, &updates)
+    ini_write::save_ini_with_updates(&document, expected_source_hash, &updates)
 }
 
 pub async fn write_mod_ini_locked_inner(
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     mod_root: &Path,
     file_name: &str,
+    expected_source_hash: &str,
     line_updates: Vec<IniLineUpdate>,
 ) -> Result<(), AppError> {
-    write_mod_ini_inner(mod_root, file_name, line_updates)
+    write_mod_ini_inner(mod_root, file_name, expected_source_hash, line_updates)
 }
 
 pub fn list_mod_preview_images_inner(mod_root: &Path) -> Result<Vec<String>, AppError> {

@@ -58,9 +58,9 @@ pub fn strip_noise_prefixes(name: &str) -> String {
 /// Leading word every DISABLED spelling shares, used as a cheap regex prefilter.
 const DISABLED_WORD: &str = "disabled";
 
-/// Regex matching canonical and legacy DISABLED folder prefixes.
+/// 3DMigoto package configs exclude `DISABLED*`, not only `DISABLED `.
 static DISABLED_DETECT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^disabled[\s_-]+").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^disabled[\s_-]*").unwrap());
 
 /// Normalize a folder name for UI display.
 ///
@@ -74,8 +74,8 @@ static DISABLED_DETECT_RE: LazyLock<Regex> =
 pub fn normalize_display_name(name: &str) -> Cow<'_, str> {
     let mut value = name.trim();
     loop {
-        // `DISABLED_DETECT_RE` is `(?i)^disabled[\s_-]+`; the cheap prefix
-        // test rejects almost everything before the engine is entered.
+        // The cheap prefix test rejects almost everything before the regex is
+        // entered. Repeating also repairs externally produced double prefixes.
         if !value
             .get(..DISABLED_WORD.len())
             .is_some_and(|head| head.eq_ignore_ascii_case(DISABLED_WORD))

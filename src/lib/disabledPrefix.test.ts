@@ -10,13 +10,14 @@ describe('disabledPrefix', () => {
     it('should identify case variants', () => {
       expect(isDisabledName('disabled MyMod')).toBe(true);
       expect(isDisabledName('DiSaBLeD MyMod')).toBe(true);
+      expect(isDisabledName('DISABLED_MyMod')).toBe(true);
+      expect(isDisabledName('DISABLEDMyMod')).toBe(true);
     });
 
     it('should reject normal names', () => {
       expect(isDisabledName('MyMod')).toBe(false);
       expect(isDisabledName('NotDisabled')).toBe(false);
       expect(isDisabledName('distance_mod')).toBe(false);
-      expect(isDisabledName('disabled_MyMod')).toBe(false);
       expect(isDisabledName('disable-MyMod')).toBe(false);
       expect(isDisabledName('Some_disable_mod')).toBe(false);
     });
@@ -30,11 +31,13 @@ describe('disabledPrefix', () => {
     it('should strip canonical prefix case-insensitively', () => {
       expect(stripDisabledPrefix('disabled MyMod')).toBe('MyMod');
       expect(stripDisabledPrefix('DiSaBlEd   MyMod')).toBe('MyMod');
+      expect(stripDisabledPrefix('DISABLED_MyMod')).toBe('MyMod');
+      expect(stripDisabledPrefix('DISABLEDMyMod')).toBe('MyMod');
     });
 
     it('should leave normal names alone', () => {
       expect(stripDisabledPrefix('MyMod')).toBe('MyMod');
-      expect(stripDisabledPrefix('disabled_MyMod')).toBe('disabled_MyMod');
+      expect(stripDisabledPrefix('distance_mod')).toBe('distance_mod');
     });
   });
 
@@ -54,6 +57,15 @@ describe('disabledPrefix', () => {
     it('should not double-disable a path', () => {
       expect(toggleDisabledInPath('mods/Character/DISABLED MyMod', false)).toBe(
         'mods/Character/DISABLED MyMod',
+      );
+    });
+
+    it('should canonicalize a legacy runtime-disabled path when enabling', () => {
+      expect(toggleDisabledInPath('mods/Character/DISABLED_MyMod', true)).toBe(
+        'mods/Character/MyMod',
+      );
+      expect(toggleDisabledInPath('mods/Character/DISABLEDMyMod', true)).toBe(
+        'mods/Character/MyMod',
       );
     });
 

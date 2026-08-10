@@ -7,6 +7,7 @@ use crate::services::keyviewer::harvester;
 use crate::services::keyviewer::matcher;
 use crate::services::mods::metadata;
 use sqlx::SqlitePool;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
 /// Context for post-mutation tasks.
@@ -23,6 +24,16 @@ pub struct PostApplyContext {
     pub hotkeys: HotkeyConfig,
     /// Optional status overrides (e.g. preset name, folder name) from the mutation source.
     pub status_fields: Option<generator::StatusFields>,
+}
+
+fn cleanup_staging_after_error(staging: &std::path::Path, error: AppError) -> AppError {
+    match std::fs::remove_dir_all(staging) {
+        Ok(()) => error,
+        Err(cleanup_error) => AppError::Io(format!(
+            "KeyViewer artifact error ({error}); staging cleanup also failed ({cleanup_error}): {}",
+            staging.display()
+        )),
+    }
 }
 
 /// Run tasks that should execute after any mod state change (Toggle, Apply, Switch).
@@ -45,6 +56,9 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
     );
 
     crate::repo::runtime_projection_repo::rebuild_game_projection(pool, game_id).await?;
+    let game_type = crate::repo::game_repo::get_game_type(pool, game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Game {game_id} not found")))?;
 
     // One query feeds both the conflict scan and the harvest below.
     let enabled_mods = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id).await?;
@@ -57,23 +71,14 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
     let keybinds_dir = emmm_data_dir.join("keybinds").join("active");
     let status_dir = emmm_data_dir.join("status");
 
-    // Clean active artifacts (zero-leak policy)
-    if keybinds_dir.exists() {
-        let _ = std::fs::remove_dir_all(&keybinds_dir);
-    }
-    let _ = std::fs::create_dir_all(&keybinds_dir);
-    let _ = std::fs::create_dir_all(&status_dir);
-
     // Harvest: one pass per mod for both hashes and keybinds.
-    let mut occurrence_counts = std::collections::HashMap::new();
-    let mut hash_to_mod_path = std::collections::HashMap::new();
-    let mut mod_keybinds = std::collections::HashMap::new();
+    let mut occurrence_counts = HashMap::new();
+    let mut hash_to_mod_path = HashMap::new();
+    let mut mod_keybinds = HashMap::new();
 
     for stored_path in enabled_mods {
         let abs_path = stored_path.resolve(mods_path);
-        let Ok(harvest) = harvester::harvest_mod(&abs_path) else {
-            continue;
-        };
+        let harvest = harvester::harvest_mod(&abs_path)?;
 
         for (hash, occurrences) in harvest.hashes {
             *occurrence_counts.entry(hash.clone()).or_insert(0) += occurrences.len();
@@ -93,19 +98,35 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
         .map(|(name, hash_db)| {
             // Lowercase once: `code_hashes` is the flattened `skin_hashes`, and
             // building them independently case-folded every hash twice.
-            let skin_hashes: std::collections::HashMap<String, Vec<String>> = hash_db
+            let skin_hashes: HashMap<String, Vec<String>> = hash_db
                 .0
                 .into_iter()
                 .map(|(skin, hashes)| {
-                    let folded = hashes.into_iter().map(|h| h.to_ascii_lowercase()).collect();
+                    let mut folded: Vec<String> = hashes
+                        .into_iter()
+                        .map(|hash| hash.trim_start_matches("0x").to_ascii_lowercase())
+                        .filter(|hash| {
+                            hash.len() == 8
+                                && hash.chars().all(|character| character.is_ascii_hexdigit())
+                        })
+                        .collect();
+                    folded.sort_unstable();
+                    folded.dedup();
                     (skin, folded)
                 })
+                .collect();
+            let code_hashes: Vec<String> = skin_hashes
+                .values()
+                .flatten()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
                 .collect();
 
             matcher::KvObjectEntry {
                 name,
                 object_type: "Character".to_string(),
-                code_hashes: skin_hashes.values().flatten().cloned().collect(),
+                code_hashes,
                 skin_hashes,
                 tags: Vec::new(),
                 thumbnail_path: None,
@@ -115,24 +136,16 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
 
     // Match
     let config = matcher::MatchConfig::default();
-    let active_hashes: std::collections::HashSet<String> =
-        occurrence_counts.keys().cloned().collect();
+    let active_hashes: HashSet<String> = occurrence_counts.keys().cloned().collect();
     let matches = matcher::match_objects(&entries, &active_hashes, &occurrence_counts, &config);
-
-    // Generate KeyViewer.ini
-    let kv_ini_path = emmm_data_dir.join("KeyViewer.ini");
-    generator::write_keyviewer_ini(
-        &kv_ini_path,
-        &matches,
-        &ctx.hotkeys.toggle_overlay,
-        "keybinds/active",
-    )?;
+    let kv_ini_content =
+        generator::generate_keyviewer_ini(&matches, &ctx.hotkeys.toggle_overlay, game_type)?;
 
     // Map keybinds back to objects, grouped by mod source (Req-43)
-    let mut sources_per_object = std::collections::HashMap::new();
+    let mut sources_per_object = HashMap::new();
     for m in &matches {
         let mut object_sources = Vec::new();
-        let mut seen_mod_paths = std::collections::HashSet::new();
+        let mut seen_mod_paths = HashSet::new();
 
         for sentinel in &m.sentinel_hashes {
             if let Some(mod_paths) = hash_to_mod_path.get(sentinel) {
@@ -154,12 +167,15 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
         sources_per_object.insert(m.object_name.clone(), object_sources);
     }
 
-    generator::write_keybind_files(
-        &keybinds_dir,
+    let staging_keybinds = generator::create_staging_directory(&keybinds_dir)?;
+    if let Err(write_error) = generator::write_keybind_files(
+        &staging_keybinds,
         &matches,
         &sources_per_object,
         &ctx.hotkeys.toggle_overlay,
-    )?;
+    ) {
+        return Err(cleanup_staging_after_error(&staging_keybinds, write_error));
+    }
 
     // 4. Update Runtime Status (Req-42)
     //
@@ -173,16 +189,18 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
 
     let mut preset_name = None;
     if !caller_knows_preset {
-        if let Ok(snapshot) = corridor_service::get_corridor_state(
+        match corridor_service::get_corridor_state(
             pool,
             game_id,
             crate::domain::corridor::Corridor::from_is_safe(is_safe),
         )
         .await
         {
-            if !snapshot.is_dirty {
+            Ok(snapshot) if !snapshot.is_dirty => {
                 preset_name = snapshot.active_collection_name;
             }
+            Ok(_) => {}
+            Err(error) => log::warn!("[post_apply] Could not derive corridor status: {error}"),
         }
     }
 
@@ -207,7 +225,11 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
         }
     }
 
-    generator::write_status_file(&status_dir, &status, &ctx.hotkeys)?;
+    if let Err(error) = generator::write_status_file(&status_dir, &status, &ctx.hotkeys) {
+        return Err(cleanup_staging_after_error(&staging_keybinds, error));
+    }
+    generator::replace_directory(&staging_keybinds, &keybinds_dir)?;
+    generator::atomic_write(&emmm_data_dir.join("KeyViewer.ini"), &kv_ini_content)?;
 
     log::info!(
         "[post_apply] Completed post-apply tasks for game={}",

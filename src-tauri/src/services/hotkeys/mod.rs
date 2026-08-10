@@ -27,13 +27,13 @@ use serde::{Deserialize, Serialize};
 /// All actions that can be triggered by a global hotkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 pub enum HotkeyAction {
-    /// Switch to next Collection preset (default: F6).
+    /// Switch to next Collection preset (default: Ctrl+F6).
     NextPreset,
     /// Switch to previous Collection preset (default: Shift+F6).
     PrevPreset,
     /// Toggle KeyViewer overlay visibility (default: F7).
     ToggleOverlay,
-    /// Switch to next Variant Folder (default: F8).
+    /// Switch to next Variant Folder (default: Ctrl+F8).
     NextVariantFolder,
     /// Switch to previous Variant Folder (default: Shift+F8).
     PrevVariantFolder,
@@ -74,10 +74,10 @@ impl Default for HotkeyConfig {
         Self {
             enabled: true,
             cooldown_ms: 500,
-            next_preset: "F6".to_string(),
+            next_preset: "Ctrl+F6".to_string(),
             prev_preset: "Shift+F6".to_string(),
             toggle_overlay: "F7".to_string(),
-            next_variant: "F8".to_string(),
+            next_variant: "Ctrl+F8".to_string(),
             prev_variant: "Shift+F8".to_string(),
         }
     }

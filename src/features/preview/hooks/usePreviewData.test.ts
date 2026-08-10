@@ -113,6 +113,7 @@ describe('usePreviewData hooks', () => {
     await result.current.mutateAsync({
       folderPath: 'E:/Mods/ModA',
       fileName: 'config.ini',
+      expectedSourceHash: 'source-1',
       lineUpdates: [{ line_idx: 1, content: '$swapvar = 1' }],
     });
 
@@ -120,6 +121,7 @@ describe('usePreviewData hooks', () => {
       gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       fileName: 'config.ini',
+      expectedSourceHash: 'source-1',
       lineUpdates: [{ line_idx: 1, content: '$swapvar = 1' }],
     });
   });
@@ -213,6 +215,7 @@ describe('usePreviewData hooks', () => {
       result.current.mutateAsync({
         folderPath: 'E:/Mods/ModA',
         fileName: 'config.ini',
+        expectedSourceHash: 'source-1',
         lineUpdates: [{ line_idx: 1, content: '$swapvar = 1' }],
       }),
     ).rejects.toThrow('Operation in progress. Please wait.');

@@ -21,8 +21,11 @@ pub async fn update_hotkey_config(
         .update_bindings(&app, &settings.hotkeys)?;
 
     // Sync in-game overlay artifacts
-    let _ = crate::services::app::post_apply::trigger_overlay_refresh(pool.inner(), &config_state)
-        .await;
+    if let Err(error) =
+        crate::services::app::post_apply::trigger_overlay_refresh(pool.inner(), &config_state).await
+    {
+        log::warn!("Hotkeys updated but overlay refresh failed: {error}");
+    }
 
     Ok(())
 }
@@ -40,11 +43,10 @@ pub async fn update_hotkey_config(
 pub async fn get_reload_key(config_state: State<'_, ConfigService>) -> Result<String, AppError> {
     use crate::services::keyviewer::generator::{self, DEFAULT_RELOAD_KEY};
 
-    Ok(config_state.with_settings(|settings| {
-        settings
-            .active_game()
-            .and_then(|game| game.game_exe.parent().map(|root| root.join("d3dx.ini")))
-            .map(|d3dx| generator::discover_reload_key(&d3dx).reload_fixes_key)
-            .unwrap_or_else(|| DEFAULT_RELOAD_KEY.to_string())
-    }))
+    config_state.with_settings(|settings| {
+        let Some(game) = settings.active_game() else {
+            return Ok(DEFAULT_RELOAD_KEY.to_string());
+        };
+        generator::discover_reload_key_for_game(game).map(|config| config.reload_fixes_key)
+    })
 }

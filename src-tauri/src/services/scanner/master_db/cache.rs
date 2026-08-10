@@ -55,7 +55,10 @@ pub async fn get_cached(
 
     let json = std::fs::read_to_string(&db_path)?;
     let mut db = deep_matcher::MasterDb::from_json(&json)?;
-    attach_user_aliases(&mut db, &load_user_aliases(&app.state::<sqlx::SqlitePool>()).await);
+    attach_user_aliases(
+        &mut db,
+        &load_user_aliases(&app.state::<sqlx::SqlitePool>()).await,
+    );
 
     let parsed = Arc::new(db);
     cache.0.write().await.insert(canonical, Arc::clone(&parsed));

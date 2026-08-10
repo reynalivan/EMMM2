@@ -228,9 +228,9 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         }),
     };
     if let Err(error) = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await {
-        // Best-effort artifacts, but a silent failure here leaves the overlay
-        // and the SQLite projection stale with no signal at all.
         log::warn!("apply_pipeline[post_apply]: {error}");
+        ctx.warnings
+            .push(format!("Runtime artifacts were not refreshed: {error}"));
     }
 
     let apply_result = ApplyResult {

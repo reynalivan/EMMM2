@@ -67,11 +67,8 @@ fn matches_multiple_objects_sorted_by_score() {
 
     let results = match_objects(&entries, &active, &occ, &config);
 
-    assert_eq!(results.len(), 2);
-    // Amber should rank first (more hashes → higher score)
+    assert_eq!(results.len(), 1);
     assert_eq!(results[0].object_name, "Amber");
-    assert_eq!(results[1].object_name, "Albedo");
-    assert!(results[0].score > results[1].score);
 }
 
 // ─── Score Threshold ─────────────────────────────────────────────────────────
@@ -94,13 +91,13 @@ fn respects_score_threshold() {
 
 #[test]
 fn tiebreaks_by_name_when_scores_equal() {
-    // Two entries with exactly the same single hash → same score
     let entries = vec![
-        make_kv_entry("Zhongli", &["aabb1111"]),
-        make_kv_entry("Albedo", &["aabb1111"]),
+        make_kv_entry("Zhongli", &["aa111111", "aa222222"]),
+        make_kv_entry("Albedo", &["bb111111", "bb222222"]),
     ];
-    let active = make_active_hashes(&["aabb1111"]);
-    let occ = make_occurrences(&["aabb1111"], 1);
+    let hashes = &["aa111111", "aa222222", "bb111111", "bb222222"];
+    let active = make_active_hashes(hashes);
+    let occ = make_occurrences(hashes, 1);
     let config = MatchConfig::default();
 
     let results = match_objects(&entries, &active, &occ, &config);
@@ -117,14 +114,14 @@ fn tiebreaks_by_name_when_scores_equal() {
 fn assigns_correct_confidence_levels() {
     // With default config: threshold=5.0, base=10.0, occurrence_bonus~1.39, rarity_bonus=5.0
     // A single intersecting hash with rarity gives ~16.39 → ~3.3× threshold → High
-    let entries = vec![make_kv_entry("Test", &["aabb1111"])];
-    let active = make_active_hashes(&["aabb1111"]);
-    let occ = make_occurrences(&["aabb1111"], 1);
+    let entries = vec![make_kv_entry("Test", &["aabb1111", "aabb2222"])];
+    let active = make_active_hashes(&["aabb1111", "aabb2222"]);
+    let occ = make_occurrences(&["aabb1111", "aabb2222"], 1);
     let config = MatchConfig::default();
 
     let results = match_objects(&entries, &active, &occ, &config);
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].confidence, MatchConfidence::High);
+    assert_eq!(results[0].confidence, MatchConfidence::Medium);
 }
 
 #[test]
@@ -138,7 +135,7 @@ fn excellent_confidence_with_many_hashes() {
 
     let results = match_objects(&entries, &active, &occ, &config);
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].confidence, MatchConfidence::Excellent);
+    assert_eq!(results[0].confidence, MatchConfidence::High);
 }
 
 // ─── Occurrence Bonus ────────────────────────────────────────────────────────
@@ -148,7 +145,10 @@ fn higher_occurrence_gives_higher_score() {
     let entries = vec![make_kv_entry("Test", &["aabb1111"])];
     let active = make_active_hashes(&["aabb1111"]);
 
-    let config = MatchConfig::default();
+    let config = MatchConfig {
+        score_threshold: 1.0,
+        ..Default::default()
+    };
 
     let occ_low = make_occurrences(&["aabb1111"], 1);
     let occ_high = make_occurrences(&["aabb1111"], 10);
@@ -167,7 +167,10 @@ fn rare_hash_gets_rarity_bonus() {
     let entries = vec![make_kv_entry("Solo", &["unique01"])];
     let active = make_active_hashes(&["unique01"]);
     let occ = make_occurrences(&["unique01"], 1);
-    let config = MatchConfig::default();
+    let config = MatchConfig {
+        score_threshold: 1.0,
+        ..Default::default()
+    };
 
     let results = match_objects(&entries, &active, &occ, &config);
     assert_eq!(results.len(), 1);
@@ -192,13 +195,10 @@ fn common_hash_no_rarity_bonus() {
     let config = MatchConfig::default();
 
     let results = match_objects(&entries, &active, &occ, &config);
-    // All 5 should match (shared hash)
-    assert_eq!(results.len(), 5);
-    // Score should NOT include rarity bonus (hash in 5 objects, threshold is 2)
-    // base(10) + occ_bonus(2*ln(2)≈1.39) ≈ 11.39
-    for r in &results {
-        assert!(r.score < 13.0);
-    }
+    assert!(
+        results.is_empty(),
+        "shared hashes cannot be runtime sentinels"
+    );
 }
 
 // ─── Sentinel Selection ──────────────────────────────────────────────────────
@@ -234,10 +234,7 @@ fn sentinels_exclude_high_collision_hashes() {
     ];
     let active = make_active_hashes(&["collision01", "safe01"]);
     let occ = make_occurrences(&["collision01", "safe01"], 1);
-    let config = MatchConfig {
-        collision_threshold: 3,
-        ..Default::default()
-    };
+    let config = MatchConfig::default();
 
     let results = match_objects(&entries, &active, &occ, &config);
 
@@ -289,7 +286,7 @@ fn empty_active_hashes_returns_empty() {
 }
 
 #[test]
-fn sentinels_empty_when_all_hashes_high_collision() {
+fn drops_matches_when_all_hashes_are_ambiguous() {
     // All matched hashes are in 4+ objects → all excluded
     let entries = vec![
         make_kv_entry("Target", &["c1", "c2"]),
@@ -299,13 +296,35 @@ fn sentinels_empty_when_all_hashes_high_collision() {
     ];
     let active = make_active_hashes(&["c1", "c2"]);
     let occ = make_occurrences(&["c1", "c2"], 1);
-    let config = MatchConfig {
-        collision_threshold: 3,
-        ..Default::default()
-    };
+    let config = MatchConfig::default();
 
     let results = match_objects(&entries, &active, &occ, &config);
-    let target = results.iter().find(|r| r.object_name == "Target").unwrap();
-    // All hashes in 4 objects ≥ threshold 3 → empty sentinels
-    assert!(target.sentinel_hashes.is_empty());
+    assert!(results.is_empty());
+}
+
+#[test]
+fn default_threshold_rejects_a_single_hash_hit() {
+    let entries = vec![make_kv_entry("Test", &["aabb1111"])];
+    let active = make_active_hashes(&["aabb1111"]);
+    let occ = make_occurrences(&["aabb1111"], 1);
+    assert!(match_objects(&entries, &active, &occ, &MatchConfig::default()).is_empty());
+}
+
+#[test]
+fn duplicate_object_hashes_do_not_inflate_score() {
+    let duplicated = vec![make_kv_entry(
+        "Test",
+        &["aabb1111", "aabb1111", "aabb2222", "aabb2222"],
+    )];
+    let deduplicated = vec![make_kv_entry("Test", &["aabb1111", "aabb2222"])];
+    let active = make_active_hashes(&["aabb1111", "aabb2222"]);
+    let occ = make_occurrences(&["aabb1111", "aabb2222"], 1);
+
+    let duplicate_result = match_objects(&duplicated, &active, &occ, &MatchConfig::default());
+    let clean_result = match_objects(&deduplicated, &active, &occ, &MatchConfig::default());
+    assert_eq!(duplicate_result[0].score, clean_result[0].score);
+    assert_eq!(
+        duplicate_result[0].matched_hashes,
+        clean_result[0].matched_hashes
+    );
 }

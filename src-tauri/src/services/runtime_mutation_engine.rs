@@ -10,6 +10,27 @@ use crate::domain::workspace::WorkspacePathRewrite;
 use crate::services::fs_utils::file_utils::rename_cross_drive_fallback;
 use crate::services::mods::core_ops::standardize_prefix;
 
+#[derive(Debug)]
+pub struct RuntimeToggleFailure {
+    pub error: CollectionError,
+    pub rollback_warnings: Vec<String>,
+}
+
+impl std::fmt::Display for RuntimeToggleFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+
+impl std::error::Error for RuntimeToggleFailure {}
+
+fn failure(error: CollectionError) -> RuntimeToggleFailure {
+    RuntimeToggleFailure {
+        error,
+        rollback_warnings: Vec::new(),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RuntimeToggleTarget {
     pub id: String,
@@ -59,7 +80,7 @@ fn classify_rename_failure(src: &std::path::Path, error: std::io::Error) -> Coll
 
 pub async fn toggle_mods_mixed(
     request: RuntimeToggleBatchRequest,
-) -> Result<RuntimeToggleResult, CollectionError> {
+) -> Result<RuntimeToggleResult, RuntimeToggleFailure> {
     if request.operations.is_empty() {
         return Ok(empty_result());
     }
@@ -71,14 +92,15 @@ pub async fn toggle_mods_mixed(
         match build_plan(&request.mods_path, operation) {
             Ok(Some(plan)) => plans.push(plan),
             Ok(None) => {}
-            Err(error) => return Err(CollectionError::Validation(error.to_string())),
+            Err(error) => return Err(failure(CollectionError::Validation(error.to_string()))),
         }
     }
 
     if plans.is_empty() {
         return Ok(empty_result());
     }
-    validate_plans(&plans).map_err(|error| CollectionError::Validation(error.to_string()))?;
+    validate_plans(&plans)
+        .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
 
     // Only rollback populates warnings, and rollback cannot run before this point.
     let mut warnings = Vec::new();
@@ -96,7 +118,10 @@ pub async fn toggle_mods_mixed(
                 rollback_successes(&renamed, &mut warnings);
                 // Classify before stringifying, so a folder held by the game
                 // reports the holding process rather than "Access is denied".
-                return Err(classify_rename_failure(&plan.old_abs, error));
+                return Err(RuntimeToggleFailure {
+                    error: classify_rename_failure(&plan.old_abs, error),
+                    rollback_warnings: warnings,
+                });
             }
         }
     }

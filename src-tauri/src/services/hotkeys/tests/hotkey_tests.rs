@@ -18,7 +18,7 @@ fn hotkey_config_defaults() {
     let config = HotkeyConfig::default();
     assert!(config.enabled);
     assert_eq!(config.cooldown_ms, 500);
-    assert_eq!(config.next_preset, "F6");
+    assert_eq!(config.next_preset, "Ctrl+F6");
     assert_eq!(config.prev_preset, "Shift+F6");
     assert_eq!(config.toggle_overlay, "F7");
 }
@@ -32,7 +32,7 @@ fn keyviewer_config_defaults() {
 #[test]
 fn get_key_string_maps_correctly() {
     let config = HotkeyConfig::default();
-    assert_eq!(get_key_string(&config, HotkeyAction::NextPreset), "F6");
+    assert_eq!(get_key_string(&config, HotkeyAction::NextPreset), "Ctrl+F6");
     assert_eq!(
         get_key_string(&config, HotkeyAction::PrevPreset),
         "Shift+F6"
@@ -47,7 +47,7 @@ fn list_bindings_returns_correct_count() {
     assert_eq!(bindings.len(), 5);
     assert_eq!(
         get_key_string(&config, HotkeyAction::NextVariantFolder),
-        "F8"
+        "Ctrl+F8"
     );
     assert_eq!(
         get_key_string(&config, HotkeyAction::PrevVariantFolder),
@@ -69,19 +69,19 @@ fn no_conflicts_with_default_config() {
 #[test]
 fn detects_conflict_when_same_key() {
     let config = HotkeyConfig {
-        prev_preset: "F6".to_string(), // Same as next_preset
+        prev_preset: "Ctrl+F6".to_string(), // Same as next_preset
         ..Default::default()
     };
     let conflicts = detect_conflicts(&config);
     assert_eq!(conflicts.len(), 1);
-    assert_eq!(conflicts[0].2, "F6");
+    assert_eq!(conflicts[0].2, "Ctrl+F6");
 }
 
 #[test]
 fn conflict_detection_case_insensitive() {
     let config = HotkeyConfig {
-        next_preset: "f6".to_string(), // lowercase vs default "F6" was "F6"
-        prev_preset: "f6".to_string(), // same key lowercase
+        next_preset: "ctrl+f6".to_string(),
+        prev_preset: "CTRL+F6".to_string(),
         ..Default::default()
     };
     let conflicts = detect_conflicts(&config);

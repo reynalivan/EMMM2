@@ -5,6 +5,13 @@ use crate::domain::mod_path::ModFolderPath;
 use crate::domain::models::ItemStatus;
 use sqlx::SqlitePool;
 
+fn is_effectively_enabled_path(folder_path: &str) -> bool {
+    !folder_path
+        .split(['/', '\\'])
+        .filter(|component| !component.is_empty())
+        .any(crate::common::normalizer::is_disabled_folder)
+}
+
 pub async fn get_rows_for_reconcile(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
@@ -43,7 +50,11 @@ pub async fn get_enabled_mods_paths(
             .bind(game_id)
             .fetch_all(pool)
             .await?;
-    Ok(rows.into_iter().map(ModFolderPath::from_stored).collect())
+    Ok(rows
+        .into_iter()
+        .filter(|path| is_effectively_enabled_path(path))
+        .map(ModFolderPath::from_stored)
+        .collect())
 }
 
 pub async fn get_enabled_siblings_paths(
@@ -52,7 +63,7 @@ pub async fn get_enabled_siblings_paths(
     game_id: &str,
     exclude_folder: &str,
 ) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar(
+    let rows: Vec<String> = sqlx::query_scalar(
         "SELECT folder_path FROM mods
          WHERE object_id = ? AND game_id = ? AND status = 1
          AND folder_path != ?",
@@ -61,7 +72,11 @@ pub async fn get_enabled_siblings_paths(
     .bind(game_id)
     .bind(exclude_folder)
     .fetch_all(pool)
-    .await
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter(|path| is_effectively_enabled_path(path))
+        .collect())
 }
 
 pub async fn get_enabled_duplicates(
@@ -82,6 +97,7 @@ pub async fn get_enabled_duplicates(
     .await?;
     Ok(rows
         .into_iter()
+        .filter(|(_, path, _)| is_effectively_enabled_path(path))
         .map(|(id, path, name)| (id, ModFolderPath::from_stored(path), name))
         .collect())
 }
@@ -98,9 +114,14 @@ pub async fn get_enabled_mods_names_and_paths(
     .await?;
     Ok(rows
         .into_iter()
+        .filter(|(_, path)| is_effectively_enabled_path(path))
         .map(|(name, path)| (name, ModFolderPath::from_stored(path)))
         .collect())
 }
+
+#[cfg(test)]
+#[path = "tests/listing_tests.rs"]
+mod tests;
 
 pub async fn get_all_mods_id_and_paths_tx(
     conn: &mut sqlx::SqliteConnection,

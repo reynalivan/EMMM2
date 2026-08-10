@@ -198,9 +198,20 @@ export function usePreviewPanelState() {
     try {
       // Each entry targets a different ini file — write them concurrently.
       await Promise.all(
-        updatesEntries.map(([fileName, lineUpdates]) =>
-          writeModIni.mutateAsync({ folderPath: activePath, fileName, lineUpdates }),
-        ),
+        updatesEntries.map(([fileName, lineUpdates]) => {
+          const expectedSourceHash = allKeyBindFields.find(
+            (field) => field.fileName === fileName,
+          )?.sourceHash;
+          if (!expectedSourceHash) {
+            throw new Error(`Missing source fingerprint for ${fileName}`);
+          }
+          return writeModIni.mutateAsync({
+            folderPath: activePath,
+            fileName,
+            expectedSourceHash,
+            lineUpdates,
+          });
+        }),
       );
 
       setInitialByField({ ...draftByField });

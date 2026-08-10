@@ -1,21 +1,21 @@
 import { formatAppError } from '../../../lib/appError';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Keyboard, Eye, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import { commands } from '../../../lib/bindings';
 import type { HotkeyConfig, KeyViewerConfig } from '../../../types/settings';
 import { useSettings } from '../../../hooks/useSettings';
 import { useToastStore } from '../../../stores/useToastStore';
+import { detectConflicts, type ReservedBinding } from './hotkeyConflicts';
 
 /** Default hotkey config values — unified overlay toggle F7. */
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
   cooldown_ms: 500,
-  next_preset: 'F6',
+  next_preset: 'Ctrl+F6',
   prev_preset: 'Shift+F6',
   toggle_overlay: 'F7',
-  next_variant: 'F8',
+  next_variant: 'Ctrl+F8',
   prev_variant: 'Shift+F8',
 };
 
@@ -57,42 +57,34 @@ function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowPr
   );
 }
 
-/** Detect conflicts: same key string used for multiple actions. */
-function detectConflicts(config: HotkeyConfig, t: TFunction): string[] {
-  const bindings: [string, string][] = [
-    [t('settings:hotkeys.labels.next_preset'), config.next_preset],
-    [t('settings:hotkeys.labels.prev_preset'), config.prev_preset],
-    [t('settings:hotkeys.labels.toggle_overlay'), config.toggle_overlay],
-  ];
-
-  const conflicts: string[] = [];
-  for (let i = 0; i < bindings.length; i++) {
-    for (let j = i + 1; j < bindings.length; j++) {
-      if (bindings[i][1].toLowerCase() === bindings[j][1].toLowerCase()) {
-        conflicts.push(
-          t('settings:hotkeys.conflicts.message', {
-            label1: bindings[i][0],
-            label2: bindings[j][0],
-            key: bindings[i][1],
-          }),
-        );
-      }
-    }
-  }
-  return conflicts;
-}
-
 export default function HotkeyTab() {
   const { t } = useTranslation(['settings', 'common']);
   const { settings, saveSettingsAsync } = useSettings();
   const { addToast } = useToastStore();
   const [isSaving, setIsSaving] = useState(false);
+  const [reloadKey, setReloadKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let current = true;
+    commands
+      .getReloadKey()
+      .then((key) => current && setReloadKey(key))
+      .catch(() => current && setReloadKey(null));
+    return () => {
+      current = false;
+    };
+  }, [settings?.active_game_id]);
 
   if (!settings) return null;
 
   const hotkeys: HotkeyConfig = (settings.hotkeys ?? DEFAULT_HOTKEYS) as HotkeyConfig;
   const keyviewer: KeyViewerConfig = (settings.keyviewer ?? DEFAULT_KEYVIEWER) as KeyViewerConfig;
-  const conflicts = detectConflicts(hotkeys, t);
+  const reserved: ReservedBinding[] = [
+    { label: t('settings:hotkeys.reserved.package_toggle'), key: 'F6' },
+    { label: t('settings:hotkeys.reserved.frame_analysis'), key: 'F8' },
+    ...(reloadKey ? [{ label: t('settings:hotkeys.reserved.reload_fixes'), key: reloadKey }] : []),
+  ];
+  const conflicts = detectConflicts(hotkeys, reserved, t);
 
   const persistHotkeys = async (patch: Partial<HotkeyConfig>) => {
     if (!settings) return;
@@ -231,6 +223,18 @@ export default function HotkeyTab() {
                   value={hotkeys.toggle_overlay}
                   defaultValue={DEFAULT_HOTKEYS.toggle_overlay}
                   onChange={(v) => persistHotkeys({ toggle_overlay: v })}
+                />
+                <KeyBindingRow
+                  label={t('settings:hotkeys.labels.next_variant')}
+                  value={hotkeys.next_variant}
+                  defaultValue={DEFAULT_HOTKEYS.next_variant}
+                  onChange={(v) => persistHotkeys({ next_variant: v })}
+                />
+                <KeyBindingRow
+                  label={t('settings:hotkeys.labels.prev_variant')}
+                  value={hotkeys.prev_variant}
+                  defaultValue={DEFAULT_HOTKEYS.prev_variant}
+                  onChange={(v) => persistHotkeys({ prev_variant: v })}
                 />
               </div>
             </div>

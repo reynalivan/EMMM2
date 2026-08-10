@@ -26,8 +26,11 @@ pub async fn set_active_game(
 ) -> Result<(), AppError> {
     state.set_active_game(game_id.clone())?;
     if game_id.is_some() {
-        let _ =
-            crate::services::app::post_apply::trigger_overlay_refresh(pool.inner(), &state).await;
+        if let Err(error) =
+            crate::services::app::post_apply::trigger_overlay_refresh(pool.inner(), &state).await
+        {
+            log::warn!("Active game changed but overlay refresh failed: {error}");
+        }
     }
     Ok(())
 }

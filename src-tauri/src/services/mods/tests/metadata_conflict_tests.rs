@@ -143,3 +143,27 @@ fn unrelated_mods_do_not_conflict() {
         "different hashes are not a conflict"
     );
 }
+
+#[test]
+fn shaderfixes_only_mods_are_included() {
+    let temp = TempDir::new().expect("tempdir");
+    let mods_root = temp.path();
+    let filename = "0123456789abcdef-ps_replace.txt";
+    for name in ["ModA", "ModB"] {
+        let shader_fixes = mods_root.join(name).join("ShaderFixes");
+        fs::create_dir_all(&shader_fixes).expect("shader fixes");
+        fs::write(shader_fixes.join(filename), name).expect("replacement");
+    }
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
+
+    let conflicts = conflicts_for_enabled_paths(mods_root, &stored);
+
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(
+        conflicts[0].kind,
+        crate::services::scanner::conflict::ConflictKind::ShaderReplacement
+    );
+}

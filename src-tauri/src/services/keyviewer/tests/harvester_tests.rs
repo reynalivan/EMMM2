@@ -34,7 +34,7 @@ handling = skip
 }
 
 #[test]
-fn extracts_hash_from_shader_override() {
+fn ignores_shader_override_hashes_even_when_they_look_32_bit() {
     let dir = TempDir::new().unwrap();
     let path = write_ini(
         &dir,
@@ -46,9 +46,7 @@ hash = AABBCCDD
     );
 
     let result = harvest_hashes_from_ini(&path).unwrap();
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].hash, "aabbccdd"); // normalized lowercase
-    assert_eq!(result[0].section_name, "ShaderOverrideAlbedoVS");
+    assert!(result.is_empty());
 }
 
 #[test]
@@ -119,7 +117,7 @@ hash = aabbcc11
 [TextureOverrideAlbedoBody]
 hash = aabbcc22
 
-[ShaderOverrideAlbedoPS]
+[TextureOverrideAlbedoDress]
 hash = aabbcc33
 "#,
     );
@@ -230,7 +228,7 @@ fn handles_case_insensitive_section_names() {
 [textureoverridealbedobody]
 hash = df65bb00
 
-[SHADEROVERRIDEALBEDOVS]
+[TEXTUREOVERRIDEALBEDOVS]
 hash = aabbccdd
 "#,
     );

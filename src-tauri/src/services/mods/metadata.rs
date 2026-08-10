@@ -221,18 +221,20 @@ pub fn conflicts_for_enabled_paths(
     enabled_paths: &[crate::domain::mod_path::ModFolderPath],
 ) -> Vec<crate::services::scanner::conflict::ConflictInfo> {
     let mut ini_files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    let mut mod_roots = Vec::new();
     for stored in enabled_paths {
         let path = stored.resolve(mods_root);
         if !path.exists() {
             continue;
         }
+        mod_roots.push(path.clone());
         let content = crate::services::scanner::core::walker::scan_folder_content(&path, 3);
         for ini in content.ini_files {
             ini_files.push((path.clone(), ini));
         }
     }
 
-    crate::services::scanner::conflict::detect_conflicts(&ini_files)
+    crate::services::scanner::conflict::detect_conflicts_with_roots(&ini_files, &mod_roots)
 }
 
 #[cfg(test)]

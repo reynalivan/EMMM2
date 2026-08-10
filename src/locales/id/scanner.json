@@ -217,6 +217,8 @@
     "title": "Konflik Shader Terdeteksi",
     "empty": "Tidak ada konflik.",
     "description": "Mod-mod ini mengubah hash shader atau buffer yang sama. Mengaktifkannya bersamaan dapat menyebabkan glitch atau crash.",
-    "acknowledge": "Mengerti"
+    "acknowledge": "Mengerti",
+    "definite": "Tumpang tindih pasti",
+    "potential": "Tumpang tindih potensial"
   }
 }

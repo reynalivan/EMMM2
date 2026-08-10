@@ -38,8 +38,8 @@ export function canonicalPathKey(value: string | null | undefined): string | nul
   return segments.map((segment) => asciiCaseFold(segment)).join('/');
 }
 
-/** Mirrors the backend normalizer: canonical + legacy DISABLED spellings. */
-const DISABLED_PREFIX_RE = /^disabled[\s_-]+/i;
+/** Mirrors the backend and 3DMigoto package `DISABLED*` exclusion. */
+const DISABLED_PREFIX_RE = /^disabled[\s_-]*/i;
 
 function stripDisabledPrefixes(segment: string): string {
   let value = segment.trim();

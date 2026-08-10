@@ -46,9 +46,18 @@ export default function ConflictModal({ open, onClose, conflicts }: ConflictModa
                   className="bg-base-200/50 p-3 rounded-lg border border-base-content/5"
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <span className="badge badge-sm badge-neutral font-mono opacity-70">
-                      {conflict.hash.substring(0, 16)}...
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="badge badge-sm badge-neutral font-mono opacity-70">
+                        {conflict.hash.substring(0, 16)}...
+                      </span>
+                      <span
+                        className={`badge badge-sm ${
+                          conflict.certainty === 'potential' ? 'badge-info' : 'badge-warning'
+                        }`}
+                      >
+                        {t(`scanner:conflict_modal.${conflict.certainty}`)}
+                      </span>
+                    </div>
                     <span className="text-xs font-mono text-base-content/50">
                       [{conflict.section_name}]
                     </span>

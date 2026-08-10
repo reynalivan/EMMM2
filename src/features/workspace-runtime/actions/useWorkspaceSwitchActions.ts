@@ -75,11 +75,13 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
+        t('objects:toasts.reload_required', { key }),
+      );
 
       return nextPath;
     },
-    [activeGame, queryClient],
+    [activeGame, queryClient, t],
   );
 
   const setObjectNodeEnabled = useCallback(
@@ -106,7 +108,9 @@ export function useWorkspaceSwitchActions() {
       }
 
       const nextPath = result.primary_path;
-      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', (key) =>
+        t('objects:toasts.reload_required', { key }),
+      );
       // A no-op switch changed nothing on disk — don't announce a change.
       if (result.status !== 'noop') {
         toast.success(
@@ -172,14 +176,16 @@ export function useWorkspaceSwitchActions() {
           return null;
         }
 
-        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
+          t('objects:toasts.reload_required', { key }),
+        );
 
         return nextPath;
       } finally {
         markPending(pendingKey, false);
       }
     },
-    [activeGame, markPending, queryClient],
+    [activeGame, markPending, queryClient, t],
   );
 
   const resolveDuplicateForceEnable = useCallback(
@@ -202,11 +208,13 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
+        t('objects:toasts.reload_required', { key }),
+      );
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, queryClient],
+    [activeGame, queryClient, t],
   );
 
   const resolveDuplicateEnableOnly = useCallback(
@@ -229,11 +237,13 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
+        t('objects:toasts.reload_required', { key }),
+      );
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, queryClient],
+    [activeGame, queryClient, t],
   );
 
   const isPending = useMemo(() => Object.keys(pendingKeys).length > 0, [pendingKeys]);

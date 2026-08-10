@@ -164,7 +164,9 @@
     "title": "Shader Conflicts Detected",
     "empty": "No conflicts found.",
     "description": "These mods modify the same shader or buffer hashes. Enabling them together may cause glitches or crashes.",
-    "acknowledge": "Acknowledge"
+    "acknowledge": "Acknowledge",
+    "definite": "Definite overlap",
+    "potential": "Potential overlap"
   },
   "overlay": {
     "title": "Scanning Mods...",

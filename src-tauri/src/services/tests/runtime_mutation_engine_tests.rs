@@ -164,3 +164,24 @@ async fn toggle_mods_mixed_rejects_duplicate_source_paths_before_renaming() {
     assert!(mods_path.join("Variant").exists());
     assert!(!mods_path.join("DISABLED Variant").exists());
 }
+
+#[test]
+fn incomplete_rollback_is_reported_for_reconciliation() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let old_abs = temp.path().join("Variant");
+    let new_abs = temp.path().join("DISABLED Variant");
+    std::fs::create_dir_all(&old_abs).expect("old path");
+    std::fs::create_dir_all(&new_abs).expect("new path");
+    let plan = RenamePlan {
+        old_abs: old_abs.clone(),
+        requested_abs: old_abs,
+        new_abs,
+        target_enabled: false,
+    };
+    let mut warnings = Vec::new();
+
+    rollback_successes(&[plan], &mut warnings);
+
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("target already exists"));
+}

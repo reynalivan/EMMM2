@@ -198,7 +198,9 @@
       "safe_mode": "Safe Mode (Tombol Panik)",
       "next_preset": "Beralih ke Preset Berikutnya",
       "prev_preset": "Beralih ke Preset Sebelumnya",
-      "toggle_overlay": "Alihkan Overlay (Banner + KeyViewer)"
+      "toggle_overlay": "Alihkan Overlay (Banner + KeyViewer)",
+      "next_variant": "Beralih ke Varian Berikutnya",
+      "prev_variant": "Beralih ke Varian Sebelumnya"
     },
     "viewer_title": "Overlay KeyViewer",
     "auto_reload": "Muat Ulang Otomatis",
@@ -210,10 +212,16 @@
     "save_failed": "Gagal menyimpan pengaturan hotkey: {{error}}",
     "viewer_save_failed": "Gagal menyimpan pengaturan KeyViewer: {{error}}",
     "reset_tip": "Atur ulang ke default",
+    "reserved": {
+      "package_toggle": "toggle paket",
+      "frame_analysis": "analisis frame 3DMigoto",
+      "reload_fixes": "muat ulang fix 3DMigoto"
+    },
     "conflicts": {
       "share_key": "berbagi kunci",
       "and": "dan",
-      "message": "{{label1}} dan {{label2}} menggunakan kunci yang sama \"{{key}}\""
+      "message": "{{label1}} dan {{label2}} menggunakan kunci yang sama \"{{key}}\"",
+      "reserved_message": "{{label}} berkonflik dengan {{runtime}} pada \"{{key}}\""
     }
   },
   "maintenance": {

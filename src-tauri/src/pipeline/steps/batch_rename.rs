@@ -30,7 +30,16 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         mods_path: ctx.mods_path.clone(),
         operations,
     })
-    .await?;
+    .await;
+    let result = match result {
+        Ok(result) => result,
+        Err(failure) => {
+            if !failure.rollback_warnings.is_empty() {
+                recover_after_incomplete_rollback(ctx, &failure.rollback_warnings).await;
+            }
+            return Err(failure.error);
+        }
+    };
 
     ctx.mods_enabled = result.enabled_count;
     ctx.mods_disabled = result.disabled_count;
@@ -74,6 +83,38 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     );
 
     Ok(())
+}
+
+async fn recover_after_incomplete_rollback(ctx: &mut ApplyContext, warnings: &[String]) {
+    ctx.warnings.extend(warnings.iter().cloned());
+    let _reconcile_lock = match ctx.reconcile_lock.as_ref() {
+        Some(lock) => Some(lock.clone().lock_owned().await),
+        None => None,
+    };
+    let outcome = crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+            pool: &ctx.pool,
+            game_id: &ctx.game_id,
+            mods_path: &ctx.mods_path,
+            safe_mode_keywords: &ctx.settings.safe_mode.keywords,
+            reason: &crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            changed_paths: &[],
+            force_full: true,
+            watcher_events: None,
+        },
+    )
+    .await;
+
+    let recovery_message = match outcome {
+        Ok(_) => "Full disk reconcile completed after incomplete rollback".to_string(),
+        Err(error) => format!("Full disk reconcile failed after incomplete rollback: {error}"),
+    };
+    ctx.warnings.push(recovery_message);
+    crate::services::apply_progress_service::set_warnings(
+        &ctx.game_id,
+        ctx.is_safe,
+        ctx.warnings.clone(),
+    );
 }
 
 /// Every mod row for the game, reachable by both key spellings it may be

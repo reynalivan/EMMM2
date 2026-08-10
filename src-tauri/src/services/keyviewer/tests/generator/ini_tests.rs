@@ -25,7 +25,6 @@ fn keyviewer_ini_contains_sentinel_sections() {
     // New prefix is TextureOverride_EMM_ with hyphen/space → underscore
     assert!(ini.contains("[TextureOverride_EMM_Albedo_S0]"));
     assert!(ini.contains("hash = aabb1111"));
-    assert!(ini.contains("$kv_has_active = 1"));
     assert!(ini.contains("$kv_active_code = 0xaabb1111"));
     assert!(ini.contains("$kv_last_seen = time"));
 }
@@ -34,28 +33,21 @@ fn keyviewer_ini_contains_sentinel_sections() {
 fn keyviewer_ini_contains_present_section() {
     let ini = generate_keyviewer_ini(&[], "F7", ".emmm_data/keybinds/active");
     assert!(ini.contains("[Present]"));
-    // Reset flag via post
-    assert!(ini.contains("post $kv_has_active = 0"));
     // Stale detection at 1.5s (not 0.5s)
     assert!(ini.contains("if time - $kv_last_seen > 1.5"));
     // Delegate to render command list
     assert!(ini.contains("run = CommandList_EMM_Render"));
+    assert!(!ini.contains("$kv_has_active"));
 }
 
 #[test]
-fn keyviewer_ini_uses_help_ini_pipeline() {
+fn keyviewer_ini_uses_official_text_api() {
     let matches = vec![make_match_result("Albedo", &["aabb1111"])];
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
-    // Must use help.ini notification pipeline — NOT ps-t100
-    assert!(!ini.contains("ps-t100"));
-    assert!(ini.contains(
-        r"pre Resource\ShaderFixes\help.ini\Notification = ref ResourceKeyViewer_aabb1111"
-    ));
-    assert!(ini.contains(r"pre Resource\ShaderFixes\help.ini\NotificationParams = ref ResourceBox"));
-    assert!(ini.contains(r"pre run = CustomShader\ShaderFixes\help.ini\FormatText"));
-    assert!(ini.contains("notification_timeout = 1000000000.0"));
-    // OFF path must null the notification
-    assert!(ini.contains(r"Resource\ShaderFixes\help.ini\Notification = null"));
+    assert!(ini.contains(r"Resource\GIMIv8\Text = ref ResourceKeyViewer_aabb1111"));
+    assert!(ini.contains(r"Resource\GIMIv8\TextParams = ref ResourceBox"));
+    assert!(ini.contains(r"run = CommandList\GIMIv8\PrintText"));
+    assert!(!ini.contains("ShaderFixes\\help.ini"));
 }
 
 #[test]
@@ -75,23 +67,22 @@ fn keyviewer_ini_contains_resource_sections() {
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
     // New resource name is ResourceKeyViewer_HASH
     assert!(ini.contains("[ResourceKeyViewer_aabb1111]"));
-    assert!(ini.contains("filename = .emmm_data/keybinds/active/aabb1111.txt"));
+    assert!(ini.contains("filename = keybinds/active/aabb1111.txt"));
     // Correct type/format casing
     assert!(ini.contains("type = buffer"));
     assert!(ini.contains("format = R8_UINT"));
     // ResourceStatus section is present
     assert!(ini.contains("[ResourceStatus]"));
-    assert!(ini.contains("filename = .emmm_data/status/runtime_status.txt"));
+    assert!(ini.contains("filename = status/runtime_status.txt"));
     // ResourceBox section is present
     assert!(ini.contains("[ResourceBox]"));
     assert!(ini.contains("type = StructuredBuffer"));
 }
 
 #[test]
-fn keyviewer_ini_has_fallback_resource() {
+fn keyviewer_ini_does_not_emit_dead_fallback_resource() {
     let ini = generate_keyviewer_ini(&[], "F7", "keybinds");
-    assert!(ini.contains("[ResourceKeyViewer_Fallback]"));
-    assert!(ini.contains("filename = keybinds/_fallback.txt"));
+    assert!(!ini.contains("ResourceKeyViewer_Fallback"));
 }
 
 #[test]
@@ -107,10 +98,34 @@ fn keyviewer_ini_global_variables() {
     let ini = generate_keyviewer_ini(&[], "F7", "keybinds");
     // New global variable names
     assert!(ini.contains("global $kv_active = 0"));
-    assert!(ini.contains("global $kv_has_active = 0"));
     assert!(ini.contains("global $kv_active_code = 0"));
     assert!(ini.contains("global $kv_last_seen = 0"));
     // Old names must NOT appear
     assert!(!ini.contains("$kv_visible"));
     assert!(!ini.contains("$kv_detection_frame"));
+}
+
+#[test]
+fn keyviewer_ini_uses_the_selected_package_namespace() {
+    use crate::domain::models::GameType;
+
+    for (game_type, namespace) in [
+        (GameType::GIMI, "GIMIv8"),
+        (GameType::WWMI, "WWMIv1"),
+        (GameType::SRMI, "SRMIv1"),
+        (GameType::ZZMI, "ZZMIv1"),
+    ] {
+        let ini = generate_keyviewer_ini_for_game(&[], "F7", game_type).unwrap();
+        assert!(ini.contains(&format!("Resource\\{namespace}\\Text")));
+        assert!(ini.contains(&format!("CommandList\\{namespace}\\PrintText")));
+    }
+}
+
+#[test]
+fn keyviewer_ini_rejects_unsupported_profile_and_invalid_sentinel() {
+    use crate::domain::models::GameType;
+
+    assert!(generate_keyviewer_ini_for_game(&[], "F7", GameType::EFMI).is_err());
+    let invalid = vec![make_match_result("Bad", &["not-a-hash"])];
+    assert!(generate_keyviewer_ini_for_game(&invalid, "F7", GameType::GIMI).is_err());
 }

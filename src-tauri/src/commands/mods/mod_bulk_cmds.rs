@@ -118,7 +118,7 @@ pub async fn bulk_update_info(
 ) -> Result<bulk::BulkResult, AppError> {
     let _lock = op_lock.acquire().await?;
     let validated = crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
-    let result = bulk::bulk_update_info(&validated, update).await?;
+    let mut result = bulk::bulk_update_info(&validated, update).await?;
 
     if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &game_id).await? {
         let post_ctx = crate::services::app::post_apply::PostApplyContext {
@@ -129,7 +129,12 @@ pub async fn bulk_update_info(
             hotkeys: config.with_settings(|settings| settings.hotkeys.clone()),
             status_fields: None,
         };
-        let _ = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await;
+        if let Err(error) = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await {
+            result.failures.push(bulk::BulkActionError {
+                path: ".emmm_data".to_string(),
+                error,
+            });
+        }
     }
 
     Ok(result)

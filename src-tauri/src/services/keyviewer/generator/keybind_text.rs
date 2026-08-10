@@ -81,7 +81,6 @@ pub fn generate_keybind_text(
 /// Generate and write keybind text files for all matched objects.
 ///
 /// For each match result, writes `<sentinel_hash>.txt` to the output directory.
-/// Also writes `_fallback.txt` with a default message.
 pub fn write_keybind_files(
     output_dir: &Path,
     matches: &[MatchResult],
@@ -105,15 +104,6 @@ pub fn write_keybind_files(
             written_files.push(file_path);
         }
     }
-
-    // Write fallback file
-    let fallback_content = format!(
-        "No character detected\n\n[{}] Toggle Overlay",
-        overlay_toggle_key.to_uppercase()
-    );
-    let fallback_path = output_dir.join("_fallback.txt");
-    atomic_write(&fallback_path, &fallback_content)?;
-    written_files.push(fallback_path);
 
     Ok(written_files)
 }

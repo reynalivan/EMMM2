@@ -21,9 +21,11 @@ fn details_command_bridge_smoke() {
     let read_doc = read_mod_ini_inner(&mod_dir, "config.ini").unwrap();
     assert_eq!(read_doc.variables.len(), 1);
 
+    let source_hash = read_doc.source_hash.clone();
     write_mod_ini_inner(
         &mod_dir,
         "config.ini",
+        &source_hash,
         vec![IniLineUpdate {
             line_idx: 1,
             content: "$swapvar = 1".to_string(),
@@ -78,11 +80,15 @@ async fn details_command_write_requires_held_guard() {
 
     let op_lock = OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
+    let source_hash = read_mod_ini_inner(&mod_dir, "config.ini")
+        .unwrap()
+        .source_hash;
 
     write_mod_ini_locked_inner(
         &op_guard,
         &mod_dir,
         "config.ini",
+        &source_hash,
         vec![IniLineUpdate {
             line_idx: 1,
             content: "$swapvar = 1".to_string(),
@@ -93,6 +99,35 @@ async fn details_command_write_requires_held_guard() {
 
     let written = fs::read_to_string(mod_dir.join("config.ini")).unwrap();
     assert!(written.contains("$swapvar = 1"));
+}
+
+#[test]
+fn details_command_reads_and_writes_nested_ini() {
+    let tmp = TempDir::new().unwrap();
+    let mod_dir = tmp.path().join("ModA");
+    fs::create_dir_all(mod_dir.join("variants/red")).unwrap();
+    fs::write(
+        mod_dir.join("variants/red/config.ini"),
+        "[Constants]\n$value = 0\n",
+    )
+    .unwrap();
+
+    let listed = list_mod_ini_files_inner(&mod_dir).unwrap();
+    assert_eq!(listed[0].filename, "variants/red/config.ini");
+    let document = read_mod_ini_inner(&mod_dir, &listed[0].filename).unwrap();
+    write_mod_ini_inner(
+        &mod_dir,
+        &listed[0].filename,
+        &document.source_hash,
+        vec![IniLineUpdate {
+            line_idx: 1,
+            content: "$value = 1".to_string(),
+        }],
+    )
+    .unwrap();
+
+    let written = fs::read_to_string(mod_dir.join("variants/red/config.ini")).unwrap();
+    assert!(written.contains("$value = 1"));
 }
 
 #[test]

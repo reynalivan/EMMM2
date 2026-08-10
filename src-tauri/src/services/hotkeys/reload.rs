@@ -6,19 +6,14 @@ use enigo::{
 use crate::domain::errors::AppError;
 use crate::services::config::AppSettings;
 use crate::services::hotkeys::manager::normalize_shortcut;
-use crate::services::keyviewer::generator::{self, DEFAULT_RELOAD_KEY};
+use crate::services::keyviewer::generator;
 
 pub fn trigger_reload_fixes(settings: &AppSettings) -> Result<String, AppError> {
     let Some(active_game) = settings.active_game() else {
         return Err(AppError::Internal("No active game configured".to_string()));
     };
 
-    let discovered_key = active_game
-        .game_exe
-        .parent()
-        .map(|game_root| game_root.join("d3dx.ini"))
-        .map(|d3dx_path| generator::discover_reload_key(&d3dx_path).reload_fixes_key)
-        .unwrap_or_else(|| DEFAULT_RELOAD_KEY.to_string());
+    let discovered_key = generator::discover_reload_key_for_game(active_game)?.reload_fixes_key;
 
     send_reload_key(&discovered_key)?;
     Ok(discovered_key)

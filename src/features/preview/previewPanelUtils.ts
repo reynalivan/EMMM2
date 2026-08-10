@@ -1,6 +1,7 @@
 import { validateKeyBinding } from './keybindingValidator';
 
 export interface IniVariableLike {
+  qualifier: string | null;
   name: string;
   value: string;
   line_idx: number;
@@ -15,6 +16,7 @@ export interface KeyBindingLike {
 }
 
 export interface IniDocumentLike {
+  source_hash: string;
   raw_lines: string[];
   mode: 'Structured' | 'RawFallback';
   variables: IniVariableLike[];
@@ -29,6 +31,7 @@ export interface KeyBindEditableField {
   label: string;
   prefix: string;
   value: string;
+  sourceHash: string;
 }
 
 export interface KeyBindSectionGroup {
@@ -131,6 +134,7 @@ export function buildKeyBindSections(
           label: 'key',
           prefix: 'key =',
           value: binding.key,
+          sourceHash: document.source_hash,
         });
       }
 
@@ -143,6 +147,7 @@ export function buildKeyBindSections(
           label: 'back',
           prefix: 'back =',
           value: binding.back,
+          sourceHash: document.source_hash,
         });
       }
     }
@@ -174,6 +179,7 @@ export function buildKeyBindSections(
         label: left,
         prefix: `${left} =`,
         value: right,
+        sourceHash: document.source_hash,
       });
     }
 

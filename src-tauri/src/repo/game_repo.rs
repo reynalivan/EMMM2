@@ -96,6 +96,16 @@ pub async fn get_game_type_raw(
         .await
 }
 
+pub async fn get_game_type(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Option<crate::domain::models::GameType>, sqlx::Error> {
+    sqlx::query_scalar("SELECT game_type FROM games WHERE id = ?")
+        .bind(game_id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn get_mod_path(pool: &SqlitePool, game_id: &str) -> Result<Option<String>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT COALESCE(NULLIF(mods_path, ''), path) AS mods_path FROM games WHERE id = ?",

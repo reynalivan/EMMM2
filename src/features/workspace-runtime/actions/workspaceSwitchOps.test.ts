@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceImpact } from '../../../types/workspace';
+import { QueryClient } from '@tanstack/react-query';
+import type { WorkspaceImpact, WorkspaceSwitchResult } from '../../../types/workspace';
 import {
+  applyWorkspaceSwitchEffects,
   buildNodePendingKey,
   buildSwitchRefreshDescriptor,
   executeWorkspaceSwitch,
@@ -13,11 +15,14 @@ const executeWorkspaceSwitchCommand = vi.fn();
 const openWorkspaceConflictDialog = vi.fn();
 const openWorkspaceFileInUseDialog = vi.fn();
 const toastError = vi.fn();
+const toastInfo = vi.fn();
+const getReloadKeyCommand = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
+    getReloadKey: () => getReloadKeyCommand(),
   },
 }));
 
@@ -29,11 +34,13 @@ vi.mock('../state/workspaceDialogs', () => ({
 vi.mock('../../../stores/useToastStore', () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
+    info: (...args: unknown[]) => toastInfo(...args),
   },
 }));
 
 vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishRuntimeDescriptor: vi.fn(),
+  publishQueryInvalidations: vi.fn(),
 }));
 
 describe('workspace switch ops', () => {
@@ -115,7 +122,6 @@ describe('workspace switch ops', () => {
     });
   });
 
-
   describe('executeWorkspaceSwitch', () => {
     const input = {
       game_id: 'game-1',
@@ -169,5 +175,22 @@ describe('workspace switch ops', () => {
       expect(toastError).toHaveBeenCalledTimes(1);
       expect(openWorkspaceConflictDialog).not.toHaveBeenCalled();
     });
+  });
+
+  it('labels an applied disk switch as reload-required', async () => {
+    getReloadKeyCommand.mockResolvedValue('F10');
+    const result = {
+      status: 'applied',
+      impact: { rewrites: [], refresh_scopes: [] },
+    } as unknown as WorkspaceSwitchResult;
+
+    await applyWorkspaceSwitchEffects(
+      new QueryClient(),
+      result,
+      'folderSwitch',
+      (key) => `reload required: ${key}`,
+    );
+
+    expect(toastInfo).toHaveBeenCalledWith('reload required: F10');
   });
 });

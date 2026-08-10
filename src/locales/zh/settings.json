@@ -198,7 +198,9 @@
       "safe_mode": "安全模式 (紧急按键)",
       "next_preset": "切换到下一个预设",
       "prev_preset": "切换到上一个预设",
-      "toggle_overlay": "切换显示层 (横幅 + 按键查看器)"
+      "toggle_overlay": "切换显示层 (横幅 + 按键查看器)",
+      "next_variant": "切换到下一个变体",
+      "prev_variant": "切换到上一个变体"
     },
     "viewer_title": "按键查看器显示层",
     "auto_reload": "自动重载",
@@ -210,10 +212,16 @@
     "save_failed": "保存热键设置失败：{{error}}",
     "viewer_save_failed": "保存按键查看器设置失败：{{error}}",
     "reset_tip": "重置为默认值",
+    "reserved": {
+      "package_toggle": "包切换",
+      "frame_analysis": "3DMigoto 帧分析",
+      "reload_fixes": "3DMigoto 重载修复"
+    },
     "conflicts": {
       "share_key": "共用按键",
       "and": "和",
-      "message": "{{label1}} 和 {{label2}} 共用按键 \"{{key}}\""
+      "message": "{{label1}} 和 {{label2}} 共用按键 \"{{key}}\"",
+      "reserved_message": "{{label}} 与 {{runtime}} 的按键 \"{{key}}\" 冲突"
     }
   },
   "maintenance": {

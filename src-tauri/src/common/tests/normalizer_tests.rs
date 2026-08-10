@@ -40,6 +40,7 @@ fn test_normalize_display_name() {
     assert_eq!(normalize_display_name("DISABLED raiden_mod"), "raiden_mod");
     assert_eq!(normalize_display_name("disabled_raiden_mod"), "raiden_mod");
     assert_eq!(normalize_display_name("DISABLED-raiden_mod"), "raiden_mod");
+    assert_eq!(normalize_display_name("DISABLEDRaidenMod"), "RaidenMod");
     assert_eq!(normalize_display_name("raiden_mod"), "raiden_mod");
     // Externally produced double prefixes still resolve to the same identity.
     assert_eq!(
@@ -63,6 +64,7 @@ fn test_is_disabled_folder() {
     // Legacy malformed variants are repaired by toggle/rename paths.
     assert!(is_disabled_folder("disabled_some_mod"));
     assert!(is_disabled_folder("DISABLED-some_mod"));
+    assert!(is_disabled_folder("DISABLEDSomeMod"));
     // Not disabled
     assert!(!is_disabled_folder("some_mod"));
     assert!(!is_disabled_folder("a_disabled_mod"));

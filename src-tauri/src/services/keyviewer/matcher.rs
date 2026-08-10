@@ -4,8 +4,7 @@
 //! 1. For each `KvObjectEntry`: compute intersection `I = active_hashes ∩ known_hashes`
 //! 2. Score each entry: base per-hash + occurrence bonus + rarity bonus
 //! 3. Pick best match if `score ≥ threshold`; tiebreak: score desc → name asc
-//! 4. Select sentinel hashes: top K from intersection, excluding high-collision
-//! 5. High-collision: hash appears in ≥`collision_threshold` objects
+//! 4. Select sentinel hashes owned by exactly one object
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,20 +25,17 @@ pub struct MatchConfig {
     pub rarity_max_objects: usize,
     /// Number of sentinel hashes to select per matched object.
     pub sentinel_count: usize,
-    /// A hash appearing in ≥ this many objects is considered high-collision.
-    pub collision_threshold: usize,
 }
 
 impl Default for MatchConfig {
     fn default() -> Self {
         Self {
-            score_threshold: 5.0,
+            score_threshold: 20.0,
             base_per_hash: 10.0,
             occurrence_bonus_factor: 2.0,
             rarity_bonus: 5.0,
             rarity_max_objects: 2,
             sentinel_count: 3,
-            collision_threshold: 3,
         }
     }
 }
@@ -124,12 +120,14 @@ fn score_entry(
     hash_object_index: &HashMap<&str, HashSet<&str>>,
     config: &MatchConfig,
 ) -> Option<(f32, Vec<String>)> {
-    let intersection: Vec<String> = entry
+    let mut intersection: Vec<String> = entry
         .code_hashes
         .iter()
         .filter(|h| active_hashes.contains(h.as_str()))
         .cloned()
         .collect();
+    intersection.sort_unstable();
+    intersection.dedup();
 
     if intersection.is_empty() {
         return None;
@@ -192,6 +190,9 @@ pub fn match_objects(
             }
 
             let sentinel_hashes = select_sentinels(&matched_hashes, &hash_object_index, config);
+            if sentinel_hashes.is_empty() {
+                return None;
+            }
 
             let confidence = if score >= config.score_threshold * 4.0 {
                 MatchConfidence::Excellent
@@ -227,8 +228,7 @@ pub fn match_objects(
 
 /// Select sentinel hashes from the matched intersection.
 ///
-/// Prefers hashes that appear in fewer objects (higher rarity = better sentinel).
-/// Excludes high-collision hashes (appear in ≥ `collision_threshold` objects).
+/// Only hashes owned by exactly one object are safe runtime sentinels.
 /// Returns up to `sentinel_count` hashes.
 fn select_sentinels(
     matched_hashes: &[String],
@@ -247,8 +247,7 @@ fn select_sentinels(
         })
         .collect();
 
-    // Filter out high-collision hashes
-    scored.retain(|(_, count)| *count < config.collision_threshold);
+    scored.retain(|(_, count)| *count == 1);
 
     // Sort by object count ascending (rarest first), then hash value for stability
     scored.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)));

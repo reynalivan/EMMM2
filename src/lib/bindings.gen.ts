@@ -664,9 +664,9 @@ async readModIni(gameId: string, folderPath: string, fileName: string) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async writeModIni(gameId: string, folderPath: string, fileName: string, lineUpdates: IniLineUpdate[]) : Promise<Result<null, AppError>> {
+async writeModIni(gameId: string, folderPath: string, fileName: string, expectedSourceHash: string, lineUpdates: IniLineUpdate[]) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("write_mod_ini", { gameId, folderPath, fileName, lineUpdates }) };
+    return { status: "ok", data: await TAURI_INVOKE("write_mod_ini", { gameId, folderPath, fileName, expectedSourceHash, lineUpdates }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1536,7 +1536,9 @@ export type ConfigStatus = "FreshInstall" | "HasConfig"
  * User-confirmed item sent back from the review modal.
  */
 export type ConfirmedScanItem = { folderPath: string; displayName: string; isDisabled: boolean; matchedEntryKey: string | null; matchedAliasName: string | null; matchedConfidence: number | null; matchedReason: string | null; objectType: string | null; thumbnailPath: string | null; tagsJson: string | null; metadataJson: string | null; hashDbJson: string | null; customSkinsJson: string | null; dbThumbnail: string | null; skip: boolean; moveFromTemp?: boolean }
+export type ConflictCertainty = "definite" | "potential"
 export type ConflictDetails = { enabled: FolderDetail; disabled: FolderDetail }
+export type ConflictEvidence = { mod_path: string; source_path: string; section_name: string; namespace: string | null; condition: string | null; priority: number | null; match_first_index: number | null; shader_stage: string | null }
 /**
  * A group of folders sharing the same base name in the same parent directory.
  * Created when both "X" and "DISABLED X" exist on disk.
@@ -1555,25 +1557,10 @@ base_name: string;
  */
 members: ConflictMember[] }
 /**
- * Information about a shader/buffer hash conflict.
+ * A potential collision plus the source facts needed to judge it.
  */
-export type ConflictInfo = { 
-/**
- * The conflicting hash value.
- */
-hash: string; 
-/**
- * Section name where the hash was found.
- */
-section_name: string; 
-/**
- * Paths of the mods that conflict.
- */
-mod_paths: string[]; 
-/**
- * Whether at least two conflicting mods are currently enabled.
- */
-is_active: boolean }
+export type ConflictInfo = { hash: string; section_name: string; mod_paths: string[]; is_active: boolean; kind: ConflictKind; certainty: ConflictCertainty; has_conditional_evidence: boolean; evidence: ConflictEvidence[] }
+export type ConflictKind = "resource_hash" | "shader_hash" | "shader_replacement"
 /**
  * A single member of a conflict group (for the Resolve dialog).
  */
@@ -1799,11 +1786,12 @@ export type IgnoredConflict = { id: string; game_id: string; object_id: string; 
  * DTO returned to the frontend for import queue display.
  */
 export type ImportJobDto = { id: string; download_id: string | null; game_id: string | null; archive_path: string; status: string; match_category: string | null; match_entry_key: string | null; match_alias_name: string | null; match_confidence: number | null; match_reason: string | null; placed_path: string | null; error_msg: string | null; is_duplicate: boolean; created_at: string; updated_at: string }
-export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; newline_style: NewlineStyle; mode: IniReadMode }
+export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; encoding: IniEncoding; newline_style: NewlineStyle; line_terminators: LineTerminator[]; source_hash: string; mode: IniReadMode }
+export type IniEncoding = "Utf8" | "ShiftJis" | "LossyUtf8"
 export type IniFileEntry = { filename: string; path: string }
 export type IniLineUpdate = { line_idx: number; content: string }
 export type IniReadMode = "Structured" | "RawFallback"
-export type IniVariable = { name: string; value: string; line_idx: number }
+export type IniVariable = { qualifier: string | null; name: string; value: string; line_idx: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type KeyBinding = { section_name: string; key: string | null; back: string | null; key_line_idx: number; back_line_idx: number }
 /**
@@ -1814,6 +1802,7 @@ export type KeyViewerConfig = {
  * Whether KeyViewer generation is enabled.
  */
 enabled: boolean }
+export type LineTerminator = "None" | "Lf" | "CrLf" | "Cr"
 export type MatchCheckResult = { matchedName: string | null; matchScorePct: number; targetScorePct: number; isMatch: boolean; confidence: string }
 /**
  * Matched DB entry returned to frontend with resolved absolute thumbnail path.

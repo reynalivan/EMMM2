@@ -8,11 +8,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+pub use super::encoding::{decode_ini_bytes, IniEncoding, LineTerminator};
+use super::encoding::{decode_ini_source, source_fingerprint, split_lines_preserving_terminators};
+
 static SECTION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\[([^\]]+)\]\s*$").expect("valid section regex"));
 static VARIABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(\$[A-Za-z_][A-Za-z0-9_\.]*)\s*=\s*([^;#\r\n]+)")
-        .expect("valid variable regex")
+    Regex::new(
+        r"(?i)^\s*(?:(global|persist|local)\s+)?(\$[A-Za-z_][A-Za-z0-9_\.]*)\s*=\s*([^;#\r\n]+)",
+    )
+    .expect("valid variable regex")
 });
 static KEY_BACK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*(key|back)\s*=\s*([^;#\r\n]+)").expect("valid key regex"));
@@ -20,8 +25,6 @@ static KEY_BACK_RE: LazyLock<Regex> =
 /// Refuse to build an editable model for files this large — the editor holds
 /// the whole document in memory and round-trips it on save.
 const MAX_INI_BYTES: u64 = 2 * 1024 * 1024;
-
-const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
 
 /// 3DMigoto keybind sections are named `[Key…]`.
 const KEY_SECTION_PREFIX: &str = "key";
@@ -40,6 +43,7 @@ pub enum NewlineStyle {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct IniVariable {
+    pub qualifier: Option<String>,
     pub name: String,
     pub value: String,
     #[specta(type = f64)]
@@ -64,7 +68,10 @@ pub struct IniDocument {
     pub variables: Vec<IniVariable>,
     pub key_bindings: Vec<KeyBinding>,
     pub had_bom: bool,
+    pub encoding: IniEncoding,
     pub newline_style: NewlineStyle,
+    pub line_terminators: Vec<LineTerminator>,
+    pub source_hash: String,
     pub mode: IniReadMode,
 }
 
@@ -76,72 +83,73 @@ pub fn list_ini_files(mod_path: &Path) -> Result<Vec<PathBuf>, AppError> {
         )));
     }
 
-    // Extension first, then file type from the directory entry: `path.is_file()`
-    // would cost a fresh stat for every `.dds`/`.buf` in the folder too.
-    let mut entries: Vec<PathBuf> = fs::read_dir(mod_path)?
-        .flatten()
-        .filter(|entry| {
-            let path = entry.path();
-            let is_ini = path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("ini"));
-            let is_desktop_ini = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.eq_ignore_ascii_case("desktop.ini"));
-
-            is_ini
-                && !is_desktop_ini
-                && entry.file_type().is_ok_and(|file_type| file_type.is_file())
-        })
-        .map(|entry| entry.path())
-        .collect();
+    let mut entries = Vec::new();
+    collect_ini_files(mod_path, mod_path, &mut entries)?;
 
     entries.sort_by_cached_key(|path| {
-        path.file_name()
-            .map(|name| name.to_string_lossy().to_lowercase())
-            .unwrap_or_default()
+        path.strip_prefix(mod_path)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase()
     });
 
     Ok(entries)
 }
 
-/// Strip a UTF-8 BOM and decode INI bytes: UTF-8 first, Shift-JIS next (JP mod
-/// tooling still writes it), lossy UTF-8 as the last resort. Returns
-/// `(text, had_bom, clean)`; `clean == false` means the lossy fallback ran and
-/// structured parsing should not trust the text.
-pub fn decode_ini_bytes(bytes: &[u8]) -> (String, bool, bool) {
-    let had_bom = bytes.starts_with(&UTF8_BOM);
-    let content_bytes = if had_bom {
-        &bytes[UTF8_BOM.len()..]
-    } else {
-        bytes
-    };
+fn collect_ini_files(
+    root: &Path,
+    directory: &Path,
+    output: &mut Vec<PathBuf>,
+) -> Result<(), AppError> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
 
-    match String::from_utf8(content_bytes.to_vec()) {
-        Ok(text) => (text, had_bom, true),
-        Err(_) => {
-            let (cow, _encoding, had_errors) = encoding_rs::SHIFT_JIS.decode(content_bytes);
-            if !had_errors {
-                (cow.into_owned(), had_bom, true)
-            } else {
-                (
-                    String::from_utf8_lossy(content_bytes).to_string(),
-                    had_bom,
-                    false,
-                )
+        // Directory links and junction-like entries must not escape the mod root
+        // or create recursion loops. File links are ignored for the same reason.
+        if file_type.is_symlink() {
+            continue;
+        }
+
+        if file_type.is_dir() {
+            let name = entry.file_name();
+            if crate::common::normalizer::is_disabled_folder(&name.to_string_lossy()) {
+                continue;
             }
+            collect_ini_files(root, &path, output)?;
+            continue;
+        }
+
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let is_ini = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"));
+        let is_desktop_ini = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("desktop.ini"));
+        if is_ini && !is_desktop_ini && path.starts_with(root) {
+            output.push(path);
         }
     }
+
+    Ok(())
 }
 
 /// Structured view of an INI body, or `None` when the file is not safely
 /// parseable and the caller must fall back to raw lines.
 fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBinding>)> {
     let mut variables: Vec<IniVariable> = Vec::new();
-    let mut key_bindings: HashMap<String, KeyBinding> = HashMap::new();
-    let mut key_section: Option<&str> = None;
+    let mut key_bindings: Vec<KeyBinding> = Vec::new();
+    let mut section_spellings: HashMap<String, String> = HashMap::new();
+    let mut key_section: Option<String> = None;
+    let mut section_binding_start = 0;
 
     for (idx, line) in raw_lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -160,41 +168,60 @@ fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBi
                 key_section = name
                     .get(..KEY_SECTION_PREFIX.len())
                     .filter(|head| head.eq_ignore_ascii_case(KEY_SECTION_PREFIX))
-                    .map(|_| name);
+                    .map(|_| {
+                        let logical_name = name.to_ascii_lowercase();
+                        section_spellings
+                            .entry(logical_name)
+                            .or_insert_with(|| name.to_string())
+                            .clone()
+                    });
+                section_binding_start = key_bindings.len();
                 continue;
             }
         }
 
-        if line.trim_start().starts_with('$') {
-            if let Some(caps) = VARIABLE_RE.captures(line) {
-                variables.push(IniVariable {
-                    name: caps[1].trim().to_string(),
-                    value: caps[2].trim().to_string(),
-                    line_idx: idx,
-                });
-                continue;
-            }
+        if let Some(caps) = VARIABLE_RE.captures(line) {
+            variables.push(IniVariable {
+                qualifier: caps.get(1).map(|value| value.as_str().to_ascii_lowercase()),
+                name: caps[2].trim().to_string(),
+                value: caps[3].trim().to_string(),
+                line_idx: idx,
+            });
+            continue;
         }
 
-        let Some(section_name) = key_section else {
+        let Some(section_name) = key_section.as_ref() else {
             continue;
         };
 
         let Some(caps) = KEY_BACK_RE.captures(line) else {
             continue;
         };
-        let entry = key_bindings
-            .entry(section_name.to_string())
-            .or_insert_with(|| KeyBinding {
-                section_name: section_name.to_string(),
-                key: None,
-                back: None,
-                key_line_idx: None,
-                back_line_idx: None,
+        let is_key = caps[1].eq_ignore_ascii_case("key");
+        let entry_index = key_bindings[section_binding_start..]
+            .iter()
+            .rposition(|entry| {
+                if is_key {
+                    entry.key.is_none()
+                } else {
+                    entry.back.is_none()
+                }
+            })
+            .map(|relative| section_binding_start + relative)
+            .unwrap_or_else(|| {
+                key_bindings.push(KeyBinding {
+                    section_name: section_name.to_string(),
+                    key: None,
+                    back: None,
+                    key_line_idx: None,
+                    back_line_idx: None,
+                });
+                key_bindings.len() - 1
             });
+        let entry = &mut key_bindings[entry_index];
 
         let value = caps[2].trim().to_string();
-        if caps[1].eq_ignore_ascii_case("key") {
+        if is_key {
             entry.key = Some(value);
             entry.key_line_idx = Some(idx);
         } else {
@@ -202,9 +229,6 @@ fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBi
             entry.back_line_idx = Some(idx);
         }
     }
-
-    let mut key_bindings: Vec<KeyBinding> = key_bindings.into_values().collect();
-    key_bindings.sort_by(|a, b| a.section_name.cmp(&b.section_name));
 
     Some((variables, key_bindings))
 }
@@ -231,18 +255,19 @@ pub fn read_ini_document(file_path: &Path) -> Result<IniDocument, AppError> {
 /// the raw text and the parsed keybinds of every INI, can read each file once
 /// instead of once per consumer.
 pub fn parse_ini_document(file_path: &Path, bytes: &[u8]) -> IniDocument {
-    let newline_style = if bytes.windows(2).any(|w| w == b"\r\n") {
+    let decoded = decode_ini_source(bytes);
+    let (raw_lines, line_terminators) = split_lines_preserving_terminators(&decoded.text);
+    let newline_style = if line_terminators.contains(&LineTerminator::CrLf) {
         NewlineStyle::CrLf
     } else {
         NewlineStyle::Lf
     };
 
-    let (text, had_bom, utf8_ok) = decode_ini_bytes(bytes);
-
-    let raw_lines: Vec<String> = text.lines().map(ToString::to_string).collect();
-
     // A lossy decode means the text cannot be trusted for structured parsing.
-    let parsed = utf8_ok.then(|| parse_structured(&raw_lines)).flatten();
+    let parsed = decoded
+        .clean
+        .then(|| parse_structured(&raw_lines))
+        .flatten();
     let mode = match parsed {
         Some(_) => IniReadMode::Structured,
         None => IniReadMode::RawFallback,
@@ -254,8 +279,11 @@ pub fn parse_ini_document(file_path: &Path, bytes: &[u8]) -> IniDocument {
         raw_lines,
         variables,
         key_bindings,
-        had_bom,
+        had_bom: decoded.had_bom,
+        encoding: decoded.encoding,
         newline_style,
+        line_terminators,
+        source_hash: source_fingerprint(bytes),
         mode,
     }
 }

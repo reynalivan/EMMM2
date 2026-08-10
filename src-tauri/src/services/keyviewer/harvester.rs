@@ -1,8 +1,7 @@
 //! Hash harvester — extracts `hash = XXXXXXXX` from enabled mods' INI files.
 //!
-//! Scans `TextureOverride*` and `ShaderOverride*` sections in `.ini` files,
-//! extracting hash assignments. This is separate from `read_ini_document` which
-//! focuses on key bindings and variables — the harvester only cares about hashes.
+//! Scans 32-bit resource hashes from `TextureOverride*` sections. Shader hashes
+//! are 64-bit identities and belong to the conflict scanner, not this matcher.
 
 use crate::domain::errors::AppError;
 use regex::Regex;
@@ -18,10 +17,10 @@ static HASH_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^\s*hash\s*=\s*(?:0x)?([0-9a-f]{8})\s*(?:[;#].*)?$").expect("valid hash regex")
 });
 
-/// Regex matching section headers like `[TextureOverrideFoo]` or `[ShaderOverrideBar]`.
-static OVERRIDE_SECTION_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^\s*\[((?:TextureOverride|ShaderOverride)[^\]]*)\]\s*$")
-        .expect("valid override section regex")
+/// Regex matching resource override sections such as `[TextureOverrideFoo]`.
+static TEXTURE_OVERRIDE_SECTION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\s*\[(TextureOverride[^\]]*)\]\s*$")
+        .expect("valid texture override section regex")
 });
 
 /// A hash extracted from an INI file.
@@ -41,8 +40,6 @@ const DENYLIST_PREFIXES: &[&str] = &[
     "textureoverridenotification",
     "textureoverrideui",
     "textureoverridecursor",
-    "shaderoverrideui",
-    "shaderoverrideshadow",
 ];
 
 /// Check if a section name is deny-listed.
@@ -55,7 +52,7 @@ fn is_denylisted(section_name: &str) -> bool {
 
 /// Harvest hashes from a single INI file.
 ///
-/// Only extracts from `TextureOverride*` / `ShaderOverride*` sections.
+/// Only extracts from `TextureOverride*` sections.
 /// Deny-listed sections (UI, cursor, shadow, notification) are skipped.
 pub fn harvest_hashes_from_ini(file_path: &Path) -> Result<Vec<HarvestedHash>, AppError> {
     let bytes = fs::read(file_path)?;
@@ -77,7 +74,7 @@ fn harvest_hashes_from_text(text: &str, file_path: &Path) -> Vec<HarvestedHash> 
 
         // Any section header resets tracking; an override one re-arms it.
         if trimmed.starts_with('[') {
-            current_section = OVERRIDE_SECTION_RE
+            current_section = TEXTURE_OVERRIDE_SECTION_RE
                 .captures(trimmed)
                 .map(|caps| caps[1].to_string())
                 .filter(|section_name| !is_denylisted(section_name));
