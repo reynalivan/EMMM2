@@ -324,48 +324,5 @@ pub fn search_master_db_service(
     results.into_iter().take(20).collect()
 }
 
-/// Parsed MasterDB per game type, so a 5 MB JSON is read and parsed once.
-#[derive(Default)]
-pub struct MasterDbCache(
-    tokio::sync::RwLock<std::collections::HashMap<String, std::sync::Arc<deep_matcher::MasterDb>>>,
-);
-
-/// The parsed MasterDB for a game type, loading it on first use.
-///
-/// Returns `None` when the game has no bundled database. This used to be a
-/// `db_json: String` parameter: the frontend fetched the whole database, held
-/// it, and posted it back on every scan command, which then re-parsed it. The
-/// backend has the file — there was never a reason for it to cross IPC.
-pub async fn get_cached(
-    app: &tauri::AppHandle,
-    game_type: i32,
-) -> Result<Option<std::sync::Arc<deep_matcher::MasterDb>>, ScannerError> {
-    use tauri::Manager;
-
-    let canonical = crate::services::game::schema_loader::normalize_game_type(game_type);
-    let cache = app.state::<MasterDbCache>();
-
-    if let Some(hit) = cache.0.read().await.get(&canonical).cloned() {
-        return Ok(Some(hit));
-    }
-
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| ScannerError::Io(format!("failed to resolve resource dir: {error}")))?;
-    let db_path = resource_dir
-        .join("databases")
-        .join(format!("{canonical}.json"));
-    if !db_path.exists() {
-        return Ok(None);
-    }
-
-    let json = std::fs::read_to_string(&db_path)?;
-    let parsed = std::sync::Arc::new(deep_matcher::MasterDb::from_json(&json)?);
-    cache
-        .0
-        .write()
-        .await
-        .insert(canonical, std::sync::Arc::clone(&parsed));
-    Ok(Some(parsed))
-}
+mod cache;
+pub use cache::{get_cached, MasterDbCache};

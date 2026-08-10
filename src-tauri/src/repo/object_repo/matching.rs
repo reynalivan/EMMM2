@@ -10,6 +10,30 @@ pub async fn get_matched_entry_key_by_id(
         .await
 }
 
+/// Every object's `(matched_entry_key, custom_skins)` pair that carries both.
+///
+/// Feeds the MasterDB loader, which folds the user's own aliases into the
+/// bundled entries so the matcher can see them. Returns the raw JSON: parsing
+/// is the caller's business, and a blob that fails `json_valid` is dropped here
+/// the same way the listing query drops it.
+pub async fn get_user_alias_blobs(
+    pool: &sqlx::SqlitePool,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT matched_entry_key, custom_skins FROM objects
+         WHERE matched_entry_key IS NOT NULL
+           AND custom_skins IS NOT NULL
+           AND json_valid(custom_skins) = 1",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| Ok((row.try_get("matched_entry_key")?, row.try_get("custom_skins")?)))
+        .collect()
+}
+
 pub async fn get_object_folder_by_matched_entry_key<'c, E>(
     executor: E,
     game_id: &str,

@@ -80,8 +80,17 @@ pub async fn update_object_cmd(
     id: String,
     updates: UpdateObjectInput,
     pool: State<'_, sqlx::SqlitePool>,
+    app: tauri::AppHandle,
 ) -> Result<(), AppError> {
-    crate::services::objects::mutate::update_object(&pool, &id, &updates).await
+    let touches_aliases = updates.custom_skins.is_some();
+    crate::services::objects::mutate::update_object(&pool, &id, &updates).await?;
+
+    // The MasterDB is cached parsed, with user aliases already folded in, so an
+    // edited alias would otherwise not reach the matcher until a restart.
+    if touches_aliases {
+        crate::services::scanner::master_db::MasterDbCache::invalidate(&app).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]

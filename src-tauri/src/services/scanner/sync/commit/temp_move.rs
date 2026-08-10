@@ -87,6 +87,10 @@ pub(super) async fn prepare_disk_entries(
                             Some(mods_path),
                         )
                         .await?;
+                        log::warn!(
+                            "commit_scan: collision, folder left in place | source={} target={target_path_string} object={object_folder}",
+                            item.folder_path
+                        );
                         collisions.push(crate::services::scanner::core::types::CollisionInfo {
                             id: generate_stable_id(game_id, &target_path_string),
                             source_path: item.folder_path.clone(),

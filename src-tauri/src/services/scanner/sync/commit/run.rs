@@ -68,6 +68,11 @@ pub async fn commit_scan_results(
         let _ = std::fs::remove_dir(&temp_dir_path);
     }
 
+    log::info!(
+        "commit_scan: done | game_id={game_id} committed={total} new_mods={new_mods_count} updated_mods={updated_mods_count} new_objects={new_objects_count} collisions={}",
+        collisions.len()
+    );
+
     Ok(SyncResult {
         total_scanned: total,
         new_mods: new_mods_count,

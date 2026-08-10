@@ -37,17 +37,30 @@ pub async fn scan_preview(
         });
     }
 
+    log::info!(
+        "scan_preview: start | game_id={game_id} folders={total} mods_path={}",
+        mods_path.display()
+    );
+
     let mut items = Vec::with_capacity(total);
     let ini_filters = IniTokenizationConfig::default().prepare();
+    let started = std::time::Instant::now();
 
     for (idx, candidate) in candidates.iter().enumerate() {
         if let Some(channel) = &on_progress {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
             let _ = channel.send(ScanEvent::Progress {
                 current: idx + 1,
                 total,
                 folder_name: candidate.display_name.clone(),
-                elapsed_ms: 0,
-                eta_ms: 0,
+                elapsed_ms,
+                // Extrapolate from folders already finished (`idx`), not from the one
+                // just starting, so the first tick reports 0 instead of a wild guess.
+                eta_ms: if idx == 0 {
+                    0
+                } else {
+                    elapsed_ms * (total - idx) as u64 / idx as u64
+                },
             });
         }
 
@@ -82,6 +95,13 @@ pub async fn scan_preview(
         let already_in_db = existing.is_some();
         let already_matched =
             check_already_matched(pool, &existing, matched_entry_key.as_deref()).await?;
+
+        log::debug!(
+            "scan_preview: item | folder={} status={match_level} confidence={confidence} score={} best={} already_in_db={already_in_db}",
+            candidate.display_name,
+            match_result.confidence_score(),
+            matched_alias_name.as_deref().unwrap_or("-")
+        );
 
         let db_entry = matched_alias_name
             .as_ref()
@@ -144,11 +164,18 @@ pub async fn scan_preview(
         });
     }
 
+    let matched = items
+        .iter()
+        .filter(|i| i.matched_entry_key.is_some())
+        .count();
+
+    log::info!(
+        "scan_preview: done | game_id={game_id} folders={total} matched={matched} unmatched={} elapsed_ms={}",
+        total - matched,
+        started.elapsed().as_millis()
+    );
+
     if let Some(channel) = &on_progress {
-        let matched = items
-            .iter()
-            .filter(|i| i.matched_entry_key.is_some())
-            .count();
         let _ = channel.send(ScanEvent::Finished {
             matched,
             unmatched: total - matched,
@@ -221,80 +248,3 @@ fn resolve_thumbnail(
     }
 }
 
-/// Computes the percentage score for a specific batch of candidates against a folder.
-/// Used for lazy loading dropdown percentages without scoring all DB entries.
-pub fn score_candidates_batch(
-    folder_path: &str,
-    master_db: &deep_matcher::MasterDb,
-    candidate_names: Vec<String>,
-) -> std::collections::HashMap<String, u8> {
-    use std::collections::HashMap;
-
-    let mut results = HashMap::new();
-    let path = Path::new(folder_path);
-
-    if !path.exists() {
-        return results;
-    }
-
-    let raw_name = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-
-    let is_disabled = crate::common::normalizer::is_disabled_folder(&raw_name);
-
-    let candidate = walker::ModCandidate {
-        path: path.to_path_buf(),
-        display_name: crate::common::normalizer::normalize_display_name(&raw_name).into_owned(),
-        raw_name,
-        is_disabled,
-    };
-
-    let content = walker::scan_folder_content(&candidate.path, 3);
-    let ini_filters = IniTokenizationConfig::default().prepare();
-    let ai_config =
-        crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default();
-    let mut signal_cache =
-        crate::services::scanner::deep_matcher::state::signal_cache::SignalCache::new();
-
-    // Map requested names to entry IDs
-    let entry_ids: Vec<usize> = master_db
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| candidate_names.contains(&e.name))
-        .map(|(id, _)| id)
-        .collect();
-
-    if entry_ids.is_empty() {
-        return results;
-    }
-
-    // Rather than hardcoding the pipeline logic here, we just run the specialized forced scoring
-    // pipeline. It bypasses early exits and prunes to give us exact scores for the requested items.
-    let match_result = deep_matcher::score_forced_candidates(
-        &candidate,
-        master_db,
-        &content,
-        &ini_filters,
-        &ai_config,
-        &mut signal_cache,
-        &entry_ids,
-    );
-
-    // Provide baseline scores (0%) for requested names in case matcher filtered them out
-    for name in &candidate_names {
-        results.insert(name.clone(), 0);
-    }
-
-    // Update with actual scores if they survived to the final candidates list
-    for c in &match_result.candidates_all {
-        if candidate_names.contains(&c.name) {
-            results.insert(c.name.clone(), score_to_percentage(c));
-        }
-    }
-
-    results
-}
