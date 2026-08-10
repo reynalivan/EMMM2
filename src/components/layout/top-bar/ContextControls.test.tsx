@@ -63,7 +63,6 @@ describe('ContextControls', () => {
           is_active: true,
           signature: null,
           updated_at: '2026-03-25T12:17:00Z',
-          member_count: 12,
           mod_count: 12,
         },
       ],

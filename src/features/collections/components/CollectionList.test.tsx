@@ -38,7 +38,6 @@ function createCollection(partial: Partial<CollectionSummary>): CollectionSummar
     is_active: true,
     signature: null,
     updated_at: '2026-03-25T15:30:00Z',
-    raw_member_count: 4,
     mod_count: 4,
     ...partial,
   };

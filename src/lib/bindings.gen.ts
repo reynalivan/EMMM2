@@ -505,6 +505,18 @@ async bulkPinMods(gameId: string, folderPaths: string[], pin: boolean) : Promise
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Stop the running bulk toggle/delete after the item in flight. Work already
+ * done stays done — the trailing reconcile still converges the DB.
+ */
+async bulkCancel() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("bulk_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async toggleModSafe(gameId: string, folderPath: string, safe: boolean) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("toggle_mod_safe", { gameId, folderPath, safe }) };
@@ -1391,12 +1403,12 @@ export type ApplyObjectMatchInput = { game_id: string; object_id: string | null;
 /**
  * Preview data for applying a collection (before → after).
  */
-export type ApplyPreview = { collection_name: string; current_snapshot: string | null; current_mods: CollectionMod[]; current_objects: CollectionObject[]; current_tree_nodes: PreviewTreeNode[]; target_mods: CollectionMod[]; target_objects: CollectionObject[]; target_tree_nodes: PreviewTreeNode[]; current_state_name: string | null; current_state_is_unsaved: boolean; current_projected_state: ProjectedCollectionState; target_projected_state: ProjectedCollectionState }
+export type ApplyPreview = { collection_name: string; current_tree_nodes: PreviewTreeNode[]; target_tree_nodes: PreviewTreeNode[]; current_state_name: string | null; current_state_is_unsaved: boolean; current_projected_state: ProjectedCollectionState; target_projected_state: ProjectedCollectionState }
 export type ApplyProgressSnapshot = { game_id: string; is_safe: boolean; phase: string; completed: number; total: number; current_item: string | null; warnings: string[]; final_state_name: string | null; final_mode: string | null; success: boolean }
 /**
  * Result of applying a collection.
  */
-export type ApplyResult = { success: boolean; mods_enabled: number; mods_disabled: number; objects_toggled: number; new_signature: string; warnings: string[]; final_state_name: string | null; final_mode: string | null; partial_apply: boolean; skipped_missing_paths: string[]; final_state_is_dirty: boolean; runtime_path_rewrites: WorkspacePathRewrite[] }
+export type ApplyResult = { mods_enabled: number; mods_disabled: number; warnings: string[]; final_state_name: string | null; final_mode: string | null; partial_apply: boolean; skipped_missing_paths: string[]; runtime_path_rewrites: WorkspacePathRewrite[] }
 /**
  * Result of analyzing an archive before extraction.
  */
@@ -1467,10 +1479,6 @@ export type CategorySlice = { category: string; count: number }
  */
 export type CollectionError = { NotFound: { id: string } } | { DuplicateName: { name: string } } | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { Corridor: CorridorError } | { Io: string } | { FileInUse: { path: string; processes: string[] } } | { PathBusy: { path: string } }
 /**
- * A unified member type for collections.
- */
-export type CollectionMember = ({ kind: "mod" } & CollectionMod) | ({ kind: "object" } & CollectionObject) | ({ kind: "root" } & CollectionRoot)
-/**
  * A single mod member of a collection (from `collection_mods`).
  */
 export type CollectionMod = { kind: MemberKind; collection_id: string; mod_id: string | null; mod_path: string; mod_path_key: string | null; object_id: string; display_name: string | null; preview_path: string | null; node_type: string | null; warnings: string[]; is_enabled: boolean }
@@ -1482,16 +1490,12 @@ export type CollectionPathRewrite = { from: string; to: string }
 /**
  * Preview data for a collection.
  */
-export type CollectionPreview = { collection: CollectionSummary; members: CollectionMember[]; mods: CollectionMod[]; objects: CollectionObject[]; roots: CollectionRoot[]; tree_nodes: PreviewTreeNode[]; projected_state: ProjectedCollectionState }
+export type CollectionPreview = { collection: CollectionSummary; tree_nodes: PreviewTreeNode[]; projected_state: ProjectedCollectionState }
 export type CollectionReferenceImpact = { affected_collection_count: number; affected_collection_names: string[]; rewritten_paths: CollectionPathRewrite[]; missing_paths: string[] }
-/**
- * A root entry (from `collection_roots`).
- */
-export type CollectionRoot = { kind: MemberKind; collection_id: string; root_path: string; root_path_key: string; display_name: string; display_name_key: string; object_id: string | null; object_name: string | null; object_type: string | null; root_kind: string; is_safe: boolean; is_enabled: boolean; thumbnail_hint: string | null; corridor_source: string | null }
 /**
  * Summary returned in list views.
  */
-export type CollectionSummary = { id: string; name: string; is_safe: boolean; is_unsaved: boolean; is_active: boolean; signature: string | null; updated_at: string; raw_member_count: number; mod_count: number }
+export type CollectionSummary = { id: string; name: string; is_safe: boolean; is_unsaved: boolean; is_active: boolean; signature: string | null; updated_at: string; mod_count: number }
 /**
  * Represents a folder naming collision discovered during sync or organize.
  */

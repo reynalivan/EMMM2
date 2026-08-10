@@ -46,7 +46,6 @@ async fn save_current_state_creates_snapshot_without_touching_legacy_corridor_po
         CreateCollectionInput {
             game_id: "game-save-no-pointer".to_string(),
             name: "Saved Snapshot".to_string(),
-            is_safe: true,
             save_mode: Some(CreateCollectionMode::SaveCurrentState),
             source_collection_id: None,
         },
@@ -117,7 +116,6 @@ async fn list_collections_returns_all_named_presets_across_safety_flags() {
         &ctx.pool,
         "game-list-all",
         crate::domain::corridor::Corridor::from_is_safe(true),
-        None,
     )
     .await
     .expect("list safe collections");
@@ -132,7 +130,6 @@ async fn list_collections_returns_all_named_presets_across_safety_flags() {
         &ctx.pool,
         "game-list-all",
         crate::domain::corridor::Corridor::from_is_safe(false),
-        None,
     )
     .await
     .expect("list unsafe collections");
@@ -176,7 +173,7 @@ async fn dirty_state_refresh_returns_synthetic_runtime_without_unsaved_collectio
     .await
     .expect("insert enabled unsafe mod");
 
-    let summary = handle_dirty_state(&ctx.pool, "game-1", false)
+    let summary = handle_dirty_state(&ctx.pool, "game-1")
         .await
         .expect("refresh dirty state");
 
@@ -225,7 +222,6 @@ async fn clone_snapshot_does_not_touch_legacy_active_pointer() {
         CreateCollectionInput {
             game_id: "game-1".to_string(),
             name: "Source Preset".to_string(),
-            is_safe: true,
             save_mode: Some(CreateCollectionMode::SaveCurrentState),
             source_collection_id: None,
         },
@@ -241,7 +237,6 @@ async fn clone_snapshot_does_not_touch_legacy_active_pointer() {
         CreateCollectionInput {
             game_id: "game-1".to_string(),
             name: "Cloned Preset".to_string(),
-            is_safe: true,
             save_mode: Some(CreateCollectionMode::CloneSnapshot),
             source_collection_id: Some(source.id.clone()),
         },

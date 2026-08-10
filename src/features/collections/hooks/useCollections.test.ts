@@ -58,7 +58,6 @@ describe('useCollections', () => {
         name: 'Abyss Team',
         game_id: 'g-1',
         is_safe: true,
-        member_count: 5,
         mod_count: 5,
       },
     ]);
@@ -83,17 +82,13 @@ describe('useCollections', () => {
     vi.mocked(invoke).mockImplementation(async (command: string) => {
       if (command === 'apply_collection') {
         return {
-          success: true,
           mods_enabled: 1,
           mods_disabled: 0,
-          objects_toggled: 0,
-          new_signature: 'backend-sig',
           warnings: [],
           final_state_name: 'Backend Runtime',
           final_mode: 'SAFE',
           partial_apply: false,
           skipped_missing_paths: [],
-          final_state_is_dirty: false,
           runtime_path_rewrites: [
             {
               old_path: 'E:/Mods/ALBEDO/Variant',
@@ -163,12 +158,7 @@ describe('useCollections', () => {
   it('refetches apply preview when game id changes', async () => {
     vi.mocked(invoke).mockResolvedValue({
       collection_name: 'Preset',
-      current_snapshot: null,
-      current_mods: [],
-      current_objects: [],
       current_tree_nodes: [],
-      target_mods: [],
-      target_objects: [],
       target_tree_nodes: [],
       current_state_name: null,
       current_state_is_unsaved: false,

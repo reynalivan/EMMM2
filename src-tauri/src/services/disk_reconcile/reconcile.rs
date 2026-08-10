@@ -202,7 +202,15 @@ pub async fn reconcile_disk_projection(
 
     if should_reconcile {
         let scoped = !force_full && should_run_scoped_disk_reconcile(reason, &changed_roots);
-        let projection = match collect_disk_projection(mods_path, &changed_roots, scoped) {
+        // A full pass classifies every mod on disk (read_dir + ini reads each),
+        // so the snapshot runs off the async runtime.
+        let snapshot_path = mods_path.to_path_buf();
+        let snapshot_roots = changed_roots.clone();
+        let snapshot = tokio::task::spawn_blocking(move || {
+            collect_disk_projection(&snapshot_path, &snapshot_roots, scoped)
+        })
+        .await?;
+        let projection = match snapshot {
             Ok(value) => value,
             Err(DiskProjectionError::SourceUnavailable(message)) => {
                 return Ok(source_unavailable(

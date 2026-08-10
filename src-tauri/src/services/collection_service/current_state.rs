@@ -14,7 +14,6 @@ use sqlx::SqlitePool;
 pub async fn handle_dirty_state(
     pool: &SqlitePool,
     game_id: &str,
-    _is_safe: bool,
 ) -> Result<CollectionSummary, CollectionError> {
     let (mods, objects) = load_live_runtime_state(pool, game_id).await?;
     let projected_state = projected_state_service::build_projected_state(&mods, &objects, None);
@@ -28,7 +27,6 @@ pub async fn handle_dirty_state(
         is_active: false,
         signature: Some(signature),
         updated_at: chrono::Utc::now().to_rfc3339(),
-        raw_member_count: projected_state.summary.active_root_count as i32,
         mod_count: projected_state.summary.active_root_count as i32,
     })
 }

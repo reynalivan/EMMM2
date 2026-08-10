@@ -146,9 +146,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
           <h3 className="font-bold text-lg text-error flex items-center gap-2">
             <AlertTriangle size={20} /> {t('collections:apply.failed.title')}
           </h3>
-          <p className="py-4 text-sm text-base-content/80">
-            {formatAppError(previewQuery.error)}
-          </p>
+          <p className="py-4 text-sm text-base-content/80">{formatAppError(previewQuery.error)}</p>
           <div className="modal-action">
             <button className="btn btn-neutral" onClick={onClose}>
               {t('collections:apply.failed.close')}
@@ -214,7 +212,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
             </div>
           ) : result ? (
             <div className="w-full p-6 flex flex-col gap-4 justify-center">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <SummaryStat
                   label={t('collections:apply.summary.enabled', 'Enabled')}
                   value={result.mods_enabled}
@@ -222,10 +220,6 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 <SummaryStat
                   label={t('collections:apply.summary.disabled', 'Disabled')}
                   value={result.mods_disabled}
-                />
-                <SummaryStat
-                  label={t('collections:apply.summary.objects', 'Objects Updated')}
-                  value={result.objects_toggled}
                 />
               </div>
               <div className="rounded-2xl border border-success/20 bg-success/8 p-4">

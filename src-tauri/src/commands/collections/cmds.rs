@@ -51,13 +51,9 @@ pub async fn list_collections(
     config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
 ) -> Result<Vec<CollectionSummary>, AppError> {
-    let result = collection_service::list_collections(
-        pool.inner(),
-        &game_id,
-        config.current_corridor(),
-        None,
-    )
-    .await?;
+    let result =
+        collection_service::list_collections(pool.inner(), &game_id, config.current_corridor())
+            .await?;
     Ok(result)
 }
 
@@ -65,19 +61,14 @@ pub async fn list_collections(
 #[specta::specta]
 pub async fn create_collection(
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::services::config::ConfigService>,
     game_id: String,
     name: String,
     save_mode: Option<CreateCollectionMode>,
     source_collection_id: Option<String>,
 ) -> Result<CollectionSummary, AppError> {
-    let settings = config.get_settings();
-    let is_safe = settings.safe_mode.enabled;
-
     let input = CreateCollectionInput {
         game_id,
         name,
-        is_safe,
         save_mode,
         source_collection_id,
     };

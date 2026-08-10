@@ -125,3 +125,28 @@ async fn test_path_traversal_rejected() {
         "Error should contain 'PathEscapeError', got: {err}"
     );
 }
+
+/// Perf harness, not a gate: prints the wall clock for a 10k-child listing so
+/// the parallel classify pass can be compared against a serial one. Ignored
+/// because building the fixture costs seconds.
+///
+///   cargo test --lib scan_10k_folders -- --ignored --nocapture
+#[test]
+#[ignore = "perf harness"]
+fn scan_10k_folders() {
+    const COUNT: usize = 10_000;
+    let temp_dir = TempDir::new().unwrap();
+
+    for i in 0..COUNT {
+        let folder = temp_dir.path().join(format!("mod_{i:05}"));
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), "[TextureOverrideBody]\n").unwrap();
+    }
+
+    let started = std::time::Instant::now();
+    let folders = scan_fs_folders(temp_dir.path(), None).unwrap();
+    let elapsed = started.elapsed();
+
+    assert_eq!(folders.len(), COUNT);
+    println!("scan_fs_folders: {COUNT} folders in {elapsed:?}");
+}

@@ -65,6 +65,7 @@ macro_rules! emmm_collect_commands {
             commands::mods::mod_bulk_cmds::bulk_update_info,
             commands::mods::mod_bulk_cmds::bulk_toggle_favorite,
             commands::mods::mod_bulk_cmds::bulk_pin_mods,
+            commands::mods::mod_bulk_cmds::bulk_cancel,
             commands::mods::mod_meta_cmds::toggle_mod_safe,
             commands::mods::mod_meta_cmds::suggest_random_mods,
             commands::mods::mod_meta_cmds::get_active_mod_conflicts,
@@ -243,6 +244,7 @@ pub fn run() {
         })
         .manage(commands::scanner::scan_control_cmds::ScanState::new())
         .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
+        .manage(commands::mods::mod_bulk_cmds::BulkCancelState::new())
         .manage(services::fs_utils::operation_lock::OperationLock::new())
         .manage(services::scanner::master_db::MasterDbCache::default())
         .manage(commands::scanner::archive_cmds::ExtractionState::new())

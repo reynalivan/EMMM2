@@ -40,7 +40,6 @@ pub struct Collection {
     pub signature: Option<String>,
     pub root_count: i32,
     pub display_mod_count: i32,
-    pub member_count: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -55,7 +54,6 @@ pub struct CollectionSummary {
     pub is_active: bool, // Derived from corridor_state
     pub signature: Option<String>,
     pub updated_at: String,
-    pub raw_member_count: i32,
     pub mod_count: i32,
 }
 
@@ -146,15 +144,6 @@ pub struct CollectionRoot {
     pub corridor_source: Option<String>,
 }
 
-/// A unified member type for collections.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CollectionMember {
-    Mod(CollectionMod),
-    Object(CollectionObject),
-    Root(CollectionRoot),
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct PreviewTreeNode {
     pub kind: PreviewTreeNodeKind,
@@ -179,10 +168,6 @@ pub struct PreviewTreeNode {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CollectionPreview {
     pub collection: CollectionSummary,
-    pub members: Vec<CollectionMember>,
-    pub mods: Vec<CollectionMod>,
-    pub objects: Vec<CollectionObject>,
-    pub roots: Vec<CollectionRoot>,
     pub tree_nodes: Vec<PreviewTreeNode>,
     pub projected_state: ProjectedCollectionState,
 }
@@ -190,20 +175,15 @@ pub struct CollectionPreview {
 /// Result of applying a collection.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ApplyResult {
-    pub success: bool,
     #[specta(type = f64)]
     pub mods_enabled: usize,
     #[specta(type = f64)]
     pub mods_disabled: usize,
-    #[specta(type = f64)]
-    pub objects_toggled: usize,
-    pub new_signature: String,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
     pub final_mode: Option<String>,
     pub partial_apply: bool,
     pub skipped_missing_paths: Vec<String>,
-    pub final_state_is_dirty: bool,
     pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
 }
 
@@ -255,7 +235,6 @@ pub enum CreateCollectionMode {
 pub struct CreateCollectionInput {
     pub game_id: String,
     pub name: String,
-    pub is_safe: bool,
     pub save_mode: Option<CreateCollectionMode>,
     pub source_collection_id: Option<String>,
 }
@@ -272,12 +251,7 @@ pub struct UpdateCollectionInput {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ApplyPreview {
     pub collection_name: String,
-    pub current_snapshot: Option<String>,
-    pub current_mods: Vec<CollectionMod>,
-    pub current_objects: Vec<CollectionObject>,
     pub current_tree_nodes: Vec<PreviewTreeNode>,
-    pub target_mods: Vec<CollectionMod>,
-    pub target_objects: Vec<CollectionObject>,
     pub target_tree_nodes: Vec<PreviewTreeNode>,
     pub current_state_name: Option<String>,
     pub current_state_is_unsaved: bool,

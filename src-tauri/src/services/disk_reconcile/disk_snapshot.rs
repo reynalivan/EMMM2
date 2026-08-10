@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use crate::common::classifier::{classify_folder, NodeType};
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 
@@ -103,7 +105,7 @@ fn relative_path_string(mods_path: &Path, path: &Path) -> DiskProjectionResult<S
 }
 
 fn collect_terminal_mods(
-    projection: &mut DiskProjection,
+    mods: &mut Vec<DiskModEntry>,
     mods_path: &Path,
     object_folder_path_key: &str,
     path: &Path,
@@ -121,7 +123,7 @@ fn collect_terminal_mods(
                         path.display()
                     ))
                 })?;
-            projection.mods.push(DiskModEntry {
+            mods.push(DiskModEntry {
                 folder_path: folder_path.clone(),
                 folder_path_key: crate::common::path_key::folder_path_key(&folder_path, None),
                 object_folder_path_key: object_folder_path_key.to_string(),
@@ -133,7 +135,7 @@ fn collect_terminal_mods(
         NodeType::InternalAssets => Ok(()),
         NodeType::ContainerFolder => {
             for child_path in list_runtime_dirs(path)? {
-                collect_terminal_mods(projection, mods_path, object_folder_path_key, &child_path)?;
+                collect_terminal_mods(mods, mods_path, object_folder_path_key, &child_path)?;
             }
             Ok(())
         }
@@ -152,7 +154,6 @@ pub fn collect_disk_projection(
         )));
     }
 
-    let mut projection = DiskProjection::default();
     let target_roots: Vec<(String, PathBuf)> = if scoped {
         changed_roots
             .iter()
@@ -171,28 +172,41 @@ pub fn collect_disk_projection(
             .collect()
     };
 
-    for (root_name, root_path) in target_roots {
-        if !root_path.exists() || !root_path.is_dir() {
-            continue;
-        }
+    // Each root is an independent walk whose per-mod classify pass reads a
+    // directory and every ini in it. `par_iter` keeps input order, so the
+    // projection lands in the same sequence the serial loop produced.
+    let per_root: Vec<Option<(DiskObjectEntry, Vec<DiskModEntry>)>> = target_roots
+        .par_iter()
+        .map(|(root_name, root_path)| {
+            if !root_path.exists() || !root_path.is_dir() {
+                return Ok(None);
+            }
 
-        let object_entry = DiskObjectEntry {
-            folder_path: root_name.clone(),
-            folder_path_key: crate::common::path_key::folder_path_key(&root_name, None),
-            name: normalize_display_name(&root_name).into_owned(),
-            is_disabled: is_disabled_folder(&root_name),
-        };
-        let object_folder_path_key = object_entry.folder_path_key.clone();
+            let object_entry = DiskObjectEntry {
+                folder_path: root_name.clone(),
+                folder_path_key: crate::common::path_key::folder_path_key(root_name, None),
+                name: normalize_display_name(root_name).into_owned(),
+                is_disabled: is_disabled_folder(root_name),
+            };
+
+            let mut mods = Vec::new();
+            for mod_path in list_runtime_dirs(root_path)? {
+                collect_terminal_mods(
+                    &mut mods,
+                    mods_path,
+                    &object_entry.folder_path_key,
+                    &mod_path,
+                )?;
+            }
+
+            Ok(Some((object_entry, mods)))
+        })
+        .collect::<DiskProjectionResult<Vec<_>>>()?;
+
+    let mut projection = DiskProjection::default();
+    for (object_entry, mods) in per_root.into_iter().flatten() {
         projection.objects.push(object_entry);
-
-        for mod_path in list_runtime_dirs(&root_path)? {
-            collect_terminal_mods(
-                &mut projection,
-                mods_path,
-                &object_folder_path_key,
-                &mod_path,
-            )?;
-        }
+        projection.mods.extend(mods);
     }
 
     Ok(projection)

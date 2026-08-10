@@ -27,11 +27,7 @@ vi.mock('../hooks/useCollections', () => ({
   useApplyCollectionPreview: () => ({
     data: {
       collection_name: 'Test Preset',
-      current_mods: [],
-      current_objects: [],
       current_tree_nodes: [],
-      target_mods: [],
-      target_objects: [],
       target_tree_nodes: [],
       current_state_name: 'Current',
       current_state_is_unsaved: false,
@@ -106,17 +102,13 @@ describe('ApplyCollectionModal', () => {
 
   it('offers updating the original collection after partial apply', async () => {
     mutateAsync.mockResolvedValueOnce({
-      success: true,
       mods_enabled: 1,
       mods_disabled: 0,
-      objects_toggled: 0,
-      new_signature: 'partial-signature',
       warnings: ['Missing mod on disk: Mods/Missing'],
       final_state_name: 'Unsaved SAFE Preset',
       final_mode: 'SAFE',
       partial_apply: true,
       skipped_missing_paths: ['Mods/Missing'],
-      final_state_is_dirty: true,
       runtime_path_rewrites: [],
     });
     replaceMutateAsync.mockResolvedValueOnce({
@@ -127,7 +119,6 @@ describe('ApplyCollectionModal', () => {
       is_active: true,
       signature: 'partial-signature',
       updated_at: 'now',
-      member_count: 1,
       mod_count: 1,
     });
 

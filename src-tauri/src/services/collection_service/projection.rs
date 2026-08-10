@@ -70,13 +70,15 @@ where
     let mut tx = conn.begin().await?;
     collection_repo::replace_all_state_tx(
         &mut tx,
-        collection_id,
-        mods,
-        objects,
-        &roots,
-        Some(&signature),
-        snapshot_json.as_deref(),
-        state.summary.active_root_count as i32,
+        collection_repo::CollectionStateSnapshot {
+            collection_id,
+            mods,
+            objects,
+            roots: &roots,
+            signature: Some(&signature),
+            snapshot_json: snapshot_json.as_deref(),
+            display_mod_count: state.summary.active_root_count as i32,
+        },
     )
     .await?;
     tx.commit().await?;

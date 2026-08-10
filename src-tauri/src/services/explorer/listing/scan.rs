@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::common::path_key::canonical_name_key;
 use crate::domain::errors::AppError;
@@ -50,8 +52,12 @@ pub fn scan_fs_folders(target: &Path, sub_path: Option<&str>) -> Result<Vec<ModF
         }
     };
 
+    // Every entry pays a classify pass (its own `read_dir` plus an ini read per
+    // file), so the per-child work is spread across the rayon pool. `read_dir`
+    // order is not meaningful here — the sort below is what fixes the order.
+    let entries: Vec<std::fs::DirEntry> = entries.flatten().collect();
     let mut folders: Vec<ModFolder> = entries
-        .flatten()
+        .into_par_iter()
         .filter_map(|entry| build_mod_folder_from_fs_entry(entry, sub_path))
         .collect();
 

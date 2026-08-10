@@ -18,22 +18,27 @@ pub(super) fn row_to_collection(r: &sqlx::sqlite::SqliteRow) -> Collection {
         signature: r.get("signature"),
         root_count: r.get("root_count"),
         display_mod_count: r.try_get("display_mod_count").unwrap_or(0),
-        member_count: r.try_get("member_count_computed").ok(),
         created_at: r.get("created_at"),
         updated_at: r.get("updated_at"),
     }
 }
 
-pub(super) fn parse_warnings_json(raw: Option<String>) -> Vec<String> {
+pub(super) fn parse_warnings_json(raw: Option<String>) -> Result<Vec<String>, serde_json::Error> {
     let Some(raw_json) = raw else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
-    serde_json::from_str::<Vec<String>>(&raw_json).unwrap_or_default()
+    serde_json::from_str(&raw_json)
 }
 
-pub(super) fn serialize_warnings_json(warnings: &[String]) -> String {
-    serde_json::to_string(warnings).unwrap_or_else(|_| "[]".to_string())
+pub(super) fn serialize_warnings_json(
+    warnings: &[String],
+) -> Result<String, crate::domain::errors::CollectionError> {
+    serde_json::to_string(warnings).map_err(|error| {
+        crate::domain::errors::CollectionError::Db(format!(
+            "Failed to serialize collection warnings: {error}"
+        ))
+    })
 }
 
 pub fn to_summary(c: &Collection, active_collection_id: Option<&str>) -> CollectionSummary {
@@ -45,7 +50,6 @@ pub fn to_summary(c: &Collection, active_collection_id: Option<&str>) -> Collect
         signature: c.signature.clone(),
         is_active: active_collection_id == Some(c.id.as_str()),
         updated_at: c.updated_at.clone(),
-        raw_member_count: c.member_count.unwrap_or(0),
         mod_count: c.display_mod_count,
     }
 }

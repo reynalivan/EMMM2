@@ -44,7 +44,17 @@ fn conflict_member_from_disk(path: &Path, folder_name: String, is_enabled: bool)
     }
 }
 
+/// Listing is pure filesystem work — a `read_dir` plus a classify pass per
+/// child — so it runs on the blocking pool instead of stalling a Tokio worker
+/// for the whole directory.
 pub async fn list_mod_folders_inner(
+    mods_path: String,
+    sub_path: Option<String>,
+) -> Result<crate::services::explorer::types::FolderGridResponse, AppError> {
+    tokio::task::spawn_blocking(move || list_mod_folders_blocking(mods_path, sub_path)).await?
+}
+
+fn list_mod_folders_blocking(
     mods_path: String,
     sub_path: Option<String>,
 ) -> Result<crate::services::explorer::types::FolderGridResponse, AppError> {

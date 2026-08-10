@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 
+use crate::common::path_key::folder_path_key;
 use crate::domain::collection::{ApplyResult, Collection, CollectionMod, CollectionObject};
 use crate::domain::errors::CollectionError;
 use crate::domain::workspace::WorkspacePathRewrite;
@@ -17,7 +18,6 @@ use crate::services::scanner::watcher::WatcherSuppressor;
 
 /// Context passed through all pipeline steps during a collection apply.
 pub struct ApplyContext {
-    // Inputs
     pub pool: SqlitePool,
     pub game_id: String,
     pub collection_id: String,
@@ -29,24 +29,19 @@ pub struct ApplyContext {
     /// See `ApplyCollectionRequest::reconcile_lock`.
     pub reconcile_lock: Option<std::sync::Arc<tokio::sync::Mutex<()>>>,
 
-    // Resolved during pipeline execution
     pub collection: Option<Collection>,
     pub target_mods: Vec<CollectionMod>,
     pub target_objects: Vec<CollectionObject>,
     pub currently_enabled_path_keys: HashSet<String>,
-    pub to_enable: Vec<String>,  // path_keys to enable
-    pub to_disable: Vec<String>, // path_keys to disable
-    pub new_signature: String,
+    pub to_enable: Vec<String>,
+    pub to_disable: Vec<String>,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
     pub skipped_missing_paths: Vec<String>,
-    pub final_state_is_dirty: bool,
     pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
 
-    // Stats
     pub mods_enabled: usize,
     pub mods_disabled: usize,
-    pub objects_toggled: usize,
 }
 
 /// Human-readable corridor label used in messages and apply results.
@@ -88,25 +83,18 @@ impl ApplyContext {
             currently_enabled_path_keys: HashSet::new(),
             to_enable: Vec::new(),
             to_disable: Vec::new(),
-            new_signature: String::new(),
             warnings: Vec::new(),
             final_state_name: None,
             skipped_missing_paths: Vec::new(),
-            final_state_is_dirty: false,
             runtime_path_rewrites: Vec::new(),
             mods_enabled: 0,
             mods_disabled: 0,
-            objects_toggled: 0,
         }
     }
 }
 
-/// Execute the full apply pipeline.
-///
-/// Each step is a standalone function that operates on `ApplyContext`.
-/// Steps run sequentially — each step can read/write the context.
-/// This is an intentional physical-rename path. Disk Reconcile must not perform
-/// these collection apply renames on passive startup or watcher refresh.
+/// Disk Reconcile must not perform these physical collection renames during a
+/// passive startup or watcher refresh.
 pub async fn execute(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionError> {
     crate::services::apply_progress_service::start(&ctx.game_id, ctx.is_safe);
     let task_id = uuid::Uuid::new_v4().to_string();
@@ -120,26 +108,49 @@ pub async fn execute(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionEr
     .await
     .map_err(|e| CollectionError::Db(e.to_string()))?;
 
-    let result = execute_inner(ctx).await;
+    let apply_outcome = execute_inner(ctx).await;
+    update_recovery_task(ctx, &task_id, apply_outcome.is_ok()).await?;
+    if apply_outcome.is_err() {
+        finish_failed_apply(ctx);
+    }
 
-    let status = if result.is_ok() {
+    apply_outcome
+}
+
+async fn update_recovery_task(
+    ctx: &ApplyContext,
+    task_id: &str,
+    apply_succeeded: bool,
+) -> Result<(), CollectionError> {
+    let status = if apply_succeeded {
         crate::domain::task::TaskStatus::Completed
     } else {
         crate::domain::task::TaskStatus::Failed
     };
-    let _ = crate::repo::task_repo::update_status(&ctx.pool, &task_id, status).await;
-    if result.is_err() {
-        crate::services::apply_progress_service::finish(
-            &ctx.game_id,
-            ctx.is_safe,
-            ctx.final_state_name.clone(),
-            Some(corridor_label(ctx.is_safe).to_string()),
-            ctx.warnings.clone(),
-            false,
-        );
+    let Err(error) = crate::repo::task_repo::update_status(&ctx.pool, task_id, status).await else {
+        return Ok(());
+    };
+
+    log::error!("apply_pipeline: failed to update task '{task_id}' status: {error}");
+    if !apply_succeeded {
+        return Ok(());
     }
 
-    result
+    finish_failed_apply(ctx);
+    Err(CollectionError::Db(format!(
+        "Applied collection but failed to finalize recovery task '{task_id}': {error}"
+    )))
+}
+
+fn finish_failed_apply(ctx: &ApplyContext) {
+    crate::services::apply_progress_service::finish(
+        &ctx.game_id,
+        ctx.is_safe,
+        ctx.final_state_name.clone(),
+        Some(corridor_label(ctx.is_safe).to_string()),
+        ctx.warnings.clone(),
+        false,
+    );
 }
 
 async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionError> {
@@ -159,10 +170,8 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         ));
     }
 
-    // Step 1: Validate corridor match
     super::steps::validate_corridor::validate(ctx).await?;
 
-    // Step 2: Resolve target members from the collection
     crate::services::apply_progress_service::update(
         &ctx.game_id,
         ctx.is_safe,
@@ -173,7 +182,6 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
     );
     super::steps::resolve_target::resolve(ctx).await?;
 
-    // Step 3: Pre-apply disk validation (checks physical paths)
     super::steps::validate_paths::validate(ctx).await?;
     crate::services::apply_progress_service::set_warnings(
         &ctx.game_id,
@@ -181,13 +189,9 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         ctx.warnings.clone(),
     );
 
-    // Step 4: Resolve currently-enabled mod state
     super::steps::resolve_current_state::resolve(ctx).await?;
+    compute_diff(ctx);
 
-    // Step 5: Compute the diff (what to enable, what to disable)
-    super::steps::compute_diff::compute(ctx).await?;
-
-    // Step 6: Batch rename on filesystem
     crate::services::apply_progress_service::update(
         &ctx.game_id,
         ctx.is_safe,
@@ -198,9 +202,6 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
     );
     super::steps::batch_rename::rename(ctx).await?;
 
-    // Step 7: Verify database projection. The runtime mutation engine already wrote
-    // the filesystem and the DB projection in one operation, so there is nothing to
-    // do here beyond reporting progress.
     crate::services::apply_progress_service::update(
         &ctx.game_id,
         ctx.is_safe,
@@ -210,19 +211,15 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         None,
     );
 
-    // Step 8: Update corridor pointers
-    super::steps::update_corridor::update(ctx).await?;
+    ctx.final_state_name = Some(ctx.collection()?.name.clone());
 
-    // Step 9: Run post-apply tasks (KeyViewer, Signature, Conflicts, Status)
     let post_ctx = PostApplyContext {
         pool: ctx.pool.clone(),
         game_id: ctx.game_id.clone(),
         is_safe: ctx.is_safe,
         mods_path: ctx.mods_path.clone(),
         hotkeys: ctx.settings.hotkeys.clone(),
-        // The pipeline already settled the corridor in step 8; passing it here
-        // saves post-apply a second full live-state derivation.
-        status_fields: (!ctx.final_state_is_dirty).then(|| {
+        status_fields: ctx.skipped_missing_paths.is_empty().then(|| {
             crate::services::keyviewer::generator::StatusFields {
                 safe_mode: ctx.is_safe,
                 preset_name: ctx.final_state_name.clone(),
@@ -236,28 +233,77 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
         log::warn!("apply_pipeline[post_apply]: {error}");
     }
 
-    let result = ApplyResult {
-        success: true,
+    let apply_result = ApplyResult {
         mods_enabled: ctx.mods_enabled,
         mods_disabled: ctx.mods_disabled,
-        objects_toggled: ctx.objects_toggled,
-        new_signature: ctx.new_signature.clone(),
         warnings: ctx.warnings.clone(),
         final_state_name: ctx.final_state_name.clone(),
         final_mode: Some(corridor_label(ctx.is_safe).to_string()),
         partial_apply: !ctx.skipped_missing_paths.is_empty(),
         skipped_missing_paths: ctx.skipped_missing_paths.clone(),
-        final_state_is_dirty: ctx.final_state_is_dirty,
         runtime_path_rewrites: ctx.runtime_path_rewrites.clone(),
     };
     crate::services::apply_progress_service::finish(
         &ctx.game_id,
         ctx.is_safe,
-        result.final_state_name.clone(),
-        result.final_mode.clone(),
-        result.warnings.clone(),
+        apply_result.final_state_name.clone(),
+        apply_result.final_mode.clone(),
+        apply_result.warnings.clone(),
         true,
     );
 
-    Ok(result)
+    Ok(apply_result)
+}
+
+fn compute_diff(ctx: &mut ApplyContext) {
+    let target_keys: HashSet<String> = ctx
+        .target_mods
+        .iter()
+        .map(|member| {
+            member
+                .mod_path_key
+                .clone()
+                .unwrap_or_else(|| folder_path_key(&member.mod_path, None))
+        })
+        .collect();
+
+    ctx.to_enable = target_keys
+        .difference(&ctx.currently_enabled_path_keys)
+        .cloned()
+        .collect();
+    ctx.to_disable = ctx
+        .currently_enabled_path_keys
+        .difference(&target_keys)
+        .cloned()
+        .collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn successful_apply_surfaces_task_finalization_failure() {
+        let test_db = crate::test_utils::init_test_db().await;
+        let pool = test_db.pool.clone();
+        pool.close().await;
+        let mut apply_context = ApplyContext::new(ApplyCollectionRequest {
+            pool: &pool,
+            game_id: "game-1",
+            collection_id: "collection-1",
+            is_safe: true,
+            mods_path: PathBuf::from("E:/Mods"),
+            suppressor: std::sync::Arc::new(WatcherSuppressor::new(false)),
+            ignore_missing: false,
+            settings: AppSettings::default(),
+            reconcile_lock: None,
+        });
+        apply_context.final_state_name = Some("Preset".to_string());
+
+        let error = update_recovery_task(&apply_context, "task-1", true)
+            .await
+            .expect_err("task finalization failure must be returned");
+
+        assert!(matches!(error, CollectionError::Db(_)));
+    }
 }

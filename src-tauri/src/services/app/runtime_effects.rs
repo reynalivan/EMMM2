@@ -145,7 +145,7 @@ pub async fn finalize_runtime_side_effects(
     if collections_dirty {
         // Once, not once per safe-mode corridor: `handle_dirty_state` ignores
         // the corridor argument, so repeating it only repeated the same reads.
-        crate::services::collection_service::handle_dirty_state(pool, game_id, false).await?;
+        crate::services::collection_service::handle_dirty_state(pool, game_id).await?;
     }
 
     if !overlay_refresh {

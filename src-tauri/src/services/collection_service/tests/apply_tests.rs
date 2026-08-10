@@ -159,7 +159,6 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
 
     assert!(result.partial_apply);
     assert_eq!(result.skipped_missing_paths, vec!["AINOZ/Missing Mod"]);
-    assert!(result.final_state_is_dirty);
     assert_eq!(result.mods_disabled, 1);
     assert_eq!(result.runtime_path_rewrites.len(), 1);
     assert_eq!(

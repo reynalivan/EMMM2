@@ -7,6 +7,7 @@ use crate::services::disk_reconcile::emit::run_internal_disk_reconcile;
 use crate::services::mods::core_ops::toggle_mod_inner;
 use crate::services::scanner::watcher::WatcherState;
 use sqlx::SqlitePool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 
 /// Bulk toggle mods on disk. The DB converges via the trailing scoped
@@ -20,6 +21,7 @@ pub async fn bulk_toggle(
     game_id: &str,
     paths: Vec<String>,
     enable: bool,
+    cancel: &AtomicBool,
 ) -> Result<BulkResult, crate::domain::errors::AppError> {
     // One path-scoped guard across the whole batch: toggle renames keep
     // identity, so each selected path covers both its spellings.
@@ -46,7 +48,13 @@ pub async fn bulk_toggle(
     // Opt-O: Batch progress — emit every N items to reduce IPC overhead
     let progress_interval = std::cmp::max(1, total / 10);
 
+    let mut cancelled = false;
     for (i, path) in paths.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            cancelled = true;
+            break;
+        }
+
         if i % progress_interval == 0 || i == total - 1 {
             let _ = app.emit(
                 "bulk-progress",
@@ -80,7 +88,7 @@ pub async fn bulk_toggle(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
-            label: "Done".to_string(),
+            label: if cancelled { "Cancelled" } else { "Done" }.to_string(),
             current: total,
             total,
             active: false,

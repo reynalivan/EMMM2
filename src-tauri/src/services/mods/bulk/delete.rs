@@ -9,8 +9,10 @@ use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use sqlx::SqlitePool;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[allow(clippy::too_many_arguments)] // Mirrors the command boundary's argument list.
 pub async fn bulk_delete(
     app: &AppHandle,
     config: &crate::services::config::ConfigService,
@@ -18,6 +20,7 @@ pub async fn bulk_delete(
     state: &WatcherState,
     paths: Vec<String>,
     game_id: &str,
+    cancel: &AtomicBool,
 ) -> Result<BulkResult, crate::domain::errors::AppError> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| {
         crate::domain::errors::AppError::Io(format!("Failed to get app data dir: {}", e))
@@ -52,7 +55,13 @@ pub async fn bulk_delete(
     // Opt-O: Batch progress — emit every N items
     let progress_interval = std::cmp::max(1, total / 10);
 
+    let mut cancelled = false;
     for (i, path) in paths.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            cancelled = true;
+            break;
+        }
+
         if i % progress_interval == 0 || i == total - 1 {
             let _ = app.emit(
                 "bulk-progress",
@@ -104,12 +113,26 @@ pub async fn bulk_delete(
                             .unwrap_or_else(|_| p.clone())
                     })
                     .collect();
-                for relative in &relatives {
-                    let impact =
-                        crate::services::collection_service::handle_mod_missing(pool, relative)
-                            .await
-                            .unwrap_or_default();
-                    collection_impact.merge(impact);
+                // One transaction for the whole batch: the non-`_tx` helper
+                // opens and commits its own, which is a begin/commit per mod.
+                match pool.begin().await {
+                    Ok(mut tx) => {
+                        for relative in &relatives {
+                            let impact =
+                                crate::services::collection_service::handle_mod_missing_tx(
+                                    &mut tx, relative,
+                                )
+                                .await
+                                .unwrap_or_default();
+                            collection_impact.merge(impact);
+                        }
+                        if let Err(error) = tx.commit().await {
+                            log::error!("Failed committing collection impact scan: {error}");
+                        }
+                    }
+                    Err(error) => {
+                        log::error!("Failed opening collection impact transaction: {error}");
+                    }
                 }
             }
         }
@@ -133,7 +156,7 @@ pub async fn bulk_delete(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
-            label: "Done".to_string(),
+            label: if cancelled { "Cancelled" } else { "Done" }.to_string(),
             current: total,
             total,
             active: false,

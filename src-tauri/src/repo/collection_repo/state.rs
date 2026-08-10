@@ -7,91 +7,139 @@ use super::mapping::serialize_warnings_json;
 use crate::domain::collection::{CollectionMod, CollectionObject, CollectionRoot};
 use crate::domain::errors::CollectionError;
 
-/// Replace all members of a collection. Callers wrap this in their own transaction.
-#[allow(clippy::too_many_arguments)] // Snapshot replacement keeps collection member groups explicit at the repo boundary.
+pub struct CollectionStateSnapshot<'a> {
+    pub collection_id: &'a str,
+    pub mods: &'a [CollectionMod],
+    pub objects: &'a [CollectionObject],
+    pub roots: &'a [CollectionRoot],
+    pub signature: Option<&'a str>,
+    pub snapshot_json: Option<&'a str>,
+    pub display_mod_count: i32,
+}
+
 pub async fn replace_all_state_tx(
     conn: &mut SqliteConnection,
-    id: &str,
-    mods: &[CollectionMod],
-    objects: &[CollectionObject],
-    roots: &[CollectionRoot],
-    signature: Option<&str>,
-    snapshot_json: Option<&str>,
-    display_mod_count: i32,
+    snapshot: CollectionStateSnapshot<'_>,
 ) -> Result<(), CollectionError> {
-    // Clear existing
+    clear_collection_state(conn, snapshot.collection_id).await?;
+    insert_mods(conn, snapshot.mods).await?;
+    insert_objects(conn, snapshot.objects).await?;
+    insert_roots(conn, snapshot.roots).await?;
+    update_collection_snapshot(conn, &snapshot).await
+}
+
+async fn clear_collection_state(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+) -> Result<(), CollectionError> {
     sqlx::query("DELETE FROM collection_mods WHERE collection_id = ?")
-        .bind(id)
+        .bind(collection_id)
         .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM collection_objects WHERE collection_id = ?")
-        .bind(id)
+        .bind(collection_id)
         .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM collection_roots WHERE collection_id = ?")
-        .bind(id)
+        .bind(collection_id)
         .execute(&mut *conn)
         .await?;
+    Ok(())
+}
 
-    // Insert Mods
-    if !mods.is_empty() {
-        let mut qb = sqlx::QueryBuilder::new(
-            "INSERT INTO collection_mods (collection_id, mod_id, mod_path, mod_path_key, object_id, preview_path, node_type, warnings_json) ",
-        );
-        qb.push_values(mods, |mut b, m| {
-            b.push_bind(&m.collection_id)
-                .push_bind(&m.mod_id)
-                .push_bind(&m.mod_path)
-                .push_bind(&m.mod_path_key)
-                .push_bind(&m.object_id)
-                .push_bind(&m.preview_path)
-                .push_bind(&m.node_type)
-                .push_bind(serialize_warnings_json(&m.warnings));
-        });
-        qb.build().execute(&mut *conn).await?;
+async fn insert_mods(
+    conn: &mut SqliteConnection,
+    mods: &[CollectionMod],
+) -> Result<(), CollectionError> {
+    if mods.is_empty() {
+        return Ok(());
     }
 
-    // Insert Objects
-    if !objects.is_empty() {
-        let mut qb = sqlx::QueryBuilder::new(
-            "INSERT INTO collection_objects (collection_id, object_id, is_enabled) ",
-        );
-        qb.push_values(objects, |mut b, o| {
-            b.push_bind(&o.collection_id)
-                .push_bind(&o.object_id)
-                .push_bind(if o.is_enabled { 1i32 } else { 0i32 });
-        });
-        qb.build().execute(&mut *conn).await?;
+    let warnings_json = mods
+        .iter()
+        .map(|member| serialize_warnings_json(&member.warnings))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut query_builder = sqlx::QueryBuilder::new(
+        "INSERT INTO collection_mods (collection_id, mod_id, mod_path, mod_path_key, object_id, preview_path, node_type, warnings_json) ",
+    );
+    query_builder.push_values(
+        mods.iter().zip(warnings_json.iter()),
+        |mut bindings, (member, warnings)| {
+            bindings
+                .push_bind(&member.collection_id)
+                .push_bind(&member.mod_id)
+                .push_bind(&member.mod_path)
+                .push_bind(&member.mod_path_key)
+                .push_bind(&member.object_id)
+                .push_bind(&member.preview_path)
+                .push_bind(&member.node_type)
+                .push_bind(warnings);
+        },
+    );
+    query_builder.build().execute(&mut *conn).await?;
+    Ok(())
+}
+
+async fn insert_objects(
+    conn: &mut SqliteConnection,
+    objects: &[CollectionObject],
+) -> Result<(), CollectionError> {
+    if objects.is_empty() {
+        return Ok(());
     }
 
-    // Insert Roots
-    if !roots.is_empty() {
-        let mut qb = sqlx::QueryBuilder::new("INSERT INTO collection_roots (collection_id, root_path, root_path_key, display_name, display_name_key, object_id, object_name, object_type, root_kind, is_safe, is_enabled, thumbnail_hint, corridor_source) ");
-        qb.push_values(roots, |mut b, r| {
-            b.push_bind(&r.collection_id)
-                .push_bind(&r.root_path)
-                .push_bind(&r.root_path_key)
-                .push_bind(&r.display_name)
-                .push_bind(&r.display_name_key)
-                .push_bind(&r.object_id)
-                .push_bind(&r.object_name)
-                .push_bind(&r.object_type)
-                .push_bind(&r.root_kind)
-                .push_bind(if r.is_safe { 1i32 } else { 0i32 })
-                .push_bind(if r.is_enabled { 1i32 } else { 0i32 })
-                .push_bind(&r.thumbnail_hint)
-                .push_bind(&r.corridor_source);
-        });
-        qb.build().execute(&mut *conn).await?;
+    let mut query_builder = sqlx::QueryBuilder::new(
+        "INSERT INTO collection_objects (collection_id, object_id, is_enabled) ",
+    );
+    query_builder.push_values(objects, |mut bindings, object| {
+        bindings
+            .push_bind(&object.collection_id)
+            .push_bind(&object.object_id)
+            .push_bind(if object.is_enabled { 1i32 } else { 0i32 });
+    });
+    query_builder.build().execute(&mut *conn).await?;
+    Ok(())
+}
+
+async fn insert_roots(
+    conn: &mut SqliteConnection,
+    roots: &[CollectionRoot],
+) -> Result<(), CollectionError> {
+    if roots.is_empty() {
+        return Ok(());
     }
 
-    // Update stats
+    let mut query_builder = sqlx::QueryBuilder::new("INSERT INTO collection_roots (collection_id, root_path, root_path_key, display_name, display_name_key, object_id, object_name, object_type, root_kind, is_safe, is_enabled, thumbnail_hint, corridor_source) ");
+    query_builder.push_values(roots, |mut bindings, root| {
+        bindings
+            .push_bind(&root.collection_id)
+            .push_bind(&root.root_path)
+            .push_bind(&root.root_path_key)
+            .push_bind(&root.display_name)
+            .push_bind(&root.display_name_key)
+            .push_bind(&root.object_id)
+            .push_bind(&root.object_name)
+            .push_bind(&root.object_type)
+            .push_bind(&root.root_kind)
+            .push_bind(if root.is_safe { 1i32 } else { 0i32 })
+            .push_bind(if root.is_enabled { 1i32 } else { 0i32 })
+            .push_bind(&root.thumbnail_hint)
+            .push_bind(&root.corridor_source);
+    });
+    query_builder.build().execute(&mut *conn).await?;
+    Ok(())
+}
+
+async fn update_collection_snapshot(
+    conn: &mut SqliteConnection,
+    snapshot: &CollectionStateSnapshot<'_>,
+) -> Result<(), CollectionError> {
     sqlx::query("UPDATE collections SET signature = ?, snapshot_json = ?, root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(signature)
-        .bind(snapshot_json)
-        .bind(roots.len() as i32)
-        .bind(display_mod_count)
-        .bind(id)
+        .bind(snapshot.signature)
+        .bind(snapshot.snapshot_json)
+        .bind(snapshot.roots.len() as i32)
+        .bind(snapshot.display_mod_count)
+        .bind(snapshot.collection_id)
         .execute(&mut *conn)
         .await?;
     Ok(())

@@ -329,3 +329,47 @@ fn test_collect_deep_signals_full_budget_caps_total_bytes() {
     assert_eq!(signals.scanned_ini_files, 5);
     assert!(!signals.ini_hashes.contains(&"66666666".to_string()));
 }
+
+#[test]
+fn zz_probe_default_vs_gimi_filters() {
+    use crate::services::scanner::deep_matcher::analysis::content::{
+        extract_structural_ini_tokens, IniTokenizationConfig,
+    };
+
+    const INI: &str = r#"
+[TextureOverrideAyakaBody]
+hash = 8a1b2c3d
+ib = ResourceAyakaBodyIB
+ps-t0 = ResourceAyakaBodyDiffuse
+
+[ResourceAyakaBodyDiffuse]
+filename = Ayaka\AyakaBodyDiffuse.dds
+
+[TextureOverrideAyakaHead]
+character = Ayaka
+texture = AyakaHead.dds
+resource = ResourceAyakaHead
+name = Ayaka Kamisato
+path = mods\Ayaka\head.dds
+"#;
+
+    let defaults = IniTokenizationConfig::default().prepare();
+    let schema = crate::services::game::schema_loader::load_schema(
+        std::path::Path::new("resources"), 0);
+    println!("SCHEMA stopwords={} whitelist={:?}", schema.stopwords.len(), schema.ini_key_whitelist);
+
+    let gimi = IniTokenizationConfig {
+        stopwords: schema.stopwords.clone(),
+        short_token_whitelist: schema.short_token_whitelist.clone(),
+        ini_key_blacklist: schema.ini_key_blacklist.clone(),
+        ini_key_whitelist: schema.ini_key_whitelist.clone(),
+    }.prepare();
+
+    let a = extract_structural_ini_tokens(INI, &defaults);
+    let b = extract_structural_ini_tokens(INI, &gimi);
+
+    println!("\n=== DEFAULT ===\nkey={:?}\npath_tok={:?}\npath_str={:?}\nsec_tok={:?}\nsec_str={:?}",
+        a.key_tokens, a.path_tokens, a.path_strings, a.section_tokens, a.section_strings);
+    println!("\n=== GIMI ===\nkey={:?}\npath_tok={:?}\npath_str={:?}\nsec_tok={:?}\nsec_str={:?}",
+        b.key_tokens, b.path_tokens, b.path_strings, b.section_tokens, b.section_strings);
+}

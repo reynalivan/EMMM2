@@ -93,8 +93,10 @@ fn create_flat_mod_folder(mods_root: &std::path::Path, relative_path: &str) {
 }
 
 mod apply_tests;
+mod create_tests;
 mod delete_tests;
 mod lifecycle_tests;
 mod preview_tests;
 mod references_tests;
 mod replace_tests;
+mod update_tests;

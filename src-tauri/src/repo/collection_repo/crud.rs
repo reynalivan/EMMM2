@@ -7,6 +7,14 @@ use crate::common::path_key::canonical_name_key;
 use crate::domain::collection::Collection;
 use crate::domain::errors::CollectionError;
 
+pub struct CreateCollectionRow<'a> {
+    pub id: &'a str,
+    pub game_id: &'a str,
+    pub name: &'a str,
+    pub is_safe: bool,
+    pub is_unsaved: bool,
+}
+
 /// List all collections for a game. Ordered by name.
 ///
 /// `snapshot_json` is left `None`: it holds the full serialized projected state
@@ -30,38 +38,23 @@ pub async fn list_for_game(
     Ok(rows.iter().map(row_to_collection).collect())
 }
 
-/// List collections filtered by corridor and unsaved status.
-///
-/// Leaves `snapshot_json` `None` for the same reason as [`list_for_game`].
-pub async fn list_for_corridor(
+pub async fn list_named_for_corridor(
     pool: &SqlitePool,
     game_id: &str,
     is_safe: bool,
-    include_unsaved: bool,
 ) -> Result<Vec<Collection>, CollectionError> {
-    let unsaved_clause = if include_unsaved {
-        ""
-    } else {
-        " AND c.is_unsaved = 0"
-    };
-
-    let query = format!(
+    let rows = sqlx::query(
         r#"SELECT c.id, c.game_id, c.name, c.name_key, c.is_safe, c.is_unsaved, c.is_last_unsaved,
                   c.last_active, c.signature, c.root_count, c.display_mod_count,
-                  c.created_at, c.updated_at,
-                  (SELECT COUNT(*) FROM collection_mods WHERE collection_id = c.id) +
-                  (SELECT COUNT(*) FROM collection_objects WHERE collection_id = c.id) AS member_count_computed
+                  c.created_at, c.updated_at
         FROM collections c
-        WHERE c.game_id = ? AND c.is_safe = ? {}
+        WHERE c.game_id = ? AND c.is_safe = ? AND c.is_unsaved = 0
         ORDER BY c.name ASC"#,
-        unsaved_clause
-    );
-
-    let rows = sqlx::query(&query)
-        .bind(game_id)
-        .bind(is_safe)
-        .fetch_all(pool)
-        .await?;
+    )
+    .bind(game_id)
+    .bind(is_safe)
+    .fetch_all(pool)
+    .await?;
 
     Ok(rows.iter().map(row_to_collection).collect())
 }
@@ -70,9 +63,7 @@ pub async fn list_for_corridor(
 pub async fn get_by_id(pool: &SqlitePool, id: &str) -> Result<Option<Collection>, CollectionError> {
     let row = sqlx::query(
         r#"SELECT id, game_id, name, name_key, is_safe, is_unsaved, is_last_unsaved,
-                  last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at,
-                  (SELECT COUNT(*) FROM collection_mods WHERE collection_id = collections.id) +
-                  (SELECT COUNT(*) FROM collection_objects WHERE collection_id = collections.id) AS member_count_computed
+                  last_active, snapshot_json, signature, root_count, display_mod_count, created_at, updated_at
         FROM collections
         WHERE id = ?"#,
     )
@@ -92,24 +83,46 @@ pub async fn create(
     is_safe: bool,
     is_unsaved: bool,
 ) -> Result<Collection, CollectionError> {
-    let name_key = canonical_name_key(name);
-    let is_unsaved_i32 = if is_unsaved { 1i32 } else { 0i32 };
+    let mut tx = pool.begin().await?;
+    create_tx(
+        &mut tx,
+        CreateCollectionRow {
+            id,
+            game_id,
+            name,
+            is_safe,
+            is_unsaved,
+        },
+    )
+    .await?;
+    tx.commit().await?;
 
-    // Duplicate check for named collections
-    if !is_unsaved {
-        let existing: Option<String> = sqlx::query_scalar(
-            r#"SELECT id FROM collections
-            WHERE game_id = ? AND name_key = ? AND is_safe = ? AND is_unsaved = 0"#,
+    get_by_id(pool, id)
+        .await?
+        .ok_or_else(|| CollectionError::NotFound { id: id.to_string() })
+}
+
+pub async fn create_tx(
+    conn: &mut SqliteConnection,
+    collection: CreateCollectionRow<'_>,
+) -> Result<(), CollectionError> {
+    let name_key = canonical_name_key(collection.name);
+    if !collection.is_unsaved {
+        let duplicate_exists: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS(
+                SELECT 1 FROM collections
+                WHERE game_id = ? AND name_key = ? AND is_safe = ? AND is_unsaved = 0
+            )"#,
         )
-        .bind(game_id)
+        .bind(collection.game_id)
         .bind(&name_key)
-        .bind(is_safe)
-        .fetch_optional(pool)
+        .bind(collection.is_safe)
+        .fetch_one(&mut *conn)
         .await?;
 
-        if existing.is_some() {
+        if duplicate_exists {
             return Err(CollectionError::DuplicateName {
-                name: name.to_string(),
+                name: collection.name.to_string(),
             });
         }
     }
@@ -118,25 +131,14 @@ pub async fn create(
         r#"INSERT INTO collections (id, game_id, name, name_key, is_safe, is_unsaved, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"#,
     )
-    .bind(id)
-    .bind(game_id)
-    .bind(name)
+    .bind(collection.id)
+    .bind(collection.game_id)
+    .bind(collection.name)
     .bind(&name_key)
-    .bind(is_safe)
-    .bind(is_unsaved_i32)
-    .execute(pool)
+    .bind(collection.is_safe)
+    .bind(collection.is_unsaved)
+    .execute(&mut *conn)
     .await?;
-
-    get_by_id(pool, id)
-        .await?
-        .ok_or_else(|| CollectionError::NotFound { id: id.to_string() })
-}
-
-/// Delete a collection (CASCADE handles members).
-pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), CollectionError> {
-    let mut tx = pool.begin().await?;
-    delete_tx(&mut tx, id).await?;
-    tx.commit().await?;
     Ok(())
 }
 
@@ -188,13 +190,42 @@ pub async fn find_unsaved_for_corridor(
 
 pub async fn rename(
     pool: &SqlitePool,
-    collection_id: &str,
+    collection: &Collection,
     name: &str,
 ) -> Result<(), CollectionError> {
-    sqlx::query("UPDATE collections SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(name)
-        .bind(collection_id)
-        .execute(pool)
-        .await?;
+    let name_key = canonical_name_key(name);
+    let rename_outcome = sqlx::query(
+        r#"UPDATE collections
+        SET name = ?, name_key = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND NOT EXISTS (
+            SELECT 1 FROM collections duplicate
+            WHERE duplicate.game_id = ?
+              AND duplicate.name_key = ?
+              AND duplicate.is_safe = ?
+              AND duplicate.is_unsaved = 0
+              AND duplicate.id != ?
+        )"#,
+    )
+    .bind(name)
+    .bind(&name_key)
+    .bind(&collection.id)
+    .bind(&collection.game_id)
+    .bind(&name_key)
+    .bind(collection.is_safe)
+    .bind(&collection.id)
+    .execute(pool)
+    .await?;
+
+    if rename_outcome.rows_affected() == 0 {
+        if get_by_id(pool, &collection.id).await?.is_none() {
+            return Err(CollectionError::NotFound {
+                id: collection.id.clone(),
+            });
+        }
+        return Err(CollectionError::DuplicateName {
+            name: name.to_string(),
+        });
+    }
+
     Ok(())
 }

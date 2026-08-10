@@ -46,7 +46,6 @@ pub(super) async fn execute_cycle_preset(
         pool_state.inner(),
         game_id,
         crate::domain::corridor::Corridor::from_is_safe(safe_mode_enabled),
-        None,
     )
     .await?;
 
