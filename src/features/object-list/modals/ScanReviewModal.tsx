@@ -7,14 +7,15 @@
  * # Covers: US-2.3 (Review & Organize UI)
  */
 
-import { X, Check, Ban, Search } from 'lucide-react';
-import { useState, useMemo, useCallback } from 'react';
+import { X, Check } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type ScanPreviewItem, type ConfirmedScanItem } from '../../../lib/services/scanService';
 
 import type { GameConfig } from '../../../types/game';
-import ScanReviewRow from './ScanReviewRow';
-import { type MasterDbEntry } from './scanReviewHelpers';
+import ScanReviewGroup from './ScanReviewGroup';
+import ScanReviewFilters, { type ScanReviewTab } from './ScanReviewFilters';
+import { groupByConfidence, type MasterDbEntry } from './scanReviewHelpers';
 
 interface ScanReviewModalProps {
   activeGame: GameConfig | null;
@@ -29,24 +30,25 @@ interface ScanReviewModalProps {
 export default function ScanReviewModal({
   activeGame,
   open,
-  items,
+  items: initialItems,
   masterDbEntries,
   isCommitting,
   onConfirm,
   onClose,
 }: ScanReviewModalProps) {
   const { t } = useTranslation(['objects', 'common']);
+  const [items, setItems] = useState(initialItems);
   // Overrides: folder_path -> MasterDbEntry
   const [overrides, setOverrides] = useState<Record<string, MasterDbEntry | null>>({});
   // Skips: folder_path -> boolean
   const [skips, setSkips] = useState<Record<string, boolean>>({});
   const [renames, setRenames] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [activeMainTab, setActiveMainTab] = useState<
-    'All' | 'Matched' | 'Unmatched' | 'Existing' | 'Skipped'
-  >('All');
+  const [activeMainTab, setActiveMainTab] = useState<ScanReviewTab>('All');
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [globalSearch, setGlobalSearch] = useState('');
+
+  useEffect(() => setItems(initialItems), [initialItems]);
 
   const handleOverride = useCallback((folderPath: string, entry: MasterDbEntry | null) => {
     setOverrides((prev) => ({ ...prev, [folderPath]: entry }));
@@ -143,6 +145,14 @@ export default function ScanReviewModal({
       return true;
     });
   }, [items, overrides, activeMainTab, activeFilters, globalSearch, renames, getItemTab]);
+  const visibleGroups = useMemo(
+    () => groupByConfidence(visibleItems, overrides),
+    [visibleItems, overrides],
+  );
+  const includedCount = useMemo(
+    () => items.filter((item) => !skips[item.folderPath]).length,
+    [items, skips],
+  );
 
   const toggleFilter = useCallback((conf: string) => {
     setActiveFilters((prev) => {
@@ -164,6 +174,41 @@ export default function ScanReviewModal({
     setSelected(new Set());
   }, [selected]);
 
+  const handleSetGroupSkipped = useCallback((groupItems: ScanPreviewItem[], skipped: boolean) => {
+    setSkips((previous) => {
+      const next = { ...previous };
+      groupItems.forEach((item) => {
+        next[item.folderPath] = skipped;
+      });
+      return next;
+    });
+  }, []);
+
+  const handleRename = useCallback((folderPath: string, newName: string | null) => {
+    setRenames((previous) => {
+      const next = { ...previous };
+      if (newName) next[folderPath] = newName;
+      else delete next[folderPath];
+      return next;
+    });
+  }, []);
+
+  const handleItemReplaced = useCallback((oldPath: string, replacement: ScanPreviewItem) => {
+    setItems((previous) =>
+      previous.map((item) => (item.folderPath === oldPath ? replacement : item)),
+    );
+    setOverrides((previous) => remapRecordKey(previous, oldPath, replacement.folderPath));
+    setSkips((previous) => remapRecordKey(previous, oldPath, replacement.folderPath));
+    setRenames((previous) => remapRecordKey(previous, oldPath, replacement.folderPath));
+    setSelected((previous) => {
+      if (!previous.has(oldPath)) return previous;
+      const next = new Set(previous);
+      next.delete(oldPath);
+      next.add(replacement.folderPath);
+      return next;
+    });
+  }, []);
+
   if (!open) return null;
 
   return (
@@ -182,119 +227,23 @@ export default function ScanReviewModal({
           {t('objects:scan_review.title', { count: items.length })}
         </h3>
 
-        {/* Header Controls: Main Tabs & Delete Bulk Action */}
-        <div className="flex items-end justify-between mb-1 mt-2">
-          {/* Main Tabs Container */}
-          <div className="flex gap-4 border-b border-base-300 px-1 flex-1">
-            {['All', 'Matched', 'Unmatched', 'Existing', 'Skipped'].map((tab) => {
-              const count =
-                tab === 'All' ? items.length : items.filter((i) => getItemTab(i) === tab).length;
-
-              let pillClass = 'bg-base-300/50 text-base-content/60 border-transparent';
-              if (tab === 'Matched') pillClass = 'bg-success/10 text-success border-success/20';
-              if (tab === 'Unmatched') pillClass = 'bg-error/10 text-error border-error/20';
-              if (tab === 'Skipped') pillClass = 'bg-warning/10 text-warning border-warning/20';
-
-              return (
-                <button
-                  key={tab}
-                  className={`pb-3 px-2 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${
-                    activeMainTab === tab
-                      ? 'text-primary'
-                      : 'text-base-content/60 hover:text-base-content/80'
-                  }`}
-                  onClick={() => {
-                    setActiveMainTab(
-                      tab as 'All' | 'Matched' | 'Unmatched' | 'Existing' | 'Skipped',
-                    );
-                    setActiveFilters(new Set()); // Reset subclass filters
-                    setSelected(new Set()); // Reset selection
-                  }}
-                >
-                  {t(`objects:scan_review.tabs.${tab.toLowerCase()}`, tab)}
-                  <span
-                    className={`text-[10px] uppercase font-bold px-1.5 py-0.5 leading-none rounded-full border ${pillClass}`}
-                  >
-                    {count}
-                  </span>
-                  {activeMainTab === tab && (
-                    <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {selected.size > 0 && (
-            <button
-              className="btn btn-xs h-7 min-h-0 btn-error shadow-sm shadow-error/10 hover:shadow-error/20 btn-outline ml-4 mb-2.5"
-              onClick={handleDeclineSelected}
-              title={t('objects:scan_review.bulk_skip_tip')}
-            >
-              <Ban size={12} /> {t('objects:scan_review.bulk_skip_label')} ({selected.size})
-            </button>
-          )}
-        </div>
-
-        {/* Filters & Search Layer */}
-        <div className="flex items-center justify-between mt-3 mb-2 min-h-8">
-          <div className="flex items-center gap-2">
-            {activeMainTab !== 'Existing' && (
-              <>
-                <span className="text-xs uppercase font-semibold text-base-content/40 tracking-wider mr-2">
-                  {t('objects:scan_review.filter_label')}:
-                </span>
-                {['Excellent', 'High', 'Medium', 'Low', 'Manual'].map((conf) => {
-                  // calculate count for this chip based on activeMainTab
-                  const itemsForChip = items.filter((item) => {
-                    if (activeMainTab !== 'All' && getItemTab(item) !== activeMainTab) return false;
-                    const itemConf = overrides[item.folderPath] ? 'Manual' : item.confidence;
-                    return itemConf === conf;
-                  });
-                  const count = itemsForChip.length;
-
-                  return (
-                    <button
-                      key={conf}
-                      onClick={() => toggleFilter(conf)}
-                      className={`badge badge-sm cursor-pointer transition-all gap-1 pl-2 pr-1 h-6 ${
-                        activeFilters.has(conf)
-                          ? 'badge-primary'
-                          : 'badge-outline border-base-300 text-base-content/60 hover:bg-base-200'
-                      }`}
-                    >
-                      {t(`objects:scan_review.tabs.${conf.toLowerCase()}`, conf)}
-                      <span
-                        className={`text-[9px] rounded-full px-1 py-0.5 leading-none ${
-                          activeFilters.has(conf)
-                            ? 'bg-primary-content/20 text-primary-content'
-                            : 'bg-base-300/50'
-                        }`}
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </>
-            )}
-          </div>
-
-          {/* Search Bar */}
-          <div className="relative w-64 ml-auto">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
-            />
-            <input
-              type="text"
-              className="input input-sm w-full pl-9 pr-3 bg-base-200/50 border-base-300 focus:border-primary/50"
-              placeholder={t('objects:scan_review.search_placeholder')}
-              value={globalSearch}
-              onChange={(e) => setGlobalSearch(e.target.value)}
-            />
-          </div>
-        </div>
+        <ScanReviewFilters
+          items={items}
+          overrides={overrides}
+          selectedCount={selected.size}
+          activeTab={activeMainTab}
+          activeFilters={activeFilters}
+          search={globalSearch}
+          itemTab={getItemTab}
+          onTabChange={(tab) => {
+            setActiveMainTab(tab);
+            setActiveFilters(new Set());
+            setSelected(new Set());
+          }}
+          onToggleFilter={toggleFilter}
+          onSearchChange={setGlobalSearch}
+          onDeclineSelected={handleDeclineSelected}
+        />
 
         {/* Main list */}
         <div className="flex-1 mt-2 overflow-y-auto overflow-x-hidden border border-base-300/30 rounded-lg bg-base-200/30 relative">
@@ -332,27 +281,23 @@ export default function ScanReviewModal({
               {visibleItems.length > 0 && (
                 <>
                   <tr className="bg-base-300/30 hover:bg-base-300/30 pointer-events-none hidden" />
-                  {visibleItems.map((item) => (
-                    <ScanReviewRow
-                      key={item.folderPath}
-                      item={item}
-                      override={overrides[item.folderPath] ?? null}
-                      onOverride={(e) => handleOverride(item.folderPath, e)}
-                      onToggleSkip={() => handleToggleSkip(item.folderPath)}
-                      isSkipped={!!skips[item.folderPath]}
-                      isSelected={selected.has(item.folderPath)}
-                      onToggleSelect={() => handleToggleSelect(item.folderPath)}
+                  {visibleGroups.map((group) => (
+                    <ScanReviewGroup
+                      key={group.tier}
+                      tier={group.tier}
+                      items={group.items}
+                      overrides={overrides}
+                      skips={skips}
+                      selected={selected}
+                      renames={renames}
                       masterDbEntries={masterDbEntries}
-                      renamedName={renames[item.folderPath] ?? null}
-                      onRename={(n) =>
-                        setRenames((prev) => {
-                          const next = { ...prev };
-                          if (n) next[item.folderPath] = n;
-                          else delete next[item.folderPath];
-                          return next;
-                        })
-                      }
                       activeGame={activeGame}
+                      onOverride={handleOverride}
+                      onToggleSkip={handleToggleSkip}
+                      onToggleSelect={handleToggleSelect}
+                      onRename={handleRename}
+                      onItemReplaced={handleItemReplaced}
+                      onSetGroupSkipped={handleSetGroupSkipped}
                     />
                   ))}
                 </>
@@ -370,13 +315,18 @@ export default function ScanReviewModal({
 
         {/* Actions */}
         <div className="modal-action border-t border-base-200 pt-4 mt-3">
+          {includedCount < items.length && (
+            <span className="mr-auto text-xs opacity-60">
+              {t('objects:scan_review.skipped_summary', { count: items.length - includedCount })}
+            </span>
+          )}
           <button className="btn btn-sm" onClick={onClose} disabled={isCommitting}>
             {t('common:action.cancel')}
           </button>
           <button
             className="btn btn-sm btn-primary gap-2"
             onClick={handleConfirm}
-            disabled={isCommitting || items.length === 0}
+            disabled={isCommitting || includedCount === 0}
           >
             {isCommitting ? (
               <span className="loading loading-spinner loading-xs" />
@@ -385,11 +335,18 @@ export default function ScanReviewModal({
             )}
             {isCommitting
               ? t('objects:scan_review.committing_state')
-              : t('objects:scan_review.confirm_button_label', { count: items.length })}
+              : t('objects:scan_review.confirm_button_label', { count: includedCount })}
           </button>
         </div>
       </div>
       <div className="modal-backdrop" onClick={isCommitting ? undefined : onClose} />
     </div>
   );
+}
+
+function remapRecordKey<T>(record: Record<string, T>, oldKey: string, newKey: string) {
+  if (!(oldKey in record)) return record;
+  const next = { ...record, [newKey]: record[oldKey] };
+  delete next[oldKey];
+  return next;
 }

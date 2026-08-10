@@ -214,14 +214,10 @@ fn merged_key_blacklist(config: &IniTokenizationConfig) -> BTreeSet<String> {
 }
 
 fn merged_key_whitelist(config: &IniTokenizationConfig) -> BTreeSet<String> {
-    if config.ini_key_whitelist.is_empty() {
-        return DEFAULT_INI_KEY_WHITELIST
-            .iter()
-            .map(|key| (*key).to_string())
-            .collect();
-    }
-
-    let mut set = BTreeSet::new();
+    let mut set = DEFAULT_INI_KEY_WHITELIST
+        .iter()
+        .map(|key| (*key).to_string())
+        .collect::<BTreeSet<_>>();
     for key in &config.ini_key_whitelist {
         let normalized = normalize_key(key);
         if !normalized.is_empty() {

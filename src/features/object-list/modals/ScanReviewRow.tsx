@@ -8,6 +8,9 @@ import {
   ContextMenuSeparator,
 } from '../../../components/ui/ContextMenu';
 import { commands } from '../../../lib/bindings';
+import { formatAppError } from '../../../lib/appError';
+import { scanService } from '../../../lib/services/scanService';
+import { toast } from '../../../stores/useToastStore';
 import type { ScanPreviewItem } from '../../../lib/services/scanService';
 import type { GameConfig } from '../../../types/game';
 import FolderTooltip from '../components/FolderTooltip';
@@ -25,6 +28,7 @@ interface ScanReviewRowProps {
   masterDbEntries: MasterDbEntry[];
   renamedName: string | null;
   onRename: (newName: string | null) => void;
+  onItemReplaced: (oldPath: string, replacement: ScanPreviewItem) => void;
   activeGame: GameConfig | null;
 }
 
@@ -39,6 +43,7 @@ export default function ScanReviewRow({
   masterDbEntries,
   renamedName,
   onRename,
+  onItemReplaced,
   activeGame,
 }: ScanReviewRowProps) {
   const { t } = useTranslation(['objects', 'common']);
@@ -54,11 +59,35 @@ export default function ScanReviewRow({
     setTimeout(() => renameInputRef.current?.select(), 0);
   }, [displayFolderName]);
 
-  const commitRename = useCallback(() => {
+  const commitRename = useCallback(async () => {
     const trimmed = editName.trim();
-    onRename(trimmed && trimmed !== item.displayName ? trimmed : null);
     setIsRenaming(false);
-  }, [editName, item.displayName, onRename]);
+    if (!trimmed || trimmed === item.displayName) {
+      onRename(null);
+      return;
+    }
+    if (!item.moveFromTemp || !activeGame) {
+      onRename(trimmed);
+      return;
+    }
+
+    try {
+      const newPath = await commands.renameStagedFolderCmd(item.folderPath, trimmed);
+      const [replacement] = await scanService.runDeepmatchPreview(
+        activeGame.id,
+        activeGame.game_type,
+        activeGame.mod_path,
+        undefined,
+        [newPath],
+      );
+      if (!replacement) {
+        throw new Error('Renamed folder could not be matched again');
+      }
+      onItemReplaced(item.folderPath, { ...replacement, moveFromTemp: true });
+    } catch (error) {
+      toast.error(formatAppError(error));
+    }
+  }, [activeGame, editName, item, onItemReplaced, onRename]);
 
   const cancelRename = useCallback(() => {
     setIsRenaming(false);
@@ -135,6 +164,11 @@ export default function ScanReviewRow({
                       {t('objects:item.badge_existing')}
                     </span>
                   )}
+                </span>
+              )}
+              {item.matchDetail && !isRenaming && (
+                <span className="text-[10px] text-base-content/40 truncate">
+                  {item.matchDetail}
                 </span>
               )}
             </div>
@@ -250,7 +284,7 @@ function ConfidenceBadge({
   return (
     <div
       className={`badge badge-sm badge-outline gap-1 ${getConfidenceColor(confidence)}`}
-      title={`${item.confidence} Confidence`}
+      title={item.matchDetail ?? `${item.confidence} Confidence`}
     >
       {getConfidenceIcon(confidence)}
       <span className="font-medium">{item.confidenceScore}%</span>
@@ -275,4 +309,3 @@ function revealMatchedObject(
 
   commands.revealObjectInExplorer(activeGame.id, objectId, objectName).catch(console.error);
 }
-

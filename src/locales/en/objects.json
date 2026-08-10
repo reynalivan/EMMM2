@@ -79,7 +79,9 @@
       "no_match_hint": "You can edit metadata manually instead.",
       "matching_name": "Matching {{name}}...",
       "toast": {
-        "complete": "Sync complete: {{scanned}} scanned, {{newMods}} new, {{newObjects}} objects",
+        "complete": "Sync complete: {{moved}} organized, {{skipped}} skipped, {{duplicates}} duplicate",
+        "collisions": "{{count}} folder already exists at the destination",
+        "details": "Details",
         "destination_exists": "Destination exists: {{dest}}. Please rename the folder or skip it.",
         "commit_failed": "Commit failed: {{error}}"
       }
@@ -243,6 +245,8 @@
     "search_placeholder": "Search folder name...",
     "committing_state": "Committing...",
     "confirm_button_label": "Confirm {{count}} Items",
+    "skipped_summary": "{{count}} will be skipped",
+    "none_group_warning": "No target found; included folders will be organized under Other.",
     "bulk_skip_label": "Decline Selected",
     "bulk_skip_tip": "Skip all currently selected items",
     "select_deselect_all_tip": "Select/Deselect All visible",
@@ -286,7 +290,8 @@
     "mark_safe": "Marked {{count}} objects as Safe",
     "mark_unsafe": "Marked {{count}} objects as Unsafe",
     "tags_added": "Added {{count}} tag(s) to {{items}}",
-    "tags_removed": "Removed {{count}} tag(s) from {{items}}"
+    "tags_removed": "Removed {{count}} tag(s) from {{items}}",
+    "reload_required": "Disk state applied — press {{key}} in-game to reload"
   },
   "trash": {
     "title": "Trash",

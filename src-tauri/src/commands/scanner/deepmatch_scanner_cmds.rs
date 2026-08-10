@@ -61,19 +61,21 @@ pub async fn deepmatch_scanner_cmd(
             path: format!("MasterDB for game type {}", master_db_type),
         }));
     };
-    let master_db = master_db.as_ref();
     let resource_dir = app.path().resource_dir().ok();
+    let ini_filters =
+        crate::services::scanner::master_db::ini_filters(resource_dir.as_deref(), master_db_type);
 
     // 1. Run the scanning/matching phase
-    let preview_items = sync::scan_preview(
-        &pool,
-        &game_id,
-        mods,
+    let preview_items = sync::scan_preview(sync::ScanPreviewRequest {
+        pool: &pool,
+        game_id: &game_id,
+        mods_path: mods,
         master_db,
-        resource_dir.as_deref(),
-        Some(on_progress),
-        None,
-    )
+        ini_filters: &ini_filters,
+        resource_dir: resource_dir.as_deref(),
+        on_progress: Some(on_progress),
+        specific_paths: None,
+    })
     .await?;
 
     let confirmed_items: Vec<_> = preview_items
@@ -147,8 +149,9 @@ pub async fn deepmatch_preview_cmd(
             path: format!("MasterDB for game type {}", game_type),
         }));
     };
-    let master_db = master_db.as_ref();
     let resource_dir = app.path().resource_dir().ok();
+    let ini_filters =
+        crate::services::scanner::master_db::ini_filters(resource_dir.as_deref(), game_type);
 
     let optional_paths = specific_paths.map(|paths| {
         paths
@@ -157,15 +160,16 @@ pub async fn deepmatch_preview_cmd(
             .collect::<Vec<_>>()
     });
 
-    Ok(sync::scan_preview(
-        &pool,
-        &game_id,
-        mods,
+    Ok(sync::scan_preview(sync::ScanPreviewRequest {
+        pool: &pool,
+        game_id: &game_id,
+        mods_path: mods,
         master_db,
-        resource_dir.as_deref(),
-        Some(on_progress),
-        optional_paths,
-    )
+        ini_filters: &ini_filters,
+        resource_dir: resource_dir.as_deref(),
+        on_progress: Some(on_progress),
+        specific_paths: optional_paths,
+    })
     .await?)
 }
 
@@ -196,19 +200,51 @@ pub async fn deepmatch_preview_for_objects_cmd(
             path: format!("MasterDB for game type {}", input.game_type),
         }));
     };
-    let master_db = master_db.as_ref();
     let resource_dir = app.path().resource_dir().ok();
+    let ini_filters =
+        crate::services::scanner::master_db::ini_filters(resource_dir.as_deref(), input.game_type);
 
-    Ok(sync::scan_preview(
-        &pool,
-        &input.game_id,
-        mods,
+    Ok(sync::scan_preview(sync::ScanPreviewRequest {
+        pool: &pool,
+        game_id: &input.game_id,
+        mods_path: mods,
         master_db,
-        resource_dir.as_deref(),
-        Some(on_progress),
-        Some(object_paths),
-    )
+        ini_filters: &ini_filters,
+        resource_dir: resource_dir.as_deref(),
+        on_progress: Some(on_progress),
+        specific_paths: Some(object_paths),
+    })
     .await?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_staged_folder_cmd(
+    state: State<'_, WatcherState>,
+    config: State<'_, crate::services::config::ConfigService>,
+    folder_path: String,
+    new_name: String,
+) -> Result<String, AppError> {
+    let validated =
+        crate::services::fs_utils::guard::validate_dir_in_configured_roots(&config, &folder_path)?;
+    if !is_staged_path(&validated) {
+        return Err(AppError::Security(
+            "Only folders inside .emmm_temp can be renamed from scan review".to_string(),
+        ));
+    }
+
+    let renamed = crate::services::mods::core_ops::rename_mod_folder_inner(
+        &state,
+        validated.to_string_lossy().to_string(),
+        new_name,
+    )
+    .await?;
+    Ok(renamed.new_path)
+}
+
+fn is_staged_path(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == ".emmm_temp")
 }
 
 async fn resolve_object_preview_paths(
@@ -326,9 +362,12 @@ pub async fn score_candidates_batch_cmd(
             path: format!("MasterDB for game type {}", game_type),
         }));
     };
+    let resource_dir = app.path().resource_dir().ok();
+    let ini_filters =
+        crate::services::scanner::master_db::ini_filters(resource_dir.as_deref(), game_type);
     // Move the Arc, not the 5 MB behind it.
     let res = tauri::async_runtime::spawn_blocking(move || {
-        sync::score_candidates_batch(&folder_path, &master_db, candidate_names)
+        sync::score_candidates_batch(&folder_path, &master_db, candidate_names, &ini_filters)
     })
     .await
     .map_err(|e| AppError::Internal(format!("batch scoring task panicked: {e}")))?;

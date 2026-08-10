@@ -1,4 +1,5 @@
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 pub async fn get_matched_entry_key_by_id(
     pool: &sqlx::SqlitePool,
@@ -8,6 +9,21 @@ pub async fn get_matched_entry_key_by_id(
         .bind(id)
         .fetch_optional(pool)
         .await
+}
+
+pub async fn get_matched_entry_keys_by_game(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<HashMap<String, String>, sqlx::Error> {
+    let pairs = sqlx::query_as::<_, (String, String)>(
+        "SELECT id, matched_entry_key FROM objects
+         WHERE game_id = ? AND matched_entry_key IS NOT NULL",
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(pairs.into_iter().collect())
 }
 
 /// Every object's `(matched_entry_key, custom_skins)` pair that carries both.
@@ -30,7 +46,12 @@ pub async fn get_user_alias_blobs(
     .await?;
 
     rows.into_iter()
-        .map(|row| Ok((row.try_get("matched_entry_key")?, row.try_get("custom_skins")?)))
+        .map(|row| {
+            Ok((
+                row.try_get("matched_entry_key")?,
+                row.try_get("custom_skins")?,
+            ))
+        })
         .collect()
 }
 

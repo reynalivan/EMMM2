@@ -102,21 +102,38 @@ export function useScanReviewFlow() {
           'active',
         );
         toast.success(
-          t('objects:sync.toast.complete', {
-            scanned: result.totalScanned,
-            newMods: result.newMods,
-            newObjects: result.newObjects,
+          t('objects:context.sync.toast.complete', {
+            moved: result.totalScanned,
+            skipped: result.skipped,
+            duplicates: result.collisions.length,
           }),
         );
+        if (result.collisions.length > 0) {
+          const details = result.collisions
+            .map(
+              (collision) =>
+                `${collision.objectName}\n${collision.sourcePath} → ${collision.targetPath}`,
+            )
+            .join('\n\n');
+          toast.withAction(
+            'warning',
+            t('objects:context.sync.toast.collisions', { count: result.collisions.length }),
+            {
+              label: t('objects:context.sync.toast.details'),
+              onClick: () => window.alert(details),
+            },
+            10_000,
+          );
+        }
         setScanReview(CLOSED_SCAN_REVIEW);
       } catch (e) {
         console.error('Commit scan failed:', e);
         const errMsg = formatAppError(e);
         if (errMsg.includes('DUPLICATE|')) {
           const dest = errMsg.split('DUPLICATE|')[1] || '';
-          toast.error(t('objects:sync.toast.destination_exists', { dest }));
+          toast.error(t('objects:context.sync.toast.destination_exists', { dest }));
         } else {
-          toast.error(t('objects:sync.toast.commit_failed', { error: errMsg }));
+          toast.error(t('objects:context.sync.toast.commit_failed', { error: errMsg }));
         }
         setScanReview((prev) => ({ ...prev, isCommitting: false }));
       }

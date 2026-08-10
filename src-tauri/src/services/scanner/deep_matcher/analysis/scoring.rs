@@ -119,7 +119,8 @@ pub fn has_primary_evidence(reasons: &[Reason]) -> bool {
         | Reason::TokenOverlap { .. }
         | Reason::AiRerank { .. }
         | Reason::NegativeEvidence { .. }
-        | Reason::FolderNameRescue { .. } => false,
+        | Reason::FolderNameRescue { .. }
+        | Reason::FuzzyName { .. } => false,
     })
 }
 
@@ -191,6 +192,7 @@ fn reason_priority(reason: &Reason) -> usize {
         Reason::DirectNameSupport { .. } => 8,
         Reason::AiRerank { .. } => 9,
         Reason::FolderNameRescue { .. } => 10,
+        Reason::FuzzyName { .. } => 11,
     }
 }
 

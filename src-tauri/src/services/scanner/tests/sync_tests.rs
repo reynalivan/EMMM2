@@ -1,5 +1,6 @@
 use super::*;
 use crate::services::scanner::deep_matcher;
+use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::sync::helpers::{
     canonical_entry_key, resolve_or_create_object_target_for_match, ResolveObjectTargetInput,
 };
@@ -106,14 +107,72 @@ async fn test_scan_preview_needs_review_has_no_auto_assignment() {
     .unwrap();
 
     let db = needs_review_db();
-    let items = scan_preview(&pool, "g1", temp_dir.path(), &db, None, None, None)
-        .await
-        .unwrap();
+    let filters = IniTokenizationConfig::default().prepare();
+    let items = scan_preview(ScanPreviewRequest {
+        pool: &pool,
+        game_id: "g1",
+        mods_path: temp_dir.path(),
+        master_db: std::sync::Arc::new(db),
+        ini_filters: &filters,
+        resource_dir: None,
+        on_progress: None,
+        specific_paths: None,
+    })
+    .await
+    .unwrap();
 
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].match_level, "NeedsReview");
     assert!(items[0].matched_entry_key.is_none());
     assert!(items[0].matched_alias_name.is_none());
+}
+
+#[tokio::test]
+async fn test_parallel_scan_preview_preserves_requested_order() {
+    let pool = test_pool().await;
+    let temp_dir = TempDir::new().unwrap();
+    let requested_names = ["Charlie", "Alpha", "Bravo"];
+    let mut requested_paths = Vec::new();
+    for name in requested_names {
+        let folder = temp_dir.path().join(name);
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), "[TextureOverrideUnknown]").unwrap();
+        requested_paths.push(folder);
+    }
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "ordered-game",
+            name: "Game",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/"),
+        },
+    )
+    .await
+    .unwrap();
+
+    let filters = IniTokenizationConfig::default().prepare();
+    let items = scan_preview(ScanPreviewRequest {
+        pool: &pool,
+        game_id: "ordered-game",
+        mods_path: temp_dir.path(),
+        master_db: std::sync::Arc::new(deep_matcher::MasterDb::new(Vec::new())),
+        ini_filters: &filters,
+        resource_dir: None,
+        on_progress: None,
+        specific_paths: Some(requested_paths),
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        items
+            .into_iter()
+            .map(|item| item.display_name)
+            .collect::<Vec<_>>(),
+        requested_names
+    );
 }
 
 // Covers: TC-2.3-Review-06 (Commit auto-links unmatched item to "Other" object)

@@ -219,7 +219,8 @@ fn has_primary_evidence_for_candidate(
             | Reason::DirectNameSupport { .. }
             | Reason::AiRerank { .. }
             | Reason::NegativeEvidence { .. }
-            | Reason::FolderNameRescue { .. } => {}
+            | Reason::FolderNameRescue { .. }
+            | Reason::FuzzyName { .. } => {}
         }
     }
 

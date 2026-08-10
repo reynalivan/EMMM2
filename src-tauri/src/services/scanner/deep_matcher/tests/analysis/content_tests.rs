@@ -201,7 +201,7 @@ fn test_structural_tokenization_extracts_section_key_and_path_buckets() {
 }
 
 #[test]
-fn test_structural_tokenization_applies_blacklist_and_schema_whitelist() {
+fn test_structural_tokenization_merges_schema_rules_with_safe_defaults() {
     // Covers: TC-2.2-INI-Task7-02
     let text = r#"
         [ShaderOverrideAether]
@@ -221,9 +221,8 @@ fn test_structural_tokenization_applies_blacklist_and_schema_whitelist() {
 
     assert_eq!(buckets.section_tokens, vec!["aether".to_string()]);
     assert_eq!(buckets.key_tokens, vec!["metadata".to_string()]);
-    assert!(buckets.path_tokens.is_empty());
+    assert!(buckets.path_tokens.contains(&"lumine".to_string()));
     assert!(!buckets.key_tokens.contains(&"character".to_string()));
-    assert!(!buckets.key_tokens.contains(&"texture".to_string()));
 }
 
 #[test]
@@ -331,7 +330,7 @@ fn test_collect_deep_signals_full_budget_caps_total_bytes() {
 }
 
 #[test]
-fn zz_probe_default_vs_gimi_filters() {
+fn test_gimi_schema_preserves_default_matching_signals() {
     use crate::services::scanner::deep_matcher::analysis::content::{
         extract_structural_ini_tokens, IniTokenizationConfig,
     };
@@ -354,22 +353,22 @@ path = mods\Ayaka\head.dds
 "#;
 
     let defaults = IniTokenizationConfig::default().prepare();
-    let schema = crate::services::game::schema_loader::load_schema(
-        std::path::Path::new("resources"), 0);
-    println!("SCHEMA stopwords={} whitelist={:?}", schema.stopwords.len(), schema.ini_key_whitelist);
-
+    let schema =
+        crate::services::game::schema_loader::load_schema(std::path::Path::new("resources"), 0);
     let gimi = IniTokenizationConfig {
         stopwords: schema.stopwords.clone(),
         short_token_whitelist: schema.short_token_whitelist.clone(),
         ini_key_blacklist: schema.ini_key_blacklist.clone(),
         ini_key_whitelist: schema.ini_key_whitelist.clone(),
-    }.prepare();
+    }
+    .prepare();
 
-    let a = extract_structural_ini_tokens(INI, &defaults);
-    let b = extract_structural_ini_tokens(INI, &gimi);
+    let default_buckets = extract_structural_ini_tokens(INI, &defaults);
+    let gimi_buckets = extract_structural_ini_tokens(INI, &gimi);
 
-    println!("\n=== DEFAULT ===\nkey={:?}\npath_tok={:?}\npath_str={:?}\nsec_tok={:?}\nsec_str={:?}",
-        a.key_tokens, a.path_tokens, a.path_strings, a.section_tokens, a.section_strings);
-    println!("\n=== GIMI ===\nkey={:?}\npath_tok={:?}\npath_str={:?}\nsec_tok={:?}\nsec_str={:?}",
-        b.key_tokens, b.path_tokens, b.path_strings, b.section_tokens, b.section_strings);
+    for key in ["character", "filename", "name", "path"] {
+        assert!(default_buckets.key_tokens.contains(&key.to_string()));
+        assert!(gimi_buckets.key_tokens.contains(&key.to_string()));
+    }
+    assert!(gimi_buckets.path_tokens.contains(&"ayaka".to_string()));
 }

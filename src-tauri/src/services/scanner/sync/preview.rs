@@ -1,6 +1,10 @@
 use crate::domain::errors::ScannerError;
+use rayon::prelude::*;
 use sqlx::SqlitePool;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tauri::ipc::Channel;
 
 use super::helpers::{auto_matched_candidate, canonical_entry_key};
@@ -10,20 +14,61 @@ use crate::services::scanner::core::types::{
 };
 use crate::services::scanner::core::walker;
 use crate::services::scanner::deep_matcher;
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::services::scanner::deep_matcher::models::result_summary::score_to_percentage;
 use crate::services::scanner::deep_matcher::models::types;
 
+type ExistingMod = (String, Option<String>);
+
+struct PreviewWorker {
+    mods_path: PathBuf,
+    master_db: Arc<deep_matcher::MasterDb>,
+    ini_filters: PreparedTokenFilters,
+    resource_dir: Option<PathBuf>,
+    existing_by_path: HashMap<String, ExistingMod>,
+    matched_key_by_object: HashMap<String, String>,
+}
+
+struct PreviewWorkerInput<'a> {
+    pool: &'a SqlitePool,
+    game_id: &'a str,
+    mods_path: &'a Path,
+    master_db: Arc<deep_matcher::MasterDb>,
+    ini_filters: PreparedTokenFilters,
+    resource_dir: Option<&'a Path>,
+}
+
+struct PreviewProgress {
+    channel: Option<Channel<ScanEvent>>,
+    total: usize,
+    started: std::time::Instant,
+}
+
+pub struct ScanPreviewRequest<'a> {
+    pub pool: &'a SqlitePool,
+    pub game_id: &'a str,
+    pub mods_path: &'a Path,
+    pub master_db: Arc<deep_matcher::MasterDb>,
+    pub ini_filters: &'a PreparedTokenFilters,
+    pub resource_dir: Option<&'a Path>,
+    pub on_progress: Option<Channel<ScanEvent>>,
+    pub specific_paths: Option<Vec<PathBuf>>,
+}
+
 /// Phase 1: Scan folders and run the Deep Match Scanner preview without writing to DB.
 pub async fn scan_preview(
-    pool: &SqlitePool,
-    game_id: &str,
-    mods_path: &Path,
-    master_db: &deep_matcher::MasterDb,
-    resource_dir: Option<&Path>,
-    on_progress: Option<Channel<ScanEvent>>,
-    specific_paths: Option<Vec<std::path::PathBuf>>,
+    request: ScanPreviewRequest<'_>,
 ) -> Result<Vec<ScanPreviewItem>, ScannerError> {
+    let ScanPreviewRequest {
+        pool,
+        game_id,
+        mods_path,
+        master_db,
+        ini_filters,
+        resource_dir,
+        on_progress,
+        specific_paths,
+    } = request;
     let candidates = if let Some(paths) = specific_paths {
         walker::scan_specific_folders(&paths)?
     } else {
@@ -42,44 +87,55 @@ pub async fn scan_preview(
         mods_path.display()
     );
 
-    let mut items = Vec::with_capacity(total);
-    let ini_filters = IniTokenizationConfig::default().prepare();
     let started = std::time::Instant::now();
+    let worker = build_preview_worker(PreviewWorkerInput {
+        pool,
+        game_id,
+        mods_path,
+        master_db,
+        ini_filters: ini_filters.clone(),
+        resource_dir,
+    })
+    .await?;
+    let completed = Arc::new(AtomicUsize::new(0));
+    let progress = Arc::new(PreviewProgress {
+        channel: on_progress,
+        total,
+        started,
+    });
+    let worker_progress = Arc::clone(&progress);
+    let items = tauri::async_runtime::spawn_blocking(move || {
+        candidates
+            .into_par_iter()
+            .map(|candidate| {
+                let preview_item = worker.preview_item(&candidate);
+                let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                worker_progress.send_item(&preview_item, current);
+                preview_item
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|error| ScannerError::Io(format!("preview worker failed: {error}")))?;
 
-    for (idx, candidate) in candidates.iter().enumerate() {
-        if let Some(channel) = &on_progress {
-            let elapsed_ms = started.elapsed().as_millis() as u64;
-            let _ = channel.send(ScanEvent::Progress {
-                current: idx + 1,
-                total,
-                folder_name: candidate.display_name.clone(),
-                elapsed_ms,
-                // Extrapolate from folders already finished (`idx`), not from the one
-                // just starting, so the first tick reports 0 instead of a wild guess.
-                eta_ms: if idx == 0 {
-                    0
-                } else {
-                    elapsed_ms * (total - idx) as u64 / idx as u64
-                },
-            });
-        }
+    progress.finish(game_id, &items);
+    Ok(items)
+}
 
-        let folder_path_str = candidate.path.to_string_lossy().to_string();
-
-        let existing = crate::repo::mod_repo::get_mod_id_and_object_id_by_path(
-            pool,
-            &folder_path_str,
-            game_id,
-        )
-        .await?;
-
-        // Run phased matcher (Quick first, then FullScoring fallback).
+impl PreviewWorker {
+    fn preview_item(&self, candidate: &walker::ModCandidate) -> ScanPreviewItem {
+        let folder_path = candidate.path.to_string_lossy().to_string();
+        let path_key = crate::common::path_key::folder_path_key(
+            &folder_path,
+            Some(&self.mods_path.to_string_lossy()),
+        );
+        let existing = self.existing_by_path.get(&path_key);
         let content = walker::scan_folder_content(&candidate.path, 3);
         let match_result = deep_matcher::match_folder_phased(
             candidate,
-            master_db,
+            &self.master_db,
             &content,
-            &ini_filters,
+            &self.ini_filters,
             &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default(),
         );
         let auto_candidate = auto_matched_candidate(&match_result);
@@ -93,8 +149,7 @@ pub async fn scan_preview(
         let confidence = staged_confidence_label(&match_result).to_string();
         let match_detail = Some(match_result.summary());
         let already_in_db = existing.is_some();
-        let already_matched =
-            check_already_matched(pool, &existing, matched_entry_key.as_deref()).await?;
+        let already_matched = self.is_already_matched(existing, matched_entry_key.as_deref());
 
         log::debug!(
             "scan_preview: item | folder={} status={match_level} confidence={confidence} score={} best={} already_in_db={already_in_db}",
@@ -103,12 +158,16 @@ pub async fn scan_preview(
             matched_alias_name.as_deref().unwrap_or("-")
         );
 
-        let db_entry = matched_alias_name
-            .as_ref()
-            .and_then(|name| master_db.entries.iter().find(|e| &e.name == name));
+        let db_entry = matched_alias_name.as_ref().and_then(|name| {
+            self.master_db
+                .entries
+                .iter()
+                .find(|entry| &entry.name == name)
+        });
 
         let raw_thumbnail = db_entry.and_then(|e| e.thumbnail_path.clone());
-        let db_thumbnail = resolve_thumbnail(game_id, mods_path, db_entry, None, resource_dir);
+        let db_thumbnail =
+            resolve_thumbnail(&self.mods_path, db_entry, self.resource_dir.as_deref());
         let tags_json =
             db_entry.map(|e| serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".to_string()));
         let metadata_json = db_entry
@@ -119,17 +178,6 @@ pub async fn scan_preview(
         let custom_skins_json = db_entry
             .map(|e| serde_json::to_string(&e.custom_skins).unwrap_or_else(|_| "[]".to_string()));
 
-        if let Some(channel) = &on_progress {
-            if let Some(ref matched) = matched_alias_name {
-                let _ = channel.send(ScanEvent::Matched {
-                    folder_name: candidate.display_name.clone(),
-                    object_name: matched.clone(),
-                    confidence: confidence.clone(),
-                });
-            }
-        }
-
-        // Build scored candidates from matcher's top-k for the dropdown
         let scored_candidates: Vec<ScoredCandidate> = match_result
             .candidates_topk
             .iter()
@@ -140,8 +188,8 @@ pub async fn scan_preview(
             })
             .collect();
 
-        items.push(ScanPreviewItem {
-            folder_path: folder_path_str,
+        ScanPreviewItem {
+            folder_path,
             display_name: candidate.display_name.clone(),
             is_disabled: candidate.is_disabled,
             matched_entry_key,
@@ -161,74 +209,99 @@ pub async fn scan_preview(
             already_in_db,
             already_matched,
             scored_candidates,
-        });
+        }
     }
 
-    let matched = items
-        .iter()
-        .filter(|i| i.matched_entry_key.is_some())
-        .count();
-
-    log::info!(
-        "scan_preview: done | game_id={game_id} folders={total} matched={matched} unmatched={} elapsed_ms={}",
-        total - matched,
-        started.elapsed().as_millis()
-    );
-
-    if let Some(channel) = &on_progress {
-        let _ = channel.send(ScanEvent::Finished {
-            matched,
-            unmatched: total - matched,
-        });
+    fn is_already_matched(
+        &self,
+        existing: Option<&ExistingMod>,
+        expected_entry_key: Option<&str>,
+    ) -> bool {
+        let (Some((_, Some(object_id))), Some(expected_key)) = (existing, expected_entry_key)
+        else {
+            return false;
+        };
+        self.matched_key_by_object
+            .get(object_id)
+            .map(String::as_str)
+            == Some(expected_key)
     }
-
-    Ok(items)
 }
 
-async fn check_already_matched(
-    pool: &SqlitePool,
-    existing: &Option<(String, Option<String>)>,
-    expected_entry_key: Option<&str>,
-) -> Result<bool, ScannerError> {
-    let Some(expected_entry_key) = expected_entry_key else {
-        return Ok(false);
-    };
-    let (_, obj_id) = match existing {
-        Some(r) => r,
-        None => return Ok(false),
-    };
+async fn build_preview_worker(
+    input: PreviewWorkerInput<'_>,
+) -> Result<PreviewWorker, ScannerError> {
+    let mut connection = input.pool.acquire().await?;
+    let rows =
+        crate::repo::mod_repo::get_all_mods_sync_info_tx(&mut connection, input.game_id).await?;
+    drop(connection);
+    let mods_root = input.mods_path.to_string_lossy();
+    let existing_by_path = rows
+        .into_iter()
+        .map(|(id, path, _, object_id, _, _)| {
+            let key = crate::common::path_key::folder_path_key(&path, Some(&mods_root));
+            (key, (id, object_id))
+        })
+        .collect();
+    let matched_key_by_object =
+        crate::repo::object_repo::get_matched_entry_keys_by_game(input.pool, input.game_id).await?;
 
-    let Some(id) = obj_id else {
-        return Ok(false);
-    };
+    Ok(PreviewWorker {
+        mods_path: input.mods_path.to_path_buf(),
+        master_db: input.master_db,
+        ini_filters: input.ini_filters,
+        resource_dir: input.resource_dir.map(Path::to_path_buf),
+        existing_by_path,
+        matched_key_by_object,
+    })
+}
 
-    let matched_entry_key = crate::repo::object_repo::get_matched_entry_key_by_id(pool, id).await?;
+impl PreviewProgress {
+    fn send_item(&self, preview_item: &ScanPreviewItem, current: usize) {
+        let Some(channel) = &self.channel else { return };
+        let elapsed_ms = self.started.elapsed().as_millis() as u64;
+        let _ = channel.send(ScanEvent::Progress {
+            current,
+            total: self.total,
+            folder_name: preview_item.display_name.clone(),
+            elapsed_ms,
+            eta_ms: elapsed_ms * (self.total - current) as u64 / current.max(1) as u64,
+        });
+        if let Some(object_name) = &preview_item.matched_alias_name {
+            let _ = channel.send(ScanEvent::Matched {
+                folder_name: preview_item.display_name.clone(),
+                object_name: object_name.clone(),
+                confidence: preview_item.confidence.clone(),
+            });
+        }
+    }
 
-    Ok(matched_entry_key.as_deref() == Some(expected_entry_key))
+    fn finish(&self, game_id: &str, items: &[ScanPreviewItem]) {
+        let matched = items
+            .iter()
+            .filter(|preview_item| preview_item.matched_entry_key.is_some())
+            .count();
+        log::info!(
+            "scan_preview: done | game_id={game_id} folders={} matched={matched} unmatched={} elapsed_ms={}",
+            self.total,
+            self.total - matched,
+            self.started.elapsed().as_millis()
+        );
+        let Some(channel) = &self.channel else { return };
+        let _ = channel.send(ScanEvent::Finished {
+            matched,
+            unmatched: self.total - matched,
+        });
+    }
 }
 
 fn resolve_thumbnail(
-    _game_id: &str,
     mods_path: &Path,
     db_entry: Option<&types::DbEntry>,
-    detected_skin: Option<&String>,
     resource_dir: Option<&Path>,
 ) -> Option<String> {
     let entry = db_entry?;
-
-    let rel = if let Some(skin_name) = detected_skin {
-        entry
-            .custom_skins
-            .iter()
-            .find(|s| &s.name == skin_name)
-            .and_then(|s| s.thumbnail_skin_path.clone())
-            .or_else(|| entry.thumbnail_path.clone())
-    } else {
-        entry.thumbnail_path.clone()
-    };
-
-    // ... previous content from resolve_thumbnail ...
-    let r = rel?;
+    let r = entry.thumbnail_path.clone()?;
 
     if let Some(res_dir) = resource_dir {
         let abs = res_dir.join(&r);
@@ -247,4 +320,3 @@ fn resolve_thumbnail(
         }
     }
 }
-

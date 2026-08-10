@@ -6,7 +6,6 @@ use tauri::{AppHandle, Manager};
 use crate::repo::browser_repo::ImportJobMatch as MatchResult;
 use crate::services::scanner::core::walker::ModCandidate;
 use crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::{match_folder_phased, MasterDb};
 
 /// Attempt deep match. If the scanner service has a `quick_folder_match` function, call it.
@@ -65,7 +64,8 @@ pub(super) async fn try_deep_match(
     };
 
     let content = crate::services::scanner::core::walker::scan_folder_content(extract_dir, 3);
-    let ini_filters = IniTokenizationConfig::default().prepare();
+    let ini_filters =
+        crate::services::scanner::master_db::ini_filters(Some(&resource_dir), game_type);
     let ai_config = AiRerankConfig::default();
 
     let result = match_folder_phased(&candidate, &master_db, &content, &ini_filters, &ai_config);

@@ -127,7 +127,7 @@ fn test_full_budget_overflow_keeps_partial_signals_and_continues_matching() {
 
 // Covers: TC-2.2-Task15-05
 #[test]
-fn test_full_pipeline_has_no_fuzzy_fallback_for_near_name_only() {
+fn test_full_pipeline_rejects_fuzzy_below_floor() {
     let temp = TempDir::new().expect("temp dir");
     let folder = temp.path().join("albato");
     std::fs::create_dir_all(&folder).expect("create folder");
@@ -156,4 +156,44 @@ fn test_full_pipeline_has_no_fuzzy_fallback_for_near_name_only() {
     assert_eq!(result.status, MatchStatus::NoMatch);
     assert!(result.best.is_none());
     assert!(result.candidates_topk.is_empty());
+}
+
+#[test]
+fn test_full_pipeline_fuzzy_rescue_never_auto_matches() {
+    let temp = TempDir::new().expect("temp dir");
+    let folder = temp.path().join("arlechino");
+    std::fs::create_dir_all(&folder).expect("create folder");
+
+    let content = scan_folder_content(&folder, 3);
+    let candidate = candidate_for(folder, "Arlechino");
+    let db = MasterDb::new(vec![DbEntry {
+        name: "Arlecchino".to_string(),
+        tags: vec![],
+        object_type: "Character".to_string(),
+        custom_skins: vec![],
+        thumbnail_path: None,
+        metadata: None,
+        hash_db: std::collections::HashMap::new(),
+    }]);
+
+    let result = match_folder_full(
+        &candidate,
+        &db,
+        &content,
+        &IniTokenizationConfig::default().prepare(),
+        &AiRerankConfig::default(),
+        &Default::default(),
+    );
+
+    assert_eq!(result.status, MatchStatus::NeedsReview);
+    let best = result.best.expect("fuzzy candidate");
+    assert_eq!(best.name, "Arlecchino");
+    assert_eq!(
+        best.confidence,
+        crate::services::scanner::deep_matcher::Confidence::Low
+    );
+    assert!(best
+        .reasons
+        .iter()
+        .any(|reason| matches!(reason, Reason::FuzzyName { .. })));
 }

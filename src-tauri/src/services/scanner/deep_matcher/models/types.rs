@@ -128,6 +128,11 @@ pub enum Reason {
     },
     /// Last-resort root folder name substring match (F9).
     FolderNameRescue { matched_term: String },
+    /// Last-resort approximate folder-name match (F9). Never primary evidence.
+    FuzzyName {
+        matched_term: String,
+        similarity: f32,
+    },
 }
 
 /// Result contract for staged matcher (new implementation).

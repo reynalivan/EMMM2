@@ -995,6 +995,14 @@ async deepmatchPreviewForObjectsCmd(input: DeepmatchPreviewForObjectsInput, onPr
     else return { status: "error", error: e  as any };
 }
 },
+async renameStagedFolderCmd(folderPath: string, newName: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_staged_folder_cmd", { folderPath, newName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Phase 2: Commit user-confirmed scan results to DB.
  * Called after the user reviews and confirms/overrides matches in the review modal.
@@ -1932,7 +1940,7 @@ export type ScannerError = { PathNotFound: { path: string } } | { NotADirectory:
  */
 export type ScoredCandidate = { name: string; objectType: string; scorePct: number }
 export type SearchResultEntry = { item: DbEntry; score: number }
-export type SyncResult = { totalScanned: number; newMods: number; updatedMods: number; deletedMods: number; newObjects: number; collisions: CollisionInfo[] }
+export type SyncResult = { totalScanned: number; newMods: number; updatedMods: number; deletedMods: number; newObjects: number; skipped: number; collisions: CollisionInfo[] }
 export type TAURI_CHANNEL<TSend> = null
 export type TaskStatus = "PENDING" | "COMPLETED" | "FAILED"
 export type ThemeConfig = { colors: Partial<{ [key in string]: string }>; glass: Partial<{ [key in string]: string }> }

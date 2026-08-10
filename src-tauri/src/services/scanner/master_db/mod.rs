@@ -10,7 +10,9 @@ use std::path::Path;
 use crate::services::game::schema_loader;
 use crate::services::scanner::core::types;
 use crate::services::scanner::core::walker::{FolderContent, ModCandidate};
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::analysis::content::{
+    IniTokenizationConfig, PreparedTokenFilters,
+};
 use crate::services::scanner::deep_matcher::{self, DbEntry, MasterDb, StagedMatchResult};
 
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
@@ -48,6 +50,20 @@ pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String
 
     resolve_entry_thumbnails(&mut entries, resource_dir);
     Ok(serde_json::to_string(&entries)?)
+}
+
+pub fn ini_filters(resource_dir: Option<&Path>, game_type: i32) -> PreparedTokenFilters {
+    let Some(resource_dir) = resource_dir else {
+        return IniTokenizationConfig::default().prepare();
+    };
+    let schema = schema_loader::load_schema(resource_dir, game_type);
+    IniTokenizationConfig {
+        stopwords: schema.stopwords,
+        short_token_whitelist: schema.short_token_whitelist,
+        ini_key_blacklist: schema.ini_key_blacklist,
+        ini_key_whitelist: schema.ini_key_whitelist,
+    }
+    .prepare()
 }
 
 /// Resolve all thumbnail fields in a slice of serde_json entries to absolute paths.

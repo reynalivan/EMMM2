@@ -22,6 +22,7 @@ pub async fn commit_scan_results(
     let items = request.items;
     let resource_dir = request.resource_dir;
     let _ = resource_dir; // reserved for future thumbnail resolution
+    let skipped = items.iter().filter(|item| item.skip).count();
 
     let ctx = CommitCtx {
         game_id,
@@ -79,6 +80,7 @@ pub async fn commit_scan_results(
         updated_mods: updated_mods_count,
         deleted_mods: deleted_mods_count,
         new_objects: new_objects_count,
+        skipped,
         collisions,
     })
 }

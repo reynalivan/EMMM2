@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::services::scanner::core::walker;
 use crate::services::scanner::deep_matcher;
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::services::scanner::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::services::scanner::deep_matcher::models::result_summary::score_to_percentage;
 
 /// Computes the percentage score for a specific batch of candidates against a folder.
@@ -13,6 +13,7 @@ pub fn score_candidates_batch(
     folder_path: &str,
     master_db: &deep_matcher::MasterDb,
     candidate_names: Vec<String>,
+    ini_filters: &PreparedTokenFilters,
 ) -> std::collections::HashMap<String, u8> {
     use std::collections::HashMap;
 
@@ -39,7 +40,6 @@ pub fn score_candidates_batch(
     };
 
     let content = walker::scan_folder_content(&candidate.path, 3);
-    let ini_filters = IniTokenizationConfig::default().prepare();
     let ai_config =
         crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default();
     let mut signal_cache =
@@ -64,7 +64,7 @@ pub fn score_candidates_batch(
         &candidate,
         master_db,
         &content,
-        &ini_filters,
+        ini_filters,
         &ai_config,
         &mut signal_cache,
         &entry_ids,

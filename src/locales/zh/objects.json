@@ -79,7 +79,9 @@
       "no_match_hint": "您可以改为手动编辑元数据。",
       "matching_name": "正在匹配 {{name}}...",
       "toast": {
-        "complete": "同步完成：已扫描 {{scanned}} 个，新增 {{newMods}} 个模组，{{newObjects}} 个对象",
+        "complete": "同步完成：已整理 {{moved}} 个，跳过 {{skipped}} 个，重复 {{duplicates}} 个",
+        "collisions": "目标位置已存在 {{count}} 个文件夹",
+        "details": "详情",
         "destination_exists": "目标已存在：{{dest}}。请重命名文件夹或跳过。",
         "commit_failed": "提交失败：{{error}}"
       }
@@ -205,6 +207,8 @@
     "search_placeholder": "搜索文件夹名称...",
     "committing_state": "正在提交...",
     "confirm_button_label": "确认 {{count}} 个项目",
+    "skipped_summary": "将跳过 {{count}} 个项目",
+    "none_group_warning": "未找到目标；包含的文件夹将整理到 Other。",
     "bulk_skip_label": "拒绝所选",
     "bulk_skip_tip": "跳过所有当前选定的项目",
     "select_deselect_all_tip": "全选/取消全选可见项",
@@ -248,7 +252,8 @@
     "mark_safe": "已将 {{count}} 个对象标记为安全",
     "mark_unsafe": "已将 {{count}} 个对象标记为不安全",
     "tags_added": "已为 {{items}} 添加 {{count}} 个标签",
-    "tags_removed": "已为 {{items}} 移除 {{count}} 个标签"
+    "tags_removed": "已为 {{items}} 移除 {{count}} 个标签",
+    "reload_required": "磁盘状态已应用 — 请在游戏中按 {{key}} 重新加载"
   },
   "trash": {
     "title": "回收站",

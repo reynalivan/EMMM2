@@ -86,6 +86,7 @@ fn summary_reason_priority(reason: &Reason) -> usize {
         Reason::FolderNameRescue { .. } => 8,
         Reason::NegativeEvidence { .. } => 9,
         Reason::AiRerank { .. } => 10,
+        Reason::FuzzyName { .. } => 11,
     }
 }
 
@@ -109,5 +110,6 @@ fn format_reason_message(reason: &Reason) -> String {
         Reason::FolderNameRescue { .. } => "Matched from folder name".to_string(),
         Reason::AiRerank { .. } => "AI-assisted match".to_string(),
         Reason::NegativeEvidence { .. } => "Resolved with additional analysis".to_string(),
+        Reason::FuzzyName { .. } => "Matched by similar name".to_string(),
     }
 }

@@ -14,6 +14,8 @@ pub struct SyncResult {
     pub deleted_mods: usize,
     #[specta(type = f64)]
     pub new_objects: usize,
+    #[specta(type = f64)]
+    pub skipped: usize,
     pub collisions: Vec<CollisionInfo>,
 }
 

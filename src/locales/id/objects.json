@@ -72,7 +72,9 @@
       "no_match_hint": "Anda dapat mengubah metadata secara manual sebagai gantinya.",
       "matching_name": "Mencocokkan {{name}}...",
       "toast": {
-        "complete": "Sinkronisasi selesai: {{scanned}} dipindai, {{newMods}} baru, {{newObjects}} objek",
+        "complete": "Sinkronisasi selesai: {{moved}} diatur, {{skipped}} dilewati, {{duplicates}} duplikat",
+        "collisions": "{{count}} folder sudah ada di tujuan",
+        "details": "Detail",
         "destination_exists": "Tujuan sudah ada: {{dest}}. Silakan ganti nama folder atau lewati.",
         "commit_failed": "Gagal menerapkan: {{error}}"
       }
@@ -205,6 +207,8 @@
     "search_placeholder": "Cari nama folder...",
     "committing_state": "Mendaftarkan...",
     "confirm_button_label": "Konfirmasi {{count}} Item",
+    "skipped_summary": "{{count}} akan dilewati",
+    "none_group_warning": "Target tidak ditemukan; folder yang disertakan akan diatur ke Other.",
     "bulk_skip_label": "Tolak Terpilih",
     "bulk_skip_tip": "Lewati semua item yang saat ini dipilih",
     "select_deselect_all_tip": "Pilih/Hapus Semua yang terlihat",
@@ -248,7 +252,8 @@
     "mark_safe": "Menandai {{count}} objek sebagai Aman",
     "mark_unsafe": "Menandai {{count}} objek sebagai Tidak Aman",
     "tags_added": "Menambahkan {{count}} tag ke {{items}}",
-    "tags_removed": "Menghapus {{count}} tag dari {{items}}"
+    "tags_removed": "Menghapus {{count}} tag dari {{items}}",
+    "reload_required": "Status disk diterapkan — tekan {{key}} di dalam game untuk memuat ulang"
   },
   "trash": {
     "title": "Tempat Sampah",

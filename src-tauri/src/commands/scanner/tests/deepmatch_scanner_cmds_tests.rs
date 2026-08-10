@@ -115,6 +115,9 @@ async fn score_candidates_batch_cmd_returns_scores_for_candidates() {
         &mod_dir.to_string_lossy(),
         &master_db,
         vec!["Kazuha".to_string(), "Diluc".to_string()],
+        &crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig::default(
+        )
+        .prepare(),
     );
 
     assert!(scores.contains_key("Kazuha"));
@@ -240,4 +243,12 @@ async fn resolve_object_preview_paths_skips_paths_outside_mods_root() {
     .expect("resolve paths");
 
     assert!(resolved.is_empty());
+}
+#[test]
+fn staged_rename_guard_requires_exact_temp_component() {
+    assert!(is_staged_path(Path::new("C:/Mods/.emmm_temp/Ayaka")));
+    assert!(!is_staged_path(Path::new(
+        "C:/Mods/.emmm_temp_backup/Ayaka"
+    )));
+    assert!(!is_staged_path(Path::new("C:/Mods/Ayaka")));
 }

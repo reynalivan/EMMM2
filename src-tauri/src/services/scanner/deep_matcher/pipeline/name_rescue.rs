@@ -24,6 +24,9 @@ const SCORE_ALIAS_SUBSTRING: f32 = 11.0;
 const SCORE_NAME_SUBSTRING: f32 = 10.0;
 const SCORE_TAG_SUBSTRING: f32 = 9.0;
 const SCORE_FOLDER_RESCUE: f32 = 8.0;
+const SCORE_FUZZY_RESCUE: f32 = 6.0;
+const MIN_FUZZY_LEN: usize = 5;
+const FUZZY_MIN_SIMILARITY: f64 = 0.80;
 
 const RESCUE_TOP_K: usize = 5;
 
@@ -229,6 +232,22 @@ pub fn apply_root_folder_rescue(db: &MasterDb, signals: &FolderSignals) -> Stage
                     matched_term: folder_norm.clone(),
                 }],
             });
+            continue;
+        }
+
+        let similarity = best_windowed_similarity(&folder_condensed, &entry_condensed);
+        if similarity >= FUZZY_MIN_SIMILARITY {
+            candidates.push(Candidate {
+                entry_id,
+                name: entry.name.clone(),
+                object_type: entry.object_type.clone(),
+                score: SCORE_FUZZY_RESCUE,
+                confidence: Confidence::Low,
+                reasons: vec![Reason::FuzzyName {
+                    matched_term: folder_norm.clone(),
+                    similarity: similarity as f32,
+                }],
+            });
         }
     }
 
@@ -252,6 +271,22 @@ pub fn apply_root_folder_rescue(db: &MasterDb, signals: &FolderSignals) -> Stage
                 signals,
             ),
     }
+}
+
+fn best_windowed_similarity(source: &str, entry: &str) -> f64 {
+    if source.len() < MIN_FUZZY_LEN || entry.len() < MIN_FUZZY_LEN {
+        return 0.0;
+    }
+    if source.len() <= entry.len() {
+        return strsim::normalized_levenshtein(source, entry);
+    }
+
+    source
+        .as_bytes()
+        .windows(entry.len())
+        .filter_map(|window| std::str::from_utf8(window).ok())
+        .map(|window| strsim::normalized_levenshtein(window, entry))
+        .fold(0.0, f64::max)
 }
 
 #[cfg(test)]

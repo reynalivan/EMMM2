@@ -29,9 +29,10 @@ pub(super) fn has_type_mismatch(_candidate: &Candidate) -> bool {
 }
 
 pub(super) fn is_rescue_only(candidate: &Candidate) -> bool {
-    candidate
-        .reasons
-        .iter()
-        .all(|r| matches!(r, Reason::FolderNameRescue { .. }))
-        && !candidate.reasons.is_empty()
+    candidate.reasons.iter().all(|reason| {
+        matches!(
+            reason,
+            Reason::FolderNameRescue { .. } | Reason::FuzzyName { .. }
+        )
+    }) && !candidate.reasons.is_empty()
 }

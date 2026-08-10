@@ -124,6 +124,7 @@ macro_rules! emmm_collect_commands {
             commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
             commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
             commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_for_objects_cmd,
+            commands::scanner::deepmatch_scanner_cmds::rename_staged_folder_cmd,
             commands::scanner::deepmatch_scanner_cmds::commit_scan_cmd,
             commands::scanner::deepmatch_scanner_cmds::score_candidates_batch_cmd,
             commands::scanner::deepmatch_scanner_cmds::list_folder_entries_cmd,

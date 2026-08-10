@@ -4,14 +4,13 @@ use crate::domain::errors::AppError;
 use crate::services::mods::archive::{self, ArchiveAnalysis, ExtractionEvent, ExtractionResult};
 use crate::services::scanner::core::walker::{self, ArchiveInfo};
 use crate::services::scanner::deep_matcher;
-use crate::services::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
 use crate::services::scanner::deep_matcher::models::result_summary::score_to_percentage;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{Manager, State};
 
 /// State for managing ongoing archive extractions.
 ///
@@ -204,7 +203,9 @@ pub async fn match_check_folder_cmd(
     };
 
     let content = walker::scan_folder_content(&candidate.path, 3);
-    let ini_filters = IniTokenizationConfig::default().prepare();
+    let resource_dir = app.path().resource_dir().ok();
+    let ini_filters =
+        crate::services::scanner::master_db::ini_filters(resource_dir.as_deref(), game_type);
     let ai_config =
         crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default();
 
