@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import MaintenanceTab from './MaintenanceTab';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -27,9 +27,6 @@ vi.mock('../../../hooks/useSettings', () => ({
   }),
 }));
 
-// Mock window.confirm
-const originalConfirm = window.confirm;
-
 if (!HTMLDialogElement.prototype.showModal) {
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute('open', '');
@@ -48,36 +45,6 @@ vi.mock('../../scanner/DedupFeature', () => ({
 describe('MaintenanceTab (TC-04)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.confirm = () => true;
-  });
-
-  afterAll(() => {
-    window.confirm = originalConfirm;
-  });
-
-  it('handles Trash empty confirmation and invocation', async () => {
-    (invoke as any).mockResolvedValue('Trash emptied');
-    render(<MaintenanceTab />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Empty Trash/i }));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('empty_trash');
-      expect(mockAddToast).toHaveBeenCalledWith(
-        'success',
-        expect.stringContaining('Trash Emptied'),
-      );
-    });
-  });
-
-  it('bypasses empty trash if confirm is false', async () => {
-    window.confirm = () => false;
-    render(<MaintenanceTab />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Empty Trash/i }));
-
-    // Should NOT call invoke
-    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('triggers maintenance hook correctly', () => {

@@ -76,7 +76,10 @@ pub async fn delete_download(
             .flatten();
 
         if let Some(p) = path {
-            let _ = std::fs::remove_file(&p); // best-effort
+            crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(std::path::Path::new(
+                &p,
+            ))
+            .map_err(|error| BrowserError::Io(error.to_string()))?;
         }
     }
 

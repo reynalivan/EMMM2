@@ -161,7 +161,7 @@ pub fn remove_preview_image(mod_root: &Path, image_path: &Path) -> Result<(), Ap
         ));
     }
 
-    fs::remove_file(&canonical_target)?;
+    crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&canonical_target)?;
     ThumbnailCache::invalidate(&canonical_target);
     Ok(())
 }
@@ -188,7 +188,7 @@ pub fn clear_preview_images(mod_root: &Path) -> Result<Vec<String>, AppError> {
             continue;
         }
 
-        fs::remove_file(&path)?;
+        crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&path)?;
         ThumbnailCache::invalidate(&path);
         removed.push(path.to_string_lossy().to_string());
     }

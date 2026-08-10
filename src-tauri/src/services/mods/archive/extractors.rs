@@ -85,7 +85,13 @@ pub(super) fn unpack_nested_archives(
         match extract_to_dir(&path, &sub_dest, None, format, cancel_token.clone(), None) {
             Ok(extracted) => {
                 total_extracted += extracted;
-                let _ = fs::remove_file(&path);
+                if let Err(error) =
+                    crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&path)
+                {
+                    log::warn!(
+                        "Failed to move extracted nested archive to the Recycle Bin: {error}"
+                    );
+                }
                 total_extracted +=
                     unpack_nested_archives(&sub_dest, current_depth + 1, max_depth, cancel_token);
             }

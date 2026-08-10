@@ -94,7 +94,7 @@ pub async fn delete_custom_theme(app_handle: AppHandle, id: String) -> Result<()
     let theme_path = themes_dir.join(format!("{}.json", id));
 
     if theme_path.exists() {
-        fs::remove_file(theme_path)?;
+        crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&theme_path)?;
     }
 
     Ok(())

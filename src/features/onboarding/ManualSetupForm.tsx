@@ -67,10 +67,10 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
 
   return (
     <div className="min-h-screen bg-base-100 flex items-center justify-center p-6">
-      <div className="max-w-md w-full space-y-6">
+      <div className="w-full max-w-lg space-y-7">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="btn btn-ghost btn-sm gap-2">
+          <button onClick={onBack} className="btn btn-ghost min-h-11 gap-2 px-3 whitespace-nowrap">
             <ArrowLeft className="w-5 h-5" />
             {t('common:actions.back')}
           </button>
@@ -96,7 +96,9 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
               <span className="label-text font-semibold">{t('manual_setup.game_type')}</span>
             </label>
             <select
-              className={`select select-bordered w-full ${errors.gameType ? 'select-error' : ''}`}
+              className={`select h-11 w-full ${errors.gameType ? 'select-error' : ''}`}
+              aria-invalid={errors.gameType ? 'true' : 'false'}
+              aria-describedby="game-type-feedback"
               {...register('gameType')}
             >
               <option value="">{t('manual_setup.game_type_placeholder')}</option>
@@ -106,11 +108,11 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
                 </option>
               ))}
             </select>
-            {errors.gameType && (
-              <label className="label">
+            <div id="game-type-feedback" className="label min-h-7 py-1">
+              {errors.gameType && (
                 <span className="label-text-alt text-error">{errors.gameType.message}</span>
-              </label>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Path */}
@@ -118,36 +120,44 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
             <label className="label">
               <span className="label-text font-semibold">{t('manual_setup.game_folder')}</span>
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 type="text"
-                className={`input input-bordered flex-1 truncate ${errors.path ? 'input-error' : ''}`}
+                className={`input h-11 min-w-0 flex-1 truncate ${errors.path ? 'input-error' : ''}`}
                 placeholder={t('manual_setup.game_folder_placeholder')}
                 readOnly
+                aria-invalid={errors.path ? 'true' : 'false'}
+                aria-describedby="game-folder-feedback"
                 {...register('path')}
               />
-              <button type="button" className="btn btn-primary" onClick={handleBrowse}>
+              <button
+                type="button"
+                className="btn btn-primary min-h-11 shrink-0 whitespace-nowrap"
+                onClick={handleBrowse}
+              >
                 <FolderOpen className="w-4 h-4" />
                 {t('manual_setup.browse')}
               </button>
             </div>
-            {errors.path && (
-              <label className="label">
+            <div id="game-folder-feedback" className="label min-h-7 py-1">
+              {errors.path ? (
                 <span className="label-text-alt text-error">{errors.path.message}</span>
-              </label>
-            )}
-            <label className="label">
-              <span className="label-text-alt text-base-content/50">{t('manual_setup.hint')}</span>
-            </label>
+              ) : (
+                <span className="label-text-alt text-base-content/50">
+                  {t('manual_setup.hint')}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Actions */}
-          <button type="submit" className="btn btn-primary btn-block gap-2" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              t('manual_setup.submit_button')
-            )}
+          <button
+            type="submit"
+            className="btn btn-primary btn-block min-h-11 gap-2 whitespace-nowrap"
+            disabled={isSubmitting}
+          >
+            {isSubmitting && <Loader2 className="w-5 h-5 animate-spin" />}
+            {t('manual_setup.submit_button')}
           </button>
         </form>
       </div>

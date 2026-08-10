@@ -64,8 +64,7 @@ pub async fn delete_mod_thumbnail(
     let _guard = SuppressionGuard::new(&watcher.suppressor);
     let mut changed_paths: Vec<String> = Vec::new();
     if let Some(thumb_path) = find_thumbnail(path) {
-        std::fs::remove_file(&thumb_path)
-            .map_err(|e| AppError::Io(format!("Failed to delete thumbnail: {}", e)))?;
+        crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&thumb_path)?;
         ThumbnailCache::invalidate(&thumb_path);
         changed_paths.push(thumb_path.to_string_lossy().to_string());
     }

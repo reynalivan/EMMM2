@@ -1,6 +1,6 @@
 import { formatAppError } from '../../../lib/appError';
 import { useState, useRef } from 'react';
-import { Trash2, Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
+import { Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../hooks/useSettings';
 import { commands } from '../../../lib/bindings';
@@ -13,21 +13,6 @@ export default function MaintenanceTab() {
   const { addToast } = useToastStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const resetModalRef = useRef<HTMLDialogElement>(null);
-
-  const handleEmptyTrash = async () => {
-    if (!confirm(t('settings:maintenance.trash_confirm'))) return;
-
-    setIsProcessing(true);
-    try {
-      await commands.emptyTrash();
-      addToast('success', t('settings:maintenance.trash_success'));
-    } catch (e) {
-      console.error(e);
-      addToast('error', t('settings:maintenance.trash_failed', { error: formatAppError(e) }));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const handleMaintenance = () => {
     setIsProcessing(true);
@@ -93,25 +78,6 @@ export default function MaintenanceTab() {
                 <HardDrive size={18} /> {t('settings:maintenance.open_optimizer')}
               </button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <Trash2 className="text-error" size={20} />
-            {t('settings:maintenance.trash_title')}
-          </h3>
-          <p className="text-sm opacity-70">{t('settings:maintenance.trash_desc')}</p>
-          <div className="card-actions justify-end mt-4">
-            <button
-              className="btn btn-error btn-outline gap-2"
-              onClick={handleEmptyTrash}
-              disabled={isProcessing}
-            >
-              <Trash2 size={18} /> {t('settings:maintenance.empty_trash')}
-            </button>
           </div>
         </div>
       </div>

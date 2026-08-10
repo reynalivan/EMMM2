@@ -5,7 +5,6 @@
 
 use crate::domain::errors::AppError;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
 
 use sqlx::SqlitePool;
 
@@ -41,40 +40,6 @@ pub async fn run_maintenance_counts(
 }
 
 pub fn cleanup_old_empty_trash_entries(trash_dir: &Path) -> Result<u64, AppError> {
-    if !trash_dir.exists() {
-        return Ok(0);
-    }
-
-    let cutoff = SystemTime::now()
-        .checked_sub(Duration::from_secs(30 * 24 * 60 * 60))
-        .ok_or_else(|| AppError::Internal("Failed to compute cleanup cutoff".to_string()))?;
-
-    let mut removed = 0_u64;
-    for entry in std::fs::read_dir(trash_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if !path.is_dir() {
-            continue;
-        }
-
-        let metadata_path = path.join("metadata.json");
-        if metadata_path.exists() {
-            continue;
-        }
-
-        let modified = match entry.metadata().and_then(|meta| meta.modified()) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-
-        if modified >= cutoff {
-            continue;
-        }
-
-        std::fs::remove_dir_all(&path)?;
-        removed = removed.saturating_add(1);
-    }
-
-    Ok(removed)
+    let _ = trash_dir;
+    Ok(0)
 }

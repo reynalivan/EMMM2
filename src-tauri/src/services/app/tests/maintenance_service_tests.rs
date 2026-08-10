@@ -52,8 +52,8 @@ fn test_cleanup_old_empty_trash_entries() {
 
     let removed = cleanup_old_empty_trash_entries(&trash_dir).unwrap();
 
-    assert_eq!(removed, 1);
-    assert!(!old_dir.exists());
+    assert_eq!(removed, 0);
+    assert!(old_dir.exists());
     assert!(recent_dir.exists());
     assert!(old_with_metadata.exists());
 }

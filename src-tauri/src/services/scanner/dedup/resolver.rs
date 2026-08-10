@@ -190,8 +190,12 @@ fn apply_hardlinks(keep_folder: &str, target_folder: &str) -> Result<(), Scanner
 
             // Only hardlink if file sizes match (basic safeguard)
             if src_meta.len() == tgt_meta.len() {
-                if let Err(e) = fs::remove_file(entry.path()) {
-                    log::warn!("Failed to remove target file for hardlinking: {}", e);
+                if let Err(e) =
+                    crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(entry.path())
+                {
+                    log::warn!(
+                        "Failed to move target file to the Recycle Bin for hardlinking: {e}"
+                    );
                     continue;
                 }
 

@@ -26,12 +26,12 @@ export default function ScanReviewFilters(props: ScanReviewFiltersProps) {
   const { t } = useTranslation(['objects']);
   return (
     <>
-      <div className="flex items-end justify-between mb-1 mt-2">
-        <div className="flex gap-4 border-b border-base-300 px-1 flex-1">
+      <div className="mt-2 mb-1 flex items-end justify-between">
+        <div className="flex flex-1 gap-4 overflow-x-auto border-b border-base-content/10 px-1">
           {TABS.map((tab) => (
             <button
               key={tab}
-              className={`pb-3 px-2 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${
+              className={`relative flex shrink-0 items-center gap-1.5 px-2 pb-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
                 props.activeTab === tab
                   ? 'text-primary'
                   : 'text-base-content/60 hover:text-base-content/80'
@@ -62,14 +62,14 @@ export default function ScanReviewFilters(props: ScanReviewFiltersProps) {
           </button>
         )}
       </div>
-      <div className="flex items-center justify-between mt-3 mb-2 min-h-8">
-        <div className="flex items-center gap-2">
+      <div className="mt-3 mb-2 flex min-h-8 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           {props.activeTab !== 'Existing' &&
             CONFIDENCES.map((confidence) => (
               <button
                 key={confidence}
                 onClick={() => props.onToggleFilter(confidence)}
-                className={`badge badge-sm cursor-pointer transition-all gap-1 pl-2 pr-1 h-6 ${
+                className={`badge badge-sm h-6 cursor-pointer gap-1 pr-1 pl-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                   props.activeFilters.has(confidence)
                     ? 'badge-primary'
                     : 'badge-outline border-base-300 text-base-content/60 hover:bg-base-200'
@@ -82,11 +82,11 @@ export default function ScanReviewFilters(props: ScanReviewFiltersProps) {
               </button>
             ))}
         </div>
-        <div className="relative w-64 ml-auto">
+        <div className="relative w-full lg:ml-auto lg:w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 opacity-40" />
           <input
             type="text"
-            className="input input-sm w-full pl-9 bg-base-200/50 border-base-300"
+            className="input input-sm w-full pl-9"
             placeholder={t('objects:scan_review.search_placeholder')}
             value={props.search}
             onChange={(event) => props.onSearchChange(event.target.value)}

@@ -7,7 +7,6 @@ use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
 use crate::services::mods::trash;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use sqlx::SqlitePool;
-use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
@@ -29,12 +28,6 @@ pub async fn bulk_delete(
 
     // One guard across the whole batch: no watcher-event leaks between items.
     let _suppression = SuppressionGuard::new(&state.suppressor);
-
-    if !trash_dir.exists() {
-        fs::create_dir_all(&trash_dir).map_err(|e| {
-            crate::domain::errors::AppError::Io(format!("Failed to create trash dir: {}", e))
-        })?;
-    }
 
     let total = paths.len();
     let _ = app.emit(

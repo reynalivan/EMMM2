@@ -3,6 +3,7 @@ pub mod guard;
 pub mod locking;
 pub mod operation_lock;
 pub mod path_utils;
+pub mod recycle_bin;
 
 #[cfg(test)]
 #[path = "tests/infra_tests.rs"]

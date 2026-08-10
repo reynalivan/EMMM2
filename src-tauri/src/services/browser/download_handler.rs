@@ -147,7 +147,11 @@ pub async fn start_concurrent_download(
             }
             Ok(DownloadOutcome::Canceled) => {
                 log::info!("Download canceled by user: {}", filename);
-                let _ = std::fs::remove_file(&destination);
+                if let Err(error) =
+                    crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&destination)
+                {
+                    log::warn!("Failed to move cancelled download to the Recycle Bin: {error}");
+                }
                 let _ = download_service::update_status(
                     &db,
                     &download_id,

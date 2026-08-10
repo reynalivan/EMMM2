@@ -213,9 +213,9 @@ export default function ScanReviewModal({
 
   return (
     <div className="modal modal-open">
-      <div className="modal-box relative w-[95%] max-w-5xl h-[85vh] flex flex-col p-4 sm:p-6">
+      <div className="modal-box relative flex h-[85vh] w-[95%] max-w-5xl flex-col border border-base-content/10 bg-base-200 p-4 shadow-none sm:p-6">
         <button
-          className="btn btn-sm btn-circle absolute right-2 top-2"
+          className="btn btn-ghost btn-circle absolute top-2 right-2 min-h-11 min-w-11 bg-base-300/40 hover:bg-base-300/70"
           onClick={onClose}
           aria-label={t('common:close')}
           disabled={isCommitting}
@@ -246,9 +246,9 @@ export default function ScanReviewModal({
         />
 
         {/* Main list */}
-        <div className="flex-1 mt-2 overflow-y-auto overflow-x-hidden border border-base-300/30 rounded-lg bg-base-200/30 relative">
+        <div className="relative mt-2 flex-1 overflow-x-hidden overflow-y-auto rounded-lg border border-base-content/10 bg-base-300/35">
           <table className="table table-sm table-pin-rows">
-            <thead className="text-[10px] uppercase tracking-wider text-base-content/70 z-150 [&_th]:bg-base-300/40 [&_th]:backdrop-blur-md">
+            <thead className="z-150 text-[10px] tracking-wider text-base-content/70 uppercase [&_th]:bg-base-300/90">
               <tr>
                 <th className="w-10 text-center">
                   <input
@@ -314,17 +314,21 @@ export default function ScanReviewModal({
         </div>
 
         {/* Actions */}
-        <div className="modal-action border-t border-base-200 pt-4 mt-3">
+        <div className="modal-action mt-3 border-t border-base-content/10 pt-4">
           {includedCount < items.length && (
             <span className="mr-auto text-xs opacity-60">
               {t('objects:scan_review.skipped_summary', { count: items.length - includedCount })}
             </span>
           )}
-          <button className="btn btn-sm" onClick={onClose} disabled={isCommitting}>
+          <button
+            className="btn min-h-10 whitespace-nowrap border-base-content/10 bg-base-300/50 hover:bg-base-300/80"
+            onClick={onClose}
+            disabled={isCommitting}
+          >
             {t('common:action.cancel')}
           </button>
           <button
-            className="btn btn-sm btn-primary gap-2"
+            className="btn btn-primary min-h-10 gap-2 whitespace-nowrap"
             onClick={handleConfirm}
             disabled={isCommitting || includedCount === 0}
           >

@@ -12,9 +12,9 @@ fn setup_trash() -> (TempDir, PathBuf, PathBuf) {
     (tmp, mods, trash)
 }
 
-// Covers: TC-4.5-01 (Delete to Trash)
+// Covers: TC-4.5-01 (Delete to system Recycle Bin)
 #[test]
-fn test_move_to_trash_basic() {
+fn test_move_to_system_recycle_bin() {
     let (_tmp, mods, trash) = setup_trash();
     let mod_dir = mods.join("Raiden");
     fs::create_dir(&mod_dir).unwrap();
@@ -31,31 +31,15 @@ fn test_move_to_trash_basic() {
     // Original should no longer exist
     assert!(!mod_dir.exists());
 
-    // Trash entry should exist
-    let trash_entry = trash.join(&meta.id);
-    assert!(trash_entry.exists());
-    assert!(trash_entry.join("metadata.json").exists());
-    assert!(trash_entry.join("Raiden").exists());
+    assert!(!trash.join(&meta.id).exists());
 }
 
-// Covers: TC-4.5-01 (Restore from Trash)
 #[test]
-fn test_restore_from_trash() {
-    let (_tmp, mods, trash) = setup_trash();
-    let mod_dir = mods.join("Ayaka");
-    fs::create_dir(&mod_dir).unwrap();
-    fs::write(mod_dir.join("test.txt"), "data").unwrap();
-
-    let meta = move_to_trash(&mod_dir, &trash, None).unwrap();
-    assert!(!mod_dir.exists());
-
-    let result = restore_from_trash(&meta.id, &trash, None);
-    assert!(result.is_ok());
-    assert!(mod_dir.exists());
-    assert!(mod_dir.join("test.txt").exists());
-
-    // Trash entry should be cleaned up
-    assert!(!trash.join(&meta.id).exists());
+fn legacy_trash_commands_do_not_manage_user_files() {
+    let (_tmp, _mods, trash) = setup_trash();
+    assert!(list_trash(&trash).unwrap().is_empty());
+    assert!(empty_trash(&trash).is_err());
+    assert!(restore_from_trash("legacy", &trash, None).is_err());
 }
 
 // Covers: NC-4.5-01 (Source does not exist)
@@ -68,67 +52,4 @@ fn test_move_to_trash_nonexistent() {
         .unwrap_err()
         .to_string()
         .contains("Source does not exist"));
-}
-
-#[test]
-fn test_list_trash() {
-    let (_tmp, mods, trash) = setup_trash();
-
-    // Create and trash two mods
-    let mod1 = mods.join("Mod1");
-    let mod2 = mods.join("Mod2");
-    fs::create_dir(&mod1).unwrap();
-    fs::create_dir(&mod2).unwrap();
-
-    move_to_trash(&mod1, &trash, None).unwrap();
-    move_to_trash(&mod2, &trash, None).unwrap();
-
-    let items = list_trash(&trash).unwrap();
-    assert_eq!(items.len(), 2);
-}
-
-#[test]
-fn test_empty_trash() {
-    let (_tmp, mods, trash) = setup_trash();
-
-    let mod1 = mods.join("Mod1");
-    fs::create_dir(&mod1).unwrap();
-    move_to_trash(&mod1, &trash, None).unwrap();
-
-    let count = empty_trash(&trash).unwrap();
-    assert_eq!(count, 1);
-
-    let items = list_trash(&trash).unwrap();
-    assert_eq!(items.len(), 0);
-}
-
-#[test]
-fn test_restore_conflict() {
-    let (_tmp, mods, trash) = setup_trash();
-    let mod_dir = mods.join("Conflict");
-    fs::create_dir(&mod_dir).unwrap();
-
-    let meta = move_to_trash(&mod_dir, &trash, None).unwrap();
-
-    // Re-create the original folder
-    fs::create_dir(&mod_dir).unwrap();
-
-    let result = restore_from_trash(&meta.id, &trash, None);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("already exists"));
-}
-
-#[test]
-fn test_restore_context_mismatch() {
-    let (_tmp, mods, trash) = setup_trash();
-    let mod_dir = mods.join("Mismatch");
-    fs::create_dir(&mod_dir).unwrap();
-
-    let game1 = "game1".to_string();
-    let game2 = "game2".to_string();
-    let meta = move_to_trash(&mod_dir, &trash, Some(game1)).unwrap();
-
-    let result = restore_from_trash(&meta.id, &trash, Some(&game2));
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Context mismatch"));
 }

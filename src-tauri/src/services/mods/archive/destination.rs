@@ -16,7 +16,7 @@ pub(super) fn remove_existing_dest(dest: &Path) -> Result<(), AppError> {
         return Ok(());
     }
 
-    Ok(fs::remove_dir_all(dest)?)
+    crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(dest)
 }
 
 pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), AppError> {

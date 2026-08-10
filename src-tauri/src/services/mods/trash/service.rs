@@ -7,7 +7,6 @@ use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::scanner::watcher::WatcherState;
-use std::fs;
 use std::path::Path;
 
 /// Move a mod folder to the trash directory.
@@ -26,11 +25,6 @@ pub async fn delete_mod_service(
     path: &ValidatedPath,
     game_id: &str,
 ) -> Result<DeleteModResult, AppError> {
-    if !trash_dir.exists() {
-        fs::create_dir_all(&trash_dir)
-            .map_err(|e| AppError::Io(format!("Failed to create trash dir: {}", e)))?;
-    }
-
     let original = path.original();
     let (is_safe, object_id, relative_path) = {
         let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)

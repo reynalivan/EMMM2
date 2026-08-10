@@ -36,9 +36,9 @@ fn test_cleanup_old_empty_trash_entries() {
     let removed = cleanup_old_empty_trash_entries(trash_dir).unwrap();
 
     // Assertions
-    assert_eq!(removed, 1);
-    // ancient_empty should be deleted
-    assert!(!ancient_empty.exists());
+    assert_eq!(removed, 0);
+    // Legacy app trash is retained; user data belongs in the system Recycle Bin.
+    assert!(ancient_empty.exists());
     // recent_empty should be retained
     assert!(recent_empty.exists());
     // ancient_full should be retained because of metadata.json

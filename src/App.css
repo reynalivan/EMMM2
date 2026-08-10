@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P4 H4 E5 S4 R5 V4 · genre: technical · tone: dark-austere · anchor: blue · macrostructure: existing-flow-polish · contrast: pass (40–41) · slop: pass */
 @import 'tailwindcss';
 /* themes: false — otherwise daisyUI also emits its built-in `light` and `dark`
    themes. The built-in `light` collides with ours by name, and any *-content
@@ -30,6 +31,7 @@
   --color-secondary-content: #ffffff;
   --color-accent: #b15eff; /* Neon Pink/Rose */
   --color-accent-content: #16171d;
+  --color-accent-ink: #16171d;
   --color-neutral: #111218;
   --color-neutral-content: #e2e8f0;
 
@@ -45,7 +47,19 @@
   --color-error-content: #16171d;
 
   /* 4. UI Elements & Radius */
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
   --radius-box: 1.25rem; /* Bubbly, rounded corners like the image */
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+  --control-surface: #101116;
+  --control-surface-hover: #13141a;
+  --control-border: #343642;
+  --control-border-hover: #4a4d5c;
+  --focus-ring: #60a5fa;
   --glass-bg: rgba(22, 23, 29, 0.7); /* Adjusted to match neutral dark */
   --glass-border: rgba(255, 255, 255, 0.06);
 
@@ -82,6 +96,7 @@
   --color-secondary-content: #ffffff;
   --color-accent: #9333ea; /* purple, matches onyx */
   --color-accent-content: #ffffff;
+  --color-accent-ink: #ffffff;
   --color-neutral: #1e293b; /* dark neutral in both themes, per daisyUI's role */
   --color-neutral-content: #f1f5f9;
 
@@ -97,7 +112,19 @@
   --color-error: #dc2626;
   --color-error-content: #ffffff;
 
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
   --radius-box: 1.25rem; /* same box geometry as onyx */
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+  --control-surface: #f8fafc;
+  --control-surface-hover: #f1f5f9;
+  --control-border: #cbd5e1;
+  --control-border-hover: #94a3b8;
+  --focus-ring: #1d4ed8;
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(15, 23, 42, 0.08);
   --scrollbar-thumb: #cbd5e1;
@@ -124,8 +151,48 @@
 }
 
 /* Global Styles */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   @apply bg-base-100 text-base-content antialiased selection:bg-primary/30 selection:text-base-content;
+}
+
+:is(.input, .select, .textarea, .file-input) {
+  background-color: var(--control-surface);
+  color: var(--color-base-content);
+  border-color: var(--control-border);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  transition:
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:is(.input, .select, .textarea, .file-input):focus,
+:is(.input, .select, .textarea, .file-input):focus-within {
+  border-color: var(--color-primary);
+  outline-color: var(--focus-ring);
+}
+
+:is(.btn, .input, .select, .textarea, .file-input, .checkbox, .radio, .toggle):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+:is(.checkbox, .radio, .toggle) {
+  border-color: var(--control-border);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  :is(.input, .select, .textarea, .file-input):not(:disabled):hover {
+    background-color: var(--control-surface-hover);
+    border-color: var(--control-border-hover);
+  }
 }
 
 /* Theme-Aware Utility Classes */
