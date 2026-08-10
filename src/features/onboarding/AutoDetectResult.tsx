@@ -63,7 +63,7 @@ export function AutoDetectResult({
       </motion.div>
 
       <div className="text-center mb-10">
-        <h2 className="text-3xl font-bold bg-github-gradient bg-clip-text text-transparent mb-2">
+        <h2 className="text-3xl font-bold text-base-content mb-2">
           {t('result.title', { count: confirmedGames.length })}
         </h2>
         <p className="text-base-content/60">{t('result.subtitle')}</p>

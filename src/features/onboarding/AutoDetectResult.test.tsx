@@ -25,7 +25,9 @@ describe('AutoDetectResult (TC-03)', () => {
       />,
     );
 
-    expect(screen.getByText('2 Games Found!')).toBeInTheDocument();
+    const title = screen.getByText('2 Games Found!');
+    expect(title).toHaveClass('text-base-content');
+    expect(title).not.toHaveClass('text-transparent');
     expect(screen.getByText('Game 1')).toBeInTheDocument();
     expect(screen.getByText('Game 2')).toBeInTheDocument();
     // Check for the new big checkmark icon (and the one in the button)
