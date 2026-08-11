@@ -39,6 +39,7 @@ const baseObject: WorkspaceObjectNode = {
   id: 'obj-1',
   name: 'Albedo',
   display_name: 'Albedo',
+  is_registered: true,
   node_kind: 'object',
   display_mode: 'unknown',
   type_chip: null,

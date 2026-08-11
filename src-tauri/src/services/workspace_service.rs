@@ -11,7 +11,9 @@ use crate::services::objects::query::get_filtered_objects_with_conflict_check;
 use crate::services::workspace_read_model::explorer_mapper::{
     empty_workspace_explorer, map_workspace_explorer,
 };
-use crate::services::workspace_read_model::object_mapper::map_workspace_objects;
+use crate::services::workspace_read_model::object_mapper::{
+    map_workspace_objects, WorkspaceObjectMapping,
+};
 use crate::services::workspace_read_model::preview_builder::{
     build_preview, clear_preview_selection_for_corridor_mismatch, empty_workspace_preview,
 };
@@ -38,6 +40,15 @@ fn unavailable_source_state(mods_path: &str) -> WorkspaceSourceState {
         status: WorkspaceSourceStatus::Unavailable,
         message: Some(format!("Mods root is unavailable: {mods_path}")),
     }
+}
+
+fn include_unregistered_roots(filter: &crate::domain::objects::ObjectFilter) -> bool {
+    filter.object_type.is_none()
+        && filter.status_filter.is_none()
+        && filter
+            .meta_filters
+            .as_ref()
+            .is_none_or(std::collections::HashMap::is_empty)
 }
 
 fn build_workspace_selection(
@@ -76,7 +87,13 @@ pub async fn get_workspace_view_model(
             build_workspace_selection(&resolved_selection, preview.selected_path.clone());
 
         return Ok(WorkspaceViewModel {
-            objects: map_workspace_objects(objects, &mods_path, false),
+            objects: map_workspace_objects(WorkspaceObjectMapping {
+                objects,
+                root_folders: &[],
+                mods_path: &mods_path,
+                source_available: false,
+                include_unregistered: false,
+            }),
             explorer: empty_workspace_explorer(),
             preview,
             selection,
@@ -89,17 +106,32 @@ pub async fn get_workspace_view_model(
     }
 
     let mut resolved_selection = resolve_workspace_selection(&mods_path, &input);
-    let raw_explorer = list_mod_folders_for_game(
-        pool,
-        &game_id,
-        mods_path.clone(),
-        resolved_selection.explorer_sub_path.clone(),
-    )
-    .await?;
-    let explorer = map_workspace_explorer(apply_runtime_corridor_filter_to_response(
-        raw_explorer,
+    let root_listing = apply_runtime_corridor_filter_to_response(
+        list_mod_folders_for_game(pool, &game_id, mods_path.clone(), None).await?,
         safe_mode,
-    ));
+    );
+    let workspace_objects = map_workspace_objects(WorkspaceObjectMapping {
+        objects,
+        root_folders: &root_listing.children,
+        mods_path: &mods_path,
+        source_available: true,
+        include_unregistered: include_unregistered_roots(&input.filter),
+    });
+    let raw_explorer = if resolved_selection.explorer_sub_path.is_none() {
+        root_listing
+    } else {
+        apply_runtime_corridor_filter_to_response(
+            list_mod_folders_for_game(
+                pool,
+                &game_id,
+                mods_path.clone(),
+                resolved_selection.explorer_sub_path.clone(),
+            )
+            .await?,
+            safe_mode,
+        )
+    };
+    let explorer = map_workspace_explorer(raw_explorer);
     let preview = build_preview(
         &explorer,
         resolved_selection.explorer_sub_path.as_deref(),
@@ -111,7 +143,7 @@ pub async fn get_workspace_view_model(
     let selection = build_workspace_selection(&resolved_selection, preview.selected_path.clone());
 
     Ok(WorkspaceViewModel {
-        objects: map_workspace_objects(objects, &mods_path, true),
+        objects: workspace_objects,
         explorer,
         preview,
         selection,

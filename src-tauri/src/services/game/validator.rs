@@ -15,7 +15,7 @@ pub struct DetectedGame {
 /// Validates a folder as a valid 3DMigoto game instance.
 ///
 /// Instead of failing hard on missing optional files, this function:
-/// 1. Auto-corrects if the user pointed at the `/Mods` subfolder — climbs up to the parent.
+/// 1. Resolves an instance root, its `/Mods` folder, or any nested Mods subfolder.
 /// 2. Treats `/Mods`, `d3dx.ini`, `d3d11.dll`, and `.exe` as soft warnings, not hard errors.
 ///
 /// Returns `(GameInfo, Vec<String>)` where warnings are displayed in the UI.
@@ -29,24 +29,9 @@ pub fn validate_instance(raw_path: &Path) -> Result<(GameInfo, Vec<String>), App
 
     let mut warnings: Vec<String> = Vec::new();
 
-    // SMART: If user selected the /Mods folder itself, silently climb up to the parent
-    let selected_mods_folder = raw_path
-        .file_name()
-        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("mods"));
-    let path: PathBuf = if selected_mods_folder {
-        log::debug!("Smart path correction: user selected /Mods, resolved to parent.");
-        raw_path
-            .parent()
-            .ok_or_else(|| {
-                AppError::Internal("Cannot resolve parent of selected 'Mods' folder.".to_string())
-            })?
-            .to_path_buf()
-    } else {
-        raw_path.to_path_buf()
-    };
+    let (path, mods_path) = resolve_instance_paths(raw_path)?;
 
     // RULE 1: /Mods folder (soft — warn if missing)
-    let mods_path = path.join("Mods");
     if !mods_path.is_dir() {
         warnings.push(
             "Missing /Mods folder. You may need to create it manually before installing mods."
@@ -82,6 +67,35 @@ pub fn validate_instance(raw_path: &Path) -> Result<(GameInfo, Vec<String>), App
     };
 
     Ok((info, warnings))
+}
+
+fn resolve_instance_paths(raw_path: &Path) -> Result<(PathBuf, PathBuf), AppError> {
+    if let Some(mods_root) = raw_path.ancestors().find(|candidate| {
+        candidate
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("mods"))
+    }) {
+        let instance_root = mods_root.parent().ok_or_else(|| {
+            AppError::Internal("Cannot resolve parent of selected 'Mods' folder.".to_string())
+        })?;
+        log::debug!(
+            "Smart path correction: selected Mods path {}, instance root {}.",
+            raw_path.display(),
+            instance_root.display()
+        );
+        return Ok((instance_root.to_path_buf(), raw_path.to_path_buf()));
+    }
+
+    let nested_mods_path = raw_path.join("Mods");
+    let looks_like_instance_root = nested_mods_path.is_dir()
+        || CORE_FILES
+            .iter()
+            .any(|file_name| raw_path.join(file_name).exists());
+    if looks_like_instance_root {
+        return Ok((raw_path.to_path_buf(), nested_mods_path));
+    }
+
+    Ok((raw_path.to_path_buf(), raw_path.to_path_buf()))
 }
 
 /// Finds the most appropriate launcher .exe in the given directory.

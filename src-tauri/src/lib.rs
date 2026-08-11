@@ -30,6 +30,7 @@ macro_rules! emmm_collect_commands {
             commands::app::app_cmds::check_path_exists_cmd,
             commands::app::app_cmds::ensure_dir_cmd,
             commands::app::game_cmds::auto_detect_games,
+            commands::app::game_cmds::resolve_game_folder,
             commands::app::game_cmds::add_game_manual,
             commands::app::game_cmds::save_onboarding_games,
             commands::app::game_cmds::get_games,

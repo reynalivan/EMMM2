@@ -123,6 +123,7 @@ describe('useObjectListHandlers', () => {
         active_mod_paths: null,
         name: 'Object 1',
         display_name: 'Object 1',
+        is_registered: true,
         node_kind: 'object' as const,
         display_mode: 'unknown' as const,
         type_chip: null,

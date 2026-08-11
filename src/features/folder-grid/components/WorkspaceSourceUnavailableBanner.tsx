@@ -68,8 +68,9 @@ export default function WorkspaceSourceUnavailableBanner({
 
     setBusy(true);
     try {
+      const resolved = await commands.resolveGameFolder(selected);
       const games = settings.games.map((game) =>
-        game.id === activeGame.id ? { ...game, mod_path: selected } : game,
+        game.id === activeGame.id ? { ...game, mod_path: resolved.mods_path } : game,
       );
       await saveSettingsAsync({ ...settings, games });
       await reconcile();

@@ -67,7 +67,7 @@ export function useObjectListKeyboard({
       const targetObject = objects.find(
         (object) => object.folder_path === selectedObjectFolderPath,
       );
-      if (!targetObject) {
+      if (!targetObject?.is_registered) {
         return;
       }
 

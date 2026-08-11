@@ -26,6 +26,9 @@
     "source_locate_btn": "Locate folder…",
     "source_locate_title": "Select the mods folder for this game",
     "source_relocated": "Mods folder updated.",
+    "source_dialog_title": "Mods folder not found",
+    "source_dialog_message": "The saved Mods folder is unavailable. Locate it to continue loading your mod data.",
+    "source_later_btn": "Later",
     "source_action_failed": "Could not reach the mods folder: {{error}}"
   },
   "empty": {

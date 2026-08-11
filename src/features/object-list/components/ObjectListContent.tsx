@@ -177,7 +177,7 @@ export default function ObjectListContent({
                     onClick={() => onSelectObject(item.obj.folder_path)}
                     isDropTarget={isDragging && hoveredItemId === item.obj.id}
                     isBulkSelected={isBulkSelected?.(item.obj.id)}
-                    onToggleBulkSelect={onToggleBulkSelect}
+                    onToggleBulkSelect={item.obj.is_registered ? onToggleBulkSelect : undefined}
                     isSwitchPending={isObjectSwitchPending?.(item.obj)}
                   />
                 </ContextMenu>

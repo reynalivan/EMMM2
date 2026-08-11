@@ -13,7 +13,8 @@ const getRowId = (item: RowItem) => item.obj.id;
 export function useObjectBulkSelect(flatItems: FlatItem[]) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const rowItems = useMemo(
-    () => flatItems.filter((item): item is RowItem => item.type === 'row'),
+    () =>
+      flatItems.filter((item): item is RowItem => item.type === 'row' && item.obj.is_registered),
     [flatItems],
   );
   const { ids: rowIds, setAnchorId, getRange } = useRangeSelection(rowItems, getRowId);

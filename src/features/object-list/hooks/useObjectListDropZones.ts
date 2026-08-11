@@ -6,16 +6,13 @@ export type { DropZone } from '../utils/dropUtils';
 import type { DropValidation } from '../modals/DropConfirmModal';
 import { scanService } from '../../../lib/services/scanService';
 import { toast } from '../../../stores/useToastStore';
-import type { ObjectSummary } from '../../../types/object';
 import type { GameType } from '../../../types/game';
-
+import type { WorkspaceObjectNode } from '../../../types/workspace';
 
 export interface UseObjectListDropZonesProps {
   activeGame:
-    | { id: string; name: string; game_type: GameType; mod_path: string }
-    | null
-    | undefined;
-  objects: ObjectSummary[];
+    { id: string; name: string; game_type: GameType; mod_path: string } | null | undefined;
+  objects: WorkspaceObjectNode[];
   toolbarRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   bottomRef: RefObject<HTMLDivElement | null>;
@@ -109,11 +106,16 @@ export function useObjectListDropZones({
         return;
       }
 
-      const targetObj = objects.find((o) => o.id === targetId);
-      if (!targetObj) {
+      const targetObject = objects.find((object) => object.id === targetId);
+      if (!targetObject) {
         toast.error('Target object not found.');
         return;
       }
+      if (!targetObject.is_registered) {
+        toast.info('Register this folder before moving mods into it.');
+        return;
+      }
+      const registeredObjects = objects.filter((object) => object.is_registered);
 
       // Only validate folders (not loose files)
       const classified = classifyDroppedPaths(paths);
@@ -129,23 +131,23 @@ export function useObjectListDropZones({
       setDropValidation({
         paths,
         targetId,
-        targetName: targetObj.name,
+        targetName: targetObject.name,
         status: 'validating',
       });
 
       try {
         // Score the first dropped folder against all object names
-        const candidateNames = objects.map((o) => o.name);
+        const candidateNames = registeredObjects.map((object) => object.name);
         const scores = await scanService.scoreCandidatesBatch(
           foldersToValidate[0],
           candidateNames,
           activeGame.game_type,
         );
 
-        const targetScore = scores[targetObj.name] ?? 0;
+        const targetScore = scores[targetObject.name] ?? 0;
 
         // Find best match
-        let bestName = targetObj.name;
+        let bestName = targetObject.name;
         let bestScore = targetScore;
         for (const [name, score] of Object.entries(scores)) {
           if (score !== undefined && score > bestScore) {
@@ -154,17 +156,17 @@ export function useObjectListDropZones({
           }
         }
 
-        const bestObj = objects.find((o) => o.name === bestName);
+        const bestObject = registeredObjects.find((object) => object.name === bestName);
 
         // Confidence threshold: 50% or below → show warning
         if (targetScore <= 50) {
           setDropValidation({
             paths,
             targetId,
-            targetName: targetObj.name,
+            targetName: targetObject.name,
             status: 'warning',
             targetScore,
-            suggestedId: bestObj?.id,
+            suggestedId: bestObject?.id,
             suggestedName: bestName,
             suggestedScore: bestScore,
           });
@@ -233,7 +235,13 @@ export function useObjectListDropZones({
 
       // Track which object row the cursor is over (for per-item highlight)
       if (zone === 'item') {
-        setHoveredItemId(findObjectIdAtPoint(pos));
+        const hoveredId = findObjectIdAtPoint(pos);
+        const registeredId = objects.some(
+          (object) => object.id === hoveredId && object.is_registered,
+        )
+          ? hoveredId
+          : null;
+        setHoveredItemId(registeredId);
         // Calculate tooltip Y relative to sidebar root
         const sidebarRect = contentRef.current?.parentElement?.getBoundingClientRect();
         setTooltipTop(sidebarRect ? pos.y - sidebarRect.top - 16 : pos.y);
@@ -241,7 +249,7 @@ export function useObjectListDropZones({
         setHoveredItemId(null);
       }
     },
-    [resolveDropZone, contentRef],
+    [resolveDropZone, contentRef, objects],
   );
 
   const handleDragStateChange = useCallback((dragging: boolean) => {

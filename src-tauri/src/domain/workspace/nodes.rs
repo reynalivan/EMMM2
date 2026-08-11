@@ -60,6 +60,7 @@ pub enum WorkspaceSwitchPolicyKey {
 pub struct WorkspaceObjectNode {
     #[serde(flatten)]
     pub object: ObjectSummary,
+    pub is_registered: bool,
     pub node_kind: WorkspaceNodeKind,
     pub display_mode: WorkspaceDisplayMode,
     pub type_chip: Option<WorkspaceTypeChip>,

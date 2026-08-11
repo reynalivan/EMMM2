@@ -129,6 +129,14 @@ async autoDetectGames(rootPath: string) : Promise<Result<GameConfig[], AppError>
     else return { status: "error", error: e  as any };
 }
 },
+async resolveGameFolder(path: string) : Promise<Result<GameInfo, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resolve_game_folder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Manually add a single game by path and type.
  * Validates the folder, checks for duplicates, saves to ConfigService.
@@ -1732,6 +1740,10 @@ export type GameConfig = { id: string; name: string; game_type: number; mod_path
  */
 warnings?: string[] }
 /**
+ * Result of a successful folder validation
+ */
+export type GameInfo = { path: string; launcher_path: string; mods_path: string }
+/**
  * Represents a row in the `objects` table.
  */
 export type GameObject = { id: string; game_id: string; name: string; folder_path: string; folder_path_key: string; status: number; object_type: string; sub_category: string | null; tags: string; metadata: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_pinned: boolean; is_auto_sync: boolean; created_at: string }
@@ -1975,7 +1987,7 @@ export type WorkspaceModInfoSummary = { actual_name: string; author: string; ver
 export type WorkspaceMoveTarget = { object_id: string; object_name: string; object_folder_path: string; target_subpath: string | null; display_path: string; depth: number }
 export type WorkspaceNode = WorkspaceExplorerNode | WorkspaceObjectNode
 export type WorkspaceNodeKind = "object" | "container" | "terminal_mod" | "inactive_branch"
-export type WorkspaceObjectNode = ({ id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }) & { node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities }
+export type WorkspaceObjectNode = ({ id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }) & { is_registered: boolean; node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities }
 export type WorkspacePathRewrite = { old_path: string; new_path: string }
 export type WorkspacePreview = { selected_path: string | null; selected_node: WorkspaceNode | null; is_flat_mod_root: boolean; display_title: string | null; display_subtitle: string | null; mod_info_summary: WorkspaceModInfoSummary | null; ini_summary: WorkspaceIniSummary | null; image_summary: WorkspaceImageSummary | null; warning_summary: WorkspaceWarningSummary }
 export type WorkspaceReason = { code: WorkspaceReasonCode; args: Partial<{ [key in string]: string }> }

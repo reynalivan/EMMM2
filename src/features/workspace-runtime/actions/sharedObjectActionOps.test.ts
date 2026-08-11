@@ -41,6 +41,7 @@ describe('shared object action operations', () => {
           id: 'object-1',
           name: 'Diluc',
           display_name: 'Diluc',
+          is_registered: true,
           node_kind: 'object',
           display_mode: 'unknown',
           type_chip: null,

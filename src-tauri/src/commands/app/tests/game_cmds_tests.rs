@@ -2,7 +2,7 @@
 use crate::services::config::ConfigService;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 async fn setup_pool() -> sqlx::SqlitePool {
@@ -85,6 +85,38 @@ async fn test_add_game_manual_and_duplicate() {
             .contains("already registered"),
         "Duplicate addition was not prevented."
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_add_game_manual_persists_selected_mods_subfolder() {
+    let pool = setup_pool().await;
+    let service = ConfigService::new_for_test(pool.clone());
+    let tmp = TempDir::new().unwrap();
+    let game_dir = tmp.path().join("GIMI");
+    create_valid_instance(&game_dir);
+    let selected = game_dir.join("Mods").join("character");
+    fs::create_dir_all(selected.join("Aether")).unwrap();
+
+    let game = crate::commands::app::game_cmds::add_game_manual_inner(
+        &service,
+        "GIMI",
+        &selected.to_string_lossy(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(game.game_exe, game_dir);
+    assert_eq!(game.mod_path, selected);
+    crate::commands::app::game_cmds::save_onboarding_games_inner(&service, vec![game])
+        .await
+        .unwrap();
+
+    let stored: (String, String) = sqlx::query_as("SELECT path, mods_path FROM games LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(PathBuf::from(stored.0), game_dir);
+    assert_eq!(PathBuf::from(stored.1), selected);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

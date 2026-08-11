@@ -26,6 +26,9 @@
     "source_locate_btn": "Cari folder…",
     "source_locate_title": "Pilih folder mods untuk game ini",
     "source_relocated": "Folder mods diperbarui.",
+    "source_dialog_title": "Folder Mods tidak ditemukan",
+    "source_dialog_message": "Folder Mods yang tersimpan tidak tersedia. Pilih lokasi barunya untuk melanjutkan memuat data mod.",
+    "source_later_btn": "Nanti",
     "source_action_failed": "Tidak dapat mengakses folder mods: {{error}}"
   },
   "empty": {

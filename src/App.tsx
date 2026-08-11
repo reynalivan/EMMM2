@@ -151,6 +151,7 @@ import { ToastContainer } from './components/ui/Toast';
 import ConflictResolveDialog from './features/folder-grid/modals/ConflictResolveDialog';
 import { DynamicThemeInjector } from './features/settings/theme/DynamicThemeInjector';
 import { FileInUseDialog } from './components/dialogs/FileInUseDialog';
+import WorkspaceSourceUnavailableDialog from './features/folder-grid/components/WorkspaceSourceUnavailableDialog';
 
 export default function App() {
   useThemeRuntime();
@@ -169,6 +170,7 @@ export default function App() {
       <ToastContainer />
       <ConflictResolveDialog />
       <FileInUseDialog />
+      <WorkspaceSourceUnavailableDialog />
     </div>
   );
 }

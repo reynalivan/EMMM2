@@ -50,6 +50,13 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
     let is_safe = ctx.is_safe;
     let mods_path = &ctx.mods_path;
 
+    if !mods_path.is_dir() {
+        return Err(AppError::NotFound(format!(
+            "Mods folder not found: {}",
+            mods_path.display()
+        )));
+    }
+
     log::info!(
         "[post_apply] Starting post-apply tasks for game={}",
         game_id
@@ -275,4 +282,30 @@ pub async fn trigger_overlay_refresh(
         .with_settings(|settings| settings.active_game_id.clone())
         .ok_or_else(|| AppError::Internal("No active game".to_string()))?;
     trigger_overlay_refresh_for_game(pool, config, &game_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn missing_mods_root_is_not_created_by_post_apply() {
+        let ctx = crate::test_utils::init_test_db().await;
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("missing-mods");
+
+        let result = run_post_apply_tasks(PostApplyContext {
+            pool: ctx.pool,
+            game_id: "missing-game".to_string(),
+            is_safe: true,
+            mods_path: missing.clone(),
+            hotkeys: HotkeyConfig::default(),
+            status_fields: None,
+        })
+        .await;
+
+        assert!(matches!(result, Err(AppError::NotFound(_))));
+        assert!(!missing.exists());
+    }
 }

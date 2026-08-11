@@ -19,7 +19,8 @@ fn test_valid_instance_passes() {
     let result = validate_instance(&dir);
     assert!(result.is_ok());
     let (info, warnings) = result.unwrap();
-    assert!(info.mods_path.contains("Mods"));
+    assert_eq!(PathBuf::from(info.path), dir);
+    assert_eq!(PathBuf::from(info.mods_path), dir.join("Mods"));
     assert!(info.launcher_path.contains("3DMigotoLoader"));
     assert!(
         warnings.is_empty(),
@@ -164,12 +165,33 @@ fn test_smart_mods_folder_correction() {
         result.is_ok(),
         "Selecting the Mods folder should auto-correct"
     );
-    let (info, _warnings) = result.unwrap();
+    let (info, warnings) = result.unwrap();
     // The resolved path should be the parent (base)
     assert!(
         !info.path.to_lowercase().ends_with("mods"),
         "Game path should be the parent of the Mods folder"
     );
+    assert_eq!(PathBuf::from(info.mods_path), mods_dir);
+    assert!(warnings.is_empty());
+
+    let _ = fs::remove_dir_all(&base);
+}
+
+#[test]
+fn test_smart_mods_subfolder_correction() {
+    let base = std::env::temp_dir().join("emmm_test_smart_subfolder_correction");
+    let _ = fs::remove_dir_all(&base);
+    create_valid_instance(&base);
+    let selected = base.join("Mods").join("character");
+    fs::create_dir_all(selected.join("Aether")).unwrap();
+    fs::create_dir_all(selected.join("Mods").join(".emmm_data")).unwrap();
+
+    let (info, warnings) = validate_instance(&selected).unwrap();
+
+    assert_eq!(PathBuf::from(info.path), base);
+    assert_eq!(PathBuf::from(info.mods_path), selected);
+    assert!(info.launcher_path.contains("3DMigotoLoader"));
+    assert!(warnings.is_empty());
 
     let _ = fs::remove_dir_all(&base);
 }

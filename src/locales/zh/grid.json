@@ -26,6 +26,9 @@
     "source_locate_btn": "定位文件夹…",
     "source_locate_title": "为此游戏选择模组文件夹",
     "source_relocated": "模组文件夹已更新。",
+    "source_dialog_title": "未找到模组文件夹",
+    "source_dialog_message": "已保存的模组文件夹不可用。请选择新位置以继续加载模组数据。",
+    "source_later_btn": "稍后",
     "source_action_failed": "无法访问模组文件夹：{{error}}"
   },
   "empty": {

@@ -69,3 +69,4 @@ async fn setup_workspace_fixture(
 mod corridor;
 mod drift;
 mod preview;
+mod roots;

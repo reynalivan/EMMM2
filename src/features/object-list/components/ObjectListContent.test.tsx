@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ObjectListContent from './ObjectListContent';
 import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
 import type { FlatItem } from '../hooks/useObjectListVirtualizer';
 import type { WorkspaceCapabilities, WorkspaceObjectNode } from '../../../types/workspace';
+import { useObjectBulkSelect } from '../hooks/useObjectBulkSelect';
 
 vi.mock('../../../components/ui/ContextMenu', () => ({
   ContextMenu: ({ children, content }: { children: React.ReactNode; content: React.ReactNode }) => (
@@ -14,7 +15,17 @@ vi.mock('../../../components/ui/ContextMenu', () => ({
   ),
 }));
 vi.mock('./ObjectRowItem', () => ({
-  default: ({ obj }: { obj: { name: string } }) => <div data-testid="row-item">{obj.name}</div>,
+  default: ({
+    obj,
+    onToggleBulkSelect,
+  }: {
+    obj: { name: string };
+    onToggleBulkSelect?: () => void;
+  }) => (
+    <div data-testid="row-item" data-bulk-selectable={Boolean(onToggleBulkSelect)}>
+      {obj.name}
+    </div>
+  ),
 }));
 vi.mock('./CategorySection', () => ({
   default: ({ category }: { category: { name: string } }) => (
@@ -47,6 +58,7 @@ describe('ObjectListContent', () => {
     id: '1',
     name: 'Obj1',
     display_name: 'Obj1',
+    is_registered: true,
     node_kind: 'object',
     display_mode: 'unknown',
     type_chip: null,
@@ -137,6 +149,62 @@ describe('ObjectListContent', () => {
 
     expect(screen.getByTestId('category-section')).toBeInTheDocument();
     expect(screen.getByTestId('row-item')).toBeInTheDocument();
+  });
+
+  it('keeps filesystem-only roots out of bulk selection', () => {
+    const runtimeRoot: WorkspaceObjectNode = {
+      ...objectRow,
+      id: 'fs-root',
+      is_registered: false,
+    };
+    const flatItems: FlatItem[] = [
+      { type: 'row', obj: objectRow },
+      { type: 'row', obj: runtimeRoot },
+    ];
+    const { result } = renderHook(() => useObjectBulkSelect(flatItems));
+
+    act(() => result.current.selectAll());
+
+    expect([...result.current.selectedIds]).toEqual(['1']);
+  });
+
+  it('does not expose a bulk checkbox for filesystem-only roots', () => {
+    const runtimeRoot: WorkspaceObjectNode = {
+      ...objectRow,
+      id: 'fs-root',
+      is_registered: false,
+    };
+    const virtualizer = {
+      getTotalSize: () => 70,
+      getVirtualItems: () => [{ index: 0, size: 70, start: 0 }],
+    };
+
+    render(
+      <ObjectListContent
+        parentRef={{ current: null }}
+        rowVirtualizer={
+          virtualizer as unknown as import('@tanstack/react-virtual').Virtualizer<
+            HTMLDivElement,
+            Element
+          >
+        }
+        flatObjectItems={[{ type: 'row', obj: runtimeRoot }]}
+        selectedObjectFolderPath={null}
+        selectedObjectType={null}
+        onSelectObject={vi.fn()}
+        setSelectedObjectType={vi.fn()}
+        isMobile={false}
+        stickyPosition={null}
+        selectedIndex={-1}
+        scrollToSelected={vi.fn()}
+        onToggleBulkSelect={vi.fn()}
+        contextMenuProps={
+          {} as unknown as React.ComponentProps<typeof ObjectListContent>['contextMenuProps']
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('row-item')).toHaveAttribute('data-bulk-selectable', 'false');
   });
 
   it('uses identical object context menu targets for row and sticky row', () => {

@@ -10,6 +10,12 @@ fn canonical_game_path_key(path: &str) -> String {
     folder_path_key(path, None)
 }
 
+#[specta::specta]
+#[tauri::command]
+pub fn resolve_game_folder(path: String) -> Result<crate::domain::models::GameInfo, AppError> {
+    validator::validate_instance(Path::new(&path)).map(|(info, _warnings)| info)
+}
+
 /// Auto-detect games by scanning an XXMI root folder.
 /// Validates each subfolder, saves valid games to ConfigService.
 #[specta::specta]

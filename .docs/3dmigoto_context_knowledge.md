@@ -1,6 +1,6 @@
 # 3DMigoto Context Knowledge untuk EMMM2NEW
 
-> Status: baseline riset per 2026-08-10. Dokumen ini merangkum percakapan Claude, kode EMMM2NEW saat ini, source code/repository upstream, dan dokumentasi modding yang diberikan. Gunakan sebagai konteks desain; temuan bertanda **runtime-test** belum boleh dianggap terbukti di semua fork XXMI.
+> Basis pengetahuan dan panduan teknis per 2026-08-11. Gunakan untuk memahami runtime, menulis/mendiagnosis mod, dan mengintegrasikan EMMM dengan package XXMI. Status gap dan hasil remediation berada di [`3dmigoto_gap_status.md`](./3dmigoto_gap_status.md).
 
 ## 1. Tujuan dan batas sumber
 
@@ -337,65 +337,63 @@ Sumber: [Hunting](https://leotorrez.github.io/modding/guides/hunting), [Textures
 
 ### 6.1 INI Reader/Formatter
 
-- [`document.rs`](../src-tauri/src/services/ini/document.rs) menemukan INI langsung di satu folder, mengecualikan `desktop.ini`, membatasi 2 MiB, mendeteksi BOM/newline, mencoba UTF-8 lalu Shift-JIS, dan menyimpan `raw_lines`.
-- Structured view hanya mengekstrak assignment `$variable = ...` yang dimulai `$`, serta satu `key` dan satu `back` per `[Key*]`.
-- Malformed/lossy input masuk `RawFallback`; writer menolak menyimpannya.
+- [`document.rs`](../src-tauri/src/services/ini/document.rs) menemukan INI secara rekursif dan deterministik, mengecualikan `desktop.ini` serta subtree `DISABLED*`, dan tidak mengikuti symlink.
+- [`encoding.rs`](../src-tauri/src/services/ini/encoding.rs) mempertahankan encoding asal, BOM, terminator per baris (`LF`, `CRLF`, `CR`, atau none), dan final-newline state.
+- Structured view adalah index di atas raw lines. Ia mengenali qualifier `global`, `persist`, dan `local`, mempertahankan ejaan section, serta menyimpan repeated `key`/`back` dalam urutan source.
+- Input lossy dapat dibaca sebagai raw fallback, tetapi tidak boleh disimpan karena bytes asal tidak dapat direkonstruksi dengan aman.
 
 ### 6.2 INI Writer
 
-- [`write.rs`](../src-tauri/src/services/ini/write.rs) membuat `.bak`, mengubah line index pada salinan `raw_lines`, mempertahankan BOM flag dan satu newline style, menulis `.tmp`, lalu rename.
-- Ini cukup aman untuk edit kecil pada UTF-8 sederhana, tetapi belum lossless penuh dan belum aman terhadap concurrent/stale edits.
+- [`write.rs`](../src-tauri/src/services/ini/write.rs) memvalidasi seluruh update sebelum side effect, lalu membandingkan BLAKE3 source fingerprint dengan bytes terbaru di disk.
+- Writer mempertahankan encoding/BOM/terminator asal dan menolak karakter yang tidak representable pada Shift-JIS.
+- Commit memakai unique sibling temp, recovery rename, auto-restore pada kegagalan replace, dan rotasi tiga generasi backup.
+- Command write berjalan di bawah `OperationLock`; external edit setelah read menghasilkan stale-write error, bukan overwrite.
 
 ### 6.3 KeyViewer
 
-- [`post_apply.rs`](../src-tauri/src/services/app/post_apply.rs) membaca mod berstatus enabled, memanen hash/keybind satu pass, memuat object/hash DB, mencocokkan, lalu menulis `.emmm_data/KeyViewer.ini`, `keybinds/active/*.txt`, dan status.
-- [`harvester.rs`](../src-tauri/src/services/keyviewer/harvester.rs) hanya menerima hash 8-hex dari `TextureOverride*` atau `ShaderOverride*` dan memakai denylist nama section.
-- [`matcher.rs`](../src-tauri/src/services/keyviewer/matcher.rs) memberi base/occurrence/rarity score, lalu memilih sampai tiga sentinel yang tidak high-collision.
-- [`generator/ini.rs`](../src-tauri/src/services/keyviewer/generator/ini.rs) membuat TextureOverride sentinel, state per-frame, dan overlay melalui legacy `ShaderFixes\help.ini`.
+- [`post_apply.rs`](../src-tauri/src/services/app/post_apply.rs) memakai effective-enabled paths, memanen nested INI satu pass, mencocokkan object, lalu membangun artifact di staging sebelum directory swap.
+- [`harvester.rs`](../src-tauri/src/services/keyviewer/harvester.rs) hanya memasukkan hash resource 8-hex dari `TextureOverride*` ke matcher. Shader hash 16-hex ditangani conflict scanner sebagai tipe berbeda.
+- [`matcher.rs`](../src-tauri/src/services/keyviewer/matcher.rs) mendeduplikasi evidence, memakai threshold konservatif, dan hanya menghasilkan artifact bila sentinel unik terhadap semua object result.
+- [`generator/ini.rs`](../src-tauri/src/services/keyviewer/generator/ini.rs) memakai text API resmi per package: `GIMIv8`, `SRMIv1`, `WWMIv1`, atau `ZZMIv1`. EFMI ditolak eksplisit sampai API resmi terverifikasi.
+- Seluruh resource path ditulis relatif terhadap `.emmm_data/KeyViewer.ini`: `status/...` dan `keybinds/active/...`.
 
 ### 6.4 Switch mod
 
-- [`core_ops/toggle.rs`](../src-tauri/src/services/mods/core_ops/toggle.rs) dan [`runtime_mutation_engine.rs`](../src-tauri/src/services/runtime_mutation_engine.rs) melakukan rename filesystem dengan collision check, lock/suppression, batch plan, dan rollback best-effort.
+- [`core_ops/toggle.rs`](../src-tauri/src/services/mods/core_ops/toggle.rs) dan [`runtime_mutation_engine.rs`](../src-tauri/src/services/runtime_mutation_engine.rs) melakukan rename filesystem dengan collision check, lock/suppression, batch plan, dan rollback.
 - [`workspace_switch_service.rs`](../src-tauri/src/services/workspace_switch_service.rs) memisahkan object-root switch dari mod switch dan menjalankan scoped disk reconcile.
-- Disk reconcile menyelesaikan DB/runtime projection dan memicu refresh artifact overlay bila folder berubah.
-- UI switch tidak menyuntikkan F10 karena game mungkin tidak fokus; [`hotkey_cmds.rs`](../src-tauri/src/commands/app/hotkey_cmds.rs) hanya mengembalikan key yang harus ditekan. Cycle preset in-game dapat mengirim reload karena callback sudah memastikan game fokus.
+- Bila rollback tidak lengkap, collection pipeline menjalankan full disk reconcile dan menyimpan recovery warning pada progress state.
+- UI switch melaporkan **disk applied, reload required** dan menampilkan reload key hasil discovery. Cycle preset in-game baru melaporkan reload setelah key-send berhasil.
+- Default EMMM adalah `Ctrl+F6` dan `Ctrl+F8`; F6/F8 tanpa modifier tetap dimiliki package/3DMigoto.
 
 ### 6.5 Call flow Reader -> Editor -> Writer
 
 ```text
 mod path
-  -> list_ini_files (direct children saja)
+  -> list_ini_files (recursive, sorted, skip desktop.ini/DISABLED*/symlink)
   -> read_ini_document
        -> metadata size guard 2 MiB
        -> read bytes
-       -> detect any CRLF
-       -> UTF-8 / Shift-JIS / lossy decode
-       -> split raw_lines
-       -> parse $variable dan [Key*] key/back
+       -> detect UTF-8/BOM, Shift-JIS, atau lossy fallback
+       -> split raw_lines sambil menyimpan terminator per baris
+       -> parse qualified variables dan repeated [Key*] key/back
+       -> hitung source fingerprint
   -> frontend membuat line_updates
   -> save_ini_with_updates
-       -> reject RawFallback
-       -> read current original untuk .bak
+       -> validasi seluruh update dan reject RawFallback
+       -> re-read target dan cocokkan fingerprint
        -> patch cached raw_lines by index
-       -> join memakai satu newline style
-       -> write fixed .tmp
-       -> rename/Windows remove+rename fallback
+       -> encode memakai encoding/BOM/terminator asal
+       -> rotate backup + write unique temp + sync
+       -> recoverable replace; auto-restore bila commit gagal
 ```
 
-Invariant yang sudah baik:
+Invariant yang wajib dipertahankan:
 
 - raw lines menjadi sumber rendering ulang, bukan serializer dari structured fields;
-- save ditolak bila decode/parser tidak dipercaya;
-- backup menyimpan bytes original saat save dimulai;
-- target update divalidasi terhadap bounds.
-
-Invariant yang belum ada:
-
-- bytes saat save sama dengan bytes saat document dibaca;
-- encoding/output sama dengan encoding/input;
-- final newline dan mixed terminator identik;
-- seluruh update valid sebelum side effect `.bak`/`.tmp`;
-- satu writer per file dan replace selalu recoverable.
+- save ditolak bila decode tidak dipercaya atau source sudah berubah;
+- targeted edit tidak mengubah encoding, terminator, BOM, atau baris lain;
+- semua update valid sebelum backup/temp dibuat;
+- target asli atau recovery yang jelas selalu tersedia bila replace gagal.
 
 ### 6.6 Call flow mutation -> reconcile -> overlay
 
@@ -422,47 +420,49 @@ Design yang matang di alur ini:
 - disk diposisikan sebagai source of truth;
 - object-root switch dipisahkan dari mod-level switch;
 - operation lock dan watcher suppression mengurangi race/feedback loop;
-- batch mutation direncanakan sebelum rename dan memiliki rollback best-effort;
+- batch mutation direncanakan sebelum rename dan memiliki rollback + full-reconcile recovery;
 - reconcile menjadi single writer DB setelah filesystem berubah;
-- runtime side effects diurutkan setelah projection settle.
+- effective-enabled query digunakan setelah projection settle;
+- runtime artifact dibangun di staging dan baru ditukar setelah valid.
 
-Risiko boundary:
+Boundary yang tetap harus dipahami:
 
-- query overlay kembali memakai raw `mods.status`, sehingga dapat membatalkan semantic effective-disabled yang projection/UI sudah pahami;
-- beberapa runtime side-effect error dilog dan tidak dipropagasi karena disk mutation telah sukses. UX perlu menunjukkan degraded completion;
-- artifact cleanup bukan transaction dan mengabaikan beberapa error filesystem;
-- game runtime reload adalah boundary eksternal yang belum masuk transaction disk/DB/artifact.
+- keberhasilan rename/reconcile/artifact tidak berarti game sudah reload;
+- UI-driven mutation hanya boleh menampilkan `ReloadRequired`, karena fokus game tidak terjamin;
+- hotkey in-game boleh menampilkan `RuntimeReloaded` hanya setelah input replay sukses;
+- artifact error sesudah disk mutation adalah degraded completion, bukan alasan mengklaim disk rollback.
 
 ### 6.7 Call flow KeyViewer secara detail
 
 ```text
 get_enabled_mods_paths
-  -> untuk setiap mod: list direct INI
+  -> filter status=enabled + tidak ada component DISABLED*
+  -> untuk setiap mod: list nested INI
   -> decode sekali
-  -> harvest 8-hex override hashes
-  -> parse [Key*]
+  -> harvest TextureOverride resource hash 8-hex
+  -> parse seluruh repeated [Key*]
   -> occurrence_counts + hash_to_mod_path
   -> get_kv_matching_objects
-  -> flatten skin hashes menjadi code_hashes
+  -> dedupe skin/code hashes
   -> match_objects
        -> reverse hash -> object-name set
        -> intersection + score
        -> threshold filter
-       -> sentinel rarity/collision filter
-  -> generate TextureOverride per sentinel
+       -> wajibkan sentinel unik; drop ambiguity
+  -> render API text berdasarkan GameType
   -> map sentinel kembali ke source mod keybinds
-  -> write text resources dan status
+  -> stage keybind text + status + KeyViewer.ini
+  -> directory/file atomic replace
 ```
 
-Titik kehilangan informasi:
+Aturan diagnosis:
 
-- file nested tidak masuk;
-- type hash dan component provenance hilang saat flatten;
-- repeated key/back hilang pada parser;
-- object type di-hardcode `Character` pada pembentukan `KvObjectEntry`;
-- tags dan thumbnail dikosongkan;
-- sumber keybind dipetakan hanya melalui sentinel, bukan seluruh matched evidence;
-- confidence berbasis kelipatan threshold, bukan probabilitas atau kalibrasi fixture.
+- satu base hash tidak cukup untuk menerima match;
+- duplicate evidence tidak boleh menaikkan score;
+- shared sentinel tidak boleh menghasilkan dua TextureOverride artifact;
+- ShaderOverride 16-hex tidak boleh dipaksa masuk resource matcher;
+- kegagalan create/write/replace/cleanup harus terlihat sebagai error atau warning degraded;
+- EFMI harus dianggap unsupported, bukan diam-diam memakai namespace package lain.
 
 ### 6.8 Hotkey ownership
 
@@ -472,114 +472,11 @@ Ada tiga domain hotkey yang harus dipisahkan:
 2. Key section di mod/paket, diproses 3dmigoto ketika game foreground dan ditulis `no_modifiers F6`.
 3. Hunting key di `[Hunting]`, bukan `[Key*]`, dengan chord/negative modifier dan aksi engine seperti reload/frame analysis.
 
-Konflik lintas domain tidak terdeteksi oleh `detect_conflicts`, karena fungsi lokal hanya membandingkan action EMMM satu sama lain. Runtime profile harus menyediakan reserved bindings, lalu scanner aktual menambah binding dari `d3dx.ini` dan included core package.
+Validator settings membandingkan semua action EMMM, reserved F6/F8 package bindings, dan reload key hasil discovery dari `[Hunting]`. Binding tersimpan milik user tidak dimigrasi diam-diam; perubahan default hanya berlaku pada konfigurasi baru atau aksi reset.
 
-### 6.9 Arti hasil test saat ini
+## 7. Panduan verifikasi dan regression minimum
 
-Validasi lokal yang dijalankan untuk baseline ini:
-
-- `cargo test services::ini::`: 12 test lulus.
-- `cargo test services::keyviewer::`: 56 test lulus.
-- `cargo test services::hotkeys::`: 31 test lulus.
-
-Kelulusan ini membuktikan implementasi konsisten dengan contract test saat ini, bukan bahwa contract tersebut cocok dengan upstream. Dua contoh contract test yang justru perlu diperbaiki:
-
-- reload-key tests membuat `[KeyReload] type = reload_fixes`, sedangkan config upstream memakai `[Hunting] reload_fixes = ...`;
-- KeyViewer generator tests secara eksplisit mengharuskan legacy `CustomShader\ShaderFixes\help.ini\FormatText` dan path `.emmm_data/status/...`, sehingga regression suite mempertahankan dua asumsi yang sedang diaudit.
-
-## 7. Gap terverifikasi dan prioritas perbaikan
-
-| ID | Prioritas | Gap terverifikasi | Dampak |
-|---|---:|---|---|
-| INI-01 | P0 | `list_ini_files` hanya satu level, sedangkan runtime memakai `include_recursive = Mods` | Nested INI tidak ikut editor, hash harvest, atau keybind harvest; EMMM dan runtime melihat dunia berbeda |
-| INI-02 | P0 | Decoder Shift-JIS tidak menyimpan encoding asal; writer selalu menghasilkan UTF-8 | Save pada Shift-JIS “bersih” melakukan transcoding diam-diam |
-| INI-03 | P1 | `text.lines()` + `join()` menghilangkan final newline dan menormalisasi mixed newline | Klaim lossless belum benar; diff dapat lebih luas dari satu baris |
-| INI-04 | P1 | Structured model tidak mengenali `global/persist/local $var` dan hanya menyimpan key/back terakhir | Banyak variable resmi dan multiple bindings hilang dari view/edit |
-| INI-05 | P1 | Section identity pada structured view belum case-insensitive dan error entry dari `read_dir` di-drop dengan `flatten()` | Duplicate logical section atau unreadable entry dapat disajikan keliru/tanpa diagnosis |
-| WRT-01 | P0 | Tidak ada optimistic concurrency check terhadap bytes/mtime yang dibaca | External edit setelah read dapat ditimpa oleh stale `raw_lines` |
-| WRT-02 | P0 | Windows fallback menghapus original sebelum rename kedua; kegagalan kedua tidak auto-restore `.bak` | Ada window file utama hilang walau backup masih tersedia |
-| WRT-03 | P1 | Nama `.tmp` tetap dan tidak ada per-file lock; `.bak` ditimpa setiap save | Concurrent save dapat race; riwayat recovery hanya satu generasi |
-| KV-01 | P0 | Reload discovery mencari `[Key*] type = reload_fixes`; upstream menaruh `reload_fixes` di `[Hunting]` | Selalu fallback untuk konfigurasi nyata; rebind user tidak dihormati |
-| KV-02 | P0 | Parser pengiriman reload memakai format `+`; binding upstream memakai spasi, `no_*`, dan `VK_*` | Binding nyata seperti `no_modifiers VK_F10` gagal direplay |
-| KV-03 | P0 | `d3dx.ini` dicari di `game_exe.parent()`; pada layout XXMI kontrak lebih kuat adalah parent dari configured `Mods`/package root | File konfigurasi yang dibaca dapat salah atau tidak ditemukan |
-| KV-04 | P0 | Generator hardcode compatibility layer GIMI `ShaderFixes\help.ini`; `FormatText` sudah dummy/deprecated | Overlay rapuh dan tidak portable ke WWMI/ZZMI/SRMI |
-| KV-05 | P0 | `KeyViewer.ini` berada di `.emmm_data`, status memakai root-style `.emmm_data/status/...`, sedangkan keybind memakai namespace-relative `keybinds/active/...` | Keduanya dapat bekerja karena resolver mencoba config-relative lalu root fallback, tetapi kontrak campuran rapuh dan wajib integration test |
-| KV-06 | P0 | Enabled-mod query hanya `mods.status = 1`; child di bawah object-root `DISABLED ` sengaja tidak dicascade | KeyViewer/conflict scan dapat memanen mod yang efektifnya tidak dimuat 3Dmigoto |
-| KV-07 | P1 | Harvester mengiklankan ShaderOverride tetapi regex hanya 8-hex | Shader 16-hex selalu diabaikan; model data perlu typed hash atau scope hanya resource override |
-| KV-08 | P1 | `code_hashes` hasil flatten belum dideduplicate; threshold 5 < satu base hit 10; sentinel dengan collision count 2 masih dapat dimiliki dua object | Score bisa terinflasi, match false-positive, sentinel/resource ambigu atau tertimpa |
-| KV-09 | P1 | Cleanup/create directory menelan error; fallback resource dibuat tetapi tidak pernah dipilih | Artifact stale dan dead path dapat lolos tanpa diagnosis |
-| SW-01 | P0 | Upstream mengecualikan `DISABLED*`, Rust mengenali delimiter space/underscore/dash, frontend hanya canonical whitespace | Status UI/DB/runtime berbeda untuk nama legacy/eksternal seperti `DISABLEDFoo` atau `DISABLED_Foo` |
-| SW-02 | P0 | Default EMMM F6/F8 bertabrakan dengan F6 package toggle dan F8 frame analysis | Satu key dapat memicu dua tindakan atau menutup fitur hunting; default harus package-aware |
-| SW-03 | P1 | Rollback batch bersifat best-effort; bila rollback gagal, error tidak membawa reconcile recovery plan | Disk/DB dapat drift setelah partial rename yang tidak pulih |
-| SW-04 | P1 | UI mutation sengaja hanya menampilkan reload key, bukan memastikan runtime sudah reload | Status “applied” berarti disk/DB selesai, belum tentu game sudah memakai state baru |
-| INI-06 | P1 | Archive/root classification lokal cenderung mengenali `TextureOverride`, `ShaderOverride`, atau `Resource`; mod valid dapat hanya berisi Include/Key/CommandList/ShaderRegex | Paket support atau shader/key-only berisiko salah ditolak/diklasifikasi |
-| KV-10 | P1 | Conflict scan berbasis hash belum merekam `match_first_index`, condition, namespace, priority, atau ShaderFixes replacement | Shared hash dapat over-report; shader/global conflicts dapat under-report |
-
-### 7.1 Status remediation EMMM2NEW (2026-08-10)
-
-Catatan audit: tabel di atas memuat **23 ID unik**, walaupun roadmap awal menyebut 22. Status di bawah mencakup seluruh 23 ID.
-
-| ID | Status | Bukti implementasi | Bukti verifikasi |
-|---|---|---|---|
-| INI-01 | Resolved | `services/ini/document.rs` melakukan discovery rekursif, deterministik, tidak mengikuti symlink, dan melewati subtree runtime-disabled; editor dan KeyViewer memakai walker yang sama | `document_tests::test_list_ini_files_recurses_deterministically_and_skips_disabled_subtrees`; KeyViewer suite |
-| INI-02 | Resolved | `services/ini/encoding.rs` mempertahankan UTF-8/BOM, Shift-JIS, dan menolak write lossy/unrepresentable | INI golden/write tests |
-| INI-03 | Resolved | Terminator disimpan per baris (`LF`, `CRLF`, `CR`, none), termasuk final-newline state | mixed-terminator dan final-newline tests |
-| INI-04 | Resolved | Structured view menyimpan qualifier `global/persist/local` dan repeated key/back dalam source order | `document_tests` qualified/repeated fixtures |
-| INI-05 | Resolved | Section identity canonical case-insensitive; walker mempropagasi entry error | INI document suite |
-| WRT-01 | Resolved | DTO membawa BLAKE3 source fingerprint; writer membandingkan bytes terbaru sebelum commit | stale-write rejection tests |
-| WRT-02 | Resolved | Commit memakai sibling temp + recovery rename dan auto-restore bila replace gagal | injected recovery/commit tests |
-| WRT-03 | Resolved | `OperationLock` menyerialisasi command write, temp name unik, backup diputar tiga generasi | preview/write concurrency and rotation tests |
-| KV-01 | Resolved | Reload dibaca dari `[Hunting] reload_fixes` | reload discovery fixtures |
-| KV-02 | Resolved | Replay menerima whitespace/`+`, `VK_*`, modifier positif, dan mengabaikan `no_*` | reload grammar tests |
-| KV-03 | Resolved | Resolver memilih parent configured `Mods`, lalu parent executable sebagai fallback | package/legacy path tests |
-| KV-04 | Resolved | Generator memakai API resmi `GIMIv8`, `SRMIv1`, `WWMIv1`, `ZZMIv1`; EFMI unsupported gagal eksplisit | package matrix golden tests |
-| KV-05 | Resolved in code | Semua resource generated relatif terhadap `.emmm_data/KeyViewer.ini` (`status/...`, `keybinds/active/...`) | generator resource-resolution tests; validasi visual in-game per package tetap disarankan |
-| KV-06 | Resolved | Enabled repository projection menolak setiap path yang memiliki ancestor/component `DISABLED*` | repository matrix tests |
-| KV-07 | Resolved | KeyViewer hanya memanen TextureOverride 8-hex; ShaderOverride 16-hex masuk typed conflict scope | harvester negative/positive tests; conflict tests |
-| KV-08 | Resolved | Hash input didedupe, threshold dinaikkan, sentinel wajib unik dan collision ambigu dibuang | matcher duplicate/shared/ambiguous fixtures |
-| KV-09 | Resolved | Artifact dibuat di staging unik, file/directory swap recoverable, dead fallback dihapus, error cleanup/write dipropagasi | atomic/generator failure tests dan caller warning propagation |
-| SW-01 | Resolved | Rust/TypeScript memakai semantics case-insensitive `DISABLED*`; rename tetap canonical `DISABLED ` | normalizer/path-key suites |
-| SW-02 | Resolved | Default menjadi `Ctrl+F6`/`Ctrl+F8`; UI memeriksa F6, F8, dan reload key hasil discovery tanpa memigrasi config tersimpan | Rust hotkey suite dan `HotkeyTab.test.ts` |
-| SW-03 | Resolved | Rollback yang tidak lengkap menghasilkan warning; collection pipeline menjalankan full disk reconcile dan menyimpan recovery warning di progress state | runtime mutation rollback tests; batch reconcile source audit |
-| SW-04 | Resolved | Workspace/app mutation menyebut disk state applied + reload required; in-game cycle baru melaporkan reload setelah key-send sukses | workspace switch UI test dan hotkey reload flow tests |
-| INI-06 | Resolved | Archive classifier menerima Include/Key/CommandList/ShaderRegex selain override/resource | archive classify fixtures |
-| KV-10 | Resolved | Conflict report membawa kind, provenance, namespace, condition, priority, `match_first_index`, shader stage, serta certainty potential/definite; indeks yang pasti terpisah tidak digabung | conflict evidence, disjoint-index, dan ShaderFixes-only tests |
-
-Temuan KV-05 adalah **runtime-test** untuk menetapkan satu bentuk path canonical; mixed resolution-nya terverifikasi dari generator/caller dan source resolver upstream. Urutan `Present`/TextureOverride dan flicker threshold 1.5 detik juga harus diuji in-game pada setiap package, bukan disimpulkan hanya dari unit test string.
-
-## 8. Roadmap yang disarankan
-
-### Fase A — samakan kontrak dengan runtime
-
-1. Buat `GameRuntimeProfile`: lokasi `d3dx.ini`, namespace/API text, built-in reserved hotkeys, reload binding grammar, dan root `Mods` per package.
-2. Buat satu `EffectiveEnabledResolver` yang mempertimbangkan semua ancestor dan pola exclude runtime; gunakan untuk KeyViewer, conflicts, collection preview, dan switch status.
-3. Ganti discovery INI dengan walker rekursif yang mengikuti policy `include_recursive/exclude_recursive`, deterministik, tidak mengikuti symlink keluar root, dan melaporkan error.
-4. Pisahkan parser binding 3Dmigoto dari parser global-hotkey EMMM. Parse `[Hunting] reload_fixes`, token spasi, `no_*`, `VK_*`, multiple main/controller tokens; replay hanya bila game terverifikasi fokus.
-
-### Fase B — reader/writer benar-benar lossless dan recoverable
-
-1. Simpan source bytes metadata: encoding, BOM, per-line terminator/final newline, content hash, dan file identity/mtime.
-2. Modelkan ordered tokens/lines; structured indices adalah view di atas token, bukan representasi pengganti.
-3. Dukung variable declaration qualifiers dan repeated `key/back` sambil mempertahankan urutan/case.
-4. Sebelum save, validasi semua updates, re-read dan bandingkan hash, lalu write ke unique temp pada directory yang sama.
-5. Gunakan replace atomic Windows yang benar atau recovery transaction: fsync/flush, replace, auto-restore backup jika commit gagal, dan per-file lock.
-
-### Fase C — KeyViewer portable dan deterministik
-
-1. Migrasikan renderer ke API text resmi per profile (`GIMIv8\PrintText`, adapter WWMI, dan capability check/fallback).
-2. Tetapkan satu base path relatif dan uji dari lokasi aktual `.emmm_data/KeyViewer.ini`.
-3. Gunakan typed hashes (`Shader64`, `Resource32`) dan dedupe per object/skin/provenance sebelum scoring.
-4. Kalibrasi matcher dengan fixture nyata; paksa sentinel unik atau selesaikan ambiguity eksplisit. Jangan menghasilkan override untuk match tanpa sentinel.
-5. Buat artifact generation transactional: staging directory, validate INI/resources, atomic swap, cleanup stale, dan propagate semua error.
-
-### Fase D — switch lifecycle dan UX
-
-1. Reserved-hotkey validator membandingkan binding EMMM dengan profile package dan `[Hunting]/[Key*]` aktual; ubah default F6/F8.
-2. Bedakan status `DiskApplied`, `ArtifactsRefreshed`, dan `RuntimeReloaded/ReloadRequired`.
-3. Bila rollback gagal, paksa full reconcile dan tampilkan recovery action, bukan hanya warning log.
-4. Tambahkan integration test rename object ancestor: runtime exclude, DB effective state, KeyViewer harvest, conflicts, collection signature, dan F10 behavior harus konvergen.
-
-## 9. Acceptance test minimum
+Gunakan matriks berikut saat mengubah parser, writer, profile runtime, KeyViewer, conflict engine, atau alur switch. Detail status implementasi dan pekerjaan validasi yang masih terbuka berada di [`3dmigoto_gap_status.md`](./3dmigoto_gap_status.md).
 
 - Fixture nested mod dengan UTF-8 BOM, Shift-JIS, CRLF/LF campuran, final/no-final newline, repeated key/back, qualified variables, flow control, dan non-ASCII section.
 - Golden round-trip: no-op save menghasilkan bytes identik; targeted save hanya mengubah token yang diminta.
@@ -590,7 +487,7 @@ Temuan KV-05 adalah **runtime-test** untuk menetapkan satu bentuk path canonical
 - Matcher fixtures dari asset repositories: shared texture, duplicate skin hashes, shader64/resource32, zero sentinel, dan ambiguous sentinel.
 - In-game smoke: toggle mod/object/preset, F10, camera pan, character swap, safe mode, status fallback, dan overlay off tidak meninggalkan notification stale.
 
-### 9.1 Snapshot repository yang diperiksa
+### 7.1 Snapshot repository yang diperiksa
 
 Commit ini dicatat agar klaim dapat direproduksi dan diperbarui tanpa mengandalkan “latest” yang bergerak:
 
@@ -609,7 +506,7 @@ Commit ini dicatat agar klaim dapat direproduksi dan diperbarui tanpa mengandalk
 
 Catatan ecosystem freshness: XXMI Launcher saat ini menunjuk package SRMI/ZZMI modern yang berbeda dari repository standalone lama pada daftar awal (`SpectrumQT/SRMI-Package` dan `leotorrez/ZZMI-Package`). Repository lama tetap berguna untuk guides/tools, tetapi profile runtime produksi harus mengikuti package yang benar-benar dipasang launcher.
 
-## 10. Referensi primer
+## 8. Referensi primer
 
 - [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto) dan [Dependencies/d3dx.ini](https://github.com/bo3b/3Dmigoto/blob/master/Dependencies/d3dx.ini)
 - [GIMI-Package](https://github.com/SilentNightSound/GIMI-Package), [d3dx.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/d3dx.ini), [API.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/API.ini), [help.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/help.ini), dan [KeyBindings.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/KeyBindings.ini)

@@ -111,6 +111,7 @@ function createObject(overrides: Partial<WorkspaceObjectNode> = {}): WorkspaceOb
     id: 'object-1',
     name: 'Alpha',
     display_name: 'Alpha',
+    is_registered: true,
     folder_path: 'Objects/Alpha',
     object_type: 'Character',
     sub_category: null,
