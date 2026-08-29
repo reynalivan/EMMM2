@@ -8,14 +8,14 @@ import {
   useWatcherLifecycle,
 } from './useFileWatcher';
 import { isPreviewAffected } from '../utils/reconcileSelection';
-import type { DiskReconcileResult } from '../../../core/tauri/bindings';
-import { commands } from '../../../core/tauri/bindings';
+import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
+import { commands } from '../../../shared/api/tauri/bindings';
 import { runtimeQueryKeys } from '../../runtime-sync/queryRefresh';
-import { GameType, type GameConfig } from '../../../types/game';
-import { useAppStore } from '../../../stores/useAppStore';
+import { GameType, type GameConfig } from '@/entities/game/model/game';
+import { useAppStore } from '../../../app/store/useAppStore';
 import { workspaceKeys } from '../../workspace-runtime/hooks/useWorkspaceViewModel';
 
-vi.mock('../../../core/tauri/bindings', () => ({
+vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     stopWatcher: vi.fn().mockResolvedValue(undefined),
@@ -24,7 +24,7 @@ vi.mock('../../../core/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../stores/useAppStore', () => {
+vi.mock('../../../app/store/useAppStore', () => {
   const state = {
     workspaceView: 'mods',
     explorerSubPath: undefined as string | undefined,
@@ -92,7 +92,7 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-vi.mock('../../../stores/useToastStore', () => ({
+vi.mock('../../../app/store/useToastStore', () => ({
   toast: {
     info: vi.fn(),
     warning: vi.fn(),
@@ -475,7 +475,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('records unavailable disk source without refreshing runtime queries', async () => {
-    const { useAppStore } = await import('../../../stores/useAppStore');
+    const { useAppStore } = await import('../../../app/store/useAppStore');
     const state = useAppStore.getState();
 
     applyDiskReconcileResult(
@@ -504,7 +504,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('clears unavailable disk source after a successful applied result', async () => {
-    const { useAppStore } = await import('../../../stores/useAppStore');
+    const { useAppStore } = await import('../../../app/store/useAppStore');
     const state = useAppStore.getState();
 
     applyDiskReconcileResult(
@@ -559,7 +559,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('includes collection reference impact in the external change toast', async () => {
-    const { toast } = await import('../../../stores/useToastStore');
+    const { toast } = await import('../../../app/store/useToastStore');
 
     applyDiskReconcileResult(
       createResult({
@@ -597,7 +597,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('surfaces a nonfatal warning when committed runtime effects remain pending', async () => {
-    const { toast } = await import('../../../stores/useToastStore');
+    const { toast } = await import('../../../app/store/useToastStore');
 
     const result = createResult({
       pending_runtime_effects: {
@@ -741,7 +741,7 @@ describe('useDiskReconcileCoordinator', () => {
       .mockResolvedValueOnce(createResult({ reason: 'WindowRefocused' }));
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { toast } = await import('../../../stores/useToastStore');
+    const { toast } = await import('../../../app/store/useToastStore');
     const state = useAppStore.getState();
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
 
@@ -772,7 +772,7 @@ describe('useDiskReconcileCoordinator', () => {
       createResult({}),
     );
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
-    const { toast } = await import('../../../stores/useToastStore');
+    const { toast } = await import('../../../app/store/useToastStore');
 
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
     await waitFor(() => expect(eventHandlers['mod_watch:event']).toBeDefined());

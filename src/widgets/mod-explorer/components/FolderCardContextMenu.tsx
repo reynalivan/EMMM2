@@ -1,0 +1,71 @@
+import React from 'react';
+import {
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '../../../shared/ui/components/ui/ContextMenu';
+import type { ModFolder } from '@/entities/game-object/model/object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import { useModContextMenuItems } from '../hooks/useModContextMenuItems';
+import { useModContextMenuActions } from '@/features/mod-runtime/actions/useModContextMenuActions';
+
+interface FolderCardContextMenuProps {
+  folder: WorkspaceExplorerNode;
+  onRename: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
+  onToggleFavorite: () => void;
+  onEnableOnlyThis?: () => void;
+  onOpenMoveDialog?: (folder: ModFolder) => void;
+  onNavigate?: (folderName: string) => void;
+  onToggleSafe?: () => void;
+  onSyncWithDb?: () => void;
+  hasFolderNameConflict?: boolean;
+}
+
+export default function FolderCardContextMenu({
+  folder,
+  onRename,
+  onDelete,
+  onToggle,
+  onToggleFavorite,
+  onEnableOnlyThis,
+  onOpenMoveDialog,
+  onNavigate,
+  onToggleSafe,
+  onSyncWithDb,
+  hasFolderNameConflict = false,
+}: FolderCardContextMenuProps) {
+  const contextActions = useModContextMenuActions(folder);
+  const items = useModContextMenuItems({
+    folder,
+    onRename,
+    onDelete,
+    onToggleEnabled: onToggle,
+    onToggleFavorite,
+    onEnableOnlyThis,
+    onToggleSafe,
+    onOpenMoveDialog,
+    onNavigateModPack: onNavigate,
+    onSyncWithDb,
+    onOpenExplorer: hasFolderNameConflict ? undefined : contextActions.openExplorer,
+    onPasteThumbnail: contextActions.pasteThumbnailFromClipboard,
+    onImportThumbnail: contextActions.importThumbnail,
+  });
+
+  return (
+    <>
+      {items.map((item) => {
+        if (item.hidden) return null;
+
+        return (
+          <React.Fragment key={item.id}>
+            {item.separatorBefore && <ContextMenuSeparator />}
+            <ContextMenuItem icon={item.icon} danger={item.danger} onClick={item.onClick}>
+              {item.label}
+            </ContextMenuItem>
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}

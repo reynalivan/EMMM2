@@ -1,7 +1,7 @@
 import type {
   WorkspaceSelectionReconciliationReason,
   WorkspaceSelectionReconciliationStatus,
-} from '../../../types/workspace';
+} from '@/entities/workspace/model/workspace';
 import type {
   WorkspaceDialogState,
   WorkspaceMobilePane,

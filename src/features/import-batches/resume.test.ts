@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ImportBatch } from '../../core/tauri/bindings.gen';
+import type { ImportBatch } from '../../shared/api/tauri/bindings.gen';
 import { needsSourceAnalysis, selectLatestResumableBatch } from './resume';
 
 function batch(

@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { DiskReconcileResult } from '../../../core/tauri/bindings';
+import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
 import { publishDiskReconcileRefresh } from './reconcileRefresh';
 
 function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileResult {

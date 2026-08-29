@@ -1,8 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { thumbnailKeys } from '../../dashboard/hooks/useThumbnail';
+import { thumbnailKeys } from '@/pages/dashboard/hooks/useThumbnail';
 import { publishQueryInvalidations } from '../../runtime-sync/queryRefresh';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
-import type { RuntimeEffectDescriptor } from '../../../core/lib/runtimeEffects';
+import type { RuntimeEffectDescriptor } from '../../../shared/lib/runtimeEffects';
 import { applyWorkspacePathRewrites } from './workspaceViewModelRewrite';
 
 export function applyRuntimeEffects(

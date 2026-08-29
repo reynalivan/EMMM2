@@ -2,9 +2,9 @@ import { act, render, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { commands, type DiskReconcileResult } from '../../core/tauri/bindings';
-import { useAppStore } from '../../stores/useAppStore';
-import { GameType, type GameConfig } from '../../types/game';
+import { commands, type DiskReconcileResult } from '../../shared/api/tauri/bindings';
+import { useAppStore } from '../../app/store/useAppStore';
+import { GameType, type GameConfig } from '@/entities/game/model/game';
 import { runtimeQueryKeys } from '../runtime-sync/queryRefresh';
 import { ExternalChangeHandler } from './ExternalChangeHandler';
 
@@ -24,7 +24,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
 }));
 
-vi.mock('../../core/tauri/bindings', () => ({
+vi.mock('../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     stopWatcher: vi.fn().mockResolvedValue(undefined),

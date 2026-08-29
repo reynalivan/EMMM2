@@ -1,4 +1,4 @@
-import type { ImportFlow, TargetMode } from '../../core/tauri/bindings';
+import type { ImportFlow, TargetMode } from '../../shared/api/tauri/bindings';
 
 export type ImportBatchLaunchRequest =
   | {

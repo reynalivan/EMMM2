@@ -1,13 +1,13 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../core/tauri/bindings';
-import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
-import { runObjectBatchMutation } from '../../object-list/hooks/objectQueryCache';
-import { useDeleteObject, useUpdateObject } from '../../object-list/hooks/useObjectMutations';
-import { toast } from '../../../stores/useToastStore';
-import type { GameSchema } from '../../../types/object';
-import type { WorkspaceObjectNode } from '../../../types/workspace';
+import { commands } from '../../../shared/api/tauri/bindings';
+import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { runObjectBatchMutation } from '@/widgets/object-sidebar/hooks/objectQueryCache';
+import { useDeleteObject, useUpdateObject } from '@/widgets/object-sidebar/hooks/useObjectMutations';
+import { toast } from '../../../app/store/useToastStore';
+import type { GameSchema } from '@/entities/game-object/model/object';
+import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
 import { applyObjectCategoryAndRefresh, revealObjectInExplorer } from './sharedObjectActionOps';
 import {
   buildSharedObjectActionState,

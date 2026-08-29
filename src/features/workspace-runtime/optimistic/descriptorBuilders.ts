@@ -1,7 +1,7 @@
 import type {
   RuntimeEffectDescriptor,
   RuntimeRefreshEvent,
-} from '../../../core/lib/runtimeEffects';
+} from '../../../shared/lib/runtimeEffects';
 
 export type RuntimeMutationClass =
   | 'workspaceOnly'

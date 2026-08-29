@@ -1,18 +1,18 @@
-use crate::domain::errors::CollectionError;
+use crate::shared::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 
 /// Load the target collection's members.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let collection = ctx.collection()?.clone();
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
-    let snapshot = crate::services::collection::load_projected_collection_state(
+    let snapshot = crate::modules::collections::application::collection::load_projected_collection_state(
         &ctx.pool,
         &collection,
         Some(mods_path.as_str()),
     )
     .await?;
     let (mods, objects) =
-        crate::services::collection::collection_members_from_projected_state(
+        crate::modules::collections::application::collection::collection_members_from_projected_state(
             &ctx.collection_id,
             &snapshot,
         );

@@ -1,0 +1,33 @@
+//! Application-level maintenance service.
+//!
+//! Extracts the vacuum-db + prune-thumbnails orchestration that
+//! was previously inlined in `settings_cmds.rs`.
+
+use crate::shared::errors::AppError;
+use std::path::Path;
+
+use sqlx::SqlitePool;
+
+/// Run all maintenance tasks and return the number of pruned thumbnails.
+pub async fn run_maintenance_counts(
+    pool: &SqlitePool,
+    app_data_dir: &Path,
+) -> Result<u64, AppError> {
+    use crate::platform::images::thumbnail_cache::{ThumbnailCache, THUMBNAIL_RETENTION_DAYS};
+
+    // 1. Vacuum DB
+    crate::modules::system::adapters::outbound::sqlite::settings::vacuum_database(pool).await?;
+
+    // 2. Prune thumbnails nothing has looked at in a while.
+    //
+    // This used to prune "orphans", keeping only cache entries whose key
+    // matched an `objects.thumbnail_path`. But the cache is keyed by the image
+    // file found *inside a mod folder*, and object thumbnails are a different
+    // population entirely — so the keep-set almost never matched and every run
+    // wiped the whole folder-grid cache while reporting it as cleanup. Age is
+    // a predicate this layer can actually evaluate correctly.
+    let pruned_count =
+        ThumbnailCache::clear_old_cache_for_app_data(app_data_dir, THUMBNAIL_RETENTION_DAYS)?;
+
+    Ok(pruned_count as u64)
+}

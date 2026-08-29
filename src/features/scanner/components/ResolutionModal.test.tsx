@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../tests/testing/test-utils';
 import ResolutionModal from './ResolutionModal';
-import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace/model/scanner';
 
 // Mock HTMLDialogElement methods
 beforeEach(() => {

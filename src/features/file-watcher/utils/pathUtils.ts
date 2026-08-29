@@ -1,4 +1,4 @@
-import { pathsEqual, pathStartsWith } from '../../../core/lib/pathKey';
+import { pathsEqual, pathStartsWith } from '../../../shared/lib/pathKey';
 import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
 
 export function joinModPath(modsPath: string, relativePath: string): string {

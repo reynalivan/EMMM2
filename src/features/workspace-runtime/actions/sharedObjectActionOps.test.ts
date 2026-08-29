@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyObjectCategoryAndRefresh } from './sharedObjectActionOps';
-import { GameType } from '../../../types/game';
+import { GameType } from '@/entities/game/model/game';
 
 const setModCategory = vi.fn();
 const setObjectModsCategory = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
 
-vi.mock('../../../core/tauri/bindings', () => ({
+vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     setModCategory: (...args: unknown[]) => setModCategory(...args),

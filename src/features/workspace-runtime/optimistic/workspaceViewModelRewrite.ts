@@ -1,7 +1,7 @@
-import { useAppStore } from '../../../stores/useAppStore';
+import { useAppStore } from '../../../app/store/useAppStore';
 import { recordInternalWorkspacePathRewrites } from '../utils/selectionReconciliation';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
-import type { RuntimeEffectDescriptor } from '../../../core/lib/runtimeEffects';
+import type { RuntimeEffectDescriptor } from '../../../shared/lib/runtimeEffects';
 
 type RuntimePathRewrite = RuntimeEffectDescriptor['rewrites'][number];
 type WorkspacePathRewriteSource = 'internal' | 'disk_reconcile';

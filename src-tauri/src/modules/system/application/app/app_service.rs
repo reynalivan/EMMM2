@@ -1,0 +1,59 @@
+//! Application-level status and lifecycle service.
+//!
+//! Provides `check_config_status` (DB check for fresh install vs configured)
+//! and `reset_database_service` (backup + full table clear).
+
+use crate::shared::errors::AppError;
+use crate::modules::games::domain::models::ConfigStatus;
+use std::path::Path;
+
+/// Determine whether the app has games configured.
+/// Returns `HasConfig` when at least one game row exists; `FreshInstall` otherwise.
+pub async fn check_config_status(pool: &sqlx::SqlitePool) -> Result<ConfigStatus, AppError> {
+    let count = crate::modules::games::adapters::outbound::sqlite::game::count_games(pool).await?;
+
+    if count > 0 {
+        Ok(ConfigStatus::HasConfig)
+    } else {
+        Ok(ConfigStatus::FreshInstall)
+    }
+}
+
+/// Back up `app.db` to the trash folder, then wipe all data from the DB.
+/// Does NOT delete any mod files from disk — only clears database records.
+pub async fn reset_database_service(
+    pool: &sqlx::SqlitePool,
+    app_data_dir: &Path,
+    settings_revision: Option<u64>,
+) -> Result<(), AppError> {
+    let db_path = app_data_dir.join("app.db");
+    let trash_dir = app_data_dir.join("trash");
+
+    // Ensure trash directory exists
+    if !trash_dir.exists() {
+        std::fs::create_dir_all(&trash_dir)?;
+    }
+
+    // Backup the database file with a timestamp
+    if db_path.exists() {
+        let epoch_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let backup_name = format!("app_backup_{}.db", epoch_secs);
+        let backup_path = trash_dir.join(&backup_name);
+        std::fs::copy(&db_path, &backup_path)?;
+        log::info!("Database backed up to: {}", backup_path.display());
+    }
+
+    // Clean up cached image thumbnails
+    let thumbnails_dir = app_data_dir.join("thumbnails");
+    if thumbnails_dir.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&thumbnails_dir) {
+            log::warn!("Failed to delete thumbnails directory: {e}");
+        }
+    }
+
+    // Clear all data from the database (tables only, no file deletion)
+    Ok(crate::modules::system::adapters::outbound::sqlite::settings::reset_all_data_with_revision(pool, settings_revision).await?)
+}

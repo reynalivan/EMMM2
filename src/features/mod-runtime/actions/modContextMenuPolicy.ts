@@ -15,7 +15,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import type { WorkspaceExplorerNode } from '../../../types/workspace';
+import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
 
 export interface ModContextMenuItemConfig {
   id: string;

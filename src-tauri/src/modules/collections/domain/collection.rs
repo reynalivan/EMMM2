@@ -1,0 +1,264 @@
+use serde::{Deserialize, Serialize};
+
+use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
+
+// ---------------------------------------------------------------------------
+// Collection — A named loadout snapshot
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewTreeNodeKind {
+    Object,
+    Folder,
+    Mod,
+}
+
+/// The kind of member in a collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, specta::Type)]
+#[sqlx(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum MemberKind {
+    Mod,
+    Object,
+}
+
+/// Full collection row from the `collections` table.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct Collection {
+    pub id: String,
+    pub game_id: String,
+    pub name: String,
+    pub name_key: String,
+    pub is_safe: bool,
+    /// Derived from `collection_runtime_state.draft_collection_id`; never persisted on this row.
+    pub is_draft: bool,
+    pub snapshot_json: Option<String>,
+    pub signature: Option<String>,
+    pub display_mod_count: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Summary returned in list views.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct CollectionSummary {
+    pub id: String,
+    pub name: String,
+    pub is_safe: bool,
+    pub is_safety_classified: bool,
+    pub is_active: bool,
+    pub signature: Option<String>,
+    pub updated_at: String,
+    pub mod_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedObjectState {
+    pub object_id: String,
+    pub display_name: String,
+    pub path_key: String,
+    pub is_enabled: bool,
+    #[specta(type = f64)]
+    pub active_root_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedActiveRoot {
+    pub object_id: String,
+    pub root_key: String,
+    pub display_name: String,
+    pub root_type: String,
+    pub source_path: String,
+    pub thumbnail_hint: Option<String>,
+    pub warnings: Vec<String>,
+    pub is_missing: bool,
+    pub is_safe: bool,
+    pub safety_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedStateSummary {
+    #[specta(type = f64)]
+    pub object_count: usize,
+    #[specta(type = f64)]
+    pub enabled_object_count: usize,
+    #[specta(type = f64)]
+    pub active_root_count: usize,
+    #[specta(type = f64)]
+    pub missing_root_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ProjectedCollectionState {
+    pub object_states: Vec<ProjectedObjectState>,
+    pub active_roots: Vec<ProjectedActiveRoot>,
+    pub summary: ProjectedStateSummary,
+}
+
+/// A single mod member of a collection (from `collection_mods`).
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct CollectionMod {
+    pub kind: MemberKind,
+    pub collection_id: String,
+    pub mod_id: Option<String>,
+    pub mod_path: String,
+    pub mod_path_key: Option<String>,
+    pub object_id: String,
+    pub display_name: Option<String>,
+    pub preview_path: Option<String>,
+    pub node_type: Option<String>,
+    pub warnings: Vec<String>,
+    pub is_enabled: bool,
+    pub is_safe: bool,
+    pub safety_source: Option<String>,
+}
+
+/// A single object member of a collection (from `collection_objects`).
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+pub struct CollectionObject {
+    pub kind: MemberKind,
+    pub collection_id: String,
+    pub object_id: String,
+    pub is_enabled: bool,
+    pub display_name: Option<String>,
+    pub path_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct PreviewTreeNode {
+    pub kind: PreviewTreeNodeKind,
+    pub id: String,
+    pub name: String,
+    pub path: Option<String>,
+    pub object_id: Option<String>,
+    pub node_type: Option<String>,
+    pub is_enabled: bool,
+    pub is_effectively_active: bool,
+    pub inactive_reason: Option<String>,
+    pub show_inactive_chip: bool,
+    pub status_kind: Option<String>,
+    pub collapse_children: bool,
+    pub warnings: Vec<String>,
+    #[specta(type = Option<f64>)]
+    pub mod_count: Option<usize>,
+    pub children: Vec<PreviewTreeNode>,
+}
+
+/// Preview data for a collection.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct CollectionPreview {
+    pub collection: CollectionSummary,
+    pub tree_nodes: Vec<PreviewTreeNode>,
+    pub projected_state: ProjectedCollectionState,
+}
+
+/// Result of applying a collection.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ApplyResult {
+    #[specta(type = f64)]
+    pub mods_enabled: usize,
+    #[specta(type = f64)]
+    pub mods_disabled: usize,
+    pub warnings: Vec<String>,
+    pub final_state_name: Option<String>,
+    pub partial_apply: bool,
+    pub skipped_missing_paths: Vec<String>,
+    pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
+    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct CollectionPathRewrite {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct CollectionReferenceImpact {
+    #[specta(type = f64)]
+    pub affected_collection_count: usize,
+    pub affected_collection_names: Vec<String>,
+    pub rewritten_paths: Vec<CollectionPathRewrite>,
+    pub missing_paths: Vec<String>,
+}
+
+impl CollectionReferenceImpact {
+    pub fn merge(&mut self, next: Self) {
+        for name in next.affected_collection_names {
+            if !self
+                .affected_collection_names
+                .iter()
+                .any(|existing| existing == &name)
+            {
+                self.affected_collection_names.push(name);
+            }
+        }
+        for path in next.missing_paths {
+            if !self.missing_paths.iter().any(|existing| existing == &path) {
+                self.missing_paths.push(path);
+            }
+        }
+        for rewrite in next.rewritten_paths {
+            let from_key = crate::shared::path_key::folder_path_key(&rewrite.from, None);
+            let to_key = crate::shared::path_key::folder_path_key(&rewrite.to, None);
+            if !self.rewritten_paths.iter().any(|existing| {
+                crate::shared::path_key::folder_path_key(&existing.from, None) == from_key
+                    && crate::shared::path_key::folder_path_key(&existing.to, None) == to_key
+            }) {
+                self.rewritten_paths.push(rewrite);
+            }
+        }
+        self.affected_collection_count = self.affected_collection_names.len();
+    }
+}
+
+/// Input for creating a new collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateCollectionMode {
+    SaveCurrentState,
+    CloneSnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize, specta::Type)]
+pub struct CreateCollectionInput {
+    pub game_id: String,
+    pub name: String,
+    pub save_mode: Option<CreateCollectionMode>,
+    pub source_collection_id: Option<String>,
+}
+
+/// Input for updating an existing collection.
+#[derive(Debug, Clone, Deserialize, specta::Type)]
+pub struct UpdateCollectionInput {
+    pub id: String,
+    pub game_id: String,
+    pub name: Option<String>,
+}
+
+/// Preview data for applying a collection (before → after).
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ApplyPreview {
+    pub collection_name: String,
+    pub current_tree_nodes: Vec<PreviewTreeNode>,
+    pub target_tree_nodes: Vec<PreviewTreeNode>,
+    pub current_state_name: Option<String>,
+    pub current_state_is_unsaved: bool,
+    pub current_projected_state: ProjectedCollectionState,
+    pub target_projected_state: ProjectedCollectionState,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct ApplyProgressSnapshot {
+    pub game_id: String,
+    pub phase: String,
+    #[specta(type = f64)]
+    pub completed: usize,
+    #[specta(type = f64)]
+    pub total: usize,
+    pub current_item: Option<String>,
+    pub warnings: Vec<String>,
+    pub final_state_name: Option<String>,
+    pub success: bool,
+}

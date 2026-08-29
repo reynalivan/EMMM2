@@ -3,7 +3,7 @@ import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
-import { pathBasename } from '../../../core/lib/pathKey';
+import { pathBasename } from '../../../shared/lib/pathKey';
 
 export const FileInUseDialog: React.FC = () => {
   const { t } = useTranslation('common');

@@ -1,4 +1,4 @@
-import type { ImportBatch } from '../../core/tauri/bindings.gen';
+import type { ImportBatch } from '../../shared/api/tauri/bindings.gen';
 
 const TERMINAL_BATCH_STATUSES = new Set(['done', 'cancelled']);
 

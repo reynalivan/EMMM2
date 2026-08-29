@@ -1,4 +1,4 @@
-import type { DupScanEvent } from '../../../types/scanner';
+import type { DupScanEvent } from '@/entities/workspace/model/scanner';
 import type { DedupScanProgress } from '../components/DedupFeature';
 
 export function reduceDedupProgress(

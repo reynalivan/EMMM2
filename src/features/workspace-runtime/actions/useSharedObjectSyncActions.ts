@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { GameConfig } from '../../../types/game';
+import type { GameConfig } from '@/entities/game/model/game';
 import { openObjectClassificationWizard } from '../../import-batches/classificationLauncher';
 
 export function useSharedObjectSyncActions(activeGame: GameConfig | null) {

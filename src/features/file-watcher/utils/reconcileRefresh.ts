@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { DiskReconcileResult } from '../../../core/tauri/bindings';
+import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,

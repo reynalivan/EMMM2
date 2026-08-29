@@ -1,12 +1,12 @@
 import { useShallow } from 'zustand/react/shallow';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import { commands } from '../../../core/tauri/bindings';
-import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
-import { useAppStore } from '../../../stores/useAppStore';
-import { toast } from '../../../stores/useToastStore';
-import { ItemStatus, type ObjectFilter } from '../../../types/object';
-import type { WorkspaceViewModel } from '../../../types/workspace';
+import { commands } from '../../../shared/api/tauri/bindings';
+import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useAppStore } from '../../../app/store/useAppStore';
+import { toast } from '../../../app/store/useToastStore';
+import { ItemStatus, type ObjectFilter } from '@/entities/game-object/model/object';
+import type { WorkspaceViewModel } from '@/entities/workspace/model/workspace';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntimeSelector,

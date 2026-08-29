@@ -1,4 +1,4 @@
-import type { WorkspaceCapabilities, WorkspaceNode } from '../../../types/workspace';
+import type { WorkspaceCapabilities, WorkspaceNode } from '@/entities/workspace/model/workspace';
 
 export const DEFAULT_SOURCE_UNAVAILABLE_MESSAGE = 'Workspace source is unavailable.';
 

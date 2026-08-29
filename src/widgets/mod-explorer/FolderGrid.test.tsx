@@ -1,0 +1,354 @@
+import { render, screen } from '@testing-library/react';
+import FolderGrid from './FolderGrid';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { createWrapper } from '../../tests/testing/test-utils';
+import { ModFolder } from '@/entities/game-object/model/object';
+
+// Mock the hook!
+const mockUseFolderGrid = vi.fn();
+vi.mock('./hooks/useFolderGrid', () => ({
+  useFolderGrid: () => mockUseFolderGrid(),
+}));
+
+const mockAppStoreState = {
+  activePane: 'folderGrid',
+  setActivePane: vi.fn(),
+};
+
+vi.mock('../../app/store/useAppStore', () => ({
+  useAppStore: Object.assign(
+    vi.fn((selector) => (selector ? selector(mockAppStoreState) : mockAppStoreState)),
+    { getState: () => mockAppStoreState },
+  ),
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
+}));
+
+vi.mock('./hooks/useFolderMutations', () => ({
+  useActiveConflicts: () => ({ data: [] }),
+}));
+
+vi.mock('../settings/hooks/useSettings', () => ({
+  useSettings: () => ({ data: { organize_subfolders: true }, isLoading: false }),
+}));
+
+vi.mock('../dashboard/hooks/useActiveGame', () => ({
+  useActiveGame: () => ({ activeGame: { id: 'test-game', mod_path: 'C:\\mods' } }),
+}));
+
+// Mock subcomponents
+vi.mock('./components/FolderCard', () => ({
+  default: ({ folder }: { folder: ModFolder }) => (
+    <div data-testid="folder-card">{folder.name}</div>
+  ),
+}));
+
+vi.mock('./components/FolderListRow', () => ({
+  default: ({ item }: { item: ModFolder }) => <div data-testid="folder-row">{item.name}</div>,
+}));
+
+vi.mock('../../shared/ui/components/ui/ContextMenu', () => ({
+  ContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ContextMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ContextMenuSeparator: () => <hr />,
+}));
+
+vi.mock('./components/DragOverlay', () => ({
+  default: () => <div>DragOverlay</div>,
+}));
+
+vi.mock('../../shared/ui/components/ui/ConfirmDialog', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div>ConfirmDialog</div> : null),
+}));
+
+vi.mock('../mod-runtime/modals/BulkTagModal', () => ({
+  BulkTagModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div>BulkTagModal</div> : null),
+}));
+
+vi.mock('./components/BulkActionBar', () => ({
+  default: () => <div data-testid="bulk-action-bar" />,
+}));
+
+vi.mock('./modals/FolderGridModals', () => ({
+  default: () => <div data-testid="folder-grid-modals" />,
+}));
+
+vi.mock('./components/BulkProgressBar', () => ({
+  default: () => <div data-testid="bulk-progress-bar" />,
+}));
+
+const defaultHookReturn = {
+  // Data & State
+  sortedFolders: [],
+  conflicts: [],
+  isLoading: false,
+  isPlaceholderData: false,
+  isError: false,
+  error: null,
+  selfNodeType: null,
+  selfIsMod: false,
+  selfIsEnabled: false,
+  selfReasons: [],
+  isGridView: true,
+  isMobile: false,
+  currentPath: [],
+  explorerSearchQuery: '',
+  sortOrder: 'asc',
+  sortLabel: 'Name',
+  viewMode: 'grid',
+
+  // Virtualization
+  parentRef: { current: null },
+  virtualItems: [],
+  rowVirtualizer: {
+    getTotalSize: () => 1000,
+    getVirtualItems: () => [],
+  },
+  columnCount: 4,
+  cardWidth: 200,
+
+  // Handlers mapped to vi.fn()
+  handleNavigate: vi.fn(),
+  handleBreadcrumbClick: vi.fn(),
+  handleGoHome: vi.fn(),
+  setMobilePane: vi.fn(),
+  setViewMode: vi.fn(),
+  setExplorerSearch: vi.fn(),
+  handleSortToggle: vi.fn(),
+  handleKeyDown: vi.fn(),
+  focusedId: null,
+  gridSelection: new Set(),
+  toggleGridSelection: vi.fn(),
+  clearGridSelection: vi.fn(),
+  handleToggleSelf: vi.fn(),
+  handleToggleEnabled: vi.fn(),
+  handleToggleFavorite: vi.fn(),
+  handleEnableOnlyThis: vi.fn(),
+  handleMoveToObject: vi.fn(),
+  openMoveDialog: vi.fn(),
+  closeMoveDialog: vi.fn(),
+  objects: [],
+  moveDialog: { open: false, folder: null },
+  renamingId: null,
+  handleRenameRequest: vi.fn(),
+  handleRenameSubmit: vi.fn(),
+  handleRenameCancel: vi.fn(),
+  deleteConfirm: { open: false, folder: null },
+  setDeleteConfirm: vi.fn(),
+  handleDeleteRequest: vi.fn(),
+  handleDeleteConfirm: vi.fn(),
+  isPreviewOpen: false,
+  togglePreview: vi.fn(),
+  bulkTagOpen: false,
+  setBulkTagOpen: vi.fn(),
+  bulkDeleteConfirm: false,
+  setBulkDeleteConfirm: vi.fn(),
+  handleBulkToggle: vi.fn(),
+  handleBulkTagRequest: vi.fn(),
+  handleBulkDeleteRequest: vi.fn(),
+  handleBulkDeleteConfirm: vi.fn(),
+  handleBulkFavorite: vi.fn(),
+  handleBulkSafe: vi.fn(),
+  handleBulkPin: vi.fn(),
+  handleBulkMoveToObject: vi.fn(),
+
+  pinSafeDialog: { open: false, folder: null },
+  handleToggleSafeRequest: vi.fn(),
+  handleToggleSafeSubmit: vi.fn(),
+  handleToggleSafeCancel: vi.fn(),
+
+  activeContextDialog: { open: false, folder: null, isProcessing: false },
+  handleActiveContextCancel: vi.fn(),
+  handleActiveContextSubmit: vi.fn(),
+
+  isDragging: false,
+  selectedObject: null,
+  handleImportFiles: vi.fn(),
+
+  // Duplicate Warning
+  duplicateWarning: { open: false, folder: null, duplicates: [] },
+  handleDuplicateForceEnable: vi.fn(),
+  handleDuplicateEnableOnly: vi.fn(),
+  handleDuplicateCancel: vi.fn(),
+  isFolderSwitchPending: vi.fn(() => false),
+};
+
+describe('FolderGrid', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseFolderGrid.mockReturnValue(defaultHookReturn);
+  });
+
+  it('renders empty state when no sortedFolders', () => {
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      sortedFolders: [],
+    });
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByText('No mods installed yet.')).toBeInTheDocument();
+  });
+
+  it('renders loading state', () => {
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      isLoading: true,
+    });
+    render(<FolderGrid />, { wrapper: createWrapper });
+    // Assuming Loader2 renders something or we can find by class?
+    // Or just check that empty state is NOT there
+    expect(screen.queryByText(/No mod folders found/i)).not.toBeInTheDocument();
+  });
+
+  it('renders items', () => {
+    const mockData: ModFolder[] = [
+      {
+        id: null,
+        owner_object_id: null,
+        owner_object_folder_path: null,
+        conflict_group_id: null,
+        conflict_state: null,
+        node_type: 'ContainerFolder',
+        classification_reasons: [],
+        name: 'Mod A',
+        path: '/mods/Mod A',
+        is_enabled: true,
+        is_directory: true,
+        folder_name: 'Mod A',
+        thumbnail_path: null,
+        modified_at: 0,
+        size_bytes: 0,
+        has_info_json: false,
+        is_favorite: false,
+        is_misplaced: false,
+        is_safe: true,
+        is_safety_classified: true,
+        contains_safe_mods: true,
+        contains_unsafe_mods: false,
+        metadata: null,
+        category: null,
+        warnings: [],
+      },
+    ];
+
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      sortedFolders: mockData,
+      virtualItems: [{ index: 0, start: 0, size: 200, key: '0' }],
+      rowVirtualizer: {
+        getTotalSize: () => 200,
+        getVirtualItems: () => [{ index: 0, start: 0, size: 200, key: '0' }],
+      },
+      columnCount: 1, // list-like for verify
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByText('Mod A')).toBeInTheDocument();
+  });
+
+  it('does not expose a local refresh action because disk sync is global', () => {
+    render(<FolderGrid />, { wrapper: createWrapper });
+
+    expect(screen.queryByTitle('Refresh')).not.toBeInTheDocument();
+  });
+
+  it('renders only folders supplied by the workspace view model', () => {
+    const visibleFolder = {
+      name: 'Visible Safe Mod',
+      path: '/mods/Visible Safe Mod',
+      is_directory: true,
+    } as unknown as ModFolder;
+    const hiddenFolder = {
+      name: 'Hidden Unsafe Mod',
+      path: '/mods/Hidden Unsafe Mod',
+      is_directory: true,
+    } as unknown as ModFolder;
+
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      rawFolders: [visibleFolder, hiddenFolder],
+      sortedFolders: [visibleFolder],
+      virtualItems: [{ index: 0, start: 0, size: 200, key: '0' }],
+      totalSize: 200,
+      columnCount: 1,
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+
+    expect(screen.getByText('Visible Safe Mod')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Unsafe Mod')).not.toBeInTheDocument();
+  });
+
+  it('TC-12-01: renders Grid layout correctly', () => {
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      isGridView: true,
+      sortedFolders: [
+        { name: 'Mod A', path: '/Mod A', is_directory: true } as unknown as ModFolder,
+      ],
+      virtualItems: [{ index: 0, start: 0, size: 200, key: '0' }],
+      rowVirtualizer: {
+        getTotalSize: () => 200,
+        getVirtualItems: () => [{ index: 0, start: 0, size: 200, key: '0' }],
+      },
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByTestId('folder-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('folder-row')).not.toBeInTheDocument();
+  });
+
+  it('TC-12-01: renders List layout correctly', () => {
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      isGridView: false,
+      sortedFolders: [
+        { name: 'Mod B', path: '/Mod B', is_directory: true } as unknown as ModFolder,
+      ],
+      virtualItems: [{ index: 0, start: 0, size: 50, key: '0' }],
+      rowVirtualizer: {
+        getTotalSize: () => 50,
+        getVirtualItems: () => [{ index: 0, start: 0, size: 50, key: '0' }],
+      },
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByTestId('folder-row')).toBeInTheDocument();
+    expect(screen.queryByTestId('folder-card')).not.toBeInTheDocument();
+  });
+
+  it('TC-12-08: renders contextual empty state for active search', () => {
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      sortedFolders: [],
+      explorerSearchQuery: 'NonExistentMod',
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByText('No mods match your search.')).toBeInTheDocument();
+    expect(screen.queryByText(/NonExistentMod/i)).not.toBeInTheDocument();
+  });
+
+  it('TC-12-10: handles Navigate up (Go Home / Breadcrumbs)', () => {
+    const handleGoHome = vi.fn();
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      handleGoHome,
+      currentPath: ['Characters', 'Albedo'],
+    });
+
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByText('Characters')).toBeInTheDocument();
+    expect(screen.getByText('Albedo')).toBeInTheDocument();
+  });
+
+  it('TC-15-005: Renders DragOverlay when dragging', () => {
+    mockUseFolderGrid.mockReturnValue({
+      ...defaultHookReturn,
+      isDragging: true,
+    });
+    render(<FolderGrid />, { wrapper: createWrapper });
+    expect(screen.getByText('DragOverlay')).toBeInTheDocument();
+  });
+});

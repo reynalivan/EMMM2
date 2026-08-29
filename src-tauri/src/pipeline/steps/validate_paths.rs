@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use crate::domain::errors::CollectionError;
+use crate::shared::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::services::mods::core_ops::resolve_existing_runtime_variant;
+use crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant;
 
 /// Pre-Apply Validation Step: Verify physical paths exist for all target mod members.
 ///

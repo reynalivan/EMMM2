@@ -3,22 +3,22 @@ mod common;
 #[cfg(test)]
 mod tests {
     use super::common::init_test_db;
-    use emmm_lib::domain::models::GameType;
-    use emmm_lib::repo::game::{upsert_game, GameRow};
-    use emmm_lib::services::config::ConfigService;
-    use emmm_lib::services::mods::bulk;
-    use emmm_lib::services::mods::core_ops::toggle_mod_inner;
-    use emmm_lib::services::mods::info_json;
+    use emmm_lib::modules::games::domain::models::GameType;
+    use emmm_lib::modules::games::adapters::outbound::sqlite::game::{upsert_game, GameRow};
+    use emmm_lib::modules::system::application::config::ConfigService;
+    use emmm_lib::modules::library::application::mods::bulk;
+    use emmm_lib::modules::library::application::mods::core_ops::toggle_mod_inner;
+    use emmm_lib::modules::library::application::mods::info_json;
     use std::fs;
     use tempfile::TempDir;
 
-    use emmm_lib::services::scanner::watcher::WatcherState;
+    use emmm_lib::modules::workspace::application::scanner::watcher::WatcherState;
 
     async fn toggle_all(
         state: &WatcherState,
         paths: Vec<String>,
         enable: bool,
-    ) -> Result<Vec<String>, emmm_lib::domain::errors::AppError> {
+    ) -> Result<Vec<String>, emmm_lib::shared::errors::AppError> {
         let mut toggled = Vec::new();
         for path in paths {
             toggled.push(toggle_mod_inner(state, path, enable).await?);
@@ -118,7 +118,7 @@ mod tests {
         };
 
         let validated =
-            emmm_lib::services::fs_utils::guard::validate_paths(&config, game_id, &paths)
+            emmm_lib::platform::fs::guard::validate_paths(&config, game_id, &paths)
                 .expect("Paths should validate inside the mods root");
         let result = bulk::bulk_update_info(&validated, update)
             .await

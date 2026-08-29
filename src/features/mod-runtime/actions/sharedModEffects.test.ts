@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../stores/useAppStore';
+import { useAppStore } from '../../../app/store/useAppStore';
 import { runSharedModActiveContextToggle } from './sharedModEffects';
 
 const toggleModSafeMock = vi.fn();
@@ -8,7 +8,7 @@ const updateFolderCacheMock = vi.fn();
 const applyRuntimePathInvalidationMutationResultMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
-vi.mock('../../../core/tauri/bindings', () => ({
+vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     toggleModSafe: (...args: unknown[]) => toggleModSafeMock(...args),
@@ -24,7 +24,7 @@ vi.mock('../../workspace-runtime/actions/sharedRuntimeResultMapper', () => ({
     applyRuntimePathInvalidationMutationResultMock(...args),
 }));
 
-vi.mock('../../../stores/useToastStore', () => ({
+vi.mock('../../../app/store/useToastStore', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccessMock(...args),
   },

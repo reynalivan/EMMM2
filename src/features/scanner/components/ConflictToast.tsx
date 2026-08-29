@@ -1,6 +1,6 @@
 import { AlertTriangle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '../../../types/scanner';
+import type { ConflictInfo } from '@/entities/workspace/model/scanner';
 
 interface Props {
   conflicts: ConflictInfo[];

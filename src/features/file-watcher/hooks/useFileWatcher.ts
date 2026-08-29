@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
-import { useAppStore } from '../../../stores/useAppStore';
-import type { GameConfig } from '../../../types/game';
+import { useAppStore } from '../../../app/store/useAppStore';
+import type { GameConfig } from '@/entities/game/model/game';
 import {
   commands,
   type DiskReconcileReason,
   type DiskReconcileResult,
-} from '../../../core/tauri/bindings';
-import { formatAppError } from '../../../core/lib/appError';
+} from '../../../shared/api/tauri/bindings';
+import { formatAppError } from '../../../shared/lib/appError';
 import { publishDiskReconcileRefresh } from '../utils/reconcileRefresh';
 import {
   buildDiskReconcilePathRewrites,
@@ -18,7 +18,7 @@ import {
 } from '../utils/reconcileSelection';
 import { maybeShowExternalChangeToast } from '../utils/reconcileToast';
 import { applyWorkspacePathRewrites } from '../../workspace-runtime/optimistic/workspaceViewModelRewrite';
-import { toast } from '../../../stores/useToastStore';
+import { toast } from '../../../app/store/useToastStore';
 import {
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,

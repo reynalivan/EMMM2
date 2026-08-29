@@ -1,4 +1,8 @@
-import type { DupScanGroup, DuplicateSelection, ResolutionRequest } from '../../../types/scanner';
+import type {
+  DupScanGroup,
+  DuplicateSelection,
+  ResolutionRequest,
+} from '@/entities/workspace/model/scanner';
 
 /**
  * The duplicate report lets the user decide per group, but the backend resolves

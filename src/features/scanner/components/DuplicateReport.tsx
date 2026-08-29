@@ -4,15 +4,15 @@
  * Covers: TC-9.5-01, TC-9.5-02, TC-9.5-03 (UI presentation and user actions)
  */
 
-import { formatAppError } from '../../../core/lib/appError';
+import { formatAppError } from '../../../shared/lib/appError';
 import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
-import type { DuplicateSelection, ResolutionRequest } from '../../../types/scanner';
+import type { DuplicateSelection, ResolutionRequest } from '@/entities/workspace/model/scanner';
 import { buildResolutionRequests } from '../utils/resolutionRequests';
 import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
-import { toast } from '../../../stores/useToastStore';
+import { toast } from '../../../app/store/useToastStore';
 import { useTranslation } from 'react-i18next';
 
 interface Props {

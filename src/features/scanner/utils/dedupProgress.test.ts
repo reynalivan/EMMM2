@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DupScanEvent } from '../../../types/scanner';
+import type { DupScanEvent } from '@/entities/workspace/model/scanner';
 import { reduceDedupProgress } from './dedupProgress';
 
 describe('reduceDedupProgress', () => {

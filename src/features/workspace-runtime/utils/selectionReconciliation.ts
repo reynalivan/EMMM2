@@ -7,14 +7,14 @@
  * in-memory guards, kept out of the hook so it can be tested directly.
  */
 
-import type { WorkspaceSelection } from '../../../types/workspace';
+import type { WorkspaceSelection } from '@/entities/workspace/model/workspace';
 import type { WorkspaceRuntimeEvent } from '../state/workspaceEvents';
 import {
   normalizeWorkspacePath,
   rewriteWorkspacePathValue,
   type WorkspacePathRewriteInput,
 } from './pathRewrite';
-import { pathBasename } from '../../../core/lib/pathKey';
+import { pathBasename } from '../../../shared/lib/pathKey';
 
 export interface WorkspaceViewModelSelectionInput {
   selectedObjectFolderPath: string | null;

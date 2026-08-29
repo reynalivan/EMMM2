@@ -1,0 +1,62 @@
+//! Row lifecycle: inserts and deletes.
+
+use crate::shared::path_key::folder_path_key;
+use crate::modules::games::domain::models::ItemStatus;
+use sqlx::SqlitePool;
+
+#[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
+pub async fn insert_mod_tx(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+    game_id: &str,
+    object_id: &str,
+    actual_name: &str,
+    folder_path: &str,
+    mods_path: Option<&str>,
+    status: ItemStatus,
+    object_type: &str,
+    is_favorite: bool,
+    is_safe: bool,
+    safety_source: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, safety_source, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)"
+    )
+    .bind(id)
+    .bind(game_id)
+    .bind(object_id)
+    .bind(actual_name)
+    .bind(folder_path)
+    .bind(folder_path_key(folder_path, mods_path))
+    .bind(status as i64)
+    .bind(object_type)
+    .bind(is_favorite)
+    .bind(is_safe)
+    .bind(safety_source)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_mod_by_id(pool: &SqlitePool, mod_id: &str) -> Result<(), sqlx::Error> {
+    let mut conn = pool.acquire().await?;
+    delete_mod_tx(&mut conn, mod_id).await
+}
+
+/// `folder_path` MUST be absolute: the key is built without a `mods_path`, and
+/// only an absolute path short-circuits that lookup to the stored key shape.
+pub async fn delete_mod_by_path(pool: &SqlitePool, folder_path: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM mods WHERE folder_path_key = ?")
+        .bind(folder_path_key(folder_path, None))
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_mod_tx(conn: &mut sqlx::SqliteConnection, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM mods WHERE id = ?")
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}

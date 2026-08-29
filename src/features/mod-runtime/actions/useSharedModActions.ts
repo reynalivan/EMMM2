@@ -1,16 +1,16 @@
-import { formatAppError } from '../../../core/lib/appError';
-import type { MoveStatus } from '../../../types/mod';
+import { formatAppError } from '../../../shared/lib/appError';
+import type { MoveStatus } from '@/entities/mod/model/mod';
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../core/tauri/bindings';
-import { toast } from '../../../stores/useToastStore';
-import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { commands } from '../../../shared/api/tauri/bindings';
+import { toast } from '../../../app/store/useToastStore';
+import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
 import { useBulkFavorite } from '../hooks/useBulkModMutations';
-import { useToggleModSafe } from '../../folder-grid/hooks/useFolderMutations';
-import { useDeleteMod, useRenameMod } from '../../folder-grid/hooks/useFolderCoreMutations';
-import type { ModFolder } from '../../../types/object';
-import type { WorkspaceExplorerNode } from '../../../types/workspace';
+import { useToggleModSafe } from '@/widgets/mod-explorer/hooks/useFolderMutations';
+import { useDeleteMod, useRenameMod } from '@/widgets/mod-explorer/hooks/useFolderCoreMutations';
+import type { ModFolder } from '@/entities/game-object/model/object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
 import { moveModsToObjectAndRefresh } from '../operations/sharedOperations';
 import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
 import {

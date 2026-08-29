@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace/model/scanner';
 import { buildResolutionRequests } from './resolutionRequests';
 
 function group(id: string, paths: string[], confidenceScore = 100): DupScanGroup {

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import type { DiskReconcileProgress } from '../../../core/tauri/bindings';
-import { useAppStore } from '../../../stores/useAppStore';
+import type { DiskReconcileProgress } from '../../../shared/api/tauri/bindings';
+import { useAppStore } from '../../../app/store/useAppStore';
 
 /** Keeps event-only scan progress out of the long-lived reconcile coordinator. */
 export function useDiskReconcileProgress(gameId: string | null): void {

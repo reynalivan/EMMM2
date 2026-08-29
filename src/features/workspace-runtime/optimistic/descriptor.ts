@@ -1,4 +1,4 @@
-import type { RuntimeEffectDescriptor } from '../../../core/lib/runtimeEffects';
+import type { RuntimeEffectDescriptor } from '../../../shared/lib/runtimeEffects';
 
 // ponytail: six spelled-out lines on purpose. The return-type annotation already
 // fails the build if a descriptor field is added and not merged here, and every

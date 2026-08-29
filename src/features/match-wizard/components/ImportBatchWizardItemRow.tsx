@@ -8,8 +8,8 @@ import type {
   ImportItem,
   JsonValue,
   StableCategory,
-} from '../../../core/tauri/bindings.gen';
-import type { ObjectSummary } from '../../../types/object';
+} from '../../../shared/api/tauri/bindings.gen';
+import type { ObjectSummary } from '@/entities/game-object/model/object';
 import { destinationDecision } from '../utils/importBatchDecision';
 
 const CATEGORIES: StableCategory[] = ['Character', 'Weapon', 'UI', 'Other'];

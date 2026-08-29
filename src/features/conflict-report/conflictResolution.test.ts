@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ConflictInfo } from '../../types/scanner';
+import type { ConflictInfo } from '@/entities/workspace/model/scanner';
 import {
   buildConflictKey,
   chooseConflictWinner,

@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
-import { toast } from '../../../stores/useToastStore';
+import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { toast } from '../../../app/store/useToastStore';
 import type {
   WorkspaceExplorerNode,
   WorkspaceNode,
   WorkspaceObjectNode,
-} from '../../../types/workspace';
+} from '@/entities/workspace/model/workspace';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
 import {
   applyWorkspaceSwitchEffects,

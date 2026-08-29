@@ -17,20 +17,23 @@ import prettierConfig from 'eslint-config-prettier';
 
 /** Directories that own the mods runtime. */
 const MODS_RUNTIME = [
-  'src/features/object-list/**',
-  'src/features/folder-grid/**',
-  'src/features/preview/**',
+  'src/widgets/object-sidebar/**',
+  'src/widgets/mod-explorer/**',
+  'src/widgets/mod-preview/**',
   'src/features/mod-runtime/**',
   'src/features/file-watcher/**',
   'src/features/workspace-runtime/**',
+  'src/features/import-batches/**',
+  'src/features/match-wizard/**',
+  'src/features/randomizer/**',
   'src/hooks/**',
 ];
 
 /** Runtime directories that consume the shared actions rather than defining them. */
 const MODS_RUNTIME_CONSUMERS = [
-  'src/features/object-list/**',
-  'src/features/folder-grid/**',
-  'src/features/preview/**',
+  'src/widgets/object-sidebar/**',
+  'src/widgets/mod-explorer/**',
+  'src/widgets/mod-preview/**',
   'src/features/mod-runtime/**',
   'src/features/workspace-runtime/**',
 ];
@@ -61,7 +64,7 @@ export default tseslint.config(
       'src-tauri',
       'coverage',
       // Ignore specta generated bindings
-      'src/core/tauri/bindings.gen.ts',
+      'src/shared/api/tauri/bindings.gen.ts',
       '.agent',
       '.history',
       '.vscode',
@@ -110,7 +113,7 @@ export default tseslint.config(
             {
               group: ['**/workspace-runtime/**', '**/workspace-runtime'],
               message:
-                'runtime-sync is the lower layer; importing workspace-runtime closes a cycle. Put shared contracts in src/lib/runtimeEffects.ts.',
+                'runtime-sync is the lower layer; importing workspace-runtime closes a cycle. Put shared contracts in src/core/lib/runtimeEffects.ts.',
             },
           ],
         },
@@ -142,7 +145,7 @@ export default tseslint.config(
 
   // runtimeEffects is the shared leaf contract: no feature may leak into it.
   {
-    files: ['src/lib/runtimeEffects.ts'],
+    files: ['src/core/lib/runtimeEffects.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -253,14 +256,14 @@ export default tseslint.config(
 
   // importPipeline preflights a user-supplied path before import; that probe is allowed.
   {
-    files: ['src/features/object-list/utils/importPipeline.ts'],
+  files: ['src/widgets/object-sidebar/utils/importPipeline.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 
   // Whole frontend: removed commands stay removed, refresh stays centralised.
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/lib/bindings.ts', 'src/setupTests.ts'],
+    ignores: ['src/shared/api/tauri/bindings.ts', 'src/setupTests.ts'],
     rules: {
       'no-restricted-properties': [
         'error',
@@ -340,9 +343,9 @@ export default tseslint.config(
   // Surface components render; they do not wire events or publish runtime effects.
   {
     files: [
-      'src/features/preview/PreviewPanel.tsx',
-      'src/features/folder-grid/FolderGrid.tsx',
-      'src/features/object-list/ObjectList.tsx',
+      'src/widgets/mod-preview/PreviewPanel.tsx',
+      'src/widgets/mod-explorer/FolderGrid.tsx',
+      'src/widgets/object-sidebar/ObjectList.tsx',
     ],
     rules: {
       'no-restricted-syntax': [
@@ -368,9 +371,8 @@ export default tseslint.config(
   // Folder-grid dialogs collect input; the caller publishes and reports errors.
   {
     files: [
-      'src/features/folder-grid/modals/ConflictResolveDialog.tsx',
-      'src/features/folder-grid/modals/MoveToObjectDialog.tsx',
-      'src/features/folder-grid/modals/IgnoreManagementModal.tsx',
+      'src/widgets/object-sidebar/modals/MoveToObjectDialog.tsx',
+      'src/widgets/mod-explorer/modals/IgnoreManagementModal.tsx',
     ],
     rules: {
       'no-restricted-syntax': [
@@ -390,10 +392,10 @@ export default tseslint.config(
   // so they must never start or refresh a Match Wizard workflow.
   {
     files: [
-      'src/App.tsx',
-      'src/components/layout/**/*.{ts,tsx}',
+      'src/app/entrypoint/App.tsx',
+      'src/shared/ui/components/layout/**/*.{ts,tsx}',
       'src/features/file-watcher/**/*.{ts,tsx}',
-      'src/features/onboarding/**/*.{ts,tsx}',
+      'src/pages/onboarding/**/*.{ts,tsx}',
       'src/features/workspace-runtime/**/*.{ts,tsx}',
     ],
     rules: {

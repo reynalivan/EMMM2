@@ -1,11 +1,11 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { commands } from '../../../core/tauri/bindings';
-import { useAppStore } from '../../../stores/useAppStore';
-import { toast } from '../../../stores/useToastStore';
-import type { ModFolder } from '../../../types/object';
-import type { WorkspaceExplorerNode } from '../../../types/workspace';
+import { commands } from '../../../shared/api/tauri/bindings';
+import { useAppStore } from '../../../app/store/useAppStore';
+import { toast } from '../../../app/store/useToastStore';
+import type { ModFolder } from '@/entities/game-object/model/object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
 import { applyRuntimePathInvalidationMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
-import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
+import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 
 export interface SharedModSwitchActions {
   setNodeEnabled: (

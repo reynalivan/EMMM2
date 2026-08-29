@@ -1,11 +1,11 @@
-use emmm_lib::commands::mods::mod_core_cmds;
-use emmm_lib::services::mods::trash;
+use emmm_lib::modules::library::adapters::inbound::mod_core_cmds;
+use emmm_lib::modules::library::application::mods::trash;
 use std::fs;
 use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_epic4_full_maintenance_flow() {
-    use emmm_lib::services::scanner::watcher::WatcherState;
+    use emmm_lib::modules::workspace::application::scanner::watcher::WatcherState;
 
     // -------------------------------------------------------------------------
     // Setup: Create a mock environment

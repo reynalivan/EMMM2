@@ -1,11 +1,11 @@
-import { useDialogSync } from '../../shared/hooks/useDialogSync';
+import { useDialogSync } from '../../shared/lib/hooks/useDialogSync';
 import { AlertTriangle, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '../../types/scanner';
+import type { ConflictInfo } from '@/entities/workspace/model/scanner';
 import { useBulkToggle } from '../mod-runtime/hooks/useBulkModMutations';
-import { commands } from '../../core/tauri/bindings';
-import { formatAppError } from '../../core/lib/appError';
+import { commands } from '../../shared/api/tauri/bindings';
+import { formatAppError } from '../../shared/lib/appError';
 import ConflictGroupCard from './ConflictGroupCard';
 import ConflictResolutionSummary from './ConflictResolutionSummary';
 import {

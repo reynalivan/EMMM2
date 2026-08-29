@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../core/tauri/bindings';
+import { commands } from '../../../shared/api/tauri/bindings';
 import type {
   JsonValue,
   GameSchema,
   ObjectClassificationPreviewItem,
   StableCategory,
-} from '../../../core/tauri/bindings.gen';
-import { formatAppError } from '../../../core/lib/appError';
-import { toast } from '../../../stores/useToastStore';
+} from '../../../shared/api/tauri/bindings.gen';
+import { formatAppError } from '../../../shared/lib/appError';
+import { toast } from '../../../app/store/useToastStore';
 import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 import {
   subscribeObjectClassificationWizard,

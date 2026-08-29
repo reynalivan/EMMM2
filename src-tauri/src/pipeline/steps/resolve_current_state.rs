@@ -1,13 +1,13 @@
-use crate::domain::errors::CollectionError;
+use crate::shared::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
 
 /// Resolve currently-enabled mod path keys for the whole runtime.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let (mods, objects) =
-        crate::services::collection::load_live_runtime_state(&ctx.pool, &ctx.game_id)
+        crate::modules::collections::application::collection::load_live_runtime_state(&ctx.pool, &ctx.game_id)
             .await?;
     let projected_state =
-        crate::services::projected_state::build_projected_state(&mods, &objects, None);
+        crate::modules::workspace::application::projected_state::build_projected_state(&mods, &objects, None);
     ctx.currently_enabled_path_keys = projected_state
         .active_roots
         .into_iter()

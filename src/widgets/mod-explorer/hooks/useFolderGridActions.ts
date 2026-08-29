@@ -1,0 +1,183 @@
+import { formatAppError } from '../../../shared/lib/appError';
+import { useCallback, useMemo } from 'react';
+import { join } from '@tauri-apps/api/path';
+import { useQueryClient } from '@tanstack/react-query';
+import { commands } from '../../../shared/api/tauri/bindings';
+import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { toast } from '../../../app/store/useToastStore';
+import { useSharedModActions } from '@/features/mod-runtime/actions/useSharedModActions';
+import {
+  closeWorkspaceDialog,
+  openWorkspaceEnableParentDialog,
+} from '@/features/workspace-runtime/state/workspaceDialogs';
+import { useWorkspaceSwitchActions } from '@/features/workspace-runtime/actions/useWorkspaceSwitchActions';
+import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { ObjectSummary } from '@/entities/game-object/model/object';
+import { applyRuntimeMutationResult } from '@/features/workspace-runtime/actions/sharedRuntimeResultMapper';
+
+interface UseFolderGridActionsOptions {
+  activeGame: ReturnType<typeof useActiveGame>['activeGame'];
+  currentPath: string[];
+  explorerSubPath: string | undefined;
+  ancestorDisabledBy: string | null;
+  ancestorDisabledPath: string | null;
+  rawFolders: WorkspaceExplorerNode[];
+  objects: ObjectSummary[];
+  clearGridSelection: () => void;
+  sourceAvailable: boolean;
+}
+
+export function useFolderGridActions({
+  activeGame,
+  currentPath,
+  explorerSubPath,
+  ancestorDisabledBy,
+  ancestorDisabledPath,
+  rawFolders,
+  objects,
+  clearGridSelection,
+  sourceAvailable,
+}: UseFolderGridActionsOptions) {
+  const queryClient = useQueryClient();
+  const actions = useSharedModActions({
+    onRenameSuccess: clearGridSelection,
+    onDeleteSuccess: clearGridSelection,
+    onMoveSuccess: clearGridSelection,
+    switchSurface: 'folder_grid',
+  });
+  const switchActions = useWorkspaceSwitchActions();
+  const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
+
+  const enableParentDialog = useMemo(() => {
+    if (dialogState.kind !== 'folderEnableParent') {
+      return {
+        open: false,
+        ancestorName: '',
+        willActivate: [] as WorkspaceExplorerNode[],
+        stayDisabled: [] as WorkspaceExplorerNode[],
+      };
+    }
+
+    return {
+      open: true,
+      ancestorName: dialogState.ancestorName,
+      willActivate: dialogState.willActivate,
+      stayDisabled: dialogState.stayDisabled,
+    };
+  }, [dialogState]);
+
+  const currentAbsPath = useMemo(() => {
+    if (!sourceAvailable || !activeGame?.mod_path) {
+      return null;
+    }
+
+    const parts = [activeGame.mod_path, ...currentPath.filter(Boolean)];
+    return parts.join('\\');
+  }, [activeGame, currentPath, sourceAvailable]);
+
+  const refreshWorkspaceQueries = useCallback(() => {
+    void applyRuntimeMutationResult(queryClient, 'workspaceStructure');
+  }, [queryClient]);
+
+  const handleRevealInExplorer = useCallback(
+    async (objectId: string) => {
+      if (!activeGame) {
+        return;
+      }
+
+      const object = objects.find((candidate) => candidate.id === objectId);
+      try {
+        await commands.revealObjectInExplorer(
+          activeGame.id,
+          objectId,
+          object?.folder_path ?? objectId,
+        );
+      } catch (error) {
+        const message = formatAppError(error);
+        toast.error(message);
+        refreshWorkspaceQueries();
+      }
+    },
+    [activeGame, objects, refreshWorkspaceQueries],
+  );
+
+  const handleOpenCurrentFolderInExplorer = useCallback(async () => {
+    if (!currentAbsPath || !activeGame?.id) {
+      return;
+    }
+
+    try {
+      await commands.openInExplorer(activeGame.id, currentAbsPath);
+    } catch (error) {
+      const message = formatAppError(error);
+      toast.error(message);
+    }
+  }, [activeGame, currentAbsPath]);
+
+  const handleToggleSelf = useCallback(
+    async (enable: boolean) => {
+      if (!sourceAvailable || !activeGame?.id || !activeGame.mod_path || !explorerSubPath) {
+        return;
+      }
+
+      const targetPath = await join(activeGame.mod_path, explorerSubPath);
+      await switchActions.setFolderPathEnabled(targetPath, enable);
+    },
+    [activeGame, explorerSubPath, sourceAvailable, switchActions],
+  );
+
+  const openEnableParentDialog = useCallback(() => {
+    if (!ancestorDisabledBy || !ancestorDisabledPath) {
+      return;
+    }
+
+    const willActivate = rawFolders.filter((folder) => folder.is_enabled);
+    const stayDisabled = rawFolders.filter((folder) => !folder.is_enabled);
+    openWorkspaceEnableParentDialog({
+      ancestorName: ancestorDisabledBy,
+      ancestorPath: ancestorDisabledPath,
+      willActivate,
+      stayDisabled,
+    });
+  }, [ancestorDisabledBy, ancestorDisabledPath, rawFolders]);
+
+  const closeEnableParentDialog = useCallback(() => {
+    closeWorkspaceDialog('folderEnableParent');
+  }, []);
+
+  const handleEnableParent = useCallback(async () => {
+    if (dialogState.kind !== 'folderEnableParent') {
+      return;
+    }
+
+    await switchActions.setFolderPathEnabled(dialogState.ancestorPath, true);
+    closeWorkspaceDialog('folderEnableParent');
+  }, [dialogState, switchActions]);
+
+  const handleToggleEnabledGuarded = useCallback(
+    (folder: WorkspaceExplorerNode) => {
+      if (ancestorDisabledBy) {
+        openEnableParentDialog();
+        return;
+      }
+
+      void actions.handleToggleEnabled(folder);
+    },
+    [actions, ancestorDisabledBy, openEnableParentDialog],
+  );
+
+  return {
+    actions,
+    switchActions,
+    enableParentDialog,
+    handleRevealInExplorer,
+    currentAbsPath,
+    handleOpenCurrentFolderInExplorer,
+    handleToggleSelf,
+    openEnableParentDialog,
+    closeEnableParentDialog,
+    handleEnableParent,
+    handleToggleEnabledGuarded,
+  };
+}

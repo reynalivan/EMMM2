@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::domain::errors::{AppError, CollectionError};
-use crate::domain::workspace::WorkspacePathRewrite;
+use crate::shared::errors::{AppError, CollectionError};
+use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::services::workspace_mutation::engine::{
+use crate::modules::workspace::application::workspace_mutation::engine::{
     toggle_mods_mixed, RuntimeToggleBatchRequest, RuntimeToggleOperation, RuntimeToggleTarget,
 };
 
@@ -14,7 +14,7 @@ struct ObjectTogglePlan {
 
 /// Batch rename mod folders and persist DB projection.
 pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let _guard = crate::services::scanner::watcher::SuppressionGuard::new(&ctx.suppressor);
+    let _guard = crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(&ctx.suppressor);
     // One pass over the game's mods, indexed by key — the enable and disable
     // lists then resolve from memory instead of re-reading the table.
     let by_key = load_targets_by_key(ctx).await?;
@@ -57,7 +57,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     // a child path before its terminal state is settled.
     for plan in object_plans {
         let original_path = plan.current_path.to_string_lossy().to_string();
-        match crate::services::mods::object_switch::toggle_object_root_on_disk(
+        match crate::modules::library::application::mods::object_switch::toggle_object_root_on_disk(
             &plan.current_path,
             plan.target_enabled,
         ) {
@@ -85,14 +85,14 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     // retains its game-first mutation lease across this inline projection, so
     // it cannot interleave with a queued reconcile for the same game.
     if !changed_paths.is_empty() {
-        let reconcile = crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
-            crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+        let reconcile = crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
+            crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
                 pool: &ctx.pool,
                 game_id: &ctx.game_id,
                 mods_path: &ctx.mods_path,
                 safe_mode_keywords: &ctx.settings.safety.keywords,
                 reason:
-                    &crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+                    &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
                 changed_paths: &changed_paths,
                 force_full: false,
                 watcher_events: None,
@@ -120,7 +120,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
 
 async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ObjectTogglePlan>, CollectionError> {
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::repo::object::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    let rows = crate::modules::catalog::adapters::outbound::sqlite::object::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
     drop(conn);
     let by_id = rows
         .into_iter()
@@ -161,7 +161,7 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
         .runtime_path_rewrites
         .iter()
         .map(
-            |rewrite| crate::services::scanner::watcher::ModWatchEvent::Renamed {
+            |rewrite| crate::modules::workspace::application::scanner::watcher::ModWatchEvent::Renamed {
                 from: rewrite.old_path.clone(),
                 to: rewrite.new_path.clone(),
             },
@@ -172,13 +172,13 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
         .iter()
         .flat_map(|rewrite| [rewrite.old_path.clone(), rewrite.new_path.clone()])
         .collect::<Vec<_>>();
-    let outcome = crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
-        crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+    let outcome = crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
             pool: &ctx.pool,
             game_id: &ctx.game_id,
             mods_path: &ctx.mods_path,
             safe_mode_keywords: &ctx.settings.safety.keywords,
-            reason: &crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            reason: &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
             changed_paths: &changed_paths,
             force_full: true,
             watcher_events: (!rename_events.is_empty()).then_some(rename_events.as_slice()),
@@ -193,7 +193,7 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
         Err(error) => format!("Full disk reconcile failed after failed mutation: {error}"),
     };
     ctx.warnings.push(recovery_message);
-    crate::services::apply_progress::set_warnings(&ctx.game_id, ctx.warnings.clone());
+    crate::modules::library::application::apply_progress::set_warnings(&ctx.game_id, ctx.warnings.clone());
 }
 
 /// Every mod row for the game, reachable by both key spellings it may be
@@ -203,7 +203,7 @@ async fn load_targets_by_key(
     ctx: &ApplyContext,
 ) -> Result<HashMap<String, RuntimeToggleTarget>, CollectionError> {
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::repo::mods::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    let rows = crate::modules::library::adapters::outbound::sqlite::mods::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
     drop(conn);
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
     let mut by_key = HashMap::with_capacity(rows.len() * 2);
@@ -238,8 +238,8 @@ fn pick_targets(
 fn normalized_enabled_key(path: &str, mods_path: Option<&str>) -> String {
     let clean_path = path
         .split(['/', '\\'])
-        .map(|segment| crate::services::mods::core_ops::standardize_prefix(segment, true))
+        .map(|segment| crate::modules::library::application::mods::core_ops::standardize_prefix(segment, true))
         .collect::<Vec<_>>()
         .join("/");
-    crate::common::path_key::folder_path_key(&clean_path, mods_path).to_lowercase()
+    crate::shared::path_key::folder_path_key(&clean_path, mods_path).to_lowercase()
 }

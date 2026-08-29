@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ConflictInfo } from '../../types/scanner';
+import type { ConflictInfo } from '@/entities/workspace/model/scanner';
 import ConflictModal from './ConflictModal';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   isPending: false,
 }));
 
-vi.mock('../../shared/hooks/useDialogSync', () => ({
+vi.mock('../../shared/lib/hooks/useDialogSync', () => ({
   useDialogSync: vi.fn(),
 }));
 
@@ -26,13 +26,13 @@ vi.mock('../mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutateAsync: mocks.bulkToggle, isPending: mocks.isPending }),
 }));
 
-vi.mock('../../core/tauri/bindings', () => ({
+vi.mock('../../shared/api/tauri/bindings', () => ({
   commands: {
     openInExplorer: (...args: unknown[]) => mocks.openInExplorer(...args),
   },
 }));
 
-vi.mock('../../core/lib/appError', () => ({
+vi.mock('../../shared/lib/appError', () => ({
   formatAppError: (error: unknown) => String(error),
 }));
 

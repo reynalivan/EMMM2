@@ -1,8 +1,8 @@
-import type { DiskReconcileResult } from '../../../core/tauri/bindings';
-import { useAppStore } from '../../../stores/useAppStore';
-import type { GameConfig } from '../../../types/game';
+import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
+import { useAppStore } from '../../../app/store/useAppStore';
+import type { GameConfig } from '@/entities/game/model/game';
 import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
-import { pathStartsWith } from '../../../core/lib/pathKey';
+import { pathStartsWith } from '../../../shared/lib/pathKey';
 import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
 import { joinModPath, rewritePath } from './pathUtils';
 

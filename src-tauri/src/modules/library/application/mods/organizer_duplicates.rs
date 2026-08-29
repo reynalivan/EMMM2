@@ -1,0 +1,51 @@
+use crate::shared::errors::AppError;
+use crate::modules::library::application::mods::core_ops::standardize_prefix;
+use std::path::Path;
+
+pub async fn disable_target_duplicates(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    target_object_id: &str,
+    new_rel: &str,
+    base_path: &Path,
+    target_obj_path: &Path,
+    path_hints: &mut Vec<super::organizer_move::OrganizerMovePathHint>,
+) -> Result<(), AppError> {
+    use crate::modules::workspace::domain::normalizer::is_disabled_folder;
+
+    let siblings =
+        crate::modules::library::adapters::outbound::sqlite::mods::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)
+            .await?;
+    for (_id, sibling_rel, _name) in siblings {
+        let sibling_path = sibling_rel.resolve(base_path);
+        let Some(sibling_name) = sibling_path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if is_disabled_folder(sibling_name) || sibling_name.starts_with('.') {
+            continue;
+        }
+
+        let sibling_disabled_path = sibling_path
+            .parent()
+            .unwrap_or(target_obj_path)
+            .join(standardize_prefix(sibling_name, false));
+        if sibling_disabled_path.exists()
+            || std::fs::rename(&sibling_path, &sibling_disabled_path).is_err()
+        {
+            continue;
+        }
+
+        let sibling_new_rel = sibling_disabled_path
+            .strip_prefix(base_path)
+            .unwrap_or(&sibling_disabled_path)
+            .to_string_lossy()
+            .to_string();
+        path_hints.push(super::organizer_move::OrganizerMovePathHint {
+            old_path: sibling_rel.into_stored(),
+            new_path: sibling_new_rel,
+            target_object_id: target_object_id.to_string(),
+        });
+    }
+
+    Ok(())
+}

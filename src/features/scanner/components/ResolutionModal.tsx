@@ -4,7 +4,7 @@
  */
 
 import { Trash2, ShieldCheck, AlertTriangle, X } from 'lucide-react';
-import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
+import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace/model/scanner';
 import { useTranslation } from 'react-i18next';
 
 interface Props {

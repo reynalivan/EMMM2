@@ -1,4 +1,4 @@
-import type { WorkspaceObjectNode } from '../../../types/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
 import type { WorkspaceRuntimeEvent } from '../state/workspaceEvents';
 import type { WorkspaceDialogState } from '../state/workspaceState';
 

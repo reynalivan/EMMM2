@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { WorkspaceReason, WorkspaceWarning } from '../../../types/workspace';
+import type { WorkspaceReason, WorkspaceWarning } from '@/entities/workspace/model/workspace';
 
 function getReasonText(t: TFunction, reason: WorkspaceReason): string {
   if (reason.code === 'disabled_by_container') {

@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../core/lib/runtimeEffects';
+import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../shared/lib/runtimeEffects';
 
 // FE runtime refresh bus only.
 // Disk Reconcile event handlers or explicit non-filesystem mutations publish into this layer.

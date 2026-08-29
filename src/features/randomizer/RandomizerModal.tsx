@@ -1,7 +1,7 @@
-import { formatAppError } from '../../core/lib/appError';
+import { formatAppError } from '../../shared/lib/appError';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { commands, type RandomModProposal } from '../../core/tauri/bindings';
+import { commands, type RandomModProposal } from '../../shared/api/tauri/bindings';
 import { RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
@@ -11,7 +11,7 @@ import {
   buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../workspace-runtime/optimistic/descriptorBuilders';
-import type { WorkspaceImpact } from '../../types/workspace';
+import type { WorkspaceImpact } from '@/entities/workspace/model/workspace';
 
 interface RandomizerModalProps {
   open: boolean;

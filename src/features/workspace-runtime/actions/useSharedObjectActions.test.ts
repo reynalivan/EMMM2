@@ -2,8 +2,8 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../stores/useAppStore';
-import type { WorkspaceObjectNode } from '../../../types/workspace';
+import { useAppStore } from '../../../app/store/useAppStore';
+import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
 import { useSharedObjectActions } from './useSharedObjectActions';
 
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
@@ -87,14 +87,14 @@ vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
 }));
 
-vi.mock('../../../core/tauri/bindings', () => ({
+vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     pinObject: vi.fn(),
   },
 }));
 
-vi.mock('../../../stores/useToastStore', () => ({
+vi.mock('../../../app/store/useToastStore', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),

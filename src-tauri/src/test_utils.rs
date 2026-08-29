@@ -2,9 +2,9 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Pool, Sqlite};
 use std::sync::Once;
 
-use crate::common::path_key::{canonical_name_key, folder_path_key};
-use crate::domain::collection::ProjectedCollectionState;
-use crate::repo::game::{upsert_game, GameRow};
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
+use crate::modules::collections::domain::collection::ProjectedCollectionState;
+use crate::modules::games::adapters::outbound::sqlite::game::{upsert_game, GameRow};
 
 static INIT: Once = Once::new();
 
@@ -15,7 +15,7 @@ pub struct TestContext {
 pub struct TestGameFixture<'a> {
     pub id: &'a str,
     pub name: &'a str,
-    pub game_type: crate::domain::models::GameType,
+    pub game_type: crate::modules::games::domain::models::GameType,
     pub path: &'a str,
     pub mods_path: Option<&'a str>,
 }
@@ -34,7 +34,7 @@ pub struct TestModFixture<'a> {
     pub object_id: Option<&'a str>,
     pub actual_name: &'a str,
     pub folder_path: &'a str,
-    pub status: crate::domain::models::ItemStatus,
+    pub status: crate::modules::games::domain::models::ItemStatus,
     pub is_safe: bool,
     pub object_type: Option<&'a str>,
     pub mods_path: Option<&'a str>,
@@ -70,7 +70,7 @@ pub async fn init_test_db() -> TestContext {
     // Run migrations (force cache bust)
     let m = sqlx::migrate!("./migrations");
     m.run(&pool).await.expect("Failed to run migrations");
-    crate::repo::utils::unicode_keys::ensure_unicode_keys(&pool)
+    crate::modules::system::adapters::outbound::sqlite::utils::unicode_keys::ensure_unicode_keys(&pool)
         .await
         .expect("Failed to backfill unicode keys");
 
@@ -147,9 +147,9 @@ pub async fn set_test_collection_snapshot(
     collection_id: &str,
     state: &ProjectedCollectionState,
 ) -> Result<(), sqlx::Error> {
-    let snapshot_json = crate::services::projected_state::serialize_snapshot_json(state)
+    let snapshot_json = crate::modules::workspace::application::projected_state::serialize_snapshot_json(state)
         .unwrap_or_default();
-    let signature = crate::services::projected_state::signature_for_projected_state(state);
+    let signature = crate::modules::workspace::application::projected_state::signature_for_projected_state(state);
     let active_root_count = state.summary.active_root_count as i32;
 
     sqlx::query(
@@ -175,7 +175,7 @@ pub async fn update_test_mod_path_and_status(
     sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ?, status = ? WHERE id = ?")
         .bind(folder_path)
         .bind(folder_path_key(folder_path, mods_path))
-        .bind(status.parse::<crate::domain::models::ItemStatus>().unwrap() as i64)
+        .bind(status.parse::<crate::modules::games::domain::models::ItemStatus>().unwrap() as i64)
         .bind(mod_id)
         .execute(pool)
         .await?;

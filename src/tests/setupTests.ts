@@ -1,20 +1,20 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 import React from 'react';
-import browserEn from '../locales/en/browser.json';
-import collectionsEn from '../locales/en/collections.json';
-import commonEn from '../locales/en/common.json';
-import dashboardEn from '../locales/en/dashboard.json';
-import folderGridEn from '../locales/en/folder_grid.json';
-import gridEn from '../locales/en/grid.json';
-import layoutEn from '../locales/en/layout.json';
-import objectsEn from '../locales/en/objects.json';
-import onboardingEn from '../locales/en/onboarding.json';
-import previewEn from '../locales/en/preview.json';
-import scannerEn from '../locales/en/scanner.json';
-import settingsEn from '../locales/en/settings.json';
-import welcomeEn from '../locales/en/welcome.json';
-import modInboxEn from '../locales/en/mod_inbox.json';
+import browserEn from '../shared/i18n/locales/en/browser.json';
+import collectionsEn from '../shared/i18n/locales/en/collections.json';
+import commonEn from '../shared/i18n/locales/en/common.json';
+import dashboardEn from '../shared/i18n/locales/en/dashboard.json';
+import folderGridEn from '../shared/i18n/locales/en/folder_grid.json';
+import gridEn from '../shared/i18n/locales/en/grid.json';
+import layoutEn from '../shared/i18n/locales/en/layout.json';
+import objectsEn from '../shared/i18n/locales/en/objects.json';
+import onboardingEn from '../shared/i18n/locales/en/onboarding.json';
+import previewEn from '../shared/i18n/locales/en/preview.json';
+import scannerEn from '../shared/i18n/locales/en/scanner.json';
+import settingsEn from '../shared/i18n/locales/en/settings.json';
+import welcomeEn from '../shared/i18n/locales/en/welcome.json';
+import modInboxEn from '../shared/i18n/locales/en/mod_inbox.json';
 
 // Mock Tauri API globally
 vi.mock('@tauri-apps/api/core', () => ({

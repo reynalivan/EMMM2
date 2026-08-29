@@ -1,0 +1,1495 @@
+{
+  "App.test": [
+    "@/src\\app\\entrypoint\\App.test"
+  ],
+  "App": [
+    "@/src\\app\\entrypoint\\App"
+  ],
+  "main": [
+    "@/src\\app\\entrypoint\\main"
+  ],
+  "queryClient": [
+    "@/src\\app\\providers\\queryClient",
+    "@/src\\shared\\lib\\queryClient"
+  ],
+  "explorerSlice": [
+    "@/src\\app\\store\\appStore\\explorerSlice",
+    "@/src\\stores\\appStore\\explorerSlice"
+  ],
+  "gameSlice": [
+    "@/src\\app\\store\\appStore\\gameSlice",
+    "@/src\\stores\\appStore\\gameSlice"
+  ],
+  "layoutSlice": [
+    "@/src\\app\\store\\appStore\\layoutSlice",
+    "@/src\\stores\\appStore\\layoutSlice"
+  ],
+  "navigationSlice": [
+    "@/src\\app\\store\\appStore\\navigationSlice",
+    "@/src\\stores\\appStore\\navigationSlice"
+  ],
+  "objectListSlice": [
+    "@/src\\app\\store\\appStore\\objectListSlice",
+    "@/src\\stores\\appStore\\objectListSlice"
+  ],
+  "selectionSlice": [
+    "@/src\\app\\store\\appStore\\selectionSlice",
+    "@/src\\stores\\appStore\\selectionSlice"
+  ],
+  "sliceTypes": [
+    "@/src\\app\\store\\appStore\\sliceTypes",
+    "@/src\\stores\\appStore\\sliceTypes"
+  ],
+  "workspaceRuntimeReducer": [
+    "@/src\\app\\store\\appStore\\workspaceRuntimeReducer",
+    "@/src\\stores\\appStore\\workspaceRuntimeReducer"
+  ],
+  "workspaceRuntimeSlice": [
+    "@/src\\app\\store\\appStore\\workspaceRuntimeSlice",
+    "@/src\\stores\\appStore\\workspaceRuntimeSlice"
+  ],
+  "workspaceRuntimeTransitions": [
+    "@/src\\app\\store\\appStore\\workspaceRuntimeTransitions",
+    "@/src\\stores\\appStore\\workspaceRuntimeTransitions"
+  ],
+  "useAppStore.objectList.test": [
+    "@/src\\app\\store\\useAppStore.objectList.test",
+    "@/src\\stores\\useAppStore.objectList.test"
+  ],
+  "useAppStore.test": [
+    "@/src\\app\\store\\useAppStore.test",
+    "@/src\\stores\\useAppStore.test"
+  ],
+  "useAppStore": [
+    "@/src\\app\\store\\useAppStore",
+    "@/src\\stores\\useAppStore"
+  ],
+  "useBrowserStore.test": [
+    "@/src\\app\\store\\useBrowserStore.test",
+    "@/src\\stores\\useBrowserStore.test"
+  ],
+  "useBrowserStore": [
+    "@/src\\app\\store\\useBrowserStore",
+    "@/src\\stores\\useBrowserStore"
+  ],
+  "useToastStore.test": [
+    "@/src\\app\\store\\useToastStore.test",
+    "@/src\\stores\\useToastStore.test"
+  ],
+  "useToastStore": [
+    "@/src\\app\\store\\useToastStore",
+    "@/src\\stores\\useToastStore"
+  ],
+  "vite-env.d": [
+    "@/src\\app\\vite-env.d"
+  ],
+  "collection": [
+    "@/src\\entities\\common\\collection",
+    "@/src\\types\\collection"
+  ],
+  "dashboard": [
+    "@/src\\entities\\common\\dashboard",
+    "@/src\\types\\dashboard"
+  ],
+  "game": [
+    "@/src\\entities\\common\\game",
+    "@/src\\types\\game"
+  ],
+  "mod": [
+    "@/src\\entities\\common\\mod",
+    "@/src\\types\\mod"
+  ],
+  "object": [
+    "@/src\\entities\\common\\object",
+    "@/src\\types\\object"
+  ],
+  "scanner": [
+    "@/src\\entities\\common\\scanner",
+    "@/src\\types\\scanner"
+  ],
+  "settings": [
+    "@/src\\entities\\common\\settings",
+    "@/src\\types\\settings"
+  ],
+  "task": [
+    "@/src\\entities\\common\\task",
+    "@/src\\types\\task"
+  ],
+  "workspace": [
+    "@/src\\entities\\common\\workspace",
+    "@/src\\types\\workspace"
+  ],
+  "ConflictGroupCard": [
+    "@/src\\features\\conflict-report\\ConflictGroupCard"
+  ],
+  "ConflictModal.test": [
+    "@/src\\features\\conflict-report\\ConflictModal.test"
+  ],
+  "ConflictModal": [
+    "@/src\\features\\conflict-report\\ConflictModal"
+  ],
+  "conflictResolution.test": [
+    "@/src\\features\\conflict-report\\conflictResolution.test"
+  ],
+  "conflictResolution": [
+    "@/src\\features\\conflict-report\\conflictResolution"
+  ],
+  "ConflictResolutionSummary": [
+    "@/src\\features\\conflict-report\\ConflictResolutionSummary"
+  ],
+  "FileInUseDialog": [
+    "@/src\\features\\file-watcher\\dialogs\\FileInUseDialog"
+  ],
+  "ExternalChangeHandler.test": [
+    "@/src\\features\\file-watcher\\ExternalChangeHandler.test"
+  ],
+  "ExternalChangeHandler": [
+    "@/src\\features\\file-watcher\\ExternalChangeHandler"
+  ],
+  "useFileWatcher.test": [
+    "@/src\\features\\file-watcher\\hooks\\useFileWatcher.test"
+  ],
+  "useFileWatcher": [
+    "@/src\\features\\file-watcher\\hooks\\useFileWatcher"
+  ],
+  "infra.test": [
+    "@/src\\features\\file-watcher\\infra.test"
+  ],
+  "pathUtils.test": [
+    "@/src\\features\\file-watcher\\utils\\pathUtils.test"
+  ],
+  "pathUtils": [
+    "@/src\\features\\file-watcher\\utils\\pathUtils"
+  ],
+  "reconcileProgress.test": [
+    "@/src\\features\\file-watcher\\utils\\reconcileProgress.test"
+  ],
+  "reconcileProgress": [
+    "@/src\\features\\file-watcher\\utils\\reconcileProgress"
+  ],
+  "reconcileRefresh.test": [
+    "@/src\\features\\file-watcher\\utils\\reconcileRefresh.test"
+  ],
+  "reconcileRefresh": [
+    "@/src\\features\\file-watcher\\utils\\reconcileRefresh"
+  ],
+  "reconcileSelection": [
+    "@/src\\features\\file-watcher\\utils\\reconcileSelection"
+  ],
+  "reconcileToast.test": [
+    "@/src\\features\\file-watcher\\utils\\reconcileToast.test"
+  ],
+  "reconcileToast": [
+    "@/src\\features\\file-watcher\\utils\\reconcileToast"
+  ],
+  "watcherError": [
+    "@/src\\features\\file-watcher\\utils\\watcherError"
+  ],
+  "watcherLifecycle": [
+    "@/src\\features\\file-watcher\\utils\\watcherLifecycle"
+  ],
+  "classificationLauncher": [
+    "@/src\\features\\import-batches\\classificationLauncher"
+  ],
+  "ImportBatchWizardHost": [
+    "@/src\\features\\import-batches\\ImportBatchWizardHost"
+  ],
+  "launcher": [
+    "@/src\\features\\import-batches\\launcher"
+  ],
+  "resume.test": [
+    "@/src\\features\\import-batches\\resume.test"
+  ],
+  "resume": [
+    "@/src\\features\\import-batches\\resume"
+  ],
+  "ImportBatchWizardItemRow": [
+    "@/src\\features\\match-wizard\\components\\ImportBatchWizardItemRow"
+  ],
+  "ObjectClassificationWizardHost": [
+    "@/src\\features\\match-wizard\\components\\ObjectClassificationWizardHost"
+  ],
+  "ImportBatchWizard.test": [
+    "@/src\\features\\match-wizard\\ImportBatchWizard.test"
+  ],
+  "ImportBatchWizard": [
+    "@/src\\features\\match-wizard\\ImportBatchWizard"
+  ],
+  "importBatchDecision": [
+    "@/src\\features\\match-wizard\\utils\\importBatchDecision"
+  ],
+  "modContextMenuPolicy": [
+    "@/src\\features\\mod-runtime\\actions\\modContextMenuPolicy"
+  ],
+  "sharedModDialogs": [
+    "@/src\\features\\mod-runtime\\actions\\sharedModDialogs"
+  ],
+  "sharedModEffects.test": [
+    "@/src\\features\\mod-runtime\\actions\\sharedModEffects.test"
+  ],
+  "sharedModEffects": [
+    "@/src\\features\\mod-runtime\\actions\\sharedModEffects"
+  ],
+  "useModContextMenuActions": [
+    "@/src\\features\\mod-runtime\\actions\\useModContextMenuActions"
+  ],
+  "useSharedModActions.test": [
+    "@/src\\features\\mod-runtime\\actions\\useSharedModActions.test"
+  ],
+  "useSharedModActions": [
+    "@/src\\features\\mod-runtime\\actions\\useSharedModActions"
+  ],
+  "useBulkModMutations": [
+    "@/src\\features\\mod-runtime\\hooks\\useBulkModMutations"
+  ],
+  "ActiveModContextDialog": [
+    "@/src\\features\\mod-runtime\\modals\\ActiveModContextDialog"
+  ],
+  "BulkTagModal": [
+    "@/src\\features\\mod-runtime\\modals\\BulkTagModal"
+  ],
+  "sharedOperations.test": [
+    "@/src\\features\\mod-runtime\\operations\\sharedOperations.test"
+  ],
+  "sharedOperations": [
+    "@/src\\features\\mod-runtime\\operations\\sharedOperations"
+  ],
+  "RandomizerModal.test": [
+    "@/src\\features\\randomizer\\RandomizerModal.test"
+  ],
+  "RandomizerModal": [
+    "@/src\\features\\randomizer\\RandomizerModal"
+  ],
+  "queryRefresh.test": [
+    "@/src\\features\\runtime-sync\\queryRefresh.test"
+  ],
+  "queryRefresh": [
+    "@/src\\features\\runtime-sync\\queryRefresh"
+  ],
+  "ConflictToast": [
+    "@/src\\features\\scanner\\components\\ConflictToast"
+  ],
+  "DedupFeature": [
+    "@/src\\features\\scanner\\components\\DedupFeature"
+  ],
+  "DuplicateReport.test": [
+    "@/src\\features\\scanner\\components\\DuplicateReport.test"
+  ],
+  "DuplicateReport": [
+    "@/src\\features\\scanner\\components\\DuplicateReport"
+  ],
+  "DuplicateTable.test": [
+    "@/src\\features\\scanner\\components\\DuplicateTable.test"
+  ],
+  "DuplicateTable": [
+    "@/src\\features\\scanner\\components\\DuplicateTable"
+  ],
+  "IgnoredPairsModal": [
+    "@/src\\features\\scanner\\components\\IgnoredPairsModal"
+  ],
+  "ResolutionModal.test": [
+    "@/src\\features\\scanner\\components\\ResolutionModal.test"
+  ],
+  "ResolutionModal": [
+    "@/src\\features\\scanner\\components\\ResolutionModal"
+  ],
+  "useDedup.test": [
+    "@/src\\features\\scanner\\hooks\\useDedup.test"
+  ],
+  "useDedup": [
+    "@/src\\features\\scanner\\hooks\\useDedup"
+  ],
+  "StorageOptimizerPage": [
+    "@/src\\features\\scanner\\StorageOptimizerPage"
+  ],
+  "dedupProgress.test": [
+    "@/src\\features\\scanner\\utils\\dedupProgress.test"
+  ],
+  "dedupProgress": [
+    "@/src\\features\\scanner\\utils\\dedupProgress"
+  ],
+  "resolutionRequests.test": [
+    "@/src\\features\\scanner\\utils\\resolutionRequests.test"
+  ],
+  "resolutionRequests": [
+    "@/src\\features\\scanner\\utils\\resolutionRequests"
+  ],
+  "sharedObjectActionOps.test": [
+    "@/src\\features\\workspace-runtime\\actions\\sharedObjectActionOps.test"
+  ],
+  "sharedObjectActionOps": [
+    "@/src\\features\\workspace-runtime\\actions\\sharedObjectActionOps"
+  ],
+  "sharedObjectActionsState.test": [
+    "@/src\\features\\workspace-runtime\\actions\\sharedObjectActionsState.test"
+  ],
+  "sharedObjectActionsState": [
+    "@/src\\features\\workspace-runtime\\actions\\sharedObjectActionsState"
+  ],
+  "sharedRuntimeResultMapper": [
+    "@/src\\features\\workspace-runtime\\actions\\sharedRuntimeResultMapper"
+  ],
+  "useSharedObjectActions.test": [
+    "@/src\\features\\workspace-runtime\\actions\\useSharedObjectActions.test"
+  ],
+  "useSharedObjectActions": [
+    "@/src\\features\\workspace-runtime\\actions\\useSharedObjectActions"
+  ],
+  "useSharedObjectSyncActions": [
+    "@/src\\features\\workspace-runtime\\actions\\useSharedObjectSyncActions"
+  ],
+  "useWorkspaceSwitchActions": [
+    "@/src\\features\\workspace-runtime\\actions\\useWorkspaceSwitchActions"
+  ],
+  "workspaceActionAvailability": [
+    "@/src\\features\\workspace-runtime\\actions\\workspaceActionAvailability"
+  ],
+  "workspaceActionPolicy": [
+    "@/src\\features\\workspace-runtime\\actions\\workspaceActionPolicy"
+  ],
+  "workspaceSwitchOps.test": [
+    "@/src\\features\\workspace-runtime\\actions\\workspaceSwitchOps.test"
+  ],
+  "workspaceSwitchOps": [
+    "@/src\\features\\workspace-runtime\\actions\\workspaceSwitchOps"
+  ],
+  "workspaceSwitchPolicy": [
+    "@/src\\features\\workspace-runtime\\actions\\workspaceSwitchPolicy"
+  ],
+  "WorkspaceSwitchControl": [
+    "@/src\\features\\workspace-runtime\\components\\WorkspaceSwitchControl"
+  ],
+  "WorkspaceSwitchLabel": [
+    "@/src\\features\\workspace-runtime\\components\\WorkspaceSwitchLabel"
+  ],
+  "useWorkspaceViewModel.contract.test": [
+    "@/src\\features\\workspace-runtime\\hooks\\useWorkspaceViewModel.contract.test"
+  ],
+  "useWorkspaceViewModel": [
+    "@/src\\features\\workspace-runtime\\hooks\\useWorkspaceViewModel"
+  ],
+  "applyOptimisticEffects.test": [
+    "@/src\\features\\workspace-runtime\\optimistic\\applyOptimisticEffects.test"
+  ],
+  "applyOptimisticEffects": [
+    "@/src\\features\\workspace-runtime\\optimistic\\applyOptimisticEffects"
+  ],
+  "descriptor": [
+    "@/src\\features\\workspace-runtime\\optimistic\\descriptor"
+  ],
+  "descriptorBuilders.test": [
+    "@/src\\features\\workspace-runtime\\optimistic\\descriptorBuilders.test"
+  ],
+  "descriptorBuilders": [
+    "@/src\\features\\workspace-runtime\\optimistic\\descriptorBuilders"
+  ],
+  "workspaceViewModelRewrite": [
+    "@/src\\features\\workspace-runtime\\optimistic\\workspaceViewModelRewrite"
+  ],
+  "workspaceDialogs": [
+    "@/src\\features\\workspace-runtime\\state\\workspaceDialogs"
+  ],
+  "workspaceEvents": [
+    "@/src\\features\\workspace-runtime\\state\\workspaceEvents"
+  ],
+  "workspaceReducer.test": [
+    "@/src\\features\\workspace-runtime\\state\\workspaceReducer.test"
+  ],
+  "workspaceState": [
+    "@/src\\features\\workspace-runtime\\state\\workspaceState"
+  ],
+  "workspaceStoreBridge": [
+    "@/src\\features\\workspace-runtime\\state\\workspaceStoreBridge"
+  ],
+  "pathRewrite.test": [
+    "@/src\\features\\workspace-runtime\\utils\\pathRewrite.test"
+  ],
+  "pathRewrite": [
+    "@/src\\features\\workspace-runtime\\utils\\pathRewrite"
+  ],
+  "selectionReconciliation": [
+    "@/src\\features\\workspace-runtime\\utils\\selectionReconciliation"
+  ],
+  "workspaceIntentBus": [
+    "@/src\\features\\workspace-runtime\\utils\\workspaceIntentBus"
+  ],
+  "workspaceSemantics": [
+    "@/src\\features\\workspace-runtime\\utils\\workspaceSemantics"
+  ],
+  "BrowserPage": [
+    "@/src\\pages\\browser\\components\\BrowserPage"
+  ],
+  "BrowserTabBar": [
+    "@/src\\pages\\browser\\components\\BrowserTabBar"
+  ],
+  "BrowserToolbar": [
+    "@/src\\pages\\browser\\components\\BrowserToolbar"
+  ],
+  "DownloadManagerPanel.test": [
+    "@/src\\pages\\browser\\components\\DownloadManagerPanel.test"
+  ],
+  "DownloadManagerPanel": [
+    "@/src\\pages\\browser\\components\\DownloadManagerPanel"
+  ],
+  "DownloadsPage": [
+    "@/src\\pages\\browser\\components\\DownloadsPage"
+  ],
+  "downloadStatusBadge": [
+    "@/src\\pages\\browser\\downloadStatusBadge"
+  ],
+  "useDownloads": [
+    "@/src\\pages\\browser\\hooks\\useDownloads"
+  ],
+  "useWebviewSync": [
+    "@/src\\pages\\browser\\hooks\\useWebviewSync"
+  ],
+  "types": [
+    "@/src\\pages\\browser\\types",
+    "@/src\\pages\\collections\\types",
+    "@/src\\pages\\mod-inbox\\types"
+  ],
+  "browserUrl.test": [
+    "@/src\\pages\\browser\\utils\\browserUrl.test"
+  ],
+  "browserUrl": [
+    "@/src\\pages\\browser\\utils\\browserUrl"
+  ],
+  "collectionPreviewSemantics": [
+    "@/src\\pages\\collections\\collectionPreviewSemantics"
+  ],
+  "CollectionsPage": [
+    "@/src\\pages\\collections\\CollectionsPage"
+  ],
+  "ApplyCollectionActions": [
+    "@/src\\pages\\collections\\components\\ApplyCollectionActions"
+  ],
+  "ApplyCollectionModal.test": [
+    "@/src\\pages\\collections\\components\\ApplyCollectionModal.test"
+  ],
+  "ApplyCollectionModal": [
+    "@/src\\pages\\collections\\components\\ApplyCollectionModal"
+  ],
+  "CollectionList.test": [
+    "@/src\\pages\\collections\\components\\CollectionList.test"
+  ],
+  "CollectionList": [
+    "@/src\\pages\\collections\\components\\CollectionList"
+  ],
+  "CollectionPreviewPanel.test": [
+    "@/src\\pages\\collections\\components\\CollectionPreviewPanel.test"
+  ],
+  "CollectionPreviewPanel": [
+    "@/src\\pages\\collections\\components\\CollectionPreviewPanel"
+  ],
+  "CollectionTreeView.test": [
+    "@/src\\pages\\collections\\components\\CollectionTreeView.test"
+  ],
+  "CollectionTreeView": [
+    "@/src\\pages\\collections\\components\\CollectionTreeView"
+  ],
+  "DeleteCollectionModal": [
+    "@/src\\pages\\collections\\components\\DeleteCollectionModal"
+  ],
+  "RecoveryDialog.test": [
+    "@/src\\pages\\collections\\components\\RecoveryDialog.test"
+  ],
+  "RecoveryDialog": [
+    "@/src\\pages\\collections\\components\\RecoveryDialog"
+  ],
+  "SaveCollectionModal": [
+    "@/src\\pages\\collections\\components\\SaveCollectionModal"
+  ],
+  "collectionReferenceImpact": [
+    "@/src\\pages\\collections\\hooks\\collectionReferenceImpact"
+  ],
+  "index": [
+    "@/src\\pages\\collections\\hooks\\index",
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\index",
+    "@/src\\stores\\appStore\\index",
+    "@/src\\stores\\index",
+    "@/src\\types\\index"
+  ],
+  "useCollectionRuntime.test": [
+    "@/src\\pages\\collections\\hooks\\useCollectionRuntime.test"
+  ],
+  "useCollectionRuntime": [
+    "@/src\\pages\\collections\\hooks\\useCollectionRuntime"
+  ],
+  "useCollections.test": [
+    "@/src\\pages\\collections\\hooks\\useCollections.test"
+  ],
+  "useCollections": [
+    "@/src\\pages\\collections\\hooks\\useCollections"
+  ],
+  "queryKeys": [
+    "@/src\\pages\\collections\\queryKeys"
+  ],
+  "DashboardActivity": [
+    "@/src\\pages\\dashboard\\components\\DashboardActivity"
+  ],
+  "DashboardCharts": [
+    "@/src\\pages\\dashboard\\components\\DashboardCharts"
+  ],
+  "DashboardQuickActions.test": [
+    "@/src\\pages\\dashboard\\components\\DashboardQuickActions.test"
+  ],
+  "DashboardQuickActions": [
+    "@/src\\pages\\dashboard\\components\\DashboardQuickActions"
+  ],
+  "DashboardStats": [
+    "@/src\\pages\\dashboard\\components\\DashboardStats"
+  ],
+  "DashboardStatusStates": [
+    "@/src\\pages\\dashboard\\components\\DashboardStatusStates"
+  ],
+  "Dashboard.test": [
+    "@/src\\pages\\dashboard\\Dashboard.test"
+  ],
+  "Dashboard": [
+    "@/src\\pages\\dashboard\\Dashboard"
+  ],
+  "useActiveGame.test": [
+    "@/src\\pages\\dashboard\\hooks\\useActiveGame.test"
+  ],
+  "useActiveGame": [
+    "@/src\\pages\\dashboard\\hooks\\useActiveGame"
+  ],
+  "useActiveKeybindings.test": [
+    "@/src\\pages\\dashboard\\hooks\\useActiveKeybindings.test"
+  ],
+  "useActiveKeybindings": [
+    "@/src\\pages\\dashboard\\hooks\\useActiveKeybindings"
+  ],
+  "useDashboardStats.test": [
+    "@/src\\pages\\dashboard\\hooks\\useDashboardStats.test"
+  ],
+  "useDashboardStats": [
+    "@/src\\pages\\dashboard\\hooks\\useDashboardStats"
+  ],
+  "useThumbnail": [
+    "@/src\\pages\\dashboard\\hooks\\useThumbnail"
+  ],
+  "api": [
+    "@/src\\pages\\mod-inbox\\api"
+  ],
+  "ModInboxChrome": [
+    "@/src\\pages\\mod-inbox\\ModInboxChrome"
+  ],
+  "ModInboxPage.test": [
+    "@/src\\pages\\mod-inbox\\ModInboxPage.test"
+  ],
+  "ModInboxPage": [
+    "@/src\\pages\\mod-inbox\\ModInboxPage"
+  ],
+  "ModInboxRows": [
+    "@/src\\pages\\mod-inbox\\ModInboxRows"
+  ],
+  "navigation": [
+    "@/src\\pages\\mod-inbox\\navigation"
+  ],
+  "time.test": [
+    "@/src\\pages\\mod-inbox\\time.test"
+  ],
+  "time": [
+    "@/src\\pages\\mod-inbox\\time"
+  ],
+  "AutoDetectResult.test": [
+    "@/src\\pages\\onboarding\\components\\AutoDetectResult.test"
+  ],
+  "AutoDetectResult": [
+    "@/src\\pages\\onboarding\\components\\AutoDetectResult"
+  ],
+  "ManualSetupForm.test": [
+    "@/src\\pages\\onboarding\\components\\ManualSetupForm.test"
+  ],
+  "ManualSetupForm": [
+    "@/src\\pages\\onboarding\\components\\ManualSetupForm"
+  ],
+  "AnimatedLogo": [
+    "@/src\\pages\\onboarding\\components\\welcome\\AnimatedLogo"
+  ],
+  "AuroraBackground": [
+    "@/src\\pages\\onboarding\\components\\welcome\\AuroraBackground"
+  ],
+  "demoTypes": [
+    "@/src\\pages\\onboarding\\components\\welcome\\demoTypes"
+  ],
+  "DemoAutoOrganize": [
+    "@/src\\pages\\onboarding\\components\\welcome\\scenes\\DemoAutoOrganize"
+  ],
+  "DemoKeybindSpotlight": [
+    "@/src\\pages\\onboarding\\components\\welcome\\scenes\\DemoKeybindSpotlight"
+  ],
+  "DemoTogglePreset": [
+    "@/src\\pages\\onboarding\\components\\welcome\\scenes\\DemoTogglePreset"
+  ],
+  "SmartDemoStrip": [
+    "@/src\\pages\\onboarding\\components\\welcome\\SmartDemoStrip"
+  ],
+  "useOnboardingDiskProgress": [
+    "@/src\\pages\\onboarding\\hooks\\useOnboardingDiskProgress"
+  ],
+  "indexingProgress": [
+    "@/src\\pages\\onboarding\\utils\\indexingProgress"
+  ],
+  "WelcomeScreen.test": [
+    "@/src\\pages\\onboarding\\WelcomeScreen.test"
+  ],
+  "WelcomeScreen": [
+    "@/src\\pages\\onboarding\\WelcomeScreen"
+  ],
+  "AITab": [
+    "@/src\\pages\\settings\\components\\tabs\\AITab"
+  ],
+  "BrowserTab": [
+    "@/src\\pages\\settings\\components\\tabs\\BrowserTab"
+  ],
+  "GamesTab.test": [
+    "@/src\\pages\\settings\\components\\tabs\\GamesTab.test"
+  ],
+  "GamesTab": [
+    "@/src\\pages\\settings\\components\\tabs\\GamesTab"
+  ],
+  "GeneralTab.test": [
+    "@/src\\pages\\settings\\components\\tabs\\GeneralTab.test"
+  ],
+  "GeneralTab": [
+    "@/src\\pages\\settings\\components\\tabs\\GeneralTab"
+  ],
+  "HotkeyTab.test": [
+    "@/src\\pages\\settings\\components\\tabs\\HotkeyTab.test"
+  ],
+  "HotkeyTab": [
+    "@/src\\pages\\settings\\components\\tabs\\HotkeyTab"
+  ],
+  "LogsTab": [
+    "@/src\\pages\\settings\\components\\tabs\\LogsTab"
+  ],
+  "MaintenanceTab.test": [
+    "@/src\\pages\\settings\\components\\tabs\\MaintenanceTab.test"
+  ],
+  "MaintenanceTab": [
+    "@/src\\pages\\settings\\components\\tabs\\MaintenanceTab"
+  ],
+  "PrivacyTab": [
+    "@/src\\pages\\settings\\components\\tabs\\PrivacyTab"
+  ],
+  "UpdateTab.test": [
+    "@/src\\pages\\settings\\components\\tabs\\UpdateTab.test"
+  ],
+  "UpdateTab": [
+    "@/src\\pages\\settings\\components\\tabs\\UpdateTab"
+  ],
+  "DynamicThemeInjector": [
+    "@/src\\pages\\settings\\components\\theme\\DynamicThemeInjector"
+  ],
+  "useThemeRuntime.test": [
+    "@/src\\pages\\settings\\components\\theme\\useThemeRuntime.test"
+  ],
+  "settingsQuery": [
+    "@/src\\pages\\settings\\hooks\\settingsQuery"
+  ],
+  "useAppUpdater.test": [
+    "@/src\\pages\\settings\\hooks\\useAppUpdater.test"
+  ],
+  "useAppUpdater": [
+    "@/src\\pages\\settings\\hooks\\useAppUpdater"
+  ],
+  "useCustomThemes": [
+    "@/src\\pages\\settings\\hooks\\useCustomThemes"
+  ],
+  "useMetadataSync.test": [
+    "@/src\\pages\\settings\\hooks\\useMetadataSync.test"
+  ],
+  "useMetadataSync": [
+    "@/src\\pages\\settings\\hooks\\useMetadataSync"
+  ],
+  "useSettings.test": [
+    "@/src\\pages\\settings\\hooks\\useSettings.test"
+  ],
+  "useSettings": [
+    "@/src\\pages\\settings\\hooks\\useSettings"
+  ],
+  "useThemeRuntime": [
+    "@/src\\pages\\settings\\hooks\\useThemeRuntime"
+  ],
+  "GameFormModal.test": [
+    "@/src\\pages\\settings\\modals\\GameFormModal.test"
+  ],
+  "GameFormModal": [
+    "@/src\\pages\\settings\\modals\\GameFormModal"
+  ],
+  "SettingsPage.test": [
+    "@/src\\pages\\settings\\SettingsPage.test"
+  ],
+  "SettingsPage": [
+    "@/src\\pages\\settings\\SettingsPage"
+  ],
+  "hotkeyConflicts": [
+    "@/src\\pages\\settings\\utils\\hotkeyConflicts"
+  ],
+  "bindings.gen": [
+    "@/src\\shared\\api\\tauri\\bindings.gen"
+  ],
+  "bindings": [
+    "@/src\\shared\\api\\tauri\\bindings"
+  ],
+  "config": [
+    "@/src\\shared\\i18n\\config"
+  ],
+  "browser.json": [
+    "@/src\\shared\\i18n\\locales\\en\\browser.json",
+    "@/src\\shared\\i18n\\locales\\id\\browser.json",
+    "@/src\\shared\\i18n\\locales\\zh\\browser.json"
+  ],
+  "collections.json": [
+    "@/src\\shared\\i18n\\locales\\en\\collections.json",
+    "@/src\\shared\\i18n\\locales\\id\\collections.json",
+    "@/src\\shared\\i18n\\locales\\zh\\collections.json"
+  ],
+  "common.json": [
+    "@/src\\shared\\i18n\\locales\\en\\common.json",
+    "@/src\\shared\\i18n\\locales\\id\\common.json",
+    "@/src\\shared\\i18n\\locales\\zh\\common.json"
+  ],
+  "dashboard.json": [
+    "@/src\\shared\\i18n\\locales\\en\\dashboard.json",
+    "@/src\\shared\\i18n\\locales\\id\\dashboard.json",
+    "@/src\\shared\\i18n\\locales\\zh\\dashboard.json"
+  ],
+  "folder_grid.json": [
+    "@/src\\shared\\i18n\\locales\\en\\folder_grid.json",
+    "@/src\\shared\\i18n\\locales\\id\\folder_grid.json",
+    "@/src\\shared\\i18n\\locales\\zh\\folder_grid.json"
+  ],
+  "grid.json": [
+    "@/src\\shared\\i18n\\locales\\en\\grid.json",
+    "@/src\\shared\\i18n\\locales\\id\\grid.json",
+    "@/src\\shared\\i18n\\locales\\zh\\grid.json"
+  ],
+  "layout.json": [
+    "@/src\\shared\\i18n\\locales\\en\\layout.json",
+    "@/src\\shared\\i18n\\locales\\id\\layout.json",
+    "@/src\\shared\\i18n\\locales\\zh\\layout.json"
+  ],
+  "match_wizard.json": [
+    "@/src\\shared\\i18n\\locales\\en\\match_wizard.json",
+    "@/src\\shared\\i18n\\locales\\id\\match_wizard.json",
+    "@/src\\shared\\i18n\\locales\\zh\\match_wizard.json"
+  ],
+  "mod_inbox.json": [
+    "@/src\\shared\\i18n\\locales\\en\\mod_inbox.json",
+    "@/src\\shared\\i18n\\locales\\id\\mod_inbox.json",
+    "@/src\\shared\\i18n\\locales\\zh\\mod_inbox.json"
+  ],
+  "objects.json": [
+    "@/src\\shared\\i18n\\locales\\en\\objects.json",
+    "@/src\\shared\\i18n\\locales\\id\\objects.json",
+    "@/src\\shared\\i18n\\locales\\zh\\objects.json"
+  ],
+  "onboarding.json": [
+    "@/src\\shared\\i18n\\locales\\en\\onboarding.json",
+    "@/src\\shared\\i18n\\locales\\id\\onboarding.json",
+    "@/src\\shared\\i18n\\locales\\zh\\onboarding.json"
+  ],
+  "preview.json": [
+    "@/src\\shared\\i18n\\locales\\en\\preview.json",
+    "@/src\\shared\\i18n\\locales\\id\\preview.json",
+    "@/src\\shared\\i18n\\locales\\zh\\preview.json"
+  ],
+  "scanner.json": [
+    "@/src\\shared\\i18n\\locales\\en\\scanner.json",
+    "@/src\\shared\\i18n\\locales\\id\\scanner.json",
+    "@/src\\shared\\i18n\\locales\\zh\\scanner.json"
+  ],
+  "settings.json": [
+    "@/src\\shared\\i18n\\locales\\en\\settings.json",
+    "@/src\\shared\\i18n\\locales\\id\\settings.json",
+    "@/src\\shared\\i18n\\locales\\zh\\settings.json"
+  ],
+  "welcome.json": [
+    "@/src\\shared\\i18n\\locales\\en\\welcome.json",
+    "@/src\\shared\\i18n\\locales\\id\\welcome.json",
+    "@/src\\shared\\i18n\\locales\\zh\\welcome.json"
+  ],
+  "appError": [
+    "@/src\\shared\\lib\\appError"
+  ],
+  "committedMutationWarning.test": [
+    "@/src\\shared\\lib\\committedMutationWarning.test"
+  ],
+  "committedMutationWarning": [
+    "@/src\\shared\\lib\\committedMutationWarning"
+  ],
+  "disabledPrefix.test": [
+    "@/src\\shared\\lib\\disabledPrefix.test"
+  ],
+  "disabledPrefix": [
+    "@/src\\shared\\lib\\disabledPrefix"
+  ],
+  "dropClassification": [
+    "@/src\\shared\\lib\\dropClassification"
+  ],
+  "bulkToastMessages.test": [
+    "@/src\\shared\\lib\\hooks\\bulkToastMessages.test"
+  ],
+  "bulkToastMessages": [
+    "@/src\\shared\\lib\\hooks\\bulkToastMessages"
+  ],
+  "fileInUseRetry": [
+    "@/src\\shared\\lib\\hooks\\fileInUseRetry"
+  ],
+  "useDialogSync": [
+    "@/src\\shared\\lib\\hooks\\useDialogSync"
+  ],
+  "useDragAutoScroll.test": [
+    "@/src\\shared\\lib\\hooks\\useDragAutoScroll.test"
+  ],
+  "useDragAutoScroll": [
+    "@/src\\shared\\lib\\hooks\\useDragAutoScroll"
+  ],
+  "useFileDrop": [
+    "@/src\\shared\\lib\\hooks\\useFileDrop"
+  ],
+  "usePrefersReducedMotion.test": [
+    "@/src\\shared\\lib\\hooks\\usePrefersReducedMotion.test"
+  ],
+  "usePrefersReducedMotion": [
+    "@/src\\shared\\lib\\hooks\\usePrefersReducedMotion"
+  ],
+  "useRangeSelection": [
+    "@/src\\shared\\lib\\hooks\\useRangeSelection"
+  ],
+  "useResolvedTheme": [
+    "@/src\\shared\\lib\\hooks\\useResolvedTheme"
+  ],
+  "useResponsive.test": [
+    "@/src\\shared\\lib\\hooks\\useResponsive.test"
+  ],
+  "useResponsive": [
+    "@/src\\shared\\lib\\hooks\\useResponsive"
+  ],
+  "i18n": [
+    "@/src\\shared\\lib\\i18n"
+  ],
+  "logger.test": [
+    "@/src\\shared\\lib\\logger.test"
+  ],
+  "logger": [
+    "@/src\\shared\\lib\\logger"
+  ],
+  "pathKey.test": [
+    "@/src\\shared\\lib\\pathKey.test"
+  ],
+  "pathKey": [
+    "@/src\\shared\\lib\\pathKey"
+  ],
+  "queryClient.test": [
+    "@/src\\shared\\lib\\queryClient.test"
+  ],
+  "runtimeEffects": [
+    "@/src\\shared\\lib\\runtimeEffects"
+  ],
+  "runtimeLabels": [
+    "@/src\\shared\\lib\\runtimeLabels"
+  ],
+  "themeOptions": [
+    "@/src\\shared\\lib\\themeOptions"
+  ],
+  "formatters.test": [
+    "@/src\\shared\\lib\\utils\\formatters.test"
+  ],
+  "formatters": [
+    "@/src\\shared\\lib\\utils\\formatters"
+  ],
+  "utils.test": [
+    "@/src\\shared\\lib\\utils.test"
+  ],
+  "utils": [
+    "@/src\\shared\\lib\\utils"
+  ],
+  "MainLayout.test": [
+    "@/src\\shared\\ui\\components\\layout\\MainLayout.test"
+  ],
+  "MainLayout": [
+    "@/src\\shared\\ui\\components\\layout\\MainLayout"
+  ],
+  "ResizableWorkspace": [
+    "@/src\\shared\\ui\\components\\layout\\ResizableWorkspace"
+  ],
+  "ContextControls.test": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\ContextControls.test"
+  ],
+  "ContextControls": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\ContextControls"
+  ],
+  "GameSelector.test": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\GameSelector.test"
+  ],
+  "GameSelector": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\GameSelector"
+  ],
+  "GlobalActions.test": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\GlobalActions.test"
+  ],
+  "GlobalActions": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\GlobalActions"
+  ],
+  "index.test": [
+    "@/src\\shared\\ui\\components\\layout\\top-bar\\index.test"
+  ],
+  "BulkActionBar": [
+    "@/src\\shared\\ui\\components\\ui\\BulkActionBar",
+    "@/src\\widgets\\mod-explorer\\components\\BulkActionBar"
+  ],
+  "ConfirmDialog": [
+    "@/src\\shared\\ui\\components\\ui\\ConfirmDialog"
+  ],
+  "ContextMenu.test": [
+    "@/src\\shared\\ui\\components\\ui\\ContextMenu.test",
+    "@/src\\widgets\\mod-explorer\\components\\ContextMenu.test"
+  ],
+  "ContextMenu": [
+    "@/src\\shared\\ui\\components\\ui\\ContextMenu"
+  ],
+  "ErrorBoundary.test": [
+    "@/src\\shared\\ui\\components\\ui\\ErrorBoundary.test"
+  ],
+  "ErrorBoundary": [
+    "@/src\\shared\\ui\\components\\ui\\ErrorBoundary"
+  ],
+  "ListStateView": [
+    "@/src\\shared\\ui\\components\\ui\\ListStateView"
+  ],
+  "SafetyFilterControl": [
+    "@/src\\shared\\ui\\components\\ui\\SafetyFilterControl"
+  ],
+  "TagInput": [
+    "@/src\\shared\\ui\\components\\ui\\TagInput"
+  ],
+  "Toast.test": [
+    "@/src\\shared\\ui\\components\\ui\\Toast.test"
+  ],
+  "Toast": [
+    "@/src\\shared\\ui\\components\\ui\\Toast"
+  ],
+  "setupTests": [
+    "@/src\\tests\\setupTests"
+  ],
+  "tauri-plugin-fs": [
+    "@/src\\tests\\testing\\mocks\\tauri-plugin-fs"
+  ],
+  "test-utils": [
+    "@/src\\tests\\testing\\test-utils"
+  ],
+  "LaunchBar.test": [
+    "@/src\\widgets\\launch-bar\\LaunchBar.test"
+  ],
+  "LaunchBar": [
+    "@/src\\widgets\\launch-bar\\LaunchBar"
+  ],
+  "Breadcrumbs.test": [
+    "@/src\\widgets\\mod-explorer\\components\\Breadcrumbs.test"
+  ],
+  "Breadcrumbs": [
+    "@/src\\widgets\\mod-explorer\\components\\Breadcrumbs"
+  ],
+  "BulkContextMenu.test": [
+    "@/src\\widgets\\mod-explorer\\components\\BulkContextMenu.test"
+  ],
+  "BulkContextMenu": [
+    "@/src\\widgets\\mod-explorer\\components\\BulkContextMenu"
+  ],
+  "BulkProgressBar.test": [
+    "@/src\\widgets\\mod-explorer\\components\\BulkProgressBar.test"
+  ],
+  "BulkProgressBar": [
+    "@/src\\widgets\\mod-explorer\\components\\BulkProgressBar"
+  ],
+  "DragOverlay.test": [
+    "@/src\\widgets\\mod-explorer\\components\\DragOverlay.test"
+  ],
+  "DragOverlay": [
+    "@/src\\widgets\\mod-explorer\\components\\DragOverlay"
+  ],
+  "ExplorerEmptyState.test": [
+    "@/src\\widgets\\mod-explorer\\components\\ExplorerEmptyState.test"
+  ],
+  "ExplorerEmptyState": [
+    "@/src\\widgets\\mod-explorer\\components\\ExplorerEmptyState"
+  ],
+  "FolderCard.test": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderCard.test"
+  ],
+  "FolderCard": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderCard"
+  ],
+  "FolderCardContextMenu.test": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderCardContextMenu.test"
+  ],
+  "FolderCardContextMenu": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderCardContextMenu"
+  ],
+  "FolderCardThumbnail": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderCardThumbnail"
+  ],
+  "FolderGridBanners": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderGridBanners"
+  ],
+  "FolderGridContent": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderGridContent"
+  ],
+  "FolderGridEmpty": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderGridEmpty"
+  ],
+  "FolderGridStateViews": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderGridStateViews"
+  ],
+  "FolderGridToolbar": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderGridToolbar"
+  ],
+  "FolderListRow.test": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderListRow.test"
+  ],
+  "FolderListRow": [
+    "@/src\\widgets\\mod-explorer\\components\\FolderListRow"
+  ],
+  "WorkspaceSourceUnavailableBanner": [
+    "@/src\\widgets\\mod-explorer\\components\\WorkspaceSourceUnavailableBanner"
+  ],
+  "WorkspaceSourceUnavailableDialog.test": [
+    "@/src\\widgets\\mod-explorer\\components\\WorkspaceSourceUnavailableDialog.test"
+  ],
+  "WorkspaceSourceUnavailableDialog": [
+    "@/src\\widgets\\mod-explorer\\components\\WorkspaceSourceUnavailableDialog"
+  ],
+  "FolderGrid.test": [
+    "@/src\\widgets\\mod-explorer\\FolderGrid.test"
+  ],
+  "FolderGrid": [
+    "@/src\\widgets\\mod-explorer\\FolderGrid"
+  ],
+  "folderCache": [
+    "@/src\\widgets\\mod-explorer\\hooks\\folderCache"
+  ],
+  "folderConflictScope.test": [
+    "@/src\\widgets\\mod-explorer\\hooks\\folderConflictScope.test"
+  ],
+  "folderConflictScope": [
+    "@/src\\widgets\\mod-explorer\\hooks\\folderConflictScope"
+  ],
+  "folderMutationPayloads.test": [
+    "@/src\\widgets\\mod-explorer\\hooks\\folderMutationPayloads.test"
+  ],
+  "folderMutationPayloads": [
+    "@/src\\widgets\\mod-explorer\\hooks\\folderMutationPayloads"
+  ],
+  "safetyFilter.test": [
+    "@/src\\widgets\\mod-explorer\\hooks\\safetyFilter.test"
+  ],
+  "safetyFilter": [
+    "@/src\\widgets\\mod-explorer\\hooks\\safetyFilter"
+  ],
+  "useBulkProgress": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useBulkProgress"
+  ],
+  "useFolderCoreMutations": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderCoreMutations"
+  ],
+  "useFolderGrid.test": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGrid.test"
+  ],
+  "useFolderGrid": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGrid"
+  ],
+  "useFolderGridActions": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridActions"
+  ],
+  "useFolderGridBulk": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridBulk"
+  ],
+  "useFolderGridImport": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridImport"
+  ],
+  "useFolderGridLayout.test": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridLayout.test"
+  ],
+  "useFolderGridLayout": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridLayout"
+  ],
+  "useFolderGridNav": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridNav"
+  ],
+  "useFolderGridRuntime": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridRuntime"
+  ],
+  "useFolderGridSelection": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridSelection"
+  ],
+  "useFolderGridViewModel": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderGridViewModel"
+  ],
+  "useFolderMutations": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderMutations"
+  ],
+  "useFolderNavigation.test": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderNavigation.test"
+  ],
+  "useFolderNavigation": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderNavigation"
+  ],
+  "useFolderNodeView": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useFolderNodeView"
+  ],
+  "useModContextMenuItems": [
+    "@/src\\widgets\\mod-explorer\\hooks\\useModContextMenuItems"
+  ],
+  "EnableParentDialog": [
+    "@/src\\widgets\\mod-explorer\\modals\\EnableParentDialog"
+  ],
+  "FolderConflictActionSummary": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictActionSummary"
+  ],
+  "FolderConflictCandidateCard": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictCandidateCard"
+  ],
+  "FolderConflictCompletion": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictCompletion"
+  ],
+  "folderConflictDrafts": [
+    "@/src\\widgets\\mod-explorer\\modals\\folderConflictDrafts"
+  ],
+  "FolderConflictManager.test": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictManager.test"
+  ],
+  "FolderConflictManager.trash.test": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictManager.trash.test"
+  ],
+  "FolderConflictManager": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictManager"
+  ],
+  "folderConflictQueue.test": [
+    "@/src\\widgets\\mod-explorer\\modals\\folderConflictQueue.test"
+  ],
+  "folderConflictQueue": [
+    "@/src\\widgets\\mod-explorer\\modals\\folderConflictQueue"
+  ],
+  "FolderConflictTrashDialog": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderConflictTrashDialog"
+  ],
+  "folderConflictValidation.test": [
+    "@/src\\widgets\\mod-explorer\\modals\\folderConflictValidation.test"
+  ],
+  "folderConflictValidation": [
+    "@/src\\widgets\\mod-explorer\\modals\\folderConflictValidation"
+  ],
+  "FolderGridModals": [
+    "@/src\\widgets\\mod-explorer\\modals\\FolderGridModals"
+  ],
+  "IgnoreManagementModal": [
+    "@/src\\widgets\\mod-explorer\\modals\\IgnoreManagementModal"
+  ],
+  "RenameConfirmationManager.test": [
+    "@/src\\widgets\\mod-explorer\\modals\\RenameConfirmationManager.test"
+  ],
+  "RenameConfirmationManager": [
+    "@/src\\widgets\\mod-explorer\\modals\\RenameConfirmationManager"
+  ],
+  "useApplyFolderConflictActionResult": [
+    "@/src\\widgets\\mod-explorer\\modals\\useApplyFolderConflictActionResult"
+  ],
+  "useFolderConflictDetails": [
+    "@/src\\widgets\\mod-explorer\\modals\\useFolderConflictDetails"
+  ],
+  "FolderTypeChip": [
+    "@/src\\widgets\\mod-explorer\\utils\\FolderTypeChip"
+  ],
+  "AdvancedKeybindModal": [
+    "@/src\\widgets\\mod-preview\\components\\AdvancedKeybindModal"
+  ],
+  "DuplicateWarningModal.test": [
+    "@/src\\widgets\\mod-preview\\components\\DuplicateWarningModal.test"
+  ],
+  "DuplicateWarningModal": [
+    "@/src\\widgets\\mod-preview\\components\\DuplicateWarningModal"
+  ],
+  "GallerySection.test": [
+    "@/src\\widgets\\mod-preview\\components\\GallerySection.test"
+  ],
+  "GallerySection": [
+    "@/src\\widgets\\mod-preview\\components\\GallerySection"
+  ],
+  "IniEditorSection.test": [
+    "@/src\\widgets\\mod-preview\\components\\IniEditorSection.test"
+  ],
+  "IniEditorSection": [
+    "@/src\\widgets\\mod-preview\\components\\IniEditorSection"
+  ],
+  "keyMapper": [
+    "@/src\\widgets\\mod-preview\\components\\keyMapper"
+  ],
+  "MetadataSection.test": [
+    "@/src\\widgets\\mod-preview\\components\\MetadataSection.test"
+  ],
+  "MetadataSection": [
+    "@/src\\widgets\\mod-preview\\components\\MetadataSection"
+  ],
+  "PreviewConfirmDialogs": [
+    "@/src\\widgets\\mod-preview\\components\\PreviewConfirmDialogs"
+  ],
+  "PreviewEmptyState": [
+    "@/src\\widgets\\mod-preview\\components\\PreviewEmptyState"
+  ],
+  "PreviewFolderConflictState": [
+    "@/src\\widgets\\mod-preview\\components\\PreviewFolderConflictState"
+  ],
+  "PreviewHeader": [
+    "@/src\\widgets\\mod-preview\\components\\PreviewHeader"
+  ],
+  "PreviewPanelContextMenu": [
+    "@/src\\widgets\\mod-preview\\components\\PreviewPanelContextMenu"
+  ],
+  "PreviewPanelModals": [
+    "@/src\\widgets\\mod-preview\\components\\PreviewPanelModals"
+  ],
+  "UnsavedIniChangesModal": [
+    "@/src\\widgets\\mod-preview\\components\\UnsavedIniChangesModal"
+  ],
+  "useMetadataDraft": [
+    "@/src\\widgets\\mod-preview\\hooks\\useMetadataDraft"
+  ],
+  "usePreviewActions": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewActions"
+  ],
+  "usePreviewData.test": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewData.test"
+  ],
+  "usePreviewData": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewData"
+  ],
+  "usePreviewEffects": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewEffects"
+  ],
+  "usePreviewPanelState.test": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewPanelState.test"
+  ],
+  "usePreviewPanelState": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewPanelState"
+  ],
+  "usePreviewRuntime": [
+    "@/src\\widgets\\mod-preview\\hooks\\usePreviewRuntime"
+  ],
+  "PreviewPanel.test": [
+    "@/src\\widgets\\mod-preview\\PreviewPanel.test"
+  ],
+  "PreviewPanel": [
+    "@/src\\widgets\\mod-preview\\PreviewPanel"
+  ],
+  "keybindingValidator.test": [
+    "@/src\\widgets\\mod-preview\\utils\\keybindingValidator.test"
+  ],
+  "keybindingValidator": [
+    "@/src\\widgets\\mod-preview\\utils\\keybindingValidator"
+  ],
+  "keybindValue.test": [
+    "@/src\\widgets\\mod-preview\\utils\\keybindValue.test"
+  ],
+  "keybindValue": [
+    "@/src\\widgets\\mod-preview\\utils\\keybindValue"
+  ],
+  "previewPanelUtils.test": [
+    "@/src\\widgets\\mod-preview\\utils\\previewPanelUtils.test"
+  ],
+  "previewPanelUtils": [
+    "@/src\\widgets\\mod-preview\\utils\\previewPanelUtils"
+  ],
+  "CategorySection.test": [
+    "@/src\\widgets\\object-sidebar\\components\\CategorySection.test"
+  ],
+  "CategorySection": [
+    "@/src\\widgets\\object-sidebar\\components\\CategorySection"
+  ],
+  "FilterPanel.test": [
+    "@/src\\widgets\\object-sidebar\\components\\FilterPanel.test"
+  ],
+  "FilterPanel": [
+    "@/src\\widgets\\object-sidebar\\components\\FilterPanel"
+  ],
+  "ObjectBulkActionBar": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectBulkActionBar"
+  ],
+  "ObjectContextMenu.test": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectContextMenu.test"
+  ],
+  "ObjectContextMenu": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectContextMenu"
+  ],
+  "ObjectContextMenuTarget": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectContextMenuTarget"
+  ],
+  "ObjectListConflictBanner": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListConflictBanner"
+  ],
+  "ObjectListContent.test": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListContent.test"
+  ],
+  "ObjectListContent": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListContent"
+  ],
+  "ObjectListDropIndicators": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListDropIndicators"
+  ],
+  "ObjectListStates.test": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListStates.test"
+  ],
+  "ObjectListStates": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListStates"
+  ],
+  "ObjectListToolbar.test": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListToolbar.test"
+  ],
+  "ObjectListToolbar": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectListToolbar"
+  ],
+  "ObjectRowItem.test": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectRowItem.test"
+  ],
+  "ObjectRowItem": [
+    "@/src\\widgets\\object-sidebar\\components\\ObjectRowItem"
+  ],
+  "objectQueryCache": [
+    "@/src\\widgets\\object-sidebar\\hooks\\objectQueryCache"
+  ],
+  "useDropImportFlow": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useDropImportFlow"
+  ],
+  "useEditObjectForm": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useEditObjectForm"
+  ],
+  "useMasterDbSync": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useMasterDbSync"
+  ],
+  "useObjectBulkActions.test": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectBulkActions.test"
+  ],
+  "useObjectBulkActions": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectBulkActions"
+  ],
+  "useObjectBulkSelect": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectBulkSelect"
+  ],
+  "useObjectListBulkToolbarProps": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListBulkToolbarProps"
+  ],
+  "useObjectListDropZones": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListDropZones"
+  ],
+  "useObjectListEffects": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListEffects"
+  ],
+  "useObjectListHandlers.test": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListHandlers.test"
+  ],
+  "useObjectListHandlers": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListHandlers"
+  ],
+  "useObjectListKeyboard": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListKeyboard"
+  ],
+  "useObjectListLogic.test": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListLogic.test"
+  ],
+  "useObjectListLogic": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListLogic"
+  ],
+  "useObjectListVirtualizer.test": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListVirtualizer.test"
+  ],
+  "useObjectListVirtualizer": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectListVirtualizer"
+  ],
+  "useObjectMutations": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectMutations"
+  ],
+  "useObjectQueries": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useObjectQueries"
+  ],
+  "useScanReviewFlow": [
+    "@/src\\widgets\\object-sidebar\\hooks\\useScanReviewFlow"
+  ],
+  "AutoSetupModal": [
+    "@/src\\widgets\\object-sidebar\\modals\\AutoSetupModal"
+  ],
+  "CreateObjectModal.test": [
+    "@/src\\widgets\\object-sidebar\\modals\\CreateObjectModal.test"
+  ],
+  "CreateObjectModal": [
+    "@/src\\widgets\\object-sidebar\\modals\\CreateObjectModal"
+  ],
+  "DynamicMetadataFields": [
+    "@/src\\widgets\\object-sidebar\\modals\\DynamicMetadataFields"
+  ],
+  "EditObjectModal.test": [
+    "@/src\\widgets\\object-sidebar\\modals\\EditObjectModal.test"
+  ],
+  "EditObjectModal": [
+    "@/src\\widgets\\object-sidebar\\modals\\EditObjectModal"
+  ],
+  "EditObjectTabAuto": [
+    "@/src\\widgets\\object-sidebar\\modals\\EditObjectTabAuto"
+  ],
+  "EditObjectTabManual": [
+    "@/src\\widgets\\object-sidebar\\modals\\EditObjectTabManual"
+  ],
+  "EditObjectTabThumbnail": [
+    "@/src\\widgets\\object-sidebar\\modals\\EditObjectTabThumbnail"
+  ],
+  "MoveToObjectDialog.test": [
+    "@/src\\widgets\\object-sidebar\\modals\\MoveToObjectDialog.test"
+  ],
+  "MoveToObjectDialog": [
+    "@/src\\widgets\\object-sidebar\\modals\\MoveToObjectDialog"
+  ],
+  "ObjectListAuxiliaryModals": [
+    "@/src\\widgets\\object-sidebar\\modals\\ObjectListAuxiliaryModals"
+  ],
+  "ObjectListModals.test": [
+    "@/src\\widgets\\object-sidebar\\modals\\ObjectListModals.test"
+  ],
+  "ObjectListModals": [
+    "@/src\\widgets\\object-sidebar\\modals\\ObjectListModals"
+  ],
+  "ObjectListPrimaryModals": [
+    "@/src\\widgets\\object-sidebar\\modals\\ObjectListPrimaryModals"
+  ],
+  "ObjectList": [
+    "@/src\\widgets\\object-sidebar\\ObjectList"
+  ],
+  "objectService.test": [
+    "@/src\\widgets\\object-sidebar\\services\\objectService.test"
+  ],
+  "objectService": [
+    "@/src\\widgets\\object-sidebar\\services\\objectService"
+  ],
+  "bulkSummary.test": [
+    "@/src\\widgets\\object-sidebar\\utils\\bulkSummary.test"
+  ],
+  "bulkSummary": [
+    "@/src\\widgets\\object-sidebar\\utils\\bulkSummary"
+  ],
+  "dropUtils.test": [
+    "@/src\\widgets\\object-sidebar\\utils\\dropUtils.test"
+  ],
+  "dropUtils": [
+    "@/src\\widgets\\object-sidebar\\utils\\dropUtils"
+  ],
+  "objectFilterState.test": [
+    "@/src\\widgets\\object-sidebar\\utils\\objectFilterState.test"
+  ],
+  "objectFilterState": [
+    "@/src\\widgets\\object-sidebar\\utils\\objectFilterState"
+  ],
+  "runBulkClassifyAndMatch": [
+    "@/src\\widgets\\object-sidebar\\utils\\runBulkClassifyAndMatch"
+  ]
+}

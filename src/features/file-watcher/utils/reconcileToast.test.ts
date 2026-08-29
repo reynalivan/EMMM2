@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DiskReconcileResult } from '../../../core/tauri/bindings';
-import { toast } from '../../../stores/useToastStore';
+import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
+import { toast } from '../../../app/store/useToastStore';
 import { maybeShowExternalChangeToast } from './reconcileToast';
 
-vi.mock('../../../stores/useToastStore', () => ({
+vi.mock('../../../app/store/useToastStore', () => ({
   toast: { info: vi.fn() },
 }));
 

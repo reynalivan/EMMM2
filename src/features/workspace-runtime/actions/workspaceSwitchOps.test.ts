@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import type { WorkspaceImpact, WorkspaceSwitchResult } from '../../../types/workspace';
+import type { WorkspaceImpact, WorkspaceSwitchResult } from '@/entities/workspace/model/workspace';
 import {
   applyWorkspaceSwitchEffects,
   buildNodePendingKey,
@@ -23,7 +23,7 @@ const toastInfo = vi.fn();
 const getReloadKeyCommand = vi.fn();
 const notifyCommittedMutationSyncWarning = vi.fn();
 
-vi.mock('../../../core/tauri/bindings', () => ({
+vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
@@ -38,13 +38,13 @@ vi.mock('../state/workspaceDialogs', () => ({
   openWorkspaceFileInUseDialog: (...args: unknown[]) => openWorkspaceFileInUseDialog(...args),
 }));
 
-vi.mock('../../../stores/useAppStore', () => ({
+vi.mock('../../../app/store/useAppStore', () => ({
   useAppStore: {
     getState: () => ({ setFolderConflicts, setRenameConfirmations }),
   },
 }));
 
-vi.mock('../../../stores/useToastStore', () => ({
+vi.mock('../../../app/store/useToastStore', () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
     info: (...args: unknown[]) => toastInfo(...args),
@@ -56,7 +56,7 @@ vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishQueryInvalidations: vi.fn(),
 }));
 
-vi.mock('../../../core/lib/committedMutationWarning', () => ({
+vi.mock('../../../shared/lib/committedMutationWarning', () => ({
   notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
     notifyCommittedMutationSyncWarning(...args),
 }));

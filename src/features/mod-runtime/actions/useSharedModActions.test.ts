@@ -2,9 +2,9 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../stores/useAppStore';
-import type { ModFolder } from '../../../types/object';
-import type { DuplicateInfo } from '../../../types/scanner';
+import { useAppStore } from '../../../app/store/useAppStore';
+import type { ModFolder } from '@/entities/game-object/model/object';
+import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
 import { useSharedModActions } from './useSharedModActions';
 
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
@@ -82,14 +82,14 @@ vi.mock('../../import-batches/classificationLauncher', () => ({
   openObjectClassificationWizard: (...args: unknown[]) => openObjectClassificationWizard(...args),
 }));
 
-vi.mock('../../../core/tauri/bindings', () => ({
+vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     toggleModSafe: vi.fn(),
   },
 }));
 
-vi.mock('../../../stores/useToastStore', () => ({
+vi.mock('../../../app/store/useToastStore', () => ({
   toast: {
     success: vi.fn(),
     error: (...args: unknown[]) => toastError(...args),

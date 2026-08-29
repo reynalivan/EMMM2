@@ -1,0 +1,200 @@
+use log::{info, warn};
+use reqwest::Client;
+use serde::Deserialize;
+use sqlx::SqlitePool;
+use std::time::Duration;
+
+/// Remote manifest structure
+#[derive(Debug, Deserialize)]
+struct RemoteManifest {
+    db_version: u64,
+    /// URL to download the character database payload
+    db_url: Option<String>,
+}
+
+/// Result of a metadata sync check
+#[derive(Debug, serde::Serialize, specta::Type)]
+pub struct MetadataSyncResult {
+    pub updated: bool,
+    #[specta(type = Option<f64>)]
+    pub version: Option<u64>,
+}
+
+/// Maximum number of retries on rate-limit (HTTP 429).
+const MAX_RETRIES: u32 = 3;
+
+/// First backoff interval; doubles on each retry.
+const RETRY_BACKOFF: Duration = Duration::from_millis(500);
+
+/// Check remote manifest and sync metadata if a newer version is available.
+///
+/// This function is designed to be called at startup and fail silently on any
+/// network error so it never blocks the app from launching.
+pub async fn check_and_sync_metadata(pool: &SqlitePool) -> MetadataSyncResult {
+    match try_sync(pool).await {
+        Ok(result) => result,
+        Err(e) => {
+            warn!("Metadata sync skipped: {e}");
+            MetadataSyncResult {
+                updated: false,
+                version: None,
+            }
+        }
+    }
+}
+
+async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error> {
+    let client = super::http_client(super::MANIFEST_TIMEOUT)?;
+
+    // Read cached ETag / Last-Modified from DB
+    let etag = crate::modules::system::adapters::outbound::sqlite::settings::get_app_meta(pool, "etag")
+        .await
+        .unwrap_or_default();
+    let last_modified = crate::modules::system::adapters::outbound::sqlite::settings::get_app_meta(pool, "last_modified")
+        .await
+        .unwrap_or_default();
+
+    // Conditional GET with retry logic for rate limiting
+    let response = request_with_retry(
+        &client,
+        &format!("{}data/manifest.json", super::CDN_BASE_URL),
+        &etag,
+        &last_modified,
+    )
+    .await?;
+
+    // 304 Not Modified — nothing to do
+    if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+        info!("Metadata: up-to-date (304 Not Modified)");
+        return Ok(MetadataSyncResult {
+            updated: false,
+            version: None,
+        });
+    }
+
+    if !response.status().is_success() {
+        anyhow::bail!("Manifest fetch failed: HTTP {}", response.status());
+    }
+
+    // Capture the new validators but do NOT persist them yet: caching the ETag
+    // before the payload lands means a failed download turns every later check
+    // into a 304 and the update is never retried until upstream bumps again.
+    let header_value = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let new_etag = header_value("etag");
+    let new_last_modified = header_value("last-modified");
+
+    let manifest: RemoteManifest = response.json().await?;
+    let local_version: u64 = crate::modules::system::adapters::outbound::sqlite::settings::get_app_meta(pool, "metadata_version")
+        .await
+        .unwrap_or_default()
+        .parse()
+        .unwrap_or(0);
+
+    if manifest.db_version <= local_version {
+        info!(
+            "Metadata: already at version {} (remote: {})",
+            local_version, manifest.db_version
+        );
+        // Nothing to download, so the new validators are safe to cache now.
+        persist_validators(pool, &new_etag, &new_last_modified).await;
+        return Ok(MetadataSyncResult {
+            updated: false,
+            version: Some(local_version),
+        });
+    }
+
+    info!(
+        "Metadata: updating {} -> {}",
+        local_version, manifest.db_version
+    );
+
+    // Download the character DB payload if URL is provided
+    if let Some(db_url) = &manifest.db_url {
+        let db_response = request_with_retry(&client, db_url, "", "").await?;
+        if db_response.status().is_success() {
+            let payload: serde_json::Value = db_response.json().await?;
+            // Store raw payload in app_meta for downstream consumers
+            crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(
+                pool,
+                "metadata_payload",
+                &payload.to_string(),
+            )
+            .await;
+        }
+    }
+
+    // Update the local version marker, then cache the validators — only now
+    // that the payload made it — so a failed run retries with the old ETag.
+    crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(
+        pool,
+        "metadata_version",
+        &manifest.db_version.to_string(),
+    )
+    .await;
+    persist_validators(pool, &new_etag, &new_last_modified).await;
+
+    Ok(MetadataSyncResult {
+        updated: true,
+        version: Some(manifest.db_version),
+    })
+}
+
+async fn persist_validators(
+    pool: &SqlitePool,
+    etag: &Option<String>,
+    last_modified: &Option<String>,
+) {
+    if let Some(value) = etag {
+        crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(pool, "etag", value).await;
+    }
+    if let Some(value) = last_modified {
+        crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(pool, "last_modified", value).await;
+    }
+}
+
+/// GET with conditional headers and exponential backoff on 429.
+async fn request_with_retry(
+    client: &Client,
+    url: &str,
+    etag: &str,
+    last_modified: &str,
+) -> Result<reqwest::Response, anyhow::Error> {
+    let mut delay = RETRY_BACKOFF;
+
+    for attempt in 0..=MAX_RETRIES {
+        let mut req = client.get(url);
+        if !etag.is_empty() {
+            req = req.header("If-None-Match", etag);
+        }
+        if !last_modified.is_empty() {
+            req = req.header("If-Modified-Since", last_modified);
+        }
+
+        let response = req.send().await?;
+
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if attempt < MAX_RETRIES {
+                warn!(
+                    "Rate limited (429), retry {}/{} in {:?}",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    delay
+                );
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+                continue;
+            }
+            anyhow::bail!("Rate limited after {} retries", MAX_RETRIES);
+        }
+
+        return Ok(response);
+    }
+
+    anyhow::bail!("Request failed after {} retries", MAX_RETRIES);
+}

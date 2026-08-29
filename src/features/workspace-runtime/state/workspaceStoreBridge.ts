@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { selectWorkspaceRuntimeState } from '../../../stores/appStore/workspaceRuntimeSlice';
-import { useAppStore } from '../../../stores/useAppStore';
+import { selectWorkspaceRuntimeState } from '../../../app/store/appStore/workspaceRuntimeSlice';
+import { useAppStore } from '../../../app/store/useAppStore';
 import type { WorkspaceRuntimeEvent } from './workspaceEvents';
 import type { WorkspaceRuntimeState, WorkspaceTransitionTarget } from './workspaceState';
 

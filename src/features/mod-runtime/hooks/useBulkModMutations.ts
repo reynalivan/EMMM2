@@ -5,9 +5,9 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { commands, sparse } from '../../../core/tauri/bindings';
-import { toast } from '../../../stores/useToastStore';
-import { thumbnailKeys } from '../../dashboard/hooks/useThumbnail';
+import { commands, sparse } from '../../../shared/api/tauri/bindings';
+import { toast } from '../../../app/store/useToastStore';
+import { thumbnailKeys } from '@/pages/dashboard/hooks/useThumbnail';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import {
@@ -15,19 +15,19 @@ import {
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../../workspace-runtime/optimistic/descriptorBuilders';
-import type { ModInfoUpdate } from '../../../types/object';
-import { formatAppError } from '../../../core/lib/appError';
-import { openFileInUseRetryDialog } from '../../../shared/hooks/fileInUseRetry';
+import type { ModInfoUpdate } from '@/entities/game-object/model/object';
+import { formatAppError } from '../../../shared/lib/appError';
+import { openFileInUseRetryDialog } from '../../../shared/lib/hooks/fileInUseRetry';
 import {
   collectionReferenceImpactRefreshEvents,
   notifyCollectionReferenceImpact,
-} from '../../collections/hooks/collectionReferenceImpact';
+} from '@/pages/collections/hooks/collectionReferenceImpact';
 import {
   formatBulkFailureMessage,
   formatBulkSuccessMessage,
-} from '../../../shared/hooks/bulkToastMessages';
-import { resolveTogglePathRewrites } from '../../folder-grid/hooks/folderMutationPayloads';
-import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
+} from '../../../shared/lib/hooks/bulkToastMessages';
+import { resolveTogglePathRewrites } from '@/widgets/mod-explorer/hooks/folderMutationPayloads';
+import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {

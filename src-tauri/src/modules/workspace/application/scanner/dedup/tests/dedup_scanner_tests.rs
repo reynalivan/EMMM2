@@ -1,0 +1,993 @@
+use super::{scan_duplicates, DedupScanStatus};
+use std::collections::HashSet;
+use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tempfile::TempDir;
+
+const VALID_MOD_INI: &str = "[TextureOverrideBody]\nhash = 12345678\n";
+
+async fn setup_scan_db() -> sqlx::SqlitePool {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "game-1",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "/game/path",
+            mods_path: Some("/game/path/mods"),
+        },
+    )
+    .await
+    .unwrap();
+    pool
+}
+
+/// A mod row as the dedup tests care about it.
+///
+/// Every fixture in this file shares the same game, mods root, enabled status
+/// and empty object link, so only the identity and the safe flag are worth
+/// spelling per mod.
+struct Registered<'a> {
+    id: &'a str,
+    name: &'a str,
+    folder: &'a std::path::Path,
+    is_safe: bool,
+}
+
+impl<'a> Registered<'a> {
+    fn safe(id: &'a str, name: &'a str, folder: &'a std::path::Path) -> Self {
+        Self {
+            id,
+            name,
+            folder,
+            is_safe: true,
+        }
+    }
+
+    /// A mod the library classifies as unsafe. A duplicate group inherits the
+    /// flag from any member so filtered views remain accurate.
+    fn marked_unsafe(id: &'a str, name: &'a str, folder: &'a std::path::Path) -> Self {
+        Self {
+            id,
+            name,
+            folder,
+            is_safe: false,
+        }
+    }
+}
+
+async fn register_mods(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    mods: &[Registered<'_>],
+) {
+    for entry in mods {
+        crate::test_utils::insert_test_mod(
+            pool,
+            &crate::test_utils::TestModFixture {
+                id: entry.id,
+                game_id,
+                object_id: None,
+                actual_name: entry.name,
+                // Relative, because that is what the database holds. Fixtures
+                // used to store the absolute temp path, so every test here
+                // exercised a shape production never produces -- and the whole
+                // scan silently returning zero folders went unnoticed.
+                folder_path: entry
+                    .folder
+                    .strip_prefix(mods_root)
+                    .unwrap_or(entry.folder)
+                    .to_string_lossy()
+                    .as_ref(),
+                status: crate::modules::games::domain::models::ItemStatus::Enabled,
+                is_safe: entry.is_safe,
+                object_type: None,
+                mods_path: Some(mods_root.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
+
+// Covers: TC-9.1-01 (Exact Hash Match)
+#[tokio::test]
+async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Albedo_A");
+    let second = mods_root.join("Albedo_B");
+
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(first.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(second.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(first.join("texture.dds"), b"same-content").unwrap();
+    fs::write(second.join("texture.dds"), b"same-content").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Albedo_A", &first),
+            Registered::safe("mod-b", "Albedo_B", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert!(!outcome.groups.is_empty());
+
+    let exact_group = outcome
+        .groups
+        .iter()
+        .find(|group| group.members.len() == 2)
+        .unwrap();
+
+    assert_eq!(exact_group.confidence_score, 100);
+    assert!(exact_group.match_reason.contains("Exact hash match"));
+}
+
+// Covers: EC-9.02 (False Positive Guard)
+#[tokio::test]
+async fn test_ec_9_02_same_name_different_content_stays_below_80() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Raiden_Mod");
+    let second = mods_root.join("Raiden_Skin");
+
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(first.join("mod.ini"), ";v1\n$swapvar=1\n").unwrap();
+    fs::write(second.join("mod.ini"), ";v2\n$swapvar=9\n").unwrap();
+    fs::write(first.join("texture.dds"), b"alpha-0000").unwrap();
+    fs::write(second.join("texture.dds"), b"beta-9999").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Raiden_Mod", &first),
+            Registered::safe("mod-b", "Raiden_Skin", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    // Due to the improved 3DMigoto logical scoring algorithm,
+    // these two mods with different file names (alpha vs beta), missing hashes,
+    // and completely different texture setups are completely ignored.
+    assert!(
+        outcome.groups.is_empty(),
+        "Mods with entirely different structures and textures should yield 0 duplicates."
+    );
+}
+
+// Covers: DI-9.01 (Whitelist pairs ignored on subsequent scans)
+#[tokio::test]
+async fn test_di_9_01_whitelist_pair_is_filtered_out() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Kazuha_A");
+    let second = mods_root.join("Kazuha_B");
+
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(first.join("mod.ini"), ";header\n$swapvar=2\n").unwrap();
+    fs::write(second.join("mod.ini"), ";header\n$swapvar=2\n").unwrap();
+    fs::write(first.join("texture.dds"), b"same-content").unwrap();
+    fs::write(second.join("texture.dds"), b"same-content").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Kazuha_A", &first),
+            Registered::safe("mod-b", "Kazuha_B", &second),
+        ],
+    )
+    .await;
+
+    sqlx::query(
+        "INSERT INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind("wl-1")
+    .bind(game_id)
+    .bind("mod-a")
+    .bind("mod-b")
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert!(
+        outcome.groups.is_empty(),
+        "Whitelisted pair should be filtered from duplicate groups"
+    );
+}
+
+// Covers: TC-9.1-02 (Structure Match)
+#[tokio::test]
+async fn test_tc_9_1_02_structure_match_confidence_70_to_90() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let folder_a = mods_root.join("CharA");
+    let folder_b = mods_root.join("CharB");
+
+    // Create identical folder structures with different file names
+    fs::create_dir_all(folder_a.join("Textures")).unwrap();
+    fs::create_dir_all(folder_b.join("Textures")).unwrap();
+    fs::create_dir_all(folder_a.join("Config")).unwrap();
+    fs::create_dir_all(folder_b.join("Config")).unwrap();
+
+    // Same tree, different filenames
+    fs::write(folder_a.join("Textures/diffuse.dds"), b"image-data-001").unwrap();
+    fs::write(folder_b.join("Textures/albedo.dds"), b"image-data-002").unwrap();
+    fs::write(folder_a.join("Config/settings.ini"), ";config\n$var=1\n").unwrap();
+    fs::write(folder_b.join("Config/options.ini"), ";config\n$var=2\n").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "CharA", &folder_a),
+            Registered::safe("mod-b", "CharB", &folder_b),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+
+    if let Some(group) = outcome.groups.iter().find(|g| g.members.len() == 2) {
+        assert!(
+            group.confidence_score >= 70 && group.confidence_score <= 90,
+            "Structure match should have confidence 70-90%, got {}",
+            group.confidence_score
+        );
+        assert!(
+            group.match_reason.to_lowercase().contains("structure")
+                || group.match_reason.to_lowercase().contains("tree"),
+            "Match reason should mention structure, got: {}",
+            group.match_reason
+        );
+    }
+}
+
+// Covers: TC-9.1-03 (Name + Size Match)
+#[tokio::test]
+async fn test_tc_9_1_03_name_size_match_disabled_prefix_normalization() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let folder_a = mods_root.join("Nahida_Mod");
+    let folder_b = mods_root.join("Nahida_Skin");
+
+    fs::create_dir_all(&folder_a).unwrap();
+    fs::create_dir_all(&folder_b).unwrap();
+
+    // Different content but similar sizes
+    fs::write(folder_a.join("mod.ini"), ";version 1\n$swapvar=alpha\n").unwrap();
+    fs::write(folder_b.join("mod.ini"), ";version 2\n$swapvar=beta__\n").unwrap();
+    fs::write(folder_a.join("texture.dds"), b"content-alpha-001").unwrap();
+    fs::write(folder_b.join("texture.dds"), b"content-beta__002").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Nahida_Mod", &folder_a),
+            Registered::safe("mod-b", "Nahida_Skin", &folder_b),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+
+    // The DISABLED prefix normalization means these should be detected as potential duplicates
+    if let Some(group) = outcome.groups.iter().find(|g| g.members.len() == 2) {
+        // Algorithm may produce different scores based on content similarity
+        assert!(
+            group.confidence_score >= 50,
+            "Name match after DISABLED normalization should produce some confidence, got {}",
+            group.confidence_score
+        );
+        assert!(
+            group.match_reason.to_lowercase().contains("name")
+                || group.match_reason.to_lowercase().contains("low confidence"),
+            "Match reason should mention name or low confidence, got: {}",
+            group.match_reason
+        );
+    }
+}
+
+// Covers: TC-9.3-02 (Cancel Scan) + DI-9.04 (Scan Atomicity)
+#[tokio::test]
+async fn test_tc_9_3_02_cancel_scan_leaves_db_unchanged() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+
+    // Create 5 folders to scan
+    for i in 1..=5 {
+        let folder = mods_root.join(format!("Mod{}", i));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), format!(";mod {}\n$var={}\n", i, i)).unwrap();
+
+        register_mods(
+            &pool,
+            game_id,
+            mods_root,
+            &[Registered::safe(
+                &format!("mod-{}", i),
+                &format!("Mod{}", i),
+                &folder,
+            )],
+        )
+        .await;
+    }
+
+    // Set cancel flag immediately
+    let cancel_flag = Arc::new(AtomicBool::new(true));
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, cancel_flag)
+        .await
+        .unwrap();
+
+    // Verify scan was cancelled
+    assert_eq!(outcome.status, DedupScanStatus::Cancelled);
+
+    // Verify no partial results persisted
+    assert!(
+        outcome.groups.is_empty(),
+        "Cancelled scan should not produce groups"
+    );
+}
+
+// Covers: EC-9.01 (10 Copies of Same Mod)
+#[tokio::test]
+async fn test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+
+    // Create 10 identical copies
+    for i in 1..=10 {
+        let folder = mods_root.join(format!("YaeMiko{}", i));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+        fs::write(folder.join("texture.dds"), b"identical-content").unwrap();
+
+        register_mods(
+            &pool,
+            game_id,
+            mods_root,
+            &[Registered::safe(
+                &format!("mod-{}", i),
+                &format!("YaeMiko{}", i),
+                &folder,
+            )],
+        )
+        .await;
+    }
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+
+    // Should find groups (exact implementation may vary - could be 1 large group or multiple pairs)
+    assert!(
+        !outcome.groups.is_empty(),
+        "10 identical copies should produce duplicate groups"
+    );
+
+    // Count total unique members across all groups
+    let mut all_member_ids: HashSet<String> = HashSet::new();
+    for group in &outcome.groups {
+        for member in &group.members {
+            // Use mod_id if available, otherwise use folder_path as identifier
+            let identifier = member
+                .mod_id
+                .clone()
+                .unwrap_or_else(|| member.folder_path.clone());
+            all_member_ids.insert(identifier);
+        }
+    }
+
+    // All 10 folders should be represented in the groups
+    assert!(
+        all_member_ids.len() >= 9,
+        "At least 9 of the 10 copies should be flagged as duplicates, got {}",
+        all_member_ids.len()
+    );
+}
+
+// Covers: EC-9.05 (Cancel Mid-Hash)
+#[tokio::test]
+async fn test_ec_9_05_cancel_mid_hash_stops_cleanly() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+
+    // Create 20 folders with varying sizes to simulate hash time
+    for i in 1..=20 {
+        let folder = mods_root.join(format!("BigMod{}", i));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), format!(";mod {}\n", i).repeat(100)).unwrap();
+        fs::write(folder.join("large.dds"), vec![i as u8; 1024 * 100]).unwrap(); // 100KB file
+
+        register_mods(
+            &pool,
+            game_id,
+            mods_root,
+            &[Registered::safe(
+                &format!("mod-{}", i),
+                &format!("BigMod{}", i),
+                &folder,
+            )],
+        )
+        .await;
+    }
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let cancel_clone = Arc::clone(&cancel_flag);
+
+    // Spawn task that cancels after a short delay
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        cancel_clone.store(true, Ordering::SeqCst);
+    });
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, cancel_flag)
+        .await
+        .unwrap();
+
+    // Should either complete or cancel cleanly - no panic/error
+    assert!(
+        outcome.status == DedupScanStatus::Cancelled
+            || outcome.status == DedupScanStatus::Completed,
+        "Scan should complete or cancel cleanly without errors"
+    );
+}
+
+// Covers: Custom VariantContainer logic (Epic 9 Extension)
+#[tokio::test]
+async fn test_ec_9_03_variants_in_same_modpack_are_ignored() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+
+    // Create a VariantContainer structure
+    let container = mods_root.join("SomeCharacter Modpack");
+    fs::create_dir_all(&container).unwrap();
+
+    // It needs an orchestrator ini or many variants to be classified as VariantContainer.
+    // Let's create an orchestrator ini
+    let orchestrator_content = r#"
+[ResourceTexture1]
+filename = VariantA/tex.dds
+[ResourceTexture2]
+filename = VariantB/tex.dds
+    "#;
+    fs::write(container.join("merged.ini"), orchestrator_content).unwrap();
+
+    let variant_a = container.join("VariantA");
+    let variant_b = container.join("VariantB");
+
+    fs::create_dir_all(&variant_a).unwrap();
+    fs::create_dir_all(&variant_b).unwrap();
+
+    // Identical content to force a 100% duplicate match if they weren't filtered!
+    fs::write(variant_a.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(variant_b.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(variant_a.join("texture.dds"), b"identical-content").unwrap();
+    fs::write(variant_b.join("texture.dds"), b"identical-content").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-variant-a", "VariantA", &variant_a),
+            Registered::safe("mod-variant-b", "VariantB", &variant_b),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+
+    // They share a parent (container) that is a VariantContainer.
+    // So the scanner should filter them out and find 0 duplicate groups.
+    assert!(
+        outcome.groups.is_empty(),
+        "Variants within the same modpack must be ignored, but found {} groups",
+        outcome.groups.len()
+    );
+}
+
+// Covers: DI-9.02 (BLAKE3 Usage Verification)
+#[tokio::test]
+async fn test_di_9_02_blake3_hash_algorithm_is_used() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+
+    let folder_a = mods_root.join("TestA");
+    let folder_b = mods_root.join("TestB");
+
+    fs::create_dir_all(&folder_a).unwrap();
+    fs::create_dir_all(&folder_b).unwrap();
+
+    // Exact same content - should produce high confidence match
+    let content = b"test-content-for-blake3-verification";
+    fs::write(folder_a.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(folder_b.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(folder_a.join("data.bin"), content).unwrap();
+    fs::write(folder_b.join("data.bin"), content).unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "TestA", &folder_a),
+            Registered::safe("mod-b", "TestB", &folder_b),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+
+    // Verify duplicate was detected (BLAKE3 should produce consistent hashes for identical content)
+    assert!(
+        !outcome.groups.is_empty(),
+        "Identical content should be detected as duplicates"
+    );
+
+    if let Some(group) = outcome.groups.iter().find(|g| g.members.len() == 2) {
+        // With all files identical, should get high confidence (100% for exact match)
+        assert_eq!(
+            group.confidence_score, 100,
+            "Complete file match should produce 100% confidence via BLAKE3, got {}",
+            group.confidence_score
+        );
+    }
+
+    // NOTE: This test verifies BLAKE3 indirectly through behavior.
+    // Direct verification would require exposing internal hash function or checking imports.
+    // The fact that identical files produce deterministic high-confidence results
+    // demonstrates that a cryptographic hash function (BLAKE3 per TRD) is in use.
+}
+
+// Covers: TC-32 (Follow Links = False on Dedup)
+#[tokio::test]
+async fn test_deduper_ignores_symlinks() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path().join("mods");
+    let external_dir = temp.path().join("external");
+
+    fs::create_dir_all(&mods_root).unwrap();
+    fs::create_dir_all(&external_dir).unwrap();
+
+    // Create a file in the external dir that we DO NOT want to hash
+    fs::write(external_dir.join("massive.dds"), b"huge_fake_data").unwrap();
+
+    let first_mod = mods_root.join("BaseMod");
+    fs::create_dir_all(&first_mod).unwrap();
+    fs::write(first_mod.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(first_mod.join("texture.dds"), b"normal_data").unwrap();
+
+    // Create a symlink inside BaseMod pointing to external_dir
+    let symlink_path = first_mod.join("linked_folder");
+
+    #[cfg(windows)]
+    let sym_res = std::os::windows::fs::symlink_dir(&external_dir, &symlink_path);
+    #[cfg(unix)]
+    let sym_res = std::os::unix::fs::symlink(&external_dir, &symlink_path);
+
+    if sym_res.is_err() {
+        println!(
+            "Skipping symlink test due to OS privileges (e.g., Windows without Developer Mode)"
+        );
+        return;
+    }
+
+    register_mods(
+        &pool,
+        game_id,
+        &mods_root,
+        &[Registered::safe("mod-base", "BaseMod", &first_mod)],
+    )
+    .await;
+
+    let outcome = scan_duplicates(&mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    // There shouldn't be any duplicates found since we only registered one mod and its linked content is ignored
+    assert!(
+        outcome.groups.is_empty(),
+        "Symlinked content must not be indexed as duplicates"
+    );
+}
+
+// The group inherits classification from every member, so one unsafe half is
+// enough to mark the pair for view filtering.
+#[tokio::test]
+async fn a_duplicate_group_is_unsafe_when_any_member_is() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Shenhe_A");
+    let second = mods_root.join("Shenhe_B");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+        fs::write(folder.join("texture.dds"), b"identical-bytes").unwrap();
+    }
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Shenhe_A", &first),
+            Registered::marked_unsafe("mod-b", "Shenhe_B", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    let group = outcome
+        .groups
+        .first()
+        .expect("identical folders must form a group");
+    assert!(
+        group.is_unsafe,
+        "a group holding an unsafe mod must be flagged unsafe"
+    );
+    assert!(
+        group.members.iter().any(|member| !member.is_safe),
+        "the unsafe member's own flag must survive into the group"
+    );
+}
+
+// The complement: nothing gets flagged unsafe just by being a duplicate.
+#[tokio::test]
+async fn a_duplicate_group_of_safe_mods_stays_safe() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Yelan_A");
+    let second = mods_root.join("Yelan_B");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+        fs::write(folder.join("texture.dds"), b"identical-bytes").unwrap();
+    }
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Yelan_A", &first),
+            Registered::safe("mod-b", "Yelan_B", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    let group = outcome
+        .groups
+        .first()
+        .expect("identical folders must form a group");
+    assert!(!group.is_unsafe);
+    assert!(group.members.iter().all(|member| member.is_safe));
+}
+
+#[tokio::test]
+async fn merged_mod_children_count_as_one_logical_scan_unit() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let merged_root = mods_root.join("AlbedoMerged");
+    let first_variant = merged_root.join("VariantA");
+    let second_variant = merged_root.join("VariantB");
+
+    fs::create_dir_all(&first_variant).unwrap();
+    fs::create_dir_all(&second_variant).unwrap();
+    fs::write(
+        merged_root.join("merged.ini"),
+        r#"[TextureOverrideAlbedo]
+hash = 12345678
+run = CommandListAlbedo
+
+[CommandListAlbedo]
+if $swapvar == 0
+vb0 = ResourceAlbedoA
+else
+vb0 = ResourceAlbedoB
+endif
+
+[ResourceAlbedoA]
+filename = VariantA/body.buf
+
+[ResourceAlbedoB]
+filename = VariantB/body.buf
+"#,
+    )
+    .unwrap();
+    fs::write(
+        first_variant.join("DISABLED ModA.ini"),
+        "[TextureOverrideA]\nhash = 12345678\n",
+    )
+    .unwrap();
+    fs::write(
+        second_variant.join("DISABLED ModB.ini"),
+        "[TextureOverrideB]\nhash = 12345678\n",
+    )
+    .unwrap();
+    fs::write(first_variant.join("body.buf"), b"variant-a").unwrap();
+    fs::write(second_variant.join("body.buf"), b"variant-b").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("merged-root", "AlbedoMerged", &merged_root),
+            Registered::safe("variant-a", "VariantA", &first_variant),
+            Registered::safe("variant-b", "VariantB", &second_variant),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        outcome.total_folders, 1,
+        "merged root owns its child variants and must be scanned once"
+    );
+    assert!(outcome.groups.is_empty());
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn differently_cased_db_path_does_not_duplicate_one_physical_mod() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let only_mod = mods_root.join("OnlyMod");
+
+    fs::create_dir_all(&only_mod).unwrap();
+    fs::write(
+        only_mod.join("mod.ini"),
+        "[TextureOverrideBody]\nhash = 12345678\n",
+    )
+    .unwrap();
+    fs::write(only_mod.join("body.dds"), b"content").unwrap();
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[Registered::safe("only-mod", "OnlyMod", &only_mod)],
+    )
+    .await;
+    sqlx::query("UPDATE mods SET folder_path = 'onlymod' WHERE id = 'only-mod'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.total_folders, 1);
+    assert!(outcome.groups.is_empty());
+}
+
+#[tokio::test]
+async fn matching_texture_samples_do_not_claim_full_hash_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("LargeTextureA");
+    let second = mods_root.join("LargeTextureB");
+
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    let ini = "[TextureOverrideBody]\nhash = 12345678\n";
+    fs::write(first.join("mod.ini"), ini).unwrap();
+    fs::write(second.join("mod.ini"), ini).unwrap();
+
+    let size = 5 * 1024 * 1024 + 4096;
+    let first_texture = vec![b'a'; size];
+    let mut second_texture = first_texture.clone();
+    second_texture[size / 2] = b'b';
+    fs::write(first.join("body.dds"), first_texture).unwrap();
+    fs::write(second.join("body.dds"), second_texture).unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("large-a", "LargeTextureA", &first),
+            Registered::safe("large-b", "LargeTextureB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome
+            .groups
+            .iter()
+            .all(|group| group.confidence_score < 100),
+        "a 1KB head/tail sample match is not full-content identity"
+    );
+}
+
+#[tokio::test]
+async fn different_non_asset_files_prevent_exact_folder_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("CompleteCopyA");
+    let second = mods_root.join("CompleteCopyB");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(
+            folder.join("mod.ini"),
+            "[TextureOverrideBody]\nhash = 12345678\n",
+        )
+        .unwrap();
+        fs::write(folder.join("body.dds"), b"same-texture").unwrap();
+    }
+    fs::write(first.join("README.txt"), b"first release").unwrap();
+    fs::write(second.join("README.txt"), b"second release").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("complete-a", "CompleteCopyA", &first),
+            Registered::safe("complete-b", "CompleteCopyB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome
+            .groups
+            .iter()
+            .all(|group| group.confidence_score < 100),
+        "every regular file contributes to exact folder identity"
+    );
+}
+
+#[tokio::test]
+async fn system_noise_files_do_not_break_exact_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("NoiseCopyA");
+    let second = mods_root.join("NoiseCopyB");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(
+            folder.join("mod.ini"),
+            "[TextureOverrideBody]\nhash = 12345678\n",
+        )
+        .unwrap();
+        fs::write(folder.join("body.dds"), b"same-texture").unwrap();
+    }
+    fs::write(first.join("desktop.ini"), b"machine-a").unwrap();
+    fs::write(second.join("desktop.ini"), b"machine-b").unwrap();
+    fs::write(first.join("thumbs.db"), b"cache-a").unwrap();
+    fs::write(second.join("thumbs.db"), b"cache-b").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("noise-a", "NoiseCopyA", &first),
+            Registered::safe("noise-b", "NoiseCopyB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome
+            .groups
+            .iter()
+            .any(|group| group.confidence_score == 100),
+        "OS cache files are excluded from exact content identity"
+    );
+}

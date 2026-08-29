@@ -1,7 +1,7 @@
 import i18next from 'i18next';
-import type { DiskReconcileResult } from '../../../core/tauri/bindings';
-import { formatCollectionReferenceImpact } from '../../collections/hooks/collectionReferenceImpact';
-import { toast } from '../../../stores/useToastStore';
+import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
+import { formatCollectionReferenceImpact } from '@/pages/collections/hooks/collectionReferenceImpact';
+import { toast } from '../../../app/store/useToastStore';
 
 const TOAST_SAMPLE_LIMIT = 2;
 

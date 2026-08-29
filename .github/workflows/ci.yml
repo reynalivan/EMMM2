@@ -41,8 +41,8 @@ jobs:
         # `git add -N` first: a plain `git diff` ignores untracked files, so an
         # uncommitted generated file would silently pass this gate.
         run: |
-          git add -N src/lib/bindings.gen.ts
-          git diff --exit-code src/lib/bindings.gen.ts
+          git add -N src/shared/api/tauri/bindings.gen.ts
+          git diff --exit-code src/shared/api/tauri/bindings.gen.ts
 
       - name: Clippy
         working-directory: src-tauri

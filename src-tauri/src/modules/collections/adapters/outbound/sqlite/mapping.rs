@@ -1,0 +1,52 @@
+//! Row -> domain mapping helpers shared by the other submodules.
+
+use crate::modules::collections::domain::collection::{Collection, CollectionSummary};
+
+pub(super) fn row_to_collection(r: &sqlx::sqlite::SqliteRow) -> Collection {
+    use sqlx::Row;
+    Collection {
+        id: r.get("id"),
+        game_id: r.get("game_id"),
+        name: r.get("name"),
+        name_key: r.get("name_key"),
+        is_safe: r.get::<i32, _>("is_safe") != 0,
+        is_draft: r.get::<i32, _>("is_draft") != 0,
+        // The list queries omit this column on purpose — see `list_for_game`.
+        snapshot_json: r.try_get("snapshot_json").ok().flatten(),
+        signature: r.get("signature"),
+        display_mod_count: r.get("display_mod_count"),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+    }
+}
+
+pub(super) fn parse_warnings_json(raw: Option<String>) -> Result<Vec<String>, serde_json::Error> {
+    let Some(raw_json) = raw else {
+        return Ok(Vec::new());
+    };
+
+    serde_json::from_str(&raw_json)
+}
+
+pub(super) fn serialize_warnings_json(
+    warnings: &[String],
+) -> Result<String, crate::shared::errors::CollectionError> {
+    serde_json::to_string(warnings).map_err(|error| {
+        crate::shared::errors::CollectionError::Db(format!(
+            "Failed to serialize collection warnings: {error}"
+        ))
+    })
+}
+
+pub fn to_summary(c: &Collection, active_collection_id: Option<&str>) -> CollectionSummary {
+    CollectionSummary {
+        id: c.id.clone(),
+        name: c.name.clone(),
+        is_safe: c.is_safe,
+        is_safety_classified: true,
+        signature: c.signature.clone(),
+        is_active: active_collection_id == Some(c.id.as_str()),
+        updated_at: c.updated_at.clone(),
+        mod_count: c.display_mod_count,
+    }
+}

@@ -1,15 +1,15 @@
-import { formatAppError } from '../../../core/lib/appError';
+import { formatAppError } from '../../../shared/lib/appError';
 import { useCallback } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../core/tauri/bindings';
+import { commands } from '../../../shared/api/tauri/bindings';
 import {
   usePasteThumbnail,
   useUpdateModThumbnail,
-} from '../../folder-grid/hooks/useFolderMutations';
-import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
-import { toast } from '../../../stores/useToastStore';
-import type { WorkspaceExplorerNode } from '../../../types/workspace';
+} from '@/widgets/mod-explorer/hooks/useFolderMutations';
+import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { toast } from '../../../app/store/useToastStore';
+import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
 
 export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
   const { t } = useTranslation(['grid', 'preview', 'common']);

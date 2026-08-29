@@ -1,5 +1,5 @@
-import type { ModFolder } from '../../../types/object';
-import type { DuplicateInfo } from '../../../types/scanner';
+import type { ModFolder } from '@/entities/game-object/model/object';
+import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
 import type { WorkspaceDialogState } from '../../workspace-runtime/state/workspaceState';
 import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
 
