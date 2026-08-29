@@ -5,7 +5,6 @@ use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-use crate::repo::browser;
 
 /// Illegal Windows filename characters to strip.
 const ILLEGAL_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
@@ -48,20 +47,9 @@ pub fn sanitize_filename(raw: &str) -> String {
     }
 }
 
-/// Resolve the collision-safe destination path for a download.
-///
-/// Layout:
-/// - `root/YYYY-MM/<session_id>/<safe_filename>.<ext>` (session-linked)
-/// - `root/YYYY-MM/adhoc/<timestamp>_<safe_filename>.<ext>` (no session)
-pub fn compute_download_path(root: &Path, session_id: Option<&str>, filename: &str) -> PathBuf {
-    let now = Utc::now();
-    let month_dir = now.format("%Y-%m").to_string();
+/// Resolve the collision-safe destination path for a download directly in the root directory.
+pub fn compute_download_path(dir: &Path, _session_id: Option<&str>, filename: &str) -> PathBuf {
     let safe_name = sanitize_filename(filename);
-
-    let dir = match session_id {
-        Some(sid) => root.join(&month_dir).join(sid),
-        None => root.join(&month_dir).join("adhoc"),
-    };
 
     // Generate unique path (avoid collision)
     let mut candidate = dir.join(&safe_name);
@@ -93,23 +81,23 @@ pub fn compute_download_path(root: &Path, session_id: Option<&str>, filename: &s
 
 /// Get the `BrowserDownloadsRoot` path.
 ///
-/// Priority: `browser_settings.downloads_root` (if non-empty + writable) → default.
+/// Priority: Mod Inbox of the active game -> `AppData/EMM2/BrowserDownloads` fallback.
 pub async fn get_downloads_root(app: &AppHandle, db: &SqlitePool) -> PathBuf {
-    let override_path: Option<String> = browser::get_setting(db, "downloads_root")
+    // If there is an active game, route downloads directly to its Mod Inbox.
+    if let Ok(Some(active_game)) = crate::repo::settings::get_setting(db, "active_game_id").await {
+        if let Ok(inbox) = crate::services::import_batch::ready_to_move::resolve_mod_inbox_root(
+            app,
+            db,
+            &active_game,
+            None,
+        )
         .await
-        .ok()
-        .flatten();
-
-    if let Some(p) = override_path {
-        if !p.is_empty() {
-            let path = PathBuf::from(&p);
-            if path.exists() || std::fs::create_dir_all(&path).is_ok() {
-                return path;
-            }
+        {
+            return inbox;
         }
     }
 
-    // Default: AppData/EMM2/BrowserDownloads/
+    // Fallback: AppData/EMM2/BrowserDownloads/
     match app.path().app_data_dir() {
         Ok(data_dir) => data_dir.join("BrowserDownloads"),
         Err(_) => PathBuf::from("BrowserDownloads"),
@@ -154,7 +142,7 @@ mod tests {
     #[test]
     fn test_sanitize_filename_truncates_multibyte_names_on_char_boundaries() {
         // 150 three-byte chars: byte-indexed truncation would slice mid-char and panic.
-        let cjk = "模".repeat(150);
+        let cjk = "国".repeat(150);
         let clean = sanitize_filename(&format!("{cjk}.zip"));
         assert!(clean.ends_with(".zip"));
         assert_eq!(clean.chars().count(), MAX_FILENAME_LEN);
@@ -164,35 +152,14 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_download_path_with_session() {
+    fn test_compute_download_path_flat() {
         let temp = tempdir().unwrap();
-        let session_id = "1234-5678-uuid";
         let filename = "mod_pack.zip";
 
-        let path = compute_download_path(temp.path(), Some(session_id), filename);
+        // session_id is ignored now, but test to ensure API stability
+        let path = compute_download_path(temp.path(), Some("ignored"), filename);
 
-        let month_dir = Utc::now().format("%Y-%m").to_string();
-        let expected = temp
-            .path()
-            .join(&month_dir)
-            .join(session_id)
-            .join("mod_pack.zip");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_compute_download_path_adhoc() {
-        let temp = tempdir().unwrap();
-        let filename = "loose_mod.rar";
-
-        let path = compute_download_path(temp.path(), None, filename);
-
-        let month_dir = Utc::now().format("%Y-%m").to_string();
-        let expected = temp
-            .path()
-            .join(&month_dir)
-            .join("adhoc")
-            .join("loose_mod.rar");
+        let expected = temp.path().join("mod_pack.zip");
         assert_eq!(path, expected);
     }
 
@@ -200,11 +167,6 @@ mod tests {
     fn test_compute_download_path_collision() {
         let temp = tempdir().unwrap();
         let root = temp.path();
-
-        // Make the structure
-        let month_dir = Utc::now().format("%Y-%m").to_string();
-        let adhoc_dir = root.join(&month_dir).join("adhoc");
-        std::fs::create_dir_all(&adhoc_dir).unwrap();
 
         let filename = "mod.zip";
 

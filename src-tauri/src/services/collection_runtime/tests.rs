@@ -4,7 +4,7 @@ use super::{get_collection_runtime_descriptor, get_collection_runtime_state};
 use crate::domain::collection::{CreateCollectionInput, CreateCollectionMode};
 use crate::domain::models::{GameType, ItemStatus};
 use crate::domain::runtime_state::{LastChangesSource, RuntimeStatus};
-use crate::repo::{collection, collection::runtime};
+use crate::repo::collection;
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,

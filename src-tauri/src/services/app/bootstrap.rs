@@ -203,14 +203,6 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
             },
             Err(error) => log::warn!("startup: terminal batch cleanup lookup failed: {error}"),
         }
-        match services::browser::import_service::cleanup_old_terminal_staging(&pool, &app, 20).await
-        {
-            Ok(count) if count > 0 => {
-                log::info!("startup: removed {count} stale import staging director(ies)");
-            }
-            Ok(_) => {}
-            Err(error) => log::warn!("startup: import staging cleanup failed: {error}"),
-        }
     });
 
     let startup_game = app

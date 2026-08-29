@@ -2,7 +2,7 @@ use crate::domain::errors::AppError;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, State};
 
-use crate::services::browser::{browser_service, download_service, import_service};
+use crate::services::browser::{browser_service, download_service};
 
 // ── Browser Tab ──────────────────────────────────────────────────────────────
 
@@ -117,28 +117,4 @@ pub async fn browser_clear_imported(db: State<'_, SqlitePool>) -> Result<u64, Ap
 #[specta::specta]
 pub async fn browser_clear_old_downloads(db: State<'_, SqlitePool>) -> Result<u64, AppError> {
     Ok(download_service::clear_old_downloads(db.inner()).await?)
-}
-
-// ── Import ───────────────────────────────────────────────────────────────────
-
-/// Queue multiple import jobs for a set of finished download IDs with a chosen game.
-/// Called by the Download Manager "Import Selected" bulk action after Game Picker confirms.
-#[tauri::command]
-#[specta::specta]
-pub async fn browser_import_selected(
-    ids: Vec<String>,
-    game_id: String,
-    db: State<'_, SqlitePool>,
-    app: AppHandle,
-) -> Result<Vec<String>, AppError> {
-    Ok(import_service::bulk_queue_imports(db.inner(), &app, &ids, &game_id).await?)
-}
-
-/// Return all pending/active import jobs.
-#[tauri::command]
-#[specta::specta]
-pub async fn browser_list_import_queue(
-    db: State<'_, SqlitePool>,
-) -> Result<Vec<import_service::ImportJobDto>, AppError> {
-    Ok(import_service::list_jobs(db.inner()).await?)
 }

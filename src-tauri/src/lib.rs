@@ -161,8 +161,6 @@ macro_rules! emmm_collect_commands {
             commands::browser::browser_cmds::browser_delete_download,
             commands::browser::browser_cmds::browser_clear_imported,
             commands::browser::browser_cmds::browser_clear_old_downloads,
-            commands::browser::browser_cmds::browser_import_selected,
-            commands::browser::browser_cmds::browser_list_import_queue,
         ]
     };
 }

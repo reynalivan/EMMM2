@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 use crate::repo::browser;
-use crate::services::browser::{download_handler, import_service};
+use crate::services::browser::download_handler;
 
 /// DTO for the frontend download list. Defined in `repo::browser`; re-exported
 /// so existing `download_service::BrowserDownloadDto` users keep compiling.
@@ -153,29 +153,6 @@ pub async fn on_download_finished(
                 "file_path": file_path,
             }),
         );
-
-        // Auto-import if enabled
-        let auto_import: bool = browser::get_setting(db, "auto_import")
-            .await
-            .ok()
-            .flatten()
-            .map(|v: String| v != "false")
-            .unwrap_or(true);
-
-        if auto_import {
-            if let Some(path) = file_path {
-                if let Err(e) = import_service::queue_import_job(
-                    db,
-                    app,
-                    &download_id,
-                    path,
-                )
-                .await
-                {
-                    log::error!("Auto-import queue failed: {e}");
-                }
-            }
-        }
     } else {
         update_status(
             db,
