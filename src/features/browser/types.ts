@@ -2,7 +2,7 @@
 // Epic 44: Browser Feature — Shared TypeScript types
 // ──────────────────────────────────────────────────────────────────────────────
 
-import type { BrowserDownloadDto, ImportJobDto } from '../../core/tauri/bindings.gen';
+import type { BrowserDownloadDto } from '../../core/tauri/bindings.gen';
 
 export type DownloadStatus =
   'requested' | 'in_progress' | 'finished' | 'failed' | 'canceled' | 'imported';
@@ -12,28 +12,9 @@ export type DownloadStatus =
 // the raw `String` the backend serializes.
 export type BrowserDownloadItem = Omit<BrowserDownloadDto, 'status'> & { status: DownloadStatus };
 
-export type ImportJobStatus =
-  | 'discovered'
-  | 'staged'
-  | 'awaiting_category'
-  | 'awaiting_destination'
-  | 'ready'
-  | 'committing'
-  | 'reconciling'
-  | 'finalizing_metadata'
-  | 'skipped'
-  | 'partial'
-  | 'metadata_pending'
-  | 'queued'
-  | 'extracting'
-  | 'matching'
-  | 'needs_review'
-  | 'placing'
-  | 'done'
-  | 'failed'
-  | 'canceled';
 
-export type ImportJobItem = Omit<ImportJobDto, 'status'> & { status: ImportJobStatus };
+
+
 
 // Runtime download progress event
 export interface DownloadProgressEvent {
@@ -49,16 +30,4 @@ export interface DownloadStatusEvent {
   file_path?: string | null;
 }
 
-// Runtime import job update event
-export interface ImportJobUpdateEvent {
-  job_id?: string;
-  batch_id?: string;
-  status: ImportJobStatus;
-  category?: string | null;
-  entry_key?: string | null;
-  alias_name?: string | null;
-  confidence?: number | null;
-  reason?: string | null;
-  placed_path?: string | null;
-  error?: string | null;
-}
+
