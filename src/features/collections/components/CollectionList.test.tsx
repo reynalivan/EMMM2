@@ -174,7 +174,7 @@ describe('CollectionList', () => {
     expect(filterCollectionRowsBySafety(rows, 'safe')).toEqual([]);
     expect(filterCollectionRowsBySafety(rows, 'unsafe')).toEqual(rows);
   });
-  it('treats a stored collection as named even when a legacy unsaved flag is present', () => {
+  it('treats a stored collection as named when is_active is false', () => {
     const rows: CollectionListRow[] = [
       {
         kind: 'stored_collection',

@@ -9,7 +9,6 @@ import { useQuery } from '@tanstack/react-query';
 export interface DbEntryFull {
   name: string;
   aliases?: string[];
-  tags?: string[];
   object_type: string;
   metadata?: Record<string, unknown> | null;
   thumbnail_path?: string;
@@ -24,13 +23,11 @@ export interface DbEntryFull {
 
 /**
  * Transform flat DbEntry[] → DbEntryFull[]
- * Maps `tags` → `aliases` for UI compatibility. Preserves full metadata + thumbnail.
  */
 function mapToUiFormat(entries: DbEntry[]): DbEntryFull[] {
   return entries.map((entry) => ({
     name: entry.name,
-    aliases: entry.tags || [],
-    tags: entry.tags || [],
+    aliases: entry.aliases || [],
     object_type: entry.object_type ?? '',
     metadata: (entry.metadata ?? null) as Record<string, unknown> | null,
     thumbnail_path: entry.thumbnail_path || undefined,

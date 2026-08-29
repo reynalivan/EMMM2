@@ -172,13 +172,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for HashDbPayload {
         if trimmed.is_empty() {
             return Ok(Self::default());
         }
-        let parsed: serde_json::Value = serde_json::from_str(trimmed)?;
-        if parsed.is_array() {
-            // Gracefully ignore array payloads from legacy bugs
-            Ok(Self::default())
-        } else {
-            Ok(serde_json::from_value(parsed)?)
-        }
+        Ok(serde_json::from_str(trimmed)?)
     }
 }
 
@@ -199,13 +193,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for CustomSkinsPayload {
         if trimmed.is_empty() {
             return Ok(Self::default());
         }
-        let parsed: serde_json::Value = serde_json::from_str(trimmed)?;
-        if parsed.is_array() {
-            // Gracefully ignore array payloads from legacy bugs
-            Ok(Self::default())
-        } else {
-            Ok(serde_json::from_value(parsed)?)
-        }
+        Ok(serde_json::from_str(trimmed)?)
     }
 }
 

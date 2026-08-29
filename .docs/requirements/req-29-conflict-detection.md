@@ -70,7 +70,7 @@ As a user, I want the app to scan all active mods for colliding texture override
 ### Architecture Overview
 
 ```
-detect_conflicts_service(game_id, folder_path) → Result<(), CommandError>:
+detect_conflicts_in_folder_service(path: &Path) → Result<(), CommandError>:
   1. Determine `object_id` from `folder_path`.
   2. IDENTIFY siblings: `SELECT * FROM mods WHERE object_id = ? AND status = 'ENABLED'`.
   3. VARIANT CHECK: If `folder_path` and a sibling share a `VariantContainer` parent, PERFORM "Implicit Swap" (disable sibling, enable target) -> return Ok.

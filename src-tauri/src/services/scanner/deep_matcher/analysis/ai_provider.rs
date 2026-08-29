@@ -101,8 +101,8 @@ impl AiRerankProvider for HttpAiRerankProvider {
             let id_str = entry_id.to_string();
             id_to_entry_id.insert(id_str.clone(), entry_id);
             prompt.push_str(&format!(
-                "- ID: {}, Name: {}, Tags: {:?}\n",
-                id_str, candidate.name, candidate.tags
+                "- ID: {}, Name: {}, aliases: {:?}\n",
+                id_str, candidate.name, candidate.aliases
             ));
         }
 

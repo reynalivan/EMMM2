@@ -25,7 +25,7 @@ fn test_case_1_ayaka_ini_substring() {
     let candidate = candidate_for(folder.clone(), "ayaka");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -62,7 +62,7 @@ fn test_case_2_prefix_numbers_ayaka() {
     let candidate = candidate_for(folder.clone(), "ayaka");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -96,7 +96,7 @@ fn test_case_3_folder_rescue_exact() {
     let candidate = candidate_for(folder.clone(), "anyfiwed12");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -130,7 +130,7 @@ fn test_case_4_different_character_ini() {
     let db = MasterDb::new(vec![
         DbEntry {
             name: "Kamisato Ayaka".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -140,7 +140,7 @@ fn test_case_4_different_character_ini() {
         },
         DbEntry {
             name: "Raiden Shogun".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -176,7 +176,7 @@ fn test_case_5_folder_rescue_last_resort() {
     let candidate = candidate_for(folder.clone(), "kamisatoa");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -214,7 +214,7 @@ fn test_case_6_short_term_rejection() {
     let candidate = candidate_for(folder.clone(), "ai");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -247,7 +247,7 @@ fn test_case_7_skipword_stripping() {
     let candidate = candidate_for(folder.clone(), "skin_ayaka_mod_v2");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -282,7 +282,7 @@ fn test_case_8_cross_word_boundary() {
     let candidate = candidate_for(folder.clone(), "ayaka_data");
     let db = MasterDb::new(vec![DbEntry {
         name: "Kamisato Ayaka".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],

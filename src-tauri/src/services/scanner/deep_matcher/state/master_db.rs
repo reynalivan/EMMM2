@@ -23,7 +23,7 @@ impl MasterDb {
             .enumerate()
             .map(|(i, entry)| {
                 let mut tokens = normalizer::preprocess_text(&entry.name);
-                for tag in &entry.tags {
+                for tag in &entry.aliases {
                     tokens.extend(normalizer::preprocess_text(tag));
                 }
                 (i, tokens)
@@ -40,14 +40,12 @@ impl MasterDb {
     }
 
     /// Load from JSON string.
-    /// Supports both legacy array format `[{entry1}, {entry2}]`
-    /// and new object format `{"entries": [...], "hash_db": {...}}`.
+    /// Supports new object format `{"entries": [...], "hash_db": {...}}`.
     /// When hash_db is present, merges hashes into matching entries by name.
     pub fn from_json(json: &str) -> Result<Self, ScannerError> {
         let value: serde_json::Value = serde_json::from_str(json)?;
-
+        
         let (mut entries, hash_db) = match value {
-            // New object format: {"entries": [...], "hash_db": {...}}
             serde_json::Value::Object(ref map) if map.contains_key("entries") => {
                 let entries: Vec<DbEntry> = serde_json::from_value(map["entries"].clone())?;
                 let hash_db: std::collections::HashMap<String, Vec<String>> =
@@ -55,15 +53,10 @@ impl MasterDb {
                         .unwrap_or_default();
                 (entries, hash_db)
             }
-            // Legacy array format: [{entry1}, {entry2}]
-            serde_json::Value::Array(_) => {
-                let entries: Vec<DbEntry> = serde_json::from_value(value)?;
-                (entries, std::collections::HashMap::new())
-            }
             _ => {
                 return Err(ScannerError::Parse {
                     what: "MasterDB".to_string(),
-                    detail: "expected an array or an object with an 'entries' key".to_string(),
+                    detail: "expected an object with an 'entries' key".to_string(),
                 })
             }
         };

@@ -11,7 +11,7 @@ fn sample_indexes() -> MatcherIndexes {
     let entries = vec![
         DbEntry {
             name: "Raiden Shogun".to_string(),
-            tags: vec!["electro".to_string()],
+            aliases: vec!["electro".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -24,7 +24,7 @@ fn sample_indexes() -> MatcherIndexes {
         },
         DbEntry {
             name: "Jean".to_string(),
-            tags: vec!["dandelion".to_string()],
+            aliases: vec!["dandelion".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -37,7 +37,7 @@ fn sample_indexes() -> MatcherIndexes {
         },
         DbEntry {
             name: "Albedo".to_string(),
-            tags: vec!["chalk".to_string()],
+            aliases: vec!["chalk".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
@@ -55,7 +55,7 @@ fn sample_indexes() -> MatcherIndexes {
         },
         DbEntry {
             name: "Diluc".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -70,7 +70,7 @@ fn sample_indexes() -> MatcherIndexes {
         .enumerate()
         .map(|(entry_id, entry)| {
             let mut tokens = normalizer::preprocess_text(&entry.name);
-            for tag in &entry.tags {
+            for tag in &entry.aliases {
                 tokens.extend(normalizer::preprocess_text(tag));
             }
             (entry_id, tokens)

@@ -127,14 +127,8 @@ async fn classification_writer_commits_metadata_children_projection_and_user_ali
 }
 
 #[tokio::test]
-async fn classification_writer_is_idempotent_and_accepts_legacy_alias_maps() {
+async fn classification_writer_is_idempotent() {
     let pool = setup_classification_fixture().await;
-    sqlx::query(
-        "UPDATE objects SET custom_skins = '{\"Legacy Alias\":\"preview.png\"}' WHERE id = 'o1'",
-    )
-    .execute(&pool)
-    .await
-    .expect("legacy alias seed");
 
     let first = apply_object_classification(&pool, classification_input(Some("RAIDEN32114")))
         .await
@@ -152,9 +146,6 @@ async fn classification_writer_is_idempotent_and_accepts_legacy_alias_maps() {
             .expect("custom skins");
     let skins: Vec<crate::services::scanner::deep_matcher::CustomSkin> =
         serde_json::from_str(&aliases_json).expect("normalized custom skins array");
-    assert!(skins
-        .iter()
-        .any(|skin| skin.name == "Legacy" && skin.aliases == ["Legacy Alias"]));
     let learned: Vec<&String> = skins
         .iter()
         .flat_map(|skin| skin.aliases.iter())

@@ -270,7 +270,7 @@ fn validate_canonical_selection(
     if let Some(alias) = alias_name.as_deref() {
         let recognized = entry.name.eq_ignore_ascii_case(alias)
             || entry
-                .tags
+                .aliases
                 .iter()
                 .any(|value| value.eq_ignore_ascii_case(alias))
             || entry.custom_skins.iter().any(|skin| {

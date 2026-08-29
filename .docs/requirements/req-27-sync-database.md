@@ -1,11 +1,13 @@
+> **[STATUS: OUTDATED]** Arsitektur di dokumen ini (commit_scan, ApprovedCandidate, BLAKE3) telah digantikan penuh oleh pipeline import_batch. Referensi ke terminologi lama tidak valid lagi.
+
 # Epic 27: Sync Database
 
 ## 1. Executive Summary
 
 - **Problem Statement**: After an explicit scan + Deep Match Scanner review produces approved mappings, SQLite must be updated atomically with canonical enrichment metadata. Passive filesystem projection is owned by Disk Reconcile, not by scan commit.
-- **Proposed Solution**: A `commit_scan` backend command that runs a single SQLite transaction for explicit enrichment: upserts object/mod mappings from the approved candidate list, applies user-approved canonical metadata, and leaves physical add/remove/rename/status projection to Disk Reconcile.
+- **Proposed Solution**: A `import_batch` backend command that runs a single SQLite transaction for explicit enrichment: upserts object/mod mappings from the approved candidate list, applies user-approved canonical metadata, and leaves physical add/remove/rename/status projection to Disk Reconcile.
 - **Success Criteria**:
-  - `commit_scan` for 500 approved candidates completes in ≤ 3s (bounded by SQLite batch insert performance).
+  - `import_batch` for 500 approved candidates completes in ≤ 3s (bounded by SQLite batch insert performance).
   - Zero duplicate DB rows after commit — `INSERT OR REPLACE` ensures idempotency.
   - BLAKE3 identity match correctly detects moved folders in ≥ 95% of test cases (50-folder benchmark).
   - Scan commit does not act as the continuous filesystem sync path; watcher/startup/refocus/manual repair use Disk Reconcile for passive projection cleanup.
@@ -23,7 +25,7 @@ As a system, I want to safely write approved scan mappings to the DB, so that th
 
 | ID        | Type        | Criteria                                                                                                                                                                                                       |
 | --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-27.1.1 | ✅ Positive | Given N approved `ScoredCandidate` items, when `commit_scan` is called, then the `folders` table is upserted with `folder_path → object_id` associations in a single SQLite transaction                        |
+| AC-27.1.1 | ✅ Positive | Given N approved `ScoredCandidate` items, when `import_batch` is called, then the `folders` table is upserted with `folder_path → object_id` associations in a single SQLite transaction                        |
 | AC-27.1.2 | ✅ Positive | Given a folder detected as moved (same BLAKE3 hash, different path), when committed, then the existing DB row's `folder_path` is updated rather than creating a duplicate row                                  |
 | AC-27.1.3 | ❌ Negative | Given the SQLite transaction is interrupted (crash, power loss), then the DB rolls back to its pre-commit state — no partially-applied rows with inconsistent `object_id` assignments                          |
 | AC-27.1.4 | ⚠️ Edge     | Given a candidate's `proposed_object_id` references an Object that doesn't exist in the DB yet (user manually assigned in review), then the commit auto-creates that Object row before inserting the folder FK |
@@ -56,7 +58,7 @@ As a system, I want scan commit and passive filesystem reconcile to have separat
 ### Architecture Overview
 
 ```
-commit_scan(game_id, candidates: Vec<ApprovedCandidate>) → CommitResult:
+import_batch(game_id, candidates: Vec<ApprovedCandidate>) → CommitResult:
   1. Begin SQLite exclusive transaction
   2. For each candidate:
      a. If object_id not in DB: INSERT INTO objects (name, category_id, game_id, ...)
@@ -86,7 +88,7 @@ Frontend:
 ### Security & Privacy
 
 - **All `folder_path` values are validated** with `canonicalize()` + `starts_with(mods_path)` before any DB write.
-- **`commit_scan` is idempotent** — running it twice with the same candidates produces the same DB state (no duplicates via `INSERT OR REPLACE` + UNIQUE constraint).
+- **`import_batch` is idempotent** — running it twice with the same candidates produces the same DB state (no duplicates via `INSERT OR REPLACE` + UNIQUE constraint).
 - **Scan commit does not delete unrelated missing rows** — `deleted_mods` remains in the result shape for compatibility, but passive missing-folder cleanup is owned by Disk Reconcile or a future explicit repair flow.
 
 ---

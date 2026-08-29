@@ -171,7 +171,7 @@ pub(super) fn compute_points(
 
     // Tag substring (max 2)
     let tag_hits: usize = entry
-        .tags
+        .aliases
         .iter()
         .filter(|tag| {
             let t_c = normalizer::normalize_for_matching_default(tag).replace(' ', "");
@@ -207,7 +207,7 @@ pub(super) fn compute_points(
         }
 
         // tag check
-        let tag_hit = entry.tags.iter().any(|tag| {
+        let tag_hit = entry.aliases.iter().any(|tag| {
             let t = normalizer::normalize_for_matching_default(tag);
             !t.is_empty() && t.len() >= 3 && (stem.contains(&t) || t.contains(stem.as_str()))
         });

@@ -12,7 +12,7 @@ fn mock_db_with_entry(entry_id: usize, entry: DbEntry) -> MasterDb {
     while entries.len() <= entry_id {
         entries.push(DbEntry {
             name: "Dummy".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Other".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -41,7 +41,7 @@ fn base_candidate(entry_id: usize) -> Candidate {
 fn test_gb_exact_mod_name_bonus() {
     let entry = DbEntry {
         name: "Zibai Lunar Qilin".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -72,7 +72,7 @@ fn test_gb_exact_mod_name_bonus() {
 fn test_gb_category_mismatch_penalty() {
     let entry = DbEntry {
         name: "Skyward Harp Replacement".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Weapon".to_string(), // It's a Weapon
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -103,7 +103,7 @@ fn test_gb_category_mismatch_penalty() {
 fn test_gb_description_keywords_bonus() {
     let entry = DbEntry {
         name: "Raiden Shogun Outfit".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],

@@ -106,7 +106,7 @@ pub fn apply_direct_name_support_stage(
             .filter(|token| folder_tokens.contains(token))
             .collect();
         let tag_hits: Vec<String> = entry
-            .tags
+            .aliases
             .iter()
             .flat_map(|tag| normalizer::preprocess_text(tag).into_iter())
             .filter(|token| folder_tokens.contains(token))

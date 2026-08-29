@@ -5,7 +5,7 @@
 - **Problem Statement**: Users currently need to leave the app to search for and download mods (e.g., from GameBanana) via external browsers. Afterward, they must manually coordinate imports or rely on global Downloads folder watchers, which can be unreliable or intrusive.
 - **Proposed Solution**: Introduce a "Discover Hub" and a fully integrated, multi-tab "In-App Browser". Downloads are intercepted to a controlled `BrowserDownloadsRoot`. Completed files appear in a **Download Manager** where users can single-select or bulk-select files for **Auto-Organize Import** (choosing the target game before the pipeline runs). The browser opens on a configurable homepage (default: Google Search).
 - **Success Criteria**:
-  - `discover_intercept` captures zip/rar/7z links from browser in ≤ 100ms.
+  - `analyze_import_batch` captures zip/rar/7z links from browser in ≤ 100ms.
   - `download_manager` tracks parallel downloads with pause/cancel capability.
   - `smart_import` correctly identifies target Object by folder structural analysis with ≥ 90% accuracy.
   - `needs_review` overlay allows manual path override for complex nested archives.

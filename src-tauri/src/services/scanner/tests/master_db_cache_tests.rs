@@ -16,7 +16,7 @@ const NICKNAME: &str = "Beelzebul";
 fn entry(name: &str, aliases: Vec<&str>) -> DbEntry {
     DbEntry {
         name: name.to_string(),
-        tags: vec!["electro".to_string()],
+        aliases: vec!["electro".to_string()],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: if aliases.is_empty() {

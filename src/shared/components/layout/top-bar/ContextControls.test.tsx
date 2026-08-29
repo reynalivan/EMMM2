@@ -96,7 +96,7 @@ describe('ContextControls', () => {
     });
   });
 
-  it('keeps a named collection visible in the dropdown despite a legacy unsaved flag', () => {
+  it('keeps a named collection visible in the dropdown when is_active is false', () => {
     render(<ContextControls />);
 
     expect(screen.getAllByText('Current changes')).toHaveLength(1);

@@ -77,7 +77,7 @@ fn test_deep_scan_primary_fallback_no_hashes_can_automatch() {
     let candidate = candidate_for(folder.clone(), "Unknown Pack");
     let db = MasterDb::new(vec![DbEntry {
         name: "Ayaka".to_string(),
-        tags: vec!["cryo".to_string()],
+        aliases: vec!["cryo".to_string()],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -126,7 +126,7 @@ fn test_direct_name_support_only_never_auto_matches() {
     let candidate = candidate_for(folder.clone(), "zhongli");
     let db = MasterDb::new(vec![DbEntry {
         name: "Zhongli".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -178,7 +178,7 @@ fn test_margin_not_met_forces_needs_review() {
     let db = MasterDb::new(vec![
         DbEntry {
             name: "Alpha".to_string(),
-            tags: vec!["alpha".to_string()],
+            aliases: vec!["alpha".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -191,7 +191,7 @@ fn test_margin_not_met_forces_needs_review() {
         },
         DbEntry {
             name: "Beta".to_string(),
-            tags: vec!["beta".to_string()],
+            aliases: vec!["beta".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -294,7 +294,7 @@ fn test_negative_evidence_penalty_reduces_score_on_mixed_signals() {
     let db = MasterDb::new(vec![
         DbEntry {
             name: "Raiden Shogun".to_string(),
-            tags: vec!["raiden".to_string()],
+            aliases: vec!["raiden".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -304,7 +304,7 @@ fn test_negative_evidence_penalty_reduces_score_on_mixed_signals() {
         },
         DbEntry {
             name: "Yae Miko".to_string(),
-            tags: vec!["yaemiko".to_string()],
+            aliases: vec!["yaemiko".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -385,7 +385,7 @@ fn test_ultra_close_margin_forces_review_with_primary_evidence() {
     let db = MasterDb::new(vec![
         DbEntry {
             name: "Alpha".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
@@ -400,7 +400,7 @@ fn test_ultra_close_margin_forces_review_with_primary_evidence() {
         },
         DbEntry {
             name: "Beta".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -482,7 +482,7 @@ fn test_alias_recheck_after_deep_scan_rescues_match() {
     let candidate = candidate_for(folder.clone(), "Mystery Pack");
     let db = MasterDb::new(vec![DbEntry {
         name: "Target Character".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![CustomSkin {

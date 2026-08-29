@@ -24,7 +24,7 @@ fn quick_test_db() -> MasterDb {
     MasterDb::new(vec![
         DbEntry {
             name: "Raiden Shogun".to_string(),
-            tags: vec!["raiden".to_string(), "electro".to_string()],
+            aliases: vec!["raiden".to_string(), "electro".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
@@ -42,7 +42,7 @@ fn quick_test_db() -> MasterDb {
         },
         DbEntry {
             name: "Ayaka".to_string(),
-            tags: vec!["cryo".to_string()],
+            aliases: vec!["cryo".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -97,7 +97,7 @@ fn test_quick_direct_name_support_only_does_not_auto_match() {
     let candidate = candidate_for(folder.clone(), "raiden");
     let db = MasterDb::new(vec![DbEntry {
         name: "Raiden".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -133,7 +133,7 @@ fn test_quick_pipeline_has_no_fuzzy_fallback_for_near_name_only() {
     let candidate = candidate_for(folder.clone(), "Albato");
     let db = MasterDb::new(vec![DbEntry {
         name: "Albedo".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],

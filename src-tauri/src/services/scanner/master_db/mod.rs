@@ -199,7 +199,7 @@ pub fn search_master_db_service(
         let mut is_direct_match = entry.name.to_lowercase().contains(&query_lower);
         if !is_direct_match {
             is_direct_match = entry
-                .tags
+                .aliases
                 .iter()
                 .any(|alias| alias.to_lowercase().contains(&query_lower));
         }
@@ -219,7 +219,7 @@ pub fn search_master_db_service(
             0.0
         } else {
             let mut max_score = fuzzy_score(&query_lower, &entry.name);
-            for alias in &entry.tags {
+            for alias in &entry.aliases {
                 let alias_score = fuzzy_score(&query_lower, alias);
                 if alias_score > max_score {
                     max_score = alias_score;

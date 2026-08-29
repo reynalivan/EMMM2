@@ -89,16 +89,7 @@ pub async fn reset_all_data_with_revision(
     sqlx::query("DELETE FROM duplicate_whitelist")
         .execute(&mut *tx)
         .await?;
-    let has_legacy_scan_results: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scan_results')",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    if has_legacy_scan_results {
-        sqlx::query("DELETE FROM scan_results")
-            .execute(&mut *tx)
-            .await?;
-    }
+
     sqlx::query("DELETE FROM mods").execute(&mut *tx).await?;
     sqlx::query("DELETE FROM objects").execute(&mut *tx).await?;
     sqlx::query("DELETE FROM collection_runtime_state")

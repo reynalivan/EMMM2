@@ -1,19 +1,16 @@
-# Epic 30: Privacy & Safe Mode
+# Epic 30: Privacy & Safe Mode (Lightweight View Filter)
 
-> **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
-
+> **[2026-08-29] Catatan arsitektur:** Desain "Dual Corridor Handoff" (fisik mematikan folder unsafe via prefix `DISABLED `) dan PIN lock/boot guard **telah dibatalkan**. Arsitektur dirombak menjadi jauh lebih ringan: Safe Mode kini murni beroperasi sebagai **View Filter (UI Masking)** dan **Collection Tagging** (Koleksi dapat berisi tag/mods unsafe).
 
 ## 1. Executive Summary
 
-- **Problem Statement**: Users manage mods with varying content sensitivity. Opening the app on stream or in public risks displaying NSFW thumbnails and names. A fast, trustworthy privacy layer is required to prevent accidental exposure, while ensuring seamless integration with the user's saved loadouts (Collections).
-- **Proposed Solution**: A dual-corridor Safe Mode system (Safe vs Unsafe) backed by the `is_safe` flag on individual mods. It enforces **Dual Guard Isolation**: UI masking (blurring out-of-corridor mods) and **Physical Corridor Handoff** (physically disabling opposing mods using the `DISABLED ` prefix). It integrates tightly with Collections by restoring the target corridor from its own resolved state in priority order: `active_collection_id` if valid, otherwise the corridor-scoped Unsaved collection, otherwise SYSTEM fallback.
+- **Problem Statement**: Users manage mods with varying content sensitivity. Opening the app on stream or in public risks displaying NSFW thumbnails and names. A fast, trustworthy privacy layer is required to prevent accidental exposure in the UI.
+- **Proposed Solution**: A lightweight View Filter system backed by the `is_safe` flag on individual mods. Rather than physically disabling mods on the disk, the frontend simply hides or blurs out mods marked as unsafe (`is_safe = false`) when Safe Mode is active. Collections themselves can contain unsafe mods, and applying them simply operates on the database/disk normally, while the UI masks the unsafe items.
 - **Success Criteria**:
-  - **Backend-Authoritative Corridor**: The backend `safe_mode.enabled` setting is the active corridor source of truth. React syncs from command results instead of assuming the requested target is active.
-  - **Boot Guard**: The app remembers the last active Safe Mode state. If booting into Unsafe Mode and a PIN is set, the app locks the UI immediately before showing any grid data.
-  - **Atomic Corridor Handoff**: Switching corridors physically disables all active mods from the leaving corridor (rename with `DISABLED ` prefix; DB converges via Disk Reconcile) and restores the destination corridor from its own `active_collection_id`, corridor-scoped Unsaved collection, or SYSTEM fallback through the shared runtime mutation engine.
-  - **Crash Resiliency**: Corridor switches are logged in the `tasks` DB table. App crashes during a switch will trigger a `RECOVERY_REQUIRED` dialog on the next boot.
-  - **Object Independence**: Top-level Objects are NEVER physically disabled by the Safe Mode switch; only the Mod folders (Depth 1-5) inside them are manipulated.
-  - **Auto-Tagging**: New imports containing restricted keywords are automatically tagged `is_safe = false` during the scan engine phase.
+  - **View-Level Isolation**: When Safe Mode is ON, the Object List and Folder Grid either hide or blur unsafe items. The backend still returns the full dataset (as seen in `workspace_read_model` containing `contains_unsafe_mods`, `is_safe`, etc.), and the frontend applies the filter.
+  - **Collection Integration**: Collections can safely snapshot and restore loadouts containing unsafe mods without triggering a physical corridor wipe.
+  - **No Physical File Manipulation for Privacy**: Privacy toggles no longer cause massive disk I/O (renaming folders to `DISABLED `). Disk state remains untouched; only the UI presentation changes.
+  - **Auto-Tagging**: New imports containing restricted keywords are automatically tagged `is_safe = false` during the scan engine phase (via `services::scanner::sync::helpers::classify_safety`).
 
 ---
 
@@ -21,109 +18,47 @@
 
 ### User Stories
 
-#### US-30.1: Toggle Global Safe Mode (Corridor Handoff)
+#### US-30.1: Toggle Safe Mode UI Filter
 
-As a user, I want a quick toggle to switch between my Safe and Unsafe mods, restoring my exact loadout for that specific corridor automatically.
-
-| ID        | Type        | Criteria                                                                                                                                                                                                                    |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-30.1.1 | ✅ Positive | Given the Safe Mode shield icon is clicked, the system acquires an `OperationLock` and writes a `PENDING` status to the `tasks` table before touching the filesystem.                                                       |
-| AC-30.1.2 | ✅ Positive | Given the switch initiates, the backend disables the leaving corridor by prepending `DISABLED ` to all currently ENABLED mods where `is_safe != target_safe_mode`, with the DB projection converging via the pipeline's scoped Disk Reconcile.           |
-| AC-30.1.3 | ✅ Positive | Given the leaving corridor is disabled, the system restores the target corridor by resolving its own target state in priority order: valid `active_collection_id` -> corridor-scoped Unsaved collection -> SYSTEM fallback. |
-| AC-30.1.4 | ⚠️ Edge     | Given the target corridor has no valid active or unsaved collection, the system falls back to manually enabling the corridor's mods (state derived from folder prefixes) where `is_safe == target_safe_mode`.                                 |
-| AC-30.1.5 | ✅ Positive | Given the handoff completes, the backend persists `safe_mode.enabled`, updates the `tasks` table to `COMPLETED`, and returns `active_safe`, `restored_collection_id`, and `warnings` so React syncs from backend state.     |
-| AC-30.1.6 | ✅ Positive | Given both corridors are currently unsaved, the switch preview dialog and Topbar surfaces use the same canonical labels: `Unsaved SAFE Preset` for Safe and `Unsaved UNSAFE Preset` for Unsafe.                             |
-
----
-
-#### US-30.2: Startup Sequence & PIN Security
-
-As a user, I want my privacy to be protected even if I close the app while Unsafe Mode is active, ensuring no one else can open the app and see my NSFW mods.
+As a user, I want a quick toggle to hide/blur my unsafe mods so I can stream or share my screen without risk.
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                    |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-30.2.1 | ✅ Positive | Given the app is launched, the backend reads the last active Safe Mode state from `app_settings`. If the state is Unsafe Mode AND a PIN is configured, the backend emits a `LOCK_UI` event.                                 |
-| AC-30.2.2 | ✅ Positive | Given the `LOCK_UI` event, the React frontend renders a full-screen `PinEntryModal` and blurs/hides the main workspace. The grid does not load until `verify_pin()` returns `true`.                                         |
-| AC-30.2.3 | ❌ Negative | Given 5 consecutive incorrect PIN attempts, the PIN entry locks for 60 seconds using DB-backed `pin_config.failed_attempts` and `pin_config.lockout_until`, so restart does not reset the lockout.                          |
-| AC-30.2.4 | ✅ Positive | Given the app boots, if it finds a `status = 'PENDING'` record in the `tasks` table (indicating a crash during a previous mode switch or collection apply), it emits `RECOVERY_REQUIRED` to prompt the user for resolution. |
+| AC-30.1.1 | ✅ Positive | Given the Safe Mode shield icon is clicked, the frontend immediately filters out or blurs mods where `is_safe == false` from the Object List and Folder Grid.                                                             |
+| AC-30.1.2 | ✅ Positive | The backend does NOT perform any physical disk renames. `workspace_view_model` continues to serve the true disk state, relying on the frontend to apply the privacy mask.                                                 |
+
+#### US-30.2: Auto-Tagging of Imported Mods
+
+As a user, I want mods with known NSFW keywords in their names to be automatically marked as unsafe during import.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                                    |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-30.2.1 | ✅ Positive | Given an import containing a folder with a restricted keyword (e.g., "NSFW"), the scanner (`classify_safety`) automatically flags `is_safe = false`.                                                                        |
+| AC-30.2.2 | ✅ Positive | The `mods` table stores `is_safe = false` and this is reflected in the UI upon completion of the import batch.                                                                                                              |
+
+#### US-30.3: Manual Safety Tagging
+
+As a user, I want to manually override the safety tag of a mod or object.
+
+| ID        | Type        | Criteria                                                                                                                                                                                                                    |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-30.3.1 | ✅ Positive | Given the user toggles the safety flag on a mod in the UI, the backend updates the `is_safe` column in the DB and writes the flag to `info.json` if applicable.                                                           |
 
 ---
 
-#### US-30.3: UI Masking & Object Independence
+## 3. Architecture & Technical Design
 
-As a user, I want my main navigation (Objects) to remain stable regardless of the mode, but sensitive mod thumbnails to be hidden if they leak into the view.
+### Data Model
+- **`mods` Table**: Contains `is_safe` (BOOLEAN).
+- **`objects` Table**: Safety is derived dynamically or cached based on its children's safety status.
+- **Backend View Model**: `workspace_read_model` maps nodes with `is_safe`, `contains_safe_mods`, and `contains_unsafe_mods`. The backend deliberately **leaves the preview selection independent of safety** (as verified in `workspace/tests/safety_filter.rs`), delegating the masking responsibility to the frontend.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                  |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-30.3.1 | ✅ Positive | Given Safe Mode is active, the ObjectList displays ALL Objects (Characters/Weapons) normally, but the counts badge ONLY reflects the total number of mods belonging to the Safe Corridor.                 |
-| AC-30.3.2 | ✅ Positive | Given an Unsafe mod is somehow displayed while Safe Mode is active (e.g., pending FileWatcher update), its thumbnail is replaced with a blurred placeholder and its name masked via CSS `filter: blur()`. |
-| AC-30.3.3 | ❌ Negative | Given a mode switch occurs, the backend NEVER applies the `DISABLED ` prefix to a top-level Object folder, ensuring the ObjectList structure remains intact.                                              |
+### Component Interactions
+1. **Frontend Grid/List**: Reads the `is_safe` property of each item. If Global Safe Mode is active, items with `is_safe == false` are either removed from the DOM or blurred using CSS `filter: blur()`.
+2. **Scanner**: `services::scanner::sync::helpers::classify_safety` uses a dictionary of keywords to assign `SAFETY_SOURCE_AUTO_TAGGED`.
+3. **Collections**: A Collection simply stores the array of `enabled_mod_ids`. When a Collection is applied, it physically enables the mods (removing `DISABLED ` prefix) regardless of their `is_safe` flag. The UI continues to mask them if Safe Mode is currently active.
 
----
-
-#### US-30.4: Privacy Tagging & Auto-Classification
-
-As a user, I want the system to automatically flag potentially sensitive mods so I don't have to review them manually.
-
-| ID        | Type        | Criteria                                                                                                                                                           |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-30.4.1 | ✅ Positive | Given a folder is scanned, if its name or tokens match `safe_mode_keywords`, the system automatically tags it as `is_safe = false` in the DB.                      |
-| AC-30.4.2 | ✅ Positive | Given the context menu, when a user manually toggles "Mark as NSFW", the `is_safe` boolean is updated in the DB immediately.                                       |
-| AC-30.4.3 | ⚠️ Edge     | Given a user marks a mod as "Safe" while currently in Unsafe Mode, the mod immediately becomes invisible to the current corridor and will be disabled dynamically. |
-
----
-
-### Non-Goals
-
-- Safe Mode focuses on UI visibility and disk-level corridor separation (disabling via prefix). It does not encrypt actual mod files (`.dds`, `.buf`).
-- No auto-lock timer based on idle activity (only on startup or manual toggle).
-- No remote PIN sync or recovery questions. Lost PIN requires manual SQLite database edit.
-
----
-
-## 3. Technical Specifications
-
-### Architecture Overview
-
-```rust
-// Backend entrypoint: collections::cmds::switch_corridor
-// Runtime owner: pipeline::switch_pipeline + services::runtime_mutation_engine
-
-pub async fn switch_corridor(game_id: String, target_safe_mode: bool) -> Result<CorridorSwitchResult, Error> {
-    // 1. Resolve active settings/corridor pointers and acquire OperationLock.
-    let watcher_state = app.state::<WatcherState>();
-    let mut ctx = switch_pipeline::SwitchContext::new(pool, game_id, target_safe_mode).await?;
-
-    // 2. Execute the shared corridor switch pipeline.
-    // The pipeline records task state, disables the leaving corridor, restores the
-    // target corridor from active/unsaved collection or SYSTEM fallback, and calls
-    // runtime_mutation_engine::toggle_mods_mixed (rename-only) under WatcherSuppression,
-    // followed by the pipeline's inline scoped Disk Reconcile.
-    let result = switch_pipeline::execute(&mut ctx, watcher_state).await?;
-
-    // 3. Return backend-authoritative corridor state for React to sync from.
-    Ok(result)
-}
-```
-
-### Integration Points
-
-| Component         | Detail                                                                                                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Boot Guard        | React `App.tsx` checks backend payload on mount. Halts render and mounts `PinEntryModal` if `LOCK_UI` is true.                                                                                                                             |
-| Topbar State      | `SwitchResult.restored_collection_id` is sent to React, updating Zustand `activeCollectionId` to sync the Dropdown. Unsaved corridor display names shown after the switch must come from the same shared label source used by Collections. |
-| Workspace Runtime | `WorkspaceViewModel.explorer` is corridor-filtered backend-side. `ObjectList` stays all-objects, while `Preview` must drop stale `selected_mod_path` values that no longer belong to the active corridor.                                  |
-| Task Recovery     | Next boot checks `tasks` table. If `status == 'PENDING'`, it halts UI and shows the "Recovery Action" dialog (Resume / Rollback).                                                                                                          |
-| PIN Hashing       | Uses `argon2` crate with constant-time verification. Failed attempts and lockout expiry are persisted in `pin_config`.                                                                                                                     |
-
-### Security & Privacy
-
-- **Strict Corridor Enforcement**: Mods with `is_safe != current_mode` cannot be physically enabled. Dual Guard ensures they are both physically renamed and excluded from SQL counts.
-- **Fail-Safe Startup**: By recording the corridor switch in the `tasks` table, any power loss during the mass-rename process will be caught and resolved on the next launch, preventing corrupted physical states.
-
----
-
-## 4. Dependencies
-
-- **Blocked by**: Epic 13 (Core Mod Ops - `rename` logic), Epic 14 (OperationLock), Epic 31 (Collections - `apply_collection` logic).
-- **Blocks**: None.
+### Removed Mechanisms (Historical)
+- `switch_corridor` command and physical prefix renaming for Safe Mode.
+- Boot guard, UI PIN locking, and Crash Resiliency `tasks` (PENDING state).
+- Complex `active_collection_id` corridor handoffs.

@@ -29,24 +29,10 @@ impl Default for ReloadKeyConfig {
     }
 }
 
-/// Resolve the package config from the configured Mods directory first. XXMI
-/// can install the package away from the game executable, so exe proximity is
-/// only a compatibility fallback.
+/// Resolve the package config from the configured Mods directory. XXMI
+/// installs the package away from the game executable.
 pub fn resolve_d3dx_ini_path(game: &GameConfig) -> Option<PathBuf> {
-    let package_candidate = game.mod_path.parent().map(|parent| parent.join("d3dx.ini"));
-    if package_candidate
-        .as_ref()
-        .is_some_and(|path| path.is_file())
-    {
-        return package_candidate;
-    }
-
-    let legacy_candidate = game.game_exe.parent().map(|parent| parent.join("d3dx.ini"));
-    if legacy_candidate.as_ref().is_some_and(|path| path.is_file()) {
-        return legacy_candidate;
-    }
-
-    package_candidate.or(legacy_candidate)
+    game.mod_path.parent().map(|parent| parent.join("d3dx.ini"))
 }
 
 /// Discover the reload key from a d3dx.ini file.

@@ -9,7 +9,7 @@ fn db_entries() -> Vec<DbEntry> {
     vec![
         DbEntry {
             name: "Raiden Shogun".to_string(),
-            tags: vec!["Ei".to_string(), "Electro".to_string()],
+            aliases: vec!["Ei".to_string(), "Electro".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -22,7 +22,7 @@ fn db_entries() -> Vec<DbEntry> {
         },
         DbEntry {
             name: "Albedo".to_string(),
-            tags: vec!["Kreideprinz".to_string()],
+            aliases: vec!["Kreideprinz".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
@@ -40,7 +40,7 @@ fn db_entries() -> Vec<DbEntry> {
         },
         DbEntry {
             name: "NoHash".to_string(),
-            tags: vec!["Support".to_string()],
+            aliases: vec!["Support".to_string()],
             object_type: "Other".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -60,7 +60,7 @@ fn keywords(entries: &[DbEntry]) -> Vec<(usize, HashSet<String>)> {
         .enumerate()
         .map(|(idx, entry)| {
             let mut tokens = normalizer::preprocess_text(&entry.name);
-            for tag in &entry.tags {
+            for tag in &entry.aliases {
                 tokens.extend(normalizer::preprocess_text(tag));
             }
             (idx, tokens)

@@ -71,7 +71,7 @@ CommandError (Rust enum, serialized to JSON):
   { error: "FileAccessDenied", message: "Access denied to path: /mods/Foo" }
   | { error: "DuplicateConflict", message: "..." }
   | { error: "OperationInProgress", message: "..." }
-  | ... (all variants in src-tauri/src/types/errors.rs)
+  | ... (all variants in src-tauri/src/domain/errors.rs)
 
 useToastStore (Zustand):
   state: { toasts: Toast[] }

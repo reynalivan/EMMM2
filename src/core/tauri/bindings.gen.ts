@@ -1534,7 +1534,7 @@ export type DashboardStats = { total_mods: number; enabled_mods: number; disable
 /**
  * A single DB entry from Master DB.
  */
-export type DbEntry = { name: string; tags?: string[]; object_type?: string;
+export type DbEntry = { name: string; aliases?: string[]; object_type?: string;
 /**
  * Whether this is a matchable object or a generic taxonomy placeholder.
  */

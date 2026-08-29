@@ -133,9 +133,9 @@ fn test_normalize_game_type() {
     assert_eq!(normalize_game_type(6), "gimi");
 }
 
-// Covers: load_schema with legacy game_type resolves to correct schema
+// Covers: load_schema with GameType 1 (SRMI) resolves to correct schema
 #[test]
-fn test_load_schema_with_legacy_game_type() {
+fn test_load_schema_with_srmi_game_type() {
     let temp = TempDir::new().unwrap();
     let schemas_dir = temp.path().join("schemas");
     std::fs::create_dir_all(&schemas_dir).unwrap();
@@ -144,7 +144,7 @@ fn test_load_schema_with_legacy_game_type() {
     let mut file = std::fs::File::create(schemas_dir.join("srmi.json")).unwrap();
     file.write_all(valid.as_bytes()).unwrap();
 
-    // "StarRail" (legacy) should normalize to "srmi" and find srmi.json
+    // SRMI (1) should normalize to "srmi" and find srmi.json
     let schema = load_schema(temp.path(), 1);
     assert_eq!(schema.categories.len(), 1);
     assert_eq!(schema.categories[0].name, "Character");

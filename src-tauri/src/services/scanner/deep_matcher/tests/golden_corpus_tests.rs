@@ -5,7 +5,7 @@ fn test_db() -> MasterDb {
     MasterDb::new(vec![
         DbEntry {
             name: "Raiden Shogun".to_string(),
-            tags: vec!["raiden".to_string(), "electro".to_string()],
+            aliases: vec!["raiden".to_string(), "electro".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
@@ -23,7 +23,7 @@ fn test_db() -> MasterDb {
         },
         DbEntry {
             name: "Ayaka".to_string(),
-            tags: vec!["cryo".to_string()],
+            aliases: vec!["cryo".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -33,7 +33,7 @@ fn test_db() -> MasterDb {
         },
         DbEntry {
             name: "Nahida".to_string(),
-            tags: vec!["dendro".to_string()],
+            aliases: vec!["dendro".to_string()],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],

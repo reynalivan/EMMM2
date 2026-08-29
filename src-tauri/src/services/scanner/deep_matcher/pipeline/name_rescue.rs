@@ -89,7 +89,7 @@ fn apply_substring_name_inner(
         // Invariant across the source-string loop below.
         let entry_condensed = entry_name_norm.replace(' ', "");
         let alias_condensed = condensed_terms(entry.custom_skins.iter().flat_map(|s| &s.aliases));
-        let tag_condensed = condensed_terms(entry.tags.iter());
+        let tag_condensed = condensed_terms(entry.aliases.iter());
 
         for (deep_str, deep_condensed) in source_strings.iter().zip(&source_condensed) {
             // Exact name match (highest score)
@@ -210,7 +210,7 @@ pub fn apply_root_folder_rescue(db: &MasterDb, signals: &FolderSignals) -> Stage
 
         // Tag substring check
         if !matched
-            && entry.tags.iter().any(|tag| {
+            && entry.aliases.iter().any(|tag| {
                 let tag_norm = normalizer::normalize_for_matching_default(tag);
                 !tag_norm.is_empty()
                     && tag_norm.len() >= MIN_TERM_LEN

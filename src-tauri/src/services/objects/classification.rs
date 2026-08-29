@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+
 
 use crate::domain::errors::AppError;
 use crate::services::scanner::deep_matcher::CustomSkin;
@@ -189,43 +189,9 @@ fn parse_custom_skins(raw: Option<&str>) -> Result<Vec<CustomSkin>, AppError> {
     let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else {
         return Ok(Vec::new());
     };
-    let value: serde_json::Value = serde_json::from_str(raw).map_err(|error| {
+    serde_json::from_str(raw).map_err(|error| {
         AppError::Validation(format!("Stored custom skins are invalid JSON: {error}"))
-    })?;
-    match value {
-        serde_json::Value::Array(_) => serde_json::from_value(value).map_err(|error| {
-            AppError::Validation(format!(
-                "Stored custom skins have an invalid array shape: {error}"
-            ))
-        }),
-        serde_json::Value::Object(_) => {
-            let legacy: BTreeMap<String, String> =
-                serde_json::from_value(value).map_err(|error| {
-                    AppError::Validation(format!(
-                        "Stored custom skins have an invalid legacy shape: {error}"
-                    ))
-                })?;
-            let aliases = legacy
-                .into_keys()
-                .map(|alias| alias.trim().to_string())
-                .filter(|alias| !alias.is_empty())
-                .collect::<Vec<_>>();
-            if aliases.is_empty() {
-                Ok(Vec::new())
-            } else {
-                Ok(vec![CustomSkin {
-                    name: "Legacy".to_string(),
-                    aliases,
-                    thumbnail_skin_path: None,
-                    rarity: None,
-                }])
-            }
-        }
-        serde_json::Value::Null => Ok(Vec::new()),
-        _ => Err(AppError::Validation(
-            "Stored custom skins must be an array or legacy object".to_string(),
-        )),
-    }
+    })
 }
 
 fn merge_user_alias(skins: &mut Vec<CustomSkin>, alias: &str) -> bool {

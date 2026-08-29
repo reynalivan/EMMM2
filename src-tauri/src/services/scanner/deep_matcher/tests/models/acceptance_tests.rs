@@ -8,10 +8,10 @@ use crate::services::scanner::deep_matcher::{
     Confidence, DbEntry, MatchMode, MatchStatus, Reason, ScoreState,
 };
 
-fn db_entry(name: &str, tags: &[&str], object_type: &str) -> DbEntry {
+fn db_entry(name: &str, aliases: &[&str], object_type: &str) -> DbEntry {
     DbEntry {
         name: name.to_string(),
-        tags: tags.iter().map(|tag| tag.to_string()).collect(),
+        aliases: aliases.iter().map(|tag| tag.to_string()).collect(),
         object_type: object_type.to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],

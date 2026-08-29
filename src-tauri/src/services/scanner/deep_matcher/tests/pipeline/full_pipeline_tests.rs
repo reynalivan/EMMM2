@@ -38,7 +38,7 @@ fn test_full_alias_recheck_rescues_match_after_deep_ini_collection() {
     let db = MasterDb::new(vec![
         DbEntry {
             name: "Target Hero".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
@@ -53,7 +53,7 @@ fn test_full_alias_recheck_rescues_match_after_deep_ini_collection() {
         },
         DbEntry {
             name: "Control Hero".to_string(),
-            tags: vec![],
+            aliases: vec![],
             object_type: "Character".to_string(),
             entry_kind: Default::default(),
             custom_skins: vec![],
@@ -101,7 +101,7 @@ fn test_full_budget_overflow_keeps_partial_signals_and_continues_matching() {
     let candidate = candidate_for(folder.clone(), "Budget Stress Folder");
     let db = MasterDb::new(vec![DbEntry {
         name: "Arlecchino".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -139,7 +139,7 @@ fn test_full_pipeline_rejects_fuzzy_below_floor() {
     let candidate = candidate_for(folder.clone(), "Albato");
     let db = MasterDb::new(vec![DbEntry {
         name: "Albedo".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],
@@ -172,7 +172,7 @@ fn test_full_pipeline_fuzzy_rescue_never_auto_matches() {
     let candidate = candidate_for(folder, "Arlechino");
     let db = MasterDb::new(vec![DbEntry {
         name: "Arlecchino".to_string(),
-        tags: vec![],
+        aliases: vec![],
         object_type: "Character".to_string(),
         entry_kind: Default::default(),
         custom_skins: vec![],

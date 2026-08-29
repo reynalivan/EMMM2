@@ -60,7 +60,7 @@ describe('CollectionPreviewPanel', () => {
     });
   });
 
-  it('uses the stored collection name instead of its legacy unsaved flag', () => {
+  it('uses the stored collection name', () => {
     render(
       <CollectionPreviewPanel
         source={{ kind: 'stored_collection', collectionId: 'collection-1' }}

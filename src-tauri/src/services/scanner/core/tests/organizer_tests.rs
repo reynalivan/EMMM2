@@ -4,57 +4,61 @@ use std::fs;
 use tempfile::TempDir;
 
 fn ambiguous_master_db() -> MasterDb {
-    let db_json = json!([
-        {
-            "name": "Amber",
-            "tags": ["sunset"],
-            "object_type": "Character",
-            "custom_skins": [
-                {
-                    "name": "Sunset",
-                    "aliases": ["Sunset"],
-                    "thumbnail_skin_path": null,
-                    "rarity": null
-                }
-            ],
-            "thumbnail_path": null,
-            "metadata": null,
-            "hash_db": {}
-        },
-        {
-            "name": "Lisa",
-            "tags": ["sunset"],
-            "object_type": "Character",
-            "custom_skins": [
-                {
-                    "name": "Sunset",
-                    "aliases": ["Sunset"],
-                    "thumbnail_skin_path": null,
-                    "rarity": null
-                }
-            ],
-            "thumbnail_path": null,
-            "metadata": null,
-            "hash_db": {}
-        }
-    ])
+    let db_json = json!({
+        "entries": [
+            {
+                "name": "Amber",
+                "aliases": ["sunset"],
+                "object_type": "Character",
+                "custom_skins": [
+                    {
+                        "name": "Sunset",
+                        "aliases": ["Sunset"],
+                        "thumbnail_skin_path": null,
+                        "rarity": null
+                    }
+                ],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hash_db": {}
+            },
+            {
+                "name": "Lisa",
+                "aliases": ["sunset"],
+                "object_type": "Character",
+                "custom_skins": [
+                    {
+                        "name": "Sunset",
+                        "aliases": ["Sunset"],
+                        "thumbnail_skin_path": null,
+                        "rarity": null
+                    }
+                ],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hash_db": {}
+            }
+        ]
+    })
     .to_string();
 
     MasterDb::from_json(&db_json).unwrap()
 }
 
 fn simple_master_db() -> MasterDb {
-    let db_json = json!([
-        {
-            "name": "Raiden Shogun",
-            "tags": [],
-            "object_type": "Character",
-            "custom_skins": [],
-            "thumbnail_path": null,
-            "metadata": null,
-            "hash_db": {"Default": ["d94c8962"]}
-        }
-    ])
+    let db_json = json!({
+        "entries": [
+            {
+                "name": "Raiden Shogun",
+                "aliases": [],
+                "object_type": "Character",
+                "custom_skins": [],
+                "thumbnail_path": null,
+                "metadata": null,
+                "hash_db": {"Default": ["d94c8962"]}
+            }
+        ]
+    })
     .to_string();
 
     MasterDb::from_json(&db_json).unwrap()

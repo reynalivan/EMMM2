@@ -265,7 +265,7 @@ pub enum EntryKind {
 pub struct DbEntry {
     pub name: String,
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub aliases: Vec<String>,
     #[serde(default)]
     pub object_type: String,
     /// Whether this is a matchable object or a generic taxonomy placeholder.

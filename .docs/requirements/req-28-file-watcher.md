@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users who organize mods in Windows Explorer while EMMM is open expect the app to reflect external changes instantly — without this, the UI shows stale data until a manual refresh, and bulk operations that fire filesystem events trigger unnecessary grid re-renders.
-- **Proposed Solution**: A `notify-debouncer-full` watcher (over `notify` v7) running as a background Tauri-managed service, watching the active game's `mods_path` recursively with a 500 ms debounce and rename From/To stitching via Windows file IDs. Suppression is two-tier: a blanket ref-counted `SuppressionGuard` for broad operations (scan, archive extraction, import) and path-scoped, identity-keyed registrations (`suppress_paths`, 2 s tail after drop) for toggle/rename/move/trash — so unrelated external events keep flowing during precise mutations. All runtime truth updates go through **Disk Reconcile** — the single writer of `status`/`folder_path` — before typed result payloads reach the frontend; a watcher error/overflow degrades to a force-full reconcile so lost events cannot cause drift.
+- **Proposed Solution**: A `notify-debouncer-full` watcher (over `notify` v7) running as a background Tauri-managed service, watching the active game's `mods_path` recursively with a 500 ms debounce and rename From/To stitching via Windows file IDs. Suppression is two-tier: a blanket ref-counted `SuppressionGuard` for broad operations (scan, archive extraction, import) and path-scoped, identity-keyed registrations (`suppress_paths`, generation-based repair evidence ledger) for toggle/rename/move/trash — so unrelated external events keep flowing during precise mutations. All runtime truth updates go through **Disk Reconcile** — the single writer of `status`/`folder_path` — before typed result payloads reach the frontend; a watcher error/overflow degrades to a force-full reconcile so lost events cannot cause drift.
 - **Success Criteria**:
   - [x] External folder creation appears in the grid within ≤ 500ms of the OS delivering the `Create` event.
   - [x] External folder deletion disappears from the grid within ≤ 500ms.
@@ -62,7 +62,7 @@ WatcherState (Tauri managed state):
   suppressor: Arc<WatcherSuppressor>
     // blanket: guard_depth + manual_depth (ref-counted)
     // path-scoped: Vec<ScopedEntry { identity_key, expires_at }>
-    //   suppress_paths([paths]) -> PathSuppressionGuard (RAII, 2s tail on drop)
+    //   suppress_paths([paths]) -> PathSuppressionGuard (RAII, generation-based repair ledger on drop)
     //   identity key = DISABLED prefix stripped + case-folded, so ONE entry
     //   covers both spellings of a toggle rename
   watcher: Mutex<Option<Debouncer<RecommendedWatcher, RecommendedCache>>>
@@ -88,7 +88,7 @@ start_watcher(game_id) -> ():
 Suppression (RAII):
   SuppressionGuard::new(): blanket depth += 1; Drop: -= 1 (saturating)
   suppress_paths([...]): register identity-keyed entries; Drop: entries live
-    another 2s (tail) so async OS events queued during the mutation are
+    another generation-based repair evidence ledger so async OS events queued during the mutation are
     still swallowed
 
 Quiet reconciles (no 'disk_reconcile:result' event):
@@ -103,7 +103,7 @@ Disk Reconcile unavailable source:
     do not write projection deletes
 
 Frontend:
-  RuntimeSyncCoordinator / ExternalChangeHandler.tsx
+  RuntimeSyncCoordinator / useFileWatcher.ts
     -> listen('disk_reconcile:result', (result) => {
         1. Apply `path_updates` + `cleared_selection_paths`
         2. Invalidate objects / folders / thumbnails / collections / dashboard / details
@@ -117,7 +117,7 @@ Frontend:
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | notify Crate      | `notify-debouncer-full` over `notify` v7 (ReadDirectoryChangesWatcher on Windows; rename stitching via file IDs)                                                                                                                                                |
 | Debounce          | 500 ms debounce window in `notify-debouncer-full`; the event loop drains the channel per callback batch                                                                                                                                                             |
-| Suppression       | `Arc<WatcherSuppressor>` shared between watcher and internal file mutations; blanket guards ref-count, path-scoped entries are identity-keyed with a 2 s post-drop tail                                                                                                   |
+| Suppression       | `Arc<WatcherSuppressor>` shared between watcher and internal file mutations; blanket guards ref-count, path-scoped entries are identity-keyed with a generation-based repair evidence ledger                                                                                                   |
 | Frontend Listener | `listen('disk_reconcile:result', handler)` — registered in the runtime coordinator on mount; applies `path_updates`, then refreshes ObjectList on `objects_changed`, `folders_changed`, or `path_updates.length > 0` |
 | Game Switch       | On `set_active_game` → watcher restarts for new `mods_path`; Mods view then runs `reconcileDiskState`                                                                                                                |
 | Rename Hints      | The debouncer stitches From/To into one `Renamed { from, to }` event via Windows file IDs; coalesced batches preserve the hints while an older reconcile runs, so collection/path healing is not lost |

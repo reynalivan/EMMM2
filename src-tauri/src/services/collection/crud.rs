@@ -197,9 +197,7 @@ pub async fn update_collection(
         collection::rename(pool, &collection, name).await?;
     }
     let collection = require_collection(pool, &input.id).await?;
-    // A cache-only load repairs legacy display counts before the renamed summary is returned.
-    load_projected_collection_state(pool, &collection, None).await?;
-    let collection = require_collection(pool, &input.id).await?;
+
 
     Ok(collection::to_summary(&collection, None))
 }
