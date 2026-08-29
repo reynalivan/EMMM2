@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '../../../testing/test-utils';
+import { render, screen, waitFor, fireEvent } from '../../../tests/testing/test-utils';
 import MetadataSection from './MetadataSection';
 
 describe('MetadataSection', () => {

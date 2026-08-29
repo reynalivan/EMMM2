@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { ActiveKeyBinding } from '../../../types/settings';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from './useActiveGame';
 
 /**
  * TanStack Query hook for active keybindings.

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import {
   commands,
   type FolderConflictSummary,
   type FolderNameConflictGroup,
-} from '../../../lib/bindings';
+} from '../../../core/tauri/bindings';
 
 export function useFolderConflictDetails(
   gameId: string | null,

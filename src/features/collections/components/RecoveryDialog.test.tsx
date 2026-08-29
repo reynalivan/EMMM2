@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '../../../testing/test-utils';
+import { fireEvent, render, screen, waitFor } from '../../../tests/testing/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecoveryDialog } from './RecoveryDialog';
 
@@ -7,7 +7,7 @@ const appStartupCheckMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     resolveRecoveryTask: (...args: unknown[]) => resolveRecoveryTaskMock(...args),

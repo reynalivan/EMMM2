@@ -6,7 +6,7 @@ const applyRuntimeEffects = vi.fn();
 const applyRuntimeMutationResult = vi.fn();
 const notifyCommittedMutationSyncWarning = vi.fn();
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     moveModsToObject: (...args: unknown[]) => moveModsToObject(...args),
@@ -21,9 +21,9 @@ vi.mock('../../workspace-runtime/actions/sharedRuntimeResultMapper', () => ({
   applyRuntimeMutationResult: (...args: unknown[]) => applyRuntimeMutationResult(...args),
 }));
 
-vi.mock('../../../hooks/folderCache', () => ({}));
+vi.mock('../../folder-grid/hooks/folderCache', () => ({}));
 
-vi.mock('../../../lib/committedMutationWarning', () => ({
+vi.mock('../../../core/lib/committedMutationWarning', () => ({
   notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
     notifyCommittedMutationSyncWarning(...args),
 }));

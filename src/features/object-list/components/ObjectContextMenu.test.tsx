@@ -4,7 +4,7 @@ import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
 import type { WorkspaceCapabilities } from '../../../types/workspace';
 
 // Mock inner components to simplify
-vi.mock('../../../components/ui/ContextMenu', () => ({
+vi.mock('../../../shared/components/ui/ContextMenu', () => ({
   ContextMenuItem: ({
     children,
     onClick,

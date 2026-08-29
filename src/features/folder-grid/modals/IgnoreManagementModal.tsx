@@ -1,10 +1,10 @@
-import { useDialogSync } from '../../../hooks/useDialogSync';
-import { formatAppError } from '../../../lib/appError';
+import { useDialogSync } from '../../../shared/hooks/useDialogSync';
+import { formatAppError } from '../../../core/lib/appError';
 import { useRef } from 'react';
 import { X, Trash2, ShieldAlert, Ghost, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { toast } from '../../../stores/useToastStore';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { IgnoredConflict } from '../../../types/scanner';

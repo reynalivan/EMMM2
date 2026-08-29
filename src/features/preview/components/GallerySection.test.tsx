@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '../../../testing/test-utils';
+import { render, screen, waitFor } from '../../../tests/testing/test-utils';
 import GallerySection from './GallerySection';
 
 vi.mock('@tauri-apps/api/core', () => ({

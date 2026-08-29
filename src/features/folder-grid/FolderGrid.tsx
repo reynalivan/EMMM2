@@ -6,7 +6,7 @@ import EnableParentDialog from './modals/EnableParentDialog';
 import BulkProgressBar from './components/BulkProgressBar';
 import BulkActionBar from './components/BulkActionBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
-import { cn } from '../../lib/utils';
+import { cn } from '../../core/lib/utils';
 import { useFolderGridViewModel } from './hooks/useFolderGridViewModel';
 import FolderGridStateViews from './components/FolderGridStateViews';
 import FolderGridContent from './components/FolderGridContent';

@@ -1,9 +1,9 @@
 import { collectionKeys, collectionRuntimeKeys } from '../../features/collections/queryKeys';
 import { listen } from '@tauri-apps/api/event';
-import { commands } from '../../lib/bindings';
-import { formatAppError } from '../../lib/appError';
-import { queryClient } from '../../lib/queryClient';
-import { settingsKeys } from '../../hooks/settingsQuery';
+import { commands } from '../../core/tauri/bindings';
+import { formatAppError } from '../../core/lib/appError';
+import { queryClient } from '../../core/lib/queryClient';
+import { settingsKeys } from '../../features/settings/hooks/settingsQuery';
 import { toast } from '../useToastStore';
 import type { AppSliceCreator } from './sliceTypes';
 import type {
@@ -11,7 +11,7 @@ import type {
   DiskReconcileProgress,
   FolderNameConflictGroup,
   RenameConfirmationGroup,
-} from '../../lib/bindings';
+} from '../../core/tauri/bindings';
 
 /** Disk Reconcile bookkeeping for one game. */
 export interface DiskReconcileEntry {

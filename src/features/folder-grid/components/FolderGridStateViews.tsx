@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import ListStateView from '../../../components/ui/ListStateView';
+import ListStateView from '../../../shared/components/ui/ListStateView';
 import FolderGridEmpty from './FolderGridEmpty';
 
 interface FolderGridStateViewsProps {

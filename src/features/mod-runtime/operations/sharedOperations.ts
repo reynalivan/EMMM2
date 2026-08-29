@@ -1,6 +1,6 @@
 import type { MoveStatus } from '../../../types/mod';
 import type { QueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import {
@@ -8,8 +8,8 @@ import {
   buildWorkspacePathRewritesDescriptor,
 } from '../../workspace-runtime/optimistic/descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
-import { thumbnailKeys } from '../../../hooks/useThumbnail';
-import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
+import { thumbnailKeys } from '../../dashboard/hooks/useThumbnail';
+import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 
 export async function moveModsToObjectAndRefresh(params: {
   queryClient: QueryClient;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '../../../testing/test-utils';
+import { render, screen } from '../../../tests/testing/test-utils';
 import { CollectionList } from './CollectionList';
 import { buildCollectionWorkspaceRows, filterCollectionRowsBySafety } from '../types';
 import type { CollectionRuntimeSnapshot, CollectionSummary } from '../../../types/collection';

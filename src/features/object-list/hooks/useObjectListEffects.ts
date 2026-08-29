@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { subscribeWorkspaceIntent } from '../../workspace-runtime/workspaceIntentBus';
+import { subscribeWorkspaceIntent } from '../../workspace-runtime/utils/workspaceIntentBus';
 
 interface UseObjectListEffectsOptions {
   activeGameId: string | null;

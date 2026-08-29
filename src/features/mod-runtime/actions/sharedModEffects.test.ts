@@ -8,14 +8,14 @@ const updateFolderCacheMock = vi.fn();
 const applyRuntimePathInvalidationMutationResultMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     toggleModSafe: (...args: unknown[]) => toggleModSafeMock(...args),
   },
 }));
 
-vi.mock('../../../hooks/folderCache', () => ({
+vi.mock('../../folder-grid/hooks/folderCache', () => ({
   updateFolderCache: (...args: unknown[]) => updateFolderCacheMock(...args),
 }));
 

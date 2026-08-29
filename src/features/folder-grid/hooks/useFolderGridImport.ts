@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { join } from '@tauri-apps/api/path';
-import { useFileDrop } from '../../../hooks/useFileDrop';
-import { useDragAutoScroll } from '../../../hooks/useDragAutoScroll';
-import { commands } from '../../../lib/bindings';
+import { useFileDrop } from '../../../shared/hooks/useFileDrop';
+import { useDragAutoScroll } from '../../../shared/hooks/useDragAutoScroll';
+import { commands } from '../../../core/tauri/bindings';
 import { openImportBatchWizard } from '../../import-batches/launcher';
 
 interface FolderGridImportOptions {

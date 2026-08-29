@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { useFolderGridNav } from './useFolderGridNav';
 import { useFolderGridBulk } from './useFolderGridBulk';
 import { useFolderGridImport } from './useFolderGridImport';

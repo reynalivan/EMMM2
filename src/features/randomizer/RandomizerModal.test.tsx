@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '../../testing/test-utils';
+import { render, screen, waitFor, fireEvent, act } from '../../tests/testing/test-utils';
 import RandomizerModal from './RandomizerModal';
 
 vi.mock('@tauri-apps/api/core', () => ({

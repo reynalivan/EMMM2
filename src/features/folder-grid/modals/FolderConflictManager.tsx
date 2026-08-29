@@ -1,9 +1,9 @@
 import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { formatAppError } from '../../../lib/appError';
-import { commands, type FolderNameConflictCandidate } from '../../../lib/bindings';
-import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
+import { formatAppError } from '../../../core/lib/appError';
+import { commands, type FolderNameConflictCandidate } from '../../../core/tauri/bindings';
+import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';

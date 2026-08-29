@@ -20,10 +20,10 @@ vi.mock('lucide-react', () => ({
 }));
 
 // Mock custom hooks
-vi.mock('../../../hooks/useFolderMutations', () => ({
+vi.mock('../hooks/useFolderMutations', () => ({
   usePasteThumbnail: () => ({ mutateAsync: vi.fn() }),
 }));
-vi.mock('../../../hooks/useModContextMenuItems', () => ({
+vi.mock('../hooks/useModContextMenuItems', () => ({
   useModContextMenuItems: (props: {
     folder: { is_enabled: boolean; is_favorite: boolean };
     onOpenMoveDialog?: (folder: WorkspaceExplorerNode) => void;
@@ -99,7 +99,7 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
   readFile: vi.fn(),
 }));
 
-vi.mock('../../../components/ui/ContextMenu', () => ({
+vi.mock('../../../shared/components/ui/ContextMenu', () => ({
   ContextMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
     <div role="menuitem" onClick={onClick}>
       {children}

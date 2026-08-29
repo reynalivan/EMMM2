@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { ContextMenu } from '../../../components/ui/ContextMenu';
+import { ContextMenu } from '../../../shared/components/ui/ContextMenu';
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock Lucide icons

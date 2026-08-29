@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useActiveGame } from '../../hooks/useActiveGame';
-import { useDiskReconcileCoordinator } from './hooks';
+import { useActiveGame } from '../dashboard/hooks/useActiveGame';
+import { useDiskReconcileCoordinator } from './hooks/useFileWatcher';
 
 /**
  * Headless coordinator for Disk Reconcile.

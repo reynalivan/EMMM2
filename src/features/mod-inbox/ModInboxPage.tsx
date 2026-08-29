@@ -3,8 +3,8 @@ import { Archive, PackageOpen, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
-import { formatAppError } from '../../lib/appError';
-import { commands } from '../../lib/bindings';
+import { formatAppError } from '../../core/lib/appError';
+import { commands } from '../../core/tauri/bindings';
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
 import { openImportBatchWizard } from '../import-batches/launcher';
@@ -208,6 +208,7 @@ export default function ModInboxPage() {
         loading={loading}
         onSettings={openInboxSettings}
         onOpen={() => {
+          
           if (snapshot) void modInboxCommands.openModInboxFolder(activeGameId);
         }}
         onRefresh={() => void refresh()}

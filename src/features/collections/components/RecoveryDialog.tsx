@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { PipelineTask, RecoveryAction } from '../../../types/task';
 import { toast } from '../../../stores/useToastStore';
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 
 interface RecoveryDialogProps {
   tasks: PipelineTask[];

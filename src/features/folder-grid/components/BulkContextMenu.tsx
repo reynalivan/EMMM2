@@ -9,7 +9,7 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { ContextMenuItem, ContextMenuSeparator } from '../../../components/ui/ContextMenu';
+import { ContextMenuItem, ContextMenuSeparator } from '../../../shared/components/ui/ContextMenu';
 
 interface BulkContextMenuProps {
   count: number;

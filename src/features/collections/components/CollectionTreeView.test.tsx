@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '../../../testing/test-utils';
+import { render, screen } from '../../../tests/testing/test-utils';
 import { CollectionTreeView } from './CollectionTreeView';
 import type { PreviewTreeNode } from '../../../types/collection';
 

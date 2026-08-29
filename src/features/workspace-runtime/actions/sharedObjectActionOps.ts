@@ -1,4 +1,4 @@
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { QueryClient, UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { GameConfig } from '../../../types/game';
 import type { UpdateObjectInput } from '../../../types/object';

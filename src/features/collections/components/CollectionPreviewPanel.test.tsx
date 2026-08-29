@@ -1,4 +1,4 @@
-import { render, screen } from '../../../testing/test-utils';
+import { render, screen } from '../../../tests/testing/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CollectionPreview } from '../../../types/collection';
 import { CollectionPreviewPanel } from './CollectionPreviewPanel';
@@ -20,7 +20,7 @@ vi.mock('./CollectionTreeView', () => ({
   CollectionTreeView: () => null,
 }));
 
-vi.mock('../../../lib/runtimeLabels', () => ({
+vi.mock('../../../core/lib/runtimeLabels', () => ({
   useRuntimeLabels: () => ({ currentChanges: 'Current changes' }),
   getCollectionDisplayName: ({ name, isUnsaved }: { name: string | null; isUnsaved: boolean }) =>
     isUnsaved || !name ? 'Current changes' : name,

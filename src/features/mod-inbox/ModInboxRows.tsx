@@ -1,7 +1,7 @@
 import { Archive, Boxes, ExternalLink, FolderOpen, PackageOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { formatBytes } from '../../utils/formatters';
+import { formatBytes } from '../../shared/utils/formatters';
 import type {
   ModInboxEntry,
   ModInboxEntryLayout,

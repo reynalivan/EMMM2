@@ -3,7 +3,7 @@
  * Extracted from ObjectList for modularity (350-line limit).
  */
 
-import ConfirmDialog from '../../../components/ui/ConfirmDialog';
+import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import EditObjectModal from './EditObjectModal';
 import CreateObjectModal from './CreateObjectModal';
 import AutoSetupModal from './AutoSetupModal';

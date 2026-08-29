@@ -3,21 +3,21 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
-import { useUpdateObject } from '../../../hooks/useObjectMutations';
+import { commands } from '../../../core/tauri/bindings';
+import { useUpdateObject } from './useObjectMutations';
 import {
   useDeleteModThumbnail,
   useToggleModSafe,
   useUpdateModCategory,
   useUpdateModInfo,
   useUpdateModThumbnail,
-} from '../../../hooks/useFolderMutations';
-import { useRenameMod } from '../../../hooks/useFolderCoreMutations';
+} from '../../folder-grid/hooks/useFolderMutations';
+import { useRenameMod } from '../../folder-grid/hooks/useFolderCoreMutations';
 import { type JsonValue, type ModInfo } from '../../../types/object';
-import type { GameObject } from '../../../lib/bindings';
+import type { GameObject } from '../../../core/tauri/bindings';
 import type { ObjectSummary } from '../../../types/object';
 import type { ModFolder } from '../../../types/object';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 
 export const schema = z
   .object({

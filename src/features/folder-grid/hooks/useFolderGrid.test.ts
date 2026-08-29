@@ -2,7 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useFolderGrid } from './useFolderGrid';
 import { useAppStore } from '../../../stores/useAppStore';
-import { createWrapper } from '../../../testing/test-utils';
+import { createWrapper } from '../../../tests/testing/test-utils';
 import { ModFolder } from '../../../types/object';
 
 // Provide element dimensions for virtualization
@@ -16,24 +16,24 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
-vi.mock('../../../hooks/folderCache', () => ({
+vi.mock('./folderCache', () => ({
   sortFolders: (f: ModFolder[]) => f,
   folderKeys: { all: [] },
 }));
 
-vi.mock('../../../hooks/useFolderCoreMutations', () => ({
+vi.mock('./useFolderCoreMutations', () => ({
   useRenameMod: () => ({ mutate: vi.fn() }),
   useDeleteMod: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock('../../../hooks/useFolderMutations', () => ({
+vi.mock('./useFolderMutations', () => ({
   useImportMods: () => ({ mutate: vi.fn() }),
   useToggleModSafe: () => ({ mutate: vi.fn() }),
   useUpdateModInfo: () => ({ mutate: vi.fn() }),
   useActiveConflicts: () => ({ data: [] }),
 }));
 
-vi.mock('../../../hooks/useBulkModMutations', () => ({
+vi.mock('../../mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
   useBulkUpdateInfo: () => ({ mutate: vi.fn() }),
@@ -42,7 +42,7 @@ vi.mock('../../../hooks/useBulkModMutations', () => ({
   useBulkPin: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
+vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
   useWorkspaceViewModel: () => ({
     data: {
       explorer: {
@@ -139,15 +139,15 @@ vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useFileDrop', () => ({
+vi.mock('../../../shared/hooks/useFileDrop', () => ({
   useFileDrop: () => ({ isDragging: false, dragPosition: null }),
 }));
 
-vi.mock('../../../hooks/useDragAutoScroll', () => ({
+vi.mock('../../../shared/hooks/useDragAutoScroll', () => ({
   useDragAutoScroll: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({ activeGame: { id: 'test-game', mod_path: '/mods' } }),
 }));
 

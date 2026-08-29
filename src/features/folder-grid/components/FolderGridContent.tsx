@@ -2,13 +2,13 @@ import { CheckSquare, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import FolderCard from './FolderCard';
 import FolderListRow from './FolderListRow';
-import { cn } from '../../../lib/utils';
+import { cn } from '../../../core/lib/utils';
 import {
   ContextMenu,
   ContextMenuItem,
   ContextMenuSeparator,
-} from '../../../components/ui/ContextMenu';
-import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
+} from '../../../shared/components/ui/ContextMenu';
+import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
 import { isFolderConflictProtected } from '../hooks/folderConflictScope';
 import type { useFolderGrid } from '../hooks/useFolderGrid';
 

@@ -1,14 +1,14 @@
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { validateKeyBinding } from '../keybindingValidator';
+import { validateKeyBinding } from '../utils/keybindingValidator';
 import { toast } from '../../../stores/useToastStore';
 import {
   buildKeyBindSections,
   getConflictingKeys,
   toFieldValueMap,
   toIniWritePayload,
-} from '../previewPanelUtils';
+} from '../utils/previewPanelUtils';
 import { useMetadataDraft } from './useMetadataDraft';
 import {
   dispatchWorkspaceRuntimeEvent,

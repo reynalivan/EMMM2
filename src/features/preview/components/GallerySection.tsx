@@ -1,13 +1,13 @@
 import { type Dispatch, type SetStateAction, useMemo, useRef, useState, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClipboardPaste, ImagePlus, Loader2, Maximize2, Trash2, ImageIcon } from 'lucide-react';
-import { getFileUrl } from '../../../lib/utils';
+import { getFileUrl } from '../../../core/lib/utils';
 import {
   ContextMenu,
   ContextMenuItem,
   ContextMenuSeparator,
-} from '../../../components/ui/ContextMenu';
-import { shouldLoadGalleryImage } from '../previewPanelUtils';
+} from '../../../shared/components/ui/ContextMenu';
+import { shouldLoadGalleryImage } from '../utils/previewPanelUtils';
 
 interface GallerySectionProps {
   images: string[];

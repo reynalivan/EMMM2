@@ -13,7 +13,7 @@ import { useAppStore } from '../../../stores/useAppStore';
 import { CollectionTreeView } from './CollectionTreeView';
 import type { PreviewTreeNode } from '../../../types/collection';
 import { ApplyCollectionActions } from './ApplyCollectionActions';
-import { extractMissingModsPayload, formatAppError } from '../../../lib/appError';
+import { extractMissingModsPayload, formatAppError } from '../../../core/lib/appError';
 import type { ApplyResult } from '../../../types/collection';
 
 interface ApplyCollectionModalProps {

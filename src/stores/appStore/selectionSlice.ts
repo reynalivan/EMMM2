@@ -1,7 +1,7 @@
 import {
   rewriteWorkspacePathValue,
   type WorkspacePathRewriteInput,
-} from '../../features/workspace-runtime/pathRewrite';
+} from '../../features/workspace-runtime/utils/pathRewrite';
 import type { AppSliceCreator } from './sliceTypes';
 
 export interface SelectionSlice {

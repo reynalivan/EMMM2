@@ -9,7 +9,7 @@ import { Layers, Loader2, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCollectionPreview } from '../hooks/useCollections';
 import { CollectionTreeView } from './CollectionTreeView';
-import { getCollectionDisplayName, useRuntimeLabels } from '../../../lib/runtimeLabels';
+import { getCollectionDisplayName, useRuntimeLabels } from '../../../core/lib/runtimeLabels';
 import type { CollectionRuntimeSnapshot } from '../../../types/collection';
 import type { CollectionWorkspaceSource } from '../types';
 

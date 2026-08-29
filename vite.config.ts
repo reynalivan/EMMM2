@@ -47,7 +47,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: './src/setupTests.ts',
+    setupFiles: './src/tests/setupTests.ts',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     css: true,
     deps: {
@@ -59,7 +59,7 @@ export default defineConfig({
     },
     alias: {
       '@tauri-apps/plugin-fs': fileURLToPath(
-        new URL('./src/testing/mocks/tauri-plugin-fs.ts', import.meta.url),
+        new URL('./src/tests/testing/mocks/tauri-plugin-fs.ts', import.meta.url),
       ),
     },
   },

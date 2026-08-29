@@ -1,4 +1,4 @@
-import type { FolderNameConflictGroup } from '../../../lib/bindings';
+import type { FolderNameConflictGroup } from '../../../core/tauri/bindings';
 
 export interface CompletedFolderConflict {
   group_id: string;

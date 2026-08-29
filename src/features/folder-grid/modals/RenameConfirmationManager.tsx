@@ -2,16 +2,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, FolderOpen, Loader2, Split, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { formatAppError } from '../../../lib/appError';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { formatAppError } from '../../../core/lib/appError';
 import {
   commands,
   type RenameConfirmationGroup,
   type RenameConfirmationResolution,
-} from '../../../lib/bindings';
+} from '../../../core/tauri/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
-import { applyDiskReconcileResult } from '../../file-watcher/hooks';
+import { applyDiskReconcileResult } from '../../file-watcher/hooks/useFileWatcher';
 import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
 

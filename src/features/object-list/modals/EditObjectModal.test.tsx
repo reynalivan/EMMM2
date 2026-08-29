@@ -9,18 +9,18 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import EditObjectModal from './EditObjectModal';
-import { useUpdateObject } from '../../../hooks/useObjectMutations';
+import { useUpdateObject } from '../hooks/useObjectMutations';
 import type { ObjectSummary } from '../../../types/object';
-import { createWrapper } from '../../../testing/test-utils';
+import { createWrapper } from '../../../tests/testing/test-utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEditObjectForm, schema } from '../hooks/useEditObjectForm';
 import type { EditObjectFormData } from '../hooks/useEditObjectForm';
 
 // Mock dependencies
-vi.mock('../../../hooks/useObjectMutations');
-vi.mock('../../../hooks/useObjectQueries');
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../hooks/useObjectMutations');
+vi.mock('../hooks/useObjectQueries');
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
 
@@ -37,14 +37,14 @@ vi.mock('../hooks/useEditObjectForm', async (importOriginal) => {
 });
 
 // Mock folder mutations — real hooks use react-query + Tauri APIs that hang in jsdom.
-vi.mock('../../../hooks/useFolderCoreMutations', () => ({
+vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
   useRenameMod: () => ({
     mutateAsync: vi.fn().mockResolvedValue({ new_path: '/new/path' }),
     isPending: false,
   }),
 }));
 
-vi.mock('../../../hooks/useFolderMutations', () => ({
+vi.mock('../../folder-grid/hooks/useFolderMutations', () => ({
   useUpdateModCategory: () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
@@ -122,8 +122,8 @@ vi.mock('@tauri-apps/api/core', () => ({
     return Promise.resolve(null);
   }),
 }));
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { useGameSchema } from '../../../hooks/useObjectQueries';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { useGameSchema } from '../hooks/useObjectQueries';
 
 const mockUseUpdateObject = useUpdateObject as unknown as ReturnType<typeof vi.fn>;
 const mockUseActiveGame = useActiveGame as unknown as ReturnType<typeof vi.fn>;

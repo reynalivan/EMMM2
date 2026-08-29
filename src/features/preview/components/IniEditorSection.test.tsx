@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '../../../testing/test-utils';
+import { render, screen, waitFor } from '../../../tests/testing/test-utils';
 import IniEditorSection from './IniEditorSection';
-import type { KeyBindSectionGroup } from '../previewPanelUtils';
+import type { KeyBindSectionGroup } from '../utils/previewPanelUtils';
 
 describe('IniEditorSection', () => {
   const mockKeyBindSections: KeyBindSectionGroup[] = [

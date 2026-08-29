@@ -14,7 +14,7 @@ import { GamePickerModal } from './GamePickerModal';
 import { ImportQueuePanel } from './ImportQueuePanel';
 import { Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 
 export function BrowserPage() {
   const { t } = useTranslation(['browser']);

@@ -2,7 +2,7 @@
 // Epic 44: Browser Feature — Shared TypeScript types
 // ──────────────────────────────────────────────────────────────────────────────
 
-import type { BrowserDownloadDto, ImportJobDto } from '../../lib/bindings.gen';
+import type { BrowserDownloadDto, ImportJobDto } from '../../core/tauri/bindings.gen';
 
 export type DownloadStatus =
   'requested' | 'in_progress' | 'finished' | 'failed' | 'canceled' | 'imported';

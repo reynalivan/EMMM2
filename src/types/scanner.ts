@@ -18,7 +18,7 @@ export type {
   ResolutionRequest,
   ResolutionSummary,
   WhitelistEntry,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';
 
 export type DuplicateInfo = {
   mod_id: string;

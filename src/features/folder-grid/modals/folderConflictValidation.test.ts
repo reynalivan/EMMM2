@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FolderNameConflictCandidate } from '../../../lib/bindings';
+import type { FolderNameConflictCandidate } from '../../../core/tauri/bindings';
 import { validateFolderConflictDrafts } from './folderConflictValidation';
 
 const candidates: FolderNameConflictCandidate[] = [

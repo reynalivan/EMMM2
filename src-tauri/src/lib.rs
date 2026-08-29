@@ -301,7 +301,7 @@ mod specta_tests {
     /// generated file fails the build (type-drift guard).
     #[test]
     fn export_bindings() {
-        let output_path = std::path::Path::new("..").join("src/lib/bindings.gen.ts");
+        let output_path = std::path::Path::new("..").join("src/core/tauri/bindings.gen.ts");
         tauri_specta::Builder::<tauri::Wry>::new()
             .commands(emmm_collect_commands!())
             .export(

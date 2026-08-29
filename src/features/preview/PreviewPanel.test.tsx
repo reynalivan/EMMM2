@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '../../testing/test-utils';
+import { render, screen, waitFor } from '../../tests/testing/test-utils';
 import { invoke } from '@tauri-apps/api/core';
 import PreviewPanel from './PreviewPanel';
 import * as usePreviewPanelStateModule from './hooks/usePreviewPanelState';
@@ -57,7 +57,7 @@ vi.mock('../mod-runtime/actions/useModContextMenuActions', () => ({
   }),
 }));
 
-vi.mock('../../hooks/useActiveGame', () => ({
+vi.mock('../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({
     activeGame: { id: 'GIMI', name: 'Genshin Impact' },
     isLoading: false,
@@ -141,7 +141,7 @@ function createDefaultHookState() {
 
   return {
     activePath: 'E:/Mods/TestMod',
-    folderNameConflict: null as import('../../lib/bindings').FolderNameConflictGroup | null,
+    folderNameConflict: null as import("../../core/tauri/bindings").FolderNameConflictGroup | null,
     selectedFolder,
     sourceUnavailableMessage: null as string | null,
     previewSummary: {

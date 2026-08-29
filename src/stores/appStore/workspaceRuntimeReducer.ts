@@ -1,5 +1,5 @@
-import { rewriteWorkspacePathValue } from '../../features/workspace-runtime/pathRewrite';
-import { pathStartsWith } from '../../lib/pathKey';
+import { rewriteWorkspacePathValue } from '../../features/workspace-runtime/utils/pathRewrite';
+import { pathStartsWith } from '../../core/lib/pathKey';
 import type { WorkspaceRuntimeEvent } from '../../features/workspace-runtime/state/workspaceEvents';
 import {
   INITIAL_WORKSPACE_DIALOG_STATE,

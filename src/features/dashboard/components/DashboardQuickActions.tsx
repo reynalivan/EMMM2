@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { WorkspaceView } from '../../../stores/appStore/navigationSlice';
 
 interface DashboardQuickActionsProps {

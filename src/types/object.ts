@@ -13,13 +13,13 @@ export type {
   ObjectFilter,
   ObjectSummary,
   RenameResult,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';
 
 import type {
   ConflictGroup,
   ModInfoUpdate as GenModInfoUpdate,
   UpdateObjectInput as GenUpdateObjectInput,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';
 
 /**
  * All fields optional on purpose: every field is `Option` in Rust and serde
@@ -48,7 +48,7 @@ export enum ItemStatus {
   Enabled = 1,
 }
 
-import type { WorkspaceExplorerNode } from '../lib/bindings.gen';
+import type { WorkspaceExplorerNode } from '../core/tauri/bindings.gen';
 
 /**
  * Frontend-only: the plain-folder subset of the generated

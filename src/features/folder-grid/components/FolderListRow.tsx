@@ -3,11 +3,11 @@ import { Folder, File, Copy, AlertTriangle, Star } from 'lucide-react';
 import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import BulkContextMenu from './BulkContextMenu';
-import { useModContextMenuItems } from '../../../hooks/useModContextMenuItems';
+import { useModContextMenuItems } from '../hooks/useModContextMenuItems';
 import { useModContextMenuActions } from '../../mod-runtime/actions/useModContextMenuActions';
 
-import { ContextMenu } from '../../../components/ui/ContextMenu';
-import { formatWorkspaceReason } from '../../workspace-runtime/workspaceSemantics';
+import { ContextMenu } from '../../../shared/components/ui/ContextMenu';
+import { formatWorkspaceReason } from '../../workspace-runtime/utils/workspaceSemantics';
 import { WorkspaceSwitchControl } from '../../workspace-runtime/components/WorkspaceSwitchControl';
 import { WorkspaceSwitchLabel } from '../../workspace-runtime/components/WorkspaceSwitchLabel';
 import { useFolderNodeView } from '../hooks/useFolderNodeView';

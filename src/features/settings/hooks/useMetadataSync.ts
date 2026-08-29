@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { MetadataSyncResult } from '../../../types/scanner';
 
 export const metadataSyncKeys = {

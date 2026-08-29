@@ -1,4 +1,4 @@
-import { commands } from '../../lib/bindings';
+import { commands } from '../../core/tauri/bindings';
 import { useAppStore } from '../../stores/useAppStore';
 import type { ProcessedModInboxDestination } from './types';
 

@@ -5,7 +5,7 @@
  * Uses v2 types directly — no intermediary transformation.
  */
 
-import ListStateView from '../../../components/ui/ListStateView';
+import ListStateView from '../../../shared/components/ui/ListStateView';
 import { Layers, Trash2, Edit2, Check, X, PlayCircle, Loader2, Save } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';

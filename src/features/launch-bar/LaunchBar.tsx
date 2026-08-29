@@ -1,10 +1,10 @@
-import { formatAppError } from '../../lib/appError';
+import { formatAppError } from '../../core/lib/appError';
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useActiveGame } from '../../hooks/useActiveGame';
-import { useActiveConflicts } from '../../hooks/useFolderMutations';
+import { useActiveGame } from '../dashboard/hooks/useActiveGame';
+import { useActiveConflicts } from '../folder-grid/hooks/useFolderMutations';
 import { useAppStore } from '../../stores/useAppStore';
-import { commands } from '../../lib/bindings';
+import { commands } from '../../core/tauri/bindings';
 import { exit } from '@tauri-apps/plugin-process';
 import RandomizerModal from '../randomizer/RandomizerModal';
 import ConflictModal from '../conflict-report/ConflictModal';

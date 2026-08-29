@@ -4,4 +4,4 @@ export type {
   DashboardStats,
   GameSlice,
   RecentMod,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';

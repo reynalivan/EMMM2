@@ -3,10 +3,10 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/object';
 import type { DuplicateInfo } from '../../../types/scanner';
-import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
-import ConfirmDialog from '../../../components/ui/ConfirmDialog';
+import MoveToObjectDialog from '../../object-list/modals/MoveToObjectDialog';
+import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import DuplicateWarningModal from './DuplicateWarningModal';
-import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
+import ActiveModContextDialog from '../../mod-runtime/modals/ActiveModContextDialog';
 import type { ObjectSummary } from '../../../types/object';
 
 interface PreviewPanelModalsProps {

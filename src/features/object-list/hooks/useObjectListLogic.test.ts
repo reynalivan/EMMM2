@@ -59,22 +59,22 @@ vi.mock('../../../stores/useAppStore', () => ({
 }));
 
 const useGameSchemaMock = vi.fn<() => { data: unknown }>(() => ({ data: undefined }));
-vi.mock('../../../hooks/useObjectQueries', () => ({
+vi.mock('./useObjectQueries', () => ({
   useGameSchema: () => useGameSchemaMock(),
 }));
 
 const useWorkspaceViewModelMock = vi.fn<
   () => { data: unknown; isLoading: boolean; isError: boolean }
 >(() => ({ data: { objects: [] }, isLoading: false, isError: false }));
-vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
+vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
   useWorkspaceViewModel: () => useWorkspaceViewModelMock(),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: null })),
 }));
 
-vi.mock('../../../hooks/useResponsive', () => ({
+vi.mock('../../../shared/hooks/useResponsive', () => ({
   useResponsive: vi.fn(() => ({ isMobile: false })),
 }));
 

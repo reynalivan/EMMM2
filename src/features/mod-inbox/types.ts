@@ -4,4 +4,4 @@ export type {
   ModInboxSnapshot,
   ProcessedModInboxDestination,
   ProcessedModInboxSource,
-} from '../../lib/bindings.gen';
+} from '../../core/tauri/bindings.gen';

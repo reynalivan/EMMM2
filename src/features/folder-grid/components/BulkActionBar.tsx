@@ -1,6 +1,6 @@
 import { ArrowRightLeft, Edit, Pin, PinOff, Star, StarOff, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import SharedBulkActionBar from '../../../components/ui/BulkActionBar';
+import SharedBulkActionBar from '../../../shared/components/ui/BulkActionBar';
 
 interface BulkActionBarProps {
   count: number;

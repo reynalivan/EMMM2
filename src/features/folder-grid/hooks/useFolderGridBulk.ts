@@ -13,8 +13,8 @@ import {
   useBulkSafety,
   useBulkFavorite,
   useBulkPin,
-} from '../../../hooks/useBulkModMutations';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+} from '../../mod-runtime/hooks/useBulkModMutations';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import type { ModFolder } from '../../../types/object';
 
 interface FolderGridBulkOptions {

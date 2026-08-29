@@ -1,4 +1,4 @@
-import type { FolderNameConflictCandidate } from '../../../lib/bindings';
+import type { FolderNameConflictCandidate } from '../../../core/tauri/bindings';
 
 export type FolderConflictValidationCode =
   'empty' | 'invalid' | 'reserved' | 'disabled_prefix' | 'duplicate';

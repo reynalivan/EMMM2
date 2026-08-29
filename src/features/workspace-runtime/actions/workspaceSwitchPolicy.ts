@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { WorkspaceNode } from '../../../types/workspace';
-import { formatWorkspaceReason } from '../workspaceSemantics';
+import { formatWorkspaceReason } from '../utils/workspaceSemantics';
 
 export interface WorkspaceSwitchPolicy {
   canToggle: boolean;

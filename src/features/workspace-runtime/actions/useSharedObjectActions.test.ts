@@ -34,7 +34,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'game-1',
@@ -48,11 +48,11 @@ vi.mock('../../../hooks/useActiveGame', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/objectQueryCache', () => ({
+vi.mock('../../object-list/hooks/objectQueryCache', () => ({
   runObjectBatchMutation: (...args: unknown[]) => runObjectBatchMutation(...args),
 }));
 
-vi.mock('../../../hooks/useObjectMutations', () => ({
+vi.mock('../../object-list/hooks/useObjectMutations', () => ({
   useDeleteObject: () => ({
     mutateAsync: deleteObjectMutateAsync,
   }),
@@ -87,7 +87,7 @@ vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
 }));
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     pinObject: vi.fn(),

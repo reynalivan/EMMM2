@@ -1,6 +1,6 @@
 /** Shared game configuration types for the EMMM frontend. */
 
-export type { GameConfig } from '../lib/bindings.gen';
+export type { GameConfig } from '../core/tauri/bindings.gen';
 
 /**
  * Numeric on the wire (Rust `serde_repr`): the generated bindings type this as

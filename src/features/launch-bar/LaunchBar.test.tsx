@@ -7,10 +7,10 @@ import type { ConflictInfo } from '../../types/scanner';
 const launchGame = vi.fn();
 let activeConflicts: ConflictInfo[] = [];
 
-vi.mock('../../hooks/useActiveGame', () => ({
+vi.mock('../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
-vi.mock('../../hooks/useFolderMutations', () => ({
+vi.mock('../folder-grid/hooks/useFolderMutations', () => ({
   useActiveConflicts: vi.fn(() => ({ data: activeConflicts })),
 }));
 vi.mock('../../stores/useAppStore', () => ({
@@ -30,7 +30,7 @@ vi.mock('react-i18next', () => ({
     },
   }),
 }));
-vi.mock('../../lib/bindings', () => ({
+vi.mock('../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     launchGame: (...args: unknown[]) => launchGame(...args),

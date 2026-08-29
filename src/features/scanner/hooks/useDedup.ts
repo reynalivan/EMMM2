@@ -3,11 +3,11 @@
  * Provides dedup query keys plus report and resolution hooks.
  */
 
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
 import { Channel } from '@tauri-apps/api/core';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { toast } from '../../../stores/useToastStore';
 import type { DupScanReport, ResolutionRequest, DupScanEvent } from '../../../types/scanner';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';

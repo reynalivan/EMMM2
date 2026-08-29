@@ -1,10 +1,10 @@
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useCallback, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { toast } from '../../../stores/useToastStore';
-import { publishWorkspaceIntent } from '../../workspace-runtime/workspaceIntentBus';
+import { publishWorkspaceIntent } from '../../workspace-runtime/utils/workspaceIntentBus';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 
 interface PreviewMutationLike<TInput> {

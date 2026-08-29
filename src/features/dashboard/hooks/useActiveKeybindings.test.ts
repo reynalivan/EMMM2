@@ -1,9 +1,9 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useActiveKeybindings } from './useActiveKeybindings';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from './useActiveGame';
 import { invoke } from '@tauri-apps/api/core';
-import { createWrapper } from '../../../testing/test-utils';
+import { createWrapper } from '../../../tests/testing/test-utils';
 
 // Restore real @tanstack/react-query — the global setupTests stub
 // replaces useQuery with a no-op, which prevents queryFn from running.
@@ -13,7 +13,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('./useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
 

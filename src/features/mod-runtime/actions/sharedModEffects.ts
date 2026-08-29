@@ -1,11 +1,11 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { applyRuntimePathInvalidationMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
-import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
+import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 
 export interface SharedModSwitchActions {
   setNodeEnabled: (

@@ -4,10 +4,10 @@ import { describe, it, expect, vi } from 'vitest';
 import FolderListRow from './FolderListRow';
 import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '../../../types/workspace';
 
-vi.mock('../../../hooks/useThumbnail', () => ({
+vi.mock('../../dashboard/hooks/useThumbnail', () => ({
   useThumbnail: vi.fn((_gameId: string, _path: string) => ({ data: null, isLoading: false })),
 }));
-vi.mock('../../../hooks/useModContextMenuItems', () => ({
+vi.mock('../hooks/useModContextMenuItems', () => ({
   useModContextMenuItems: () => [],
 }));
 vi.mock('../../mod-runtime/actions/useModContextMenuActions', () => ({
@@ -22,7 +22,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 // ContextMenu is wrapped
-vi.mock('../../../components/ui/ContextMenu', () => ({
+vi.mock('../../../shared/components/ui/ContextMenu', () => ({
   ContextMenu: ({ children, content }: { children: React.ReactNode; content: React.ReactNode }) => (
     <div data-testid="context-menu-wrapper">
       {children}

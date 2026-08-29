@@ -2,13 +2,13 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import BulkProgressBar from './BulkProgressBar';
 import { useBulkProgress } from '../hooks/useBulkProgress';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 
 vi.mock('../hooks/useBulkProgress', () => ({
   useBulkProgress: vi.fn(),
 }));
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   commands: { bulkCancel: vi.fn().mockResolvedValue({ status: 'ok', data: null }) },
 }));
 

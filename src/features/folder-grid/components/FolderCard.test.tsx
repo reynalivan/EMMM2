@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '../../../testing/test-utils';
+import { render, screen, fireEvent } from '../../../tests/testing/test-utils';
 import FolderCard from './FolderCard';
 import { beforeEach, vi, describe, it, expect } from 'vitest';
 import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '../../../types/workspace';
@@ -22,7 +22,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 // Mock ContextMenu to just render children
-vi.mock('../../../components/ui/ContextMenu', () => ({
+vi.mock('../../../shared/components/ui/ContextMenu', () => ({
   ContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ContextMenuItem: () => null,
   ContextMenuSeparator: () => null,

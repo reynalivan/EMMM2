@@ -12,7 +12,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { History, Layers, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '../../hooks/useActiveGame';
+import { useActiveGame } from '../dashboard/hooks/useActiveGame';
 
 import {
   useClearLastChanges,
@@ -37,8 +37,8 @@ import {
   type CollectionWorkspaceSource,
 } from './types';
 import { useAppStore } from '../../stores/useAppStore';
-import { SafetyFilterControl } from '../../components/ui/SafetyFilterControl';
-import { extractMissingModsPayload } from '../../lib/appError';
+import { SafetyFilterControl } from '../../shared/components/ui/SafetyFilterControl';
+import { extractMissingModsPayload } from '../../core/lib/appError';
 
 export default function CollectionsPage() {
   const { t } = useTranslation('collections');

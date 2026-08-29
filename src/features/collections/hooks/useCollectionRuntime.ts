@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type {
   CollectionRuntimeDescriptor,
   CollectionRuntimeSnapshot,

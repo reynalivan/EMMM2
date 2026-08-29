@@ -1,9 +1,9 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useObjectListHandlers } from './useObjectListHandlers';
-import { useDeleteMod } from '../../../hooks/useFolderCoreMutations';
-import { useDeleteObject, useUpdateObject } from '../../../hooks/useObjectMutations';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useDeleteMod } from '../../folder-grid/hooks/useFolderCoreMutations';
+import { useDeleteObject, useUpdateObject } from './useObjectMutations';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -12,16 +12,16 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useFolderCoreMutations', () => ({
+vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
   useDeleteMod: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useObjectMutations', () => ({
+vi.mock('./useObjectMutations', () => ({
   useDeleteObject: vi.fn(),
   useUpdateObject: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
 

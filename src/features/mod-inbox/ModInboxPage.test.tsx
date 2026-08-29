@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from '../../testing/test-utils';
+import { act, fireEvent, render, screen, waitFor } from '../../tests/testing/test-utils';
 import { listen } from '@tauri-apps/api/event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { commands } from '../../lib/bindings';
+import { commands } from '../../core/tauri/bindings';
 import { openImportBatchWizard } from '../import-batches/launcher';
 import { modInboxCommands } from './api';
 import ModInboxPage from './ModInboxPage';
@@ -33,7 +33,7 @@ vi.mock('../../stores/useAppStore', () => ({
   ),
 }));
 
-vi.mock('../../lib/bindings', () => ({
+vi.mock('../../core/tauri/bindings', () => ({
   commands: {
     createModInboxBatch: vi.fn(),
     createModInboxFolder: vi.fn(),
@@ -126,6 +126,7 @@ describe('ModInboxPage', () => {
     vi.mocked(modInboxCommands.getModInbox).mockResolvedValue(readySnapshot);
     vi.mocked(modInboxCommands.startModInboxWatcher).mockResolvedValue(undefined);
     vi.mocked(modInboxCommands.stopModInboxWatcher).mockResolvedValue(undefined);
+    
     vi.mocked(modInboxCommands.openModInboxFolder).mockResolvedValue(undefined);
     vi.mocked(commands.openInExplorer).mockResolvedValue(undefined as never);
     vi.mocked(listen).mockResolvedValue(vi.fn());
@@ -205,6 +206,7 @@ describe('ModInboxPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeEnabled());
     await waitFor(() => expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    
     expect(modInboxCommands.openModInboxFolder).toHaveBeenCalledWith('game-1');
   });
 

@@ -10,7 +10,7 @@ import ObjectRowItem from './ObjectRowItem';
 import CategorySection from './CategorySection';
 import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
 import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
-import { ContextMenu } from '../../../components/ui/ContextMenu';
+import { ContextMenu } from '../../../shared/components/ui/ContextMenu';
 import type { FlatItem } from '../hooks/useObjectListVirtualizer';
 import { maskWorkspaceNodeCapabilities } from '../../workspace-runtime/actions/workspaceActionAvailability';
 

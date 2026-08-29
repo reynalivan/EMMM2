@@ -1,12 +1,12 @@
 import { useState, useRef, useMemo } from 'react';
 import { useObjectListLogic } from './hooks/useObjectListLogic';
-import { useFileDrop } from '../../hooks/useFileDrop';
-import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
+import { useFileDrop } from '../../shared/hooks/useFileDrop';
+import { useDragAutoScroll } from '../../shared/hooks/useDragAutoScroll';
 import ObjectListToolbar from './components/ObjectListToolbar';
 import ObjectListContent, { type ContextMenuHandlerProps } from './components/ObjectListContent';
 import { useObjectListDropZones } from './hooks/useObjectListDropZones';
 import { useAppStore } from '../../stores/useAppStore';
-import { cn } from '../../lib/utils';
+import { cn } from '../../core/lib/utils';
 import { useObjectListEffects } from './hooks/useObjectListEffects';
 import ObjectListConflictBanner from './components/ObjectListConflictBanner';
 import ObjectListDropIndicators from './components/ObjectListDropIndicators';

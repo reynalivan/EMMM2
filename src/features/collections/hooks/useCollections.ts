@@ -13,12 +13,12 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { useTranslation } from 'react-i18next';
 import { toast } from '../../../stores/useToastStore';
 import { collectionKeys } from '../queryKeys';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import {
   extractFileInUsePayload,
   extractMissingModsPayload,
   formatAppError,
-} from '../../../lib/appError';
+} from '../../../core/lib/appError';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
@@ -27,8 +27,8 @@ import {
 import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import { openWorkspaceFileInUseDialog } from '../../workspace-runtime/state/workspaceDialogs';
-import type { RuntimeEffectDescriptor } from '../../../lib/runtimeEffects';
-import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
+import type { RuntimeEffectDescriptor } from '../../../core/lib/runtimeEffects';
+import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 import type {
   CollectionSummary,
   CollectionPreview,

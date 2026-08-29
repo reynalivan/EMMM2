@@ -17,9 +17,9 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
-import { cn, getFileUrl } from '../../../lib/utils';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { useThumbnail } from '../../../hooks/useThumbnail';
+import { cn, getFileUrl } from '../../../core/lib/utils';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { useThumbnail } from '../../dashboard/hooks/useThumbnail';
 import { buildWorkspaceSwitchPolicy } from '../../workspace-runtime/actions/workspaceSwitchPolicy';
 import { WorkspaceSwitchLabel } from '../../workspace-runtime/components/WorkspaceSwitchLabel';
 

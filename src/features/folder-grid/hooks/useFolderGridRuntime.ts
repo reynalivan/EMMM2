@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
-import { useResponsive } from '../../../hooks/useResponsive';
-import { sortFolders } from '../../../hooks/folderCache';
-import { useWorkspaceViewModel } from '../../workspace-runtime/useWorkspaceViewModel';
+import { useResponsive } from '../../../shared/hooks/useResponsive';
+import { sortFolders } from './folderCache';
+import { useWorkspaceViewModel } from '../../workspace-runtime/hooks/useWorkspaceViewModel';
 import { useFolderGridLayout } from './useFolderGridLayout';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { useAppStore } from '../../../stores/useAppStore';

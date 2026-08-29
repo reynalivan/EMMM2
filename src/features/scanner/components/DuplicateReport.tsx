@@ -4,7 +4,7 @@
  * Covers: TC-9.5-01, TC-9.5-02, TC-9.5-03 (UI presentation and user actions)
  */
 
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';

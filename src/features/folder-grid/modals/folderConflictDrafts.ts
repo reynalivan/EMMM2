@@ -1,4 +1,4 @@
-import type { FolderNameConflictCandidate } from '../../../lib/bindings';
+import type { FolderNameConflictCandidate } from '../../../core/tauri/bindings';
 
 export interface FolderConflictDraftState {
   drafts: Record<string, string>;

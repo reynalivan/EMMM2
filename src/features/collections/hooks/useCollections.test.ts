@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createWrapper } from '../../../testing/test-utils';
+import { createWrapper } from '../../../tests/testing/test-utils';
 import { collectionRuntimeKeys } from '../queryKeys';
 import {
   useApplyCollection,

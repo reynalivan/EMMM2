@@ -3,7 +3,7 @@ import { MoreVertical } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
-import { useModContextMenuItems } from '../../../hooks/useModContextMenuItems';
+import { useModContextMenuItems } from '../../folder-grid/hooks/useModContextMenuItems';
 import { useModContextMenuActions } from '../../mod-runtime/actions/useModContextMenuActions';
 
 interface PreviewPanelContextMenuProps {

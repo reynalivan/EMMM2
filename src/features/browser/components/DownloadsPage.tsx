@@ -4,9 +4,9 @@ import { useDownloads } from '../hooks/useDownloads';
 import { Download, PlayCircle, Trash2 } from 'lucide-react';
 import type { DownloadStatus } from '../types';
 import { GamePickerModal } from './GamePickerModal';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { BrowserDownloadItem } from '../types';
-import { formatBytes } from '../../../utils/formatters';
+import { formatBytes } from '../../../shared/utils/formatters';
 import { useTranslation } from 'react-i18next';
 
 export default function DownloadsPage() {

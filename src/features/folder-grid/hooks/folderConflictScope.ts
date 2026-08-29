@@ -1,4 +1,4 @@
-import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
+import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
 
 function comparablePath(path: string): string {
   return normalizeWorkspacePath(path).toLocaleLowerCase('en-US');

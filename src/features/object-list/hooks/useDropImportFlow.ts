@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { toast } from '../../../stores/useToastStore';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import { openImportBatchWizard } from '../../import-batches/launcher';

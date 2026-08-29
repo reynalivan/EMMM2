@@ -38,9 +38,9 @@ export type {
   WorkspaceWarning,
   WorkspaceWarningCode,
   WorkspaceWarningState,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';
 
-import type { WorkspaceExplorerNode, WorkspaceNode } from '../lib/bindings.gen';
+import type { WorkspaceExplorerNode, WorkspaceNode } from '../core/tauri/bindings.gen';
 
 /**
  * Frontend-only shared shape of workspace nodes (Rust flattens these fields

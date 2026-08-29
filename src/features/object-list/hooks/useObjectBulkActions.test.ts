@@ -16,7 +16,7 @@ const publishRuntimeDescriptor = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     pinObject: (...args: unknown[]) => pinObject(...args),
@@ -37,19 +37,19 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({}),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({ activeGame: { id: 'game-1' } }),
 }));
 
 // Run the wrapped mutation directly: the optimistic patch and its trailing
 // refresh are not what these tests are about.
-vi.mock('../../../hooks/objectQueryCache', () => ({
+vi.mock('./objectQueryCache', () => ({
   runObjectBatchMutation: async ({ mutation }: { mutation: () => Promise<void> }) => {
     await mutation();
   },
 }));
 
-vi.mock('../../../hooks/useObjectMutations', () => ({
+vi.mock('./useObjectMutations', () => ({
   useDeleteObject: () => ({ mutateAsync: vi.fn() }),
 }));
 

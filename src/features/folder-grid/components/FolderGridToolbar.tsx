@@ -1,7 +1,7 @@
 import { Search, ChevronLeft, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ExplorerBreadcrumbs from './Breadcrumbs';
-import { SafetyFilterControl } from '../../../components/ui/SafetyFilterControl';
+import { SafetyFilterControl } from '../../../shared/components/ui/SafetyFilterControl';
 import { useAppStore } from '../../../stores/useAppStore';
 
 export interface FolderGridToolbarProps {

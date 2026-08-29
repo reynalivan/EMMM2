@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, renderHook, waitFor } from '../../../testing/test-utils';
+import { act, cleanup, renderHook, waitFor } from '../../../tests/testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
 import * as usePreviewDataModule from './usePreviewData';
-import * as workspaceViewModelModule from '../../workspace-runtime/useWorkspaceViewModel';
+import * as workspaceViewModelModule from '../../workspace-runtime/hooks/useWorkspaceViewModel';
 import { useAppStore } from '../../../stores/useAppStore';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -45,7 +45,7 @@ vi.mock('../../../stores/useToastStore', () => ({
   },
 }));
 
-vi.mock('../../../hooks/useSettings', () => ({
+vi.mock('../../settings/hooks/useSettings', () => ({
   useSettings: vi.fn(() => ({
     data: { preview_auto_sync: false },
     isLoading: false,
@@ -64,7 +64,7 @@ vi.mock('./usePreviewData', () => ({
   useSelectedModPath: vi.fn(() => null),
 }));
 
-vi.mock('../../workspace-runtime/useWorkspaceViewModel', () => ({
+vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
   useWorkspaceViewModel: vi.fn(() => ({
     data: {
       preview: {

@@ -5,7 +5,7 @@ import {
   type WorkspaceRuntimeState,
   type WorkspaceTransitionTarget,
 } from '../../features/workspace-runtime/state/workspaceState';
-import { pathBasename, pathStartsWith } from '../../lib/pathKey';
+import { pathBasename, pathStartsWith } from '../../core/lib/pathKey';
 
 export function buildCurrentPath(
   selectedObjectFolderPath: string | null,

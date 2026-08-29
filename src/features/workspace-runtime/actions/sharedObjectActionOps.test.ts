@@ -6,7 +6,7 @@ const setModCategory = vi.fn();
 const setObjectModsCategory = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     setModCategory: (...args: unknown[]) => setModCategory(...args),

@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react';
 import { ChevronLeft, HardDrive, Play, StopCircle, EyeOff } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
-import { useActiveGame } from '../../hooks/useActiveGame';
+import { useActiveGame } from '../dashboard/hooks/useActiveGame';
 import { useCancelDedupScan, useIgnoredPairs, useStartDedupScan } from './hooks/useDedup';
 import type { DupScanEvent } from '../../types/scanner';
-import DedupFeature, { type DedupScanProgress } from './DedupFeature';
+import DedupFeature, { type DedupScanProgress } from './components/DedupFeature';
 import { IgnoredPairsModal } from './components/IgnoredPairsModal';
 import { useTranslation } from 'react-i18next';
-import { reduceDedupProgress } from './dedupProgress';
+import { reduceDedupProgress } from './utils/dedupProgress';
 
 const IDLE_PROGRESS: DedupScanProgress = {
   isScanning: false,

@@ -23,7 +23,7 @@ const toastInfo = vi.fn();
 const getReloadKeyCommand = vi.fn();
 const notifyCommittedMutationSyncWarning = vi.fn();
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
@@ -56,7 +56,7 @@ vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishQueryInvalidations: vi.fn(),
 }));
 
-vi.mock('../../../lib/committedMutationWarning', () => ({
+vi.mock('../../../core/lib/committedMutationWarning', () => ({
   notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
     notifyCommittedMutationSyncWarning(...args),
 }));

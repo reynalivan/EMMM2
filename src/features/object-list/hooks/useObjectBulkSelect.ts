@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { useRangeSelection } from '../../../hooks/useRangeSelection';
+import { useRangeSelection } from '../../../shared/hooks/useRangeSelection';
 import type { FlatItem } from './useObjectListVirtualizer';
 
 type RowItem = Extract<FlatItem, { type: 'row' }>;

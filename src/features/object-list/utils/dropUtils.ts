@@ -6,10 +6,10 @@
  * below are object-list's own.
  */
 
-import { allUnsupported, type ClassifiedPaths } from '../../../lib/dropClassification';
+import { allUnsupported, type ClassifiedPaths } from '../../../core/lib/dropClassification';
 
-export { classifyDroppedPaths, allUnsupported } from '../../../lib/dropClassification';
-export type { ClassifiedPaths } from '../../../lib/dropClassification';
+export { classifyDroppedPaths, allUnsupported } from '../../../core/lib/dropClassification';
+export type { ClassifiedPaths } from '../../../core/lib/dropClassification';
 
 /** Supported drop zone types in the ObjectList sidebar */
 export type DropZone = 'auto-organize' | 'item' | 'new-object';

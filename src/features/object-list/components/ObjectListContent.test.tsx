@@ -6,7 +6,7 @@ import type { FlatItem } from '../hooks/useObjectListVirtualizer';
 import type { WorkspaceCapabilities, WorkspaceObjectNode } from '../../../types/workspace';
 import { useObjectBulkSelect } from '../hooks/useObjectBulkSelect';
 
-vi.mock('../../../components/ui/ContextMenu', () => ({
+vi.mock('../../../shared/components/ui/ContextMenu', () => ({
   ContextMenu: ({ children, content }: { children: React.ReactNode; content: React.ReactNode }) => (
     <div>
       <div data-testid="context-content">{content}</div>

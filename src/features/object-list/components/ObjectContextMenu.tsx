@@ -2,7 +2,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuSub,
-} from '../../../components/ui/ContextMenu';
+} from '../../../shared/components/ui/ContextMenu';
 import {
   Edit,
   Trash2,

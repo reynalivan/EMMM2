@@ -1,1 +1,1 @@
-export type { PipelineTask, RecoveryAction, TaskStatus } from '../lib/bindings.gen';
+export type { PipelineTask, RecoveryAction, TaskStatus } from '../core/tauri/bindings.gen';

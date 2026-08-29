@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useThumbnail } from '../../../hooks/useThumbnail';
-import { formatWorkspaceWarning } from '../../workspace-runtime/workspaceSemantics';
+import { useThumbnail } from '../../dashboard/hooks/useThumbnail';
+import { formatWorkspaceWarning } from '../../workspace-runtime/utils/workspaceSemantics';
 import { buildWorkspaceSwitchPolicy } from '../../workspace-runtime/actions/workspaceSwitchPolicy';
 import { maskWorkspaceNodeCapabilities } from '../../workspace-runtime/actions/workspaceActionAvailability';
 import { getFolderTypeChip } from '../utils/FolderTypeChip';

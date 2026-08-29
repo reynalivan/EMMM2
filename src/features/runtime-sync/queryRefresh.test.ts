@@ -4,7 +4,7 @@ import {
   publishRuntimeDescriptor,
   runtimeQueryKeys,
 } from './queryRefresh';
-import type { RuntimeEffectDescriptor } from '../../lib/runtimeEffects';
+import type { RuntimeEffectDescriptor } from '../../core/lib/runtimeEffects';
 
 function createQueryClientMock() {
   return {

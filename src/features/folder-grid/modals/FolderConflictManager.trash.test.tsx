@@ -7,7 +7,7 @@ import FolderConflictManager from './FolderConflictManager';
 
 const notifyCommittedMutationSyncWarning = vi.fn();
 
-vi.mock('../../../lib/committedMutationWarning', () => ({
+vi.mock('../../../core/lib/committedMutationWarning', () => ({
   notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
     notifyCommittedMutationSyncWarning(...args),
 }));

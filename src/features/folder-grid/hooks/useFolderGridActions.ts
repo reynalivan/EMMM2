@@ -1,9 +1,9 @@
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useCallback, useMemo } from 'react';
 import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { commands } from '../../../core/tauri/bindings';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { toast } from '../../../stores/useToastStore';
 import { useSharedModActions } from '../../mod-runtime/actions/useSharedModActions';
 import {

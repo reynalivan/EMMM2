@@ -1,7 +1,7 @@
-import { stripTypedDisabledPrefix } from '../../../lib/disabledPrefix';
+import { stripTypedDisabledPrefix } from '../../../core/lib/disabledPrefix';
 import { useState, memo, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { ContextMenu } from '../../../components/ui/ContextMenu';
+import { ContextMenu } from '../../../shared/components/ui/ContextMenu';
 import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import FolderCardContextMenu from './FolderCardContextMenu';

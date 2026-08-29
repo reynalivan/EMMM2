@@ -1,10 +1,10 @@
 import type { MoveStatus } from '../../../types/mod';
 import type { ModFolder } from '../../../types/object';
-import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
-import ConfirmDialog from '../../../components/ui/ConfirmDialog';
+import MoveToObjectDialog from '../../object-list/modals/MoveToObjectDialog';
+import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import IgnoreManagementModal from './IgnoreManagementModal';
-import BulkTagModal from '../../../components/modals/BulkTagModal';
-import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
+import BulkTagModal from '../../mod-runtime/modals/BulkTagModal';
+import ActiveModContextDialog from '../../mod-runtime/modals/ActiveModContextDialog';
 import type { ObjectSummary } from '../../../types/object';
 import { useTranslation } from 'react-i18next';
 

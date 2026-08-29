@@ -9,7 +9,7 @@ import {
 } from './descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from './descriptor';
 import { useAppStore } from '../../../stores/useAppStore';
-import { thumbnailKeys } from '../../../hooks/useThumbnail';
+import { thumbnailKeys } from '../../dashboard/hooks/useThumbnail';
 import { detailsKeys } from '../../preview/hooks/usePreviewData';
 
 describe('applyRuntimeEffects', () => {

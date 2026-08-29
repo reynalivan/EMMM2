@@ -1,24 +1,24 @@
-import { formatAppError } from '../../lib/appError';
+import { formatAppError } from '../../core/lib/appError';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../lib/bindings';
+import { commands } from '../../core/tauri/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { GameConfig } from '../../types/game';
-import { pathsEqual } from '../../lib/pathKey';
-import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
-import { ManualSetupForm } from './ManualSetupForm';
-import { AutoDetectResult } from './AutoDetectResult';
-import AuroraBackground from './welcome/AuroraBackground';
-import SmartDemoStrip from './welcome/SmartDemoStrip';
-import AnimatedLogo from './welcome/AnimatedLogo';
-import { useOnboardingDiskProgress } from './useOnboardingDiskProgress';
+import { pathsEqual } from '../../core/lib/pathKey';
+import { usePrefersReducedMotion } from '../../shared/hooks/usePrefersReducedMotion';
+import { ManualSetupForm } from './components/ManualSetupForm';
+import { AutoDetectResult } from './components/AutoDetectResult';
+import AuroraBackground from './components/welcome/AuroraBackground';
+import SmartDemoStrip from './components/welcome/SmartDemoStrip';
+import AnimatedLogo from './components/welcome/AnimatedLogo';
+import { useOnboardingDiskProgress } from './hooks/useOnboardingDiskProgress';
 import {
   estimatedRemainingMs,
   formatEstimatedDuration,
   type IndexingProgress,
-} from './indexingProgress';
+} from './utils/indexingProgress';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 

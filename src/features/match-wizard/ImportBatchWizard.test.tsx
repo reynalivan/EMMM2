@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ImportBatch, ImportItem } from '../../lib/bindings.gen';
+import type { ImportBatch, ImportItem } from '../../core/tauri/bindings.gen';
 import { ImportBatchWizard } from './ImportBatchWizard';
 
 vi.mock('react-i18next', () => ({

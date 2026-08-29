@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   isPending: false,
 }));
 
-vi.mock('../../hooks/useDialogSync', () => ({
+vi.mock('../../shared/hooks/useDialogSync', () => ({
   useDialogSync: vi.fn(),
 }));
 
@@ -22,17 +22,17 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../hooks/useBulkModMutations', () => ({
+vi.mock('../mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutateAsync: mocks.bulkToggle, isPending: mocks.isPending }),
 }));
 
-vi.mock('../../lib/bindings', () => ({
+vi.mock('../../core/tauri/bindings', () => ({
   commands: {
     openInExplorer: (...args: unknown[]) => mocks.openInExplorer(...args),
   },
 }));
 
-vi.mock('../../lib/appError', () => ({
+vi.mock('../../core/lib/appError', () => ({
   formatAppError: (error: unknown) => String(error),
 }));
 

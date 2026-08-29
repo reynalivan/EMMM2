@@ -5,7 +5,7 @@
 
 import { FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import ListStateView, { ListEmptyState } from '../../../components/ui/ListStateView';
+import ListStateView, { ListEmptyState } from '../../../shared/components/ui/ListStateView';
 
 interface StatesProps {
   isLoading: boolean;

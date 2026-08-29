@@ -1,4 +1,4 @@
-import { useDialogSync } from '../../../hooks/useDialogSync';
+import { useDialogSync } from '../../../shared/hooks/useDialogSync';
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Keyboard, Check, X, Lightbulb } from 'lucide-react';

@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { useAppStore } from '../../../stores/useAppStore';
-import { applyDiskReconcileResult } from '../../file-watcher/hooks';
+import { applyDiskReconcileResult } from '../../file-watcher/hooks/useFileWatcher';
 
 export function useApplyFolderConflictActionResult() {
   const queryClient = useQueryClient();

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '../../../testing/test-utils';
+import { render, screen, fireEvent } from '../../../tests/testing/test-utils';
 import DuplicateTable from './DuplicateTable';
 import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 

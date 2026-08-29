@@ -9,10 +9,10 @@ import type {
   ImportItem,
   JsonValue,
   StableCategory,
-} from '../../lib/bindings.gen';
+} from '../../core/tauri/bindings.gen';
 import type { ObjectSummary } from '../../types/object';
-import { destinationDecision } from './importBatchDecision';
-import { ImportBatchWizardItemRow } from './ImportBatchWizardItemRow';
+import { destinationDecision } from './utils/importBatchDecision';
+import { ImportBatchWizardItemRow } from './components/ImportBatchWizardItemRow';
 
 type Props = {
   batch: ImportBatch;

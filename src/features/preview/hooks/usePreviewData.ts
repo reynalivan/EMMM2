@@ -1,10 +1,10 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '../../../types/object';
-import { commands, sparse } from '../../../lib/bindings';
+import { commands, sparse } from '../../../core/tauri/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { publishQueryInvalidations, publishQueryScopes } from '../../runtime-sync/queryRefresh';
-import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
+import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 
 export interface IniFileEntry {
   filename: string;

@@ -1,4 +1,4 @@
-import { useGameSchema } from '../../../hooks/useObjectQueries';
+import { useGameSchema } from '../hooks/useObjectQueries';
 import type { ObjectSummary, FilterDef } from '../../../types/object';
 import type { ModFolder } from '../../../types/object';
 import { X } from 'lucide-react';
@@ -6,7 +6,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { useEditObjectForm } from '../hooks/useEditObjectForm';
 import { useMasterDbSync, type DbEntryFull } from '../hooks/useMasterDbSync';
 import { EditObjectTabManual } from './EditObjectTabManual';

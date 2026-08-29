@@ -20,7 +20,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'game-1',
@@ -29,7 +29,7 @@ vi.mock('../../../hooks/useActiveGame', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useThumbnail', () => ({
+vi.mock('../../dashboard/hooks/useThumbnail', () => ({
   useThumbnail: () => ({
     data: null,
   }),

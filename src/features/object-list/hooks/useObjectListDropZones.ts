@@ -1,5 +1,5 @@
 import { useState, useCallback, type RefObject } from 'react';
-import type { DragPosition } from '../../../hooks/useFileDrop';
+import type { DragPosition } from '../../../shared/hooks/useFileDrop';
 import { classifyDroppedPaths, validateDropForZone, type DropZone } from '../utils/dropUtils';
 
 export type { DropZone } from '../utils/dropUtils';

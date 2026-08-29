@@ -1,6 +1,6 @@
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { DbEntry } from '../../../types/object';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { DashboardPayload } from '../../../types/dashboard';
 import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 

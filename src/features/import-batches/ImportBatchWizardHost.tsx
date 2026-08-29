@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../lib/bindings';
+import { commands } from '../../core/tauri/bindings';
 import type {
   DestinationSuggestion,
   GameSchema,
@@ -11,9 +11,9 @@ import type {
   ImportItem,
   JsonValue,
   StableCategory,
-} from '../../lib/bindings.gen';
+} from '../../core/tauri/bindings.gen';
 import type { ObjectSummary } from '../../types/object';
-import { formatAppError } from '../../lib/appError';
+import { formatAppError } from '../../core/lib/appError';
 import { toast } from '../../stores/useToastStore';
 import { useAppStore } from '../../stores/useAppStore';
 import { ImportBatchWizard } from '../match-wizard/ImportBatchWizard';

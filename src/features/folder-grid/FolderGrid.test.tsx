@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import FolderGrid from './FolderGrid';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { createWrapper } from '../../testing/test-utils';
+import { createWrapper } from '../../tests/testing/test-utils';
 import { ModFolder } from '../../types/object';
 
 // Mock the hook!
@@ -26,15 +26,15 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
-vi.mock('../../hooks/useFolderMutations', () => ({
+vi.mock('./hooks/useFolderMutations', () => ({
   useActiveConflicts: () => ({ data: [] }),
 }));
 
-vi.mock('../../hooks/useSettings', () => ({
+vi.mock('../settings/hooks/useSettings', () => ({
   useSettings: () => ({ data: { organize_subfolders: true }, isLoading: false }),
 }));
 
-vi.mock('../../hooks/useActiveGame', () => ({
+vi.mock('../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({ activeGame: { id: 'test-game', mod_path: 'C:\\mods' } }),
 }));
 
@@ -49,7 +49,7 @@ vi.mock('./components/FolderListRow', () => ({
   default: ({ item }: { item: ModFolder }) => <div data-testid="folder-row">{item.name}</div>,
 }));
 
-vi.mock('../../components/ui/ContextMenu', () => ({
+vi.mock('../../shared/components/ui/ContextMenu', () => ({
   ContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ContextMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ContextMenuSeparator: () => <hr />,
@@ -59,11 +59,11 @@ vi.mock('./components/DragOverlay', () => ({
   default: () => <div>DragOverlay</div>,
 }));
 
-vi.mock('../../components/ui/ConfirmDialog', () => ({
+vi.mock('../../shared/components/ui/ConfirmDialog', () => ({
   default: ({ open }: { open: boolean }) => (open ? <div>ConfirmDialog</div> : null),
 }));
 
-vi.mock('../../components/modals/BulkTagModal', () => ({
+vi.mock('../mod-runtime/modals/BulkTagModal', () => ({
   BulkTagModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div>BulkTagModal</div> : null),
 }));
 

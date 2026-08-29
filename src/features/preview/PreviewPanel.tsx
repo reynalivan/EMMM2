@@ -5,7 +5,7 @@ import { useAppStore } from '../../stores/useAppStore';
 import GallerySection from './components/GallerySection';
 import MetadataSection from './components/MetadataSection';
 import IniEditorSection from './components/IniEditorSection';
-import { useActiveGame } from '../../hooks/useActiveGame';
+import { useActiveGame } from '../dashboard/hooks/useActiveGame';
 import { usePreviewPanelState } from './hooks/usePreviewPanelState';
 import PreviewPanelModals from './components/PreviewPanelModals';
 import { useSharedModActions } from '../mod-runtime/actions/useSharedModActions';
@@ -13,7 +13,7 @@ import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntime,
 } from '../workspace-runtime/state/workspaceStoreBridge';
-import { formatWorkspaceWarning } from '../workspace-runtime/workspaceSemantics';
+import { formatWorkspaceWarning } from '../workspace-runtime/utils/workspaceSemantics';
 import { usePreviewActions } from './hooks/usePreviewActions';
 import { usePreviewEffects } from './hooks/usePreviewEffects';
 import PreviewEmptyState from './components/PreviewEmptyState';

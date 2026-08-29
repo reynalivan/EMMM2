@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { open } from '@tauri-apps/plugin-dialog';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 import WorkspaceSourceUnavailableDialog from './WorkspaceSourceUnavailableDialog';
 
@@ -23,16 +23,16 @@ const fixtures = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({ activeGame: fixtures.activeGame }),
 }));
-vi.mock('../../../hooks/useSettings', () => ({
+vi.mock('../../settings/hooks/useSettings', () => ({
   useSettings: () => ({
     settings: fixtures.settings,
     saveSettingsAsync: fixtures.saveSettingsAsync,
   }),
 }));
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   commands: {
     checkPathExistsCmd: vi.fn(),
     resolveGameFolder: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock('../../../lib/bindings', () => ({
     reconcileDiskStateCmd: vi.fn(),
   },
 }));
-vi.mock('../../file-watcher/hooks', () => ({ applyDiskReconcileResult: vi.fn() }));
+vi.mock('../../file-watcher/hooks/useFileWatcher', () => ({ applyDiskReconcileResult: vi.fn() }));
 vi.mock('../../../stores/useToastStore', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));

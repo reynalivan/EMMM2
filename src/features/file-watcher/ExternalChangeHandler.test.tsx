@@ -2,7 +2,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { commands, type DiskReconcileResult } from '../../lib/bindings';
+import { commands, type DiskReconcileResult } from '../../core/tauri/bindings';
 import { useAppStore } from '../../stores/useAppStore';
 import { GameType, type GameConfig } from '../../types/game';
 import { runtimeQueryKeys } from '../runtime-sync/queryRefresh';
@@ -24,7 +24,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
 }));
 
-vi.mock('../../lib/bindings', () => ({
+vi.mock('../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     stopWatcher: vi.fn().mockResolvedValue(undefined),
@@ -33,7 +33,7 @@ vi.mock('../../lib/bindings', () => ({
   },
 }));
 
-vi.mock('../../hooks/useActiveGame', () => ({
+vi.mock('../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({
     activeGame: activeGameFixture.current,
   }),

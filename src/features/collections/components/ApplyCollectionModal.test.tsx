@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '../../../testing/test-utils';
+import { fireEvent, render, screen, waitFor } from '../../../tests/testing/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApplyCollectionModal } from './ApplyCollectionModal';
 import { useAppStore } from '../../../stores/useAppStore';

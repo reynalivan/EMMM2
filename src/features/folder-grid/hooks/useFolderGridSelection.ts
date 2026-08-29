@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { ModFolder } from '../../../types/object';
 import { useFolderNavigation } from './useFolderNavigation';
-import { useRangeSelection } from '../../../hooks/useRangeSelection';
-import { normalizeWorkspacePath } from '../../workspace-runtime/pathRewrite';
+import { useRangeSelection } from '../../../shared/hooks/useRangeSelection';
+import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
 
 const getFolderPath = (folder: ModFolder) => folder.path;
 

@@ -2,7 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboardStats } from './useDashboardStats';
 import { invoke } from '@tauri-apps/api/core';
-import { createWrapper } from '../../../testing/test-utils';
+import { createWrapper } from '../../../tests/testing/test-utils';
 import type { DashboardPayload } from '../../../types/dashboard';
 
 // Restore real @tanstack/react-query — the global setupTests stub

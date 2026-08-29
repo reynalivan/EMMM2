@@ -16,4 +16,4 @@ export type {
   ProjectedCollectionState,
   ProjectedObjectState,
   ProjectedStateSummary,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';

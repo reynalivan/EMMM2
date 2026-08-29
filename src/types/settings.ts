@@ -5,4 +5,4 @@ export type {
   HotkeyConfig,
   KeyViewerConfig,
   SafetyConfig,
-} from '../lib/bindings.gen';
+} from '../core/tauri/bindings.gen';

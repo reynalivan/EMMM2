@@ -1,4 +1,4 @@
-import { render, screen } from '../../testing/test-utils';
+import { render, screen } from '../../tests/testing/test-utils';
 import { describe, it, expect } from 'vitest';
 
 describe('Frontend Infrastructure', () => {

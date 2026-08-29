@@ -1,5 +1,5 @@
 import { parseTagList } from '../utils/bulkSummary';
-import BulkTagModal from '../../../components/modals/BulkTagModal';
+import BulkTagModal from '../../mod-runtime/modals/BulkTagModal';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 
 interface Props {

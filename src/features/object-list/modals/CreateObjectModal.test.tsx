@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import CreateObjectModal from './CreateObjectModal';
-import { useCreateObject } from '../../../hooks/useObjectMutations';
+import { useCreateObject } from '../hooks/useObjectMutations';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -17,16 +17,16 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useObjectMutations', () => ({
+vi.mock('../hooks/useObjectMutations', () => ({
   useCreateObject: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false, isError: false })),
 }));
 
-vi.mock('../../../hooks/useObjectQueries', () => ({
+vi.mock('../hooks/useObjectQueries', () => ({
   useGameSchema: vi.fn(() => ({
     data: { categories: [{ name: 'Character', label: 'Characters', filters: [] }] },
   })),
 }));
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
 vi.mock('../../../stores/useToastStore', () => ({

@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ObjectListModals from './ObjectListModals';
 
-vi.mock('../../../components/ui/ConfirmDialog', () => ({
+vi.mock('../../../shared/components/ui/ConfirmDialog', () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div data-testid="confirm-dialog">Confirm Dialog</div> : null,
 }));

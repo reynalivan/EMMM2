@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../lib/bindings';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { runObjectBatchMutation } from '../../../hooks/objectQueryCache';
-import { useDeleteObject, useUpdateObject } from '../../../hooks/useObjectMutations';
+import { commands } from '../../../core/tauri/bindings';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { runObjectBatchMutation } from '../../object-list/hooks/objectQueryCache';
+import { useDeleteObject, useUpdateObject } from '../../object-list/hooks/useObjectMutations';
 import { toast } from '../../../stores/useToastStore';
 import type { GameSchema } from '../../../types/object';
 import type { WorkspaceObjectNode } from '../../../types/workspace';

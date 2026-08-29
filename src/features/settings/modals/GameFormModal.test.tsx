@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GameType } from '../../../types/game';
 import GameFormModal from './GameFormModal';
 
-vi.mock('../../../hooks/useDialogSync', () => ({ useDialogSync: vi.fn() }));
+vi.mock('../../../shared/hooks/useDialogSync', () => ({ useDialogSync: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

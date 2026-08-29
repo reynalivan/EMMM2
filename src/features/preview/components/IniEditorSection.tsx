@@ -2,7 +2,7 @@ import { Edit2, ExternalLink, Keyboard, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-shell';
-import type { KeyBindSectionGroup } from '../previewPanelUtils';
+import type { KeyBindSectionGroup } from '../utils/previewPanelUtils';
 import { AdvancedKeybindModal } from './AdvancedKeybindModal';
 interface IniEditorSectionProps {
   activePath: string | null;

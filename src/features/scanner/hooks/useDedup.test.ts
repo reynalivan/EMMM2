@@ -12,9 +12,9 @@ import {
   useCancelDedupScan,
   useResolveDuplicates,
 } from './useDedup';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../../types/scanner';
-import { createWrapper } from '../../../testing/test-utils';
+import { createWrapper } from '../../../tests/testing/test-utils';
 import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 vi.unmock('@tanstack/react-query');
@@ -27,7 +27,7 @@ vi.mock('@tauri-apps/api/core', () => {
   return { invoke: vi.fn(), Channel: ChannelMock };
 });
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     dupScanGetReport: vi.fn(),

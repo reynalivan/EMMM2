@@ -1,7 +1,7 @@
 import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { FolderConflictSummary, FolderNameConflictCandidate } from '../../../lib/bindings';
-import { formatBytes } from '../../../utils/formatters';
+import type { FolderConflictSummary, FolderNameConflictCandidate } from '../../../core/tauri/bindings';
+import { formatBytes } from '../../../shared/utils/formatters';
 
 interface Props {
   candidate: FolderNameConflictCandidate;

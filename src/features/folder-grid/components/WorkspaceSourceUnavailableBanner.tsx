@@ -1,11 +1,11 @@
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useState } from 'react';
 import { AlertTriangle, FolderSearch, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { applyDiskReconcileResult } from '../../file-watcher/hooks';
+import { commands } from '../../../core/tauri/bindings';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { applyDiskReconcileResult } from '../../file-watcher/hooks/useFileWatcher';
 import { toast } from '../../../stores/useToastStore';
 import { openWorkspaceSourceRecoveryDialog } from '../../workspace-runtime/state/workspaceDialogs';
 

@@ -1,4 +1,4 @@
-import { useDialogSync } from '../../../hooks/useDialogSync';
+import { useDialogSync } from '../../../shared/hooks/useDialogSync';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,10 +7,10 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { X, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { GameConfig } from '../../../hooks/useSettings';
+import type { GameConfig } from '../hooks/useSettings';
 import { GameType } from '../../../types/game';
-import { pathsEqual } from '../../../lib/pathKey';
-import { formatAppError } from '../../../lib/appError';
+import { pathsEqual } from '../../../core/lib/pathKey';
+import { formatAppError } from '../../../core/lib/appError';
 
 function getGameSchema(t: TFunction) {
   return z.object({

@@ -1,15 +1,15 @@
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useGameSchema } from '../../../hooks/useObjectQueries';
-import { useActiveGame } from '../../../hooks/useActiveGame';
-import { useResponsive } from '../../../hooks/useResponsive';
+import { useGameSchema } from './useObjectQueries';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
+import { useResponsive } from '../../../shared/hooks/useResponsive';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
 import type { FilterDef } from '../../../types/object';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
-import { useWorkspaceViewModel } from '../../workspace-runtime/useWorkspaceViewModel';
+import { useWorkspaceViewModel } from '../../workspace-runtime/hooks/useWorkspaceViewModel';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../../workspace-runtime/actions/workspaceActionAvailability';
 import { useWorkspaceRuntime } from '../../workspace-runtime/state/workspaceStoreBridge';
 import {

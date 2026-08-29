@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DashboardQuickActions } from './DashboardQuickActions';
 
-vi.mock('../../../lib/bindings', () => ({ commands: { launchGame: vi.fn() } }));
+vi.mock('../../../core/tauri/bindings', () => ({ commands: { launchGame: vi.fn() } }));
 
 describe('DashboardQuickActions', () => {
   it('opens Mod Inbox from its dashboard tile', () => {

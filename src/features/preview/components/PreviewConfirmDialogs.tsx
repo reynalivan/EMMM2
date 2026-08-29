@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import ConfirmDialog from '../../../components/ui/ConfirmDialog';
+import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import UnsavedIniChangesModal, {
   type IniChange,
   type MetadataChange,

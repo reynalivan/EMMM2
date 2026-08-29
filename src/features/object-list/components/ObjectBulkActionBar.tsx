@@ -11,7 +11,7 @@ import {
   StarOff,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import SharedBulkActionBar from '../../../components/ui/BulkActionBar';
+import SharedBulkActionBar from '../../../shared/components/ui/BulkActionBar';
 
 interface ObjectBulkActionBarProps {
   count: number;

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '../../testing/test-utils';
+import { render, screen, fireEvent, waitFor } from '../../tests/testing/test-utils';
 import Dashboard from './Dashboard';
 
 // Mock Tauri invoke
@@ -42,7 +42,7 @@ vi.mock('./hooks/useActiveKeybindings', () => ({
   useActiveKeybindings: vi.fn(),
 }));
 
-vi.mock('../../hooks/useActiveGame', () => ({
+vi.mock('./hooks/useActiveGame', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'g-1',

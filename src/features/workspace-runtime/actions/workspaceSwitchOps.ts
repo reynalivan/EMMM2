@@ -6,8 +6,8 @@
  */
 
 import type { QueryClient } from '@tanstack/react-query';
-import { commands } from '../../../lib/bindings';
-import { extractFileInUsePayload, formatAppError } from '../../../lib/appError';
+import { commands } from '../../../core/tauri/bindings';
+import { extractFileInUsePayload, formatAppError } from '../../../core/lib/appError';
 import { toast } from '../../../stores/useToastStore';
 import { useAppStore } from '../../../stores/useAppStore';
 import type {
@@ -29,7 +29,7 @@ import {
   openRenameConfirmationDialog,
   openWorkspaceFileInUseDialog,
 } from '../state/workspaceDialogs';
-import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
+import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 
 export type WorkspaceSwitchSurface = 'folder_grid' | 'preview' | 'object_list' | 'collections';
 

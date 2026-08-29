@@ -4,17 +4,17 @@
  */
 
 import { DynamicMetadataFields } from './DynamicMetadataFields';
-import { formatAppError } from '../../../lib/appError';
+import { formatAppError } from '../../../core/lib/appError';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { X } from 'lucide-react';
 import { useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGameSchema } from '../../../hooks/useObjectQueries';
-import { useCreateObject } from '../../../hooks/useObjectMutations';
+import { useGameSchema } from '../hooks/useObjectQueries';
+import { useCreateObject } from '../hooks/useObjectMutations';
 import type { JsonValue } from '../../../types/object';
-import { useActiveGame } from '../../../hooks/useActiveGame';
+import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { toast } from '../../../stores/useToastStore';
 import { type FilterDef, ItemStatus } from '../../../types/object';
 

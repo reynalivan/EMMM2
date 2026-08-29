@@ -1,4 +1,4 @@
-import { formatAppError } from '../../lib/appError';
+import { formatAppError } from '../../core/lib/appError';
 import { Fragment, useState } from 'react';
 import {
   ArrowLeft,
@@ -13,17 +13,17 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from './hooks/useSettings';
 import { useAppStore } from '../../stores/useAppStore'; // Import Store
-import GamesTab from './tabs/GamesTab';
-import PrivacyTab from './tabs/PrivacyTab';
-import MaintenanceTab from './tabs/MaintenanceTab';
-import GeneralTab from './tabs/GeneralTab';
-import LogsTab from './tabs/LogsTab';
-import AITab from './tabs/AITab';
-import UpdateTab from './tabs/UpdateTab';
-import HotkeyTab from './tabs/HotkeyTab';
-import BrowserTab from './tabs/BrowserTab';
+import GamesTab from './components/tabs/GamesTab';
+import PrivacyTab from './components/tabs/PrivacyTab';
+import MaintenanceTab from './components/tabs/MaintenanceTab';
+import GeneralTab from './components/tabs/GeneralTab';
+import LogsTab from './components/tabs/LogsTab';
+import AITab from './components/tabs/AITab';
+import UpdateTab from './components/tabs/UpdateTab';
+import HotkeyTab from './components/tabs/HotkeyTab';
+import BrowserTab from './components/tabs/BrowserTab';
 
 // `dividerBefore` keeps the visual break above Logs without a second array.
 const TABS = [

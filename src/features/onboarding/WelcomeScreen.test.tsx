@@ -11,16 +11,16 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
 // Mock heavily styled/animated child components to simplify the test tree
-vi.mock('./welcome/AuroraBackground', () => ({
+vi.mock('./components/welcome/AuroraBackground', () => ({
   default: () => <div data-testid="aurora-bg">Aurora</div>,
 }));
-vi.mock('./welcome/SmartDemoStrip', () => ({
+vi.mock('./components/welcome/SmartDemoStrip', () => ({
   default: () => <div data-testid="demo-strip">Strip</div>,
 }));
-vi.mock('./welcome/AnimatedLogo', () => ({
+vi.mock('./components/welcome/AnimatedLogo', () => ({
   default: () => <div data-testid="logo">Logo</div>,
 }));
-vi.mock('./ManualSetupForm', () => ({
+vi.mock('./components/ManualSetupForm', () => ({
   ManualSetupForm: ({
     onBack,
     onSuccess,
@@ -49,7 +49,7 @@ vi.mock('./ManualSetupForm', () => ({
     </div>
   ),
 }));
-vi.mock('./AutoDetectResult', () => ({
+vi.mock('./components/AutoDetectResult', () => ({
   AutoDetectResult: ({
     games,
     onConfirm,

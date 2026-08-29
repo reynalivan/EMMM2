@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '../../../testing/test-utils';
+import { render, screen, fireEvent, waitFor } from '../../../tests/testing/test-utils';
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
 import type { DupScanReport, DupScanGroup, DuplicateSelection } from '../../../types/scanner';

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { useBulkProgress } from '../hooks/useBulkProgress';
 
 export default function BulkProgressBar() {

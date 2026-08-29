@@ -5,7 +5,7 @@ import { useAppStore } from '../../../stores/useAppStore';
 import { useDownloads } from '../hooks/useDownloads';
 import { useTranslation } from 'react-i18next';
 import type { BrowserDownloadItem } from '../types';
-import { formatBytes } from '../../../utils/formatters';
+import { formatBytes } from '../../../shared/utils/formatters';
 
 interface Props {
   onImportSelected: (ids: string[], gameId: string) => void;

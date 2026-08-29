@@ -1,4 +1,4 @@
-import { commands } from '../../../lib/bindings';
+import { commands } from '../../../core/tauri/bindings';
 import { listen } from '@tauri-apps/api/event';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';

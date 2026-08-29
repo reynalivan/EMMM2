@@ -32,7 +32,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/useActiveGame', () => ({
+vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'game-1',
@@ -41,23 +41,23 @@ vi.mock('../../../hooks/useActiveGame', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/folderCache', () => ({
+vi.mock('../../folder-grid/hooks/folderCache', () => ({
   updateFolderCache: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useBulkModMutations', () => ({
+vi.mock('../hooks/useBulkModMutations', () => ({
   useBulkFavorite: () => ({
     mutate: bulkFavoriteMutate,
   }),
 }));
 
-vi.mock('../../../hooks/useFolderMutations', () => ({
+vi.mock('../../folder-grid/hooks/useFolderMutations', () => ({
   useToggleModSafe: () => ({
     mutate: toggleSafeMutate,
   }),
 }));
 
-vi.mock('../../../hooks/useFolderCoreMutations', () => ({
+vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
   useRenameMod: () => ({
     mutateAsync: renameMutateAsync,
   }),
@@ -82,7 +82,7 @@ vi.mock('../../import-batches/classificationLauncher', () => ({
   openObjectClassificationWizard: (...args: unknown[]) => openObjectClassificationWizard(...args),
 }));
 
-vi.mock('../../../lib/bindings', () => ({
+vi.mock('../../../core/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     toggleModSafe: vi.fn(),
