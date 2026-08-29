@@ -14,13 +14,13 @@ pub async fn get_duplicates_for_mod_service(
     folder_path: &str,
     game_id: &str,
 ) -> Result<Vec<crate::domain::mods::DuplicateModInfo>, AppError> {
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .unwrap_or_default();
 
     // Resolve the object_id for the given folder
     let object_id =
-        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, folder_path, game_id)
+        crate::repo::mods::get_object_id_by_folder_and_game(pool, folder_path, game_id)
             .await
             .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
 
@@ -30,7 +30,7 @@ pub async fn get_duplicates_for_mod_service(
     };
 
     let duplicates =
-        crate::repo::mod_repo::get_enabled_duplicates(pool, &object_id, game_id, folder_path)
+        crate::repo::mods::get_enabled_duplicates(pool, &object_id, game_id, folder_path)
             .await
             .map_err(|e| AppError::Io(format!("DB duplicate query failed: {e}")))?;
 
@@ -70,7 +70,7 @@ pub async fn get_duplicates_for_mod_service(
 
     // Include the target mod ID in the set to check for ignores
     let target_mod_id_search: Result<Option<(String, Option<String>, i64)>, sqlx::Error> =
-        crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, folder_path, game_id).await;
+        crate::repo::mods::get_mod_id_and_status_by_path(pool, folder_path, game_id).await;
 
     let target_mod_id = match target_mod_id_search {
         Ok(Some((id, _, _))) => id,
@@ -82,7 +82,7 @@ pub async fn get_duplicates_for_mod_service(
     }
 
     // Check if this specific combination is ignored
-    let ignored = crate::repo::conflict_repo::is_conflict_ignored(
+    let ignored = crate::repo::conflict::is_conflict_ignored(
         pool,
         game_id,
         &object_id,
@@ -110,7 +110,7 @@ pub async fn enable_only_this_service(
     use crate::services::mods::core_ops::toggle_mod_inner;
     use std::path::Path;
 
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods path".to_string()))?;
 
@@ -124,12 +124,12 @@ pub async fn enable_only_this_service(
     let mut path_rewrites = Vec::new();
 
     let target_object_id =
-        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &target_rel, game_id)
+        crate::repo::mods::get_object_id_by_folder_and_game(pool, &target_rel, game_id)
             .await
             .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
 
     if let Some(object_id) = target_object_id {
-        let sibling_paths = crate::repo::mod_repo::get_enabled_siblings_paths(
+        let sibling_paths = crate::repo::mods::get_enabled_siblings_paths(
             pool,
             &object_id,
             game_id,

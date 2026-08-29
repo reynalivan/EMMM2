@@ -73,7 +73,7 @@ async fn heal_object_root_path(
         return Ok(());
     }
 
-    crate::repo::object_repo::update_object_runtime_folder_path(
+    crate::repo::object::update_object_runtime_folder_path(
         pool,
         game_id,
         old_folder_path,
@@ -81,7 +81,7 @@ async fn heal_object_root_path(
     )
     .await?;
 
-    crate::repo::mod_repo::update_child_paths(
+    crate::repo::mods::update_child_paths(
         pool,
         game_id,
         old_folder_path,
@@ -90,13 +90,13 @@ async fn heal_object_root_path(
     )
     .await?;
 
-    if crate::services::collection_service::classify_collection_path_transition(
+    if crate::services::collection::classify_collection_path_transition(
         old_folder_path,
         new_folder_path,
-    ) == crate::services::collection_service::CollectionPathTransitionKind::SemanticMoveOrRename
+    ) == crate::services::collection::CollectionPathTransitionKind::SemanticMoveOrRename
     {
         let mut tx = pool.begin().await?;
-        crate::services::collection_service::handle_object_renamed_tx(
+        crate::services::collection::handle_object_renamed_tx(
             &mut tx,
             game_id,
             old_folder_path,
@@ -122,10 +122,10 @@ pub(super) async fn resolve_object_root_path(
     ),
     AppError,
 > {
-    let object = crate::repo::object_repo::get_game_object_by_id(pool, object_id)
+    let object = crate::repo::object::get_game_object_by_id(pool, object_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Object not found: {object_id}")))?;
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
     let mods_root = Path::new(&mods_path);

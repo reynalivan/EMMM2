@@ -1,4 +1,4 @@
-use crate::repo::dashboard_repo;
+use crate::repo::dashboard;
 use sqlx::SqlitePool;
 use std::str::FromStr;
 
@@ -170,7 +170,7 @@ async fn test_stats_accuracy() {
     )
     .await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
+    let stats = dashboard::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(stats.total_mods, 5);
     assert_eq!(stats.enabled_mods, 3);
     assert_eq!(stats.disabled_mods, 2);
@@ -209,7 +209,7 @@ async fn test_dashboard_includes_all_safety_classifications() {
     )
     .await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
+    let stats = dashboard::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(stats.total_mods, 2);
     assert_eq!(stats.enabled_mods, 2);
     assert_eq!(stats.total_size_bytes, 3000);
@@ -221,7 +221,7 @@ async fn test_dashboard_includes_all_safety_classifications() {
 async fn test_zero_data_empty_db() {
     let pool = setup_pool().await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
+    let stats = dashboard::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(stats.total_mods, 0);
     assert_eq!(stats.enabled_mods, 0);
     assert_eq!(stats.disabled_mods, 0);
@@ -280,7 +280,7 @@ async fn test_category_distribution() {
     )
     .await;
 
-    let dist = dashboard_repo::fetch_category_distribution(&pool)
+    let dist = dashboard::fetch_category_distribution(&pool)
         .await
         .unwrap();
     assert_eq!(
@@ -333,7 +333,7 @@ async fn test_game_distribution() {
     )
     .await;
 
-    let dist = dashboard_repo::fetch_game_distribution(&pool)
+    let dist = dashboard::fetch_game_distribution(&pool)
         .await
         .unwrap();
     assert_eq!(dist.len(), 2);
@@ -361,7 +361,7 @@ async fn test_negative_size_clamped() {
     )
     .await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
+    let stats = dashboard::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(
         stats.total_size_bytes, 0,
         "Negative size should be clamped to 0"
@@ -390,6 +390,6 @@ async fn test_recent_mods_limit() {
         .await;
     }
 
-    let recents = dashboard_repo::fetch_recent_mods(&pool, 5).await.unwrap();
+    let recents = dashboard::fetch_recent_mods(&pool, 5).await.unwrap();
     assert_eq!(recents.len(), 5, "Should return at most 5 recent mods");
 }

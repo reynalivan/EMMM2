@@ -42,7 +42,7 @@ pub(super) async fn execute_cycle_preset(
     let game_id = game.id.as_str();
 
     let collections =
-        crate::services::collection_service::list_collections(pool_state.inner(), game_id).await?;
+        crate::services::collection::list_collections(pool_state.inner(), game_id).await?;
 
     if collections.is_empty() {
         let status = StatusFields {
@@ -58,7 +58,7 @@ pub(super) async fn execute_cycle_preset(
         .map(|collection| collection.name.clone())
         .collect();
     let current_collection_id =
-        crate::repo::collection_runtime_repo::get(pool_state.inner(), game_id)
+        crate::repo::collection::runtime::get(pool_state.inner(), game_id)
             .await?
             .and_then(|runtime| runtime.active_collection_id);
 
@@ -89,8 +89,8 @@ pub(super) async fn execute_cycle_preset(
         .acquire_mutation_lease(game_id, op_lock.inner())
         .await?;
 
-    let apply_result = crate::services::collection_service::apply_collection(
-        crate::services::collection_service::ApplyCollectionRequest {
+    let apply_result = crate::services::collection::apply_collection(
+        crate::services::collection::ApplyCollectionRequest {
             pool: pool_state.inner(),
             game_id,
             collection_id: &target.id,
@@ -135,7 +135,7 @@ async fn write_runtime_status(
     status: &StatusFields,
     hotkey_config: &HotkeyConfig,
 ) -> Result<(), AppError> {
-    let Some(mods_path) = crate::repo::game_repo::get_mod_path(pool, game_id).await? else {
+    let Some(mods_path) = crate::repo::game::get_mod_path(pool, game_id).await? else {
         return Ok(());
     };
 

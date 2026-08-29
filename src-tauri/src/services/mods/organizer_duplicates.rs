@@ -14,7 +14,7 @@ pub async fn disable_target_duplicates(
     use crate::common::normalizer::is_disabled_folder;
 
     let siblings =
-        crate::repo::mod_repo::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)
+        crate::repo::mods::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)
             .await?;
     for (_id, sibling_rel, _name) in siblings {
         let sibling_path = sibling_rel.resolve(base_path);

@@ -203,7 +203,7 @@ async fn classification_requires_awaiting_category_and_keeps_user_metadata_autho
     .unwrap_err();
     assert!(error.to_string().contains("awaiting_category"));
 
-    assert!(crate::repo::import_batch_repo::transition_item_status(
+    assert!(crate::repo::import_batch::transition_item_status(
         &context.pool,
         item_id,
         ImportItemStatus::Discovered,
@@ -211,7 +211,7 @@ async fn classification_requires_awaiting_category_and_keeps_user_metadata_autho
     )
     .await
     .unwrap());
-    assert!(crate::repo::import_batch_repo::transition_item_status(
+    assert!(crate::repo::import_batch::transition_item_status(
         &context.pool,
         item_id,
         ImportItemStatus::Staged,
@@ -557,9 +557,9 @@ async fn processed_mod_inbox_groups_pack_children_under_one_source_history() {
     let root = tempfile::tempdir().unwrap();
     let original = root.path().join("pack.zip");
     std::fs::write(&original, b"archive").unwrap();
-    crate::repo::import_batch_repo::create_batch(
+    crate::repo::import_batch::create_batch(
         &context.pool,
-        &crate::repo::import_batch_repo::CreateImportBatchRecord {
+        &crate::repo::import_batch::CreateImportBatchRecord {
             id: "batch-pack-history".to_string(),
             game_id: "gimi".to_string(),
             flow: ImportFlow::ReadyToMove,
@@ -568,7 +568,7 @@ async fn processed_mod_inbox_groups_pack_children_under_one_source_history() {
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::repo::import_batch_repo::NewImportItemRecord {
+        &[crate::repo::import_batch::NewImportItemRecord {
             id: "source-pack-history".to_string(),
             source_kind: ImportSourceKind::ReadyToMove,
             source_path: original.to_string_lossy().into_owned(),
@@ -578,16 +578,16 @@ async fn processed_mod_inbox_groups_pack_children_under_one_source_history() {
     )
     .await
     .unwrap();
-    crate::repo::import_batch_repo::replace_archive_item_with_roots(
+    crate::repo::import_batch::replace_archive_item_with_roots(
         &context.pool,
         "source-pack-history",
         &[
-            crate::repo::import_batch_repo::StagedRootRecord {
+            crate::repo::import_batch::StagedRootRecord {
                 id: "child-ayaka".to_string(),
                 staging_path: "C:/Staging/Ayaka".to_string(),
                 planned_name: "DISABLED Ayaka".to_string(),
             },
-            crate::repo::import_batch_repo::StagedRootRecord {
+            crate::repo::import_batch::StagedRootRecord {
                 id: "child-raiden".to_string(),
                 staging_path: "C:/Staging/Raiden".to_string(),
                 planned_name: "DISABLED Raiden".to_string(),
@@ -606,7 +606,7 @@ async fn processed_mod_inbox_groups_pack_children_under_one_source_history() {
     .execute(&context.pool)
     .await
     .unwrap();
-    crate::repo::import_batch_repo::mark_mod_inbox_source_processed(
+    crate::repo::import_batch::mark_mod_inbox_source_processed(
         &context.pool,
         "batch-pack-history",
         &original.to_string_lossy(),
@@ -654,9 +654,9 @@ async fn processed_delete_preflights_every_source_before_recycling_anything() {
         ("batch-valid", "source-valid", &valid),
         ("batch-escaped", "source-escaped", &escaped),
     ] {
-        crate::repo::import_batch_repo::create_batch(
+        crate::repo::import_batch::create_batch(
             &context.pool,
-            &crate::repo::import_batch_repo::CreateImportBatchRecord {
+            &crate::repo::import_batch::CreateImportBatchRecord {
                 id: batch_id.to_string(),
                 game_id: "gimi".to_string(),
                 flow: ImportFlow::ReadyToMove,
@@ -665,7 +665,7 @@ async fn processed_delete_preflights_every_source_before_recycling_anything() {
                 target_subpath: None,
                 source_archive_path: None,
             },
-            &[crate::repo::import_batch_repo::NewImportItemRecord {
+            &[crate::repo::import_batch::NewImportItemRecord {
                 id: item_id.to_string(),
                 source_kind: ImportSourceKind::ReadyToMove,
                 source_path: root

@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::repo::mod_repo::ReconcileModRow;
-use crate::repo::object_repo::ReconcileObjectRow;
-use crate::repo::stable_ids::generate_stable_id_from_key;
+use crate::repo::mods::ReconcileModRow;
+use crate::repo::object::ReconcileObjectRow;
+use crate::repo::utils::stable_ids::generate_stable_id_from_key;
 use crate::services::scanner::watcher::ModWatchEvent;
 
 use super::disk_snapshot::DiskProjection;
@@ -566,8 +566,8 @@ pub(crate) async fn detect_rename_confirmations(
     watcher_events: &[ModWatchEvent],
 ) -> Result<RenameConfirmationDetection, crate::domain::errors::AppError> {
     let mut conn = pool.acquire().await?;
-    let objects = crate::repo::object_repo::get_rows_for_reconcile(&mut conn, game_id).await?;
-    let mods = crate::repo::mod_repo::get_rows_for_reconcile(&mut conn, game_id).await?;
+    let objects = crate::repo::object::get_rows_for_reconcile(&mut conn, game_id).await?;
+    let mods = crate::repo::mods::get_rows_for_reconcile(&mut conn, game_id).await?;
     drop(conn);
     let (filtered_projection, filtered_objects, filtered_mods) =
         without_watcher_rename_evidence(mods_path, projection, &objects, &mods, watcher_events);

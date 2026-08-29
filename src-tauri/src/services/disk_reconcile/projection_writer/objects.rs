@@ -4,7 +4,7 @@ use crate::domain::errors::AppError;
 use std::collections::HashMap;
 
 use crate::domain::models::ItemStatus;
-use crate::repo::object_repo::ReconcileObjectRow as DbObjectRow;
+use crate::repo::object::ReconcileObjectRow as DbObjectRow;
 use crate::services::disk_reconcile::disk_snapshot::{DiskObjectEntry, DiskProjection};
 use crate::services::disk_reconcile::path_updates::push_path_update;
 use crate::services::disk_reconcile::types::DiskReconcilePathKind;
@@ -57,7 +57,7 @@ async fn sync_existing_object(
         return Ok(());
     }
 
-    crate::repo::object_repo::update_object_disk_identity_by_id(
+    crate::repo::object::update_object_disk_identity_by_id(
         &mut *conn,
         &existing.id,
         &disk_object.name,
@@ -74,7 +74,7 @@ async fn sync_existing_object(
     if !identity_was_staged
         && !is_runtime_prefix_transition(&existing.folder_path, &disk_object.folder_path)
     {
-        let impact = crate::services::collection_service::handle_object_renamed_tx(
+        let impact = crate::services::collection::handle_object_renamed_tx(
             &mut *conn,
             game_id,
             &persisted.folder_path,
@@ -166,20 +166,20 @@ pub(super) async fn apply_disk_objects(
             )
             .await?
         };
-        crate::repo::object_repo::update_object_runtime_state_by_id(
+        crate::repo::object::update_object_runtime_state_by_id(
             &mut *conn,
             &object_id,
             &disk_object.folder_path,
             expected_status,
         )
         .await?;
-        crate::repo::object_repo::set_filesystem_identity_tx(
+        crate::repo::object::set_filesystem_identity_tx(
             &mut *conn,
             &object_id,
             disk_object.filesystem_identity.as_deref(),
         )
         .await?;
-        crate::repo::collection_repo::rebind_object_references(
+        crate::repo::collection::rebind_object_references(
             &mut *conn,
             game_id,
             &disk_object.folder_path_key,

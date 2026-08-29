@@ -21,7 +21,7 @@ pub async fn get_import_batch(
     pool: State<'_, sqlx::SqlitePool>,
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
-    crate::repo::import_batch_repo::get_batch(pool.inner(), &batch_id)
+    crate::repo::import_batch::get_batch(pool.inner(), &batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))
 }
@@ -32,7 +32,7 @@ pub async fn list_import_batches(
     pool: State<'_, sqlx::SqlitePool>,
     game_id: Option<String>,
 ) -> Result<Vec<ImportBatch>, AppError> {
-    Ok(crate::repo::import_batch_repo::list_batches(pool.inner(), game_id.as_deref()).await?)
+    Ok(crate::repo::import_batch::list_batches(pool.inner(), game_id.as_deref()).await?)
 }
 
 #[tauri::command]
@@ -67,13 +67,13 @@ pub async fn refresh_import_item_suggestions(
     pool: State<'_, sqlx::SqlitePool>,
     item_id: String,
 ) -> Result<crate::services::import_batch::types::ImportItem, AppError> {
-    let item = crate::repo::import_batch_repo::get_item(pool.inner(), &item_id)
+    let item = crate::repo::import_batch::get_item(pool.inner(), &item_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import item '{item_id}'")))?;
-    let batch = crate::repo::import_batch_repo::get_batch(pool.inner(), &item.batch_id)
+    let batch = crate::repo::import_batch::get_batch(pool.inner(), &item.batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-    let game_type = crate::repo::game_repo::get_game_type(pool.inner(), &batch.game_id)
+    let game_type = crate::repo::game::get_game_type(pool.inner(), &batch.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))?
         as i32;
@@ -116,7 +116,7 @@ pub async fn cancel_import_batch(
     pool: State<'_, sqlx::SqlitePool>,
     batch_id: String,
 ) -> Result<(), AppError> {
-    if crate::repo::import_batch_repo::cancel_batch(pool.inner(), &batch_id).await? {
+    if crate::repo::import_batch::cancel_batch(pool.inner(), &batch_id).await? {
         let staging_root = app
             .path()
             .app_data_dir()
@@ -138,10 +138,10 @@ pub async fn commit_import_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: CommitImportBatchInput,
 ) -> Result<ImportBatchReport, AppError> {
-    let batch = crate::repo::import_batch_repo::get_batch(pool.inner(), &input.batch_id)
+    let batch = crate::repo::import_batch::get_batch(pool.inner(), &input.batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
-    let game_type = crate::repo::game_repo::get_game_type(pool.inner(), &batch.game_id)
+    let game_type = crate::repo::game::get_game_type(pool.inner(), &batch.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))?
         as i32;

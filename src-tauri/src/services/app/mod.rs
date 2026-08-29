@@ -7,3 +7,6 @@ pub mod runtime_effects;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(not(test))]
+pub mod bootstrap;

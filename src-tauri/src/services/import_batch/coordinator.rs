@@ -4,7 +4,7 @@ use super::types::{
     StableCategory, TargetMode,
 };
 use crate::domain::errors::AppError;
-use crate::repo::import_batch_repo::{self, CreateImportBatchRecord, NewImportItemRecord};
+use crate::repo::import_batch::{self, CreateImportBatchRecord, NewImportItemRecord};
 use sqlx::SqlitePool;
 use std::path::Path;
 use std::str::FromStr;
@@ -15,7 +15,7 @@ pub async fn create_import_batch(
 ) -> Result<ImportBatch, AppError> {
     let (batch, items) = prepare_import_batch(db, input).await?;
     let batch_id = batch.id.clone();
-    import_batch_repo::create_batch(db, &batch, &items).await?;
+    import_batch::create_batch(db, &batch, &items).await?;
     reload_created_batch(db, &batch_id).await
 }
 
@@ -26,7 +26,7 @@ pub async fn create_mod_inbox_import_batch(
     let (batch, items) = prepare_import_batch(db, input).await?;
     let batch_id = batch.id.clone();
     if let Some(conflict) =
-        import_batch_repo::create_mod_inbox_batch_if_sources_available(db, &batch, &items).await?
+        import_batch::create_mod_inbox_batch_if_sources_available(db, &batch, &items).await?
     {
         return Err(AppError::Validation(format!(
             "Mod Inbox source '{}' already belongs to active batch '{}'",
@@ -80,7 +80,7 @@ async fn prepare_import_batch(
 }
 
 async fn reload_created_batch(db: &SqlitePool, batch_id: &str) -> Result<ImportBatch, AppError> {
-    import_batch_repo::get_batch(db, &batch_id)
+    import_batch::get_batch(db, &batch_id)
         .await?
         .ok_or_else(|| AppError::Internal("Created import batch could not be reloaded".to_string()))
 }
@@ -95,7 +95,7 @@ pub async fn set_import_item_classification(
         ));
     }
     input.sub_category = normalized_optional(input.sub_category);
-    if !import_batch_repo::store_classification(db, &input).await? {
+    if !import_batch::store_classification(db, &input).await? {
         return Err(AppError::Validation(format!(
             "Import item '{}' must be in awaiting_category state",
             input.item_id
@@ -111,7 +111,7 @@ pub async fn rename_import_item_plan(
     input.planned_name =
         crate::services::mods::core_ops::standardize_prefix(input.planned_name.trim(), false);
     crate::services::mods::core_ops::validate_folder_name_component(&input.planned_name)?;
-    if !import_batch_repo::rename_planned_item(db, &input.item_id, &input.planned_name).await? {
+    if !import_batch::rename_planned_item(db, &input.item_id, &input.planned_name).await? {
         return Err(AppError::Validation(format!(
             "Import item '{}' can no longer be renamed",
             input.item_id
@@ -142,10 +142,10 @@ pub async fn set_import_item_decision(
         let object_id = input.destination_object_id.as_deref().ok_or_else(|| {
             AppError::Validation("Manual target decisions require an existing object".to_string())
         })?;
-        let batch = import_batch_repo::get_batch(db, &item.batch_id)
+        let batch = import_batch::get_batch(db, &item.batch_id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-        let object = crate::repo::object_repo::get_game_object_by_id(db, object_id)
+        let object = crate::repo::object::get_game_object_by_id(db, object_id)
             .await?
             .filter(|object| object.game_id == batch.game_id)
             .ok_or_else(|| {
@@ -160,7 +160,7 @@ pub async fn set_import_item_decision(
                 "Keep-specific-target can only select the batch's original target".to_string(),
             ));
         }
-        let mods_root = crate::repo::game_repo::get_mod_path(db, &batch.game_id)
+        let mods_root = crate::repo::game::get_mod_path(db, &batch.game_id)
             .await?
             .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
         input.destination_path = Some(
@@ -191,7 +191,7 @@ pub async fn set_import_item_decision(
         input.destination_path = Some(selected.target_path.clone());
         input.canonical_entry_key = selected.canonical_entry_key.clone();
     }
-    if !import_batch_repo::store_decision(db, &input).await? {
+    if !import_batch::store_decision(db, &input).await? {
         return Err(AppError::Validation(format!(
             "Import item '{}' is not awaiting a destination decision",
             input.item_id
@@ -217,7 +217,7 @@ pub async fn refresh_import_item_suggestions(
             "Import item '{item_id}' has no confirmed stable category"
         ))
     })?;
-    let inspection = import_batch_repo::get_stored_inspection(db, item_id)
+    let inspection = import_batch::get_stored_inspection(db, item_id)
         .await?
         .ok_or_else(|| {
             AppError::Validation(format!("Import item '{item_id}' has no source inspection"))
@@ -231,13 +231,13 @@ pub async fn refresh_import_item_suggestions(
     );
     rerank_with_metadata(&mut canonical, &item.classification_metadata, master_db);
 
-    let batch = import_batch_repo::get_batch(db, &item.batch_id)
+    let batch = import_batch::get_batch(db, &item.batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-    let mods_root = crate::repo::game_repo::get_mod_path(db, &batch.game_id)
+    let mods_root = crate::repo::game::get_mod_path(db, &batch.game_id)
         .await?
         .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
-    let page = crate::repo::object_repo::get_filtered_objects(
+    let page = crate::repo::object::get_filtered_objects(
         db,
         &crate::domain::objects::ObjectFilter {
             game_id: batch.game_id.clone(),
@@ -303,7 +303,7 @@ pub async fn refresh_import_item_suggestions(
         .first()
         .map(|suggestion| suggestion.evidence.clone())
         .unwrap_or_else(|| inspection.evidence.clone());
-    if !import_batch_repo::store_match_suggestions(
+    if !import_batch::store_match_suggestions(
         db,
         item_id,
         &canonical,
@@ -320,7 +320,7 @@ pub async fn refresh_import_item_suggestions(
 }
 
 async fn configured_workspace_roots(db: &SqlitePool) -> Result<Vec<std::path::PathBuf>, AppError> {
-    let games = crate::repo::game_repo::get_all_games(db).await?;
+    let games = crate::repo::game::get_all_games(db).await?;
     Ok(games
         .into_iter()
         .filter_map(|game| {
@@ -413,7 +413,7 @@ async fn validate_create_input(
             "One import batch can contain at most 500 sources".to_string(),
         ));
     }
-    if crate::repo::game_repo::get_mod_path(db, &input.game_id)
+    if crate::repo::game::get_mod_path(db, &input.game_id)
         .await?
         .is_none()
     {
@@ -511,7 +511,7 @@ fn normalized_optional(value: Option<String>) -> Option<String> {
 }
 
 async fn require_item(db: &SqlitePool, item_id: &str) -> Result<ImportItem, AppError> {
-    import_batch_repo::get_item(db, item_id)
+    import_batch::get_item(db, item_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import item '{item_id}'")))
 }

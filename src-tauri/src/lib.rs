@@ -218,7 +218,7 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle();
 
-            services::bootstrap::center_window_if_offscreen(app_handle);
+            services::app::bootstrap::center_window_if_offscreen(app_handle);
 
             #[cfg(desktop)]
             app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -227,7 +227,7 @@ pub fn run() {
                 services::images::thumbnail_cache::ThumbnailCache::init(&app_data_dir);
 
                 #[cfg(desktop)]
-                app.manage(services::bootstrap::init_pool(&app_data_dir));
+                app.manage(services::app::bootstrap::init_pool(&app_data_dir));
             }
 
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
@@ -238,13 +238,13 @@ pub fn run() {
 
             let config_ref: tauri::State<'_, services::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
-            app.manage(services::bootstrap::init_hotkey_manager(
+            app.manage(services::app::bootstrap::init_hotkey_manager(
                 app_handle,
                 &hotkey_config,
             ));
 
             {
-                services::bootstrap::run_startup_reconcile(app.handle().clone());
+                services::app::bootstrap::run_startup_reconcile(app.handle().clone());
             }
 
             Ok(())

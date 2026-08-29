@@ -16,7 +16,7 @@ pub async fn run_maintenance_counts(
     use crate::services::images::thumbnail_cache::{ThumbnailCache, THUMBNAIL_RETENTION_DAYS};
 
     // 1. Vacuum DB
-    crate::repo::settings_repo::vacuum_database(pool).await?;
+    crate::repo::settings::vacuum_database(pool).await?;
 
     // 2. Prune thumbnails nothing has looked at in a while.
     //

@@ -166,7 +166,7 @@ pub async fn dup_scan_start(
                 };
 
                 if let Err(error) =
-                    crate::repo::dedup_repo::persist_completed_report(&db_for_task, &report).await
+                    crate::repo::dedup::persist_completed_report(&db_for_task, &report).await
                 {
                     let _ = on_event.send(DupScanEvent::Failed {
                         scan_id,
@@ -202,7 +202,7 @@ pub async fn dup_scan_get_report(
     game_id: String,
     db: State<'_, sqlx::SqlitePool>,
 ) -> Result<Option<DupScanReport>, AppError> {
-    Ok(crate::repo::dedup_repo::load_latest_completed_report(db.inner(), &game_id).await?)
+    Ok(crate::repo::dedup::load_latest_completed_report(db.inner(), &game_id).await?)
 }
 
 fn dup_scan_build_scan_id() -> String {

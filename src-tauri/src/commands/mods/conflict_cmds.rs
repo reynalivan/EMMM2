@@ -360,7 +360,7 @@ pub async fn ignore_object_conflict(
     object_id: String,
     mod_ids: Vec<String>,
 ) -> Result<(), AppError> {
-    crate::repo::conflict_repo::ignore_object_conflict(&pool, &game_id, &object_id, &mod_ids)
+    crate::repo::conflict::ignore_object_conflict(&pool, &game_id, &object_id, &mod_ids)
         .await?;
     Ok(())
 }
@@ -372,7 +372,7 @@ pub async fn revoke_object_conflict(
     game_id: String,
     object_id: String,
 ) -> Result<(), AppError> {
-    crate::repo::conflict_repo::revoke_object_conflict(&pool, &game_id, &object_id).await?;
+    crate::repo::conflict::revoke_object_conflict(&pool, &game_id, &object_id).await?;
     Ok(())
 }
 
@@ -382,7 +382,7 @@ pub async fn list_ignored_object_conflicts(
     pool: State<'_, sqlx::SqlitePool>,
     game_id: String,
 ) -> Result<Vec<crate::domain::conflicts::IgnoredConflict>, AppError> {
-    let list = crate::repo::conflict_repo::list_ignored_object_conflicts(&pool, &game_id).await?;
+    let list = crate::repo::conflict::list_ignored_object_conflicts(&pool, &game_id).await?;
     Ok(list)
 }
 

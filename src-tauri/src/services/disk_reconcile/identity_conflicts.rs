@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
-use crate::repo::stable_ids::generate_stable_id_from_key;
+use crate::repo::utils::stable_ids::generate_stable_id_from_key;
 
 use super::disk_snapshot::{DiskIdentityCensus, DiskProjection};
 use super::types::{FolderNameConflictCandidate, FolderNameConflictGroup};

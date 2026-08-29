@@ -11,7 +11,7 @@ async fn absolute_object_path(
     game_id: &str,
     folder_path: &str,
 ) -> Result<String, AppError> {
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     Ok(std::path::Path::new(&mods_path)
@@ -122,7 +122,7 @@ pub async fn update_object_cmd(
     op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
 ) -> Result<(), AppError> {
     let (game_id, folder_path) =
-        crate::repo::object_repo::get_game_id_and_folder_path(pool.inner(), &id)
+        crate::repo::object::get_game_id_and_folder_path(pool.inner(), &id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Object not found: {id}")))?;
     let folder_path =
@@ -162,7 +162,7 @@ pub async fn delete_object_cmd(
     op_lock: State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
 ) -> Result<crate::services::disk_reconcile::types::CommittedMutationResult, AppError> {
     let (game_id, folder_path) =
-        crate::repo::object_repo::get_game_id_and_folder_path(pool.inner(), &id)
+        crate::repo::object::get_game_id_and_folder_path(pool.inner(), &id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Object not found: {id}")))?;
     let folder_path =

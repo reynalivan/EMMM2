@@ -1,4 +1,4 @@
-use crate::repo::game_repo::{upsert_game, GameRow};
+use crate::repo::game::{upsert_game, GameRow};
 use crate::services::app::dashboard;
 use crate::test_utils;
 

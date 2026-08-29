@@ -2,7 +2,7 @@
 //! models (explorer listing, object rows, preview trees, selection).
 //!
 //! Never writes the DB or the filesystem. Runtime counters it reads come from
-//! `object_runtime_projection`, maintained by `repo::runtime_projection_repo`.
+//! `object_runtime_projection`, maintained by `repo::runtime_projection`.
 
 pub mod common;
 pub mod explorer_mapper;

@@ -1,5 +1,5 @@
 use super::*;
-use crate::repo::game_repo::{count_games, get_all_games, upsert_game, GameRow};
+use crate::repo::game::{count_games, get_all_games, upsert_game, GameRow};
 use sqlx::SqlitePool;
 
 async fn setup_pool() -> SqlitePool {

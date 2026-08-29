@@ -91,7 +91,7 @@ fn services_only_validate_paths_they_derive() {
     let allowed = [
         "guard.rs", // the guard itself
         // Resolves the client's switch target against the DB, then proves it.
-        "workspace_switch_service.rs",
+        "workspace/switch.rs", "workspace\\switch.rs",
         // Import/download flows build their own target directory.
         "placement.rs",
         "jobs.rs",
@@ -131,7 +131,7 @@ fn repos_do_not_define_ipc_types() {
 
 /// The data-access layer does not read the disk.
 ///
-/// `object_repo::counts` used to resolve terminal nodes by walking
+/// `object::counts` used to resolve terminal nodes by walking
 /// directories and parsing INI headers — once per row per ancestor, with no
 /// memo, from inside a repo. Those rules now live in
 /// `services::objects::terminal`, where the walk can be cached and kept off
@@ -319,10 +319,10 @@ fn status_is_written_by_disk_reconcile_only() {
     ];
     let allowed_paths = [
         // The definitions themselves.
-        r"repo\mod_repo",
-        "repo/mod_repo",
-        r"repo\object_repo",
-        "repo/object_repo",
+        r"repo\mods",
+        "repo/mods",
+        r"repo\object",
+        "repo/object",
         // The single writer.
         "disk_reconcile",
     ];

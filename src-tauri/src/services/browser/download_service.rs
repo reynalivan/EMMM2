@@ -4,10 +4,10 @@ use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-use crate::repo::browser_repo;
+use crate::repo::browser;
 use crate::services::browser::{download_handler, import_service};
 
-/// DTO for the frontend download list. Defined in `repo::browser_repo`; re-exported
+/// DTO for the frontend download list. Defined in `repo::browser`; re-exported
 /// so existing `download_service::BrowserDownloadDto` users keep compiling.
 pub use crate::domain::browser::BrowserDownloadDto;
 
@@ -26,7 +26,7 @@ pub async fn create_download(
     let id = Uuid::new_v4().to_string();
     let now = now_stamp();
 
-    browser_repo::insert_download(db, &id, session_id, filename, source_url, file_path, &now)
+    browser::insert_download(db, &id, session_id, filename, source_url, file_path, &now)
         .await?;
 
     Ok(id)
@@ -44,7 +44,7 @@ pub async fn update_status(
 ) -> Result<(), BrowserError> {
     let finished_at = matches!(status, "finished" | "failed" | "canceled").then(now_stamp);
 
-    browser_repo::update_status(
+    browser::update_status(
         db,
         download_id,
         status,
@@ -60,7 +60,7 @@ pub async fn update_status(
 
 /// List all downloads ordered by most recent first.
 pub async fn list_downloads(db: &SqlitePool) -> Result<Vec<BrowserDownloadDto>, BrowserError> {
-    Ok(browser_repo::list_downloads(db).await?)
+    Ok(browser::list_downloads(db).await?)
 }
 
 /// Delete a download record and optionally the file on disk.
@@ -70,7 +70,7 @@ pub async fn delete_download(
     delete_file: bool,
 ) -> Result<(), BrowserError> {
     if delete_file {
-        let path = browser_repo::get_file_path(db, download_id)
+        let path = browser::get_file_path(db, download_id)
             .await
             .ok()
             .flatten();
@@ -83,7 +83,7 @@ pub async fn delete_download(
         }
     }
 
-    Ok(browser_repo::delete_download(db, download_id).await?)
+    Ok(browser::delete_download(db, download_id).await?)
 }
 
 /// Cancel a download: abort the in-flight transfer when one is running,
@@ -106,18 +106,18 @@ pub async fn cancel_download(
 
 /// Remove all downloads with status `imported`.
 pub async fn clear_imported(db: &SqlitePool) -> Result<u64, BrowserError> {
-    Ok(browser_repo::delete_imported(db).await?)
+    Ok(browser::delete_imported(db).await?)
 }
 
 /// Remove old downloads that exceed the retention period.
 pub async fn clear_old_downloads(db: &SqlitePool) -> Result<u64, BrowserError> {
-    let retention = browser_repo::get_retention_days(db)
+    let retention = browser::get_retention_days(db)
         .await
         .ok()
         .flatten()
         .unwrap_or(30);
 
-    Ok(browser_repo::delete_older_than(db, retention).await?)
+    Ok(browser::delete_older_than(db, retention).await?)
 }
 
 /// Called by `browser_service` when the download `Finished` event fires.
@@ -131,7 +131,7 @@ pub async fn on_download_finished(
     tab_label: &str,
 ) -> Result<(), BrowserError> {
     // Find the download by source_url + tab_label heuristic (most recent requested)
-    let row = browser_repo::find_active_by_url(db, source_url).await?;
+    let row = browser::find_active_by_url(db, source_url).await?;
 
     let (download_id, session_id) = match row {
         Some(r) => (r.id, r.session_id),
@@ -155,7 +155,7 @@ pub async fn on_download_finished(
         );
 
         // Auto-import if enabled
-        let auto_import: bool = browser_repo::get_setting(db, "auto_import")
+        let auto_import: bool = browser::get_setting(db, "auto_import")
             .await
             .ok()
             .flatten()

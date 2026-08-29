@@ -12,7 +12,7 @@ pub async fn preview_object_classification_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: PreviewObjectClassificationBatchInput,
 ) -> Result<Vec<ObjectClassificationPreviewItem>, AppError> {
-    let game_type = crate::repo::game_repo::get_game_type(pool.inner(), &input.game_id)
+    let game_type = crate::repo::game::get_game_type(pool.inner(), &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?
         as i32;
@@ -39,7 +39,7 @@ pub async fn apply_object_classification_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: ApplyObjectClassificationBatchInput,
 ) -> Result<ApplyObjectClassificationBatchResult, AppError> {
-    let game_type = crate::repo::game_repo::get_game_type(pool.inner(), &input.game_id)
+    let game_type = crate::repo::game::get_game_type(pool.inner(), &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?
         as i32;

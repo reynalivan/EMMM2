@@ -4,7 +4,7 @@
 //! Match Wizard even for high-confidence matches.
 
 use crate::domain::errors::BrowserError;
-use crate::repo::{browser_repo, import_batch_repo};
+use crate::repo::{browser, import_batch};
 use crate::services::import_batch::types::{
     CreateImportBatchInput, ImportFlow, ImportSourceInput, ImportSourceKind, TargetMode,
 };
@@ -23,7 +23,7 @@ pub async fn queue_import_job(
     archive_path: &str,
 ) -> Result<String, BrowserError> {
     let game_id = match session_id {
-        Some(session_id) => browser_repo::get_session_game_id(db, session_id).await?,
+        Some(session_id) => browser::get_session_game_id(db, session_id).await?,
         None => None,
     }
     .ok_or_else(|| {
@@ -52,7 +52,7 @@ pub async fn bulk_queue_imports(
 ) -> Result<Vec<String>, BrowserError> {
     let mut sources = Vec::with_capacity(download_ids.len());
     for download_id in download_ids {
-        let Some(download) = browser_repo::get_finished_for_import(db, download_id).await? else {
+        let Some(download) = browser::get_finished_for_import(db, download_id).await? else {
             continue;
         };
         let Some(file_path) = download.file_path else {
@@ -108,7 +108,7 @@ async fn create_browser_batch(
             .iter()
             .find(|(_, source_path)| source_path == &item.source_path)
         {
-            import_batch_repo::attach_download_id(db, &item.id, download_id).await?;
+            import_batch::attach_download_id(db, &item.id, download_id).await?;
         }
         item_ids.push(item.id.clone());
     }
@@ -133,7 +133,7 @@ fn spawn_batch_analysis(db: &SqlitePool, app: &AppHandle, batch_id: String) {
         let (status, error) = match outcome {
             Ok(()) => ("awaiting_review", None),
             Err(error) => {
-                if let Err(status_error) = import_batch_repo::set_batch_status(
+                if let Err(status_error) = import_batch::set_batch_status(
                     &db,
                     &batch_id,
                     crate::services::import_batch::types::ImportBatchStatus::Failed,

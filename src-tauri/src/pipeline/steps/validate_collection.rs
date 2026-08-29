@@ -1,6 +1,6 @@
 use crate::domain::errors::CollectionError;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::services::collection_service::{require_collection, require_game_match};
+use crate::services::collection::{require_collection, require_game_match};
 
 pub async fn validate(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let collection = require_collection(&ctx.pool, &ctx.collection_id).await?;

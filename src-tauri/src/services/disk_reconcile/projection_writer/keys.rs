@@ -16,6 +16,6 @@ pub(super) fn runtime_logical_path_key(folder_path: &str) -> String {
 }
 
 pub(super) fn is_runtime_prefix_transition(old_path: &str, new_path: &str) -> bool {
-    crate::services::collection_service::classify_collection_path_transition(old_path, new_path)
-        == crate::services::collection_service::CollectionPathTransitionKind::RuntimeTogglePrefix
+    crate::services::collection::classify_collection_path_transition(old_path, new_path)
+        == crate::services::collection::CollectionPathTransitionKind::RuntimeTogglePrefix
 }

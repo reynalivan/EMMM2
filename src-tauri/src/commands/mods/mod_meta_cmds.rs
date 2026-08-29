@@ -10,11 +10,11 @@ async fn object_absolute_path(
     game_id: &str,
     object_id: &str,
 ) -> Result<String, AppError> {
-    let object = crate::repo::object_repo::get_game_object_by_id(pool, object_id)
+    let object = crate::repo::object::get_game_object_by_id(pool, object_id)
         .await?
         .filter(|object| object.game_id == game_id)
         .ok_or_else(|| AppError::NotFound(format!("Object not found: {object_id}")))?;
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     Ok(std::path::Path::new(&mods_path)
@@ -373,11 +373,11 @@ pub async fn move_mods_to_object(
     let mut changed_paths = input.folder_paths.clone();
     changed_paths.extend(result.success.iter().cloned());
     if let Some(target_obj) =
-        crate::repo::object_repo::get_game_object_by_id(pool.inner(), &input.target_object_id)
+        crate::repo::object::get_game_object_by_id(pool.inner(), &input.target_object_id)
             .await?
     {
         if let Some(mods_path) =
-            crate::repo::game_repo::get_mod_path(pool.inner(), &input.game_id).await?
+            crate::repo::game::get_mod_path(pool.inner(), &input.game_id).await?
         {
             changed_paths.push(
                 std::path::Path::new(&mods_path)

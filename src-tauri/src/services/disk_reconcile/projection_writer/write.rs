@@ -21,8 +21,8 @@ use super::state::ProjectionWriteState;
 
 #[derive(Default)]
 pub(super) struct IdentityTransitionState {
-    pub(super) original_objects: HashMap<String, crate::repo::object_repo::ReconcileObjectRow>,
-    pub(super) original_mods: HashMap<String, crate::repo::mod_repo::ReconcileModRow>,
+    pub(super) original_objects: HashMap<String, crate::repo::object::ReconcileObjectRow>,
+    pub(super) original_mods: HashMap<String, crate::repo::mods::ReconcileModRow>,
     mod_final_ids: HashMap<String, String>,
     collection_ids_to_refresh: Vec<String>,
 }
@@ -46,7 +46,7 @@ fn disk_mod_identities(projection: &DiskProjection) -> HashSet<&str> {
 async fn record_and_delete_displaced_object(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
-    object: &crate::repo::object_repo::ReconcileObjectRow,
+    object: &crate::repo::object::ReconcileObjectRow,
     index: &DbIndex,
     disk_mod_keys: &HashSet<&str>,
     state: &mut ProjectionWriteState<'_>,
@@ -57,7 +57,7 @@ async fn record_and_delete_displaced_object(
         .filter(|row| row.object_id.as_deref() == Some(object.id.as_str()))
     {
         if !disk_mod_keys.contains(child.folder_path_key.as_str()) {
-            let impact = crate::services::collection_service::handle_mod_missing_tx(
+            let impact = crate::services::collection::handle_mod_missing_tx(
                 &mut *conn,
                 game_id,
                 &child.folder_path,
@@ -67,7 +67,7 @@ async fn record_and_delete_displaced_object(
         }
         state.change_summary.record_mod_removed(&child.actual_name);
     }
-    crate::repo::object_repo::delete_object_and_mods_by_folder(
+    crate::repo::object::delete_object_and_mods_by_folder(
         &mut *conn,
         game_id,
         &object.folder_path,
@@ -146,10 +146,10 @@ async fn prepare_identity_transitions(
                     &disk_object.folder_path,
                 ))
             .then(|| CollectionPathRewrite {
-                from: crate::services::collection_service::logical_collection_path(
+                from: crate::services::collection::logical_collection_path(
                     &source.folder_path,
                 ),
-                to: crate::services::collection_service::logical_collection_path(
+                to: crate::services::collection::logical_collection_path(
                     &disk_object.folder_path,
                 ),
             })
@@ -158,7 +158,7 @@ async fn prepare_identity_transitions(
 
     for (position, source) in transitions.original_objects.values().enumerate() {
         let stage = format!("{OBJECT_STAGE_PREFIX}{position}-{}", uuid::Uuid::new_v4());
-        crate::repo::object_repo::stage_object_identity_tx(&mut *conn, &source.id, &stage).await?;
+        crate::repo::object::stage_object_identity_tx(&mut *conn, &source.id, &stage).await?;
     }
 
     let after_objects = DbIndex::load(&mut *conn, game_id).await?;
@@ -171,7 +171,7 @@ async fn prepare_identity_transitions(
         let Some(source) = after_objects.mod_by_filesystem_identity(identity) else {
             continue;
         };
-        let final_id = crate::repo::stable_ids::generate_stable_id_from_key(
+        let final_id = crate::repo::utils::stable_ids::generate_stable_id_from_key(
             game_id,
             &disk_mod.folder_path_key,
         );
@@ -188,7 +188,7 @@ async fn prepare_identity_transitions(
                 .as_deref()
                 .is_some_and(|value| mod_identities.contains(value));
             if occupant.id != source.id && !occupant_is_elsewhere {
-                crate::repo::mod_repo::delete_mod_tx(&mut *conn, &occupant.id).await?;
+                crate::repo::mods::delete_mod_tx(&mut *conn, &occupant.id).await?;
                 state.folders_changed = true;
                 state
                     .change_summary
@@ -210,17 +210,17 @@ async fn prepare_identity_transitions(
                     &disk_mod.folder_path,
                 ))
             .then(|| CollectionPathRewrite {
-                from: crate::services::collection_service::logical_collection_path(
+                from: crate::services::collection::logical_collection_path(
                     &source.folder_path,
                 ),
-                to: crate::services::collection_service::logical_collection_path(
+                to: crate::services::collection::logical_collection_path(
                     &disk_mod.folder_path,
                 ),
             })
         })
         .collect::<Vec<_>>();
     let staged_collections =
-        crate::services::collection_service::stage_identity_path_transitions_tx(
+        crate::services::collection::stage_identity_path_transitions_tx(
             &mut *conn,
             game_id,
             &object_rewrites,
@@ -234,18 +234,18 @@ async fn prepare_identity_transitions(
 
     // Primary-key swaps are legal only when every source first leaves the
     // path-derived ID namespace. Foreign keys are repaired before commit.
-    crate::repo::mod_repo::defer_foreign_keys_tx(&mut *conn).await?;
+    crate::repo::mods::defer_foreign_keys_tx(&mut *conn).await?;
     for (position, (source, final_id)) in mod_sources.into_iter().enumerate() {
-        crate::repo::collection_repo::detach_mod_runtime_id(&mut *conn, game_id, &source.id)
+        crate::repo::collection::detach_mod_runtime_id(&mut *conn, game_id, &source.id)
             .await?;
         let temp_id = format!(
             "emmm-reconcile-mod-stage-{position}-{}",
             uuid::Uuid::new_v4()
         );
         let temp_path = format!(".emmm-reconcile-mod-stage/{temp_id}");
-        crate::repo::mod_repo::stage_mod_identity_tx(&mut *conn, &temp_id, &temp_path, &source.id)
+        crate::repo::mods::stage_mod_identity_tx(&mut *conn, &temp_id, &temp_path, &source.id)
             .await?;
-        crate::repo::mod_repo::rewrite_dependent_mod_ids_tx(&mut *conn, &source.id, &temp_id)
+        crate::repo::mods::rewrite_dependent_mod_ids_tx(&mut *conn, &source.id, &temp_id)
             .await?;
         transitions.original_mods.insert(temp_id.clone(), source);
         transitions.mod_final_ids.insert(temp_id, final_id);
@@ -259,7 +259,7 @@ async fn finalize_mod_reference_transitions(
     transitions: &IdentityTransitionState,
 ) -> Result<(), AppError> {
     for (temp_id, final_id) in &transitions.mod_final_ids {
-        crate::repo::mod_repo::rewrite_dependent_mod_ids_tx(&mut *conn, temp_id, final_id).await?;
+        crate::repo::mods::rewrite_dependent_mod_ids_tx(&mut *conn, temp_id, final_id).await?;
     }
     Ok(())
 }
@@ -363,7 +363,7 @@ pub(crate) async fn reconcile_projection_in_tx(
     )
     .await?;
     prune_missing_objects(&mut *conn, game_id, &index, &prune_scope, &mut state).await?;
-    crate::services::collection_service::refresh_collection_signatures_tx(
+    crate::services::collection::refresh_collection_signatures_tx(
         &mut *conn,
         &identity_transitions.collection_ids_to_refresh,
     )

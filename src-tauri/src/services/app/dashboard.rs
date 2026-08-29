@@ -15,12 +15,12 @@ pub async fn get_active_keybindings_service(
     pool: &sqlx::SqlitePool,
     game_id: &str,
 ) -> Result<Vec<ActiveKeyBinding>, AppError> {
-    let mods_root = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_root = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
     let mods_root = std::path::Path::new(&mods_root);
     // 1. Fetch enabled mods' folder paths and names for this game
-    let rows = crate::repo::mod_repo::get_enabled_mods_names_and_paths(pool, game_id).await?;
+    let rows = crate::repo::mods::get_enabled_mods_names_and_paths(pool, game_id).await?;
 
     let mut bindings: Vec<ActiveKeyBinding> = Vec::new();
 
@@ -61,17 +61,17 @@ pub struct DashboardPayload {
 
 /// Fetch all dashboard data in a single service call.
 pub async fn get_dashboard_payload(pool: &sqlx::SqlitePool) -> Result<DashboardPayload, AppError> {
-    use crate::repo::dashboard_repo;
+    use crate::repo::dashboard;
 
-    let stats = dashboard_repo::fetch_global_stats(pool).await?;
+    let stats = dashboard::fetch_global_stats(pool).await?;
 
     // Independent reads. Serially they cost four extra round trips; WAL
     // readers do not block each other, so the pool can serve them at once.
     let (duplicate_waste_bytes, category_distribution, game_distribution, recent_mods) = tokio::try_join!(
-        async { dashboard_repo::fetch_duplicate_waste(pool).await },
-        async { dashboard_repo::fetch_category_distribution(pool).await },
-        async { dashboard_repo::fetch_game_distribution(pool).await },
-        async { dashboard_repo::fetch_recent_mods(pool, 5).await },
+        async { dashboard::fetch_duplicate_waste(pool).await },
+        async { dashboard::fetch_category_distribution(pool).await },
+        async { dashboard::fetch_game_distribution(pool).await },
+        async { dashboard::fetch_recent_mods(pool, 5).await },
     )?;
 
     Ok(DashboardPayload {

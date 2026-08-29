@@ -3,12 +3,12 @@
 use sqlx::SqlitePool;
 
 use crate::domain::errors::BrowserError;
-use crate::repo::browser_repo;
+use crate::repo::browser;
 
 /// Fetch the configured homepage URL from `browser_settings` table.
 /// Falls back to `https://www.google.com` if not set.
 pub async fn get_homepage(db: &SqlitePool) -> String {
-    browser_repo::get_setting(db, "homepage_url")
+    browser::get_setting(db, "homepage_url")
         .await
         .ok()
         .flatten()
@@ -18,7 +18,7 @@ pub async fn get_homepage(db: &SqlitePool) -> String {
 /// Save a new homepage URL to `browser_settings`.
 pub async fn set_homepage(db: &SqlitePool, url: &str) -> Result<(), BrowserError> {
     validate_http_url(url)?;
-    browser_repo::set_setting(db, "homepage_url", url).await?;
+    browser::set_setting(db, "homepage_url", url).await?;
     Ok(())
 }
 

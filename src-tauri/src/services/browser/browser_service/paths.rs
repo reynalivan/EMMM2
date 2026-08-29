@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-use crate::repo::browser_repo;
+use crate::repo::browser;
 
 /// Illegal Windows filename characters to strip.
 const ILLEGAL_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
@@ -95,7 +95,7 @@ pub fn compute_download_path(root: &Path, session_id: Option<&str>, filename: &s
 ///
 /// Priority: `browser_settings.downloads_root` (if non-empty + writable) → default.
 pub async fn get_downloads_root(app: &AppHandle, db: &SqlitePool) -> PathBuf {
-    let override_path: Option<String> = browser_repo::get_setting(db, "downloads_root")
+    let override_path: Option<String> = browser::get_setting(db, "downloads_root")
         .await
         .ok()
         .flatten();

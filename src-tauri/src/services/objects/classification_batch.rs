@@ -93,13 +93,13 @@ pub async fn preview_object_classification_batch(
         .iter()
         .map(|draft| (draft.object_id.as_str(), draft))
         .collect::<BTreeMap<_, _>>();
-    let mods_root = crate::repo::game_repo::get_mod_path(db, &input.game_id)
+    let mods_root = crate::repo::game::get_mod_path(db, &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
     let mut result = Vec::with_capacity(input.object_ids.len());
 
     for object_id in &input.object_ids {
-        let object = crate::repo::object_repo::get_game_object_by_id(db, object_id)
+        let object = crate::repo::object::get_game_object_by_id(db, object_id)
             .await?
             .filter(|object| object.game_id == input.game_id)
             .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
@@ -165,13 +165,13 @@ pub async fn apply_object_classification_batch(
             "Classification object IDs must be unique".to_string(),
         ));
     }
-    let mods_root = crate::repo::game_repo::get_mod_path(db, &input.game_id)
+    let mods_root = crate::repo::game::get_mod_path(db, &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
     let mut prepared = Vec::with_capacity(input.items.len());
 
     for item in input.items {
-        let object = crate::repo::object_repo::get_game_object_by_id(db, &item.object_id)
+        let object = crate::repo::object::get_game_object_by_id(db, &item.object_id)
             .await?
             .filter(|object| object.game_id == input.game_id)
             .ok_or_else(|| AppError::NotFound(format!("Object '{}'", item.object_id)))?;

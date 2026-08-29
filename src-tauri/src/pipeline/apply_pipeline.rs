@@ -9,7 +9,7 @@ use crate::domain::errors::CollectionError;
 use crate::domain::task::TaskStatus;
 use crate::domain::workspace::WorkspacePathRewrite;
 use crate::services::app::post_apply::PostApplyContext;
-use crate::services::collection_service::ApplyCollectionRequest;
+use crate::services::collection::ApplyCollectionRequest;
 use crate::services::config::AppSettings;
 use crate::services::scanner::watcher::WatcherSuppressor;
 
@@ -100,7 +100,7 @@ pub async fn execute(
     expected_status: TaskStatus,
     settle_normal_failure: bool,
 ) -> Result<ApplyResult, CollectionError> {
-    crate::services::apply_progress_service::start(&ctx.game_id);
+    crate::services::apply_progress::start(&ctx.game_id);
 
     match execute_inner(ctx).await {
         Ok(result) => {
@@ -111,7 +111,7 @@ pub async fn execute(
                 finish_failed_apply(ctx);
                 return Err(error);
             }
-            crate::services::apply_progress_service::finish(
+            crate::services::apply_progress::finish(
                 &ctx.game_id,
                 result.final_state_name.clone(),
                 result.warnings.clone(),
@@ -137,14 +137,14 @@ async fn finalize_apply(
     let outcome: Result<(), sqlx::Error> = async {
         let mut tx = ctx.pool.begin().await?;
         if ctx.finalize_active_collection {
-            crate::repo::collection_runtime_repo::set_active_tx(
+            crate::repo::collection::runtime::set_active_tx(
                 &mut tx,
                 &ctx.game_id,
                 ctx.final_active_collection_id.as_deref(),
             )
             .await?;
         }
-        let completed = crate::repo::task_repo::compare_and_set_status_tx(
+        let completed = crate::repo::task::compare_and_set_status_tx(
             &mut tx,
             task_id,
             expected_status,
@@ -172,7 +172,7 @@ async fn settle_normal_apply_failure(ctx: &ApplyContext, task_id: &str) {
     } else {
         TaskStatus::Failed
     };
-    if let Err(error) = crate::repo::task_repo::compare_and_set_status(
+    if let Err(error) = crate::repo::task::compare_and_set_status(
         &ctx.pool,
         task_id,
         TaskStatus::Running,
@@ -185,7 +185,7 @@ async fn settle_normal_apply_failure(ctx: &ApplyContext, task_id: &str) {
 }
 
 fn finish_failed_apply(ctx: &ApplyContext) {
-    crate::services::apply_progress_service::finish(
+    crate::services::apply_progress::finish(
         &ctx.game_id,
         ctx.final_state_name.clone(),
         ctx.warnings.clone(),
@@ -194,7 +194,7 @@ fn finish_failed_apply(ctx: &ApplyContext) {
 }
 
 async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, CollectionError> {
-    crate::services::apply_progress_service::update(&ctx.game_id, "preparing", 0, 0, None);
+    crate::services::apply_progress::update(&ctx.game_id, "preparing", 0, 0, None);
     if !ctx.mods_path.exists() || !ctx.mods_path.is_dir() {
         return Err(CollectionError::RuntimeState(
             crate::domain::errors::RuntimeStateError::NoModsPath {
@@ -205,17 +205,17 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
 
     super::steps::validate_collection::validate(ctx).await?;
 
-    crate::services::apply_progress_service::update(&ctx.game_id, "diffing", 0, 0, None);
+    crate::services::apply_progress::update(&ctx.game_id, "diffing", 0, 0, None);
     super::steps::resolve_target::resolve(ctx).await?;
 
     super::steps::validate_paths::validate(ctx).await?;
-    crate::services::apply_progress_service::set_warnings(&ctx.game_id, ctx.warnings.clone());
+    crate::services::apply_progress::set_warnings(&ctx.game_id, ctx.warnings.clone());
 
     super::steps::resolve_current_state::resolve(ctx).await?;
     compute_diff(ctx);
     ctx.mutation_started = true;
 
-    crate::services::apply_progress_service::update(
+    crate::services::apply_progress::update(
         &ctx.game_id,
         "renaming",
         0,
@@ -224,7 +224,7 @@ async fn execute_inner(ctx: &mut ApplyContext) -> Result<ApplyResult, Collection
     );
     super::steps::batch_rename::rename(ctx).await?;
 
-    crate::services::apply_progress_service::update(
+    crate::services::apply_progress::update(
         &ctx.game_id,
         "verifying",
         ctx.mods_enabled + ctx.mods_disabled,
@@ -332,7 +332,7 @@ mod tests {
         .await
         .expect("seed game");
         for (id, name) in [("baseline-before", "Before"), ("baseline-after", "After")] {
-            crate::repo::collection_repo::create(
+            crate::repo::collection::create(
                 &test_db.pool,
                 id,
                 "game-atomic-finalize",
@@ -343,14 +343,14 @@ mod tests {
             .await
             .expect("seed collection");
         }
-        crate::repo::collection_runtime_repo::set_active(
+        crate::repo::collection::runtime::set_active(
             &test_db.pool,
             "game-atomic-finalize",
             Some("baseline-before"),
         )
         .await
         .expect("seed active baseline");
-        crate::repo::task_repo::create_claimed_task(
+        crate::repo::task::create_claimed_task(
             &test_db.pool,
             "task-atomic-finalize",
             "game-atomic-finalize",
@@ -387,7 +387,7 @@ mod tests {
         assert!(matches!(error, CollectionError::Db(_)));
 
         let runtime =
-            crate::repo::collection_runtime_repo::get(&test_db.pool, "game-atomic-finalize")
+            crate::repo::collection::runtime::get(&test_db.pool, "game-atomic-finalize")
                 .await
                 .expect("load runtime")
                 .expect("runtime exists");
@@ -396,7 +396,7 @@ mod tests {
             Some("baseline-before"),
             "active baseline update must roll back with failed task completion"
         );
-        let task = crate::repo::task_repo::get_task_by_id(&test_db.pool, "task-atomic-finalize")
+        let task = crate::repo::task::get_task_by_id(&test_db.pool, "task-atomic-finalize")
             .await
             .expect("load task")
             .expect("task exists");

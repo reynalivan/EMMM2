@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::domain::errors::{AppError, CollectionError};
 use crate::domain::workspace::WorkspacePathRewrite;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::services::runtime_mutation_engine::{
+use crate::services::workspace_mutation::engine::{
     toggle_mods_mixed, RuntimeToggleBatchRequest, RuntimeToggleOperation, RuntimeToggleTarget,
 };
 
@@ -120,7 +120,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
 
 async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ObjectTogglePlan>, CollectionError> {
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::repo::object_repo::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    let rows = crate::repo::object::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
     drop(conn);
     let by_id = rows
         .into_iter()
@@ -193,7 +193,7 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
         Err(error) => format!("Full disk reconcile failed after failed mutation: {error}"),
     };
     ctx.warnings.push(recovery_message);
-    crate::services::apply_progress_service::set_warnings(&ctx.game_id, ctx.warnings.clone());
+    crate::services::apply_progress::set_warnings(&ctx.game_id, ctx.warnings.clone());
 }
 
 /// Every mod row for the game, reachable by both key spellings it may be
@@ -203,7 +203,7 @@ async fn load_targets_by_key(
     ctx: &ApplyContext,
 ) -> Result<HashMap<String, RuntimeToggleTarget>, CollectionError> {
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::repo::mod_repo::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    let rows = crate::repo::mods::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
     drop(conn);
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
     let mut by_key = HashMap::with_capacity(rows.len() * 2);

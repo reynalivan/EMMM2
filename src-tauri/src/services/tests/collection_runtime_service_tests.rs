@@ -4,13 +4,13 @@ use super::{get_collection_runtime_descriptor, get_collection_runtime_state};
 use crate::domain::collection::{CreateCollectionInput, CreateCollectionMode};
 use crate::domain::models::{GameType, ItemStatus};
 use crate::domain::runtime_state::{LastChangesSource, RuntimeStatus};
-use crate::repo::{collection_repo, collection_runtime_repo};
+use crate::repo::{collection, collection::runtime};
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,
 };
 
-use crate::services::collection_service::create_collection;
+use crate::services::collection::create_collection;
 
 #[tokio::test]
 async fn runtime_descriptor_returns_only_compact_global_status_data() {
@@ -208,10 +208,10 @@ async fn runtime_state_never_treats_last_changes_as_an_active_baseline() {
     .expect("insert game");
 
     let unsaved =
-        collection_repo::create(&ctx.pool, "unsaved-1", "game-1", "202603251217", true, true)
+        collection::create(&ctx.pool, "unsaved-1", "game-1", "202603251217", true, true)
             .await
             .expect("create unsaved");
-    collection_runtime_repo::set_active(&ctx.pool, "game-1", Some(&unsaved.id))
+    collection::runtime::set_active(&ctx.pool, "game-1", Some(&unsaved.id))
         .await
         .expect("set active pointer");
 
@@ -239,7 +239,7 @@ async fn runtime_descriptor_surfaces_draft_last_changes_without_a_preview_tree()
     )
     .await
     .expect("insert game");
-    let baseline = collection_repo::create(
+    let baseline = collection::create(
         &ctx.pool,
         "baseline-1",
         "game-draft",
@@ -249,7 +249,7 @@ async fn runtime_descriptor_surfaces_draft_last_changes_without_a_preview_tree()
     )
     .await
     .expect("create baseline");
-    let draft = collection_repo::create(
+    let draft = collection::create(
         &ctx.pool,
         "draft-1",
         "game-draft",
@@ -260,7 +260,7 @@ async fn runtime_descriptor_surfaces_draft_last_changes_without_a_preview_tree()
     .await
     .expect("create draft");
     let mut tx = ctx.pool.begin().await.expect("begin runtime transaction");
-    collection_runtime_repo::set_draft_tx(&mut tx, "game-draft", &draft.id, Some(&baseline.id))
+    collection::runtime::set_draft_tx(&mut tx, "game-draft", &draft.id, Some(&baseline.id))
         .await
         .expect("set draft pointer");
     tx.commit().await.expect("commit runtime transaction");
@@ -350,7 +350,7 @@ async fn runtime_state_counts_members_deleted_from_disk() {
     .expect("save baseline");
 
     std::fs::remove_dir_all(&mod_dir).expect("delete mod folder");
-    crate::services::collection_service::handle_mod_missing(
+    crate::services::collection::handle_mod_missing(
         &ctx.pool,
         "game-missing",
         "AINOZ/Blue",

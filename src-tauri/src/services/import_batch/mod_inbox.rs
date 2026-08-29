@@ -4,7 +4,7 @@ use super::types::{
     ProcessedModInboxDestination, ProcessedModInboxSource, TargetMode,
 };
 use crate::domain::errors::AppError;
-use crate::repo::import_batch_repo;
+use crate::repo::import_batch;
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ pub async fn build_mod_inbox_snapshot(
     }
 
     let canonical_root = root.canonicalize()?;
-    let active = import_batch_repo::list_active_mod_inbox_sources(db, game_id).await?;
+    let active = import_batch::list_active_mod_inbox_sources(db, game_id).await?;
     let active_by_path = active
         .into_iter()
         .map(|source| (source.source_path, source.batch_id))
@@ -173,7 +173,7 @@ pub async fn delete_processed_sources(
 
     for (source, canonical) in targets {
         crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&canonical)?;
-        if import_batch_repo::mark_mod_inbox_source_deleted(db, game_id, &source.source_id).await?
+        if import_batch::mark_mod_inbox_source_deleted(db, game_id, &source.source_id).await?
             == 0
         {
             return Err(AppError::Internal(format!(
@@ -271,7 +271,7 @@ async fn build_processed_sources(
     db: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<ProcessedModInboxSource>, AppError> {
-    let rows = import_batch_repo::list_mod_inbox_history_rows(db, game_id).await?;
+    let rows = import_batch::list_mod_inbox_history_rows(db, game_id).await?;
     let mut grouped = BTreeMap::<String, ProcessedModInboxSource>::new();
     for row in rows {
         let name = Path::new(&row.source_path)

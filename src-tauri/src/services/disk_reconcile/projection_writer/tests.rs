@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::common::safety_constants::SAFETY_SOURCE_UNKNOWN;
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::models::{GameType, ItemStatus};
-use crate::repo::stable_ids::generate_stable_id;
+use crate::repo::utils::stable_ids::generate_stable_id;
 use crate::services::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::services::disk_reconcile::disk_snapshot::collect_disk_projection;
 use crate::services::disk_reconcile::types::{DiskReconcilePathKind, DiskReconcilePathUpdate};
@@ -95,7 +95,7 @@ async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str, mods_path: &Path) -> 
 }
 
 async fn seed_collection_with_members(pool: &sqlx::SqlitePool, mod_paths: &[&str]) {
-    crate::repo::collection_repo::create(
+    crate::repo::collection::create(
         pool,
         "collection-swap",
         "game-1",
@@ -461,7 +461,7 @@ async fn parent_delete_preserves_collection_members_and_reports_every_child_miss
     )
     .await
     .expect("mod seed");
-    crate::repo::collection_repo::create(
+    crate::repo::collection::create(
         &ctx.pool,
         "collection-1",
         "game-1",
@@ -517,7 +517,7 @@ async fn parent_delete_preserves_collection_members_and_reports_every_child_miss
             .fetch_one(&ctx.pool)
             .await
             .expect("collection snapshot");
-    let snapshot = crate::services::projected_state_service::parse_snapshot_json(&snapshot_json)
+    let snapshot = crate::services::projected_state::parse_snapshot_json(&snapshot_json)
         .unwrap_or_else(|| panic!("invalid collection snapshot: {snapshot_json}"));
     assert_eq!(snapshot.summary.missing_root_count, 1);
 }
@@ -558,7 +558,7 @@ async fn recreated_parent_and_child_rebind_durable_collection_references() {
     )
     .await
     .expect("mod seed");
-    crate::repo::collection_repo::create(
+    crate::repo::collection::create(
         &ctx.pool,
         "collection-1",
         "game-1",
@@ -627,7 +627,7 @@ async fn full_reconcile_heals_offline_nested_terminal_rename_by_filesystem_ident
             .fetch_one(&ctx.pool)
             .await
             .expect("initial mod row");
-    crate::repo::collection_repo::create(
+    crate::repo::collection::create(
         &ctx.pool,
         "collection-1",
         "game-1",
@@ -696,7 +696,7 @@ async fn full_reconcile_heals_offline_parent_rename_and_all_collection_children(
     .fetch_one(&ctx.pool)
     .await
     .expect("runtime rows");
-    crate::repo::collection_repo::create(
+    crate::repo::collection::create(
         &ctx.pool,
         "collection-1",
         "game-1",
@@ -766,7 +766,7 @@ async fn offline_rename_into_deleted_destination_keeps_source_row_metadata() {
         .execute(&ctx.pool)
         .await
         .expect("source metadata");
-    crate::repo::collection_repo::create(
+    crate::repo::collection::create(
         &ctx.pool,
         "collection-1",
         "game-1",

@@ -4,8 +4,8 @@
 use crate::domain::errors::AppError;
 use std::collections::HashMap;
 
-use crate::repo::mod_repo::ReconcileModRow as DbModRow;
-use crate::repo::object_repo::ReconcileObjectRow as DbObjectRow;
+use crate::repo::mods::ReconcileModRow as DbModRow;
+use crate::repo::object::ReconcileObjectRow as DbObjectRow;
 
 use super::keys::runtime_logical_path_key;
 
@@ -13,14 +13,14 @@ async fn load_db_objects(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
 ) -> Result<Vec<DbObjectRow>, AppError> {
-    Ok(crate::repo::object_repo::get_rows_for_reconcile(conn, game_id).await?)
+    Ok(crate::repo::object::get_rows_for_reconcile(conn, game_id).await?)
 }
 
 async fn load_db_mods(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
 ) -> Result<Vec<DbModRow>, AppError> {
-    Ok(crate::repo::mod_repo::get_rows_for_reconcile(conn, game_id).await?)
+    Ok(crate::repo::mods::get_rows_for_reconcile(conn, game_id).await?)
 }
 
 /// Every lookup table stores a position into the owned row vector, so a row is

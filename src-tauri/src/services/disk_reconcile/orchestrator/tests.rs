@@ -551,7 +551,7 @@ async fn reconcile_and_collection_apply_do_not_deadlock_on_inverted_locks() {
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let game_lock = state.game_lock("game-1");
     let mut apply_context = crate::pipeline::apply_pipeline::ApplyContext::new(
-        crate::services::collection_service::ApplyCollectionRequest {
+        crate::services::collection::ApplyCollectionRequest {
             pool: &ctx.pool,
             game_id: "game-1",
             collection_id: "collection-1",

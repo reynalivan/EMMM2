@@ -46,7 +46,7 @@ pub async fn reveal_object_in_explorer(
     object_id: String,
     object_name: String,
 ) -> Result<String, AppError> {
-    let mods_path = crate::repo::game_repo::get_mod_path(pool.inner(), &game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool.inner(), &game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
 

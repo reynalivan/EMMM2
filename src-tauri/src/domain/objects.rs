@@ -1,7 +1,7 @@
 //! Object vocabulary shared by the repo, the services and the frontend.
 //!
 //! These carry `specta::Type`, so they are the TypeScript contract. They lived
-//! in `repo::object_repo`, which made the data-access layer the owner of the
+//! in `repo::object`, which made the data-access layer the owner of the
 //! IPC surface. `sqlx::FromRow` stays on them: the row shape and the wire
 //! shape genuinely coincide today, and a second type per table would be
 //! ceremony until one of them actually diverges.

@@ -1,7 +1,7 @@
 use super::staging::stage_import_batch_sources;
 use super::types::{ImportBatch, ImportBatchStatus, ImportItemStatus};
 use crate::domain::errors::AppError;
-use crate::repo::import_batch_repo;
+use crate::repo::import_batch;
 use crate::services::match_engine::classification::classify_source;
 use crate::services::match_engine::inspection::{inspect_source, InspectionRequest};
 use crate::services::scanner::deep_matcher::analysis::content::PreparedTokenFilters;
@@ -15,10 +15,10 @@ pub async fn analyze_import_batch_for_app(
     db: &SqlitePool,
     batch_id: &str,
 ) -> Result<ImportBatch, AppError> {
-    let batch = import_batch_repo::get_batch(db, batch_id)
+    let batch = import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
-    let game_type = crate::repo::game_repo::get_game_type(db, &batch.game_id)
+    let game_type = crate::repo::game::get_game_type(db, &batch.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))?
         as i32;
@@ -53,7 +53,7 @@ pub async fn analyze_import_batch(
     ini_filters: &PreparedTokenFilters,
     match_extensions: &[String],
 ) -> Result<ImportBatch, AppError> {
-    let mut batch = import_batch_repo::get_batch(db, batch_id)
+    let mut batch = import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
     if matches!(
@@ -86,7 +86,7 @@ pub async fn analyze_import_batch(
         })?;
         let categories =
             classify_source(&analysis_path, &item.planned_name, master_db, ini_filters);
-        if !import_batch_repo::store_inspection(db, &item.id, &inspection, &categories).await? {
+        if !import_batch::store_inspection(db, &item.id, &inspection, &categories).await? {
             return Err(AppError::Validation(format!(
                 "Import item '{}' changed while analysis was running",
                 item.id
@@ -94,7 +94,7 @@ pub async fn analyze_import_batch(
         }
     }
 
-    import_batch_repo::get_batch(db, batch_id)
+    import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| {
             AppError::Internal("Analyzed import batch could not be reloaded".to_string())

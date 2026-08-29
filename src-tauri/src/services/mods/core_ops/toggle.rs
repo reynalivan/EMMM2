@@ -107,7 +107,7 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
 ) -> Result<ModTogglePolicyOutcome, AppError> {
     let canonical_path = path;
 
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Failed to fetch game mods path".to_string()))?;
 

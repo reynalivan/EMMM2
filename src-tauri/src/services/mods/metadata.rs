@@ -17,14 +17,14 @@ pub async fn set_mod_category(
     let folder_path_str = canonical_path.to_string_lossy();
 
     let exists =
-        crate::repo::mod_repo::get_mod_id_and_object_id_by_path(pool, &folder_path_str, game_id)
+        crate::repo::mods::get_mod_id_and_object_id_by_path(pool, &folder_path_str, game_id)
             .await?;
 
     if let Some((mod_id, object_id)) = exists {
         let obj_id_str = object_id.unwrap_or_default();
         let mut conn = pool.acquire().await?;
 
-        crate::repo::mod_repo::update_mod_object_id_and_type_tx(
+        crate::repo::mods::update_mod_object_id_and_type_tx(
             &mut conn,
             &mod_id,
             &obj_id_str,
@@ -84,7 +84,7 @@ pub async fn toggle_mod_safe(
     full_path: &ValidatedPath,
     safe: bool,
 ) -> Result<(), AppError> {
-    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let game_mod_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods_path".to_string()))?;
 
@@ -107,7 +107,7 @@ pub async fn toggle_mod_safe(
     };
     crate::services::mods::info_json::update_info_json(full_path, &update)?;
     if let Err(error) =
-        crate::repo::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await
+        crate::repo::mods::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await
     {
         let rollback = match previous.as_deref() {
             Some(bytes) => crate::services::fs_utils::atomic_file::atomic_write(&info_path, bytes),
@@ -147,7 +147,7 @@ fn path_has_disabled_segment(path: &str) -> bool {
         .any(crate::common::normalizer::is_disabled_folder)
 }
 
-fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::repo::mod_repo::Mod) -> bool {
+fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::repo::mods::Mod) -> bool {
     if path_has_hidden_segment(&mod_row.folder_path) {
         return false;
     }
@@ -161,7 +161,7 @@ pub async fn suggest_random_mods(
 ) -> Result<Vec<RandomModProposal>, AppError> {
     use rand::seq::SliceRandom;
 
-    let characters = crate::repo::object_repo::get_characters_for_game(pool, game_id).await?;
+    let characters = crate::repo::object::get_characters_for_game(pool, game_id).await?;
 
     if characters.is_empty() {
         return Ok(Vec::new());
@@ -170,7 +170,7 @@ pub async fn suggest_random_mods(
     let mut proposals = Vec::new();
 
     for (object_id, object_name) in characters {
-        let mods = crate::repo::mod_repo::get_mods_by_object_id(pool, &object_id).await?;
+        let mods = crate::repo::mods::get_mods_by_object_id(pool, &object_id).await?;
 
         if mods.is_empty() {
             continue;
@@ -202,10 +202,10 @@ pub async fn get_active_mod_conflicts(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<crate::services::scanner::conflict::ConflictInfo>, AppError> {
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let mods_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
-    let rows = crate::repo::mod_repo::get_enabled_mods_paths(pool, game_id).await?;
+    let rows = crate::repo::mods::get_enabled_mods_paths(pool, game_id).await?;
 
     Ok(conflicts_for_enabled_paths(Path::new(&mods_path), &rows))
 }

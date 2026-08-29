@@ -22,7 +22,7 @@ pub async fn resolve_mod_path_for_object(
     object_id: &str,
     mods_root: &Path,
 ) -> Option<String> {
-    let (mod_id, stored_path) = crate::repo::mod_repo::get_mod_by_object_id(pool, object_id)
+    let (mod_id, stored_path) = crate::repo::mods::get_mod_by_object_id(pool, object_id)
         .await
         .ok()??;
 
@@ -32,7 +32,7 @@ pub async fn resolve_mod_path_for_object(
     }
 
     // Filesystem is source of truth — delete the stale row
-    let _ = crate::repo::mod_repo::delete_mod_by_id(pool, &mod_id).await;
+    let _ = crate::repo::mods::delete_mod_by_id(pool, &mod_id).await;
 
     log::warn!(
         "Deleted stale mod {} (folder gone): {}",

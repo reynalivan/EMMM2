@@ -3,7 +3,7 @@
 //!
 //! Never mutates the filesystem, and only runs inside the disk_reconcile
 //! orchestrator. `object_runtime_projection` refresh happens in the same transaction via
-//! `repo::runtime_projection_repo` (see `disk_reconcile::reconcile`).
+//! `repo::runtime_projection` (see `disk_reconcile::reconcile`).
 
 mod index;
 mod keys;

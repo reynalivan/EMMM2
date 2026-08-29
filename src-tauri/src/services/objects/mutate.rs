@@ -23,7 +23,7 @@ pub async fn create_object_cmd_inner(
     let mut pending_thumbnail_copy = None;
     let mut previous_thumbnail = None;
 
-    let mods_path = crate::repo::game_repo::get_configured_mods_path(pool, &input.game_id)
+    let mods_path = crate::repo::game::get_configured_mods_path(pool, &input.game_id)
         .await
         .map_err(|e| AppError::Db(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
@@ -95,7 +95,7 @@ pub async fn create_object_cmd_inner(
         crate::services::images::thumbnail_cache::ThumbnailCache::invalidate(dest);
     }
 
-    let res = crate::repo::object_repo::create_object(
+    let res = crate::repo::object::create_object(
         pool,
         &id,
         &input.game_id,
@@ -113,7 +113,7 @@ pub async fn create_object_cmd_inner(
 
     match res {
         Ok(_) => {
-            crate::repo::runtime_projection_repo::refresh_object_projection(
+            crate::repo::runtime_projection::refresh_object_projection(
                 pool,
                 &input.game_id,
                 &id,
@@ -243,7 +243,7 @@ pub async fn toggle_pin_object(
     id: &str,
     pin: bool,
 ) -> Result<(), AppError> {
-    Ok(crate::repo::object_repo::set_is_pinned(pool, id, pin).await?)
+    Ok(crate::repo::object::set_is_pinned(pool, id, pin).await?)
 }
 
 /// Update an object, returning a user-friendly error on unique-name conflicts.
@@ -253,11 +253,11 @@ pub async fn update_object(
     updates: &UpdateObjectInput,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let object_game_id = crate::repo::object_repo::get_game_id_conn(&mut tx, id).await?;
+    let object_game_id = crate::repo::object::get_game_id_conn(&mut tx, id).await?;
     let update_result = async {
-        crate::repo::object_repo::update_object(&mut *tx, id, updates).await?;
+        crate::repo::object::update_object(&mut *tx, id, updates).await?;
         if let Some(game_id) = object_game_id.as_deref() {
-            crate::repo::runtime_projection_repo::refresh_projection_for_object_ids_tx(
+            crate::repo::runtime_projection::refresh_projection_for_object_ids_tx(
                 &mut tx,
                 game_id,
                 [id.to_string()],
@@ -289,7 +289,7 @@ pub async fn set_object_and_mods_category(
     }
 
     let mut tx = pool.begin().await?;
-    let object_updated = crate::repo::object_repo::update_object_type_for_game(
+    let object_updated = crate::repo::object::update_object_type_for_game(
         &mut *tx, game_id, object_id, category,
     )
     .await?;
@@ -300,9 +300,9 @@ pub async fn set_object_and_mods_category(
     }
 
     let child_updated =
-        crate::repo::mod_repo::set_object_type_for_object(&mut *tx, game_id, object_id, category)
+        crate::repo::mods::set_object_type_for_object(&mut *tx, game_id, object_id, category)
             .await?;
-    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids_tx(
+    crate::repo::runtime_projection::refresh_projection_for_object_ids_tx(
         &mut tx,
         game_id,
         [object_id.to_string()],
@@ -325,14 +325,14 @@ pub async fn delete_object(
         crate::services::scanner::watcher::SuppressionGuard::new(&watcher_state.suppressor);
     // 1. Fetch object from DB to get game_id and folder_path
     let (obj_game_id, obj_folder_path) =
-        crate::repo::object_repo::get_game_id_and_folder_path(pool, id)
+        crate::repo::object::get_game_id_and_folder_path(pool, id)
             .await
             .map_err(|e| AppError::Db(e.to_string()))?
             .ok_or_else(|| AppError::NotFound(format!("Object not found: {}", id)))?;
 
     let mut target_dir_opt: Option<std::path::PathBuf> = None;
 
-    let mods_path = crate::repo::game_repo::get_configured_mods_path(pool, &obj_game_id)
+    let mods_path = crate::repo::game::get_configured_mods_path(pool, &obj_game_id)
         .await
         .map_err(|e| AppError::Db(e.to_string()))?;
 
@@ -341,7 +341,7 @@ pub async fn delete_object(
     }
 
     // 1.5. Safety Guard: Check if the object has any mods
-    let count = crate::repo::object_repo::get_mod_count_for_object(pool, id).await?;
+    let count = crate::repo::object::get_mod_count_for_object(pool, id).await?;
     if count > 0 && !force {
         return Err(AppError::ObjectHasMods(count as i32));
     }

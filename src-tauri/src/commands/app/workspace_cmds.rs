@@ -27,7 +27,7 @@ pub async fn get_workspace_view_model(
         &game_id,
     );
 
-    let mut workspace = crate::services::workspace_service::get_workspace_view_model_with_listing_mode(
+    let mut workspace = crate::services::workspace::get_workspace_view_model_with_listing_mode(
         pool.inner(),
         input,
         matches!(
@@ -74,7 +74,7 @@ pub async fn execute_workspace_switch(
     .await?;
     let op_guard = op_lock.acquire().await?;
     let game_id = input.game_id.clone();
-    let result = crate::services::workspace_switch_service::execute_switch(
+    let result = crate::services::workspace::switch::execute_switch(
         input,
         config.inner(),
         pool.inner(),

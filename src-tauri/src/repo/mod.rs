@@ -1,18 +1,16 @@
-pub mod browser_repo;
-pub mod collection_repo;
-pub mod collection_runtime_repo;
-pub mod conflict_repo;
-pub mod dashboard_repo;
-pub mod dedup_repo;
-pub mod game_repo;
-pub mod import_batch_repo;
-pub mod mod_repo;
-pub mod object_repo;
-pub mod runtime_projection_repo;
-pub mod settings_repo;
-pub mod stable_ids;
-pub mod task_repo;
-pub mod unicode_keys;
+pub mod browser;
+pub mod collection;
+pub mod conflict;
+pub mod dashboard;
+pub mod dedup;
+pub mod game;
+pub mod import_batch;
+pub mod mods;
+pub mod object;
+pub mod runtime_projection;
+pub mod settings;
+pub mod task;
+pub mod utils;
 
 #[cfg(test)]
 #[path = "tests/folder_path_normalization_test.rs"]

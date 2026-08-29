@@ -114,9 +114,9 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("Ayaka.zip");
     std::fs::write(&archive, b"archive").unwrap();
-    crate::repo::import_batch_repo::create_batch(
+    crate::repo::import_batch::create_batch(
         &context.pool,
-        &crate::repo::import_batch_repo::CreateImportBatchRecord {
+        &crate::repo::import_batch::CreateImportBatchRecord {
             id: "batch-archive".to_string(),
             game_id: "gimi".to_string(),
             flow: ImportFlow::ReadyToMove,
@@ -125,7 +125,7 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::repo::import_batch_repo::NewImportItemRecord {
+        &[crate::repo::import_batch::NewImportItemRecord {
             id: "item-archive".to_string(),
             source_kind: ImportSourceKind::ReadyToMove,
             source_path: archive.to_string_lossy().into_owned(),
@@ -152,14 +152,14 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
     let error = finalize_ready_to_move_archives(&context.pool, "batch-archive")
         .await
         .unwrap_err();
-    crate::repo::import_batch_repo::mark_ready_to_move_archive_pending(
+    crate::repo::import_batch::mark_ready_to_move_archive_pending(
         &context.pool,
         "batch-archive",
         &error.to_string(),
     )
     .await
     .unwrap();
-    let pending = crate::repo::import_batch_repo::get_batch(&context.pool, "batch-archive")
+    let pending = crate::repo::import_batch::get_batch(&context.pool, "batch-archive")
         .await
         .unwrap()
         .unwrap();
@@ -171,14 +171,14 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
     finalize_ready_to_move_archives(&context.pool, "batch-archive")
         .await
         .unwrap();
-    crate::repo::import_batch_repo::complete_ready_to_move_archive_pending(
+    crate::repo::import_batch::complete_ready_to_move_archive_pending(
         &context.pool,
         "batch-archive",
     )
     .await
     .unwrap();
     assert_eq!(
-        crate::repo::import_batch_repo::finish_batch_from_items(&context.pool, "batch-archive",)
+        crate::repo::import_batch::finish_batch_from_items(&context.pool, "batch-archive",)
             .await
             .unwrap(),
         ImportBatchStatus::Done
@@ -220,9 +220,9 @@ async fn ready_to_move_folder_pack_is_retained_in_processed_with_history() {
     let root = tempfile::tempdir().unwrap();
     let pack = root.path().join("Character Pack");
     std::fs::create_dir(&pack).unwrap();
-    crate::repo::import_batch_repo::create_batch(
+    crate::repo::import_batch::create_batch(
         &context.pool,
-        &crate::repo::import_batch_repo::CreateImportBatchRecord {
+        &crate::repo::import_batch::CreateImportBatchRecord {
             id: "batch-pack".to_string(),
             game_id: "gimi".to_string(),
             flow: ImportFlow::ReadyToMove,
@@ -231,7 +231,7 @@ async fn ready_to_move_folder_pack_is_retained_in_processed_with_history() {
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::repo::import_batch_repo::NewImportItemRecord {
+        &[crate::repo::import_batch::NewImportItemRecord {
             id: "item-pack".to_string(),
             source_kind: ImportSourceKind::ReadyToMove,
             source_path: pack.to_string_lossy().into_owned(),
@@ -293,9 +293,9 @@ async fn ready_to_move_finalization_recovers_a_crash_after_the_source_move() {
     let target = processed.join("Crash Pack");
     std::fs::create_dir(&source).unwrap();
     std::fs::create_dir(&processed).unwrap();
-    crate::repo::import_batch_repo::create_batch(
+    crate::repo::import_batch::create_batch(
         &context.pool,
-        &crate::repo::import_batch_repo::CreateImportBatchRecord {
+        &crate::repo::import_batch::CreateImportBatchRecord {
             id: "batch-crash".to_string(),
             game_id: "gimi".to_string(),
             flow: ImportFlow::ReadyToMove,
@@ -304,7 +304,7 @@ async fn ready_to_move_finalization_recovers_a_crash_after_the_source_move() {
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::repo::import_batch_repo::NewImportItemRecord {
+        &[crate::repo::import_batch::NewImportItemRecord {
             id: "item-crash".to_string(),
             source_kind: ImportSourceKind::ReadyToMove,
             source_path: source.to_string_lossy().into_owned(),
@@ -323,7 +323,7 @@ async fn ready_to_move_finalization_recovers_a_crash_after_the_source_move() {
         .execute(&context.pool)
         .await
         .unwrap();
-    crate::repo::import_batch_repo::plan_mod_inbox_source_processing(
+    crate::repo::import_batch::plan_mod_inbox_source_processing(
         &context.pool,
         "batch-crash",
         &source.to_string_lossy(),

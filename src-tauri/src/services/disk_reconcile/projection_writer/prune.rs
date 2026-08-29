@@ -37,7 +37,7 @@ pub(super) async fn prune_missing_objects(
             continue;
         }
 
-        crate::repo::object_repo::delete_object_and_mods_by_folder(
+        crate::repo::object::delete_object_and_mods_by_folder(
             &mut *conn,
             game_id,
             &db_object.folder_path,
@@ -83,7 +83,7 @@ pub(super) async fn prune_missing_mods(
             continue;
         }
 
-        let impact = crate::services::collection_service::handle_mod_missing_tx(
+        let impact = crate::services::collection::handle_mod_missing_tx(
             &mut *conn,
             game_id,
             &db_mod.folder_path,
@@ -91,7 +91,7 @@ pub(super) async fn prune_missing_mods(
         .await?;
         state.collection_reference_impact.merge(impact);
 
-        crate::repo::mod_repo::delete_mod_tx(&mut *conn, &db_mod.id).await?;
+        crate::repo::mods::delete_mod_tx(&mut *conn, &db_mod.id).await?;
         state.folders_changed = true;
         state.change_summary.record_mod_removed(&db_mod.actual_name);
     }

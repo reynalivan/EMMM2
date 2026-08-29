@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::domain::errors::AppError;
-use crate::repo::mod_repo::ReconcileModRow;
-use crate::repo::object_repo::ReconcileObjectRow;
+use crate::repo::mods::ReconcileModRow;
+use crate::repo::object::ReconcileObjectRow;
 use crate::services::disk_reconcile::disk_snapshot::{collect_disk_projection, DiskProjection};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -216,8 +216,8 @@ pub async fn inspect_game_mods_directory(
 
     let mut conn = pool.acquire().await?;
     let existing_objects =
-        crate::repo::object_repo::get_rows_for_reconcile(&mut conn, game_id).await?;
-    let existing_mods = crate::repo::mod_repo::get_rows_for_reconcile(&mut conn, game_id).await?;
+        crate::repo::object::get_rows_for_reconcile(&mut conn, game_id).await?;
+    let existing_mods = crate::repo::mods::get_rows_for_reconcile(&mut conn, game_id).await?;
     let summary = classify_candidate(
         &existing_objects,
         &existing_mods,
@@ -374,8 +374,8 @@ fn rollback_game_mods_directory(
 #[cfg(test)]
 mod tests {
     use crate::domain::models::ItemStatus;
-    use crate::repo::mod_repo::ReconcileModRow;
-    use crate::repo::object_repo::ReconcileObjectRow;
+    use crate::repo::mods::ReconcileModRow;
+    use crate::repo::object::ReconcileObjectRow;
     use crate::services::disk_reconcile::disk_snapshot::{
         DiskModEntry, DiskObjectEntry, DiskProjection,
     };

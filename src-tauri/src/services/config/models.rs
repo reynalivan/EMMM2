@@ -1,4 +1,4 @@
-use crate::repo::game_repo;
+use crate::repo::game;
 use crate::services::hotkeys::{HotkeyConfig, KeyViewerConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -85,7 +85,7 @@ impl Default for AppSettings {
     }
 }
 
-pub fn game_row_to_config(row: game_repo::GameRow) -> GameConfig {
+pub fn game_row_to_config(row: game::GameRow) -> GameConfig {
     GameConfig {
         id: row.id,
         name: row.name,
@@ -99,8 +99,8 @@ pub fn game_row_to_config(row: game_repo::GameRow) -> GameConfig {
     }
 }
 
-pub fn config_to_game_row(config: &GameConfig) -> game_repo::GameRow {
-    game_repo::GameRow {
+pub fn config_to_game_row(config: &GameConfig) -> game::GameRow {
+    game::GameRow {
         id: config.id.clone(),
         name: config.name.clone(),
         game_type: config.game_type,

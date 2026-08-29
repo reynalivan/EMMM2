@@ -1,5 +1,5 @@
 use crate::domain::errors::AppError;
-use crate::repo::{game_repo, settings_repo};
+use crate::repo::{game, settings};
 use sqlx::SqlitePool;
 
 use super::models::{config_to_game_row, game_row_to_config, AiConfig, AppSettings, SafetyConfig};
@@ -8,8 +8,8 @@ use super::ConfigService;
 impl ConfigService {
     /// Load AppSettings from the SQLite database.
     pub(super) async fn load_from_db(pool: &SqlitePool) -> Result<AppSettings, AppError> {
-        let kv = settings_repo::get_all_settings(pool).await?;
-        let games = game_repo::get_all_games(pool)
+        let kv = settings::get_all_settings(pool).await?;
+        let games = game::get_all_games(pool)
             .await?
             .into_iter()
             .map(game_row_to_config)
@@ -69,22 +69,22 @@ impl ConfigService {
         removed_game_ids: &[String],
     ) -> Result<(), AppError> {
         let mut tx = pool.begin().await?;
-        settings_repo::set_setting(
+        settings::set_setting(
             &mut *tx,
             "settings_revision",
             &settings.revision.to_string(),
         )
         .await?;
-        settings_repo::set_setting(&mut *tx, "theme", &settings.theme).await?;
-        settings_repo::set_setting(&mut *tx, "language", &settings.language).await?;
+        settings::set_setting(&mut *tx, "theme", &settings.theme).await?;
+        settings::set_setting(&mut *tx, "language", &settings.language).await?;
 
         if let Some(ref id) = settings.active_game_id {
-            settings_repo::set_setting(&mut *tx, "active_game_id", id).await?;
+            settings::set_setting(&mut *tx, "active_game_id", id).await?;
         } else {
-            settings_repo::delete_setting(&mut *tx, "active_game_id").await?;
+            settings::delete_setting(&mut *tx, "active_game_id").await?;
         }
 
-        settings_repo::set_setting(
+        settings::set_setting(
             &mut *tx,
             "auto_close_launcher",
             &settings.auto_close_launcher.to_string(),
@@ -92,23 +92,23 @@ impl ConfigService {
         .await?;
 
         let safety_json = serde_json::to_string(&settings.safety)?;
-        settings_repo::set_setting(&mut *tx, "safety_classification", &safety_json).await?;
+        settings::set_setting(&mut *tx, "safety_classification", &safety_json).await?;
 
         let ai_json = serde_json::to_string(&settings.ai)?;
-        settings_repo::set_setting(&mut *tx, "ai", &ai_json).await?;
+        settings::set_setting(&mut *tx, "ai", &ai_json).await?;
 
         let hotkeys_json = serde_json::to_string(&settings.hotkeys)?;
-        settings_repo::set_setting(&mut *tx, "hotkeys", &hotkeys_json).await?;
+        settings::set_setting(&mut *tx, "hotkeys", &hotkeys_json).await?;
 
         let keyviewer_json = serde_json::to_string(&settings.keyviewer)?;
-        settings_repo::set_setting(&mut *tx, "keyviewer", &keyviewer_json).await?;
+        settings::set_setting(&mut *tx, "keyviewer", &keyviewer_json).await?;
 
         // Persist games
         for game in &settings.games {
             let row = config_to_game_row(game);
-            game_repo::upsert_game(&mut *tx, &row).await?;
+            game::upsert_game(&mut *tx, &row).await?;
         }
-        game_repo::delete_games_by_ids(&mut tx, removed_game_ids).await?;
+        game::delete_games_by_ids(&mut tx, removed_game_ids).await?;
 
         tx.commit().await?;
         Ok(())

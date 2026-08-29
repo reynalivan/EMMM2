@@ -5,12 +5,12 @@ use sqlx::SqlitePool;
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-use crate::repo::browser_repo;
+use crate::repo::browser;
 
 pub use crate::domain::browser::ImportJobDto;
 
 pub async fn list_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, BrowserError> {
-    Ok(browser_repo::list_active_jobs(db).await?)
+    Ok(browser::list_active_jobs(db).await?)
 }
 
 pub async fn cleanup_old_terminal_staging(
@@ -18,13 +18,13 @@ pub async fn cleanup_old_terminal_staging(
     app: &AppHandle,
     limit: i64,
 ) -> Result<usize, BrowserError> {
-    let candidates = browser_repo::list_terminal_staging_cleanup_candidates(db, limit).await?;
+    let candidates = browser::list_terminal_staging_cleanup_candidates(db, limit).await?;
     let staging_root = browser_staging_root(app)?;
     let mut cleaned = 0;
     for (job_id, staging_path) in candidates {
         match remove_job_staging_dir(&staging_root, &job_id, Path::new(&staging_path)) {
             Ok(()) => {
-                browser_repo::clear_staging_path(db, &job_id).await?;
+                browser::clear_staging_path(db, &job_id).await?;
                 cleaned += 1;
             }
             Err(error) => {

@@ -18,10 +18,10 @@ pub async fn list_move_targets_for_object_service(
     game_id: &str,
     object_id: &str,
 ) -> Result<Vec<WorkspaceMoveTarget>, AppError> {
-    let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
+    let game_mod_path = crate::repo::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
-    let target_obj = crate::repo::object_repo::get_game_object_by_id(pool, object_id)
+    let target_obj = crate::repo::object::get_game_object_by_id(pool, object_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Target object not found".to_string()))?;
 

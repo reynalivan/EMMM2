@@ -1,6 +1,6 @@
 use super::types::{ImportBatch, ImportBatchStatus, ImportItemStatus};
 use crate::domain::errors::AppError;
-use crate::repo::import_batch_repo::{self, StagedRootRecord};
+use crate::repo::import_batch::{self, StagedRootRecord};
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 
@@ -58,7 +58,7 @@ pub async fn stage_import_batch_sources(
     batch_id: &str,
     staging_root: &Path,
 ) -> Result<ImportBatch, AppError> {
-    let batch = import_batch_repo::get_batch(db, batch_id)
+    let batch = import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
     if !matches!(
@@ -71,7 +71,7 @@ pub async fn stage_import_batch_sources(
         )));
     }
     std::fs::create_dir_all(staging_root)?;
-    import_batch_repo::set_batch_status(db, batch_id, ImportBatchStatus::Analyzing).await?;
+    import_batch::set_batch_status(db, batch_id, ImportBatchStatus::Analyzing).await?;
 
     for item in batch.items.iter().filter(|item| {
         matches!(
@@ -81,7 +81,7 @@ pub async fn stage_import_batch_sources(
     }) {
         if item.status == ImportItemStatus::Failed {
             cleanup_item_staging(staging_root, batch_id, &item.id)?;
-            if !import_batch_repo::reset_failed_item_for_staging(db, &item.id).await? {
+            if !import_batch::reset_failed_item_for_staging(db, &item.id).await? {
                 return Err(AppError::Validation(format!(
                     "Import item '{}' changed while preparing a staging retry",
                     item.id
@@ -113,20 +113,20 @@ pub async fn stage_import_batch_sources(
         };
 
         if let Err(error) = outcome {
-            import_batch_repo::set_item_failure(db, &item.id, &error.to_string()).await?;
-            import_batch_repo::set_batch_status(db, batch_id, ImportBatchStatus::Partial).await?;
+            import_batch::set_item_failure(db, &item.id, &error.to_string()).await?;
+            import_batch::set_batch_status(db, batch_id, ImportBatchStatus::Partial).await?;
             return Err(error);
         }
     }
 
-    import_batch_repo::set_batch_status(db, batch_id, ImportBatchStatus::AwaitingReview).await?;
-    import_batch_repo::get_batch(db, batch_id)
+    import_batch::set_batch_status(db, batch_id, ImportBatchStatus::AwaitingReview).await?;
+    import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::Internal("Staged import batch could not be reloaded".to_string()))
 }
 
 async fn transition_folder_to_staged(db: &SqlitePool, item_id: &str) -> Result<(), AppError> {
-    let updated = import_batch_repo::transition_item_status(
+    let updated = import_batch::transition_item_status(
         db,
         item_id,
         ImportItemStatus::Discovered,
@@ -191,7 +191,7 @@ async fn stage_ready_to_move_folder(
     if records.is_empty() {
         return transition_folder_to_staged(db, item_id).await;
     }
-    if !import_batch_repo::replace_archive_item_with_roots(db, item_id, &records).await? {
+    if !import_batch::replace_archive_item_with_roots(db, item_id, &records).await? {
         return Err(AppError::Validation(format!(
             "Import item '{item_id}' changed while folder-pack staging completed"
         )));
@@ -239,7 +239,7 @@ async fn stage_archive_item(
             }
         })
         .collect::<Vec<_>>();
-    if !import_batch_repo::replace_archive_item_with_roots(db, item_id, &records).await? {
+    if !import_batch::replace_archive_item_with_roots(db, item_id, &records).await? {
         return Err(AppError::Validation(format!(
             "Import item '{item_id}' changed while archive staging completed"
         )));

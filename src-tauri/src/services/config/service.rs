@@ -26,7 +26,7 @@ impl ConfigService {
     }
 
     /// Initialize from Tauri AppHandle. The pool is already migrated by
-    /// `bootstrap::init_pool`, so this only loads current settings.
+    /// `app::bootstrap::init_pool`, so this only loads current settings.
     pub fn init(_app_handle: &AppHandle, pool: SqlitePool) -> Self {
         let (settings, settings_authoritative) =
             match Self::run_async(async { Self::load_from_db(&pool).await }) {

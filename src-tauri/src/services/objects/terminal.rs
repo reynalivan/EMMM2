@@ -1,7 +1,7 @@
 //! Terminal-node rules: which folder in a nested path counts as "the mod",
 //! and the per-object totals that follow from it.
 //!
-//! This lived in `repo::object_repo::counts` and walked the disk from inside
+//! This lived in `repo::object::counts` and walked the disk from inside
 //! the data-access layer, once per row per ancestor with no memo. Resolving a
 //! terminal reads directories and parses INI headers, so it belongs here.
 
@@ -13,7 +13,7 @@ use crate::common::normalizer::is_disabled_folder;
 use crate::common::path_key::{canonical_name_key, folder_path_key, resolve_collection_path};
 use crate::domain::models::ItemStatus;
 use crate::domain::objects::ObjectSummary;
-use crate::repo::object_repo::{ObjectCountCandidate, TerminalDescriptor};
+use crate::repo::object::{ObjectCountCandidate, TerminalDescriptor};
 
 pub(crate) struct TerminalCounts {
     pub total: i64,

@@ -78,7 +78,7 @@ async fn test_set_object_type_for_object_updates_only_target_object_mods() {
     let pool = setup_object_mods_fixture().await;
 
     let updated =
-        crate::repo::mod_repo::set_object_type_for_object(&pool, "g_object_mods", "obj1", "Weapon")
+        crate::repo::mods::set_object_type_for_object(&pool, "g_object_mods", "obj1", "Weapon")
             .await
             .unwrap();
 

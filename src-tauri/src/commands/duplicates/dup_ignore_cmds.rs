@@ -1,6 +1,6 @@
 use crate::domain::conflicts::WhitelistEntry;
 use crate::domain::errors::AppError;
-use crate::repo::dedup_repo::{delete_whitelist_entry, get_whitelist_detailed};
+use crate::repo::dedup::{delete_whitelist_entry, get_whitelist_detailed};
 use tauri::State;
 
 #[tauri::command]

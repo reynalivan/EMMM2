@@ -117,7 +117,7 @@ async fn persisted_mod_snapshot(
 }
 
 async fn runtime_signature(pool: &sqlx::SqlitePool, game_id: &str) -> String {
-    crate::services::collection_runtime_service::get_collection_runtime_state(pool, game_id)
+    crate::services::collection_runtime::get_collection_runtime_state(pool, game_id)
         .await
         .expect("runtime state should load")
         .current_signature

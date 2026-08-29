@@ -2,7 +2,7 @@
 
 use crate::common::safety_constants::{SAFETY_SOURCE_MANUAL, SAFETY_SOURCE_UNKNOWN};
 use crate::domain::errors::AppError;
-use crate::repo::stable_ids::generate_stable_id_from_key;
+use crate::repo::utils::stable_ids::generate_stable_id_from_key;
 use crate::services::disk_reconcile::disk_snapshot::DiskProjection;
 use crate::services::disk_reconcile::helpers::load_runtime_mod_metadata;
 use crate::services::disk_reconcile::path_updates::push_path_update;
@@ -100,14 +100,14 @@ pub(super) async fn apply_disk_mods(
 
             if path_changed || name_changed || status_changed || safety_changed || id_changed {
                 if id_changed {
-                    crate::repo::collection_repo::detach_mod_runtime_id(
+                    crate::repo::collection::detach_mod_runtime_id(
                         &mut *conn,
                         game_id,
                         &existing_mod.id,
                     )
                     .await?;
                 }
-                crate::repo::mod_repo::update_mod_identity_tx(
+                crate::repo::mods::update_mod_identity_tx(
                     &mut *conn,
                     &new_id,
                     &disk_mod.folder_path,
@@ -134,7 +134,7 @@ pub(super) async fn apply_disk_mods(
             }
 
             if object_changed || type_changed {
-                crate::repo::mod_repo::update_mod_object_id_and_type_tx(
+                crate::repo::mods::update_mod_object_id_and_type_tx(
                     &mut *conn,
                     &new_id,
                     object_id,
@@ -150,7 +150,7 @@ pub(super) async fn apply_disk_mods(
                     .original_mods
                     .contains_key(&existing_mod.id)
             {
-                let impact = crate::services::collection_service::handle_mod_moved_or_renamed_tx(
+                let impact = crate::services::collection::handle_mod_moved_or_renamed_tx(
                     &mut *conn,
                     game_id,
                     &persisted_mod.folder_path,
@@ -169,7 +169,7 @@ pub(super) async fn apply_disk_mods(
                 .seen_mod_keys
                 .insert(existing_mod.folder_path_key.clone());
         } else {
-            crate::repo::mod_repo::insert_mod_tx(
+            crate::repo::mods::insert_mod_tx(
                 &mut *conn,
                 &new_id,
                 game_id,
@@ -188,7 +188,7 @@ pub(super) async fn apply_disk_mods(
             state.change_summary.record_mod_added(&metadata.actual_name);
         }
 
-        crate::repo::collection_repo::rebind_mod_references(
+        crate::repo::collection::rebind_mod_references(
             &mut *conn,
             game_id,
             &disk_mod.folder_path_key,
@@ -197,7 +197,7 @@ pub(super) async fn apply_disk_mods(
             object_id,
         )
         .await?;
-        crate::repo::mod_repo::set_filesystem_identity_tx(
+        crate::repo::mods::set_filesystem_identity_tx(
             &mut *conn,
             &new_id,
             disk_mod.filesystem_identity.as_deref(),

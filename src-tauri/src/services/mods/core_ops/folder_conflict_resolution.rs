@@ -489,7 +489,7 @@ mod tests {
         let direct_projection_writer = ["persist_folder", "_conflict_rewrites"].concat();
 
         assert!(!production.contains(&direct_projection_writer));
-        assert!(!production.contains("collection_service::"));
+        assert!(!production.contains("collection::"));
         assert!(!production.contains("sqlx::"));
         assert!(!production.contains("serde_json"));
         assert!(production.contains("collect_disk_identity_census"));

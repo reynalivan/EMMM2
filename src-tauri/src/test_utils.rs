@@ -4,7 +4,7 @@ use std::sync::Once;
 
 use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::domain::collection::ProjectedCollectionState;
-use crate::repo::game_repo::{upsert_game, GameRow};
+use crate::repo::game::{upsert_game, GameRow};
 
 static INIT: Once = Once::new();
 
@@ -70,7 +70,7 @@ pub async fn init_test_db() -> TestContext {
     // Run migrations (force cache bust)
     let m = sqlx::migrate!("./migrations");
     m.run(&pool).await.expect("Failed to run migrations");
-    crate::repo::unicode_keys::ensure_unicode_keys(&pool)
+    crate::repo::utils::unicode_keys::ensure_unicode_keys(&pool)
         .await
         .expect("Failed to backfill unicode keys");
 
@@ -147,9 +147,9 @@ pub async fn set_test_collection_snapshot(
     collection_id: &str,
     state: &ProjectedCollectionState,
 ) -> Result<(), sqlx::Error> {
-    let snapshot_json = crate::services::projected_state_service::serialize_snapshot_json(state)
+    let snapshot_json = crate::services::projected_state::serialize_snapshot_json(state)
         .unwrap_or_default();
-    let signature = crate::services::projected_state_service::signature_for_projected_state(state);
+    let signature = crate::services::projected_state::signature_for_projected_state(state);
     let active_root_count = state.summary.active_root_count as i32;
 
     sqlx::query(

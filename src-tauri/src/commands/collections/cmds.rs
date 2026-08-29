@@ -10,7 +10,7 @@ use crate::domain::collection::{
 use crate::domain::errors::AppError;
 use crate::domain::runtime_state::{CollectionRuntimeDescriptor, CollectionRuntimeSnapshot};
 use crate::services::fs_utils::operation_lock::OperationLock;
-use crate::services::{collection_runtime_service, collection_service};
+use crate::services::{collection_runtime, collection};
 
 // ============================================================================
 // Runtime state commands
@@ -23,7 +23,7 @@ pub async fn get_collection_runtime_state(
     game_id: String,
 ) -> Result<CollectionRuntimeSnapshot, AppError> {
     let snapshot =
-        collection_runtime_service::get_collection_runtime_state(pool.inner(), &game_id).await?;
+        collection_runtime::get_collection_runtime_state(pool.inner(), &game_id).await?;
     Ok(snapshot)
 }
 
@@ -34,7 +34,7 @@ pub async fn get_collection_runtime_descriptor(
     game_id: String,
 ) -> Result<CollectionRuntimeDescriptor, AppError> {
     Ok(
-        collection_runtime_service::get_collection_runtime_descriptor(pool.inner(), &game_id)
+        collection_runtime::get_collection_runtime_descriptor(pool.inner(), &game_id)
             .await?,
     )
 }
@@ -44,7 +44,7 @@ pub async fn get_collection_runtime_descriptor(
 pub async fn get_apply_progress(
     game_id: String,
 ) -> Result<Option<ApplyProgressSnapshot>, AppError> {
-    Ok(crate::services::apply_progress_service::get(&game_id))
+    Ok(crate::services::apply_progress::get(&game_id))
 }
 
 // ============================================================================
@@ -56,10 +56,10 @@ async fn collection_preflight_paths(
     collection_id: &str,
     mods_path: &Path,
 ) -> Result<Vec<String>, AppError> {
-    let mods = crate::repo::collection_repo::get_mods(pool, collection_id)
+    let mods = crate::repo::collection::get_mods(pool, collection_id)
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?;
-    let objects = crate::repo::collection_repo::get_objects(pool, collection_id)
+    let objects = crate::repo::collection::get_objects(pool, collection_id)
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?;
     let mut paths = BTreeSet::new();
@@ -88,7 +88,7 @@ pub async fn list_collections(
     pool: State<'_, SqlitePool>,
     game_id: String,
 ) -> Result<Vec<CollectionSummary>, AppError> {
-    let result = collection_service::list_collections(pool.inner(), &game_id).await?;
+    let result = collection::list_collections(pool.inner(), &game_id).await?;
     Ok(result)
 }
 
@@ -126,7 +126,7 @@ pub async fn create_collection(
         source_collection_id,
     };
 
-    let result = collection_service::create_collection(pool.inner(), input).await?;
+    let result = collection::create_collection(pool.inner(), input).await?;
     drop(operation_guard);
     Ok(result)
 }
@@ -143,7 +143,7 @@ pub async fn save_current_runtime_as_collection(
     crate::services::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
         .await?;
     let _guard = op_lock.acquire().await?;
-    Ok(collection_service::create_collection(
+    Ok(collection::create_collection(
         pool.inner(),
         CreateCollectionInput {
             game_id,
@@ -193,7 +193,7 @@ pub async fn apply_collection(
         .acquire_mutation_lease(&game_id, op_lock.inner())
         .await?;
 
-    let result = collection_service::apply_collection(collection_service::ApplyCollectionRequest {
+    let result = collection::apply_collection(collection::ApplyCollectionRequest {
         pool: pool.inner(),
         game_id: &game_id,
         collection_id: &collection_id,
@@ -218,7 +218,7 @@ pub async fn update_collection(
     name: Option<String>,
 ) -> Result<CollectionSummary, AppError> {
     let input = UpdateCollectionInput { id, game_id, name };
-    let result = collection_service::update_collection(pool.inner(), input).await?;
+    let result = collection::update_collection(pool.inner(), input).await?;
     Ok(result)
 }
 
@@ -234,7 +234,7 @@ pub async fn replace_collection_with_current_state(
     crate::services::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
         .await?;
     let operation_guard = op_lock.acquire().await?;
-    let result = collection_service::replace_collection_with_current_state(
+    let result = collection::replace_collection_with_current_state(
         pool.inner(),
         &game_id,
         &collection_id,
@@ -264,7 +264,7 @@ pub async fn save_collection_changes(
         .into_iter()
         .find(|game| game.id == game_id)
         .map(|game| game.mod_path.to_string_lossy().to_string());
-    let preview = collection_service::get_collection_preview(
+    let preview = collection::get_collection_preview(
         pool.inner(),
         &game_id,
         &collection_id,
@@ -285,7 +285,7 @@ pub async fn save_collection_changes(
         }
         .into());
     }
-    Ok(collection_service::replace_collection_with_current_state(
+    Ok(collection::replace_collection_with_current_state(
         pool.inner(),
         &game_id,
         &collection_id,
@@ -301,7 +301,7 @@ pub async fn clear_last_changes(
     game_id: String,
 ) -> Result<(), AppError> {
     let _guard = op_lock.acquire().await?;
-    collection_service::clear_last_changes(pool.inner(), &game_id).await?;
+    collection::clear_last_changes(pool.inner(), &game_id).await?;
     Ok(())
 }
 
@@ -322,7 +322,7 @@ pub async fn restore_last_changes(
     let mutation_lease = disk_reconcile
         .acquire_mutation_lease(&game_id, op_lock.inner())
         .await?;
-    let runtime = crate::repo::collection_runtime_repo::get(pool.inner(), &game_id)
+    let runtime = crate::repo::collection::runtime::get(pool.inner(), &game_id)
         .await?
         .ok_or_else(|| AppError::Validation("No Last changes snapshot exists".to_string()))?;
     let draft_id = runtime
@@ -334,14 +334,14 @@ pub async fn restore_last_changes(
         .iter()
         .find(|game| game.id == game_id)
         .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' not found")))?;
-    let restored_baseline = collection_service::valid_active_baseline(
+    let restored_baseline = collection::valid_active_baseline(
         pool.inner(),
         &game_id,
         runtime.draft_base_collection_id.as_deref(),
     )
     .await?;
-    let result = collection_service::restore_collection_with_baseline(
-        collection_service::ApplyCollectionRequest {
+    let result = collection::restore_collection_with_baseline(
+        collection::ApplyCollectionRequest {
             pool: pool.inner(),
             game_id: &game_id,
             collection_id: &draft_id,
@@ -381,7 +381,7 @@ pub async fn delete_collection(
     id: String,
 ) -> Result<(), AppError> {
     let _guard = op_lock.inner().acquire().await?;
-    collection_service::delete_collection(pool.inner(), &id).await?;
+    collection::delete_collection(pool.inner(), &id).await?;
     Ok(())
 }
 
@@ -400,7 +400,7 @@ pub async fn get_collection_preview(
         .find(|g| g.id == game_id)
         .map(|g| g.mod_path.to_string_lossy().to_string());
 
-    let result = collection_service::get_collection_preview(
+    let result = collection::get_collection_preview(
         pool.inner(),
         &game_id,
         &collection_id,
@@ -425,7 +425,7 @@ pub async fn preview_apply_collection(
         .find(|g| g.id == game_id)
         .map(|g| g.mod_path.to_string_lossy().to_string());
 
-    let result = collection_service::preview_apply(
+    let result = collection::preview_apply(
         pool.inner(),
         &game_id,
         &collection_id,
@@ -440,7 +440,7 @@ pub async fn preview_apply_collection(
 pub async fn app_startup_check(
     pool: State<'_, SqlitePool>,
 ) -> Result<Vec<crate::domain::task::PipelineTask>, AppError> {
-    crate::services::recovery_service::get_startup_recovery_tasks(pool.inner()).await
+    crate::services::recovery::get_startup_recovery_tasks(pool.inner()).await
 }
 
 #[tauri::command]
@@ -457,8 +457,8 @@ pub async fn resolve_recovery_task(
     action: crate::domain::task::RecoveryAction,
 ) -> Result<(), AppError> {
     if action == crate::domain::task::RecoveryAction::Ignore {
-        return crate::services::recovery_service::resolve_recovery_task(
-            crate::services::recovery_service::RecoveryTaskRequest {
+        return crate::services::recovery::resolve_recovery_task(
+            crate::services::recovery::RecoveryTaskRequest {
                 pool: pool.inner(),
                 config: config.inner(),
                 watcher_state: watcher_state.inner(),
@@ -469,7 +469,7 @@ pub async fn resolve_recovery_task(
         .await;
     }
 
-    let task = crate::repo::task_repo::get_task_by_id(pool.inner(), &task_id)
+    let task = crate::repo::task::get_task_by_id(pool.inner(), &task_id)
         .await?
         .ok_or_else(|| AppError::Validation(format!("Task {task_id} not found")))?;
     crate::services::disk_reconcile::emit::ensure_mutation_preflight(
@@ -482,8 +482,8 @@ pub async fn resolve_recovery_task(
         .acquire_mutation_lease(&task.game_id, op_lock.inner())
         .await?;
 
-    crate::services::recovery_service::resolve_recovery_task(
-        crate::services::recovery_service::RecoveryTaskRequest {
+    crate::services::recovery::resolve_recovery_task(
+        crate::services::recovery::RecoveryTaskRequest {
             pool: pool.inner(),
             config: config.inner(),
             watcher_state: watcher_state.inner(),

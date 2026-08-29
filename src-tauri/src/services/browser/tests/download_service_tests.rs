@@ -2,7 +2,7 @@
 //! exists today (including the quirks), not an idealized contract.
 
 use super::*;
-use crate::repo::browser_repo;
+use crate::repo::browser;
 use crate::test_utils::init_test_db;
 
 async fn status_of(db: &SqlitePool, id: &str) -> Option<String> {
@@ -124,7 +124,7 @@ async fn clear_imported_removes_only_imported_rows() {
 #[tokio::test]
 async fn clear_old_downloads_uses_the_configured_retention_window() {
     let db = init_test_db().await.pool;
-    browser_repo::set_setting(&db, "retention_days", "1")
+    browser::set_setting(&db, "retention_days", "1")
         .await
         .unwrap();
 
