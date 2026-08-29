@@ -110,7 +110,7 @@ Acceptance artifacts:
 
 - `tasks/{folder-conflict-drift-audit-plan.md,folder-conflict-drift-audit-todo.md}`
 - `tasks/{source-recovery-mutation-drift-plan.md,source-recovery-mutation-drift-todo.md}`
-- `docs/tauri-command-registration.md`
+- `.docs/knowledge/tauri-command-registration.md`
 - `test/specs/phase3c-folder-conflicts.e2e.ts`
 
 ## Verification

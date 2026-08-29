@@ -441,7 +441,7 @@ T1–T14 ── T15 cleanup, full verification, documentation
 
 **Dependencies:** Tasks 1–14.
 
-**Files likely touched:** hanya file warning yang relevan, `docs/tauri-command-registration.md`, dan history/audit record.
+**Files likely touched:** hanya file warning yang relevan, `.docs/knowledge/tauri-command-registration.md`, dan history/audit record.
 
 **Estimated scope:** Medium.
 

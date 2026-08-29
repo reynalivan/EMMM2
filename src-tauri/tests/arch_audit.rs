@@ -1,4 +1,4 @@
-//! Architecture gates (docs/architecture-refactor-plan.md).
+//! Architecture gates (.docs/knowledge/architecture-refactor-plan.md).
 //!
 //! Unlike `dal_audit.rs`, these are not shrinking baselines: the app is
 //! pre-release, so each gate goes to zero in the step that introduces it and

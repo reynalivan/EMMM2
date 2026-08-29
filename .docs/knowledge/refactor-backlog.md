@@ -6,7 +6,7 @@ those were fixed and pushed. This is the remaining debt, ordered by value.
 
 ## Where things stand
 
-Six phases of `docs/architecture-refactor-plan.md` are done and on `main`.
+Six phases of `.docs/knowledge/architecture-refactor-plan.md` are done and on `main`.
 The invariants below are enforced by **eleven gates** in
 `src-tauri/tests/arch_audit.rs`, all target-zero. Read that file first: it is
 the fastest way to learn what the layers are allowed to do.

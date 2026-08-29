@@ -20,7 +20,7 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 ## 4. Architecture Standards
 
 - **Backend**: `src-tauri/src/` (Tauri v2, Rust, SQLite). Mandatory DAL separation.
-- **Tauri IPC**: Follow `docs/tauri-command-registration.md`; every frontend command must be registered, permission-allowlisted, generated, and covered by the registry test.
+- **Tauri IPC**: Follow `.docs/knowledge/tauri-command-registration.md`; every frontend command must be registered, permission-allowlisted, generated, and covered by the registry test.
 - **Frontend**: `src/features/` (domain slices), `src/components/` (atoms).
 - **Modularity**: Keep modules cohesive and easy to navigate; split large files when responsibility, state, or control flow becomes hard to reason about, never by a mechanical line limit. Single Source of Truth; no logic duplication.
 

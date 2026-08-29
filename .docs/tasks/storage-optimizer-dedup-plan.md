@@ -1,7 +1,7 @@
 # Storage Optimizer Dedup: Implementation Plan
 
 **Status:** Safety-critical implementation complete; follow-up enrichment remains in the checklist.
-**Design:** [`docs/plans/2026-08-28-storage-optimizer-dedup-design.md`](../docs/plans/2026-08-28-storage-optimizer-dedup-design.md)
+**Design:** [`.docs/tasks/2026-08-28-storage-optimizer-dedup-design.md`](./2026-08-28-storage-optimizer-dedup-design.md)
 
 ## Outcome
 

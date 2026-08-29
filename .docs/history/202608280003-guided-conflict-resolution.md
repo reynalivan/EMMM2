@@ -26,7 +26,7 @@ The enabled-mod conflict dialog explained conflicts but could not resolve them. 
 - Related conflict modal and decision-model tests
 - `src/features/launch-bar/LaunchBar.tsx`
 - `src/locales/{en,id,zh}/scanner.json`
-- `docs/plans/2026-08-28-guided-conflict-resolution-design.md`
+- `.docs/tasks/2026-08-28-guided-conflict-resolution-design.md`
 - `tasks/guided-conflict-resolution-{plan,todo}.md`
 
 ## Goal
