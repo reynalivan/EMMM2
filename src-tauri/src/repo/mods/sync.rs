@@ -88,7 +88,6 @@ pub async fn rewrite_dependent_mod_ids_tx(
     new_id: &str,
 ) -> Result<(), sqlx::Error> {
     for (table, column) in [
-        ("mod_hash_index", "mod_id"),
         ("dedup_group_members", "folder_id"),
         ("duplicate_whitelist", "folder_a_id"),
         ("duplicate_whitelist", "folder_b_id"),

@@ -16,32 +16,17 @@ use tokio::sync::Semaphore;
 static ANALYSIS_SEMAPHORE: Semaphore = Semaphore::const_new(2);
 
 pub async fn queue_import_job(
-    db: &SqlitePool,
-    app: &AppHandle,
-    download_id: &str,
-    session_id: Option<&str>,
-    archive_path: &str,
+    _db: &SqlitePool,
+    _app: &AppHandle,
+    _download_id: &str,
+    _archive_path: &str,
 ) -> Result<String, BrowserError> {
-    let game_id = match session_id {
-        Some(session_id) => browser::get_session_game_id(db, session_id).await?,
-        None => None,
-    }
-    .ok_or_else(|| {
-        BrowserError::Import(
-            "a game must be selected before a browser download can enter Match Wizard".to_string(),
-        )
-    })?;
-
-    let item_ids = create_browser_batch(
-        db,
-        app,
-        &game_id,
-        vec![(download_id.to_string(), archive_path.to_string())],
-    )
-    .await?;
-    item_ids.into_iter().next().ok_or_else(|| {
-        BrowserError::Import("browser import batch was created without an item".to_string())
-    })
+    // Phase 3 Clean & Lightweight Audit:
+    // Auto-import from the browser is currently unsupported because the global browser
+    // lacks a game_id context, and the legacy download_sessions table is unpopulated.
+    Err(BrowserError::Import(
+        "Auto-import is currently unsupported: a game must be selected manually.".to_string(),
+    ))
 }
 
 pub async fn bulk_queue_imports(

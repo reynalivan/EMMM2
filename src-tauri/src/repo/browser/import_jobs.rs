@@ -16,19 +16,6 @@ pub struct ImportJobMatch {
     pub reason: Option<String>,
 }
 
-/// Game configured on the download session an archive came from.
-pub async fn get_session_game_id(
-    db: &SqlitePool,
-    session_id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    let game_id = sqlx::query_scalar!(
-        "SELECT game_id FROM download_sessions WHERE id = ?",
-        session_id
-    )
-    .fetch_optional(db)
-    .await?;
-    Ok(game_id.flatten())
-}
 
 /// Insert a fresh `queued` job.
 pub async fn insert_job(

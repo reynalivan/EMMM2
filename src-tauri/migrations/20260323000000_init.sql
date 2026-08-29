@@ -47,14 +47,6 @@ CREATE TABLE IF NOT EXISTS browser_downloads (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS download_sessions (
-    id TEXT PRIMARY KEY,
-    game_id TEXT,
-    status TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE SET NULL
-) STRICT;
-
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     version TEXT NOT NULL,
@@ -223,34 +215,6 @@ CREATE TABLE IF NOT EXISTS import_jobs (
 -- ------------------------------------------------------------------------------
 -- 5. KEYVIEWER
 -- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS mod_hash_index (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    mod_id TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
-    hash TEXT NOT NULL COLLATE NOCASE,
-    section_name TEXT NOT NULL DEFAULT '',
-    file_path TEXT NOT NULL DEFAULT '',
-    collision_count INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS object_sentinel_cache (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    object_id TEXT NOT NULL REFERENCES objects(id) ON DELETE CASCADE,
-    sentinel_hash TEXT NOT NULL COLLATE NOCASE,
-    confidence REAL NOT NULL,
-    is_manual INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS game_sentinel_settings (
-    game_id TEXT PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
-    is_enabled INTEGER NOT NULL DEFAULT 1,
-    overlay_position TEXT NOT NULL DEFAULT 'top_left',
-    display_mode TEXT NOT NULL DEFAULT 'auto'
-) STRICT;
-
 -- ------------------------------------------------------------------------------
 -- 6. DEDUP SCANNER
 -- ------------------------------------------------------------------------------
@@ -328,9 +292,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status         ON tasks(status) WHERE statu
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_one_open_collection_apply_per_game
     ON tasks(game_id)
     WHERE task_type = 'apply_collection' AND status IN ('PENDING', 'RUNNING');
-
-CREATE INDEX IF NOT EXISTS idx_mod_hash_index_hash ON mod_hash_index(hash);
-CREATE INDEX IF NOT EXISTS idx_mod_hash_index_game ON mod_hash_index(game_id);
 
 CREATE INDEX IF NOT EXISTS idx_dedup_jobs_game     ON dedup_jobs(game_id);
 CREATE INDEX IF NOT EXISTS idx_dedup_groups_job    ON dedup_groups(job_id);

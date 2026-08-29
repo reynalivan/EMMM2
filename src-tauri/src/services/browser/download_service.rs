@@ -133,7 +133,7 @@ pub async fn on_download_finished(
     // Find the download by source_url + tab_label heuristic (most recent requested)
     let row = browser::find_active_by_url(db, source_url).await?;
 
-    let (download_id, session_id) = match row {
+    let (download_id, _session_id) = match row {
         Some(r) => (r.id, r.session_id),
         None => {
             log::warn!("No download record found for URL: {source_url} (tab: {tab_label})");
@@ -168,7 +168,6 @@ pub async fn on_download_finished(
                     db,
                     app,
                     &download_id,
-                    session_id.as_deref(),
                     path,
                 )
                 .await
