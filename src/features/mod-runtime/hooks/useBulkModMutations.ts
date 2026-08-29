@@ -22,7 +22,10 @@ import {
   collectionReferenceImpactRefreshEvents,
   notifyCollectionReferenceImpact,
 } from '../../collections/hooks/collectionReferenceImpact';
-import { formatBulkFailureMessage, formatBulkSuccessMessage } from '../../../shared/hooks/bulkToastMessages';
+import {
+  formatBulkFailureMessage,
+  formatBulkSuccessMessage,
+} from '../../../shared/hooks/bulkToastMessages';
 import { resolveTogglePathRewrites } from '../../folder-grid/hooks/folderMutationPayloads';
 import { notifyCommittedMutationSyncWarning } from '../../../core/lib/committedMutationWarning';
 

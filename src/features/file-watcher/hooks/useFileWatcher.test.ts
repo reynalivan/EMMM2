@@ -475,7 +475,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('records unavailable disk source without refreshing runtime queries', async () => {
-    const { useAppStore } = await import("../../../stores/useAppStore");
+    const { useAppStore } = await import('../../../stores/useAppStore');
     const state = useAppStore.getState();
 
     applyDiskReconcileResult(
@@ -504,7 +504,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('clears unavailable disk source after a successful applied result', async () => {
-    const { useAppStore } = await import("../../../stores/useAppStore");
+    const { useAppStore } = await import('../../../stores/useAppStore');
     const state = useAppStore.getState();
 
     applyDiskReconcileResult(
@@ -559,7 +559,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('includes collection reference impact in the external change toast', async () => {
-    const { toast } = await import("../../../stores/useToastStore");
+    const { toast } = await import('../../../stores/useToastStore');
 
     applyDiskReconcileResult(
       createResult({
@@ -597,7 +597,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('surfaces a nonfatal warning when committed runtime effects remain pending', async () => {
-    const { toast } = await import("../../../stores/useToastStore");
+    const { toast } = await import('../../../stores/useToastStore');
 
     const result = createResult({
       pending_runtime_effects: {
@@ -741,7 +741,7 @@ describe('useDiskReconcileCoordinator', () => {
       .mockResolvedValueOnce(createResult({ reason: 'WindowRefocused' }));
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { toast } = await import("../../../stores/useToastStore");
+    const { toast } = await import('../../../stores/useToastStore');
     const state = useAppStore.getState();
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
 
@@ -772,7 +772,7 @@ describe('useDiskReconcileCoordinator', () => {
       createResult({}),
     );
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
-    const { toast } = await import("../../../stores/useToastStore");
+    const { toast } = await import('../../../stores/useToastStore');
 
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
     await waitFor(() => expect(eventHandlers['mod_watch:event']).toBeDefined());

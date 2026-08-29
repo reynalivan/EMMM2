@@ -141,7 +141,7 @@ function createDefaultHookState() {
 
   return {
     activePath: 'E:/Mods/TestMod',
-    folderNameConflict: null as import("../../core/tauri/bindings").FolderNameConflictGroup | null,
+    folderNameConflict: null as import('../../core/tauri/bindings').FolderNameConflictGroup | null,
     selectedFolder,
     sourceUnavailableMessage: null as string | null,
     previewSummary: {

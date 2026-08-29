@@ -1,4 +1,7 @@
-import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../../core/lib/runtimeEffects';
+import type {
+  RuntimeEffectDescriptor,
+  RuntimeRefreshEvent,
+} from '../../../core/lib/runtimeEffects';
 
 export type RuntimeMutationClass =
   | 'workspaceOnly'

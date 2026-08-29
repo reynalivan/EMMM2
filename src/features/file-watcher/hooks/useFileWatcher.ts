@@ -4,7 +4,11 @@ import { QueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
 import { useAppStore } from '../../../stores/useAppStore';
 import type { GameConfig } from '../../../types/game';
-import { commands, type DiskReconcileReason, type DiskReconcileResult } from '../../../core/tauri/bindings';
+import {
+  commands,
+  type DiskReconcileReason,
+  type DiskReconcileResult,
+} from '../../../core/tauri/bindings';
 import { formatAppError } from '../../../core/lib/appError';
 import { publishDiskReconcileRefresh } from '../utils/reconcileRefresh';
 import {

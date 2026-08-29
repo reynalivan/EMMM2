@@ -208,7 +208,6 @@ export default function ModInboxPage() {
         loading={loading}
         onSettings={openInboxSettings}
         onOpen={() => {
-          
           if (snapshot) void modInboxCommands.openModInboxFolder(activeGameId);
         }}
         onRefresh={() => void refresh()}

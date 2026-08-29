@@ -1,4 +1,8 @@
-import type { DestinationSuggestion, ImportBatch, ImportDecision } from '../../../core/tauri/bindings.gen';
+import type {
+  DestinationSuggestion,
+  ImportBatch,
+  ImportDecision,
+} from '../../../core/tauri/bindings.gen';
 
 export function destinationDecision(
   batch: ImportBatch,

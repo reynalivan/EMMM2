@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SettingsPage from './SettingsPage';
 
 // Mock child components
-vi.mock('./components/tabs/GamesTab', () => ({ default: () => <div data-testid="games-tab">GamesTab</div> }));
+vi.mock('./components/tabs/GamesTab', () => ({
+  default: () => <div data-testid="games-tab">GamesTab</div>,
+}));
 vi.mock('./components/tabs/PrivacyTab', () => ({
   default: () => <div data-testid="privacy-tab">PrivacyTab</div>,
 }));
@@ -13,8 +15,12 @@ vi.mock('./components/tabs/MaintenanceTab', () => ({
 vi.mock('./components/tabs/GeneralTab', () => ({
   default: () => <div data-testid="general-tab">GeneralTab</div>,
 }));
-vi.mock('./components/tabs/LogsTab', () => ({ default: () => <div data-testid="logs-tab">LogsTab</div> }));
-vi.mock('./components/tabs/AITab', () => ({ default: () => <div data-testid="ai-tab">AITab</div> }));
+vi.mock('./components/tabs/LogsTab', () => ({
+  default: () => <div data-testid="logs-tab">LogsTab</div>,
+}));
+vi.mock('./components/tabs/AITab', () => ({
+  default: () => <div data-testid="ai-tab">AITab</div>,
+}));
 vi.mock('./components/tabs/UpdateTab', () => ({
   default: () => <div data-testid="update-tab">UpdateTab</div>,
 }));

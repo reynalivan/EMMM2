@@ -126,7 +126,7 @@ describe('ModInboxPage', () => {
     vi.mocked(modInboxCommands.getModInbox).mockResolvedValue(readySnapshot);
     vi.mocked(modInboxCommands.startModInboxWatcher).mockResolvedValue(undefined);
     vi.mocked(modInboxCommands.stopModInboxWatcher).mockResolvedValue(undefined);
-    
+
     vi.mocked(modInboxCommands.openModInboxFolder).mockResolvedValue(undefined);
     vi.mocked(commands.openInExplorer).mockResolvedValue(undefined as never);
     vi.mocked(listen).mockResolvedValue(vi.fn());
@@ -206,7 +206,7 @@ describe('ModInboxPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeEnabled());
     await waitFor(() => expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Open Inbox' }));
-    
+
     expect(modInboxCommands.openModInboxFolder).toHaveBeenCalledWith('game-1');
   });
 

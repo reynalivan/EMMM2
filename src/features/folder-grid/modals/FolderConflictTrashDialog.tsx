@@ -1,6 +1,9 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { FolderConflictSummary, FolderNameConflictCandidate } from '../../../core/tauri/bindings';
+import type {
+  FolderConflictSummary,
+  FolderNameConflictCandidate,
+} from '../../../core/tauri/bindings';
 import { formatBytes } from '../../../shared/utils/formatters';
 
 interface Props {

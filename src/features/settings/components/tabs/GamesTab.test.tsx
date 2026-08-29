@@ -22,7 +22,9 @@ vi.mock('../../../../core/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../file-watcher/hooks/useFileWatcher', () => ({ applyDiskReconcileResult: vi.fn() }));
+vi.mock('../../../file-watcher/hooks/useFileWatcher', () => ({
+  applyDiskReconcileResult: vi.fn(),
+}));
 
 // Mock the GameFormModal so we don't need to mount it fully for simple tests
 vi.mock('../../modals/GameFormModal', () => ({

@@ -3,7 +3,10 @@ import { useCallback } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../core/tauri/bindings';
-import { usePasteThumbnail, useUpdateModThumbnail } from '../../folder-grid/hooks/useFolderMutations';
+import {
+  usePasteThumbnail,
+  useUpdateModThumbnail,
+} from '../../folder-grid/hooks/useFolderMutations';
 import { useActiveGame } from '../../dashboard/hooks/useActiveGame';
 import { toast } from '../../../stores/useToastStore';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
