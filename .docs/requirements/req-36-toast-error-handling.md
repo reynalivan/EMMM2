@@ -46,11 +46,11 @@ As a user, I want the app to catch catastrophic rendering errors, so that I see 
 
 As a power user or developer, I want to read internal logs from within the UI, so that I can troubleshoot deeper issues.
 
-| ID        | Type        | Criteria                                                                                                                                                                                |
-| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Type        | Criteria                                                                                                                                                                                      |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-36.3.1 | ✅ Positive | Given the Settings > Logs tab, when opened, then `get_logs({ limit: 200 })` fetches the last 200 lines from `{app_data_dir}/logs/emmm.log` and renders them in a monospaced, scrollable panel |
-| AC-36.3.2 | ✅ Positive | Given the Logs tab is open, when I click "Open Log Folder", then `open_log_folder()` opens Windows Explorer to `{app_data_dir}/logs` via `tauri::api::shell::open`                      |
-| AC-36.3.3 | ❌ Negative | Given the log file doesn't exist yet (first launch), then the Logs panel shows "No logs yet" — no crash, no empty-path error                                                            |
+| AC-36.3.2 | ✅ Positive | Given the Logs tab is open, when I click "Open Log Folder", then `open_log_folder()` opens Windows Explorer to `{app_data_dir}/logs` via `tauri::api::shell::open`                            |
+| AC-36.3.3 | ❌ Negative | Given the log file doesn't exist yet (first launch), then the Logs panel shows "No logs yet" — no crash, no empty-path error                                                                  |
 
 ---
 

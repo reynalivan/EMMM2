@@ -63,10 +63,10 @@ As a user, I want to review duplicates side-by-side and choose bulk resolutions,
 
 As a user, I want the delete resolution to act as a soft-delete, so I can restore a folder if compiling breaks the mod.
 
-| ID        | Type        | Criteria                                                                                                                                                            |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-32.3.1 | ✅ Positive | Given the "Replace" or "Delete" option, the removed folder is sent through the recoverable recycle/trash service, never permanently destroyed |
-| AC-32.3.2 | ⚠️ Edge     | Given the resolution affects multiple paths inside an object grid, TanStack query `['mods', gameId]` invalidates to refresh the app's overall memory sizes          |
+| ID        | Type        | Criteria                                                                                                                                                   |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-32.3.1 | ✅ Positive | Given the "Replace" or "Delete" option, the removed folder is sent through the recoverable recycle/trash service, never permanently destroyed              |
+| AC-32.3.2 | ⚠️ Edge     | Given the resolution affects multiple paths inside an object grid, TanStack query `['mods', gameId]` invalidates to refresh the app's overall memory sizes |
 
 ---
 
@@ -113,12 +113,12 @@ CREATE TABLE duplicate_whitelist (
 
 ### Integration Points
 
-| Component     | Detail                                                                                              |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| Parallelism   | Uses `rayon::prelude::*` for heavy IO/CPU workload scaling out to all logic cores.                  |
-| Hardlinks     | Full manifests are revalidated immediately before per-file replacement; failed replacement restores the staged original. |
-| Trash Service | Recoverable recycle/trash service handles folder removal after exact revalidation.                                      |
-| Whitelist IR  | `get_ignored_pairs` and `remove_ignored_pair` commands provide recovery for whitelisted duplicates. |
+| Component     | Detail                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Parallelism   | Uses `rayon::prelude::*` for heavy IO/CPU workload scaling out to all logic cores.                                                      |
+| Hardlinks     | Full manifests are revalidated immediately before per-file replacement; failed replacement restores the staged original.                |
+| Trash Service | Recoverable recycle/trash service handles folder removal after exact revalidation.                                                      |
+| Whitelist IR  | `get_ignored_pairs` and `remove_ignored_pair` commands provide recovery for whitelisted duplicates.                                     |
 | Report DB     | Latest completed report is stored transactionally in existing `dedup_jobs`, `dedup_groups`, and `dedup_group_members`, scoped per game. |
 
 ### Security & Privacy

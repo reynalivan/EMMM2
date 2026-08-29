@@ -35,16 +35,16 @@ Dengan demikian, root merged beserta seluruh child resource-nya adalah satu prog
 
 ## Istilah domain yang dipisahkan
 
-| Istilah | Makna | Aturan dedup |
-| --- | --- | --- |
-| `LogicalModUnit` | Satu root mod yang dapat dimuat/dioperasikan sebagai satu kesatuan | Satu-satunya kandidat folder-level |
-| `OrchestratedSubvariant` | Resource/branch internal yang dipilih oleh `merged.ini` | Tidak pernah menjadi kandidat duplicate tersendiri |
-| `ToggleVariant` | Sibling variant yang dapat di-enable/disable sebagai pilihan terpisah | Tidak dibandingkan dengan sibling milik owner yang sama |
-| `IndependentMod` | Root mod di luar ownership unit lain | Dapat dibandingkan dengan unit independen lain |
-| `ExactCopy` | Manifest unit sama setelah full BLAKE3 | Boleh menawarkan Trash; hardlink sesuai policy |
-| `SharedAssets` | Sebagian heavy asset sama, tetapi unit tidak identik | Hanya per-file optimization yang terverifikasi; bukan delete folder |
-| `RelatedVariant` | Runtime target sama, resource/branch berbeda | Informational; tidak ada aksi storage destruktif |
-| `RuntimeConflict` | Target/constraint runtime overlap | Diteruskan ke conflict workflow, bukan dilabeli duplicate |
+| Istilah                  | Makna                                                                 | Aturan dedup                                                        |
+| ------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `LogicalModUnit`         | Satu root mod yang dapat dimuat/dioperasikan sebagai satu kesatuan    | Satu-satunya kandidat folder-level                                  |
+| `OrchestratedSubvariant` | Resource/branch internal yang dipilih oleh `merged.ini`               | Tidak pernah menjadi kandidat duplicate tersendiri                  |
+| `ToggleVariant`          | Sibling variant yang dapat di-enable/disable sebagai pilihan terpisah | Tidak dibandingkan dengan sibling milik owner yang sama             |
+| `IndependentMod`         | Root mod di luar ownership unit lain                                  | Dapat dibandingkan dengan unit independen lain                      |
+| `ExactCopy`              | Manifest unit sama setelah full BLAKE3                                | Boleh menawarkan Trash; hardlink sesuai policy                      |
+| `SharedAssets`           | Sebagian heavy asset sama, tetapi unit tidak identik                  | Hanya per-file optimization yang terverifikasi; bukan delete folder |
+| `RelatedVariant`         | Runtime target sama, resource/branch berbeda                          | Informational; tidak ada aksi storage destruktif                    |
+| `RuntimeConflict`        | Target/constraint runtime overlap                                     | Diteruskan ke conflict workflow, bukan dilabeli duplicate           |
 
 ## Opsi desain
 

@@ -322,15 +322,15 @@ T2 + T3 + T4 + T5 + T6
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Last-valid snapshot terlihat stale selama sync | Medium | Persistent Syncing label, provisional styling, mutation disabled, authoritative terminal replacement |
-| Shallow listing salah dianggap fully classified | High | Explicit provisional flag; capabilities read-only; no collection or mutation decisions from provisional nodes |
-| Async recovery membuka race dengan mutation | High | Backend recovery readiness check before every physical mutation; existing per-game lock and operation lock remain authoritative |
-| Progress tampak macet pada satu root sangat besar | Medium | Show current phase/root and elapsed time; do not fabricate percent; consider sub-unit instrumentation only if measured necessary |
-| Parallel disk reads memperburuk HDD/external drive | Medium | Benchmark serial/bounded/current behavior; retain only measured improvement |
-| Terminal result tiba sebelum listener ready | High | Workspace freshness is queryable state, not event-only; events are enhancement, terminal state remains recoverable by query |
-| Refetch memicu reconcile loop | High | Workspace read is side-effect free; recovery kick/claim is separate single-flight operation |
+| Risk                                               | Impact | Mitigation                                                                                                                       |
+| -------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Last-valid snapshot terlihat stale selama sync     | Medium | Persistent Syncing label, provisional styling, mutation disabled, authoritative terminal replacement                             |
+| Shallow listing salah dianggap fully classified    | High   | Explicit provisional flag; capabilities read-only; no collection or mutation decisions from provisional nodes                    |
+| Async recovery membuka race dengan mutation        | High   | Backend recovery readiness check before every physical mutation; existing per-game lock and operation lock remain authoritative  |
+| Progress tampak macet pada satu root sangat besar  | Medium | Show current phase/root and elapsed time; do not fabricate percent; consider sub-unit instrumentation only if measured necessary |
+| Parallel disk reads memperburuk HDD/external drive | Medium | Benchmark serial/bounded/current behavior; retain only measured improvement                                                      |
+| Terminal result tiba sebelum listener ready        | High   | Workspace freshness is queryable state, not event-only; events are enhancement, terminal state remains recoverable by query      |
+| Refetch memicu reconcile loop                      | High   | Workspace read is side-effect free; recovery kick/claim is separate single-flight operation                                      |
 
 ## Explicit Non-Goals
 

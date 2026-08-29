@@ -292,13 +292,13 @@ T3 + T4 + T6 + T7 ── T8 integration, regression, i18n, and manual desktop ch
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Filtering a conflict parent accidentally prunes or rewrites its children | High | Carry protected ancestor scopes into every writer/prune/collection transition path; include parent-child fixtures and transaction rollback tests. |
-| Partial result refresh clears the conflict banner | High | Make `AppliedWithFolderConflicts` a first-class branch in the one result applier; store report before publishing safe cache refresh. |
-| Progress emits too often or ETA looks fabricated | Medium | Reuse one collector callback, throttle, phase explicitly, and hide ETA until warm-up. |
-| Fullscreen issue is renderer/compositor-specific | Medium | Characterize metrics first; use simple layout fixes first and validate manually on Windows high-DPI before changing virtual row placement. |
-| Bulk behavior surprises users | Medium | Return blocked paths and show exact safe/blocked counts; never silently drop targets. |
+| Risk                                                                     | Impact | Mitigation                                                                                                                                        |
+| ------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filtering a conflict parent accidentally prunes or rewrites its children | High   | Carry protected ancestor scopes into every writer/prune/collection transition path; include parent-child fixtures and transaction rollback tests. |
+| Partial result refresh clears the conflict banner                        | High   | Make `AppliedWithFolderConflicts` a first-class branch in the one result applier; store report before publishing safe cache refresh.              |
+| Progress emits too often or ETA looks fabricated                         | Medium | Reuse one collector callback, throttle, phase explicitly, and hide ETA until warm-up.                                                             |
+| Fullscreen issue is renderer/compositor-specific                         | Medium | Characterize metrics first; use simple layout fixes first and validate manually on Windows high-DPI before changing virtual row placement.        |
+| Bulk behavior surprises users                                            | Medium | Return blocked paths and show exact safe/blocked counts; never silently drop targets.                                                             |
 
 ## Explicit Non-Goals
 

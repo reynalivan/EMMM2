@@ -12,4 +12,5 @@ The feature has two responsibilities:
 SAFE/UNSAFE classification is display metadata. The global filter never changes collection contents or disk state.
 
 ### Export Barrel
+
 Consumers outside this feature should import hooks from `src/features/collections/hooks/index.ts`.

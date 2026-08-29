@@ -9,7 +9,7 @@ What does NOT change: the tree is always green. One workstream at a time,
 each step ends with `cargo clippy --all-targets`, full `cargo test`, bindings
 regen, `/simplify` on the step's diff, and `/code-review` (`ultra` for steps
 1, 3 and 4 — privacy gate and mutation ordering). Behavior that must survive
-gets pinned by a test *before* the code moves, not after.
+gets pinned by a test _before_ the code moves, not after.
 
 ## Best-practice evidence (Context7, Aug 2026)
 
@@ -19,7 +19,7 @@ gets pinned by a test *before* the code moves, not after.
   so the frontend switches on `e.kind`. This is the model for `AppError` and
   every subsystem error below.
 - **Tauri v2, async commands**: async commands already run on a separate
-  task, but *blocking* work (filesystem walks, archive extraction) still
+  task, but _blocking_ work (filesystem walks, archive extraction) still
   stalls a Tokio worker — route it through `spawn_blocking`. `.setup()` must
   return before the app is usable; nothing slow belongs in it.
 - **sqlx**: prepared statements are cached per connection (LRU, default 100
@@ -49,12 +49,12 @@ domain/     Types that cross layers, incl. ALL IPC wire types (the only
 
 Invariants become **types**, not comments:
 
-| Type | Kills |
-|---|---|
-| `Corridor` (Copy enum, *not* serde/specta) | Safe Mode as a client-supplied bool |
+| Type                                                               | Kills                                               |
+| ------------------------------------------------------------------ | --------------------------------------------------- |
+| `Corridor` (Copy enum, _not_ serde/specta)                         | Safe Mode as a client-supplied bool                 |
 | `OpGuard` (private field, only `OperationLock::acquire` builds it) | lock acquired at two altitudes; re-entrant deadlock |
-| `ValidatedPath` (only `fs_utils::guard` builds it) | raw client paths reaching `std::fs` |
-| `#[must_use] MutationOutcome` | "callers MUST remember to refresh the projection" |
+| `ValidatedPath` (only `fs_utils::guard` builds it)                 | raw client paths reaching `std::fs`                 |
+| `#[must_use] MutationOutcome`                                      | "callers MUST remember to refresh the projection"   |
 
 Enforced by `tests/arch_audit.rs` (same shape as the existing `dal_audit.rs`)
 — but written with **target values (0), landed at the end of each step**, not
@@ -178,7 +178,7 @@ mapping layer: wire type = domain type where the shapes already coincide
 - **MasterDB never crosses IPC again** — delete `db_json: String` from all
   five commands; `master_db::get_cached(app, game_type) -> Arc<MasterDb>` in
   the service layer (the existing `MasterDbCache` generalized). Removes a
-  ~5 MB round trip *and* five re-parses. Frontend stops threading the blob.
+  ~5 MB round trip _and_ five re-parses. Frontend stops threading the blob.
 - **Startup**: `.setup()` keeps only `purge_old_tasks` + transfer recovery
   (two fast UPDATEs); `reconcile_disk_state` moves to
   `tauri::async_runtime::spawn`, reporting through its existing progress
@@ -212,7 +212,7 @@ mapping layer: wire type = domain type where the shapes already coincide
 
 - True rollback (`tasks.snapshot_json` column).
 - `corridor_state.active_collection_id` write path.
-- Unifying the four corridor SQL predicates — they differ *semantically*
+- Unifying the four corridor SQL predicates — they differ _semantically_
   (dashboard has no manual/unknown escape hatch); unification would change
   counts. Documented at each site instead.
 

@@ -2,7 +2,6 @@
 
 > **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
 
-
 ## 1. Executive Summary
 
 - **Problem Statement**: The three most frequent user actions on individual mods — toggle, rename, delete — must feel instant (pending state in one frame, fast refetch), be safe (path-scoped watcher suppression, hold `OperationLock`), and handle filesystem edge cases (locks, collisions, permission failures) without corrupting any app state.
@@ -24,16 +23,16 @@
 
 As a user, I want to enable or disable a mod with a single click, so that I can test different combinations without manually renaming folders.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                  |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-13.1.1 | ✅ Positive | Given a disabled mod, when I click its toggle, then the card shows its pending state in ≤ 16ms; the backend completes the `DISABLED ` prefix rename + scoped reconcile within ≤ 300ms and the refetch flips the card                                         |
-| AC-13.1.2 | ✅ Positive | Given a slow HDD, when I toggle a mod, the UI toggle animates immediately (optimistic) while filesystem IO runs in the background — the user sees no lag on the toggle switch                                                             |
-| AC-13.1.3 | ❌ Negative | Given the folder is locked by an external process (e.g., the game engine is reading it), when toggled, then the `rename` syscall fails with `FileInUse`; the pending state clears (nothing to roll back — invalidation-only) and the file-in-use dialog/toast names the locking process         |
-| AC-13.1.4 | ⚠️ Edge     | Given rapid toggle spam (> 3 clicks before the previous `rename` completes), then the backend serializes via `OperationLock` — only the last intended state takes effect; no intermediate partial renames produce a corrupted folder name |
-| AC-13.1.5 | ✅ Positive | Given a disabled mod, when I select "Enable Only This" from context menu, then this mod is enabled AND all other currently enabled mods in the same Object are disabled within the same `OperationLock` atomic transaction                |
-| AC-13.1.6 | ⚠️ Edge     | Given I enable a mod, and another mod with the same `master_object_id` (e.g., Character) is already enabled, then a Duplicate Warning dialog appears: "A mod for [Character Name] is already active! Force Enable or Cancel?"             |
-| AC-13.1.7 | ⚠️ Edge     | Given I enable a mod that has known hash conflicts (detected via `ShaderFixes` or `.ini`), then a non-blocking toast "Shader Collision detected with [Mod Name]" appears — the action is not blocked, just a notice                       |
-| AC-13.1.8 | ✅ Positive | Given a successful toggle operation, a success toast includes an "Undo" button (5s timeout); clicking it reverts the state via a new backend command call without needing to manually toggle it back                                      |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-13.1.1 | ✅ Positive | Given a disabled mod, when I click its toggle, then the card shows its pending state in ≤ 16ms; the backend completes the `DISABLED ` prefix rename + scoped reconcile within ≤ 300ms and the refetch flips the card                                                                    |
+| AC-13.1.2 | ✅ Positive | Given a slow HDD, when I toggle a mod, the UI toggle animates immediately (optimistic) while filesystem IO runs in the background — the user sees no lag on the toggle switch                                                                                                           |
+| AC-13.1.3 | ❌ Negative | Given the folder is locked by an external process (e.g., the game engine is reading it), when toggled, then the `rename` syscall fails with `FileInUse`; the pending state clears (nothing to roll back — invalidation-only) and the file-in-use dialog/toast names the locking process |
+| AC-13.1.4 | ⚠️ Edge     | Given rapid toggle spam (> 3 clicks before the previous `rename` completes), then the backend serializes via `OperationLock` — only the last intended state takes effect; no intermediate partial renames produce a corrupted folder name                                               |
+| AC-13.1.5 | ✅ Positive | Given a disabled mod, when I select "Enable Only This" from context menu, then this mod is enabled AND all other currently enabled mods in the same Object are disabled within the same `OperationLock` atomic transaction                                                              |
+| AC-13.1.6 | ⚠️ Edge     | Given I enable a mod, and another mod with the same `master_object_id` (e.g., Character) is already enabled, then a Duplicate Warning dialog appears: "A mod for [Character Name] is already active! Force Enable or Cancel?"                                                           |
+| AC-13.1.7 | ⚠️ Edge     | Given I enable a mod that has known hash conflicts (detected via `ShaderFixes` or `.ini`), then a non-blocking toast "Shader Collision detected with [Mod Name]" appears — the action is not blocked, just a notice                                                                     |
+| AC-13.1.8 | ✅ Positive | Given a successful toggle operation, a success toast includes an "Undo" button (5s timeout); clicking it reverts the state via a new backend command call without needing to manually toggle it back                                                                                    |
 
 ---
 
@@ -108,7 +107,7 @@ delete_mod(path):
 | `Trash Service`           | App-level soft delete; supports `restore_from_trash` with context parity checks.                                                             |
 | `Watcher Guard`           | `SuppressionGuard` blocks event cycles during bulk or sensitive moves.                                                                       |
 | `Workspace Switch Engine` | Frontend toggle path goes through `execute_workspace_switch(...)` and maps `WorkspaceImpact` into runtime effects.                           |
-| `Runtime Mutation Engine` | Plans, validates, and executes batched `DISABLED ` prefix renames on disk (with FS rollback); it writes no DB rows — Disk Reconcile does.             |
+| `Runtime Mutation Engine` | Plans, validates, and executes batched `DISABLED ` prefix renames on disk (with FS rollback); it writes no DB rows — Disk Reconcile does.    |
 | `Runtime Descriptor`      | Optimistic/cache updates and refresh publish are centralized; feature code uses runtime-sync descriptors instead of raw query refresh calls. |
 | Disk Reconcile            | Internal filesystem mutations suppress watcher noise, then complete through one intentional runtime refresh path.                            |
 

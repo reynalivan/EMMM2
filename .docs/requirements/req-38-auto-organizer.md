@@ -21,15 +21,15 @@
 
 As a user, I want to select unorganized mod folders and have the app move them to the correct hierarchy, so that my filesystem stays clean.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                           |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ID        | Type        | Criteria                                                                                                                                                                                                    |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-38.1.1 | ✅ Positive | Given selected FolderGrid mod folders with a chosen target object, when I trigger "Move to Object", then each mod moves to the target object root or an existing subfolder while preserving the folder name |
-| AC-38.1.2 | ✅ Positive | Given a successful move, then the `folders` DB row's `folder_path` is updated to the new path in the same DB transaction as the metadata update — no orphaned rows                                                 |
-| AC-38.1.3 | ✅ Positive | Given the batch completes, then a toast shows the move result and runtime-sync descriptors refresh the grid/object list/preview                                                                                     |
-| AC-38.1.4 | ❌ Negative | Given the target destination `mods_path/{category}/{object_name}/{folder_name}` already exists, then that mod is skipped — logged as "DUPLICATE" in `BulkResult.errors`; the original folder is NOT moved          |
-| AC-38.1.5 | ❌ Negative | Given the selected target object does not exist or belongs to another game, the move is rejected before any filesystem mutation                                                                                     |
-| AC-38.1.6 | ⚠️ Edge     | Given the mod is currently enabled (`is_enabled = true`), then the rename/move still proceeds (the new path retains the filename without "DISABLED " prefix) — the enabled state is preserved correctly            |
-| AC-38.1.7 | ✅ Positive | Given the object has a canonical Deep Match relation, Auto Organize still preserves the physical object folder name/path; canonical alias data is enrichment only and does not rename folders                      |
+| AC-38.1.2 | ✅ Positive | Given a successful move, then the `folders` DB row's `folder_path` is updated to the new path in the same DB transaction as the metadata update — no orphaned rows                                          |
+| AC-38.1.3 | ✅ Positive | Given the batch completes, then a toast shows the move result and runtime-sync descriptors refresh the grid/object list/preview                                                                             |
+| AC-38.1.4 | ❌ Negative | Given the target destination `mods_path/{category}/{object_name}/{folder_name}` already exists, then that mod is skipped — logged as "DUPLICATE" in `BulkResult.errors`; the original folder is NOT moved   |
+| AC-38.1.5 | ❌ Negative | Given the selected target object does not exist or belongs to another game, the move is rejected before any filesystem mutation                                                                             |
+| AC-38.1.6 | ⚠️ Edge     | Given the mod is currently enabled (`is_enabled = true`), then the rename/move still proceeds (the new path retains the filename without "DISABLED " prefix) — the enabled state is preserved correctly     |
+| AC-38.1.7 | ✅ Positive | Given the object has a canonical Deep Match relation, Auto Organize still preserves the physical object folder name/path; canonical alias data is enrichment only and does not rename folders               |
 
 ---
 
@@ -74,13 +74,13 @@ FolderGrid Move to Object:
 
 ### Integration Points
 
-| Component                          | Detail                                                                                                                                           |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| OperationLock + WatcherSuppression | Scoped to the entire batch — prevents intermediate FS events                                                                                     |
-| DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename`                                                       |
-| Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)                                                                 |
-| Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize                                                             |
-| Canonical Relation                 | Uses physical object ownership; `matched_entry_key` / `matched_alias_name` stay as enrichment and never rewrite the physical target folder name  |
+| Component                          | Detail                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OperationLock + WatcherSuppression | Scoped to the entire batch — prevents intermediate FS events                                                                                           |
+| DB Update                          | `UPDATE folders SET folder_path = new WHERE folder_path = old` in same txn as `fs::rename`                                                             |
+| Category/Object Lookup             | `JOIN objects + categories` using current DB state (no GameSchema reload needed)                                                                       |
+| Master DB                          | Shared with Epic 26 — `object_name` resolved from DB, not re-matched during organize                                                                   |
+| Canonical Relation                 | Uses physical object ownership; `matched_entry_key` / `matched_alias_name` stay as enrichment and never rewrite the physical target folder name        |
 | Frontend                           | ObjectList bulk "Auto Recognize" updates metadata; FolderGrid selected folders use "Move to Object"; no watcher/refocus/bootstrap path invokes scanner |
 
 ### Security & Privacy

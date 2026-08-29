@@ -2,7 +2,6 @@
 
 > **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
 
-
 ## 1. Executive Summary
 
 - **Problem Statement**: Enabling/disabling a mod by adding/removing a `DISABLED ` prefix from the folder name is the single most frequent user action — it must be instant from the UI's perspective and safe against concurrent toggles, folder locks, and rename collisions.
@@ -24,14 +23,14 @@
 
 As a user, I want to enable or disable a mod with one click on a toggle, so that I can control which mods are active without using the file manager.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                     |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-20.1.1 | ✅ Positive | Given `DISABLED MyMod` (disabled), when I click the toggle to enable, then the folder is renamed to `MyMod` on disk and the card shows "enabled" within ≤ 16ms (optimistic)                                                                                  |
-| AC-20.1.2 | ✅ Positive | Given `MyMod` (enabled), when I click the toggle to disable, then the folder is renamed to `DISABLED MyMod` and the card shows "disabled" within ≤ 16ms (optimistic)                                                                                         |
-| AC-20.1.3 | ✅ Positive | Given a successful toggle, then the object's `enabled_count` in the objectlist badge updates within ≤ 50ms via the same optimistic batch update                                                                                                              |
-| AC-20.1.4 | ❌ Negative | Given `OperationLock` is already held by another operation (in-flight rename or bulk toggle), when the toggle fires, then it awaits the lock with a timeout of 3s; if not acquired, returns an "Operation in progress" toast and the pending state clears (invalidation-only: nothing to revert)      |
-| AC-20.1.5 | ❌ Negative | Given a folder is locked by parent (`ancestor_disabled_by` is present), then clicking the toggle does NOT execute the physical switch directly — instead, it opens the `EnableParentDialog` to resolve the root cause.                                       |
-| AC-20.1.6 | ⚠️ Edge     | Given rapid toggle spam (≥ 5 clicks in < 1s), then IPC calls are debounced on the frontend (the last click's target state is the intended state); the backend serializes via `OperationLock` — no intermediate state leaves a partially-prefixed folder name |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                         |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-20.1.1 | ✅ Positive | Given `DISABLED MyMod` (disabled), when I click the toggle to enable, then the folder is renamed to `MyMod` on disk and the card shows "enabled" within ≤ 16ms (optimistic)                                                                                                                      |
+| AC-20.1.2 | ✅ Positive | Given `MyMod` (enabled), when I click the toggle to disable, then the folder is renamed to `DISABLED MyMod` and the card shows "disabled" within ≤ 16ms (optimistic)                                                                                                                             |
+| AC-20.1.3 | ✅ Positive | Given a successful toggle, then the object's `enabled_count` in the objectlist badge updates within ≤ 50ms via the same optimistic batch update                                                                                                                                                  |
+| AC-20.1.4 | ❌ Negative | Given `OperationLock` is already held by another operation (in-flight rename or bulk toggle), when the toggle fires, then it awaits the lock with a timeout of 3s; if not acquired, returns an "Operation in progress" toast and the pending state clears (invalidation-only: nothing to revert) |
+| AC-20.1.5 | ❌ Negative | Given a folder is locked by parent (`ancestor_disabled_by` is present), then clicking the toggle does NOT execute the physical switch directly — instead, it opens the `EnableParentDialog` to resolve the root cause.                                                                           |
+| AC-20.1.6 | ⚠️ Edge     | Given rapid toggle spam (≥ 5 clicks in < 1s), then IPC calls are debounced on the frontend (the last click's target state is the intended state); the backend serializes via `OperationLock` — no intermediate state leaves a partially-prefixed folder name                                     |
 
 ---
 
@@ -79,7 +78,7 @@ execute_workspace_switch(input):
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Command           | `workspace_cmds.rs::execute_workspace_switch` as the public frontend switch entrypoint                                                                             |
 | Path Logic        | `path_utils::is_path_safe` ensures operations stay within the mod directory.                                                                                       |
-| DB Sync           | None in the toggle itself: the scoped `InternalMutation` Disk Reconcile after the rename is the single writer of `status`/`folder_path`.                                                                                  |
+| DB Sync           | None in the toggle itself: the scoped `InternalMutation` Disk Reconcile after the rename is the single writer of `status`/`folder_path`.                           |
 | Recursive Update  | `update_child_paths` ensures nested mods remain linked after a parent rename.                                                                                      |
 | Optimistic Update | Shared workspace switch actions apply descriptor-driven cache effects before backend confirmation.                                                                 |
 | Runtime Refresh   | Toggle does not use ad-hoc DB/cache side effects; all confirmed disk mutation freshness flows through Disk Reconcile or the shared runtime projection coordinator. |

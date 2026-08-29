@@ -191,16 +191,16 @@ toggle_variant(game_id, variant_group_id, chosen_folder_path) → ():
 
 ### Integration Points
 
-| Component      | Detail                                                                                                                                                                                |
+| Component | Detail |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Data Source    | `commands.getWorkspaceViewModel({ input })` — `explorer.children` is built from `list_mod_folders` classification and already aligned with runtime selection/corridor semantics       |
-| Virtualization | `@tanstack/react-virtual` — `useVirtualizer` with `estimateSize` = 220px (grid) / 48px (list)                                                                                         |
-| Sort           | `Array.prototype.sort()` within each group separately — `localeCompare` (name) or numeric diff (timestamp)                                                                            |
-| Path State     | `currentSubPath` in Zustand — updated on ContainerFolder double-click or breadcrumb click                                                                                             |
-| Advanced Mode  | `isAdvancedMode: bool` in Zustand — set when "Open content mods (Advanced)" is triggered; breadcrumb shows `[ADVANCED]` badge; `list_folders` receives `include_internals: true` flag |
-| Variant Picker | `VariantPickerModal` → `commands.toggleVariant(...)` under OperationLock + WatcherSuppression                                                                                         |
-| View Persist   | `localStorage['gridViewMode']` = `'grid'                                                                                                                                              | 'list'` |
-| Thumbnail      | `convertFileSrc(thumbnailPath)` from `@tauri-apps/api` — renders inside `<img>` with fallback icon                                                                                    |
+| Data Source | `commands.getWorkspaceViewModel({ input })` — `explorer.children` is built from `list_mod_folders` classification and already aligned with runtime selection/corridor semantics |
+| Virtualization | `@tanstack/react-virtual` — `useVirtualizer` with `estimateSize` = 220px (grid) / 48px (list) |
+| Sort | `Array.prototype.sort()` within each group separately — `localeCompare` (name) or numeric diff (timestamp) |
+| Path State | `currentSubPath` in Zustand — updated on ContainerFolder double-click or breadcrumb click |
+| Advanced Mode | `isAdvancedMode: bool` in Zustand — set when "Open content mods (Advanced)" is triggered; breadcrumb shows `[ADVANCED]` badge; `list_folders` receives `include_internals: true` flag |
+| Variant Picker | `VariantPickerModal` → `commands.toggleVariant(...)` under OperationLock + WatcherSuppression |
+| View Persist | `localStorage['gridViewMode']` = `'grid'                                                                                                                                              | 'list'` |
+| Thumbnail | `convertFileSrc(thumbnailPath)` from `@tauri-apps/api` — renders inside `<img>` with fallback icon |
 
 ### Security & Privacy
 

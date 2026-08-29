@@ -2,7 +2,6 @@
 
 > **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
 
-
 ## 1. Executive Summary
 
 - **Problem Statement**: Users frequently switch gameplay contexts (e.g., streaming, full-overhaul, vanilla), making manual toggling of dozens of mods error-prone. Restoring exact loadouts requires a system capable of atomic mass activation, conflict resolution, graceful failure handling, and self-healing when folders are moved.
@@ -37,13 +36,13 @@ As a user, I want to save my currently active mods as a permanent collection, so
 
 As a user, I want to activate a preset and have the app automatically disable all other mods, while warning me if any saved mods have gone missing from my disk.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                        |
-| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-31.2.1 | ✅ Positive | Given a collection is clicked, the system runs a Pre-Apply Validation. If all physical mod paths exist, the system proceeds to the Exclusive Swap automatically.                                                                                                                                |
-| AC-31.2.2 | ❌ Negative | Given some mods in the collection are physically missing from the disk and `ignore_missing = false`, the backend returns a `MissingModsError` array before any rename. The React UI intercepts this and displays a "Missing Mods" dialog listing the lost paths.                                |
-| AC-31.2.3 | ✅ Positive | Given the Missing Mods dialog, if the user clicks "Skip & Apply", the frontend re-triggers the apply command with `ignore_missing = true`, skipping the lost mods, returning skip warnings, and proceeding with the swap.                                                                       |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                                         |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-31.2.1 | ✅ Positive | Given a collection is clicked, the system runs a Pre-Apply Validation. If all physical mod paths exist, the system proceeds to the Exclusive Swap automatically.                                                                                                                                 |
+| AC-31.2.2 | ❌ Negative | Given some mods in the collection are physically missing from the disk and `ignore_missing = false`, the backend returns a `MissingModsError` array before any rename. The React UI intercepts this and displays a "Missing Mods" dialog listing the lost paths.                                 |
+| AC-31.2.3 | ✅ Positive | Given the Missing Mods dialog, if the user clicks "Skip & Apply", the frontend re-triggers the apply command with `ignore_missing = true`, skipping the lost mods, returning skip warnings, and proceeding with the swap.                                                                        |
 | AC-31.2.4 | ✅ Positive | Given the swap executes, it acquires an `OperationLock`, suppresses the Watcher, and delegates the enabled/disabled filesystem renames to the shared runtime mutation engine (rename-only), then converges the DB via an inline scoped Disk Reconcile held under the per-game orchestrator lock. |
-| AC-31.2.5 | ⚠️ Edge     | Given the collection contains multiple active mods for the same Object (e.g., two skins for Albedo), the automated apply ignores/bypasses standard duplicate hash warnings and applies them simultaneously.                                                                                     |
+| AC-31.2.5 | ⚠️ Edge     | Given the collection contains multiple active mods for the same Object (e.g., two skins for Albedo), the automated apply ignores/bypasses standard duplicate hash warnings and applies them simultaneously.                                                                                      |
 
 ---
 

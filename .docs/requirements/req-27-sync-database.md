@@ -25,7 +25,7 @@ As a system, I want to safely write approved scan mappings to the DB, so that th
 
 | ID        | Type        | Criteria                                                                                                                                                                                                       |
 | --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-27.1.1 | ✅ Positive | Given N approved `ScoredCandidate` items, when `import_batch` is called, then the `folders` table is upserted with `folder_path → object_id` associations in a single SQLite transaction                        |
+| AC-27.1.1 | ✅ Positive | Given N approved `ScoredCandidate` items, when `import_batch` is called, then the `folders` table is upserted with `folder_path → object_id` associations in a single SQLite transaction                       |
 | AC-27.1.2 | ✅ Positive | Given a folder detected as moved (same BLAKE3 hash, different path), when committed, then the existing DB row's `folder_path` is updated rather than creating a duplicate row                                  |
 | AC-27.1.3 | ❌ Negative | Given the SQLite transaction is interrupted (crash, power loss), then the DB rolls back to its pre-commit state — no partially-applied rows with inconsistent `object_id` assignments                          |
 | AC-27.1.4 | ⚠️ Edge     | Given a candidate's `proposed_object_id` references an Object that doesn't exist in the DB yet (user manually assigned in review), then the commit auto-creates that Object row before inserting the folder FK |

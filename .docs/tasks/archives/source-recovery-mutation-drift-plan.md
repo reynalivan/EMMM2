@@ -70,18 +70,18 @@ Fingerprint berasal dari canonical path, classification, dan sorted projection i
 
 ## Mutation Coverage Matrix
 
-| Area | Source of truth | Perbaikan wajib |
-|---|---|---|
-| Auto-organize/move | Disk path/identity | Pertahankan preflight, lock, scoped suppression, source+destination reconcile, dan collection rewrites; tambah partial-failure regression tests. |
-| Mod category | DB app metadata | Reconcile mempertahankan category existing bila owner object tidak berubah; mod baru atau move antar-object mengambil category target. |
-| Object category/auto-category | DB app metadata | Update object dan seluruh child mods dalam transaction/lock yang sama; watcher reconcile tidak boleh mengembalikan value lama. |
-| Auto-recognize | DB app metadata | Gabungkan match provenance dan object metadata update secara atomik per object atau batch terkontrol; jangan meninggalkan half-applied row. |
-| `info.json` | Disk untuk isi file, DB untuk indexed projection/manual policy | Preflight, lock, scoped suppression, atomic replace/recovery, trailing reconcile. |
-| Safe/favorite/pin/tags | Explicit app metadata plus `info.json` mirror | Disk+DB update memiliki rollback yang terukur; reconcile tidak boleh menimpa manual policy. |
-| Thumbnail update/paste/delete | Disk image | Preflight, canonical game-scoped validation, atomic write/Trash, cache invalidation, trailing reconcile. |
-| Preview image save/remove/clear | Disk image | Preflight, atomic write/Trash, scoped suppression, thumbnail/detail refresh. |
-| INI edit | Disk file | Pertahankan source-hash stale check dan backup recovery; tambahkan preflight dan path-scoped suppression. |
-| External image/INI/info changes | Disk event | Watcher mengklasifikasi thumbnail/runtime paths, invalidates query/cache, dan reconcile menggunakan latest snapshot. |
+| Area                            | Source of truth                                                | Perbaikan wajib                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Auto-organize/move              | Disk path/identity                                             | Pertahankan preflight, lock, scoped suppression, source+destination reconcile, dan collection rewrites; tambah partial-failure regression tests. |
+| Mod category                    | DB app metadata                                                | Reconcile mempertahankan category existing bila owner object tidak berubah; mod baru atau move antar-object mengambil category target.           |
+| Object category/auto-category   | DB app metadata                                                | Update object dan seluruh child mods dalam transaction/lock yang sama; watcher reconcile tidak boleh mengembalikan value lama.                   |
+| Auto-recognize                  | DB app metadata                                                | Gabungkan match provenance dan object metadata update secara atomik per object atau batch terkontrol; jangan meninggalkan half-applied row.      |
+| `info.json`                     | Disk untuk isi file, DB untuk indexed projection/manual policy | Preflight, lock, scoped suppression, atomic replace/recovery, trailing reconcile.                                                                |
+| Safe/favorite/pin/tags          | Explicit app metadata plus `info.json` mirror                  | Disk+DB update memiliki rollback yang terukur; reconcile tidak boleh menimpa manual policy.                                                      |
+| Thumbnail update/paste/delete   | Disk image                                                     | Preflight, canonical game-scoped validation, atomic write/Trash, cache invalidation, trailing reconcile.                                         |
+| Preview image save/remove/clear | Disk image                                                     | Preflight, atomic write/Trash, scoped suppression, thumbnail/detail refresh.                                                                     |
+| INI edit                        | Disk file                                                      | Pertahankan source-hash stale check dan backup recovery; tambahkan preflight dan path-scoped suppression.                                        |
+| External image/INI/info changes | Disk event                                                     | Watcher mengklasifikasi thumbnail/runtime paths, invalidates query/cache, dan reconcile menggunakan latest snapshot.                             |
 
 ## Task Eksekusi
 
@@ -443,17 +443,17 @@ Fingerprint berasal dari canonical path, classification, dan sorted projection i
 
 ## Risks dan Mitigasi
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Empty/different switch menghapus runtime rows yang sebenarnya masih diperlukan | High | Read-only preview, explicit confirmation, collection durable refs, transactional reconcile, config rollback. |
-| Candidate berubah antara preview dan apply | High | Deterministic fingerprint dan mandatory re-inspection under lock. |
-| Old watcher emits after root change | High | Session generation invalidation plus full reconcile on new session. |
-| OperationLock deadlock karena nested orchestrator acquisition | High | Apply service memakai already-held `OpGuard` dan direct reconcile under per-game lock; tidak memanggil acquiring entry point. |
-| Category custom ditimpa projection | Medium | Preserve existing type on same owner; explicit tests for scoped/full/watcher reconcile. |
-| Cross-store info.json/DB update gagal separuh | High | Staged replace, backup, DB transaction, verified rollback/error reporting. |
-| Narrow app mutation menelan external event lain | Medium | Path-scoped suppression; blanket only for unknown write sets. |
-| Thumbnail cache menunjuk file lama | Medium | Invalidate source and identity-keyed folder caches after success/delete/external event. |
-| Existing dirty worktree overlap | High | Re-read exact diff before each edit, patch narrowly, never revert unrelated changes. |
+| Risk                                                                           | Impact | Mitigation                                                                                                                    |
+| ------------------------------------------------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Empty/different switch menghapus runtime rows yang sebenarnya masih diperlukan | High   | Read-only preview, explicit confirmation, collection durable refs, transactional reconcile, config rollback.                  |
+| Candidate berubah antara preview dan apply                                     | High   | Deterministic fingerprint dan mandatory re-inspection under lock.                                                             |
+| Old watcher emits after root change                                            | High   | Session generation invalidation plus full reconcile on new session.                                                           |
+| OperationLock deadlock karena nested orchestrator acquisition                  | High   | Apply service memakai already-held `OpGuard` dan direct reconcile under per-game lock; tidak memanggil acquiring entry point. |
+| Category custom ditimpa projection                                             | Medium | Preserve existing type on same owner; explicit tests for scoped/full/watcher reconcile.                                       |
+| Cross-store info.json/DB update gagal separuh                                  | High   | Staged replace, backup, DB transaction, verified rollback/error reporting.                                                    |
+| Narrow app mutation menelan external event lain                                | Medium | Path-scoped suppression; blanket only for unknown write sets.                                                                 |
+| Thumbnail cache menunjuk file lama                                             | Medium | Invalidate source and identity-keyed folder caches after success/delete/external event.                                       |
+| Existing dirty worktree overlap                                                | High   | Re-read exact diff before each edit, patch narrowly, never revert unrelated changes.                                          |
 
 ## Urutan Checkpoint
 

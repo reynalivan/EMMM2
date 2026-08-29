@@ -102,7 +102,7 @@ Backend:
 | `OperationLock`      | Per `game_id` `Arc<Mutex<()>>` — bulk ops and single ops share the same lock.                                                             |
 | Progress Events      | Tauri `Window::emit("bulk-progress", {current, total, label, active})`.                                                                   |
 | Runtime Refresh      | Bulk mutation results map to centralized runtime descriptors / `WorkspaceImpact`; feature code does not call raw query invalidation APIs. |
-| `WatcherSuppression` | One path-scoped, identity-keyed registration for the whole batch before any op; a 2 s tail after the guard drops absorbs late OS events                                               |
+| `WatcherSuppression` | One path-scoped, identity-keyed registration for the whole batch before any op; a 2 s tail after the guard drops absorbs late OS events   |
 
 ### Security & Privacy
 

@@ -15,7 +15,6 @@ export type RuntimeRefreshEvent =
   | 'trashChanged'
   | 'settingsChanged'
   | 'browserDownloadsChanged'
-  | 'browserImportQueueChanged'
   | 'browserHomepageChanged'
   | 'dedupChanged'
   | 'dedupReportChanged'

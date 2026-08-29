@@ -116,7 +116,7 @@ Scanner bekerja pada logical mod units, mengabaikan subvariant internal, memisah
 - Simpan pair/edge evidence untuk non-exact relations.
 - Nama dan struktur menjadi explanation/ranking saja, bukan safety proof.
 
-**Done when:** A~B~C tidak membuat exact group kecuali ketiganya mempunyai manifest ID identik.
+**Done when:** A~~B~~C tidak membuat exact group kecuali ketiganya mempunyai manifest ID identik.
 
 ## Phase 3 — 3DMigoto semantic signatures
 

@@ -11,16 +11,16 @@ The invariants below are enforced by **eleven gates** in
 `src-tauri/tests/arch_audit.rs`, all target-zero. Read that file first: it is
 the fastest way to learn what the layers are allowed to do.
 
-| Invariant | Type that enforces it |
-|---|---|
-| Safe Mode is server-derived | `Corridor` (not serde/specta) |
-| The operation lock is held | `OpGuard` (private field) |
-| A path is inside a mods root | `ValidatedPath` (only `fs_utils::guard` builds it) |
-| A mutation settles the projection | `#[must_use] MutationOutcome` + `finalize_mutation` |
-| Errors keep their discriminant | no `Result<_, String>` in `services/` |
-| Repos only do SQL | no `std::fs`, no `specta::Type` in `repo/` |
-| Repos do not decide identity | no `type_is_authoritative` in `repo/` |
-| A stored path is not a filesystem path | `ModFolderPath` (no `AsRef<Path>`) |
+| Invariant                              | Type that enforces it                               |
+| -------------------------------------- | --------------------------------------------------- |
+| Safe Mode is server-derived            | `Corridor` (not serde/specta)                       |
+| The operation lock is held             | `OpGuard` (private field)                           |
+| A path is inside a mods root           | `ValidatedPath` (only `fs_utils::guard` builds it)  |
+| A mutation settles the projection      | `#[must_use] MutationOutcome` + `finalize_mutation` |
+| Errors keep their discriminant         | no `Result<_, String>` in `services/`               |
+| Repos only do SQL                      | no `std::fs`, no `specta::Type` in `repo/`          |
+| Repos do not decide identity           | no `type_is_authoritative` in `repo/`               |
+| A stored path is not a filesystem path | `ModFolderPath` (no `AsRef<Path>`)                  |
 
 ### The loop every change runs
 
@@ -48,7 +48,7 @@ deliberately and confirm the test goes red before believing it.
 It has caught five real mistakes across two sessions. Twice a test passed for
 the wrong reason — one wrote its fixture into the wrong directory and would
 have shipped a no-op guarantee. Three times a function was rewritten and
-*nothing at all* was checking the behaviour being preserved, which only became
+_nothing at all_ was checking the behaviour being preserved, which only became
 visible because a deliberate mutation stayed green.
 
 The cheapest form: a small script that applies each plausible mistake to the
@@ -70,18 +70,18 @@ decision.
 done for every file where length signalled a real problem — see its section
 for the measurement that decides which those are.
 
-| Item | Commit |
-|---|---|
+| Item                                                                                        | Commit    |
+| ------------------------------------------------------------------------------------------- | --------- |
 | 1.1 pair prefilter windowed, 1.2 group bucketing, 1.3 per-snapshot precompute, 3.2 tunables | `c79a094` |
-| 1.4 `PreparedTokenFilters` + three tokenizer allocations | `f2a76dd` |
-| 2.1 pins for identity and merge policy | `63381f9` |
-| 2.1 policy moved to `services/objects/reconcile.rs`, tenth arch gate | `4c97580` |
-| 3.1 dedup-test fixture shared, safe-mode propagation covered | `3bc891a` |
-| 3.1 sync-test base shared, committed enabled state covered | `5344083` |
-| Conflict detection read stored paths as absolute | `481510b` |
-| Scan commit wrote absolute paths; migration + linker | `a6259dd` |
-| `ModFolderPath`, four more readers, eleventh gate | `61e6d9a` |
-| 3.1 dedup split: snapshot / hashing / scoring / grouping | `0b8b2ff` |
+| 1.4 `PreparedTokenFilters` + three tokenizer allocations                                    | `f2a76dd` |
+| 2.1 pins for identity and merge policy                                                      | `63381f9` |
+| 2.1 policy moved to `services/objects/reconcile.rs`, tenth arch gate                        | `4c97580` |
+| 3.1 dedup-test fixture shared, safe-mode propagation covered                                | `3bc891a` |
+| 3.1 sync-test base shared, committed enabled state covered                                  | `5344083` |
+| Conflict detection read stored paths as absolute                                            | `481510b` |
+| Scan commit wrote absolute paths; migration + linker                                        | `a6259dd` |
+| `ModFolderPath`, four more readers, eleventh gate                                           | `61e6d9a` |
+| 3.1 dedup split: snapshot / hashing / scoring / grouping                                    | `0b8b2ff` |
 
 Two things worth knowing before reading the sections below, which are kept
 for the reasoning rather than as work items:
@@ -110,19 +110,19 @@ repeats.
 
 **One ambiguous column produced six bugs.** `mods.folder_path` is relative to
 the mods root. Six readers treated it as a complete path. Every one failed
-identically and *silently*: a relative path resolves against the process
+identically and _silently_: a relative path resolves against the process
 working directory, the existence check says no, and the code takes its
 nothing-found branch. "No conflicts", "no duplicates" and "no keybinds" are
 all ordinary answers, so nothing ever surfaced.
 
-| Reader | What the user saw | Fixed in |
-|---|---|---|
-| `conflicts_for_enabled_paths` | conflict count always zero | `481510b` |
-| `link_disk_to_db` rename pass | every row looked gone from disk | `a6259dd` |
-| `build_candidates` | duplicate scan found **nothing** | `61e6d9a` |
-| `resolve_mod_path_for_object` | **deleted the row** on "reveal in Explorer" | `61e6d9a` |
-| `get_active_keybindings_service` | overlay keybind list empty | `61e6d9a` |
-| scan commit (writer) | wrote absolute, disagreeing with disk reconcile | `a6259dd` |
+| Reader                           | What the user saw                               | Fixed in  |
+| -------------------------------- | ----------------------------------------------- | --------- |
+| `conflicts_for_enabled_paths`    | conflict count always zero                      | `481510b` |
+| `link_disk_to_db` rename pass    | every row looked gone from disk                 | `a6259dd` |
+| `build_candidates`               | duplicate scan found **nothing**                | `61e6d9a` |
+| `resolve_mod_path_for_object`    | **deleted the row** on "reveal in Explorer"     | `61e6d9a` |
+| `get_active_keybindings_service` | overlay keybind list empty                      | `61e6d9a` |
+| scan commit (writer)             | wrote absolute, disagreeing with disk reconcile | `a6259dd` |
 
 Two lessons worth more than the fixes:
 
@@ -222,6 +222,7 @@ Build a `PreparedTokenFilters` once via `IniTokenizationConfig::prepare()`
 and pass it by reference.
 
 Same file, smaller:
+
 - `:331` `looks_like_path` lowercases the whole RHS just to run `contains`.
 - `:313` `strip_section_prefixes` re-lowercases and reallocates per stripped
   prefix; track a `usize` offset into one lowercase copy.
@@ -236,7 +237,7 @@ What remains: the conflict scan uses `walker::scan_folder_content(path, 3)`
 (recursive, depth 3) while the harvest uses `list_ini_files` (top level
 only).
 
-**This one is not a pure refactor.** Merging the walks changes *which* INI
+**This one is not a pure refactor.** Merging the walks changes _which_ INI
 files get harvested — nested INIs would start contributing hashes and
 keybinds.
 
@@ -289,7 +290,7 @@ ones". Reading both, they are not two similar ones.
   files into a directory the user picked. No database, no matching, no job.
   It continues past a failed item and returns a per-item `BulkResult`.
 - `services/browser/import_service/placement.rs::place_mod` resolves or
-  creates the target *object*, writes the canonical match, closes the import
+  creates the target _object_, writes the canonical match, closes the import
   job, marks the download imported and emits a disk reconcile — one
   transaction over four tables, aborting whole on any failure.
 - `ingest_dropped_folders` is a third thing again: it stages loose `.ini` and
@@ -299,7 +300,7 @@ ones". Reading both, they are not two similar ones.
 What the first two genuinely share is already shared: `arrival::land_disabled`,
 the operation lock and the watcher suppression guard. What is left to extract
 is "loop, land each, record the outcome" — and the two outcomes are
-*continue-on-failure* versus *abort-the-transaction*. An abstraction over that
+_continue-on-failure_ versus _abort-the-transaction_. An abstraction over that
 difference is the premature generalization the KISS rule warns about.
 
 Revisit only if a third caller appears, or if the same bug has to be fixed in
@@ -309,8 +310,8 @@ both places.
 
 Six files under `src-tauri/src/domain/` derive both `sqlx::FromRow` and
 `specta::Type`: `objects.rs`, `dashboard.rs`, `browser.rs`, `conflicts.rs`,
-`collection.rs`, `models.rs`. Moving them out of `repo/` fixed *ownership*,
-not *coupling* — renaming a column is still a frontend breaking change.
+`collection.rs`, `models.rs`. Moving them out of `repo/` fixed _ownership_,
+not _coupling_ — renaming a column is still a frontend breaking change.
 
 **This is a deferred decision, not debt to pay down blindly.** Splitting a
 table into a row struct plus a DTO is worth doing **per table, when one
@@ -327,10 +328,10 @@ The two files the plan named as "roughly 40% repeated fixture boilerplate"
 were deduplicated (`3bc891a`, `5344083`). The estimate was wrong, and the
 measurement is worth keeping so nobody re-derives it:
 
-| File | Before | After | Tests | Lines per test |
-|---|---|---|---|---|
-| `dedup/tests/dedup_scanner_tests.rs` | 779 | 654 (+2 tests) | 13 | ~50 |
-| `scanner/tests/sync_tests.rs` | 870 | 880 (+1 test) | 11 | ~80 |
+| File                                 | Before | After          | Tests | Lines per test |
+| ------------------------------------ | ------ | -------------- | ----- | -------------- |
+| `dedup/tests/dedup_scanner_tests.rs` | 779    | 654 (+2 tests) | 13    | ~50            |
+| `scanner/tests/sync_tests.rs`        | 870    | 880 (+1 test)  | 11    | ~80            |
 
 `dedup_scanner_tests.rs` had real copy-paste — one 16-line fixture written 18
 times — and shed 125 lines. `sync_tests.rs` did not: it is long because it
@@ -374,10 +375,10 @@ opposite of what the rule is for.
 The two that genuinely exceeded were both ones Tier 1 grew, and both were
 holding more than one job. Split in `0b8b2ff`:
 
-| Was | Now |
-|---|---|
+| Was              | Now                                                    |
+| ---------------- | ------------------------------------------------------ |
 | `signals.rs` 471 | `snapshot.rs` 144 + `hashing.rs` 77 + `signals.rs` 274 |
-| `scanner.rs` 464 | `grouping.rs` 130 + `scanner.rs` 348 |
+| `scanner.rs` 464 | `grouping.rs` 130 + `scanner.rs` 348                   |
 
 `signals.rs` is now pure scoring — the folder walk and the BLAKE3 hashing that
 used to sit on either side of the model are their own modules. `grouping.rs`

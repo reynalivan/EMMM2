@@ -46,6 +46,7 @@
 > (rule TIDAK dilemahkan). Test: vitest **755**.
 >
 > Review kohesi preview: **1 dari 4 dipecah, 3 SENGAJA TIDAK** — hasil yang sah.
+>
 > - `AdvancedKeybindModal` 310 → 287: dua fungsi murni saling invers (parse/format
 >   nilai keybind, a.l. aturan `no_ctrl` menegasikan `ctrl`) diekstrak ke
 >   `utils/keybindValue.ts` + 10 test termasuk round-trip. Nol prop-drilling.
@@ -89,6 +90,7 @@
 > tanpa peminta.
 >
 > PERLU DIVERIFIKASI (belum ditelusuri tuntas):
+>
 > - `services/browser/browser_service/settings.rs:38` — `normalize_url` mencocokkan
 >   skema case-sensitive, sedangkan `validate_http_url:26` meng-lowercase dulu;
 >   input `HTTP://example.com` jadi `https://HTTP://example.com` lalu gagal parse.
@@ -108,6 +110,7 @@
 > `dedup/signals.rs` 433, `content/tokenizer.rs` 354.
 >
 > PERLU DIVERIFIKASI (belum ditelusuri tuntas):
+>
 > - `analysis/mechanical_rerank/penalties.rs:20-32` — `is_multi_entity` dan
 >   `has_type_mismatch` selalu `false` (placeholder), jadi `PENALTY_MULTI_ENTITY`
 >   dan `PENALTY_TYPE_MISMATCH` efektif mati.
@@ -152,6 +155,7 @@
 >
 > PERLU DIVERIFIKASI (temuan agen, BELUM ditelusuri tuntas — jangan diperlakukan
 > sebagai bug sebelum dicek):
+>
 > 1. Signature collection disimpan DENGAN `mods_path` (`create_collection`,
 >    `replace_collection_with_current_state`) tapi dicocokkan TANPA `mods_path`
 >    (`list_collections` → `compute_signature` → `build_projected_state(..., None)`).
@@ -260,45 +264,47 @@
 
 ## Tabel kesehatan per fitur (FE)
 
-| Fitur | LOC | Grade | Masalah utama |
-|---|---|---|---|
-| object-list | 9509 | D | 48 file flat, 6 modul besar, coupling terberat |
-| workspace-runtime | 3197 | D | hub 10 fitur, 4 modul besar, state nyangkut di god-store |
-| folder-grid | 5026 | C | 27 file flat, coupling berat |
-| preview | 4009 | C | 5 file "mengakali" limit (301–313), coupling 4 arah |
-| scanner | 3147 | C | overlap ScanReview dengan object-list |
-| mod-runtime | 1099 | C | useSharedModActions 370 |
-| runtime-sync | 265 | C | siklus dengan workspace-runtime |
-| file-watcher | 704 | C | — |
-| settings | 2893 | B | PIN modal duplikat dengan safe-mode |
-| collections | 2240 | B | ApplyCollectionModal 383 |
-| browser | 1472 | B | BrowserPage 505 |
-| downloads | 200 | B | shim 100% atas browser → fold (Fase 7) |
-| welcome | 786 | B | gabung ke onboarding (Fase 9) |
-| onboarding/randomizer/safe-mode/launch-bar/file-management | kecil | B | minor |
-| dashboard / conflict-report | 903/96 | A | conflict-report tanpa test |
+| Fitur                                                      | LOC    | Grade | Masalah utama                                            |
+| ---------------------------------------------------------- | ------ | ----- | -------------------------------------------------------- |
+| object-list                                                | 9509   | D     | 48 file flat, 6 modul besar, coupling terberat           |
+| workspace-runtime                                          | 3197   | D     | hub 10 fitur, 4 modul besar, state nyangkut di god-store |
+| folder-grid                                                | 5026   | C     | 27 file flat, coupling berat                             |
+| preview                                                    | 4009   | C     | 5 file "mengakali" limit (301–313), coupling 4 arah      |
+| scanner                                                    | 3147   | C     | overlap ScanReview dengan object-list                    |
+| mod-runtime                                                | 1099   | C     | useSharedModActions 370                                  |
+| runtime-sync                                               | 265    | C     | siklus dengan workspace-runtime                          |
+| file-watcher                                               | 704    | C     | —                                                        |
+| settings                                                   | 2893   | B     | PIN modal duplikat dengan safe-mode                      |
+| collections                                                | 2240   | B     | ApplyCollectionModal 383                                 |
+| browser                                                    | 1472   | B     | BrowserPage 505                                          |
+| downloads                                                  | 200    | B     | shim 100% atas browser → fold (Fase 7)                   |
+| welcome                                                    | 786    | B     | gabung ke onboarding (Fase 9)                            |
+| onboarding/randomizer/safe-mode/launch-bar/file-management | kecil  | B     | minor                                                    |
+| dashboard / conflict-report                                | 903/96 | A     | conflict-report tanpa test                               |
 
 ## Grade modul BE
 
-| Modul | LOC prod | Grade | Masalah |
-|---|---|---|---|
-| repo/ | ~4900 | D | object_repo 1621, mod_repo 938, collection_repo 756; impor terbalik ke services; 7 repo tanpa test |
-| commands/ | ~5700 | C | bypass repo/sqlx langsung di 6+ file; business logic di collections/cmds |
-| services/ | ~24000 | C | 20+ modul besar; disk_reconcile & runtime engine tanpa test |
-| types/ | 149 | C+ | CommandError duplikat → hapus |
-| pipeline/ | 626 | B | bersih, tapi tanpa test |
-| database/ | 190 | B | vestigial → lebur ke repo (Fase 9) |
-| domain/ | 1133 | B+ | workspace.rs 404 |
+| Modul     | LOC prod | Grade | Masalah                                                                                            |
+| --------- | -------- | ----- | -------------------------------------------------------------------------------------------------- |
+| repo/     | ~4900    | D     | object_repo 1621, mod_repo 938, collection_repo 756; impor terbalik ke services; 7 repo tanpa test |
+| commands/ | ~5700    | C     | bypass repo/sqlx langsung di 6+ file; business logic di collections/cmds                           |
+| services/ | ~24000   | C     | 20+ modul besar; disk_reconcile & runtime engine tanpa test                                        |
+| types/    | 149      | C+    | CommandError duplikat → hapus                                                                      |
+| pipeline/ | 626      | B     | bersih, tapi tanpa test                                                                            |
+| database/ | 190      | B     | vestigial → lebur ke repo (Fase 9)                                                                 |
+| domain/   | 1133     | B+    | workspace.rs 404                                                                                   |
 
 ## Fase
 
 ### Fase 0 — Safety Net ✅ (sesi ini)
+
 1. Roadmap ini ditulis ke `.docs/`.
 2. Specta codegen aktif: export ke `src/lib/bindings.gen.ts`; `bindings.ts` jadi shim re-export; type manual tergantikan dihapus; guard "generated up-to-date" di cargo test.
 3. Review kohesi modul; `cargo clippy` non-blocking di CI.
 4. Characterization test: `disk_reconcile` (orchestrator/projection_writer/rename_healer), `runtime_mutation_engine`, `projected_state_service`, smoke test `useAppStore`.
 
 ### Fase 1 — Fondasi lintas-lapisan
+
 - BE: modul leaf `common/` ← pindahkan `path_key`, `corridor_constants`, `explorer/classifier`, `scanner/core/normalizer` (putus repo→services).
 - BE: putus `preview_builder` → `preview_cmds` (turunkan logic ke services).
 - BE: unifikasi error — hapus `types/errors.rs`; ~83 command String → `AppError` + `#[from]`; babat 113 `.map_err(|e| e.to_string())`.
@@ -306,35 +312,43 @@
 - BE: mulai ekstrak template handler (validate_path → mutate → emit_reconcile → finalize).
 
 ### Fase 2 — State & store (FE)
+
 - Pecah `useAppStore` jadi slice per domain (nav, selection, workspace-preview, object-list filter, panel, theme/safe-mode/game); API publik via re-export.
 - Serap `workspaceReducer` + `workspaceStoreBridge` ke slice workspace. Test per slice.
 
 ### Fase 3 — object-list (grade D)
+
 - FE: 48 file flat → components/hooks/modals; gabung `useObjHandlers*` per domain nyata; rapikan 7 modal + 3 wrapper; perbaiki `useDeleteCollection as useDeleteObject`.
 - Dedup: `BulkTagModal` bersama (vs folder-grid); konsolidasi ScanReview* vs scanner.
 - BE: pecah `object_repo.rs` 1621 (queries/projections/classification); `object_cmds` lewat services.
 
 ### Fase 4 — Runtime core (workspace-runtime, mod-runtime, runtime-sync)
+
 - FE: pangkas `useWorkspaceSwitchActions` 511, `useSharedObjectActions` 412, `useWorkspaceViewModel` 391; kurangi peran hub.
 - BE: `workspace_cmds` 522 → workspace_service; refactor runtime engine (terlindungi test Fase 0); terapkan template handler ke ~25 site; pecah `mod_repo` 938 + mods services (`core_ops` 634, `bulk` 480, `object_switch` 437, `trash` 407); bersihkan unwrap (workspace_cmds 16, corridor_service 15, runtime_mutation_engine 11).
 
 ### Fase 5 — collections
+
 - BE: `resolve_recovery_task` dari cmds → collection_service; repo langsung → services; test command layer; pecah `collection_service` 917 & `collection_repo` 756.
 - FE: pecah `ApplyCollectionModal` 383.
 
 ### Fase 6 — scanner, file-watcher, duplicates
+
 - BE: raw sqlx di `deepmatch_scanner_cmds` → repo; pecah deep_matcher berdasarkan kohesi (`mechanical_rerank` 506, `gamebanana` 454, `full_pipeline` 442) & `sync/commit` 484; refactor `disk_reconcile`, bersihkan 12 unwrap.
 - FE: konsolidasi overlap ScanReview (lanjutan Fase 3).
 
 ### Fase 7 — browser + downloads
+
 - FE: fold `downloads` ke `browser`; pecah `BrowserPage` 505.
 - BE: `browser_cmds` berhenti terima `SqlitePool` mentah; pecah `import_service` 823; test browser command layer + `browser_service`/`download_service`/`download_handler`.
 
 ### Fase 8 — folder-grid + preview
+
 - folder-grid: 27 file flat → subfolder; pakai BulkTagModal bersama.
 - preview: review kohesi 5 file 301–313; kurangi coupling; BE `preview_cmds` 356 tipiskan.
 
 ### Fase 9 — Fitur kecil + kebersihan akhir
+
 - welcome → onboarding; dedup 2 UI PIN (safe-mode vs settings).
 - `useFolderMutations` 533 pecah; rename `useObjects.test.tsx`.
 - BE: lebur `database/` ke `repo/`; setup inline `lib.rs` (~170 baris) → service bootstrap; pecah `keyviewer/generator` 536, `explorer/listing` 526, `config/mod` 429, `domain/workspace` 404.

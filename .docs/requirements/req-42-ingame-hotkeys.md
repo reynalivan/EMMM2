@@ -73,11 +73,11 @@ As a user, I want a single hotkey to show or hide all in-game status and keybind
 
 As a user, I want to see a clear confirmation of my active settings in-game.
 
-| ID        | Type        | Criteria                                                                                                                                   |
+| ID | Type | Criteria |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ | ------------------- |
 | AC-42.5.1 | ✅ Positive | Given any hotkey action completes, `.emmm_data/status/runtime_status.txt` is written atomically with the format: `[EMM2] Safe: {On/Off}    | Collection: {Name} | Toggle: [{f7_key}]` |
 | AC-42.5.2 | ✅ Positive | The status banner resides at `.emmm_data/status/runtime_status.txt`. It is **persistent** while the overlay is toggled ON (no auto-clear). |
-| AC-42.5.3 | ❌ Negative | Given the 3DMigoto renderer is unavailable, the text file is still written correctly for external verification.                            |
+| AC-42.5.3 | ❌ Negative | Given the 3DMigoto renderer is unavailable, the text file is still written correctly for external verification. |
 
 ---
 

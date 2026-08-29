@@ -40,16 +40,16 @@ As a user, I want the app to notify me when a new version is available and insta
 
 As a system, I want to lazily fetch game schemas and entity databases from CDN, so that the app binary stays small and new characters/games are supported without a binary update.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                  |
+| ID | Type | Criteria |
 | --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------ |
-| AC-34.2.1 | ✅ Positive | Given the app starts, it checks `manifest.json` on GitHub CDN using `If-Modified-Since`/`ETag` headers; only downloads if the remote version is newer — adds ≤ 500ms to startup                                                                           |
+| AC-34.2.1 | ✅ Positive | Given the app starts, it checks `manifest.json` on GitHub CDN using `If-Modified-Since`/`ETag` headers; only downloads if the remote version is newer — adds ≤ 500ms to startup |
 | AC-34.2.2 | ✅ Positive | Given a user switches to a game whose `schema.json` is missing locally, then the app fetches it from `https://raw.githubusercontent.com/reynalivan/EMMM-Assets/main/{game_id}/schema.json` in ≤ 3s; cached to `app_data_dir/assets/{game_id}/schema.json` |
-| AC-34.2.3 | ✅ Positive | Given the remote DB version is newer than local, then the new data is downloaded, parsed, and upserted into the SQLite `metadata` table — a "New Data Available" notification appears                                                                     |
+| AC-34.2.3 | ✅ Positive | Given the remote DB version is newer than local, then the new data is downloaded, parsed, and upserted into the SQLite `metadata` table — a "New Data Available" notification appears |
 | AC-34.2.4 | ✅ Positive | Given Settings > Maintenance has a "Sync Assets" button, when clicked, then all schemas and resource packs for configured games are re-fetched in parallel (`rayon` per game_id) — results show `{ game_id, status: Ok                                    | Cached | Failed }` per game |
-| AC-34.2.5 | ❌ Negative | Given the GitHub API rate limit is hit (HTTP 429), then the request is retried with exponential backoff (1s → 2s → 4s, max 3 retries) — if all 3 retries fail, the cached version is used and a toast shows "Rate limited — using cached data"            |
-| AC-34.2.6 | ❌ Negative | Given the app is offline when fetching a schema, then the last cached version is used if present — if no cache exists, a bundled fallback schema is used and a warning banner shows "Could not fetch latest data — using bundled fallback"                |
-| AC-34.2.7 | ⚠️ Edge     | Given the fetched `schema.json` fails JSON validation (malformed), then the previous cached version is kept intact — no overwrite of a valid cache with bad data; a toast shows "Asset sync failed: invalid schema format"                                |
-| AC-34.2.8 | ⚠️ Edge     | Given the app is killed mid-download of a schema, then on next launch, the incomplete `.tmp` file is detected and deleted before fetching again — no stale partial JSON used as cache                                                                     |
+| AC-34.2.5 | ❌ Negative | Given the GitHub API rate limit is hit (HTTP 429), then the request is retried with exponential backoff (1s → 2s → 4s, max 3 retries) — if all 3 retries fail, the cached version is used and a toast shows "Rate limited — using cached data" |
+| AC-34.2.6 | ❌ Negative | Given the app is offline when fetching a schema, then the last cached version is used if present — if no cache exists, a bundled fallback schema is used and a warning banner shows "Could not fetch latest data — using bundled fallback" |
+| AC-34.2.7 | ⚠️ Edge | Given the fetched `schema.json` fails JSON validation (malformed), then the previous cached version is kept intact — no overwrite of a valid cache with bad data; a toast shows "Asset sync failed: invalid schema format" |
+| AC-34.2.8 | ⚠️ Edge | Given the app is killed mid-download of a schema, then on next launch, the incomplete `.tmp` file is detected and deleted before fetching again — no stale partial JSON used as cache |
 
 ---
 

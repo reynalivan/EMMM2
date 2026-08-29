@@ -66,27 +66,27 @@ Kegagalan DB, rollback, reconcile, runtime projection, atau collection impact ti
 
 ## Coverage saat ini
 
-| Skenario | Status saat ini | Catatan |
-|---|---|---|
-| `Mod A` + `DISABLED Mod A` saat full reconcile | Tercakup | Preflight mengembalikan `BlockedByFolderConflicts` sebelum transaksi. |
-| Konflik pada object root enabled/disabled | Tercakup | Object identity ikut masuk conflict groups. |
-| Scoped reconcile melihat konflik di root lain | Tercakup | Ada full conflict preflight, tetapi masih memakai walk kedua yang tidak koheren. |
-| Toggle child dari aplikasi | Tercakup sebagian | Path-scoped suppression dan trailing reconcile ada; reconcile masih dapat beradu dengan mutation lain/refocus. |
-| Toggle parent object | Tercakup sebagian | Child path berubah dan child status dipertahankan; concurrency dan collection scoping masih bermasalah. |
-| Bulk toggle | Tercakup sebagian | Item berhasil direconcile; kegagalan trailing reconcile hanya di-log. |
-| Rename langsung di disk saat watcher memberi event `Renamed` depth 2 | Tercakup | Rename healer memperbarui row dan collection. |
-| Rename nested terminal mod depth 3+ | Belum tercakup | Rename hint dan healer membatasi depth tepat 2. |
-| Rename saat aplikasi tertutup/event watcher hilang | Belum dapat dijamin | Path-derived ID tidak memberi bukti bahwa old dan new adalah folder yang sama. |
-| Create/delete saat aplikasi tertutup | Tercakup sebagian | Full scan dapat menemukan delta, tetapi startup hydration belum mempunyai explicit recovery gate dan parent-delete collection masih bermasalah. |
-| Prefix toggle saat aplikasi tertutup | Tercakup sebagian | Normalized runtime key dapat heal status/path; harus dibuktikan untuk parent, child, nested, dan collection sebelum UI hydrate. |
-| Suspend/resume atau watcher restart | Tercakup sebagian | Refocus/TTL refresh ada; belum ada watcher-session generation yang memastikan full scan setelah event gap. |
-| Delete child langsung dari disk | Tercakup sebagian | Row dipruning dan collection ditandai missing, tetapi belum game-scoped. |
-| Delete parent langsung dari disk | Belum tercakup | Object prune menghapus child rows tanpa missing impact; FK `collection_mods.object_id` dan `collection_objects.object_id` memakai `ON DELETE CASCADE`, sehingga membership snapshot juga dapat ikut hilang. |
-| Bulk delete saat ada perubahan eksternal lain | Belum aman | Blanket suppression membuang event lain dan hanya scoped reconcile ke item sukses. |
-| Resolve satu group saat group lain masih konflik | Belum aman | DB exact path ditulis, lalu full reconcile tetap blocked; stable ID/metadata dapat tertinggal parsial. |
-| Crash di tengah two-phase rename | Belum aman | Folder `.emmm-conflict-stage-*` dapat tertinggal dan tidak terlihat snapshot. |
-| Watcher error toast duplikat | Tercakup sebagian | Dedupe 3 detik ada, tetapi map tidak dibatasi/prune global. |
-| Command conflict IPC | Tercakup | Ketiga command sudah ada di permission allow-list. |
+| Skenario                                                             | Status saat ini     | Catatan                                                                                                                                                                                                     |
+| -------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Mod A` + `DISABLED Mod A` saat full reconcile                       | Tercakup            | Preflight mengembalikan `BlockedByFolderConflicts` sebelum transaksi.                                                                                                                                       |
+| Konflik pada object root enabled/disabled                            | Tercakup            | Object identity ikut masuk conflict groups.                                                                                                                                                                 |
+| Scoped reconcile melihat konflik di root lain                        | Tercakup            | Ada full conflict preflight, tetapi masih memakai walk kedua yang tidak koheren.                                                                                                                            |
+| Toggle child dari aplikasi                                           | Tercakup sebagian   | Path-scoped suppression dan trailing reconcile ada; reconcile masih dapat beradu dengan mutation lain/refocus.                                                                                              |
+| Toggle parent object                                                 | Tercakup sebagian   | Child path berubah dan child status dipertahankan; concurrency dan collection scoping masih bermasalah.                                                                                                     |
+| Bulk toggle                                                          | Tercakup sebagian   | Item berhasil direconcile; kegagalan trailing reconcile hanya di-log.                                                                                                                                       |
+| Rename langsung di disk saat watcher memberi event `Renamed` depth 2 | Tercakup            | Rename healer memperbarui row dan collection.                                                                                                                                                               |
+| Rename nested terminal mod depth 3+                                  | Belum tercakup      | Rename hint dan healer membatasi depth tepat 2.                                                                                                                                                             |
+| Rename saat aplikasi tertutup/event watcher hilang                   | Belum dapat dijamin | Path-derived ID tidak memberi bukti bahwa old dan new adalah folder yang sama.                                                                                                                              |
+| Create/delete saat aplikasi tertutup                                 | Tercakup sebagian   | Full scan dapat menemukan delta, tetapi startup hydration belum mempunyai explicit recovery gate dan parent-delete collection masih bermasalah.                                                             |
+| Prefix toggle saat aplikasi tertutup                                 | Tercakup sebagian   | Normalized runtime key dapat heal status/path; harus dibuktikan untuk parent, child, nested, dan collection sebelum UI hydrate.                                                                             |
+| Suspend/resume atau watcher restart                                  | Tercakup sebagian   | Refocus/TTL refresh ada; belum ada watcher-session generation yang memastikan full scan setelah event gap.                                                                                                  |
+| Delete child langsung dari disk                                      | Tercakup sebagian   | Row dipruning dan collection ditandai missing, tetapi belum game-scoped.                                                                                                                                    |
+| Delete parent langsung dari disk                                     | Belum tercakup      | Object prune menghapus child rows tanpa missing impact; FK `collection_mods.object_id` dan `collection_objects.object_id` memakai `ON DELETE CASCADE`, sehingga membership snapshot juga dapat ikut hilang. |
+| Bulk delete saat ada perubahan eksternal lain                        | Belum aman          | Blanket suppression membuang event lain dan hanya scoped reconcile ke item sukses.                                                                                                                          |
+| Resolve satu group saat group lain masih konflik                     | Belum aman          | DB exact path ditulis, lalu full reconcile tetap blocked; stable ID/metadata dapat tertinggal parsial.                                                                                                      |
+| Crash di tengah two-phase rename                                     | Belum aman          | Folder `.emmm-conflict-stage-*` dapat tertinggal dan tidak terlihat snapshot.                                                                                                                               |
+| Watcher error toast duplikat                                         | Tercakup sebagian   | Dedupe 3 detik ada, tetapi map tidak dibatasi/prune global.                                                                                                                                                 |
+| Command conflict IPC                                                 | Tercakup            | Ketiga command sudah ada di permission allow-list.                                                                                                                                                          |
 
 ## Temuan audit terprioritas
 
@@ -836,25 +836,25 @@ T1..T13 -> T14 acceptance matrix dan full verification
 
 ## Final acceptance matrix
 
-| Origin | Operation | Target | Evidence yang diharapkan |
-|---|---|---|---|
-| App | Enable/disable | child mod | Path/status/ID converged; no duplicate toast/refresh. |
-| App | Enable/disable | parent object | Child paths berubah, child own-status tetap, collection logical path tetap. |
-| App | Bulk toggle/cancel | campuran parent/child | Setiap success converged; failure eksplisit; unrelated external event tidak hilang. |
-| App | Rename/move | nested mod/cross-object | Stable ID transition dan collection rewrite atomik. |
-| Explorer | Prefix toggle | child/parent | Watcher/reconcile memahami normalized identity tanpa SQL 1555. |
-| Explorer | Semantic rename | nested | Stitched event atau filesystem identity melakukan heal; ambiguity meminta konfirmasi. |
-| Explorer | Delete | child | Row dipruning, collection missing + signature update. |
-| Explorer | Delete | parent | Semua child impacts dicapture sebelum cascade. |
-| Explorer | Rename/delete | saat app mati | Startup full scan memakai filesystem identity atau menghasilkan confirmation, bukan guess. |
-| Explorer | Create | saat app mati | Startup full scan menambah row/object link sebelum workspace hydrate. |
-| Explorer | Prefix toggle | saat app mati | Startup full scan mempertahankan identity logical, memperbarui physical path/status, dan tidak merusak collection. |
-| Explorer | Parent delete | saat app mati | Startup full scan capture seluruh child collection missing impact sebelum cascade. |
-| OS | Sleep/source disconnect/reconnect | app hidup | Tidak prune saat unavailable; watcher session generation baru memaksa full recovery pass. |
-| Watcher | Overflow/event storm | semua | Bounded queue, full reconcile, satu toast per TTL. |
-| Conflict manager | Rename group | group lain masih blocked | Group terpilih sudah DB-complete; queue tersisa akurat. |
-| Conflict manager | Trash candidate | group lain masih blocked | Survivor dan collection tetap konsisten; Trash dapat direstore. |
-| Crash | Mid-stage rename | 2/3+ candidate | Journal recovery idempotent, tidak ada hidden orphan. |
+| Origin           | Operation                         | Target                   | Evidence yang diharapkan                                                                                           |
+| ---------------- | --------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| App              | Enable/disable                    | child mod                | Path/status/ID converged; no duplicate toast/refresh.                                                              |
+| App              | Enable/disable                    | parent object            | Child paths berubah, child own-status tetap, collection logical path tetap.                                        |
+| App              | Bulk toggle/cancel                | campuran parent/child    | Setiap success converged; failure eksplisit; unrelated external event tidak hilang.                                |
+| App              | Rename/move                       | nested mod/cross-object  | Stable ID transition dan collection rewrite atomik.                                                                |
+| Explorer         | Prefix toggle                     | child/parent             | Watcher/reconcile memahami normalized identity tanpa SQL 1555.                                                     |
+| Explorer         | Semantic rename                   | nested                   | Stitched event atau filesystem identity melakukan heal; ambiguity meminta konfirmasi.                              |
+| Explorer         | Delete                            | child                    | Row dipruning, collection missing + signature update.                                                              |
+| Explorer         | Delete                            | parent                   | Semua child impacts dicapture sebelum cascade.                                                                     |
+| Explorer         | Rename/delete                     | saat app mati            | Startup full scan memakai filesystem identity atau menghasilkan confirmation, bukan guess.                         |
+| Explorer         | Create                            | saat app mati            | Startup full scan menambah row/object link sebelum workspace hydrate.                                              |
+| Explorer         | Prefix toggle                     | saat app mati            | Startup full scan mempertahankan identity logical, memperbarui physical path/status, dan tidak merusak collection. |
+| Explorer         | Parent delete                     | saat app mati            | Startup full scan capture seluruh child collection missing impact sebelum cascade.                                 |
+| OS               | Sleep/source disconnect/reconnect | app hidup                | Tidak prune saat unavailable; watcher session generation baru memaksa full recovery pass.                          |
+| Watcher          | Overflow/event storm              | semua                    | Bounded queue, full reconcile, satu toast per TTL.                                                                 |
+| Conflict manager | Rename group                      | group lain masih blocked | Group terpilih sudah DB-complete; queue tersisa akurat.                                                            |
+| Conflict manager | Trash candidate                   | group lain masih blocked | Survivor dan collection tetap konsisten; Trash dapat direstore.                                                    |
+| Crash            | Mid-stage rename                  | 2/3+ candidate           | Journal recovery idempotent, tidak ada hidden orphan.                                                              |
 
 ## Security checklist hasil audit
 

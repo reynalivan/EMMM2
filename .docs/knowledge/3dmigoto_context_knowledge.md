@@ -23,18 +23,18 @@ Percakapan Claude yang dibaca: `E:/Downloads/3dmigoto_EMMM2NEW.md`. Workflow dee
 
 ## 2. Peta ekosistem repository
 
-| Repository | Isi penting | Posisi dalam sistem |
-|---|---|---|
-| [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto) | Wrapper/hook DirectX 11, parser INI, command-list engine, hunting/frame analysis, loader, contoh `Dependencies/d3dx.ini` | Upstream resmi dan sumber semantik runtime |
-| [rayshire/3dmigoto](https://github.com/rayshire/3dmigoto) | Fork `SilentNightSound/GI-Model-Importer`; root berisi Guides, Tools, dan ZIP GIMI | Bukan fork langsung upstream bo3b; mirror/varian GIMI lama |
-| [SilentNightSound/GIMI-Package](https://github.com/SilentNightSound/GIMI-Package) | `GIMI/d3dx.ini`, `Core/GIMI`, shader/font/API/notification | Paket GIMI modern untuk XXMI; relevan untuk kontrak runtime saat ini |
-| [SilentNightSound/GI-Model-Importer](https://github.com/SilentNightSound/GI-Model-Importer) | Guides, Blender tools/scripts, ZIP dev/play | Standalone GIMI lama; README menyatakan deprecated dan mengarahkan ke XXMI |
-| [GI-Model-Importer-Assets](https://github.com/SilentNightSound/GI-Model-Importer-Assets) | Player/NPC/enemy/weapon/skill data, buffer/texture, `hash.json` | Sumber fakta hash/model GI untuk MasterDB/importer |
-| [SR-Model-Importer](https://github.com/SilentNightSound/SR-Model-Importer) | Port importer/tools/guides untuk HSR | Tooling/export-import HSR berbasis pola GIMI |
-| [SR-Model-Importer-Assets](https://github.com/SilentNightSound/SR-Model-Importer-Assets) | Player/weapon/skill/enemy assets dan `hash.json` | Sumber fakta hash/model HSR |
-| [SpectrumQT/WWMI-Package](https://github.com/SpectrumQT/WWMI-Package) | `WWMI/d3dx.ini`, `Core/WWMI`, custom shader examples | Paket XXMI untuk Wuthering Waves; namespace/API tidak boleh diasumsikan sama dengan GIMI |
-| [leotorrez/ZZ-Model-Importer](https://github.com/leotorrez/ZZ-Model-Importer) | ZIP ZZMI, Tools, petunjuk XXMI | Varian untuk ZZZ; hot-load F10 dan toggle paket F6 |
-| [SpectrumQT/XXMI-Launcher](https://github.com/SpectrumQT/XXMI-Launcher) | Python app, core/gui, locale, themes, installer/updater | Orkestrator instalasi/launch/config; runtime mod tetap paket 3Dmigoto per game |
+| Repository                                                                                  | Isi penting                                                                                                              | Posisi dalam sistem                                                                      |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto)                                           | Wrapper/hook DirectX 11, parser INI, command-list engine, hunting/frame analysis, loader, contoh `Dependencies/d3dx.ini` | Upstream resmi dan sumber semantik runtime                                               |
+| [rayshire/3dmigoto](https://github.com/rayshire/3dmigoto)                                   | Fork `SilentNightSound/GI-Model-Importer`; root berisi Guides, Tools, dan ZIP GIMI                                       | Bukan fork langsung upstream bo3b; mirror/varian GIMI lama                               |
+| [SilentNightSound/GIMI-Package](https://github.com/SilentNightSound/GIMI-Package)           | `GIMI/d3dx.ini`, `Core/GIMI`, shader/font/API/notification                                                               | Paket GIMI modern untuk XXMI; relevan untuk kontrak runtime saat ini                     |
+| [SilentNightSound/GI-Model-Importer](https://github.com/SilentNightSound/GI-Model-Importer) | Guides, Blender tools/scripts, ZIP dev/play                                                                              | Standalone GIMI lama; README menyatakan deprecated dan mengarahkan ke XXMI               |
+| [GI-Model-Importer-Assets](https://github.com/SilentNightSound/GI-Model-Importer-Assets)    | Player/NPC/enemy/weapon/skill data, buffer/texture, `hash.json`                                                          | Sumber fakta hash/model GI untuk MasterDB/importer                                       |
+| [SR-Model-Importer](https://github.com/SilentNightSound/SR-Model-Importer)                  | Port importer/tools/guides untuk HSR                                                                                     | Tooling/export-import HSR berbasis pola GIMI                                             |
+| [SR-Model-Importer-Assets](https://github.com/SilentNightSound/SR-Model-Importer-Assets)    | Player/weapon/skill/enemy assets dan `hash.json`                                                                         | Sumber fakta hash/model HSR                                                              |
+| [SpectrumQT/WWMI-Package](https://github.com/SpectrumQT/WWMI-Package)                       | `WWMI/d3dx.ini`, `Core/WWMI`, custom shader examples                                                                     | Paket XXMI untuk Wuthering Waves; namespace/API tidak boleh diasumsikan sama dengan GIMI |
+| [leotorrez/ZZ-Model-Importer](https://github.com/leotorrez/ZZ-Model-Importer)               | ZIP ZZMI, Tools, petunjuk XXMI                                                                                           | Varian untuk ZZZ; hot-load F10 dan toggle paket F6                                       |
+| [SpectrumQT/XXMI-Launcher](https://github.com/SpectrumQT/XXMI-Launcher)                     | Python app, core/gui, locale, themes, installer/updater                                                                  | Orkestrator instalasi/launch/config; runtime mod tetap paket 3Dmigoto per game           |
 
 Relasi sederhananya: upstream 3Dmigoto menyediakan interception dan bahasa INI; paket GIMI/SRMI/WWMI/ZZMI mengadaptasi runtime per game; asset repos menyediakan hash dan data model; tools Blender menghasilkan resource/INI; XXMI Launcher memasang dan menjalankan paket tersebut; EMMM mengelola folder mod dan artifact runtime di atas layout `Mods`.
 
@@ -146,18 +146,18 @@ GI assets membagi data menjadi `PlayerCharacterData`, `NPCData`, `EnemyData`, `W
 
 Satu folder object dapat memuat model/buffer/texture dan `hash.json`. Bentuk `hash.json` adalah array component, bukan satu flat object:
 
-| Field | Makna praktis | Karakteristik |
-|---|---|---|
-| `component_name` | Nama bagian seperti Hair/Body/Face atau kosong untuk component utama | Tidak selalu unik/global |
-| `root_vs` | Root vertex shader | Umumnya 16 hex; dapat kosong |
-| `draw_vb` | Hash buffer pengenal draw/model | 8 hex |
-| `position_vb` | Posisi vertex | 8 hex |
-| `blend_vb` | Weight/bone blend | 8 hex |
-| `texcoord_vb` | UV/tangent/normal stream sesuai game | 8 hex |
-| `ib` | Index buffer | 8 hex |
-| `object_indexes` | First-index/slice component | Array integer |
-| `object_classifications` | Label bagian per index | Array sejajar dengan indexes |
-| `texture_hashes` | Texture type, extension, hash per classification | Nested array; hash 8 hex |
+| Field                    | Makna praktis                                                        | Karakteristik                |
+| ------------------------ | -------------------------------------------------------------------- | ---------------------------- |
+| `component_name`         | Nama bagian seperti Hair/Body/Face atau kosong untuk component utama | Tidak selalu unik/global     |
+| `root_vs`                | Root vertex shader                                                   | Umumnya 16 hex; dapat kosong |
+| `draw_vb`                | Hash buffer pengenal draw/model                                      | 8 hex                        |
+| `position_vb`            | Posisi vertex                                                        | 8 hex                        |
+| `blend_vb`               | Weight/bone blend                                                    | 8 hex                        |
+| `texcoord_vb`            | UV/tangent/normal stream sesuai game                                 | 8 hex                        |
+| `ib`                     | Index buffer                                                         | 8 hex                        |
+| `object_indexes`         | First-index/slice component                                          | Array integer                |
+| `object_classifications` | Label bagian per index                                               | Array sejajar dengan indexes |
+| `texture_hashes`         | Texture type, extension, hash per classification                     | Nested array; hash 8 hex     |
 
 Albedo mempunyai component utama dengan `root_vs` 16-hex dan component `Face` terpisah yang sebagian field-nya kosong. Blade di SR mempunyai Hair, Head, dan Body dengan beberapa classification. Loader MasterDB harus menjaga provenance game/object/component/skin/hash-type; flatten tanpa type menghilangkan informasi penting bagi matcher.
 
@@ -175,14 +175,14 @@ EMMM tidak seharusnya menganggap `game_exe.parent()` adalah root package. `mod_p
 
 ### 2.6 Matriks status sumber
 
-| Sumber | Kegunaan | Caveat |
-|---|---|---|
-| bo3b master/source | Semantik upstream dan template konfigurasi | Fork XXMI membawa patch/extension sendiri |
-| GIMI-Package/WWMI-Package | Kontrak package modern | Berubah mengikuti update package; perlu version detection |
-| Standalone GI/SR/ZZ importer | Guides dan tools authoring | Sebagian deprecated/outdated; bukan selalu runtime modern |
-| Asset repositories | Ground truth hash/model per commit | Hash dapat usang setelah update game; perlu commit/version metadata |
-| Leotorrez docs | Workflow modder dan contoh sintaks | GIMI-oriented dan mengandung penyederhanaan |
-| Percakapan Claude | Hipotesis dan arah audit | Deep-research gagal; semua temuan perlu verifikasi ulang |
+| Sumber                       | Kegunaan                                   | Caveat                                                              |
+| ---------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
+| bo3b master/source           | Semantik upstream dan template konfigurasi | Fork XXMI membawa patch/extension sendiri                           |
+| GIMI-Package/WWMI-Package    | Kontrak package modern                     | Berubah mengikuti update package; perlu version detection           |
+| Standalone GI/SR/ZZ importer | Guides dan tools authoring                 | Sebagian deprecated/outdated; bukan selalu runtime modern           |
+| Asset repositories           | Ground truth hash/model per commit         | Hash dapat usang setelah update game; perlu commit/version metadata |
+| Leotorrez docs               | Workflow modder dan contoh sintaks         | GIMI-oriented dan mengandung penyederhanaan                         |
+| Percakapan Claude            | Hipotesis dan arah audit                   | Deep-research gagal; semua temuan perlu verifikasi ulang            |
 
 ## 3. Mental model runtime 3Dmigoto
 
@@ -223,20 +223,20 @@ Implikasi untuk EMMM:
 
 ### 3.1 Taxonomy section runtime
 
-| Section/prefix | Peran | Implikasi bagi parser/editor |
-|---|---|---|
-| `[Include]` | Memilih file atau pohon INI tambahan dan exclusion | Menentukan universe file aktif; harus menjadi input discovery policy |
-| `[Loader]` | Target, loader, module, elevation/launch behavior | Membantu menemukan package root tetapi tidak aman untuk diedit sebagai mod biasa |
-| `[Hunting]` | Hunting state, marking, cycle keys, F8/F10, dump options | Grammar binding khusus 3dmigoto, bukan `[Key*]` |
-| `[Rendering]` | Hash mode, shader/cache directories, resource tracking | Perubahan dapat memerlukan restart atau invalidasi cache |
-| `[Constants]` | Global/persistent variables dan initialization command | Declaration qualifier serta ordering harus dipertahankan |
-| `[Key*]` | Hold/toggle/cycle, repeated `key`, `back`, condition, command list | One-key struct tidak cukup; multiple binding valid |
-| `[TextureOverride*]` | Match resource/buffer hash dan jalankan command/draw/resource replacement | Hash umumnya 8-hex; section executable dan order-sensitive |
-| `[ShaderOverride*]` | Match shader dan jalankan override/filter/command | Hash umumnya 16-hex; tidak boleh dipaksa ke type resource32 |
-| `[Resource*]` | Deklarasi buffer/texture/file/ref/data | Path, format, bind flags, dan namespace penting |
-| `[CommandList*]` | Ordered executable commands dan flow control | Duplicate command adalah sequence, bukan conflict key |
-| `[CustomShader*]` | Pipeline shader/render state custom | Bisa merujuk file shader dan resource eksternal |
-| `[Present]` | Per-frame driver setelah/seputar present | Beberapa included file dapat berkontribusi; ordering dan pre/post perlu runtime test |
+| Section/prefix       | Peran                                                                     | Implikasi bagi parser/editor                                                         |
+| -------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `[Include]`          | Memilih file atau pohon INI tambahan dan exclusion                        | Menentukan universe file aktif; harus menjadi input discovery policy                 |
+| `[Loader]`           | Target, loader, module, elevation/launch behavior                         | Membantu menemukan package root tetapi tidak aman untuk diedit sebagai mod biasa     |
+| `[Hunting]`          | Hunting state, marking, cycle keys, F8/F10, dump options                  | Grammar binding khusus 3dmigoto, bukan `[Key*]`                                      |
+| `[Rendering]`        | Hash mode, shader/cache directories, resource tracking                    | Perubahan dapat memerlukan restart atau invalidasi cache                             |
+| `[Constants]`        | Global/persistent variables dan initialization command                    | Declaration qualifier serta ordering harus dipertahankan                             |
+| `[Key*]`             | Hold/toggle/cycle, repeated `key`, `back`, condition, command list        | One-key struct tidak cukup; multiple binding valid                                   |
+| `[TextureOverride*]` | Match resource/buffer hash dan jalankan command/draw/resource replacement | Hash umumnya 8-hex; section executable dan order-sensitive                           |
+| `[ShaderOverride*]`  | Match shader dan jalankan override/filter/command                         | Hash umumnya 16-hex; tidak boleh dipaksa ke type resource32                          |
+| `[Resource*]`        | Deklarasi buffer/texture/file/ref/data                                    | Path, format, bind flags, dan namespace penting                                      |
+| `[CommandList*]`     | Ordered executable commands dan flow control                              | Duplicate command adalah sequence, bukan conflict key                                |
+| `[CustomShader*]`    | Pipeline shader/render state custom                                       | Bisa merujuk file shader dan resource eksternal                                      |
+| `[Present]`          | Per-frame driver setelah/seputar present                                  | Beberapa included file dapat berkontribusi; ordering dan pre/post perlu runtime test |
 
 ### 3.2 Grammar binding 3dmigoto
 
@@ -508,18 +508,18 @@ Gunakan matriks berikut saat mengubah parser, writer, profile runtime, KeyViewer
 
 Commit ini dicatat agar klaim dapat direproduksi dan diperbarui tanpa mengandalkan “latest” yang bergerak:
 
-| Repository | Branch | Commit snapshot |
-|---|---|---|
-| `bo3b/3Dmigoto` | `master` | `4ce5f2f72b2777223d2e809dcdafec514ac98295` |
-| `rayshire/3dmigoto` | `main` | `7a1255b45cac2133c4adc4c697cc7241263fa722` |
-| `SilentNightSound/GIMI-Package` | `main` | `a88633c677766b81290d0de9f91a879f862c2bc0` |
-| `SilentNightSound/GI-Model-Importer` | `main` | `4232c2679193cad7f15898a20517798560d38153` |
-| `SilentNightSound/GI-Model-Importer-Assets` | `main` | `2039d16d4b64696098ba53cd69888ce967397be9` |
-| `SilentNightSound/SR-Model-Importer` | `main` | `ecb4a4708bceb5e134bc571a9bbc43fd10c21363` |
-| `SilentNightSound/SR-Model-Importer-Assets` | `main` | `eff6cdf613cb3b07cc241ca3f287abe3b1496b71` |
-| `SpectrumQT/WWMI-Package` | `main` | `647462518c1916e04dea1de9048f152326960795` |
-| `leotorrez/ZZ-Model-Importer` | `main` | `4fb37188b8f1b509e0bfcef877b236a8ade6e4d4` |
-| `SpectrumQT/XXMI-Launcher` | `main` | `d56786b8dacb00c35204bff45ff5b8b83bd8962a` |
+| Repository                                  | Branch   | Commit snapshot                            |
+| ------------------------------------------- | -------- | ------------------------------------------ |
+| `bo3b/3Dmigoto`                             | `master` | `4ce5f2f72b2777223d2e809dcdafec514ac98295` |
+| `rayshire/3dmigoto`                         | `main`   | `7a1255b45cac2133c4adc4c697cc7241263fa722` |
+| `SilentNightSound/GIMI-Package`             | `main`   | `a88633c677766b81290d0de9f91a879f862c2bc0` |
+| `SilentNightSound/GI-Model-Importer`        | `main`   | `4232c2679193cad7f15898a20517798560d38153` |
+| `SilentNightSound/GI-Model-Importer-Assets` | `main`   | `2039d16d4b64696098ba53cd69888ce967397be9` |
+| `SilentNightSound/SR-Model-Importer`        | `main`   | `ecb4a4708bceb5e134bc571a9bbc43fd10c21363` |
+| `SilentNightSound/SR-Model-Importer-Assets` | `main`   | `eff6cdf613cb3b07cc241ca3f287abe3b1496b71` |
+| `SpectrumQT/WWMI-Package`                   | `main`   | `647462518c1916e04dea1de9048f152326960795` |
+| `leotorrez/ZZ-Model-Importer`               | `main`   | `4fb37188b8f1b509e0bfcef877b236a8ade6e4d4` |
+| `SpectrumQT/XXMI-Launcher`                  | `main`   | `d56786b8dacb00c35204bff45ff5b8b83bd8962a` |
 
 Catatan ecosystem freshness: XXMI Launcher saat ini menunjuk package SRMI/ZZMI modern yang berbeda dari repository standalone lama pada daftar awal (`SpectrumQT/SRMI-Package` dan `leotorrez/ZZMI-Package`). Repository lama tetap berguna untuk guides/tools, tetapi profile runtime produksi harus mengikuti package yang benar-benar dipasang launcher.
 

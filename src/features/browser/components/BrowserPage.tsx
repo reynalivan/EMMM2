@@ -10,8 +10,6 @@ import { normalizeBrowserUrl } from '../utils/browserUrl';
 import { BrowserTabBar } from './BrowserTabBar';
 import { BrowserToolbar } from './BrowserToolbar';
 import { DownloadManagerPanel } from './DownloadManagerPanel';
-import { GamePickerModal } from './GamePickerModal';
-import { ImportQueuePanel } from './ImportQueuePanel';
 import { Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../core/tauri/bindings';
@@ -24,10 +22,6 @@ export function BrowserPage() {
 
   // Container that the Webview will be placed over
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Import selection state
-  const [importIds, setImportIds] = useState<string[]>([]);
-  const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
 
   // Selector-scoped: the browser store also holds persisted settings, so a
   // bare call re-renders this page whenever any of those change.
@@ -53,7 +47,7 @@ export function BrowserPage() {
 
   // Native webviews always paint above the DOM, so any overlay that must sit
   // on top of the page content requires hiding them while it's open.
-  const overlayOpen = isDownloadPanelOpen || isGamePickerOpen;
+  const overlayOpen = isDownloadPanelOpen;
 
   const { finishedCount } = useDownloads();
 
@@ -201,21 +195,6 @@ export function BrowserPage() {
     removeTab(id);
   };
 
-  const handleImportSelected = (ids: string[], _gameId: string) => {
-    setImportIds(ids);
-    setIsGamePickerOpen(true);
-  };
-
-  const handleGameConfirm = async (gameId: string) => {
-    try {
-      await commands.browserImportSelected(importIds, gameId);
-    } catch (err) {
-      console.error('Bulk import failed:', err);
-    }
-    setIsGamePickerOpen(false);
-    setImportIds([]);
-  };
-
   return (
     <div className="flex flex-col h-full relative overflow-hidden bg-base-100">
       <BrowserTabBar
@@ -289,22 +268,7 @@ export function BrowserPage() {
 
           {/* Download Manager Panel */}
           <div className="relative z-9999">
-            <DownloadManagerPanel onImportSelected={handleImportSelected} />
-          </div>
-
-          {/* Import Queue (floating bottom-left) */}
-          <div className="relative z-10000">
-            <ImportQueuePanel />
-          </div>
-
-          {/* Game Picker Modal */}
-          <div className="relative z-10010">
-            <GamePickerModal
-              downloadIds={importIds}
-              open={isGamePickerOpen}
-              onClose={() => setIsGamePickerOpen(false)}
-              onConfirm={handleGameConfirm}
-            />
+            <DownloadManagerPanel />
           </div>
         </>,
         document.body,

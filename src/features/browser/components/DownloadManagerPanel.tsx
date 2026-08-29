@@ -7,55 +7,16 @@ import { useTranslation } from 'react-i18next';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '../../../shared/utils/formatters';
 
-interface Props {
-  onImportSelected: (ids: string[], gameId: string) => void;
-}
-
-export function DownloadManagerPanel({ onImportSelected }: Props) {
+export function DownloadManagerPanel() {
   const { t } = useTranslation(['browser']);
-  const {
-    isDownloadPanelOpen,
-    closeDownloadPanel,
-    selectedDownloadIds,
-    toggleSelectDownload,
-    selectAll,
-    clearSelection,
-  } = useBrowserStore(
+  const { isDownloadPanelOpen, closeDownloadPanel } = useBrowserStore(
     useShallow((state) => ({
       isDownloadPanelOpen: state.isDownloadPanelOpen,
       closeDownloadPanel: state.closeDownloadPanel,
-      selectedDownloadIds: state.selectedDownloadIds,
-      toggleSelectDownload: state.toggleSelectDownload,
-      selectAll: state.selectAll,
-      clearSelection: state.clearSelection,
     })),
   );
 
   const { downloads, deleteDownload, cancelDownload, clearImported } = useDownloads();
-
-  const finishedDownloads = downloads.filter((d) => d.status === 'finished');
-  const finishedIds = finishedDownloads.map((d) => d.id);
-  const allFinishedSelected =
-    finishedIds.length > 0 && finishedIds.every((id) => selectedDownloadIds.has(id));
-
-  const handleSelectAll = () => {
-    if (allFinishedSelected) {
-      clearSelection();
-    } else {
-      selectAll(finishedIds);
-    }
-  };
-
-  const handleImport = async () => {
-    const selectedIds = Array.from(selectedDownloadIds);
-    if (selectedIds.length === 0) return;
-    // onImportSelected will open GamePickerModal; the game_id comes back via callback
-    onImportSelected(selectedIds, '');
-  };
-
-  const handleImportSingle = (id: string) => {
-    onImportSelected([id], '');
-  };
 
   return (
     <div
@@ -114,39 +75,14 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
 
       {/* Toolbar */}
       {downloads.length > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-base-300">
-          <input
-            id="download-select-all-checkbox"
-            type="checkbox"
-            className="checkbox checkbox-sm checkbox-primary"
-            checked={allFinishedSelected}
-            onChange={handleSelectAll}
-            title={allFinishedSelected ? t('downloads.deselect_all') : t('downloads.select_all')}
-          />
-          <span className="text-xs text-base-content/60">
-            {selectedDownloadIds.size > 0
-              ? t('downloads.selected', { count: selectedDownloadIds.size })
-              : t('downloads.select_finished')}
-          </span>
-
-          <div className="ml-auto flex gap-2">
-            {selectedDownloadIds.size > 0 && (
-              <button
-                id="download-import-selected-btn"
-                className="btn btn-primary btn-xs"
-                onClick={handleImport}
-              >
-                {t('downloads.import_selected')}
-              </button>
-            )}
-            <button
-              id="download-clear-imported-btn"
-              className="btn btn-ghost btn-xs"
-              onClick={() => clearImported()}
-            >
-              {t('downloads.clear_imported')}
-            </button>
-          </div>
+        <div className="flex items-center justify-end px-4 py-2 border-b border-base-300">
+          <button
+            id="download-clear-imported-btn"
+            className="btn btn-ghost btn-xs"
+            onClick={() => clearImported()}
+          >
+            {t('downloads.clear_imported')}
+          </button>
         </div>
       )}
 
@@ -175,11 +111,8 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
             <DownloadRow
               key={item.id}
               item={item}
-              selected={selectedDownloadIds.has(item.id)}
-              onToggle={() => toggleSelectDownload(item.id)}
               onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
               onCancel={() => cancelDownload(item.id)}
-              onImport={() => handleImportSingle(item.id)}
             />
           ))
         )}
@@ -190,14 +123,11 @@ export function DownloadManagerPanel({ onImportSelected }: Props) {
 
 interface RowProps {
   item: BrowserDownloadItem;
-  selected: boolean;
-  onToggle: () => void;
   onDelete: (deleteFile: boolean) => void;
   onCancel: () => void;
-  onImport: () => void;
 }
 
-function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }: RowProps) {
+function DownloadRow({ item, onDelete, onCancel }: RowProps) {
   const { t } = useTranslation(['browser']);
   const badge = DOWNLOAD_STATUS_BADGE[item.status];
   const progress =
@@ -210,21 +140,8 @@ function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }:
       className={`
         flex items-start gap-3 px-4 py-3 border-b border-base-300/50
         hover:bg-base-300/30 transition-colors
-        ${selected ? 'bg-primary/5' : ''}
       `}
     >
-      {/* Checkbox (only for finished) */}
-      {item.status === 'finished' ? (
-        <input
-          type="checkbox"
-          className="checkbox checkbox-sm checkbox-primary mt-1"
-          checked={selected}
-          onChange={onToggle}
-        />
-      ) : (
-        <div className="w-4" />
-      )}
-
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -251,15 +168,6 @@ function DownloadRow({ item, selected, onToggle, onDelete, onCancel, onImport }:
 
       {/* Actions */}
       <div className="flex gap-1">
-        {item.status === 'finished' && (
-          <button
-            className="btn btn-ghost btn-xs text-success"
-            onClick={onImport}
-            title={t('downloads.import_title')}
-          >
-            {t('downloads.import')}
-          </button>
-        )}
         {item.status === 'in_progress' && (
           <button
             className="btn btn-ghost btn-xs text-warning"

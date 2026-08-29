@@ -84,15 +84,15 @@ If product later requires crash-safe arbitrary swaps, that must be approved as a
 
 ## 4. Model and Agent Routing
 
-| Work type | Recommended role | Model / reasoning | Why |
-|---|---|---|---|
-| Locks, transaction boundaries, recovery state | `worker` with backend ownership | `gpt-5.6-sol`, `high` or `xhigh` | Highest correctness and concurrency risk |
-| Reconcile conflict/scoped projection | `worker` with backend ownership | `gpt-5.6-sol`, `high` | Cross-module invariants and failure semantics |
-| Collection vertical slices | `worker` | `gpt-5.6-terra`, `high`; escalate to Sol for task finalization | Bounded business logic with existing patterns |
-| Frontend React Query/UI consistency | `frontend-developer` | `gpt-5.6-terra`, `high` | Frontend-specific state and mutation behavior |
-| Performance measurement/scoped scan | `performance-engineer` | `gpt-5.6-terra`, `high` | Must benchmark before optimizing |
-| Mechanical cleanup, bindings, dead code | `worker` | `gpt-5.6-luna`, `medium` | Low-risk, pattern-driven work |
-| Checkpoint review | `reviewer` | `gpt-5.6-sol`, `high` | Read-only correctness/regression gate |
+| Work type                                     | Recommended role                | Model / reasoning                                              | Why                                           |
+| --------------------------------------------- | ------------------------------- | -------------------------------------------------------------- | --------------------------------------------- |
+| Locks, transaction boundaries, recovery state | `worker` with backend ownership | `gpt-5.6-sol`, `high` or `xhigh`                               | Highest correctness and concurrency risk      |
+| Reconcile conflict/scoped projection          | `worker` with backend ownership | `gpt-5.6-sol`, `high`                                          | Cross-module invariants and failure semantics |
+| Collection vertical slices                    | `worker`                        | `gpt-5.6-terra`, `high`; escalate to Sol for task finalization | Bounded business logic with existing patterns |
+| Frontend React Query/UI consistency           | `frontend-developer`            | `gpt-5.6-terra`, `high`                                        | Frontend-specific state and mutation behavior |
+| Performance measurement/scoped scan           | `performance-engineer`          | `gpt-5.6-terra`, `high`                                        | Must benchmark before optimizing              |
+| Mechanical cleanup, bindings, dead code       | `worker`                        | `gpt-5.6-luna`, `medium`                                       | Low-risk, pattern-driven work                 |
+| Checkpoint review                             | `reviewer`                      | `gpt-5.6-sol`, `high`                                          | Read-only correctness/regression gate         |
 
 Do not assign two production-writing agents to the same ownership area concurrently. Test-only agents may work in parallel if their files do not overlap.
 
@@ -966,32 +966,32 @@ This phase starts only after all behavioral checkpoints pass. Because backward D
 
 ## 7. Safe Parallel Execution Waves
 
-| Wave | Parallel tasks | Sequential/coordination rule |
-|---|---|---|
-| A | T0.1, T0.2, T0.3 | Tests only, separate ownership |
-| B | T1.1; T5.1 may run separately | T1.2 waits for T1.1 |
-| C | T2.1 -> T2.2 -> T2.3; T3.3 and T3.4 may run separately | No parallel edits to apply pipeline or orchestrator entry |
-| D | T2.4 and T3.1 | T3.2 waits for T3.1 |
-| E | T4.1 -> T4.2 -> T4.3 -> T4.4 | Reconcile/performance production changes sequential |
-| F | T5.2, backend half T5.3 | Frontend half T5.3 waits for bindings |
-| G | T5.4, T6.1 | Only after frontend behavior is stable |
-| H | T6.2 -> T6.3 | Cleanup sequential and evidence-driven |
-| I | T7.1 test slices | Parallel by subsystem; final verification single coordinator |
+| Wave | Parallel tasks                                         | Sequential/coordination rule                                 |
+| ---- | ------------------------------------------------------ | ------------------------------------------------------------ |
+| A    | T0.1, T0.2, T0.3                                       | Tests only, separate ownership                               |
+| B    | T1.1; T5.1 may run separately                          | T1.2 waits for T1.1                                          |
+| C    | T2.1 -> T2.2 -> T2.3; T3.3 and T3.4 may run separately | No parallel edits to apply pipeline or orchestrator entry    |
+| D    | T2.4 and T3.1                                          | T3.2 waits for T3.1                                          |
+| E    | T4.1 -> T4.2 -> T4.3 -> T4.4                           | Reconcile/performance production changes sequential          |
+| F    | T5.2, backend half T5.3                                | Frontend half T5.3 waits for bindings                        |
+| G    | T5.4, T6.1                                             | Only after frontend behavior is stable                       |
+| H    | T6.2 -> T6.3                                           | Cleanup sequential and evidence-driven                       |
+| I    | T7.1 test slices                                       | Parallel by subsystem; final verification single coordinator |
 
 ## 8. Risk Register
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Dirty shared worktree | User changes overwritten | Explicit file ownership, re-read diff, `apply_patch`, no broad format |
-| Lock refactor introduces hidden reacquisition | Deadlock remains | Central lease plus barrier tests and reviewer lock graph |
-| Post-commit warning is treated as success everywhere | Side effects never repaired | Structured pending effects and idempotent retry test |
-| Object operations interact with child toggles | Wrong final signature | Child-first/parent-last plan and full state matrix |
-| Single-writer migration loses collection healing hints | Saved references become missing | Pass explicit old/new rewrite hints into reconcile transaction |
-| Scoped scan misses cross-root conflict | Duplicate identity/SQL failure | Cheap global identity census and escalation rule |
-| Performance changes add stale cache | New drift source | No new cache; compare scoped result with full snapshot |
-| Schema cleanup breaks existing local DB | Startup failure | Explicit no-compatibility decision, fresh DB migration test, documented reset |
-| Removing conflict journal weakens swap crash recovery | Staged folders after crash | Reject unsupported cycles by default; require explicit product exception otherwise |
-| Frontend cleanup invalidates too little | Stale UI | Mapping parity tests before deleting old layer |
+| Risk                                                   | Impact                          | Mitigation                                                                         |
+| ------------------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------- |
+| Dirty shared worktree                                  | User changes overwritten        | Explicit file ownership, re-read diff, `apply_patch`, no broad format              |
+| Lock refactor introduces hidden reacquisition          | Deadlock remains                | Central lease plus barrier tests and reviewer lock graph                           |
+| Post-commit warning is treated as success everywhere   | Side effects never repaired     | Structured pending effects and idempotent retry test                               |
+| Object operations interact with child toggles          | Wrong final signature           | Child-first/parent-last plan and full state matrix                                 |
+| Single-writer migration loses collection healing hints | Saved references become missing | Pass explicit old/new rewrite hints into reconcile transaction                     |
+| Scoped scan misses cross-root conflict                 | Duplicate identity/SQL failure  | Cheap global identity census and escalation rule                                   |
+| Performance changes add stale cache                    | New drift source                | No new cache; compare scoped result with full snapshot                             |
+| Schema cleanup breaks existing local DB                | Startup failure                 | Explicit no-compatibility decision, fresh DB migration test, documented reset      |
+| Removing conflict journal weakens swap crash recovery  | Staged folders after crash      | Reject unsupported cycles by default; require explicit product exception otherwise |
+| Frontend cleanup invalidates too little                | Stale UI                        | Mapping parity tests before deleting old layer                                     |
 
 ## 9. Definition of Done
 
@@ -1006,4 +1006,3 @@ This phase starts only after all behavioral checkpoints pass. Because backward D
 - Legacy corridor/stored-unsaved/dead refresh code is removed only after behavior parity tests.
 - No new dependency, persistent cache, polling daemon, generic saga, or event bus.
 - Targeted tests, full Rust/frontend suites, lint, i18n lint, build, E2E, diff check, and final read-only review pass.
-

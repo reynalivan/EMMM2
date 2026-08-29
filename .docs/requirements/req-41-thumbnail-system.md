@@ -47,10 +47,10 @@ As a system, I want to cache generated WebP thumbnails to disk and serve L1 hits
 
 As a user, I want old thumbnails cleaned up automatically, so that my `app_data` folder doesn't grow unbounded over time.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                  |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-41.3.1 | ✅ Positive | Given the Settings > Maintenance "Clear Thumbnail Cache" button, when clicked, then `clear_old_cache(max_age_days=30)` deletes thumbnails not accessed in the last 30 days; count of freed files is returned              |
-| AC-41.3.2 | ✅ Positive | Given `prune_orphans` runs (triggered by post-scan commit), then any `thumbnails/{hash}.webp` whose `folder_path` no longer exists in the `folders` DB table is deleted from disk                                         |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-41.3.1 | ✅ Positive | Given the Settings > Maintenance "Clear Thumbnail Cache" button, when clicked, then `clear_old_cache(max_age_days=30)` deletes thumbnails not accessed in the last 30 days; count of freed files is returned                            |
+| AC-41.3.2 | ✅ Positive | Given `prune_orphans` runs (triggered by post-scan commit), then any `thumbnails/{hash}.webp` whose `folder_path` no longer exists in the `folders` DB table is deleted from disk                                                       |
 | AC-41.3.3 | ⚠️ Edge     | Given the same `blake3(identity_key(folder_path))` hash maps to two different physical paths (hash collision — statistically impossible with BLAKE3 but must handle), then the cache key is disambiguated by appending the path segment |
 
 ---
@@ -99,7 +99,7 @@ Frontend Hybrid Logic:
 | Component                 | Detail                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------- |
 | image` crate              | Resize + WebP encode: `image::open(path).resize(256,256,Lanczos3).to_webp()`                 |
-| BLAKE3                    | `blake3::hash(identity_key(path))` — filename-safe hex key, toggle-stable                               |
+| BLAKE3                    | `blake3::hash(identity_key(path))` — filename-safe hex key, toggle-stable                    |
 | Hybrid Asset Protocol     | Backend returns absolute paths; Frontend calls `convertFileSrc(path)` → `asset://` URLs      |
 | FolderCard + PreviewPanel | `<img src={useThumbnail(path)} />` — uses native browser cache for `asset://` URLs           |
 | GC Trigger                | `prune_orphans` called after `commit_scan` (Epic 27); `clear_old_cache` exposed via Settings |

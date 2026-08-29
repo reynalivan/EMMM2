@@ -447,15 +447,15 @@ T1–T14 ── T15 cleanup, full verification, documentation
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Dirty worktree overlap | Perubahan pengguna tertimpa | Re-read exact diff sebelum tiap task; patch fungsi kecil; jangan format repo-wide |
-| Filesystem dan SQLite tidak dapat satu transaksi | Partial move | Operation lock, local inverse-move journal, best-effort rollback, mandatory reconcile |
-| Full preflight memperlambat watcher | UI terlambat | Correctness tetap prioritas; ukur, lalu pisahkan lightweight identity census dari scoped metadata scan |
-| Retry side effects menyebabkan loop | CPU/log spam | Retry dibatasi oleh existing coordinator/backoff dan dirty hanya dihapus saat sukses |
-| Generic settings guard memutus onboarding | Game baru gagal dibuat | Bedakan new game, unchanged path, dan existing-path mutation dalam contract tests |
-| Cleanup staging menghapus path salah | Data loss | Canonical containment terhadap app staging root sebelum delete |
-| Refactor terlalu luas | Bug baru | Cleanup dilakukan paling akhir dan hanya pada touched code/warning yang relevan |
+| Risk                                             | Impact                      | Mitigation                                                                                             |
+| ------------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Dirty worktree overlap                           | Perubahan pengguna tertimpa | Re-read exact diff sebelum tiap task; patch fungsi kecil; jangan format repo-wide                      |
+| Filesystem dan SQLite tidak dapat satu transaksi | Partial move                | Operation lock, local inverse-move journal, best-effort rollback, mandatory reconcile                  |
+| Full preflight memperlambat watcher              | UI terlambat                | Correctness tetap prioritas; ukur, lalu pisahkan lightweight identity census dari scoped metadata scan |
+| Retry side effects menyebabkan loop              | CPU/log spam                | Retry dibatasi oleh existing coordinator/backoff dan dirty hanya dihapus saat sukses                   |
+| Generic settings guard memutus onboarding        | Game baru gagal dibuat      | Bedakan new game, unchanged path, dan existing-path mutation dalam contract tests                      |
+| Cleanup staging menghapus path salah             | Data loss                   | Canonical containment terhadap app staging root sebelum delete                                         |
+| Refactor terlalu luas                            | Bug baru                    | Cleanup dilakukan paling akhir dan hanya pada touched code/warning yang relevan                        |
 
 ## Definition of Done
 

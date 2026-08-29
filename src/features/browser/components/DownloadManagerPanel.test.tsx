@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DownloadManagerPanel } from './DownloadManagerPanel';
 import * as useBrowserStoreModule from '../../../stores/useBrowserStore';
@@ -38,10 +38,6 @@ const mockDownloads: BrowserDownloadItem[] = [
 ];
 
 describe('DownloadManagerPanel', () => {
-  const onImportSelected = vi.fn();
-  const toggleSelectDownload = vi.fn();
-  const selectAll = vi.fn();
-  const clearSelection = vi.fn();
   const closeDownloadPanel = vi.fn();
   const deleteDownload = vi.fn();
   const cancelDownload = vi.fn();
@@ -53,10 +49,6 @@ describe('DownloadManagerPanel', () => {
     // Default mocks
     vi.mocked(useBrowserStoreModule.useBrowserStore).mockReturnValue({
       isDownloadPanelOpen: true,
-      selectedDownloadIds: new Set(),
-      toggleSelectDownload,
-      selectAll,
-      clearSelection,
       closeDownloadPanel,
     });
 
@@ -69,47 +61,21 @@ describe('DownloadManagerPanel', () => {
   });
 
   it('renders downloads correctly', () => {
-    render(<DownloadManagerPanel onImportSelected={onImportSelected} />);
+    render(<DownloadManagerPanel />);
     expect(screen.getByText('mod_pack.zip')).toBeInTheDocument();
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.getByText('downloading.rar')).toBeInTheDocument();
     expect(screen.getByText('Downloading')).toBeInTheDocument();
   });
 
-  it('shows Bulk Toolbar only when downloads exist', () => {
-    render(<DownloadManagerPanel onImportSelected={onImportSelected} />);
+  it('shows Toolbar with Clear Imported when downloads exist', () => {
+    render(<DownloadManagerPanel />);
     expect(screen.getByText('Clear Imported')).toBeInTheDocument();
   });
 
-  it('does not show checkboxes for non-finished items', () => {
-    render(<DownloadManagerPanel onImportSelected={onImportSelected} />);
-    const checkboxes = screen.getAllByRole('checkbox');
-    // 1 for global bulk, 1 for the 'finished' item
-    expect(checkboxes).toHaveLength(2);
-  });
-
-  it('calls onImportSelected when clicking Import on a single item', () => {
-    render(<DownloadManagerPanel onImportSelected={onImportSelected} />);
-    const importBtn = screen.getByText('Import');
-    fireEvent.click(importBtn);
-    expect(onImportSelected).toHaveBeenCalledWith(['dl-1'], '');
-  });
-
-  it('shows Import Selected when multiple items are selected', () => {
-    vi.mocked(useBrowserStoreModule.useBrowserStore).mockReturnValue({
-      isDownloadPanelOpen: true,
-      selectedDownloadIds: new Set(['dl-1']),
-      toggleSelectDownload,
-      selectAll,
-      clearSelection,
-      closeDownloadPanel,
-    });
-
-    render(<DownloadManagerPanel onImportSelected={onImportSelected} />);
-    const importSelectedBtn = screen.getByText('Import Selected');
-    expect(importSelectedBtn).toBeInTheDocument();
-
-    fireEvent.click(importSelectedBtn);
-    expect(onImportSelected).toHaveBeenCalledWith(['dl-1'], '');
+  it('does not show any checkboxes', () => {
+    render(<DownloadManagerPanel />);
+    const checkboxes = screen.queryAllByRole('checkbox');
+    expect(checkboxes).toHaveLength(0);
   });
 });

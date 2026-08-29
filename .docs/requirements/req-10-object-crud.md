@@ -61,12 +61,12 @@ As a user, I want to delete empty Objects from the objectlist, so that the list 
 
 As a user, I want to pin frequently used objects and quickly open their folders on disk, so that I can access my most-used content and its files instantly.
 
-| ID        | Type        | Criteria                                                                                                                                                                                               |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ID        | Type        | Criteria                                                                                                                                                       |
+| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-10.4.1 | ✅ Positive | Given an unpinned object, when I click "Pin", then `is_pinned = true` is written to DB and the object sorts to the top of its section on the immediate refetch |
-| AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical order within its category                                                                                            |
-| AC-10.4.3 | ✅ Positive | Given the "Reveal in Explorer" action, the OS file explorer opens with the object's root folder selected (folder_path resolution)                                                                      |
-| AC-10.4.4 | ❌ Negative | Given a folder that was manually deleted from disk, "Reveal" caught by the backend returns `NotFound` and triggers a cache invalidation to clean the UI                                                |
+| AC-10.4.2 | ✅ Positive | Given a pinned object, when unpinned, it immediately drops back into alphabetical order within its category                                                    |
+| AC-10.4.3 | ✅ Positive | Given the "Reveal in Explorer" action, the OS file explorer opens with the object's root folder selected (folder_path resolution)                              |
+| AC-10.4.4 | ❌ Negative | Given a folder that was manually deleted from disk, "Reveal" caught by the backend returns `NotFound` and triggers a cache invalidation to clean the UI        |
 
 ---
 

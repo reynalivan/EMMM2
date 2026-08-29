@@ -1,10 +1,7 @@
 import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
-import { useState } from 'react';
 import { useDownloads } from '../hooks/useDownloads';
-import { Download, PlayCircle, Trash2 } from 'lucide-react';
+import { Download, Trash2 } from 'lucide-react';
 import type { DownloadStatus } from '../types';
-import { GamePickerModal } from './GamePickerModal';
-import { commands } from '../../../core/tauri/bindings';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '../../../shared/utils/formatters';
 import { useTranslation } from 'react-i18next';
@@ -12,24 +9,6 @@ import { useTranslation } from 'react-i18next';
 export default function DownloadsPage() {
   const { t } = useTranslation('browser');
   const { downloads, deleteDownload, cancelDownload, clearImported } = useDownloads();
-  const [importIds, setImportIds] = useState<string[]>([]);
-  const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
-
-  const handleImport = (id: string) => {
-    setImportIds([id]);
-    setIsGamePickerOpen(true);
-  };
-
-  const handleGameConfirm = async (gameId: string) => {
-    try {
-      await commands.browserImportSelected(importIds, gameId);
-    } catch (err) {
-      console.error('Failed to import:', err);
-    } finally {
-      setIsGamePickerOpen(false);
-      setImportIds([]);
-    }
-  };
 
   const renderStatus = (status: DownloadStatus) => {
     const badge = DOWNLOAD_STATUS_BADGE[status] ?? DOWNLOAD_STATUS_BADGE.requested;
@@ -136,14 +115,6 @@ export default function DownloadsPage() {
                         </td>
                         <td className="w-1/4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {item.status === 'finished' && (
-                              <button
-                                className="btn btn-sm btn-primary gap-2"
-                                onClick={() => handleImport(item.id)}
-                              >
-                                <PlayCircle size={16} /> {t('downloads.import')}
-                              </button>
-                            )}
                             {item.status === 'in_progress' && (
                               <button
                                 className="btn btn-sm btn-warning"
@@ -169,15 +140,6 @@ export default function DownloadsPage() {
             </div>
           )}
         </div>
-      </div>
-
-      <div className="fixed z-10010">
-        <GamePickerModal
-          downloadIds={importIds}
-          open={isGamePickerOpen}
-          onClose={() => setIsGamePickerOpen(false)}
-          onConfirm={handleGameConfirm}
-        />
       </div>
     </div>
   );
