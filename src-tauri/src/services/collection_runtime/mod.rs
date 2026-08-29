@@ -5,7 +5,7 @@ use crate::domain::runtime_state::{
     CollectionRuntimeDescriptor, CollectionRuntimeSnapshot, LastChangesSnapshot, LastChangesSource,
     RuntimeCounts, RuntimeSafetySummary, RuntimeStatus,
 };
-use crate::repo::{collection, collection::runtime};
+use crate::repo::collection;
 use crate::services::projected_state;
 
 /// Read the compact global collection status from one SQLite snapshot.

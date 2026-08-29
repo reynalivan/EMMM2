@@ -10,7 +10,7 @@ use crate::domain::collection::{
     CreateCollectionMode, UpdateCollectionInput,
 };
 use crate::domain::errors::CollectionError;
-use crate::repo::{collection, collection::runtime};
+use crate::repo::collection;
 use crate::services::projected_state;
 use sqlx::SqlitePool;
 
