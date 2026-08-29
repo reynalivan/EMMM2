@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../../core/tauri/bindings';
 import { openImportBatchWizard } from '../import-batches/launcher';
 import { modInboxCommands } from './api';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import ModInboxPage from './ModInboxPage';
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 import type { ModInboxSnapshot } from './types';
 
 const mockSetWorkspaceView = vi.fn();
@@ -42,6 +45,8 @@ vi.mock('../../core/tauri/bindings', () => ({
     getObject: vi.fn(),
     openModInboxFolder: vi.fn(),
     openInExplorer: vi.fn(),
+    getSettings: vi.fn(),
+    saveSettings: vi.fn(),
     startModInboxWatcher: vi.fn(),
     stopModInboxWatcher: vi.fn(),
   },
@@ -195,9 +200,32 @@ describe('ModInboxPage', () => {
     expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeDisabled();
     expect(modInboxCommands.startModInboxWatcher).not.toHaveBeenCalled();
 
+    vi.mocked(openDialog).mockResolvedValueOnce('D:/New/Inbox/Path');
+    vi.mocked(modInboxCommands.getSettings).mockResolvedValueOnce({
+      app_language: 'en',
+      app_theme: 'dark',
+      discord_rpc: true,
+      games: [{
+        id: 'game-1',
+        name: 'Game 1',
+        game_type: 'GIMI',
+        mod_path: 'mods',
+        ready_to_move_path: null,
+        game_exe: 'game.exe'
+      }]
+    });
+    vi.mocked(modInboxCommands.saveSettings).mockResolvedValueOnce();
+
     fireEvent.click(screen.getByRole('button', { name: 'Choose Location' }));
-    expect(mockSetSettingsTab).toHaveBeenCalledWith('games');
-    expect(mockSetWorkspaceView).toHaveBeenCalledWith('settings');
+    
+    await waitFor(() => expect(openDialog).toHaveBeenCalledWith({
+      directory: true,
+      multiple: false,
+      title: 'Choose Location'
+    }));
+    await waitFor(() => expect(modInboxCommands.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      games: expect.arrayContaining([expect.objectContaining({ ready_to_move_path: 'D:/New/Inbox/Path' })])
+    })));
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Folder' }));
     await waitFor(() =>

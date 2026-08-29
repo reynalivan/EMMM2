@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Archive, PackageOpen, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
@@ -192,6 +193,28 @@ export default function ModInboxPage() {
     }
   };
 
+  const chooseInboxLocation = async () => {
+    if (!activeGameId) return;
+    try {
+      const selectedPath = await openDialog({
+        directory: true,
+        multiple: false,
+        title: t('actions.choose_location'),
+      });
+      if (selectedPath && typeof selectedPath === 'string') {
+        const settings = await modInboxCommands.getSettings();
+        const game = settings.games.find((g) => g.id === activeGameId);
+        if (game) {
+          game.ready_to_move_path = selectedPath;
+          await modInboxCommands.saveSettings(settings);
+          await refresh();
+        }
+      }
+    } catch (cause) {
+      toast.error(t('errors.load', { error: formatAppError(cause) }));
+    }
+  };
+
   const openInboxSettings = () => {
     setSettingsTab('games');
     setWorkspaceView('settings');
@@ -229,7 +252,7 @@ export default function ModInboxPage() {
           rootPath={snapshot.rootPath}
           creating={busyAction === 'create-folder'}
           onCreate={() => void createFolder()}
-          onChooseLocation={openInboxSettings}
+          onChooseLocation={() => void chooseInboxLocation()}
         />
       ) : snapshot ? (
         <>
