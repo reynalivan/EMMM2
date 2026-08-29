@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::platform::fs::operation_lock::OperationLock;
+use crate::app::runtime::mutation_coordinator::MutationCoordinator;
 use crate::platform::fs::guard;
 use crate::modules::workspace::application::scanner::core::walker;
 use crate::modules::workspace::application::scanner::dedup::resolver::{
@@ -243,7 +243,7 @@ pub async fn dup_resolve_batch(
     requests: Vec<ResolutionRequest>,
     game_id: String,
     watcher_state: State<'_, WatcherState>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     config: State<'_, ConfigService>,
     db: State<'_, sqlx::SqlitePool>,
 ) -> Result<ResolutionSummary, AppError> {
@@ -259,7 +259,7 @@ pub async fn dup_resolve_batch(
         requests,
         game_id.clone(),
         db.inner(),
-        &op_guard,
+        op_guard.op_guard(),
         &watcher_state.suppressor,
         |progress: ResolutionProgress| {
             let _ = app.emit("dup-resolve-progress", &progress);

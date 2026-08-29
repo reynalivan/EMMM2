@@ -1,13 +1,18 @@
-//! Placeholder recovery runner for crash-restart mutation repair.
-
-#[derive(Debug, Default)]
 pub struct RecoveryRunner {
-    #[allow(dead_code)]
-    _private: (),
 }
 
 impl RecoveryRunner {
     pub fn new() -> Self {
-        Self { _private: () }
+        Self {}
+    }
+    
+    pub async fn run_recovery(&self) {
+        // Look at OperationJournal and recover incomplete operations
+    }
+}
+
+impl Default for RecoveryRunner {
+    fn default() -> Self {
+        Self::new()
     }
 }

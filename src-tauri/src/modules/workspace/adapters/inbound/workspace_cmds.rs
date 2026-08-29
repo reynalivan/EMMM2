@@ -5,7 +5,7 @@ use crate::modules::workspace::domain::workspace::{
     WorkspaceSwitchInput, WorkspaceSwitchResult, WorkspaceViewModel, WorkspaceViewModelInput,
 };
 use crate::modules::system::application::config::ConfigService;
-use crate::platform::fs::operation_lock::OperationLock;
+use crate::app::runtime::mutation_coordinator::MutationCoordinator;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
 #[tauri::command]
@@ -64,7 +64,7 @@ pub async fn execute_workspace_switch(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     watcher_state: State<'_, WatcherState>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
     crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
@@ -79,7 +79,7 @@ pub async fn execute_workspace_switch(
         config.inner(),
         pool.inner(),
         watcher_state.inner(),
-        &op_guard,
+        op_guard.op_guard(),
     )
     .await;
     drop(op_guard);

@@ -250,6 +250,9 @@ pub fn run() {
         .manage(modules::storage_optimizer::DupScanState::new())
         .manage(crate::modules::library::adapters::inbound::mod_bulk_cmds::BulkCancelState::new())
         .manage(crate::platform::fs::operation_lock::OperationLock::new())
+        .manage(crate::app::runtime::operation_journal::OperationJournal::new())
+        .manage(crate::app::runtime::mutation_coordinator::MutationCoordinator::new(std::sync::Arc::new(crate::app::runtime::operation_journal::OperationJournal::new())))
+
         .manage(crate::modules::workspace::application::scanner::master_db::MasterDbCache::default())
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())

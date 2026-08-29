@@ -57,7 +57,7 @@ pub async fn apply_game_mods_directory(
         '_,
         crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    operation_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    operation_lock: State<'_, crate::app::runtime::mutation_coordinator::MutationCoordinator>,
 ) -> Result<crate::modules::workspace::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryResult, AppError>
 {
     let _activation_guard = disk_reconcile_state.activation_guard().await;
@@ -70,12 +70,12 @@ pub async fn apply_game_mods_directory(
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: watcher.suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner().inner_lock(),
             progress_reporter: None,
         },
         request,
         &game_guard,
-        &operation_guard,
+        operation_guard.op_guard(),
     )
     .await?;
     watcher.invalidate_session();
@@ -101,7 +101,7 @@ pub async fn reconcile_disk_state_cmd(
         '_,
         crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    operation_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    operation_lock: State<'_, crate::app::runtime::mutation_coordinator::MutationCoordinator>,
 ) -> Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError> {
     // Opening Mods can race the workspace query which starts initial recovery.
     // Reuse that single pass instead of queueing a second full scan behind it.
@@ -138,7 +138,7 @@ pub async fn reconcile_disk_state_cmd(
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: watcher.suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner().inner_lock(),
             progress_reporter: Some(progress_reporter),
         },
         crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
@@ -164,7 +164,7 @@ pub async fn resolve_rename_confirmations(
         '_,
         crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    operation_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    operation_lock: State<'_, crate::app::runtime::mutation_coordinator::MutationCoordinator>,
 ) -> Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError> {
     if resolutions.is_empty() {
         return Err(AppError::Validation(
@@ -219,7 +219,7 @@ pub async fn resolve_rename_confirmations(
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: watcher.suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner().inner_lock(),
             progress_reporter: None,
         },
         crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::rename_resolutions(
