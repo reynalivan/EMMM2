@@ -15,7 +15,7 @@ import type { JsonValue } from '../../../types/object';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
-import type { DbEntryFull } from '../hooks/useMasterDbSync';
+import { type DbEntryFull, mapToUiFormat } from '../hooks/useMasterDbSync';
 
 interface AutoSetupModalProps {
   open: boolean;
@@ -25,7 +25,7 @@ interface AutoSetupModalProps {
 export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
   const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
-  const { data: dbJson, isLoading: isDbLoading } = useMasterDb();
+  const { data: dbEntriesRaw, isLoading: isDbLoading } = useMasterDb();
   const createObject = useCreateObject();
   const queryClient = useQueryClient();
 
@@ -34,19 +34,11 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  // Parse MasterDB JSON into UI format
+  // Process MasterDB into UI format
   const dbEntries = useMemo<DbEntryFull[]>(() => {
-    if (!dbJson) return [];
-    try {
-      const parsed = JSON.parse(dbJson);
-      // Depending on the exact format of the JSON (array vs { entries: array })
-      const entries = Array.isArray(parsed) ? parsed : parsed.entries || [];
-      return entries as DbEntryFull[];
-    } catch (err) {
-      console.error('Failed to parse MasterDB JSON:', err);
-      return [];
-    }
-  }, [dbJson]);
+    if (!dbEntriesRaw) return [];
+    return mapToUiFormat(dbEntriesRaw);
+  }, [dbEntriesRaw]);
 
   // Filter entries based on search
   const filteredEntries = useMemo(() => {
@@ -55,7 +47,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     return dbEntries.filter(
       (entry) =>
         entry.name.toLowerCase().includes(q) ||
-        (entry.tags && entry.tags.some((t) => t.toLowerCase().includes(q))),
+        (entry.aliases && entry.aliases.some((t) => t.toLowerCase().includes(q))),
     );
   }, [dbEntries, search]);
 

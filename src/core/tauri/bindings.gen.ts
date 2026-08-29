@@ -195,10 +195,10 @@ async getObject(id: string) : Promise<Result<GameObject | null, AppError>> {
 /**
  * Get the MasterDB JSON for a specific game type.
  * Loads from `resources/databases/{game_type}.json`.
- * Returns array JSON for frontend compatibility (even if file uses new object format).
+ * Returns DbEntry array directly, eliminating manual String parsing.
  * When hash_db is present in source, merges hashes into matching entries.
  */
-async getMasterDb(gameType: number) : Promise<Result<string, AppError>> {
+async getMasterDb(gameType: number) : Promise<Result<DbEntry[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_master_db", { gameType }) };
 } catch (e) {

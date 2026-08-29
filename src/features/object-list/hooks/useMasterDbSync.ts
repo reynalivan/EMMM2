@@ -24,7 +24,7 @@ export interface DbEntryFull {
 /**
  * Transform flat DbEntry[] → DbEntryFull[]
  */
-function mapToUiFormat(entries: DbEntry[]): DbEntryFull[] {
+export function mapToUiFormat(entries: DbEntry[]): DbEntryFull[] {
   return entries.map((entry) => ({
     name: entry.name,
     aliases: entry.aliases || [],

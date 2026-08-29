@@ -4,7 +4,7 @@
 //! logic for the MasterDB that was previously duplicated across commands.
 
 use crate::domain::errors::ScannerError;
-use serde_json::Value;
+
 use std::path::Path;
 
 use crate::services::game::schema_loader;
@@ -12,9 +12,15 @@ use crate::services::scanner::deep_matcher::analysis::content::{
     IniTokenizationConfig, PreparedTokenFilters,
 };
 use crate::services::scanner::deep_matcher::{DbEntry, EntryKind, MasterDb};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct MasterDbPayload {
+    entries: Vec<DbEntry>,
+}
 
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
-pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String, ScannerError> {
+pub fn load_master_db_entries(resource_dir: &Path, game_type: i32) -> Result<Vec<DbEntry>, ScannerError> {
     let canonical = schema_loader::normalize_game_type(game_type);
     let db_path = resource_dir
         .join("databases")
@@ -26,28 +32,37 @@ pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String
             game_type,
             db_path.display()
         );
-        return Ok("[]".to_string());
+        return Ok(Vec::new());
     }
 
     let json_content = std::fs::read_to_string(&db_path)?;
 
-    let parsed: Value = serde_json::from_str(&json_content)?;
+    // Only accept strict object format
+    let payload: MasterDbPayload = serde_json::from_str(&json_content)
+        .map_err(|e| ScannerError::Parse {
+            what: "MasterDB".to_string(),
+            detail: format!("expected an object with an 'entries' key: {}", e),
+        })?;
 
-    let mut entries: Vec<Value> = match parsed {
-        Value::Object(ref map) if map.contains_key("entries") => {
-            serde_json::from_value(map["entries"].clone())?
-        }
-        Value::Array(arr) => arr,
-        _ => {
-            return Err(ScannerError::Parse {
-                what: "MasterDB".to_string(),
-                detail: "expected an array or an object with an 'entries' key".to_string(),
-            })
-        }
-    };
+    let mut entries = payload.entries;
+    for entry in entries.iter_mut() {
+        // We can reuse the `absolutize_thumbnails` logic by swapping out the entry 
+        // with an empty dummy, transforming it, and placing it back.
+        // A cleaner way since `absolutize_thumbnails` takes ownership:
+        let old = std::mem::replace(entry, DbEntry {
+            name: String::new(),
+            aliases: vec![],
+            object_type: String::new(),
+            entry_kind: Default::default(),
+            custom_skins: vec![],
+            thumbnail_path: None,
+            metadata: None,
+            hash_db: Default::default(),
+        });
+        *entry = absolutize_thumbnails(old, resource_dir);
+    }
 
-    resolve_entry_thumbnails(&mut entries, resource_dir);
-    Ok(serde_json::to_string(&entries)?)
+    Ok(entries)
 }
 
 pub fn ini_filters(resource_dir: Option<&Path>, game_type: i32) -> PreparedTokenFilters {
@@ -62,42 +77,6 @@ pub fn ini_filters(resource_dir: Option<&Path>, game_type: i32) -> PreparedToken
         ini_key_whitelist: schema.ini_key_whitelist,
     }
     .prepare()
-}
-
-/// Resolve all thumbnail fields in a slice of serde_json entries to absolute paths.
-pub fn resolve_entry_thumbnails(entries: &mut [Value], resource_dir: &Path) {
-    for entry in entries.iter_mut() {
-        if let Some(name) = entry.get("name").and_then(|v| v.as_str()) {
-            let alias_name = name.to_string();
-            let entry_key = crate::services::scanner::sync::helpers::canonical_entry_key(name);
-            if entry.get("matched_entry_key").is_none() {
-                entry["matched_entry_key"] = Value::String(entry_key);
-            }
-            if entry.get("matched_alias_name").is_none() {
-                entry["matched_alias_name"] = Value::String(alias_name);
-            }
-        }
-
-        if let Some(thumb_rel) = entry.get("thumbnail_path").and_then(|v| v.as_str()) {
-            let abs_path = resource_dir.join(thumb_rel);
-            if let Some(abs_str) = abs_path.to_str() {
-                entry["thumbnail_path"] = Value::String(abs_str.to_string());
-            }
-        }
-
-        if let Some(skins) = entry.get_mut("custom_skins").and_then(|v| v.as_array_mut()) {
-            for skin in skins {
-                if let Some(skin_thumb_rel) =
-                    skin.get("thumbnail_skin_path").and_then(|v| v.as_str())
-                {
-                    let abs_path = resource_dir.join(skin_thumb_rel);
-                    if let Some(abs_str) = abs_path.to_str() {
-                        skin["thumbnail_skin_path"] = Value::String(abs_str.to_string());
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, specta::Type)]

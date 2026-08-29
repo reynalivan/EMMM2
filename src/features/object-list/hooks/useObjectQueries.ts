@@ -57,12 +57,13 @@ export function useGameSwitch() {
 
   return { switchGame };
 }
+import type { DbEntry } from '../../../core/tauri/bindings.gen';
 
 export function useMasterDb() {
   const { activeGame } = useActiveGame();
   const gameType = activeGame?.game_type;
 
-  return useQuery<string>({
+  return useQuery<DbEntry[]>({
     queryKey: ['master-db', gameType],
     queryFn: () => commands.getMasterDb(gameType!),
     enabled: !!gameType,

@@ -43,13 +43,13 @@ pub async fn get_object(
 
 /// Get the MasterDB JSON for a specific game type.
 /// Loads from `resources/databases/{game_type}.json`.
-/// Returns array JSON for frontend compatibility (even if file uses new object format).
+/// Returns DbEntry array directly, eliminating manual String parsing.
 /// When hash_db is present in source, merges hashes into matching entries.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<String, AppError> {
+pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<Vec<crate::services::scanner::deep_matcher::DbEntry>, AppError> {
     let resource_dir = resource_dir(&app)?;
-    Ok(crate::services::scanner::master_db::load_master_db_json(
+    Ok(crate::services::scanner::master_db::load_master_db_entries(
         &resource_dir,
         game_type,
     )?)

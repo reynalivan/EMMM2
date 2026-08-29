@@ -202,20 +202,20 @@ export function EditObjectTabAuto({
       {/* Tags and Custom Skins */}
       {selectedSyncEntry && (
         <>
-          {/* Tags */}
+          {/* Aliases */}
           <div className="form-control w-full mt-2">
             <label className="label py-1">
               <span className="label-text">{t('edit_modal.aliases')}</span>
             </label>
             <div className="flex flex-wrap gap-1 px-3">
-              {selectedSyncEntry.tags && selectedSyncEntry.tags.length > 0 ? (
-                selectedSyncEntry.tags.map((tag) => (
+              {selectedSyncEntry.aliases && selectedSyncEntry.aliases.length > 0 ? (
+                selectedSyncEntry.aliases.map((tag: string) => (
                   <div key={tag} className="badge badge-outline badge-sm opacity-80">
                     {tag}
                   </div>
                 ))
               ) : (
-                <div className="font-semibold text-base-content opacity-50">-</div>
+                <div className="text-sm italic opacity-50 px-1">-</div>
               )}
             </div>
           </div>
