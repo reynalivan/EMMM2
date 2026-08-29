@@ -306,5 +306,5 @@ fn validate_relative_path(path: &str) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
-#[path = "../tests/runtime_mutation_engine_tests.rs"]
+#[path = "engine_tests.rs"]
 mod tests;

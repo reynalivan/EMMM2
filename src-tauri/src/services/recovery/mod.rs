@@ -250,5 +250,4 @@ async fn resolve_rollback_target(
 }
 
 #[cfg(test)]
-#[path = "../tests/recovery_service_tests.rs"]
 mod tests;

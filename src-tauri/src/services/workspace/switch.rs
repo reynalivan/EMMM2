@@ -282,5 +282,5 @@ pub async fn execute_switch(
 }
 
 #[cfg(test)]
-#[path = "../tests/workspace_switch_service_tests.rs"]
+#[path = "tests/switch_tests.rs"]
 mod tests;

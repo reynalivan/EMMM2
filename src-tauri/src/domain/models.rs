@@ -210,7 +210,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for CustomSkinsPayload {
 }
 
 #[cfg(test)]
-#[path = "../repo/tests/models_test.rs"]
+#[path = "models_test.rs"]
 mod tests;
 
 /// Represents a row in the `objects` table.

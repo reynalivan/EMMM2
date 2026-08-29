@@ -205,5 +205,4 @@ pub async fn update_group_status(
 }
 
 #[cfg(test)]
-#[path = "../tests/dedup_repo_test.rs"]
 mod tests;

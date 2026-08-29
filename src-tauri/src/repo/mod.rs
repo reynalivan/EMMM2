@@ -12,6 +12,3 @@ pub mod settings;
 pub mod task;
 pub mod utils;
 
-#[cfg(test)]
-#[path = "tests/folder_path_normalization_test.rs"]
-mod folder_path_normalization_test;

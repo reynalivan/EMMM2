@@ -1143,5 +1143,4 @@ fn map_item_row(row: sqlx::sqlite::SqliteRow) -> Result<ImportItem, sqlx::Error>
 }
 
 #[cfg(test)]
-#[path = "../tests/import_batch_repo_test.rs"]
 mod tests;

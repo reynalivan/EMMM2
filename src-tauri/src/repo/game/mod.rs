@@ -180,5 +180,4 @@ pub async fn ensure_game_exists(
 }
 
 #[cfg(test)]
-#[path = "../tests/game_repo_test.rs"]
 mod tests;

@@ -21,5 +21,9 @@ pub use types::*;
 pub use update::*;
 
 #[cfg(test)]
-#[path = "../tests/mod_repo_test.rs"]
+#[path = "tests/mod_repo_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/folder_path_normalization_test.rs"]
+mod folder_path_normalization_test;

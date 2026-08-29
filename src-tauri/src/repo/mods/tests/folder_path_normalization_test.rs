@@ -56,7 +56,7 @@ async fn stored_path(pool: &SqlitePool, id: &str) -> String {
 /// it. Re-running the statement is how a test exercises it against rows the
 /// migration could not have seen.
 async fn run_normalization(pool: &SqlitePool) {
-    let sql = include_str!("../../../migrations/20260815000000_normalize_mod_folder_paths.sql");
+    let sql = include_str!("../../../../migrations/20260815000000_normalize_mod_folder_paths.sql");
     sqlx::query(sql).execute(pool).await.expect("normalize");
 }
 

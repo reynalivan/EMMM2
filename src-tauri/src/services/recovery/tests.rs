@@ -692,5 +692,4 @@ async fn rollback_to_draft_with_deleted_baseline_stays_unsaved() {
     assert_eq!(rollback.active_baseline_id, None);
 }
 
-#[path = "recovery_service_tests/characterization.rs"]
 mod characterization;

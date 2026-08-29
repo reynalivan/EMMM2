@@ -152,5 +152,4 @@ pub async fn set_app_meta(pool: &SqlitePool, key: &str, value: &str) {
 }
 
 #[cfg(test)]
-#[path = "../tests/settings_repo_test.rs"]
 mod tests;

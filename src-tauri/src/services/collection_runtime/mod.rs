@@ -219,5 +219,4 @@ pub async fn get_collection_runtime_state(
 }
 
 #[cfg(test)]
-#[path = "../tests/collection_runtime_service_tests.rs"]
 mod tests;
